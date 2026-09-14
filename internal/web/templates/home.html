@@ -1,0 +1,18 @@
+{{define "home"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+<section class="card">
+  <h1>hi, {{.User.Username}}</h1>
+  <p class="muted">{{.Any}} unread items</p>
+  <p>Add feeds under <a href="/feeds">feeds</a>, manage profiles under <a href="/authors">authors</a>.</p>
+</section>
+</main>
+</body>
+</html>
+{{end}}

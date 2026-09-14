@@ -36,6 +36,14 @@ func (s *SessionStore) Delete(token string) error {
 	return err
 }
 
+// Touch extends a session's expiry (sliding sessions).
+func (s *SessionStore) Touch(token, expiresAt string) error {
+	_, err := s.db.Exec(
+		`UPDATE sessions SET expires_at = ? WHERE token = ?`, expiresAt, token,
+	)
+	return err
+}
+
 func (s *SessionStore) DeleteExpired() error {
 	_, err := s.db.Exec(`DELETE FROM sessions WHERE expires_at <= datetime('now')`)
 	return err

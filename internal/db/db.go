@@ -10,6 +10,19 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// TimeFormat is the canonical timestamp layout for all stored times (UTC).
+const TimeFormat = "2006-01-02 15:04:05"
+
+// FormatTime renders a time in TimeFormat (UTC).
+func FormatTime(t time.Time) string {
+	return t.UTC().Format(TimeFormat)
+}
+
+// ParseTime parses a TimeFormat string as UTC.
+func ParseTime(s string) (time.Time, error) {
+	return time.Parse(TimeFormat, s)
+}
+
 // Open opens a sqlite database at path, enabling WAL mode and foreign keys.
 // Pass ":memory:" for an in-memory database.
 func Open(path string) (*sql.DB, error) {
@@ -42,5 +55,5 @@ func Open(path string) (*sql.DB, error) {
 
 // Now returns the current UTC time in the format used for all timestamps.
 func Now() string {
-	return time.Now().UTC().Format("2006-01-02 15:04:05")
+	return FormatTime(time.Now())
 }

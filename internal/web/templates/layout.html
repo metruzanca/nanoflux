@@ -1,0 +1,21 @@
+{{define "head"}}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if .Title}}{{.Title}} — {{end}}rss</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/htmx.min.js" defer></script>
+{{end}}
+
+{{define "topbar"}}
+<header class="top">
+  <a class="brand" href="/">rss</a>
+  {{if .User.ID}}
+  <nav>
+    <a href="/feeds">feeds</a>
+    <a href="/authors">authors</a>
+    <a href="/collections">collections</a>
+    <form action="/logout" method="post" class="inline"><button class="link" type="submit">log out</button></form>
+  </nav>
+  {{end}}
+</header>
+{{end}}

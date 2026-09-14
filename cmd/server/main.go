@@ -10,8 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/metruzanca/rss/internal/auth"
 	"github.com/metruzanca/rss/internal/config"
 	"github.com/metruzanca/rss/internal/db"
+	"github.com/metruzanca/rss/internal/httpapi"
+	"github.com/metruzanca/rss/internal/store"
 )
 
 func main() {
@@ -27,14 +30,13 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
-	})
+	st := store.New(sqldb)
+	bootstrapUser(st, cfg)
+	a := auth.New(st)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           mux,
+		Handler:           httpapi.New(st, a, cfg).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -54,4 +56,27 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("shutdown: %v", err)
 	}
+}
+
+// bootstrapUser creates the first account from env when the database is empty.
+func bootstrapUser(st *store.Store, cfg config.Config) {
+	n, err := st.Users.Count()
+	if err != nil {
+		log.Fatalf("count users: %v", err)
+	}
+	if n > 0 {
+		return
+	}
+	if cfg.BootstrapUser == "" || cfg.BootstrapPass == "" {
+		log.Printf("no users configured; set RSS_BOOTSTRAP_USER and RSS_BOOTSTRAP_PASS to create the first account")
+		return
+	}
+	hash, err := auth.HashPassword(cfg.BootstrapPass)
+	if err != nil {
+		log.Fatalf("hash password: %v", err)
+	}
+	if _, err := st.Users.Create(cfg.BootstrapUser, hash); err != nil {
+		log.Fatalf("create bootstrap user: %v", err)
+	}
+	log.Printf("created bootstrap user %q", cfg.BootstrapUser)
 }
