@@ -22,10 +22,10 @@ const maxBody = 4 << 20
 
 // Candidate is one discovered feed.
 type Candidate struct {
-	FeedURL  string
-	Title    string
-	HomeURL  string
-	Strategy string
+	FeedURL  string `json:"feed_url"`
+	Title    string `json:"title,omitempty"`
+	HomeURL  string `json:"home_url,omitempty"`
+	Strategy string `json:"strategy"`
 }
 
 // Discoverer finds feeds for URLs.
@@ -185,7 +185,11 @@ func (d *Discoverer) htmlLinks(ctx context.Context, pageURL string) (string, []s
 					continue
 				}
 				if isFeedLink(rel, typ) {
-					if u := base.ResolveReference(&url.URL{Path: href}); u.IsAbs() {
+					ref, err := url.Parse(href)
+					if err != nil {
+						continue
+					}
+					if u := base.ResolveReference(ref); u.IsAbs() {
 						links = append(links, u.String())
 					}
 				}

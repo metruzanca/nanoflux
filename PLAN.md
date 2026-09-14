@@ -5,42 +5,42 @@ extension. SQLite, session auth, background poller, feed discovery.
 
 ## Checklist
 
-- [ ] **P0 — Scaffolding**
-  - [ ] Add dependencies (modernc sqlite, gofeed, bcrypt)
-  - [ ] `internal/config` — env config (`RSS_ADDR`, `RSS_DB`, `RSS_POLL_INTERVAL`, `RSS_BOOTSTRAP_USER/PASS`)
-  - [ ] `internal/db` — open sqlite (WAL, FK on), embedded migration runner
-  - [ ] `cmd/server/main.go` — boots config, db, serves `/healthz`
-- [ ] **P1 — Store layer** (shared by server + future CLI)
-  - [ ] Repositories: users, sessions, authors, feeds, items, collections
-  - [ ] All queries scoped by `user_id`
-  - [ ] Tests against in-memory sqlite
-- [ ] **P2 — Auth**
-  - [ ] `POST /login`, `POST /logout`, `GET /login` page
-  - [ ] bcrypt password hashing
-  - [ ] Sessions in DB, httpOnly cookie (also usable as Bearer token header)
-  - [ ] Auth middleware (all routes except login/healthz)
-  - [ ] Bootstrap first user from env if `users` empty
-- [ ] **P3 — Poller + parsing**
-  - [ ] `internal/feedparse` — normalize gofeed output -> items
-  - [ ] Background poller: ticker, per-feed interval, conditional GET (etag/last-modified), worker pool, timeout
-  - [ ] `POST /feeds/{id}/refresh` manual refresh
-  - [ ] Upsert items by `(feed_id, guid)`, new items `read=false`
-- [ ] **P3b — Feed discovery** (`internal/discover`)
-  - [ ] `Discover(ctx, url) []Candidate` — strategies: direct parse, HTML link scan, well-known paths, host-specific (bluesky, youtube, reddit, github)
-  - [ ] Candidates validated by fetching + parsing server-side
-  - [ ] Fixture tests
-- [ ] **P4 — htmx web UI**
-  - [ ] `GET /` unread item list, mark read / mark-all-read
-  - [ ] Feeds: list, add (author select-or-create), edit, delete, refresh
-  - [ ] Authors: list, create/edit/delete, shows their feeds
-  - [ ] Collections: list/create, add/remove feeds
-  - [ ] htmx fragments per entity
-- [ ] **P5 — JSON API** (for extension)
-  - [ ] `POST /api/login` (token for header auth)
-  - [ ] `GET /api/unread-count`, `GET /api/items`
-  - [ ] `POST /api/items/{id}/read`
-  - [ ] `POST /api/discover`, `POST /api/save`
-  - [ ] CORS preflight handling for extension origin
+- [x] **P0 — Scaffolding**
+  - [x] Add dependencies (modernc sqlite, gofeed, bcrypt)
+  - [x] `internal/config` — env config (`RSS_ADDR`, `RSS_DB`, `RSS_POLL_INTERVAL`, `RSS_BOOTSTRAP_USER/PASS`)
+  - [x] `internal/db` — open sqlite (WAL, FK on), embedded migration runner
+  - [x] `cmd/server/main.go` — boots config, db, serves `/healthz`
+- [x] **P1 — Store layer** (shared by server + future CLI)
+  - [x] Repositories: users, sessions, authors, feeds, items, collections
+  - [x] All queries scoped by `user_id`
+  - [x] Tests against in-memory sqlite
+- [x] **P2 — Auth**
+  - [x] `POST /login`, `POST /logout`, `GET /login` page
+  - [x] bcrypt password hashing
+  - [x] Sessions in DB, httpOnly cookie (also usable as Bearer token header)
+  - [x] Auth middleware (all routes except login/healthz)
+  - [x] Bootstrap first user from env if `users` empty
+- [x] **P3 — Poller + parsing**
+  - [x] `internal/feedparse` — normalize gofeed output -> items
+  - [x] Background poller: ticker, per-feed interval, conditional GET (etag/last-modified), worker pool, timeout
+  - [x] `POST /feeds/{id}/refresh` manual refresh
+  - [x] Upsert items by `(feed_id, guid)`, new items `read=false`
+- [x] **P3b — Feed discovery** (`internal/discover`)
+  - [x] `Discover(ctx, url) []Candidate` — strategies: direct parse, HTML link scan, well-known paths, host-specific (bluesky, youtube, reddit, github)
+  - [x] Candidates validated by fetching + parsing server-side
+  - [x] Fixture tests
+- [x] **P4 — htmx web UI**
+  - [x] `GET /` unread item list, mark read / mark-all-read
+  - [x] Feeds: list, add (author select-or-create), edit, delete, refresh
+  - [x] Authors: list, create/edit/delete, shows their feeds
+  - [x] Collections: list/create, add/remove feeds
+  - [x] htmx fragments per entity
+- [x] **P5 — JSON API** (for extension)
+  - [x] `POST /api/login` (token for header auth)
+  - [x] `GET /api/unread-count`, `GET /api/items`
+  - [x] `POST /api/items/{id}/read`
+  - [x] `POST /api/discover`, `POST /api/save`
+  - [x] CORS preflight handling for extension origin
 - [ ] **Deferred (explicitly later)**
   - [ ] `cmd/cli` — cobra admin CLI on `internal/store`
   - [ ] Chrome extension (MV3) — popup, badge, save-to-collection

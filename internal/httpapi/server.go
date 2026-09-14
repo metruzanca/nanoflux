@@ -5,6 +5,7 @@ import (
 
 	"github.com/metruzanca/rss/internal/auth"
 	"github.com/metruzanca/rss/internal/config"
+	"github.com/metruzanca/rss/internal/discover"
 	"github.com/metruzanca/rss/internal/poller"
 	"github.com/metruzanca/rss/internal/store"
 	"github.com/metruzanca/rss/internal/web"
@@ -13,14 +14,20 @@ import (
 // Server wires the HTTP layer over the store. JSON API routes for the
 // extension live here too (see api.go).
 type Server struct {
-	store  *store.Store
-	auth   *auth.Authenticator
-	cfg    config.Config
-	poller *poller.Poller
+	store      *store.Store
+	auth       *auth.Authenticator
+	cfg        config.Config
+	poller     *poller.Poller
+	discoverer *discover.Discoverer
 }
 
 func New(st *store.Store, a *auth.Authenticator, cfg config.Config) *Server {
-	return &Server{store: st, auth: a, cfg: cfg}
+	return &Server{
+		store:      st,
+		auth:       a,
+		cfg:        cfg,
+		discoverer: discover.New(nil),
+	}
 }
 
 // SetPoller attaches the feed poller (needed for manual refresh).
@@ -70,5 +77,28 @@ func (s *Server) Handler() http.Handler {
 	// htmx fragments.
 	mux.Handle("GET /fragments/author-form", s.auth.Require(http.HandlerFunc(s.authorFormFragment)))
 
-	return mux
+	// JSON API (for the browser extension).
+	mux.HandleFunc("POST /api/login", s.apiLogin)
+	mux.Handle("GET /api/unread-count", s.auth.Require(http.HandlerFunc(s.apiUnreadCount)))
+	mux.Handle("GET /api/items", s.auth.Require(http.HandlerFunc(s.apiItems)))
+	mux.Handle("POST /api/items/{id}/read", s.auth.Require(http.HandlerFunc(s.apiItemRead)))
+	mux.Handle("POST /api/discover", s.auth.Require(http.HandlerFunc(s.apiDiscover)))
+	mux.Handle("POST /api/save", s.auth.Require(http.HandlerFunc(s.apiSave)))
+
+	return cors(mux)
+}
+
+// cors answers the browser extension's cross-origin preflights. Auth relies
+// on a Bearer token (never cookies cross-site), so allowing any origin is safe.
+func cors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
