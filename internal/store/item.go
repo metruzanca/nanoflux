@@ -1,0 +1,185 @@
+package store
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"strings"
+)
+
+type Item struct {
+	ID          int64
+	FeedID      int64
+	GUID        string
+	Title       string
+	Link        string
+	Summary     string
+	ImageURL    string
+	PublishedAt string
+	FetchedAt   string
+	Read        bool
+}
+
+// ItemWithFeed joins an item with its feed and author for display.
+type ItemWithFeed struct {
+	Item
+	FeedTitle  string
+	FeedURL    string
+	AuthorID   int64
+	AuthorName string
+}
+
+type ItemFilter struct {
+	UnreadOnly   bool
+	FeedID       int64 // 0 = all
+	AuthorID     int64 // 0 = all
+	CollectionID int64 // 0 = all
+	Limit        int
+}
+
+type ItemStore struct{ db *sql.DB }
+
+// Upsert inserts an item, ignoring duplicates on (feed_id, guid). It reports
+// whether a new row was actually inserted.
+func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
+	res, err := s.db.Exec(
+		`INSERT INTO items(feed_id, guid, title, link, summary, image_url, published_at, fetched_at)
+		 VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(feed_id, guid) DO NOTHING`,
+		feedID, it.GUID, it.Title, it.Link, it.Summary, nullStr(it.ImageURL),
+		nullStr(it.PublishedAt), it.FetchedAt,
+	)
+	if err != nil {
+		return false, fmt.Errorf("upsert item: %w", err)
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
+	conds := []string{"f.user_id = ?"}
+	args := []any{userID}
+	if f.UnreadOnly {
+		conds = append(conds, "i.read = 0")
+	}
+	if f.FeedID != 0 {
+		conds = append(conds, "f.id = ?")
+		args = append(args, f.FeedID)
+	}
+	if f.AuthorID != 0 {
+		conds = append(conds, "f.author_id = ?")
+		args = append(args, f.AuthorID)
+	}
+	if f.CollectionID != 0 {
+		conds = append(conds,
+			"i.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?)")
+		args = append(args, f.CollectionID)
+	}
+	limit := f.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+
+	rows, err := s.db.Query(
+		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+		        i.published_at, i.fetched_at, i.read,
+		        f.title, f.feed_url, a.id, a.name
+		 FROM items i
+		 JOIN feeds f ON f.id = i.feed_id
+		 JOIN authors a ON a.id = f.author_id
+		 WHERE `+strings.Join(conds, " AND ")+`
+		 ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
+		 LIMIT ?`,
+		append(args, limit)...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []ItemWithFeed
+	for rows.Next() {
+		it, err := scanItemWithFeed(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+func (s *ItemStore) ByID(userID, id int64) (Item, error) {
+	it, err := scanItem(s.db.QueryRow(
+		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+		        i.published_at, i.fetched_at, i.read
+		 FROM items i JOIN feeds f ON f.id = i.feed_id
+		 WHERE i.id = ? AND f.user_id = ?`, id, userID,
+	))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Item{}, ErrNotFound
+	}
+	return it, err
+}
+
+// SetRead marks an item read/unread, verifying it belongs to the user.
+func (s *ItemStore) SetRead(userID, itemID int64, read bool) error {
+	res, err := s.db.Exec(
+		`UPDATE items SET read = ?
+		 WHERE id = ? AND feed_id IN (SELECT id FROM feeds WHERE user_id = ?)`,
+		boolInt(read), itemID, userID,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// MarkAllRead marks every item read for a user; pass feedID 0 for all feeds.
+func (s *ItemStore) MarkAllRead(userID, feedID int64) error {
+	_, err := s.db.Exec(
+		`UPDATE items SET read = 1
+		 WHERE feed_id IN (SELECT id FROM feeds WHERE user_id = ?)
+		   AND (? = 0 OR feed_id = ?)`,
+		userID, feedID, feedID,
+	)
+	return err
+}
+
+func (s *ItemStore) CountUnread(userID int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
+		 WHERE f.user_id = ? AND i.read = 0`, userID,
+	).Scan(&n)
+	return n, err
+}
+
+func scanItem(row scanner) (Item, error) {
+	var it Item
+	var imageURL, publishedAt sql.NullString
+	var read int
+	err := row.Scan(
+		&it.ID, &it.FeedID, &it.GUID, &it.Title, &it.Link, &it.Summary,
+		&imageURL, &publishedAt, &it.FetchedAt, &read,
+	)
+	it.ImageURL, it.PublishedAt = imageURL.String, publishedAt.String
+	it.Read = read != 0
+	return it, err
+}
+
+func scanItemWithFeed(row scanner) (ItemWithFeed, error) {
+	var it ItemWithFeed
+	var imageURL, publishedAt sql.NullString
+	var read int
+	err := row.Scan(
+		&it.ID, &it.FeedID, &it.GUID, &it.Title, &it.Link, &it.Summary,
+		&imageURL, &publishedAt, &it.FetchedAt, &read,
+		&it.FeedTitle, &it.FeedURL, &it.AuthorID, &it.AuthorName,
+	)
+	it.ImageURL, it.PublishedAt = imageURL.String, publishedAt.String
+	it.Read = read != 0
+	return it, err
+}
