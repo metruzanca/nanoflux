@@ -257,7 +257,7 @@ func TestListDue(t *testing.T) {
 	f, _ := s.Feeds.Create(u.ID, a.ID, "feed", "https://a.dev/rss.xml", "", "", 900)
 
 	// Never polled -> due.
-	due, err := s.Feeds.ListDue(db.Now(), 900)
+	due, err := s.Feeds.ListDue(db.Now())
 	if err != nil || len(due) != 1 {
 		t.Fatalf("ListDue never polled: %v %d", err, len(due))
 	}
@@ -266,7 +266,7 @@ func TestListDue(t *testing.T) {
 	if err := s.Feeds.SetPollMeta(f.ID, "", "", db.Now()); err != nil {
 		t.Fatal(err)
 	}
-	due, _ = s.Feeds.ListDue(db.Now(), 900)
+	due, _ = s.Feeds.ListDue(db.Now())
 	if len(due) != 0 {
 		t.Fatalf("ListDue should be empty after fresh poll")
 	}
@@ -276,7 +276,7 @@ func TestListDue(t *testing.T) {
 	if err := s.Feeds.SetPollMeta(f.ID, "", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	due, _ = s.Feeds.ListDue(db.Now(), 900)
+	due, _ = s.Feeds.ListDue(db.Now())
 	if len(due) != 0 {
 		t.Fatalf("ListDue should skip disabled feeds")
 	}

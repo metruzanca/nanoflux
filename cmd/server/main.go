@@ -14,6 +14,7 @@ import (
 	"github.com/metruzanca/rss/internal/config"
 	"github.com/metruzanca/rss/internal/db"
 	"github.com/metruzanca/rss/internal/httpapi"
+	"github.com/metruzanca/rss/internal/poller"
 	"github.com/metruzanca/rss/internal/store"
 )
 
@@ -34,6 +35,11 @@ func main() {
 	bootstrapUser(st, cfg)
 	a := auth.New(st)
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go poller.New(st, cfg.PollInterval, cfg.PollWorkers).Run(ctx)
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           httpapi.New(st, a, cfg).Handler(),
@@ -47,8 +53,6 @@ func main() {
 		}
 	}()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	<-ctx.Done()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

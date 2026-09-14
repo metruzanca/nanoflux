@@ -140,13 +140,13 @@ func (s *FeedStore) SetPollMeta(id int64, etag, lastModified, lastPolledAt strin
 	return err
 }
 
-// ListDue returns enabled feeds that have not been polled within
-// pollIntervalSec of now.
-func (s *FeedStore) ListDue(now string, pollIntervalSec int) ([]Feed, error) {
+// ListDue returns enabled feeds that have not been polled within their own
+// poll_interval_sec of now.
+func (s *FeedStore) ListDue(now string) ([]Feed, error) {
 	rows, err := s.db.Query(
 		`SELECT `+feedCols+` FROM feeds
-		 WHERE enabled = 1 AND (last_polled_at IS NULL OR last_polled_at <= datetime(?, '-' || ? || ' seconds'))`,
-		now, pollIntervalSec,
+		 WHERE enabled = 1 AND (last_polled_at IS NULL OR last_polled_at <= datetime(?, '-' || poll_interval_sec || ' seconds'))`,
+		now,
 	)
 	if err != nil {
 		return nil, err
