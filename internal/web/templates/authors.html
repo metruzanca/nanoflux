@@ -1,0 +1,58 @@
+{{define "authors"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+<h1>authors</h1>
+<section class="card">
+  <h2>new author</h2>
+  <form class="stack" method="post" action="/authors">
+    {{template "author_fields" .Data}}
+    <button type="submit">add author</button>
+  </form>
+</section>
+{{template "authors_list" .Data.Rows}}
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "author_edit"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+<section class="card">
+  <h1>edit author</h1>
+  <form class="stack" method="post" action="/authors/{{.Data.Form.ID}}/edit">
+    {{template "author_fields" .Data}}
+    <button type="submit">save</button>
+  </form>
+</section>
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "author_fields"}}
+<label>name
+  <input name="name" value="{{.Form.Name}}" required>
+</label>
+<label>url
+  <input name="url" type="url" value="{{.Form.URL}}">
+</label>
+<label>avatar url
+  <input name="avatar_url" type="url" value="{{.Form.AvatarURL}}">
+</label>
+<label>description
+  <textarea name="description" rows="3">{{.Form.Description}}</textarea>
+</label>
+{{end}}

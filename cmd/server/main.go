@@ -38,11 +38,16 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	go poller.New(st, cfg.PollInterval, cfg.PollWorkers).Run(ctx)
+	p := poller.New(st, cfg.PollInterval, cfg.PollWorkers)
+	go p.Run(ctx)
 
 	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           httpapi.New(st, a, cfg).Handler(),
+		Addr: cfg.Addr,
+		Handler: func() http.Handler {
+			h := httpapi.New(st, a, cfg)
+			h.SetPoller(p)
+			return h.Handler()
+		}(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

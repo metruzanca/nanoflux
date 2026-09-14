@@ -1,0 +1,30 @@
+{{define "items_list"}}
+{{if .}}
+<ul class="items" id="items-list">
+  {{range .}}
+  {{template "item_row" .}}
+  {{end}}
+</ul>
+{{else}}
+<p class="muted" id="items-list">nothing here</p>
+{{end}}
+{{end}}
+
+{{define "item_row"}}
+<li id="item-{{.ID}}">
+  <div class="row">
+    <div>
+      <a class="item-title{{if not .Read}} unread{{end}}" href="{{.Link}}" target="_blank" rel="noopener">{{.Title}}</a>
+      <div class="item-meta">
+        {{.AuthorName}} · <a href="{{.FeedURL}}">{{.FeedTitle}}</a>
+        {{if .PublishedAt}} · {{.PublishedAt | timeFmt}}{{end}}
+      </div>
+      {{if .Summary}}<div class="item-summary">{{.Summary | stripHTML}}</div>{{end}}
+    </div>
+    <button class="link" title="{{if .Read}}mark unread{{else}}mark read{{end}}"
+      hx-post="/items/{{.ID}}/read" hx-target="#item-{{.ID}}" hx-swap="outerHTML">
+      {{if .Read}}↺{{else}}✓{{end}}
+    </button>
+  </div>
+</li>
+{{end}}

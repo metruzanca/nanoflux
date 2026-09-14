@@ -23,7 +23,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	u, err := s.store.Users.ByUsername(username)
 	if err != nil || !auth.CheckPassword(u.PasswordHash, password) {
 		w.WriteHeader(http.StatusUnauthorized)
-		web.Render(w, "login", web.Page{Title: "log in", Any: "invalid username or password"})
+		web.Render(w, "login", web.Page{Title: "log in", Data: "invalid username or password"})
 		return
 	}
 

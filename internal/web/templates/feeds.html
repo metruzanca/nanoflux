@@ -1,0 +1,74 @@
+{{define "feeds"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+<h1>feeds</h1>
+<section class="card">
+  <h2>add feed</h2>
+  <form class="stack" method="post" action="/feeds">
+    {{template "feed_fields" .Data}}
+    <button type="submit">add feed</button>
+  </form>
+</section>
+{{template "feeds_list" .Data.Rows}}
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "feed_edit"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+<section class="card">
+  <h1>edit feed</h1>
+  <form class="stack" method="post" action="/feeds/{{.Data.Form.ID}}/edit">
+    {{template "feed_fields" .Data}}
+    <button type="submit">save</button>
+  </form>
+</section>
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "feed_fields"}}
+<label>title
+  <input name="title" value="{{.Form.Title}}" required>
+</label>
+<label>feed url
+  <input name="feed_url" type="url" value="{{.Form.FeedURL}}" required>
+</label>
+<label>home url
+  <input name="home_url" type="url" value="{{.Form.HomeURL}}">
+</label>
+<label>author
+  <select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change">
+    <option value="">select author</option>
+    {{range .Authors}}<option value="{{.ID}}"{{if eq $.Form.AuthorID .ID}} selected{{end}}>{{.Name}}</option>{{end}}
+    <option value="new">+ new author</option>
+  </select>
+</label>
+<div id="new-author"></div>
+<label>poll interval (seconds)
+  <input name="poll_interval_sec" type="number" value="{{.Form.PollIntervalSec}}" min="60">
+</label>
+{{if .Collections}}
+<fieldset>
+  <legend>collections</legend>
+  {{range .Collections}}
+  <label class="check"><input type="checkbox" name="collections" value="{{.ID}}"{{if has .ID $.Form.CollectionIDs}} checked{{end}}> {{.Name}}</label>
+  {{end}}
+</fieldset>
+{{end}}
+{{end}}

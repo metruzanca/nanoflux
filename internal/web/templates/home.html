@@ -7,11 +7,11 @@
 <body>
 {{template "topbar" .}}
 <main>
-<section class="card">
-  <h1>hi, {{.User.Username}}</h1>
-  <p class="muted">{{.Any}} unread items</p>
-  <p>Add feeds under <a href="/feeds">feeds</a>, manage profiles under <a href="/authors">authors</a>.</p>
-</section>
+<div class="row">
+  <h1>unread ({{.Data.UnreadCount}})</h1>
+  {{if .Data.UnreadCount}}<button hx-post="/items/read-all" hx-target="#items-list" hx-swap="outerHTML">mark all read</button>{{end}}
+</div>
+{{template "items_list" .Data.Unread}}
 </main>
 </body>
 </html>

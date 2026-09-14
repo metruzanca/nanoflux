@@ -1,0 +1,41 @@
+{{define "collections"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+<h1>collections</h1>
+<section class="card">
+  <h2>new collection</h2>
+  <form class="stack" method="post" action="/collections">
+    <label>name
+      <input name="name" required>
+    </label>
+    <button type="submit">create</button>
+  </form>
+</section>
+{{template "collections_list" .Data}}
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "collections_list"}}
+<ul class="plain" id="collections-list">
+  {{range .}}
+  {{template "collection_row" .}}
+  {{end}}
+</ul>
+{{end}}
+
+{{define "collection_row"}}
+<li id="collection-{{.ID}}">
+  <div class="row">
+    <a href="/collections/{{.ID}}"><strong>{{.Name}}</strong></a>
+    <button class="link danger" title="delete" hx-post="/collections/{{.ID}}/delete" hx-target="#collection-{{.ID}}" hx-swap="outerHTML" hx-confirm="delete this collection?">✕</button>
+  </div>
+</li>
+{{end}}

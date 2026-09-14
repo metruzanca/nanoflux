@@ -159,7 +159,7 @@ func TestItemsFlow(t *testing.T) {
 	if len(unread) != 2 {
 		t.Fatalf("expected 2 unread, got %d", len(unread))
 	}
-	n, err := s.Items.CountUnread(u.ID)
+	n, err := s.Items.CountUnread(u.ID, 0)
 	if err != nil || n != 2 {
 		t.Fatalf("CountUnread: %v %d", err, n)
 	}
@@ -167,14 +167,14 @@ func TestItemsFlow(t *testing.T) {
 	if err := s.Items.SetRead(u.ID, items[0].ID, true); err != nil {
 		t.Fatalf("SetRead: %v", err)
 	}
-	n, _ = s.Items.CountUnread(u.ID)
+	n, _ = s.Items.CountUnread(u.ID, 0)
 	if n != 1 {
 		t.Fatalf("expected 1 unread after SetRead, got %d", n)
 	}
 	if err := s.Items.MarkAllRead(u.ID, 0); err != nil {
 		t.Fatalf("MarkAllRead: %v", err)
 	}
-	n, _ = s.Items.CountUnread(u.ID)
+	n, _ = s.Items.CountUnread(u.ID, 0)
 	if n != 0 {
 		t.Fatalf("expected 0 unread after MarkAllRead, got %d", n)
 	}

@@ -121,6 +121,23 @@ func (s *ItemStore) ByID(userID, id int64) (Item, error) {
 	return it, err
 }
 
+// OneWithFeed returns a single item joined with its feed and author.
+func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
+	it, err := scanItemWithFeed(s.db.QueryRow(
+		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+		        i.published_at, i.fetched_at, i.read,
+		        f.title, f.feed_url, a.id, a.name
+		 FROM items i
+		 JOIN feeds f ON f.id = i.feed_id
+		 JOIN authors a ON a.id = f.author_id
+		 WHERE i.id = ? AND f.user_id = ?`, itemID, userID,
+	))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ItemWithFeed{}, ErrNotFound
+	}
+	return it, err
+}
+
 // SetRead marks an item read/unread, verifying it belongs to the user.
 func (s *ItemStore) SetRead(userID, itemID int64, read bool) error {
 	res, err := s.db.Exec(
@@ -148,11 +165,13 @@ func (s *ItemStore) MarkAllRead(userID, feedID int64) error {
 	return err
 }
 
-func (s *ItemStore) CountUnread(userID int64) (int, error) {
+// CountUnread counts unread items for a user; feedID 0 means all feeds.
+func (s *ItemStore) CountUnread(userID, feedID int64) (int, error) {
 	var n int
 	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-		 WHERE f.user_id = ? AND i.read = 0`, userID,
+		 WHERE f.user_id = ? AND i.read = 0 AND (? = 0 OR f.id = ?)`,
+		userID, feedID, feedID,
 	).Scan(&n)
 	return n, err
 }

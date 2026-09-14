@@ -68,8 +68,8 @@ func TestLoginFlow(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("GET / with session: got %d, want 200", rr.Code)
 	}
-	if !strings.Contains(rr.Body.String(), "hi, alice") {
-		t.Fatalf("home page missing username: %s", rr.Body.String())
+	if !strings.Contains(rr.Body.String(), "unread") {
+		t.Fatalf("home page missing unread heading: %s", rr.Body.String())
 	}
 }
 

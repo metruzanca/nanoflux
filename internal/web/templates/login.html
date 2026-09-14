@@ -9,7 +9,7 @@
 <main>
 <section class="card login">
   <h1>log in</h1>
-  {{if .Any}}<p class="error">{{.Any}}</p>{{end}}
+  {{if .Data}}<p class="error">{{.Data}}</p>{{end}}
   <form method="post" action="/login">
     <label>username
       <input name="username" autofocus autocomplete="username" required>

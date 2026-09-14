@@ -1,0 +1,25 @@
+{{define "feeds_list"}}
+<ul class="plain" id="feeds-list">
+  {{range .}}
+  {{template "feed_row" .}}
+  {{end}}
+</ul>
+{{end}}
+
+{{define "feed_row"}}
+<li id="feed-{{.ID}}">
+  <div class="row">
+    <div>
+      <a href="{{.FeedURL}}"><strong>{{.Title}}</strong></a>
+      <div class="item-meta">
+        {{.AuthorName}} · {{.Unread}} unread · last polled {{if .LastPolledAt}}{{.LastPolledAt | timeFmt}}{{else}}never{{end}}
+      </div>
+    </div>
+    <div class="row-actions">
+      <a class="small" href="/feeds/{{.ID}}/edit">edit</a>
+      <button class="link" title="refresh" hx-post="/feeds/{{.ID}}/refresh" hx-target="#feed-{{.ID}}" hx-swap="outerHTML">↻</button>
+      <button class="link danger" title="delete" hx-post="/feeds/{{.ID}}/delete" hx-target="#feed-{{.ID}}" hx-swap="outerHTML" hx-confirm="delete this feed?">✕</button>
+    </div>
+  </div>
+</li>
+{{end}}

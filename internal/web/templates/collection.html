@@ -1,0 +1,44 @@
+{{define "collection"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+<div class="row">
+  <h1>{{.Data.Collection.Name}}</h1>
+</div>
+<section class="card">
+  <h2>add feed</h2>
+  <form class="stack" method="post" action="/collections/{{.Data.Collection.ID}}/add-feed">
+    <select name="feed_id">
+      {{range .Data.AllFeeds}}<option value="{{.ID}}">{{.Title}}</option>{{end}}
+    </select>
+    <button type="submit">add</button>
+  </form>
+</section>
+<h2>feeds</h2>
+{{template "collection_feeds" .Data}}
+<h2>items</h2>
+{{template "items_list" .Data.Items}}
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "collection_feeds"}}
+<ul class="plain" id="collection-feeds">
+  {{range .Feeds}}
+  <li>
+    <div class="row">
+      <a href="{{.FeedURL}}">{{.Title}}</a>
+      <button class="link danger" title="remove" hx-post="/collections/{{$.Collection.ID}}/remove-feed/{{.ID}}" hx-target="#collection-feeds" hx-swap="outerHTML">✕</button>
+    </div>
+  </li>
+  {{else}}
+  <li class="muted">no feeds in this collection</li>
+  {{end}}
+</ul>
+{{end}}
