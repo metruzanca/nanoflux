@@ -1,0 +1,128 @@
+# rss — Implementation Plan
+
+Dead-simple self-hosted RSS app. Go backend + htmx frontend + (later) a Chrome
+extension. SQLite, session auth, background poller, feed discovery.
+
+## Checklist
+
+- [ ] **P0 — Scaffolding**
+  - [ ] Add dependencies (modernc sqlite, gofeed, bcrypt)
+  - [ ] `internal/config` — env config (`RSS_ADDR`, `RSS_DB`, `RSS_POLL_INTERVAL`, `RSS_BOOTSTRAP_USER/PASS`)
+  - [ ] `internal/db` — open sqlite (WAL, FK on), embedded migration runner
+  - [ ] `cmd/server/main.go` — boots config, db, serves `/healthz`
+- [ ] **P1 — Store layer** (shared by server + future CLI)
+  - [ ] Repositories: users, sessions, authors, feeds, items, collections
+  - [ ] All queries scoped by `user_id`
+  - [ ] Tests against in-memory sqlite
+- [ ] **P2 — Auth**
+  - [ ] `POST /login`, `POST /logout`, `GET /login` page
+  - [ ] bcrypt password hashing
+  - [ ] Sessions in DB, httpOnly cookie (also usable as Bearer token header)
+  - [ ] Auth middleware (all routes except login/healthz)
+  - [ ] Bootstrap first user from env if `users` empty
+- [ ] **P3 — Poller + parsing**
+  - [ ] `internal/feedparse` — normalize gofeed output -> items
+  - [ ] Background poller: ticker, per-feed interval, conditional GET (etag/last-modified), worker pool, timeout
+  - [ ] `POST /feeds/{id}/refresh` manual refresh
+  - [ ] Upsert items by `(feed_id, guid)`, new items `read=false`
+- [ ] **P3b — Feed discovery** (`internal/discover`)
+  - [ ] `Discover(ctx, url) []Candidate` — strategies: direct parse, HTML link scan, well-known paths, host-specific (bluesky, youtube, reddit, github)
+  - [ ] Candidates validated by fetching + parsing server-side
+  - [ ] Fixture tests
+- [ ] **P4 — htmx web UI**
+  - [ ] `GET /` unread item list, mark read / mark-all-read
+  - [ ] Feeds: list, add (author select-or-create), edit, delete, refresh
+  - [ ] Authors: list, create/edit/delete, shows their feeds
+  - [ ] Collections: list/create, add/remove feeds
+  - [ ] htmx fragments per entity
+- [ ] **P5 — JSON API** (for extension)
+  - [ ] `POST /api/login` (token for header auth)
+  - [ ] `GET /api/unread-count`, `GET /api/items`
+  - [ ] `POST /api/items/{id}/read`
+  - [ ] `POST /api/discover`, `POST /api/save`
+  - [ ] CORS preflight handling for extension origin
+- [ ] **Deferred (explicitly later)**
+  - [ ] `cmd/cli` — cobra admin CLI on `internal/store`
+  - [ ] Chrome extension (MV3) — popup, badge, save-to-collection
+  - [ ] MCP server wrapping `internal/store`
+  - [ ] Dockerfile / container packaging
+
+## Decisions locked in
+
+- **Ingestion**: background poller goroutine + per-feed manual refresh.
+- **Auth**: session-based. httpOnly cookie for web UI; `/api/login` also returns
+  the session token so the extension can send `Authorization: Bearer <token>`
+  (same session table — no separate token type). Cross-site cookies need HTTPS,
+  so the extension uses the header form.
+- **Collections**: groups of feeds (folders).
+- **Save page** (extension) = **feed discovery**: find the page's RSS/Atom feed
+  and save it (e.g. `bsk.app/profile/metru.dev` -> that profile's RSS). Basic
+  case is scanning HTML for `<link rel="alternate" type="application/rss+xml">`;
+  special cases handled by host-specific strategies.
+- **Data model**: per-user isolation — each user has their own authors, feeds,
+  collections, and read state. `read` is a column on `items` (safe because feeds
+  are per-user).
+
+## Tech choices
+
+- SQLite via `modernc.org/sqlite` (pure Go, no cgo -> clean container builds).
+  Integer PKs, WAL mode, foreign keys on.
+- Parsing: `github.com/mmcdole/gofeed` (RSS 2.0 / Atom / JSON-feed).
+- Passwords: `golang.org/x/crypto/bcrypt`.
+- HTTP: stdlib `net/http` with Go 1.22+ method routing. No framework.
+- Templates: `html/template`; htmx served as a vendored static file.
+- Session tokens from `crypto/rand`.
+
+## Repo layout
+
+```
+cmd/server/main.go          # entrypoint: config, db, poller, http server
+cmd/cli/                    # (later) cobra admin CLI
+internal/config/            # env config
+internal/db/                # open sqlite (WAL), migrate (embedded schema)
+internal/store/             # repositories shared by server + CLI
+internal/auth/              # bcrypt, sessions, middleware
+internal/poller/            # background fetch loop + manual refresh
+internal/feedparse/         # wraps gofeed; normalizes feeds -> items
+internal/discover/          # feed discovery (strategies)
+internal/httpapi/           # route registration, handlers, JSON API
+internal/web/               # html/template + static assets
+web/templates/              # htmx pages & fragments
+web/static/                 # css, htmx.js
+extension/                  # (later) MV3
+```
+
+## Schema
+
+```sql
+users(id, username UNIQUE, password_hash, created_at)
+sessions(id, token UNIQUE, user_id, created_at, expires_at)
+authors(id, user_id, name, url, avatar_url, description, created_at)
+feeds(id, user_id, author_id, title, feed_url, home_url, description,
+      etag, last_modified, last_polled_at, poll_interval_sec, enabled)
+items(id, feed_id, guid, title, link, summary, image_url, published_at,
+      fetched_at, read, UNIQUE(feed_id, guid))
+collections(id, user_id, name, created_at)
+collection_feeds(collection_id, feed_id, PRIMARY KEY(collection_id, feed_id))
+```
+
+No `kind='bookmark'` in v1 — a save is always a real discovered feed. If
+discovery fails, the UI says so; the user can paste a feed URL manually.
+
+## Feed discovery strategies (in order)
+
+1. **Direct**: parse the URL itself as a feed.
+2. **HTML link scan**: `<link rel="alternate" type="rss/atom/feed+json">`,
+   resolve relative hrefs.
+3. **Well-known paths**: `/feed`, `/feed.xml`, `/rss`, `/rss.xml`, `/atom.xml`,
+   `/index.xml`, `/feeds/posts/default`, `/?feed=rss`.
+4. **Host-specific**: `bsk.app`/`bsky.app` profiles (`/profile/{h}/rss`),
+   YouTube channel_id, Reddit `{url}.rss`, GitHub `releases.atom`.
+
+Candidates are only returned after being fetched + parsed server-side.
+
+## Verification
+
+- `go test ./...` (store/parser/discover/handlers via `httptest`)
+- `go vet`, `gofmt`
+- Manual smoke: bootstrap user, run server, add a feed, confirm items land.

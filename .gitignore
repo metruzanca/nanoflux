@@ -1,0 +1,7 @@
+/rss
+/rss-server
+/data/
+*.db
+*.db-wal
+*.db-shm
+.env
