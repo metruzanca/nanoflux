@@ -43,6 +43,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /login", s.loginPage)
 	mux.HandleFunc("POST /login", s.login)
+	mux.HandleFunc("GET /signup", s.signupPage)
+	mux.HandleFunc("POST /signup", s.signup)
 	mux.Handle("POST /logout", s.auth.Require(http.HandlerFunc(s.logout)))
 
 	// Items.

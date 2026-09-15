@@ -3,6 +3,7 @@ package httpapi
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/metruzanca/rss/internal/auth"
 	"github.com/metruzanca/rss/internal/web"
@@ -45,4 +46,57 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auth.ClearCookie(w)
 	http.Redirect(w, r, "/login", http.StatusFound)
+}
+
+func (s *Server) signupPage(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.auth.User(r); err == nil {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	web.Render(w, "signup", web.Page{Title: "create account"})
+}
+
+func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
+	username := strings.TrimSpace(r.FormValue("username"))
+	password := r.FormValue("password")
+
+	renderErr := func(msg string) {
+		w.WriteHeader(http.StatusBadRequest)
+		web.Render(w, "signup", web.Page{Title: "create account", Data: msg})
+	}
+
+	switch {
+	case username == "":
+		renderErr("username is required")
+		return
+	case len(password) < 8:
+		renderErr("password must be at least 8 characters")
+		return
+	}
+	if _, err := s.store.Users.ByUsername(username); err == nil {
+		renderErr("that username is taken")
+		return
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		log.Printf("hash password: %v", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	u, err := s.store.Users.Create(username, hash)
+	if err != nil {
+		log.Printf("create user: %v", err)
+		renderErr("that username is taken")
+		return
+	}
+
+	token, err := s.auth.CreateSession(u.ID)
+	if err != nil {
+		log.Printf("create session: %v", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	s.auth.SetCookie(w, token)
+	http.Redirect(w, r, "/", http.StatusFound)
 }
