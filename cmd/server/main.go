@@ -68,6 +68,8 @@ func main() {
 }
 
 // bootstrapUser creates the first account from env when the database is empty.
+// With no env creds it falls back to a default admin/admin account so a fresh
+// instance is immediately usable; the signup page lets other users register.
 func bootstrapUser(st *store.Store, cfg config.Config) {
 	n, err := st.Users.Count()
 	if err != nil {
@@ -76,16 +78,23 @@ func bootstrapUser(st *store.Store, cfg config.Config) {
 	if n > 0 {
 		return
 	}
-	if cfg.BootstrapUser == "" || cfg.BootstrapPass == "" {
-		log.Printf("no users configured; set RSS_BOOTSTRAP_USER and RSS_BOOTSTRAP_PASS to create the first account")
+	if cfg.BootstrapUser != "" && cfg.BootstrapPass != "" {
+		hash, err := auth.HashPassword(cfg.BootstrapPass)
+		if err != nil {
+			log.Fatalf("hash password: %v", err)
+		}
+		if _, err := st.Users.Create(cfg.BootstrapUser, hash); err != nil {
+			log.Fatalf("create bootstrap user: %v", err)
+		}
+		log.Printf("created bootstrap user %q", cfg.BootstrapUser)
 		return
 	}
-	hash, err := auth.HashPassword(cfg.BootstrapPass)
+	hash, err := auth.HashPassword("admin")
 	if err != nil {
 		log.Fatalf("hash password: %v", err)
 	}
-	if _, err := st.Users.Create(cfg.BootstrapUser, hash); err != nil {
-		log.Fatalf("create bootstrap user: %v", err)
+	if _, err := st.Users.Create("admin", hash); err != nil {
+		log.Fatalf("create default admin: %v", err)
 	}
-	log.Printf("created bootstrap user %q", cfg.BootstrapUser)
+	log.Printf("no users found: created default account admin/admin — change the password after logging in")
 }
