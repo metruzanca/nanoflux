@@ -15,7 +15,7 @@
 
 <dialog id="add-feed-dialog" class="modal">
   <form class="stack" hx-post="/feeds" hx-target="#feeds-list" hx-swap="beforeend"
-        hx-on::after-request="if(event.detail.successful){this.closest('dialog').close();this.reset()}">
+        hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
     <div class="row">
       <h2>add feed</h2>
       <button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
