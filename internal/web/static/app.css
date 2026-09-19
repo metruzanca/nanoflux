@@ -97,3 +97,16 @@ ul.items li:last-child { border-bottom: none; }
   background: var(--panel);
   color: var(--fg);
 }
+
+.row-actions { display: flex; gap: 0.5rem; align-items: center; }
+
+dialog.modal {
+  width: min(28rem, calc(100vw - 2rem));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--fg);
+  padding: 1.25rem;
+}
+dialog.modal::backdrop { background: rgba(0, 0, 0, 0.55); }
+dialog.modal h2 { margin: 0; }

@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/metruzanca/rss/internal/auth"
 	"github.com/metruzanca/rss/internal/store"
@@ -154,27 +157,28 @@ func (s *Server) feedRows(userID int64) ([]feedRow, error) {
 func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 
-	title := r.FormValue("title")
-	feedURL := r.FormValue("feed_url")
+	title := strings.TrimSpace(r.FormValue("title"))
+	feedURL := strings.TrimSpace(r.FormValue("feed_url"))
 	homeURL := r.FormValue("home_url")
 	interval, _ := strconv.Atoi(r.FormValue("poll_interval_sec"))
 	if interval <= 0 {
 		interval = 900
 	}
 	if title == "" || feedURL == "" {
-		http.Redirect(w, r, "/feeds", http.StatusFound)
+		writeFormError(w, "add-feed-error", "title and feed url are required")
 		return
 	}
 
-	authorID, ok := s.resolveAuthor(w, r, u.ID)
-	if !ok {
+	authorID, errMsg := s.resolveAuthor(r, u.ID)
+	if errMsg != "" {
+		writeFormError(w, "add-feed-error", errMsg)
 		return
 	}
 
 	f, err := s.store.Feeds.Create(u.ID, authorID, title, feedURL, homeURL, "", interval)
 	if err != nil {
 		log.Printf("create feed: %v", err)
-		http.Error(w, "create feed failed", http.StatusInternalServerError)
+		writeFormError(w, "add-feed-error", "could not create feed")
 		return
 	}
 	for _, cid := range r.Form["collections"] {
@@ -182,37 +186,35 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 			s.store.Collections.AddFeed(u.ID, n, f.ID)
 		}
 	}
-	http.Redirect(w, r, "/feeds", http.StatusFound)
+	author, _ := s.store.Authors.ByID(u.ID, authorID)
+	web.RenderFragment(w, "feed_row", feedRow{Feed: f, AuthorName: author.Name})
 }
 
 // resolveAuthor maps the feed form's author selection to an author id,
-// creating a new author when "new" was chosen.
-func (s *Server) resolveAuthor(w http.ResponseWriter, r *http.Request, userID int64) (int64, bool) {
+// creating a new author when "new" was chosen. It returns a non-empty error
+// message when the selection is invalid.
+func (s *Server) resolveAuthor(r *http.Request, userID int64) (int64, string) {
 	switch r.FormValue("author_id") {
 	case "new":
 		name := r.FormValue("author_name")
 		url := r.FormValue("author_url")
-		if name == "" {
-			http.Redirect(w, r, "/feeds", http.StatusFound)
-			return 0, false
+		if strings.TrimSpace(name) == "" {
+			return 0, "new author needs a name"
 		}
 		a, err := s.store.Authors.Create(userID, name, url, "", "")
 		if err != nil {
 			log.Printf("create author: %v", err)
-			http.Error(w, "create author failed", http.StatusInternalServerError)
-			return 0, false
+			return 0, "could not create author"
 		}
-		return a.ID, true
+		return a.ID, ""
 	case "":
-		http.Redirect(w, r, "/feeds", http.StatusFound)
-		return 0, false
+		return 0, "select or create an author"
 	default:
 		id, err := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
 		if err != nil {
-			http.Redirect(w, r, "/feeds", http.StatusFound)
-			return 0, false
+			return 0, "select or create an author"
 		}
-		return id, true
+		return id, ""
 	}
 }
 
@@ -273,8 +275,9 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/feeds", http.StatusFound)
 		return
 	}
-	authorID, ok := s.resolveAuthor(w, r, u.ID)
-	if !ok {
+	authorID, errMsg := s.resolveAuthor(r, u.ID)
+	if errMsg != "" {
+		http.Redirect(w, r, "/feeds", http.StatusFound)
 		return
 	}
 	if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
@@ -385,17 +388,18 @@ func (s *Server) authorRows(userID int64) []authorRow {
 
 func (s *Server) authorCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	name := r.FormValue("name")
+	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
-		http.Redirect(w, r, "/authors", http.StatusFound)
+		writeFormError(w, "add-author-error", "name is required")
 		return
 	}
-	if _, err := s.store.Authors.Create(u.ID, name, r.FormValue("url"), r.FormValue("avatar_url"), r.FormValue("description")); err != nil {
+	a, err := s.store.Authors.Create(u.ID, name, r.FormValue("url"), r.FormValue("avatar_url"), r.FormValue("description"))
+	if err != nil {
 		log.Printf("create author: %v", err)
-		http.Error(w, "create author failed", http.StatusInternalServerError)
+		writeFormError(w, "add-author-error", "could not create author")
 		return
 	}
-	http.Redirect(w, r, "/authors", http.StatusFound)
+	web.RenderFragment(w, "author_row", authorRow{Author: a})
 }
 
 func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
@@ -505,17 +509,18 @@ func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) collectionCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	name := r.FormValue("name")
+	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
-		http.Redirect(w, r, "/collections", http.StatusFound)
+		writeFormError(w, "add-collection-error", "name is required")
 		return
 	}
-	if _, err := s.store.Collections.Create(u.ID, name); err != nil {
+	c, err := s.store.Collections.Create(u.ID, name)
+	if err != nil {
 		log.Printf("create collection: %v", err)
-		http.Error(w, "create failed", http.StatusInternalServerError)
+		writeFormError(w, "add-collection-error", "could not create collection")
 		return
 	}
-	http.Redirect(w, r, "/collections", http.StatusFound)
+	web.RenderFragment(w, "collection_row", c)
 }
 
 func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
@@ -596,4 +601,13 @@ func (s *Server) renderCollectionFeeds(w http.ResponseWriter, userID, id int64) 
 		return
 	}
 	web.RenderFragment(w, "collection_feeds", d)
+}
+
+// writeFormError responds to an htmx add-form submit with an out-of-band swap
+// that renders msg into the modal's error div without disturbing the form.
+func writeFormError(w http.ResponseWriter, target, msg string) {
+	w.WriteHeader(http.StatusBadRequest)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	io.WriteString(w, `<div id="`+target+`" hx-swap-oob="innerHTML">`+
+		template.HTMLEscapeString(msg)+`</div>`)
 }

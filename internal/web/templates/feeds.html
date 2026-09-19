@@ -7,15 +7,24 @@
 <body>
 {{template "topbar" .}}
 <main>
-<h1>feeds</h1>
-<section class="card">
-  <h2>add feed</h2>
-  <form class="stack" method="post" action="/feeds">
+<div class="row">
+  <h1>feeds</h1>
+  <button type="button" onclick="document.getElementById('add-feed-dialog').showModal()">+ add feed</button>
+</div>
+{{template "feeds_list" .Data.Rows}}
+
+<dialog id="add-feed-dialog" class="modal">
+  <form class="stack" hx-post="/feeds" hx-target="#feeds-list" hx-swap="beforeend"
+        hx-on::after-request="if(event.detail.successful){this.closest('dialog').close();this.reset()}">
+    <div class="row">
+      <h2>add feed</h2>
+      <button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+    </div>
     {{template "feed_fields" .Data}}
+    <div id="add-feed-error" class="error"></div>
     <button type="submit">add feed</button>
   </form>
-</section>
-{{template "feeds_list" .Data.Rows}}
+</dialog>
 </main>
 </body>
 </html>

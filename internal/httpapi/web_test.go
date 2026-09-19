@@ -51,35 +51,46 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 
-	// Create an author through the web UI.
-	if rr := doForm(h, "POST", "/authors", url.Values{
+	// Create an author through the web UI (returns the row fragment).
+	rr := doForm(h, "POST", "/authors", url.Values{
 		"name": {"Metru"}, "url": {"https://metru.dev"},
-	}, cookie); rr.Code != http.StatusFound {
-		t.Fatalf("create author: %d", rr.Code)
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "author-") {
+		t.Fatalf("create author: %d %s", rr.Code, rr.Body.String())
 	}
 	if body := doGet(h, "/authors", cookie).Body.String(); !strings.Contains(body, "Metru") {
 		t.Fatal("authors page missing author")
 	}
 
-	// Create a feed referencing that author.
+	// Create a feed referencing that author (returns the row fragment).
 	u, _ := s.store.Users.ByUsername("alice")
 	authors, _ := s.store.Authors.List(u.ID)
-	if rr := doForm(h, "POST", "/feeds", url.Values{
+	rr = doForm(h, "POST", "/feeds", url.Values{
 		"title": {"Blog"}, "feed_url": {"https://example.com/rss.xml"},
 		"author_id": {itoa(authors[0].ID)}, "poll_interval_sec": {"900"},
-	}, cookie); rr.Code != http.StatusFound {
-		t.Fatalf("create feed: %d", rr.Code)
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "feed-") {
+		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
 	}
 	body := doGet(h, "/feeds", cookie).Body.String()
 	if !strings.Contains(body, "Blog") || !strings.Contains(body, "Metru") {
 		t.Fatal("feeds page missing feed/author")
 	}
 
+	// Missing author -> form error, not a redirect.
+	rr = doForm(h, "POST", "/feeds", url.Values{
+		"title": {"NoAuthor"}, "feed_url": {"https://example.com/rss2.xml"},
+	}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "select or create an author") {
+		t.Fatalf("feed without author: %d %s", rr.Code, rr.Body.String())
+	}
+
 	// Create a collection and attach the feed.
-	if rr := doForm(h, "POST", "/collections", url.Values{
+	rr = doForm(h, "POST", "/collections", url.Values{
 		"name": {"Dev"},
-	}, cookie); rr.Code != http.StatusFound {
-		t.Fatalf("create collection: %d", rr.Code)
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "collection-") {
+		t.Fatalf("create collection: %d %s", rr.Code, rr.Body.String())
 	}
 	cols, _ := s.store.Collections.List(u.ID)
 	feeds, _ := s.store.Feeds.List(u.ID)

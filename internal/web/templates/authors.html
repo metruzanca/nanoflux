@@ -7,15 +7,24 @@
 <body>
 {{template "topbar" .}}
 <main>
-<h1>authors</h1>
-<section class="card">
-  <h2>new author</h2>
-  <form class="stack" method="post" action="/authors">
+<div class="row">
+  <h1>authors</h1>
+  <button type="button" onclick="document.getElementById('add-author-dialog').showModal()">+ add author</button>
+</div>
+{{template "authors_list" .Data.Rows}}
+
+<dialog id="add-author-dialog" class="modal">
+  <form class="stack" hx-post="/authors" hx-target="#authors-list" hx-swap="beforeend"
+        hx-on::after-request="if(event.detail.successful){this.closest('dialog').close();this.reset()}">
+    <div class="row">
+      <h2>add author</h2>
+      <button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+    </div>
     {{template "author_fields" .Data}}
+    <div id="add-author-error" class="error"></div>
     <button type="submit">add author</button>
   </form>
-</section>
-{{template "authors_list" .Data.Rows}}
+</dialog>
 </main>
 </body>
 </html>

@@ -7,17 +7,26 @@
 <body>
 {{template "topbar" .}}
 <main>
-<h1>collections</h1>
-<section class="card">
-  <h2>new collection</h2>
-  <form class="stack" method="post" action="/collections">
-    <label>name
-      <input name="name" required>
-    </label>
-    <button type="submit">create</button>
-  </form>
-</section>
+<div class="row">
+  <h1>collections</h1>
+  <button type="button" onclick="document.getElementById('add-collection-dialog').showModal()">+ add collection</button>
+</div>
 {{template "collections_list" .Data}}
+
+<dialog id="add-collection-dialog" class="modal">
+  <form class="stack" hx-post="/collections" hx-target="#collections-list" hx-swap="beforeend"
+        hx-on::after-request="if(event.detail.successful){this.closest('dialog').close();this.reset()}">
+    <div class="row">
+      <h2>add collection</h2>
+      <button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+    </div>
+    <label>name
+      <input name="name" autofocus required>
+    </label>
+    <div id="add-collection-error" class="error"></div>
+    <button type="submit">add collection</button>
+  </form>
+</dialog>
 </main>
 </body>
 </html>
