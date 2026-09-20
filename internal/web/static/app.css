@@ -44,6 +44,53 @@ a.external::after {
 .top nav a { color: var(--fg); }
 .inline { display: inline; margin: 0; }
 
+.user-menu { position: relative; display: inline-flex; }
+
+.avatar-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  border-radius: 50%;
+  line-height: 0;
+  cursor: pointer;
+}
+.avatar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.user-menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.5rem);
+  z-index: 50;
+  min-width: 10rem;
+  padding: 0.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.user-menu-pop:not([hidden]) { display: flex; flex-direction: column; }
+.user-menu-pop a,
+.user-menu-pop button {
+  padding: 0.45rem 0.75rem;
+  border-radius: 6px;
+  color: var(--fg);
+  text-align: left;
+  white-space: nowrap;
+}
+.user-menu-pop a:hover,
+.user-menu-pop button:hover {
+  background: rgba(91, 140, 255, 0.15);
+  text-decoration: none;
+}
+.user-menu-pop form { margin: 0; }
+.user-menu-pop button.link {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0.45rem 0.75rem;
+  color: var(--fg);
+}
+
 main { max-width: 46rem; margin: 1.5rem auto; padding: 0 1.25rem; }
 
 .card {
@@ -212,6 +259,17 @@ body:has(dialog.modal[open]) {
 }
 .avatar-sm { width: 1.5rem; height: 1.5rem; }
 .avatar-lg { width: 4rem; height: 4rem; }
+.avatar-default {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  line-height: 1;
+}
 
 dialog.modal.wide[open] {
   width: min(60rem, calc(100vw - 2rem));

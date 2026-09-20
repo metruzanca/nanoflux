@@ -60,6 +60,39 @@ func TestSettingsAvatar(t *testing.T) {
 	}
 }
 
+func TestTopbarUserMenu(t *testing.T) {
+	_, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	// No profile picture: the topbar shows the default initial-letter avatar.
+	body := doGet(h, "/settings", cookie).Body.String()
+	for _, want := range []string{
+		`class="user-menu"`,
+		`id="user-menu-btn"`,
+		`avatar-default">A</span>`,
+		`href="/settings"`,
+		`action="/logout" method="post"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("topbar user menu missing %q", want)
+		}
+	}
+
+	// Upload a picture: the default avatar is replaced by the real one.
+	png := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
+	rr := uploadForm(h, "/settings/avatar", "avatar", "me.png", png, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("upload avatar: %d %s", rr.Code, rr.Body.String())
+	}
+	body = doGet(h, "/settings", cookie).Body.String()
+	if !strings.Contains(body, `src="/avatar"`) {
+		t.Fatalf("topbar should render the avatar image: %s", body)
+	}
+	if strings.Contains(body, "avatar-default") {
+		t.Fatalf("topbar should not show the default avatar: %s", body)
+	}
+}
+
 // uploadForm posts a multipart form with one file field.
 func uploadForm(h http.Handler, path, field, filename string, data []byte, cookie *http.Cookie) *httptest.ResponseRecorder {
 	var buf bytes.Buffer

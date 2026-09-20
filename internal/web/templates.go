@@ -39,6 +39,16 @@ var funcMap = template.FuncMap{
 	"isGallery":   isGallery,
 	"galleryThumb": galleryThumb,
 	"sourceIcon":  sourceIcon,
+	"initial":     initial,
+}
+
+// initial returns the uppercased first character of a name, for the default
+// avatar shown when a user has no profile picture.
+func initial(s string) string {
+	for _, r := range s {
+		return strings.ToUpper(string(r))
+	}
+	return "?"
 }
 
 func has(id int64, ids []int64) bool {
