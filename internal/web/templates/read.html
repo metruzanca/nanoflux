@@ -1,0 +1,18 @@
+{{define "read"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+<div class="row">
+  <h1>read ({{.Data.ReadCount}})</h1>
+  {{if .Data.ReadCount}}<button hx-post="/items/unread-all" hx-target="#items-list" hx-swap="outerHTML">mark all unread</button>{{end}}
+</div>
+{{template "items_list" .Data.Read}}
+</main>
+</body>
+</html>
+{{end}}

@@ -18,6 +18,11 @@ type homeData struct {
 	UnreadCount int
 }
 
+type readData struct {
+	Read      []store.ItemWithFeed
+	ReadCount int
+}
+
 type feedRow struct {
 	store.Feed
 	AuthorName string
@@ -95,6 +100,30 @@ func (s *Server) itemsReadAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderItemsList(w, r, u.ID)
+}
+
+func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{ReadOnly: true, Limit: 100})
+	count, _ := s.store.Items.CountRead(u.ID, 0)
+	web.Render(w, "read", web.Page{Title: "read", User: u, Data: readData{
+		Read: items, ReadCount: count,
+	}})
+}
+
+func (s *Server) itemsMarkAllUnread(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	if err := s.store.Items.MarkAllUnread(u.ID, 0); err != nil {
+		log.Error("mark all unread", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	s.renderReadItemsList(w, u.ID)
+}
+
+func (s *Server) renderReadItemsList(w http.ResponseWriter, userID int64) {
+	items, _ := s.store.Items.List(userID, store.ItemFilter{ReadOnly: true, Limit: 100})
+	web.RenderFragment(w, "items_list", items)
 }
 
 func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID int64) {
