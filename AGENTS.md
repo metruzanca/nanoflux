@@ -159,7 +159,10 @@ icons that override the built-in X/YouTube/globe set.
 - The avatar is a **file upload**: bytes go to object storage (`avatars/<userID>`)
   and are served at the auth-required `GET /avatar` (`Cache-Control: private,
   no-cache`); `User.HasAvatar` (from `avatar_key IS NOT NULL`) decides whether
-  the topbar shows it. The avatar form re-renders itself (error inside the
+  the topbar shows the photo or the default initial-letter avatar (`initial` in
+  `templates.go`). The topbar avatar is a button that opens a dropdown menu
+  (settings, log out) — see `user-menu` in `layout.html` and `app.css`. The
+  avatar form re-renders itself (error inside the
   swapped card), unlike the create-form OOB pattern.
 
 ## Object storage (S3 / SeaweedFS)

@@ -21,9 +21,15 @@ document.addEventListener('htmx:beforeSwap', function (e) {
     <a href="/feeds">feeds</a>
     <a href="/authors">authors</a>
     <a href="/collections">collections</a>
-    <a href="/settings">settings</a>
-    {{if .User.HasAvatar}}<a href="/settings" title="settings"><img class="avatar avatar-sm" src="/avatar" alt=""></a>{{end}}
-    <form action="/logout" method="post" class="inline"><button class="link" type="submit">log out</button></form>
+    <div class="user-menu">
+      <button type="button" id="user-menu-btn" class="avatar-btn" aria-haspopup="true" aria-expanded="false" title="{{.User.Username}}" onclick="toggleUserMenu(event)">
+        {{if .User.HasAvatar}}<img class="avatar avatar-sm" src="/avatar" alt="{{.User.Username}}">{{else}}<span class="avatar avatar-sm avatar-default">{{initial .User.Username}}</span>{{end}}
+      </button>
+      <div id="user-menu" class="user-menu-pop" role="menu" hidden>
+        <a href="/settings" role="menuitem">settings</a>
+        <form action="/logout" method="post"><button class="link menu-item" type="submit">log out</button></form>
+      </div>
+    </div>
   </nav>
   {{end}}
 </header>
@@ -66,6 +72,33 @@ function markRowRead(id) {
     btn.setAttribute('title', 'mark unread');
   }
 }
+function toggleUserMenu(e) {
+  e.stopPropagation();
+  var menu = document.getElementById('user-menu');
+  var btn = document.getElementById('user-menu-btn');
+  var open = menu.hidden;
+  menu.hidden = !open;
+  if (btn) btn.setAttribute('aria-expanded', String(open));
+}
+document.addEventListener('click', function (e) {
+  var menu = document.getElementById('user-menu');
+  var btn = document.getElementById('user-menu-btn');
+  if (!menu || menu.hidden) return;
+  if (!e.target.closest('.user-menu')) {
+    menu.hidden = true;
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    var menu = document.getElementById('user-menu');
+    var btn = document.getElementById('user-menu-btn');
+    if (menu && !menu.hidden) {
+      menu.hidden = true;
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+  }
+});
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   var dialog = document.getElementById('item-dialog');
