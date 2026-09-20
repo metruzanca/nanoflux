@@ -126,7 +126,7 @@ func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	items, _ := s.store.Items.List(u.ID, store.ItemFilter{ReadOnly: true, Limit: 100})
 	count, _ := s.store.Items.CountRead(u.ID, 0)
-	web.Render(w, "read", web.Page{Title: "read", User: u, Data: readData{
+	web.Render(w, "read", web.Page{Title: "history", User: u, Data: readData{
 		Read: items, ReadCount: count,
 	}})
 }
