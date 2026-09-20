@@ -100,10 +100,14 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 	}
 	cols, _ := s.store.Collections.List(u.ID)
 	feeds, _ := s.store.Feeds.List(u.ID)
-	if rr := doForm(h, "POST", "/collections/"+itoa(cols[0].ID)+"/add-feed", url.Values{
+	rr := doForm(h, "POST", "/collections/"+itoa(cols[0].ID)+"/add-feed", url.Values{
 		"feed_id": {itoa(feeds[0].ID)},
-	}, cookie); rr.Code != http.StatusOK {
+	}, cookie)
+	if rr.Code != http.StatusOK {
 		t.Fatalf("add feed to collection: %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "hx-swap-oob") || !strings.Contains(rr.Body.String(), "collection-items") {
+		t.Fatalf("add-feed response should carry the items oob swap: %s", rr.Body.String())
 	}
 	body = doGet(h, "/collections/"+itoa(cols[0].ID), cookie).Body.String()
 	if !strings.Contains(body, "Blog") {

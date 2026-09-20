@@ -638,7 +638,7 @@ func (s *Server) renderCollectionFeeds(w http.ResponseWriter, userID, id int64) 
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	web.RenderFragment(w, "collection_feeds", d)
+	web.RenderFragment(w, "collection_updated", d)
 }
 
 // writeFormError responds to an htmx add-form submit with an out-of-band swap
