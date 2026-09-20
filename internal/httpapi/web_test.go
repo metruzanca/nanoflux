@@ -227,6 +227,9 @@ func TestReadPage(t *testing.T) {
 	if !strings.Contains(body, "Item") || !strings.Contains(body, `hx-post="/items/unread-all"`) {
 		t.Fatalf("read page missing read item: %s", body)
 	}
+	if !strings.Contains(body, `class="read-at"`) {
+		t.Fatalf("read page missing read-at timestamp: %s", body)
+	}
 	if body := doGet(h, "/", cookie).Body.String(); strings.Contains(body, `data-item-link="https://b.dev/1"`) {
 		t.Fatal("unread page should not show read item")
 	}
@@ -713,12 +716,18 @@ func TestScopedReadUnreadTabs(t *testing.T) {
 		if strings.Contains(body, `data-item-link="https://b.dev/2"`) {
 			t.Fatalf("%s default view should not show the read item: %s", scope.base, body)
 		}
+		if strings.Contains(body, "read-at") {
+			t.Fatalf("%s default view should not show read-at: %s", scope.base, body)
+		}
 
-		// ?view=read shows only the read item.
+		// ?view=read shows only the read item, with its read-at timestamp.
 		body = doGet(h, scope.base+"?view=read", cookie).Body.String()
 		if !strings.Contains(body, `data-item-link="https://b.dev/2"`) ||
 			strings.Contains(body, `data-item-link="https://b.dev/1"`) {
 			t.Fatalf("%s read view wrong list: %s", scope.base, body)
+		}
+		if !strings.Contains(body, `class="read-at"`) {
+			t.Fatalf("%s read view missing read-at timestamp: %s", scope.base, body)
 		}
 
 		// The fragment endpoint returns the tabbed list for the requested view.
