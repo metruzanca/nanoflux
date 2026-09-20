@@ -17,7 +17,12 @@ var migrations = []migration{
 	{4, schemaV4},
 	{5, schemaV5},
 	{6, schemaV6},
+	{7, schemaV7},
 }
+
+const schemaV7 = `
+ALTER TABLE items ADD COLUMN read_at TEXT;
+`
 
 const schemaV6 = `
 ALTER TABLE items ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;

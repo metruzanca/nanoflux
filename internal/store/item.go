@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/metruzanca/nanoflux/internal/db"
 )
 
 type Item struct {
@@ -18,6 +20,7 @@ type Item struct {
 	PublishedAt string
 	FetchedAt   string
 	Read        bool
+	ReadAt      string
 	Favorite    bool
 }
 
@@ -91,7 +94,7 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 
 	rows, err := s.db.Query(
 		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
-		        i.published_at, i.fetched_at, i.read, i.favorite,
+		        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
 		        f.title, f.feed_url, a.id, a.name
 		 FROM items i
 		 JOIN feeds f ON f.id = i.feed_id
@@ -120,7 +123,7 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 func (s *ItemStore) ByID(userID, id int64) (Item, error) {
 	it, err := scanItem(s.db.QueryRow(
 		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
-		        i.published_at, i.fetched_at, i.read, i.favorite
+		        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at
 		 FROM items i JOIN feeds f ON f.id = i.feed_id
 		 WHERE i.id = ? AND f.user_id = ?`, id, userID,
 	))
@@ -134,7 +137,7 @@ func (s *ItemStore) ByID(userID, id int64) (Item, error) {
 func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 	it, err := scanItemWithFeed(s.db.QueryRow(
 		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
-		        i.published_at, i.fetched_at, i.read, i.favorite,
+		        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
 		        f.title, f.feed_url, a.id, a.name
 		 FROM items i
 		 JOIN feeds f ON f.id = i.feed_id
@@ -147,12 +150,17 @@ func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 	return it, err
 }
 
-// SetRead marks an item read/unread, verifying it belongs to the user.
+// SetRead marks an item read/unread, verifying it belongs to the user. When an
+// item is marked read its read_at timestamp is recorded; unread clears it.
 func (s *ItemStore) SetRead(userID, itemID int64, read bool) error {
+	var readAt any
+	if read {
+		readAt = db.Now()
+	}
 	res, err := s.db.Exec(
-		`UPDATE items SET read = ?
+		`UPDATE items SET read = ?, read_at = ?
 		 WHERE id = ? AND feed_id IN (SELECT id FROM feeds WHERE user_id = ?)`,
-		boolInt(read), itemID, userID,
+		boolInt(read), readAt, itemID, userID,
 	)
 	if err != nil {
 		return err
@@ -182,10 +190,10 @@ func (s *ItemStore) SetFavorite(userID, itemID int64, fav bool) error {
 // MarkAllRead marks every item read for a user; pass feedID 0 for all feeds.
 func (s *ItemStore) MarkAllRead(userID, feedID int64) error {
 	_, err := s.db.Exec(
-		`UPDATE items SET read = 1
+		`UPDATE items SET read = 1, read_at = ?
 		 WHERE feed_id IN (SELECT id FROM feeds WHERE user_id = ?)
 		   AND (? = 0 OR feed_id = ?)`,
-		userID, feedID, feedID,
+		db.Now(), userID, feedID, feedID,
 	)
 	return err
 }
@@ -193,7 +201,7 @@ func (s *ItemStore) MarkAllRead(userID, feedID int64) error {
 // MarkAllUnread marks every item unread for a user; pass feedID 0 for all feeds.
 func (s *ItemStore) MarkAllUnread(userID, feedID int64) error {
 	_, err := s.db.Exec(
-		`UPDATE items SET read = 0
+		`UPDATE items SET read = 0, read_at = NULL
 		 WHERE feed_id IN (SELECT id FROM feeds WHERE user_id = ?)
 		   AND (? = 0 OR feed_id = ?)`,
 		userID, feedID, feedID,
@@ -282,31 +290,33 @@ func (s *ItemStore) CountReadCollection(userID, collectionID int64) (int, error)
 
 func scanItem(row scanner) (Item, error) {
 	var it Item
-	var imageURL, publishedAt sql.NullString
+	var imageURL, publishedAt, readAt sql.NullString
 	var read, favorite int
 	err := row.Scan(
 		&it.ID, &it.FeedID, &it.GUID, &it.Title, &it.Link, &it.Summary,
-		&imageURL, &publishedAt, &it.FetchedAt, &read, &favorite,
+		&imageURL, &publishedAt, &it.FetchedAt, &read, &favorite, &readAt,
 	)
 	it.ImageURL, it.PublishedAt = imageURL.String, publishedAt.String
 	it.Read = read != 0
+	it.ReadAt = readAt.String
 	it.Favorite = favorite != 0
 	return it, err
 }
 
 func scanItemWithFeed(row scanner) (ItemWithFeed, error) {
 	var it ItemWithFeed
-	var imageURL, publishedAt, authorName sql.NullString
+	var imageURL, publishedAt, authorName, readAt sql.NullString
 	var authorID sql.NullInt64
 	var read, favorite int
 	err := row.Scan(
 		&it.ID, &it.FeedID, &it.GUID, &it.Title, &it.Link, &it.Summary,
-		&imageURL, &publishedAt, &it.FetchedAt, &read, &favorite,
+		&imageURL, &publishedAt, &it.FetchedAt, &read, &favorite, &readAt,
 		&it.FeedTitle, &it.FeedURL, &authorID, &authorName,
 	)
 	it.ImageURL, it.PublishedAt = imageURL.String, publishedAt.String
 	it.AuthorID, it.AuthorName = authorID.Int64, authorName.String
 	it.Read = read != 0
+	it.ReadAt = readAt.String
 	it.Favorite = favorite != 0
 	return it, err
 }

@@ -33,6 +33,7 @@
 <div class="item-meta">
         {{if .AuthorName}}<a href="/authors/{{.AuthorID}}">{{.AuthorName}}</a> · {{end}}{{sourceIcon .FeedURL}}<a href="/feeds/{{.FeedID}}">{{.FeedTitle}}</a>
         {{if .PublishedAt}} · {{.PublishedAt | timeFmt}}{{end}}
+        {{if .Read}}{{if .ReadAt}} · <span class="read-at">read {{.ReadAt | timeFmt}}</span>{{end}}{{end}}
       </div>
         {{if and .Summary (not $image) (not $link) (not $gallery)}}<div class="item-summary">{{.Summary | stripHTML}}</div>{{end}}
       </div>

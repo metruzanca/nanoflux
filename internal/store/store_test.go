@@ -170,9 +170,24 @@ func TestItemsFlow(t *testing.T) {
 	if err := s.Items.SetRead(u.ID, items[0].ID, true); err != nil {
 		t.Fatalf("SetRead: %v", err)
 	}
+	readItem, _ := s.Items.ByID(u.ID, items[0].ID)
+	if !readItem.Read || readItem.ReadAt == "" {
+		t.Fatalf("read item should carry a read_at timestamp: %+v", readItem)
+	}
 	n, _ = s.Items.CountUnread(u.ID, 0)
 	if n != 1 {
 		t.Fatalf("expected 1 unread after SetRead, got %d", n)
+	}
+	// Marking unread clears the read_at timestamp.
+	if err := s.Items.SetRead(u.ID, items[0].ID, false); err != nil {
+		t.Fatalf("SetRead false: %v", err)
+	}
+	unreadItem, _ := s.Items.ByID(u.ID, items[0].ID)
+	if unreadItem.Read || unreadItem.ReadAt != "" {
+		t.Fatalf("unread item should have empty read_at: %+v", unreadItem)
+	}
+	if err := s.Items.SetRead(u.ID, items[0].ID, true); err != nil {
+		t.Fatalf("SetRead: %v", err)
 	}
 	if err := s.Items.MarkAllRead(u.ID, 0); err != nil {
 		t.Fatalf("MarkAllRead: %v", err)
