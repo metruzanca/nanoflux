@@ -1,5 +1,6 @@
 /rss
 /rss-server
+/dist/
 /data/
 *.db
 *.db-wal

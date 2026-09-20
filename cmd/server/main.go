@@ -18,8 +18,12 @@ import (
 	"github.com/metruzanca/rss/internal/store"
 )
 
+// version is set at build time via ldflags (see .goreleaser.yaml).
+var version = "dev"
+
 func main() {
 	cfg := config.Load()
+	log.Printf("rss %s starting", version)
 
 	sqldb, err := db.Open(cfg.DBPath)
 	if err != nil {
