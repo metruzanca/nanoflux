@@ -1,51 +1,10 @@
-{{define "head"}}
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{if .Title}}{{.Title}} — {{end}}nanoflux</title>
-<link rel="stylesheet" href="/static/app.css">
-<script src="/static/htmx.min.js" defer></script>
-<script>
+// nanoflux frontend helpers. htmx 2.x does not swap 4xx/5xx bodies by default;
+// this override lets error fragments render so form errors are visible.
 document.addEventListener('htmx:beforeSwap', function (e) {
   if (e.detail.xhr.status >= 400) e.detail.shouldSwap = true;
 });
-</script>
-{{end}}
 
-{{define "topbar"}}
-<header class="top">
-  <a class="brand" href="/">nanoflux</a>
-  {{if .User.ID}}
-  <nav>
-    <a href="/">unread</a>
-    <a href="/feeds">feeds</a>
-    <a href="/authors">authors</a>
-    <a href="/collections">collections</a>
-    <a href="/favorites">favorites</a>
-    <div class="user-menu">
-      <button type="button" id="user-menu-btn" class="avatar-btn" aria-haspopup="true" aria-expanded="false" title="{{.User.Username}}" onclick="toggleUserMenu(event)">
-        {{if .User.HasAvatar}}<img class="avatar avatar-sm" src="/avatar" alt="{{.User.Username}}">{{else}}<span class="avatar avatar-sm avatar-default">{{initial .User.Username}}</span>{{end}}
-      </button>
-      <div id="user-menu" class="user-menu-pop" role="menu" hidden>
-        <a href="/read" role="menuitem">history</a>
-        <a href="/settings" role="menuitem">settings</a>
-        <form action="/logout" method="post"><button class="link menu-item" type="submit">log out</button></form>
-      </div>
-    </div>
-  </nav>
-  {{end}}
-</header>
-
-<dialog id="item-dialog" class="modal wide">
-  <div class="row">
-    <h2 class="muted">item</h2>
-    <div class="row-actions">
-      <a id="item-dialog-live" class="small external" href="#" target="_blank" rel="noopener">open live</a>
-      <button type="button" class="link" onclick="document.getElementById('item-dialog').close()">✕</button>
-    </div>
-  </div>
-  <div id="item-dialog-body" class="item-view"></div>
-</dialog>
-<script>
+// Item modal.
 var currentItemId = null;
 function openItem(el) {
   currentItemId = el.dataset.itemId;
@@ -73,6 +32,8 @@ function markRowRead(id) {
     btn.setAttribute('title', 'mark unread');
   }
 }
+
+// User dropdown menu.
 function toggleUserMenu(e) {
   e.stopPropagation();
   var menu = document.getElementById('user-menu');
@@ -100,6 +61,8 @@ document.addEventListener('keydown', function (e) {
     }
   }
 });
+
+// Arrow keys move through the item list while the modal is open.
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   var dialog = document.getElementById('item-dialog');
@@ -117,5 +80,17 @@ document.addEventListener('keydown', function (e) {
   e.preventDefault();
   openItem(link);
 });
-</script>
-{{end}}
+
+// When any modal dialog closes, reset its form and clear the feed/author
+// preview container so stale state doesn't leak into the next open.
+document.addEventListener('close', function (e) {
+  var dialog = e.target;
+  if (!(dialog instanceof HTMLDialogElement)) return;
+  dialog.querySelectorAll('input, textarea').forEach(function (el) {
+    if (el.type === 'hidden') return;
+    el.value = '';
+  });
+  dialog.querySelectorAll('[id$="-preview"]').forEach(function (el) {
+    el.innerHTML = '';
+  });
+}, true);

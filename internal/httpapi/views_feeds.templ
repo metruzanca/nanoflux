@@ -1,0 +1,204 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+templ feedsPage(u store.User, d feedsData) {
+	<div class="row">
+		<h1>feeds</h1>
+		<button type="button" onclick="document.getElementById('add-feed-dialog').showModal()">+ add feed</button>
+	</div>
+	@FeedsList(d.Rows)
+
+	<dialog id="add-feed-dialog" class="modal">
+		<div class="row">
+			<h2>add feed</h2>
+			<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+		</div>
+		<form class="stack" hx-post="/fragments/feed-preview" hx-target="#feed-preview" hx-swap="innerHTML">
+			<label>url
+				<input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required/>
+			</label>
+			<button type="submit">find feed</button>
+		</form>
+		<div id="feed-preview"></div>
+	</dialog>
+}
+
+templ FeedsList(rows []feedRow) {
+	<ul class="plain" id="feeds-list">
+		for _, r := range rows {
+			@FeedRow(r)
+		}
+	</ul>
+}
+
+templ FeedRow(r feedRow) {
+	<li id={ "feed-" + strconv.FormatInt(r.ID, 10) }>
+		<div class="row">
+			<div>
+				<a href={ "/feeds/" + strconv.FormatInt(r.ID, 10) }>
+					<strong>@web.SourceIcon(r.FeedURL)
+					{ r.Title }</strong>
+				</a>
+				<div class="item-meta">
+					if r.AuthorName != "" {
+						<a href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.AuthorName }</a> ·
+					} else {
+						<span class="muted">no author</span> ·
+					}
+					<a href={ templ.URL(r.FeedURL) } class="external">feed</a> · { r.Unread } unread · last polled 
+					if r.LastPolledAt != "" {
+						{ web.TimeFmt(r.Timezone, r.LastPolledAt) }
+					} else {
+						never
+					}
+				</div>
+			</div>
+			<div class="row-actions">
+				<a class="small" href={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit" }>edit</a>
+				<button class="link" title="refresh" hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/refresh" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">↻</button>
+				<button class="link danger" title="delete" hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML" hx-confirm="delete this feed?">✕</button>
+			</div>
+		</div>
+	</li>
+}
+
+templ feedPreviewFields(d feedPreviewForm) {
+	<form class="stack" hx-post="/feeds" hx-target="#feeds-list" hx-swap="beforeend" hx-on:after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+		<label>title
+			<input name="title" type="text" value={ d.Title }/>
+		</label>
+		<label>feed url
+			<input name="feed_url" type="text" value={ d.FeedURL } required/>
+		</label>
+		<label>home url
+			<input id="feed-home-url" name="home_url" type="url" value={ d.HomeURL }/>
+		</label>
+		<label>author
+			<select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change" hx-include="#feed-home-url">
+				<option value="">no author</option>
+				for _, a := range d.Authors {
+					if a.ID == d.SelectedAuthorID {
+						<option value={ strconv.FormatInt(a.ID, 10) } selected>{ a.Name }</option>
+					} else {
+						<option value={ strconv.FormatInt(a.ID, 10) }>{ a.Name }</option>
+					}
+				}
+				<option value="new">+ create new author</option>
+			</select>
+		</label>
+		<div id="new-author"></div>
+		<div id="add-feed-error" class="error"></div>
+		<button type="submit">add feed</button>
+	</form>
+}
+
+templ feedChooser(d feedChoose) {
+	<div class="choose">
+		<p class="muted">found { len(d.Candidates) } feeds on that page — pick one</p>
+		<select name="feed_url" hx-post="/fragments/feed-preview" hx-target="#feed-preview" hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id">
+			for _, c := range d.Candidates {
+				<option value={ c.FeedURL }>{ c.Title }</option>
+			}
+		</select>
+	</div>
+}
+
+templ feedEditPage(u store.User, d feedsData) {
+	<section class="card">
+		<h1>edit feed</h1>
+		<form class="stack" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
+			@feedFields(d)
+			<button type="submit">save</button>
+		</form>
+	</section>
+}
+
+templ feedFields(d feedsData) {
+	<label>title
+		<input name="title" value={ d.Form.Title } required/>
+	</label>
+	<label>feed url
+		<input name="feed_url" type="text" value={ d.Form.FeedURL } required/>
+	</label>
+	<label>home url
+		<input name="home_url" type="url" value={ d.Form.HomeURL }/>
+	</label>
+	<label>author
+		<select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change">
+			<option value="">no author</option>
+			for _, a := range d.Authors {
+				if a.ID == d.Form.AuthorID {
+					<option value={ strconv.FormatInt(a.ID, 10) } selected>{ a.Name }</option>
+				} else {
+					<option value={ strconv.FormatInt(a.ID, 10) }>{ a.Name }</option>
+				}
+			}
+			<option value="new">+ create new author</option>
+		</select>
+	</label>
+	<div id="new-author"></div>
+	<label>poll interval (seconds)
+		<input name="poll_interval_sec" type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min="60"/>
+	</label>
+	if len(d.Collections) > 0 {
+		<fieldset>
+			<legend>collections</legend>
+			for _, c := range d.Collections {
+				if hasID(c.ID, d.Form.CollectionIDs) {
+					<label class="check"><input type="checkbox" name="collections" value={ strconv.FormatInt(c.ID, 10) } checked/> { c.Name }</label>
+				} else {
+					<label class="check"><input type="checkbox" name="collections" value={ strconv.FormatInt(c.ID, 10) }/> { c.Name }</label>
+				}
+			}
+		</fieldset>
+	}
+}
+
+templ feedPage(u store.User, d feedPageData) {
+	<section class="card">
+		<div class="row">
+			<h1>@web.SourceIcon(d.Row.FeedURL)
+			{ d.Row.Title }</h1>
+			<div class="row-actions">
+				<a class="small" href={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/edit" }>edit</a>
+				<button class="link" title="refresh" hx-post={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/refresh" } hx-on:after-request="if(event.detail.successful) window.location.reload()">↻</button>
+			</div>
+		</div>
+		<p class="item-meta">
+			if d.Row.AuthorName != "" {
+				<a href={ "/authors/" + strconv.FormatInt(d.Row.AuthorID, 10) }>{ d.Row.AuthorName }</a> ·
+			} else {
+				no author ·
+			}
+			<a href={ templ.URL(d.Row.FeedURL) } class="external">feed</a>
+			if d.Row.HomeURL != "" {
+				· <a href={ templ.URL(d.Row.HomeURL) } target="_blank" rel="noopener" class="external">home</a>
+			}
+		</p>
+		<p class="muted small">{ d.Row.Unread } unread · last polled 
+		if d.Row.LastPolledAt != "" {
+			{ web.TimeFmt(d.Row.Timezone, d.Row.LastPolledAt) }
+		} else {
+			never
+		}
+	</p>
+	</section>
+	<h2>items</h2>
+	@ScopedItems(d.Scoped)
+}
+
+// hasID reports whether id is present in ids.
+func hasID(id int64, ids []int64) bool {
+	for _, i := range ids {
+		if i == id {
+			return true
+		}
+	}
+	return false
+}

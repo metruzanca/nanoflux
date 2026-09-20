@@ -1,9 +1,12 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 )
 
 type Collection struct {
@@ -13,56 +16,44 @@ type Collection struct {
 	CreatedAt string
 }
 
-type CollectionStore struct{ db *sql.DB }
+type CollectionStore struct{ q *sqlcgen.Queries }
 
 func (s *CollectionStore) Create(userID int64, name string) (Collection, error) {
-	res, err := s.db.Exec(
-		`INSERT INTO collections(user_id, name) VALUES(?, ?)`, userID, name,
-	)
+	c, err := s.q.CreateCollection(context.Background(), sqlcgen.CreateCollectionParams{
+		UserID: userID,
+		Name:   name,
+	})
 	if err != nil {
 		return Collection{}, fmt.Errorf("create collection: %w", err)
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return Collection{}, err
-	}
-	return s.ByID(userID, id)
+	return toCollection(c), nil
 }
 
 func (s *CollectionStore) ByID(userID, id int64) (Collection, error) {
-	c, err := scanCollection(s.db.QueryRow(
-		`SELECT id, user_id, name, created_at FROM collections WHERE id = ? AND user_id = ?`,
-		id, userID,
-	))
+	c, err := s.q.GetCollection(context.Background(), sqlcgen.GetCollectionParams{ID: id, UserID: userID})
 	if errors.Is(err, sql.ErrNoRows) {
 		return Collection{}, ErrNotFound
 	}
-	return c, err
+	if err != nil {
+		return Collection{}, err
+	}
+	return toCollection(c), nil
 }
 
 func (s *CollectionStore) List(userID int64) ([]Collection, error) {
-	rows, err := s.db.Query(
-		`SELECT id, user_id, name, created_at FROM collections WHERE user_id = ? ORDER BY name`,
-		userID,
-	)
+	rows, err := s.q.ListCollections(context.Background(), userID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []Collection
-	for rows.Next() {
-		c, err := scanCollection(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, c)
+	out := make([]Collection, 0, len(rows))
+	for _, c := range rows {
+		out = append(out, toCollection(c))
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *CollectionStore) Delete(userID, id int64) error {
-	res, err := s.db.Exec(`DELETE FROM collections WHERE id = ? AND user_id = ?`, id, userID)
+	res, err := s.q.DeleteCollection(context.Background(), sqlcgen.DeleteCollectionParams{ID: id, UserID: userID})
 	if err != nil {
 		return err
 	}
@@ -74,35 +65,31 @@ func (s *CollectionStore) Delete(userID, id int64) error {
 
 // AddFeed associates a feed with a collection, verifying both belong to the user.
 func (s *CollectionStore) AddFeed(userID, collectionID, feedID int64) error {
-	var n int
-	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM collections c
-		 JOIN feeds f ON f.user_id = c.user_id
-		 WHERE c.id = ? AND f.id = ? AND c.user_id = ?`,
-		collectionID, feedID, userID,
-	).Scan(&n)
+	n, err := s.q.VerifyCollectionFeed(context.Background(), sqlcgen.VerifyCollectionFeedParams{
+		ID:     collectionID,
+		ID_2:   feedID,
+		UserID: userID,
+	})
 	if err != nil {
 		return err
 	}
 	if n == 0 {
 		return ErrNotFound
 	}
-	_, err = s.db.Exec(
-		`INSERT INTO collection_feeds(collection_id, feed_id) VALUES(?, ?)
-		 ON CONFLICT(collection_id, feed_id) DO NOTHING`,
-		collectionID, feedID,
-	)
+	_, err = s.q.AddFeedToCollection(context.Background(), sqlcgen.AddFeedToCollectionParams{
+		CollectionID: collectionID,
+		FeedID:       feedID,
+	})
 	return err
 }
 
 func (s *CollectionStore) RemoveFeed(userID, collectionID, feedID int64) error {
-	res, err := s.db.Exec(
-		`DELETE FROM collection_feeds
-		 WHERE collection_id = ? AND feed_id = ?
-		   AND collection_id IN (SELECT id FROM collections WHERE user_id = ?)
-		   AND feed_id IN (SELECT id FROM feeds WHERE user_id = ?)`,
-		collectionID, feedID, userID, userID,
-	)
+	res, err := s.q.RemoveFeedFromCollection(context.Background(), sqlcgen.RemoveFeedFromCollectionParams{
+		CollectionID: collectionID,
+		FeedID:       feedID,
+		UserID:       userID,
+		UserID_2:     userID,
+	})
 	if err != nil {
 		return err
 	}
@@ -113,30 +100,25 @@ func (s *CollectionStore) RemoveFeed(userID, collectionID, feedID int64) error {
 }
 
 func (s *CollectionStore) Feeds(userID, collectionID int64) ([]Feed, error) {
-	rows, err := s.db.Query(
-		`SELECT `+feedCols+`
-		 FROM feeds f JOIN collection_feeds cf ON cf.feed_id = f.id
-		 WHERE cf.collection_id = ? AND f.user_id = ? ORDER BY f.title`,
-		collectionID, userID,
-	)
+	rows, err := s.q.ListFeedsInCollection(context.Background(), sqlcgen.ListFeedsInCollectionParams{
+		CollectionID: collectionID,
+		UserID:       userID,
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []Feed
-	for rows.Next() {
-		f, err := scanFeed(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, f)
+	out := make([]Feed, 0, len(rows))
+	for _, f := range rows {
+		out = append(out, toFeed(f))
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
-func scanCollection(row scanner) (Collection, error) {
-	var c Collection
-	err := row.Scan(&c.ID, &c.UserID, &c.Name, &c.CreatedAt)
-	return c, err
+// FeedCollectionIDs returns the ids of a user's collections that contain
+// feedID, in one query.
+func (s *CollectionStore) FeedCollectionIDs(userID, feedID int64) ([]int64, error) {
+	return s.q.CollectionIDsForFeed(context.Background(), sqlcgen.CollectionIDsForFeedParams{
+		FeedID: feedID,
+		UserID: userID,
+	})
 }

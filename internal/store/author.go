@@ -1,9 +1,12 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 )
 
 type Author struct {
@@ -16,61 +19,85 @@ type Author struct {
 	CreatedAt   string
 }
 
-type AuthorStore struct{ db *sql.DB }
+// AuthorWithCount joins an author with its number of feeds.
+type AuthorWithCount struct {
+	Author
+	FeedCount int
+}
+
+type AuthorStore struct{ q *sqlcgen.Queries }
 
 func (s *AuthorStore) Create(userID int64, name, url, avatarURL, description string) (Author, error) {
-	res, err := s.db.Exec(
-		`INSERT INTO authors(user_id, name, url, avatar_url, description) VALUES(?, ?, ?, ?, ?)`,
-		userID, name, nullStr(url), nullStr(avatarURL), nullStr(description),
-	)
+	a, err := s.q.CreateAuthor(context.Background(), sqlcgen.CreateAuthorParams{
+		UserID:      userID,
+		Name:        name,
+		Url:         ns(url),
+		AvatarUrl:   ns(avatarURL),
+		Description: ns(description),
+	})
 	if err != nil {
 		return Author{}, fmt.Errorf("create author: %w", err)
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return Author{}, err
-	}
-	return s.ByID(userID, id)
+	return toAuthor(a), nil
 }
 
 func (s *AuthorStore) ByID(userID, id int64) (Author, error) {
-	a, err := scanAuthor(s.db.QueryRow(
-		`SELECT id, user_id, name, url, avatar_url, description, created_at
-		 FROM authors WHERE id = ? AND user_id = ?`, id, userID,
-	))
+	a, err := s.q.GetAuthor(context.Background(), sqlcgen.GetAuthorParams{ID: id, UserID: userID})
 	if errors.Is(err, sql.ErrNoRows) {
 		return Author{}, ErrNotFound
 	}
-	return a, err
+	if err != nil {
+		return Author{}, err
+	}
+	return toAuthor(a), nil
 }
 
 func (s *AuthorStore) List(userID int64) ([]Author, error) {
-	rows, err := s.db.Query(
-		`SELECT id, user_id, name, url, avatar_url, description, created_at
-		 FROM authors WHERE user_id = ? ORDER BY name`, userID,
-	)
+	rows, err := s.q.ListAuthors(context.Background(), userID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []Author
-	for rows.Next() {
-		a, err := scanAuthor(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, a)
+	out := make([]Author, 0, len(rows))
+	for _, a := range rows {
+		out = append(out, toAuthor(a))
 	}
-	return out, rows.Err()
+	return out, nil
+}
+
+// ListWithFeedCount returns the user's authors with their feed counts in one
+// query.
+func (s *AuthorStore) ListWithFeedCount(userID int64) ([]AuthorWithCount, error) {
+	rows, err := s.q.ListAuthorsWithFeedCount(context.Background(), userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AuthorWithCount, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, AuthorWithCount{
+			Author: toAuthor(sqlcgen.Author{
+				ID:          r.ID,
+				UserID:      r.UserID,
+				Name:        r.Name,
+				Url:         r.Url,
+				AvatarUrl:   r.AvatarUrl,
+				Description: r.Description,
+				CreatedAt:   r.CreatedAt,
+			}),
+			FeedCount: int(r.FeedCount),
+		})
+	}
+	return out, nil
 }
 
 func (s *AuthorStore) Update(userID, id int64, name, url, avatarURL, description string) error {
-	res, err := s.db.Exec(
-		`UPDATE authors SET name = ?, url = ?, avatar_url = ?, description = ?
-		 WHERE id = ? AND user_id = ?`,
-		name, nullStr(url), nullStr(avatarURL), nullStr(description), id, userID,
-	)
+	res, err := s.q.UpdateAuthor(context.Background(), sqlcgen.UpdateAuthorParams{
+		Name:        name,
+		Url:         ns(url),
+		AvatarUrl:   ns(avatarURL),
+		Description: ns(description),
+		ID:          id,
+		UserID:      userID,
+	})
 	if err != nil {
 		return err
 	}
@@ -83,7 +110,7 @@ func (s *AuthorStore) Update(userID, id int64, name, url, avatarURL, description
 // Delete removes an author and cascades to their feeds (and those feeds'
 // items and collection links).
 func (s *AuthorStore) Delete(userID, id int64) error {
-	res, err := s.db.Exec(`DELETE FROM authors WHERE id = ? AND user_id = ?`, id, userID)
+	res, err := s.q.DeleteAuthor(context.Background(), sqlcgen.DeleteAuthorParams{ID: id, UserID: userID})
 	if err != nil {
 		return fmt.Errorf("delete author: %w", err)
 	}
@@ -91,12 +118,4 @@ func (s *AuthorStore) Delete(userID, id int64) error {
 		return ErrNotFound
 	}
 	return nil
-}
-
-func scanAuthor(row scanner) (Author, error) {
-	var a Author
-	var url, avatarURL, description sql.NullString
-	err := row.Scan(&a.ID, &a.UserID, &a.Name, &url, &avatarURL, &description, &a.CreatedAt)
-	a.URL, a.AvatarURL, a.Description = url.String, avatarURL.String, description.String
-	return a, err
 }

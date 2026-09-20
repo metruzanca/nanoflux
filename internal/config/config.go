@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -9,6 +10,7 @@ import (
 type Config struct {
 	Addr          string
 	DBPath        string
+	FileStoreDir  string
 	LogLevel      string
 	PollInterval  time.Duration
 	PollWorkers   int
@@ -17,9 +19,11 @@ type Config struct {
 }
 
 func Load() Config {
+	dbPath := getenv("RSS_DB", "./data/rss.db")
 	return Config{
 		Addr:          getenv("RSS_ADDR", ":8080"),
-		DBPath:        getenv("RSS_DB", "./data/rss.db"),
+		DBPath:        dbPath,
+		FileStoreDir:  getenv("RSS_FILE_STORE", filepath.Join(filepath.Dir(dbPath), "filestore")),
 		LogLevel:      getenv("RSS_LOG_LEVEL", "info"),
 		PollInterval:  durationEnv("RSS_POLL_INTERVAL", 15*time.Minute),
 		PollWorkers:   intEnv("RSS_POLL_WORKERS", 4),

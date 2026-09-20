@@ -1,0 +1,166 @@
+package httpapi
+
+import (
+	"net/url"
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/store"
+)
+
+templ authorsPage(u store.User, d authorsData) {
+	<div class="row">
+		<h1>authors</h1>
+		<button type="button" onclick="document.getElementById('add-author-dialog').showModal()">+ add author</button>
+	</div>
+	@AuthorsList(d.Rows)
+
+	<dialog id="add-author-dialog" class="modal">
+		<div class="row">
+			<h2>add author</h2>
+			<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+		</div>
+		<form class="stack" hx-post="/fragments/author-preview" hx-target="#author-preview" hx-swap="innerHTML">
+			<label>url
+				<input name="url" type="url" placeholder="https://site.com" autofocus required/>
+			</label>
+			<button type="submit">find author</button>
+		</form>
+		<div id="author-preview"></div>
+	</dialog>
+}
+
+templ AuthorsList(rows []authorRow) {
+	<ul class="plain" id="authors-list">
+		for _, r := range rows {
+			@AuthorRow(r)
+		}
+	</ul>
+}
+
+templ AuthorRow(r authorRow) {
+	<li id={ "author-" + strconv.FormatInt(r.ID, 10) }>
+		<div class="row">
+			<div>
+				<a href={ "/authors/" + strconv.FormatInt(r.ID, 10) }>
+					if r.AvatarURL != "" {
+						<img class="avatar avatar-sm" src={ "/img?u=" + url.QueryEscape(r.AvatarURL) } onerror="this.style.display='none'" alt=""/>
+					}
+					<strong>{ r.Name }</strong>
+				</a>
+				<div class="item-meta">{ r.FeedCount } feeds
+					if r.URL != "" {
+						· <a href={ templ.URL(r.URL) } target="_blank" rel="noopener" class="external">{ r.URL }</a>
+					}
+				</div>
+			</div>
+			<div class="row-actions">
+				<a class="small" href={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/edit" }>edit</a>
+				if r.FeedCount > 0 {
+					<button class="link danger" title="delete" hx-post={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target={ "#author-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML" hx-confirm={ "delete this author and their " + strconv.Itoa(r.FeedCount) + " feeds?" }>✕</button>
+				} else {
+					<button class="link danger" title="delete" hx-post={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target={ "#author-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML" hx-confirm="delete this author?">✕</button>
+				}
+			</div>
+		</div>
+	</li>
+}
+
+templ authorPreviewFields(d authorPreviewForm) {
+	<form class="stack" hx-post="/authors" hx-target="#authors-list" hx-swap="beforeend" hx-on:after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+		if d.AvatarURL != "" {
+			<img class="avatar" src={ "/img?u=" + url.QueryEscape(d.AvatarURL) } onerror="this.style.display='none'" alt=""/>
+		}
+		<label>name
+			<input name="name" type="text" value={ d.Name } required/>
+		</label>
+		<label>url
+			<input name="url" type="url" value={ d.URL }/>
+		</label>
+		<label>avatar url
+			<input name="avatar_url" type="url" value={ d.AvatarURL }/>
+		</label>
+		<div id="add-author-error" class="error"></div>
+		<button type="submit">add author</button>
+	</form>
+}
+
+templ authorEditPage(u store.User, d authorsData) {
+	<section class="card">
+		<h1>edit author</h1>
+		<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
+			@authorFields(d)
+			<button type="submit">save</button>
+		</form>
+	</section>
+}
+
+templ authorFields(d authorsData) {
+	<label>name
+		<input name="name" value={ d.Form.Name } required/>
+	</label>
+	<label>url
+		<input name="url" type="url" value={ d.Form.URL }/>
+	</label>
+	<label>avatar url
+		<input name="avatar_url" type="url" value={ d.Form.AvatarURL }/>
+	</label>
+	<label>description
+		<textarea name="description" rows="3">{ d.Form.Description }</textarea>
+	</label>
+}
+
+templ authorPage(u store.User, d authorData) {
+	<section class="card">
+		<div class="row">
+			<div class="row">
+				if d.Author.AvatarURL != "" {
+					<img class="avatar avatar-lg" src={ "/img?u=" + url.QueryEscape(d.Author.AvatarURL) } onerror="this.style.display='none'" alt=""/>
+				}
+				<h1>{ d.Author.Name }</h1>
+			</div>
+			<a class="small" href={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/edit" }>edit</a>
+		</div>
+		if d.Author.URL != "" {
+			<p><a href={ templ.URL(d.Author.URL) } target="_blank" rel="noopener" class="external">{ d.Author.URL }</a></p>
+		}
+		if d.Author.Description != "" {
+			<p>{ d.Author.Description }</p>
+		}
+	</section>
+	<div class="row">
+		<h2>feeds</h2>
+		<button type="button" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>
+	</div>
+	@FeedsList(d.Rows)
+	<h2>items</h2>
+	@ScopedItems(d.Scoped)
+
+	<dialog id="add-author-feed-dialog" class="modal">
+		<div class="row">
+			<h2>add feed for { d.Author.Name }</h2>
+			<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+		</div>
+		<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-feed-preview" hx-swap="innerHTML">
+			<input type="hidden" id="feed-author-id" name="author_id" value={ strconv.FormatInt(d.Author.ID, 10) }/>
+			<label>url
+				<input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required/>
+			</label>
+			<button type="submit">find feed</button>
+		</form>
+		<div id="author-feed-preview"></div>
+	</dialog>
+}
+
+templ authorCreateFields(d authorPreviewForm) {
+	<div class="new-author">
+		<label>new author name
+			<input name="author_name" type="text" value={ d.Name } required/>
+		</label>
+		<label>new author url
+			<input name="author_url" type="url" value={ d.URL }/>
+		</label>
+		<label>avatar url
+			<input name="avatar_url" type="url" value={ d.AvatarURL }/>
+		</label>
+	</div>
+}

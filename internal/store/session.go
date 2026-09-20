@@ -1,50 +1,48 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+
+	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 )
 
-type SessionStore struct{ db *sql.DB }
+type SessionStore struct{ q *sqlcgen.Queries }
 
 // Create stores a session token. expiresAt is a db-formatted UTC timestamp.
 func (s *SessionStore) Create(userID int64, token, expiresAt string) error {
-	_, err := s.db.Exec(
-		`INSERT INTO sessions(token, user_id, expires_at) VALUES(?, ?, ?)`,
-		token, userID, expiresAt,
-	)
-	return err
+	return s.q.CreateSession(context.Background(), sqlcgen.CreateSessionParams{
+		Token:     token,
+		UserID:    userID,
+		ExpiresAt: expiresAt,
+	})
 }
 
 // UserByToken returns the user for a valid, unexpired session token.
 func (s *SessionStore) UserByToken(token string) (User, error) {
-	u, err := scanUser(s.db.QueryRow(
-		`SELECT u.id, u.username, u.password_hash, (u.avatar_key IS NOT NULL), u.timezone, u.created_at
-		 FROM sessions se
-		 JOIN users u ON u.id = se.user_id
-		 WHERE se.token = ? AND se.expires_at > datetime('now')`,
-		token,
-	))
+	u, err := s.q.GetUserByToken(context.Background(), token)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
-	return u, err
+	if err != nil {
+		return User{}, err
+	}
+	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.CreatedAt), nil
 }
 
 func (s *SessionStore) Delete(token string) error {
-	_, err := s.db.Exec(`DELETE FROM sessions WHERE token = ?`, token)
-	return err
+	return s.q.DeleteSession(context.Background(), token)
 }
 
 // Touch extends a session's expiry (sliding sessions).
 func (s *SessionStore) Touch(token, expiresAt string) error {
-	_, err := s.db.Exec(
-		`UPDATE sessions SET expires_at = ? WHERE token = ?`, expiresAt, token,
-	)
-	return err
+	return s.q.TouchSession(context.Background(), sqlcgen.TouchSessionParams{
+		ExpiresAt: expiresAt,
+		Token:     token,
+	})
 }
 
 func (s *SessionStore) DeleteExpired() error {
-	_, err := s.db.Exec(`DELETE FROM sessions WHERE expires_at <= datetime('now')`)
-	return err
+	return s.q.DeleteExpiredSessions(context.Background())
 }

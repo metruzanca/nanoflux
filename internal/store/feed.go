@@ -1,9 +1,12 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 )
 
 type Feed struct {
@@ -22,94 +25,123 @@ type Feed struct {
 	CreatedAt       string
 }
 
-type FeedStore struct{ db *sql.DB }
+// FeedWithUnread joins a feed with its author's name and unread item count.
+type FeedWithUnread struct {
+	Feed
+	AuthorName string
+	Unread     int
+}
 
-const feedCols = `id, user_id, author_id, title, feed_url, home_url, description,
-	etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at`
+type FeedStore struct{ q *sqlcgen.Queries }
 
 func (s *FeedStore) Create(userID, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int) (Feed, error) {
-	res, err := s.db.Exec(
-		`INSERT INTO feeds(user_id, author_id, title, feed_url, home_url, description, poll_interval_sec)
-		 VALUES(?, ?, ?, ?, ?, ?, ?)`,
-		userID, nullInt64(authorID), title, feedURL, nullStr(homeURL), nullStr(description), pollIntervalSec,
-	)
+	f, err := s.q.CreateFeed(context.Background(), sqlcgen.CreateFeedParams{
+		UserID:          userID,
+		AuthorID:        ni(authorID),
+		Title:           title,
+		FeedUrl:         feedURL,
+		HomeUrl:         ns(homeURL),
+		Description:     ns(description),
+		PollIntervalSec: int64(pollIntervalSec),
+	})
 	if err != nil {
 		return Feed{}, fmt.Errorf("create feed: %w", err)
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return Feed{}, err
-	}
-	return s.ByID(userID, id)
+	return toFeed(f), nil
 }
 
 func (s *FeedStore) ByID(userID, id int64) (Feed, error) {
-	f, err := scanFeed(s.db.QueryRow(
-		`SELECT `+feedCols+` FROM feeds WHERE id = ? AND user_id = ?`, id, userID,
-	))
+	f, err := s.q.GetFeed(context.Background(), sqlcgen.GetFeedParams{ID: id, UserID: userID})
 	if errors.Is(err, sql.ErrNoRows) {
 		return Feed{}, ErrNotFound
 	}
-	return f, err
+	if err != nil {
+		return Feed{}, err
+	}
+	return toFeed(f), nil
 }
 
 // ByIDAny returns a feed by id regardless of user. Used by the poller and CLI.
 func (s *FeedStore) ByIDAny(id int64) (Feed, error) {
-	f, err := scanFeed(s.db.QueryRow(`SELECT `+feedCols+` FROM feeds WHERE id = ?`, id))
+	f, err := s.q.GetFeedAny(context.Background(), id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Feed{}, ErrNotFound
 	}
-	return f, err
+	if err != nil {
+		return Feed{}, err
+	}
+	return toFeed(f), nil
 }
 
 func (s *FeedStore) List(userID int64) ([]Feed, error) {
-	rows, err := s.db.Query(
-		`SELECT `+feedCols+` FROM feeds WHERE user_id = ? ORDER BY title`, userID,
-	)
+	rows, err := s.q.ListFeeds(context.Background(), userID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []Feed
-	for rows.Next() {
-		f, err := scanFeed(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, f)
+	out := make([]Feed, 0, len(rows))
+	for _, f := range rows {
+		out = append(out, toFeed(f))
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *FeedStore) ListByAuthor(userID, authorID int64) ([]Feed, error) {
-	rows, err := s.db.Query(
-		`SELECT `+feedCols+` FROM feeds WHERE user_id = ? AND author_id = ? ORDER BY title`,
-		userID, authorID,
-	)
+	rows, err := s.q.ListFeedsByAuthor(context.Background(), sqlcgen.ListFeedsByAuthorParams{
+		UserID:   userID,
+		AuthorID: ni(authorID),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []Feed
-	for rows.Next() {
-		f, err := scanFeed(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, f)
+	out := make([]Feed, 0, len(rows))
+	for _, f := range rows {
+		out = append(out, toFeed(f))
 	}
-	return out, rows.Err()
+	return out, nil
+}
+
+// ListWithUnread returns a user's feeds with author name and unread counts in
+// one query, avoiding a count query per feed.
+func (s *FeedStore) ListWithUnread(userID int64) ([]FeedWithUnread, error) {
+	rows, err := s.q.ListFeedsWithUnread(context.Background(), userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FeedWithUnread, 0, len(rows))
+	for _, f := range rows {
+		out = append(out, toFeedWithUnread(f))
+	}
+	return out, nil
+}
+
+// ListByAuthorWithUnread is ListWithUnread scoped to one author.
+func (s *FeedStore) ListByAuthorWithUnread(userID, authorID int64) ([]FeedWithUnread, error) {
+	rows, err := s.q.ListFeedsByAuthorWithUnread(context.Background(), sqlcgen.ListFeedsByAuthorWithUnreadParams{
+		UserID:   userID,
+		AuthorID: ni(authorID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FeedWithUnread, 0, len(rows))
+	for _, f := range rows {
+		out = append(out, toFeedByAuthorWithUnread(f))
+	}
+	return out, nil
 }
 
 func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int, enabled bool) error {
-	res, err := s.db.Exec(
-		`UPDATE feeds SET author_id = ?, title = ?, feed_url = ?, home_url = ?, description = ?,
-		 poll_interval_sec = ?, enabled = ? WHERE id = ? AND user_id = ?`,
-		nullInt64(authorID), title, feedURL, nullStr(homeURL), nullStr(description),
-		pollIntervalSec, boolInt(enabled), id, userID,
-	)
+	res, err := s.q.UpdateFeed(context.Background(), sqlcgen.UpdateFeedParams{
+		AuthorID:        ni(authorID),
+		Title:           title,
+		FeedUrl:         feedURL,
+		HomeUrl:         ns(homeURL),
+		Description:     ns(description),
+		PollIntervalSec: int64(pollIntervalSec),
+		Enabled:         enabled,
+		ID:              id,
+		UserID:          userID,
+	})
 	if err != nil {
 		return err
 	}
@@ -120,7 +152,7 @@ func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, hom
 }
 
 func (s *FeedStore) Delete(userID, id int64) error {
-	res, err := s.db.Exec(`DELETE FROM feeds WHERE id = ? AND user_id = ?`, id, userID)
+	res, err := s.q.DeleteFeed(context.Background(), sqlcgen.DeleteFeedParams{ID: id, UserID: userID})
 	if err != nil {
 		return fmt.Errorf("delete feed: %w", err)
 	}
@@ -133,64 +165,24 @@ func (s *FeedStore) Delete(userID, id int64) error {
 // SetPollMeta records the result of a fetch: entity tags for conditional GET
 // and the time of the poll. Not user-scoped because the poller owns it.
 func (s *FeedStore) SetPollMeta(id int64, etag, lastModified, lastPolledAt string) error {
-	_, err := s.db.Exec(
-		`UPDATE feeds SET etag = ?, last_modified = ?, last_polled_at = ? WHERE id = ?`,
-		nullStr(etag), nullStr(lastModified), lastPolledAt, id,
-	)
-	return err
+	return s.q.SetFeedPollMeta(context.Background(), sqlcgen.SetFeedPollMetaParams{
+		Etag:         ns(etag),
+		LastModified: ns(lastModified),
+		LastPolledAt: ns(lastPolledAt),
+		ID:           id,
+	})
 }
 
 // ListDue returns enabled feeds that have not been polled within their own
 // poll_interval_sec of now.
 func (s *FeedStore) ListDue(now string) ([]Feed, error) {
-	rows, err := s.db.Query(
-		`SELECT `+feedCols+` FROM feeds
-		 WHERE enabled = 1 AND (last_polled_at IS NULL OR last_polled_at <= datetime(?, '-' || poll_interval_sec || ' seconds'))`,
-		now,
-	)
+	rows, err := s.q.ListFeedsDue(context.Background(), now)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []Feed
-	for rows.Next() {
-		f, err := scanFeed(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, f)
+	out := make([]Feed, 0, len(rows))
+	for _, f := range rows {
+		out = append(out, toFeed(f))
 	}
-	return out, rows.Err()
-}
-
-func scanFeed(row scanner) (Feed, error) {
-	var f Feed
-	var homeURL, description, etag, lastModified, lastPolledAt sql.NullString
-	var authorID sql.NullInt64
-	var enabled int
-	err := row.Scan(
-		&f.ID, &f.UserID, &authorID, &f.Title, &f.FeedURL,
-		&homeURL, &description, &etag, &lastModified, &lastPolledAt,
-		&f.PollIntervalSec, &enabled, &f.CreatedAt,
-	)
-	f.HomeURL, f.Description, f.ETag, f.LastModified, f.LastPolledAt =
-		homeURL.String, description.String, etag.String, lastModified.String, lastPolledAt.String
-	f.AuthorID = authorID.Int64 // 0 = no author
-	f.Enabled = enabled != 0
-	return f, err
-}
-
-func nullInt64(n int64) any {
-	if n == 0 {
-		return nil
-	}
-	return n
-}
-
-func boolInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
+	return out, nil
 }

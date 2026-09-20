@@ -1,0 +1,66 @@
+package httpapi
+
+templ loginPage(errMsg string) {
+	<section class="card login">
+		<h1>log in</h1>
+		if errMsg != "" {
+			<p class="error">{ errMsg }</p>
+		}
+		<form method="post" action="/login">
+			<label>username
+				<input name="username" autofocus autocomplete="username" required/>
+			</label>
+			<label>password
+				<input name="password" type="password" autocomplete="current-password" required/>
+			</label>
+			<button type="submit">log in</button>
+		</form>
+		<p class="small muted">no account? <a href="/signup">create one</a></p>
+	</section>
+}
+
+templ signupPage(errMsg string) {
+	<section class="card login">
+		<h1>create account</h1>
+		if errMsg != "" {
+			<p class="error">{ errMsg }</p>
+		}
+		<form method="post" action="/signup">
+			<label>username
+				<input name="username" autofocus autocomplete="username" required/>
+			</label>
+			<label>password
+				<input name="password" type="password" autocomplete="new-password" minlength="8" required/>
+			</label>
+			<button type="submit">create account</button>
+		</form>
+		<p class="small muted">already have an account? <a href="/login">log in</a></p>
+	</section>
+}
+
+templ homePage(d homeData) {
+	<div class="row">
+		<h1>unread ({ d.UnreadCount })</h1>
+		if d.UnreadCount > 0 {
+			<button hx-post="/items/read-all" hx-target="#items-list" hx-swap="outerHTML">mark all read</button>
+		}
+	</div>
+	@ItemsList(d.Unread)
+}
+
+templ readPage(d readData) {
+	<div class="row">
+		<h1>history ({ d.ReadCount })</h1>
+		if d.ReadCount > 0 {
+			<button hx-post="/items/unread-all" hx-target="#items-list" hx-swap="outerHTML">mark all unread</button>
+		}
+	</div>
+	@ItemsList(d.Read)
+}
+
+templ favoritesPage(d favoritesData) {
+	<div class="row">
+		<h1>favorites ({ d.FavCount })</h1>
+	</div>
+	@ItemsList(d.Favorites)
+}

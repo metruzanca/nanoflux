@@ -1,0 +1,84 @@
+package httpapi
+
+import (
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+templ head(title string) {
+	<meta charset="utf-8"/>
+	<meta name="viewport" content="width=device-width, initial-scale=1"/>
+	<title>{ web.PageTitle(title) }</title>
+	<link rel="stylesheet" href={ templ.URL("/static/app.css") }/>
+	<script src={ templ.URL("/static/htmx.min.js") } defer></script>
+	<script src={ templ.URL("/static/app.js") } defer></script>
+}
+
+templ topbar(u store.User) {
+	<header class="top">
+		<a class="brand" href="/">nanoflux</a>
+		if u.ID != 0 {
+			<nav>
+				<a href="/">unread</a>
+				<a href="/feeds">feeds</a>
+				<a href="/authors">authors</a>
+				<a href="/collections">collections</a>
+				<a href="/favorites">favorites</a>
+				<div class="user-menu">
+					<button type="button" id="user-menu-btn" class="avatar-btn" aria-haspopup="true" aria-expanded="false" title={ u.Username } onclick="toggleUserMenu(event)">
+						if u.HasAvatar {
+							<img class="avatar avatar-sm" src={ templ.URL("/avatar") } alt={ u.Username }/>
+						} else {
+							<span class="avatar avatar-sm avatar-default">{ web.Initial(u.Username) }</span>
+						}
+					</button>
+					<div id="user-menu" class="user-menu-pop" role="menu" hidden>
+						<a href="/read" role="menuitem">history</a>
+						<a href="/settings" role="menuitem">settings</a>
+						<form action="/logout" method="post"><button class="link menu-item" type="submit">log out</button></form>
+					</div>
+				</div>
+			</nav>
+		}
+	</header>
+
+	<dialog id="item-dialog" class="modal wide">
+		<div class="row">
+			<h2 class="muted">item</h2>
+			<div class="row-actions">
+				<a id="item-dialog-live" class="small external" href="#" target="_blank" rel="noopener">open live</a>
+				<button type="button" class="link" onclick="document.getElementById('item-dialog').close()">✕</button>
+			</div>
+		</div>
+		<div id="item-dialog-body" class="item-view"></div>
+	</dialog>
+}
+
+// basePage renders a full HTML document: head, topbar, and the page content.
+templ basePage(title string, u store.User, content templ.Component) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			@head(title)
+		</head>
+		<body>
+			@topbar(u)
+			<main>
+				@content
+			</main>
+		</body>
+	</html>
+}
+
+// FormError is the shared user-facing error banner (role="alert").
+templ FormError(msg string) {
+	<div class="error" role="alert">{ msg }</div>
+}
+
+// FormErrorOOB renders an error into a named slot via an htmx out-of-band
+// swap, keeping the surrounding form untouched.
+templ FormErrorOOB(target, msg string) {
+	<div id={ target } hx-swap-oob="innerHTML">
+		<div class="error" role="alert">{ msg }</div>
+	</div>
+}

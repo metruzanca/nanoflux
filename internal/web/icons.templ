@@ -1,0 +1,41 @@
+package web
+
+import (
+	"net/url"
+	"strings"
+)
+
+// sourceIconHost extracts the lowercase hostname for /icons/ lookups, or ""
+// when the url is unusable.
+func sourceIconHost(rawurl string) string {
+	u, err := url.Parse(rawurl)
+	if err != nil || u.Hostname() == "" {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
+// SourceIcon renders a source-type icon for a feed URL. Icons are resolved
+// server-side by /icons/{domain}, which prefers the user's cached custom icon
+// for the domain and falls back to the built-in X/YouTube/globe icons.
+templ SourceIcon(rawurl string) {
+	if host := sourceIconHost(rawurl); host != "" {
+		<img class="src-icon" src={ templ.URL("/icons/" + url.PathEscape(host)) } width="16" height="16" alt=""/>
+	} else {
+		<svg class="src-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<circle cx="12" cy="12" r="10"></circle>
+			<line x1="2" y1="12" x2="22" y2="12"></line>
+			<path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+		</svg>
+	}
+}
+
+// FavIcon renders a star for the favorite toggle, filled when the item is a
+// favorite. Fill comes from currentColor so CSS can tint it.
+templ FavIcon(fav bool) {
+	if fav {
+		<svg class="star on" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+	} else {
+		<svg class="star" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+	}
+}

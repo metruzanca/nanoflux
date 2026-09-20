@@ -3,7 +3,7 @@ package httpapi
 import (
 	"context"
 	"html/template"
-	"io"
+
 	"net/http"
 	"strconv"
 	"strings"
@@ -108,9 +108,9 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	items, _ := s.store.Items.List(u.ID, store.ItemFilter{UnreadOnly: true, Limit: 100})
 	unread, _ := s.store.Items.CountUnread(u.ID, 0)
-	web.Render(w, "home", web.Page{Title: "unread", User: u, Data: homeData{
+	web.Render(w, r, basePage("unread", u, homePage(homeData{
 		Unread: withTZ(u.Timezone, items), UnreadCount: unread,
-	}})
+	})))
 }
 
 func (s *Server) itemsReadAll(w http.ResponseWriter, r *http.Request) {
@@ -127,18 +127,18 @@ func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	items, _ := s.store.Items.List(u.ID, store.ItemFilter{ReadOnly: true, Limit: 100})
 	count, _ := s.store.Items.CountRead(u.ID, 0)
-	web.Render(w, "read", web.Page{Title: "history", User: u, Data: readData{
+	web.Render(w, r, basePage("history", u, readPage(readData{
 		Read: withTZ(u.Timezone, items), ReadCount: count,
-	}})
+	})))
 }
 
 func (s *Server) favoritesPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	items, _ := s.store.Items.List(u.ID, store.ItemFilter{FavoritesOnly: true, Limit: 100})
 	count, _ := s.store.Items.CountFavorites(u.ID, 0)
-	web.Render(w, "favorites", web.Page{Title: "favorites", User: u, Data: favoritesData{
+	web.Render(w, r, basePage("favorites", u, favoritesPage(favoritesData{
 		Favorites: withTZ(u.Timezone, items), FavCount: count,
-	}})
+	})))
 }
 
 func (s *Server) itemsMarkAllUnread(w http.ResponseWriter, r *http.Request) {
@@ -148,17 +148,17 @@ func (s *Server) itemsMarkAllUnread(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	s.renderReadItemsList(w, u.ID, u.Timezone)
+	s.renderReadItemsList(w, r, u.ID, u.Timezone)
 }
 
-func (s *Server) renderReadItemsList(w http.ResponseWriter, userID int64, tz string) {
+func (s *Server) renderReadItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
 	items, _ := s.store.Items.List(userID, store.ItemFilter{ReadOnly: true, Limit: 100})
-	web.RenderFragment(w, "items_list", withTZ(tz, items))
+	web.Render(w, r, ItemsList(withTZ(tz, items)))
 }
 
 func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
 	items, _ := s.store.Items.List(userID, store.ItemFilter{UnreadOnly: true, Limit: 100})
-	web.RenderFragment(w, "items_list", withTZ(tz, items))
+	web.Render(w, r, ItemsList(withTZ(tz, items)))
 }
 
 // withTZ stamps the user's timezone onto each item so templates can render
@@ -192,7 +192,7 @@ type itemViewData struct {
 // modal by the frontend.
 func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -224,12 +224,12 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
 	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemSource(ctx, data)
-	web.RenderFragment(w, "item_view", data)
+	web.Render(w, r, ItemView(data))
 }
 
 func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -250,12 +250,12 @@ func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row.Timezone = u.Timezone
-	web.RenderFragment(w, "item_row", row)
+	web.Render(w, r, ItemRow(row))
 }
 
 func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -276,7 +276,7 @@ func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row.Timezone = u.Timezone
-	web.RenderFragment(w, "item_row", row)
+	web.Render(w, r, ItemRow(row))
 }
 
 func (s *Server) feeds(w http.ResponseWriter, r *http.Request) {
@@ -288,28 +288,22 @@ func (s *Server) feeds(w http.ResponseWriter, r *http.Request) {
 	}
 	authors, _ := s.store.Authors.List(u.ID)
 	collections, _ := s.store.Collections.List(u.ID)
-	web.Render(w, "feeds", web.Page{Title: "feeds", User: u, Data: feedsData{
+	web.Render(w, r, basePage("feeds", u, feedsPage(u, feedsData{
 		Rows: rows, Authors: authors, Collections: collections,
 		Form: feedForm{PollIntervalSec: 900},
-	}})
+	})))
 }
 
 func (s *Server) feedRows(userID int64, tz string) ([]feedRow, error) {
-	feeds, err := s.store.Feeds.List(userID)
+	rows, err := s.store.Feeds.ListWithUnread(userID)
 	if err != nil {
 		return nil, err
 	}
-	authors, _ := s.store.Authors.List(userID)
-	names := make(map[int64]string, len(authors))
-	for _, a := range authors {
-		names[a.ID] = a.Name
+	out := make([]feedRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, feedRow{Feed: r.Feed, AuthorName: r.AuthorName, Unread: r.Unread, Timezone: tz})
 	}
-	rows := make([]feedRow, 0, len(feeds))
-	for _, f := range feeds {
-		unread, _ := s.store.Items.CountUnread(userID, f.ID)
-		rows = append(rows, feedRow{Feed: f, AuthorName: names[f.AuthorID], Unread: unread, Timezone: tz})
-	}
-	return rows, nil
+	return out, nil
 }
 
 func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
@@ -323,20 +317,20 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 		interval = 900
 	}
 	if title == "" || feedURL == "" {
-		writeFormError(w, "add-feed-error", "title and feed url are required")
+		writeFormError(w, r, "add-feed-error", "title and feed url are required")
 		return
 	}
 
 	authorID, errMsg := s.resolveAuthor(r, u.ID)
 	if errMsg != "" {
-		writeFormError(w, "add-feed-error", errMsg)
+		writeFormError(w, r, "add-feed-error", errMsg)
 		return
 	}
 
 	f, err := s.store.Feeds.Create(u.ID, authorID, title, feedURL, homeURL, "", interval)
 	if err != nil {
 		log.Error("create feed", "err", err)
-		writeFormError(w, "add-feed-error", "could not create feed")
+		writeFormError(w, r, "add-feed-error", "could not create feed")
 		return
 	}
 	for _, cid := range r.Form["collections"] {
@@ -345,7 +339,7 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	author, _ := s.store.Authors.ByID(u.ID, authorID)
-	web.RenderFragment(w, "feed_row", feedRow{Feed: f, AuthorName: author.Name})
+	web.Render(w, r, FeedRow(feedRow{Feed: f, AuthorName: author.Name, Timezone: u.Timezone}))
 }
 
 // resolveAuthor maps the feed form's author selection to an author id.
@@ -377,7 +371,7 @@ func (s *Server) resolveAuthor(r *http.Request, userID int64) (int64, string) {
 
 func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -393,31 +387,22 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 		PollIntervalSec: f.PollIntervalSec,
 	}
 	collections, _ := s.store.Collections.List(u.ID)
-	form.CollectionIDs = s.collectionIDsForFeed(u.ID, f.ID, collections)
+	form.CollectionIDs = s.collectionIDsForFeed(u.ID, f.ID)
 	authors, _ := s.store.Authors.List(u.ID)
 
-	web.Render(w, "feed_edit", web.Page{Title: "edit " + f.Title, User: u, Data: feedsData{
+	web.Render(w, r, basePage("edit "+f.Title, u, feedEditPage(u, feedsData{
 		Authors: authors, Collections: collections, Form: form,
-	}})
+	})))
 }
 
-func (s *Server) collectionIDsForFeed(userID, feedID int64, all []store.Collection) []int64 {
-	var out []int64
-	for _, c := range all {
-		feeds, _ := s.store.Collections.Feeds(userID, c.ID)
-		for _, f := range feeds {
-			if f.ID == feedID {
-				out = append(out, c.ID)
-				break
-			}
-		}
-	}
-	return out
+func (s *Server) collectionIDsForFeed(userID, feedID int64) []int64 {
+	ids, _ := s.store.Collections.FeedCollectionIDs(userID, feedID)
+	return ids
 }
 
 func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -507,7 +492,7 @@ func normalizeURL(s string) string {
 
 func (s *Server) feedDelete(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -522,7 +507,7 @@ func (s *Server) feedDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -539,44 +524,43 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
-	web.RenderFragment(w, "feed_row", feedRow{Feed: f, AuthorName: author.Name, Unread: unread})
+	web.Render(w, r, FeedRow(feedRow{Feed: f, AuthorName: author.Name, Unread: unread, Timezone: u.Timezone}))
 }
 
 func (s *Server) authors(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	rows := s.authorRows(u.ID)
-	web.Render(w, "authors", web.Page{Title: "authors", User: u, Data: authorsData{Rows: rows}})
+	web.Render(w, r, basePage("authors", u, authorsPage(u, authorsData{Rows: rows})))
 }
 
 func (s *Server) authorRows(userID int64) []authorRow {
-	authors, _ := s.store.Authors.List(userID)
-	rows := make([]authorRow, 0, len(authors))
-	for _, a := range authors {
-		feeds, _ := s.store.Feeds.ListByAuthor(userID, a.ID)
-		rows = append(rows, authorRow{Author: a, FeedCount: len(feeds)})
+	rows, _ := s.store.Authors.ListWithFeedCount(userID)
+	out := make([]authorRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, authorRow{Author: r.Author, FeedCount: r.FeedCount})
 	}
-	return rows
+	return out
 }
 
 func (s *Server) authorCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
-		writeFormError(w, "add-author-error", "name is required")
+		writeFormError(w, r, "add-author-error", "name is required")
 		return
 	}
 	a, err := s.store.Authors.Create(u.ID, name, r.FormValue("url"), r.FormValue("avatar_url"), r.FormValue("description"))
 	if err != nil {
 		log.Error("create author", "err", err)
-		writeFormError(w, "add-author-error", "could not create author")
+		writeFormError(w, r, "add-author-error", "could not create author")
 		return
 	}
-	web.RenderFragment(w, "author_row", authorRow{Author: a})
+	web.Render(w, r, AuthorRow(authorRow{Author: a}))
 }
 
 func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -592,9 +576,9 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scoped := s.authorScopedItems(u.ID, id, itemsView(r), u.Timezone)
-	web.Render(w, "author", web.Page{Title: a.Name, User: u, Data: authorData{
+	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
 		Author: a, Rows: rows, Scoped: scoped,
-	}})
+	})))
 }
 
 // authorScopedItems loads one read/unread item list for an author plus the
@@ -618,17 +602,17 @@ func (s *Server) authorScopedItems(userID, authorID int64, view, tz string) scop
 
 func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	web.RenderFragment(w, "scoped_items", s.authorScopedItems(u.ID, id, itemsView(r), u.Timezone))
+	web.Render(w, r, ScopedItems(s.authorScopedItems(u.ID, id, itemsView(r), u.Timezone)))
 }
 
 func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -646,9 +630,9 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	scoped := s.feedScopedItems(u.ID, id, itemsView(r), u.Timezone)
-	web.Render(w, "feed", web.Page{Title: feed.Title, User: u, Data: feedPageData{
+	web.Render(w, r, basePage(feed.Title, u, feedPage(u, feedPageData{
 		Row: feedRow{Feed: feed, AuthorName: authorName, Unread: unread, Timezone: u.Timezone}, Scoped: scoped,
-	}})
+	})))
 }
 
 // feedScopedItems loads one read/unread item list for a feed plus the counts
@@ -672,31 +656,29 @@ func (s *Server) feedScopedItems(userID, feedID int64, view, tz string) scopedIt
 
 func (s *Server) feedItems(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	web.RenderFragment(w, "scoped_items", s.feedScopedItems(u.ID, id, itemsView(r), u.Timezone))
+	web.Render(w, r, ScopedItems(s.feedScopedItems(u.ID, id, itemsView(r), u.Timezone)))
 }
 
 func (s *Server) feedRowsForAuthor(userID, authorID int64, tz string) ([]feedRow, error) {
-	feeds, err := s.store.Feeds.ListByAuthor(userID, authorID)
+	rows, err := s.store.Feeds.ListByAuthorWithUnread(userID, authorID)
 	if err != nil {
 		return nil, err
 	}
-	author, _ := s.store.Authors.ByID(userID, authorID)
-	rows := make([]feedRow, 0, len(feeds))
-	for _, f := range feeds {
-		unread, _ := s.store.Items.CountUnread(userID, f.ID)
-		rows = append(rows, feedRow{Feed: f, AuthorName: author.Name, Unread: unread, Timezone: tz})
+	out := make([]feedRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, feedRow{Feed: r.Feed, AuthorName: r.AuthorName, Unread: r.Unread, Timezone: tz})
 	}
-	return rows, nil
+	return out, nil
 }
 
 func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -706,14 +688,14 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	web.Render(w, "author_edit", web.Page{Title: "edit " + a.Name, User: u, Data: authorsData{
+	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
 		Form: authorForm{ID: a.ID, Name: a.Name, URL: a.URL, AvatarURL: a.AvatarURL, Description: a.Description},
-	}})
+	})))
 }
 
 func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -733,7 +715,7 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) authorDelete(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -759,36 +741,36 @@ func (s *Server) authorFormFragment(w http.ResponseWriter, r *http.Request) {
 			name, homeURL, avatar = meta.Title, meta.HomeURL, meta.IconURL
 		}
 	}
-	web.RenderFragment(w, "author_create_fields", authorPreviewForm{
+	web.Render(w, r, authorCreateFields(authorPreviewForm{
 		Name: name, URL: homeURL, AvatarURL: avatar,
-	})
+	}))
 }
 
 func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	rows, _ := s.store.Collections.List(u.ID)
-	web.Render(w, "collections", web.Page{Title: "collections", User: u, Data: rows})
+	web.Render(w, r, basePage("collections", u, collectionsPage(u, rows)))
 }
 
 func (s *Server) collectionCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
-		writeFormError(w, "add-collection-error", "name is required")
+		writeFormError(w, r, "add-collection-error", "name is required")
 		return
 	}
 	c, err := s.store.Collections.Create(u.ID, name)
 	if err != nil {
 		log.Error("create collection", "err", err)
-		writeFormError(w, "add-collection-error", "could not create collection")
+		writeFormError(w, r, "add-collection-error", "could not create collection")
 		return
 	}
-	web.RenderFragment(w, "collection_row", c)
+	web.Render(w, r, CollectionRow(c))
 }
 
 func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -798,7 +780,7 @@ func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	web.Render(w, "collection", web.Page{Title: d.Collection.Name, User: u, Data: d})
+	web.Render(w, r, basePage(d.Collection.Name, u, collectionPage(u, d)))
 }
 
 func (s *Server) collectionDataFor(userID, id int64, view, tz string) (collectionData, error) {
@@ -833,17 +815,17 @@ func (s *Server) collectionScopedItems(userID, collectionID int64, view, tz stri
 
 func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	web.RenderFragment(w, "scoped_items", s.collectionScopedItems(u.ID, id, itemsView(r), u.Timezone))
+	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, itemsView(r), u.Timezone)))
 }
 
 func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -858,7 +840,7 @@ func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) collectionAddFeed(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -867,12 +849,12 @@ func (s *Server) collectionAddFeed(w http.ResponseWriter, r *http.Request) {
 	if feedID != 0 {
 		s.store.Collections.AddFeed(u.ID, id, feedID)
 	}
-	s.renderCollectionFeeds(w, u.ID, id, normalizeItemsView(r.FormValue("view")), u.Timezone)
+	s.renderCollectionFeeds(w, r, u.ID, id, normalizeItemsView(r.FormValue("view")), u.Timezone)
 }
 
 func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -883,17 +865,17 @@ func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.Collections.RemoveFeed(u.ID, id, feedID)
-	s.renderCollectionFeeds(w, u.ID, id, normalizeItemsView(r.FormValue("view")), u.Timezone)
+	s.renderCollectionFeeds(w, r, u.ID, id, normalizeItemsView(r.FormValue("view")), u.Timezone)
 }
 
-func (s *Server) renderCollectionFeeds(w http.ResponseWriter, userID, id int64, view, tz string) {
+func (s *Server) renderCollectionFeeds(w http.ResponseWriter, r *http.Request, userID, id int64, view, tz string) {
 	d, err := s.collectionDataFor(userID, id, view, tz)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	d.Scoped.SwapOOB = true
-	web.RenderFragment(w, "collection_updated", d)
+	web.Render(w, r, collectionUpdated(d))
 }
 
 // itemsView reads the ?view= query param and normalizes it to "unread" or "read".
@@ -911,18 +893,16 @@ func normalizeItemsView(v string) string {
 // writeFormError responds to an htmx add-form submit with an out-of-band swap
 // that renders msg into the modal's error div without disturbing the form. The
 // markup matches the form_error fragment (role="alert" banner).
-func writeFormError(w http.ResponseWriter, target, msg string) {
+func writeFormError(w http.ResponseWriter, r *http.Request, target, msg string) {
 	w.WriteHeader(http.StatusBadRequest)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	io.WriteString(w, `<div id="`+target+`" hx-swap-oob="innerHTML"><div class="error" role="alert">`+
-		template.HTMLEscapeString(msg)+`</div></div>`)
+	web.Render(w, r, FormErrorOOB(target, msg))
 }
 
 // renderError responds to an htmx request whose target is the preview
 // container itself with a 400 and a styled error fragment swapped in via the
 // normal target swap. The global htmx:beforeSwap listener allows 4xx content
 // to render.
-func renderError(w http.ResponseWriter, msg string) {
+func renderError(w http.ResponseWriter, r *http.Request, msg string) {
 	w.WriteHeader(http.StatusBadRequest)
-	web.RenderFragment(w, "form_error", map[string]string{"Message": msg})
+	web.Render(w, r, FormError(msg))
 }

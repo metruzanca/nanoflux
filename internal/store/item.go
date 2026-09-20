@@ -1,12 +1,13 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 )
 
 type Item struct {
@@ -44,18 +45,21 @@ type ItemFilter struct {
 	Limit         int
 }
 
-type ItemStore struct{ db *sql.DB }
+type ItemStore struct{ q *sqlcgen.Queries }
 
 // Upsert inserts an item, ignoring duplicates on (feed_id, guid). It reports
 // whether a new row was actually inserted.
 func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
-	res, err := s.db.Exec(
-		`INSERT INTO items(feed_id, guid, title, link, summary, image_url, published_at, fetched_at)
-		 VALUES(?, ?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(feed_id, guid) DO NOTHING`,
-		feedID, it.GUID, it.Title, it.Link, it.Summary, nullStr(it.ImageURL),
-		nullStr(it.PublishedAt), it.FetchedAt,
-	)
+	res, err := s.q.UpsertItem(context.Background(), sqlcgen.UpsertItemParams{
+		FeedID:      feedID,
+		Guid:        it.GUID,
+		Title:       it.Title,
+		Link:        it.Link,
+		Summary:     it.Summary,
+		ImageUrl:    ns(it.ImageURL),
+		PublishedAt: ns(it.PublishedAt),
+		FetchedAt:   it.FetchedAt,
+	})
 	if err != nil {
 		return false, fmt.Errorf("upsert item: %w", err)
 	}
@@ -64,105 +68,70 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 }
 
 func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
-	conds := []string{"f.user_id = ?"}
-	args := []any{userID}
-	if f.UnreadOnly {
-		conds = append(conds, "i.read = 0")
-	}
-	if f.ReadOnly {
-		conds = append(conds, "i.read = 1")
-	}
-	if f.FavoritesOnly {
-		conds = append(conds, "i.favorite = 1")
-	}
-	if f.FeedID != 0 {
-		conds = append(conds, "f.id = ?")
-		args = append(args, f.FeedID)
-	}
-	if f.AuthorID != 0 {
-		conds = append(conds, "f.author_id = ?")
-		args = append(args, f.AuthorID)
-	}
-	if f.CollectionID != 0 {
-		conds = append(conds,
-			"i.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?)")
-		args = append(args, f.CollectionID)
-	}
 	limit := f.Limit
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-
-	rows, err := s.db.Query(
-		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
-		        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
-		        f.title, f.feed_url, a.id, a.name
-		 FROM items i
-		 JOIN feeds f ON f.id = i.feed_id
-		 LEFT JOIN authors a ON a.id = f.author_id
-		 WHERE `+strings.Join(conds, " AND ")+`
-		 ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
-		 LIMIT ?`,
-		append(args, limit)...,
-	)
+	rows, err := s.q.ListItems(context.Background(), sqlcgen.ListItemsParams{
+		UserID:       userID,
+		FeedID:       f.FeedID,
+		AuthorID:     f.AuthorID,
+		CollectionID: f.CollectionID,
+		Unread:       boolInt(f.UnreadOnly),
+		Read:         boolInt(f.ReadOnly),
+		Favorites:    boolInt(f.FavoritesOnly),
+		Limit:        int64(limit),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var out []ItemWithFeed
-	for rows.Next() {
-		it, err := scanItemWithFeed(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, it)
+	out := make([]ItemWithFeed, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
+			r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+			r.FeedTitle, r.FeedUrl, r.AuthorID, r.AuthorName))
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *ItemStore) ByID(userID, id int64) (Item, error) {
-	it, err := scanItem(s.db.QueryRow(
-		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
-		        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at
-		 FROM items i JOIN feeds f ON f.id = i.feed_id
-		 WHERE i.id = ? AND f.user_id = ?`, id, userID,
-	))
+	it, err := s.q.GetItem(context.Background(), sqlcgen.GetItemParams{ID: id, UserID: userID})
 	if errors.Is(err, sql.ErrNoRows) {
 		return Item{}, ErrNotFound
 	}
-	return it, err
+	if err != nil {
+		return Item{}, err
+	}
+	return toItem(it), nil
 }
 
 // OneWithFeed returns a single item joined with its feed and author.
 func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
-	it, err := scanItemWithFeed(s.db.QueryRow(
-		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
-		        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
-		        f.title, f.feed_url, a.id, a.name
-		 FROM items i
-		 JOIN feeds f ON f.id = i.feed_id
-		 LEFT JOIN authors a ON a.id = f.author_id
-		 WHERE i.id = ? AND f.user_id = ?`, itemID, userID,
-	))
+	it, err := s.q.GetItemWithFeed(context.Background(), sqlcgen.GetItemWithFeedParams{ID: itemID, UserID: userID})
 	if errors.Is(err, sql.ErrNoRows) {
 		return ItemWithFeed{}, ErrNotFound
 	}
-	return it, err
+	if err != nil {
+		return ItemWithFeed{}, err
+	}
+	return toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary,
+		it.ImageUrl, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
+		it.FeedTitle, it.FeedUrl, it.AuthorID, it.AuthorName), nil
 }
 
 // SetRead marks an item read/unread, verifying it belongs to the user. When an
 // item is marked read its read_at timestamp is recorded; unread clears it.
 func (s *ItemStore) SetRead(userID, itemID int64, read bool) error {
-	var readAt any
+	var readAt sql.NullString
 	if read {
-		readAt = db.Now()
+		readAt = ns(db.Now())
 	}
-	res, err := s.db.Exec(
-		`UPDATE items SET read = ?, read_at = ?
-		 WHERE id = ? AND feed_id IN (SELECT id FROM feeds WHERE user_id = ?)`,
-		boolInt(read), readAt, itemID, userID,
-	)
+	res, err := s.q.SetItemRead(context.Background(), sqlcgen.SetItemReadParams{
+		Read:   read,
+		ReadAt: readAt,
+		ID:     itemID,
+		UserID: userID,
+	})
 	if err != nil {
 		return err
 	}
@@ -174,11 +143,11 @@ func (s *ItemStore) SetRead(userID, itemID int64, read bool) error {
 
 // SetFavorite marks an item as a favorite or not, verifying it belongs to the user.
 func (s *ItemStore) SetFavorite(userID, itemID int64, fav bool) error {
-	res, err := s.db.Exec(
-		`UPDATE items SET favorite = ?
-		 WHERE id = ? AND feed_id IN (SELECT id FROM feeds WHERE user_id = ?)`,
-		boolInt(fav), itemID, userID,
-	)
+	res, err := s.q.SetItemFavorite(context.Background(), sqlcgen.SetItemFavoriteParams{
+		Favorite: fav,
+		ID:       itemID,
+		UserID:   userID,
+	})
 	if err != nil {
 		return err
 	}
@@ -190,134 +159,80 @@ func (s *ItemStore) SetFavorite(userID, itemID int64, fav bool) error {
 
 // MarkAllRead marks every item read for a user; pass feedID 0 for all feeds.
 func (s *ItemStore) MarkAllRead(userID, feedID int64) error {
-	_, err := s.db.Exec(
-		`UPDATE items SET read = 1, read_at = ?
-		 WHERE feed_id IN (SELECT id FROM feeds WHERE user_id = ?)
-		   AND (? = 0 OR feed_id = ?)`,
-		db.Now(), userID, feedID, feedID,
-	)
-	return err
+	return s.q.MarkAllItemsRead(context.Background(), sqlcgen.MarkAllItemsReadParams{
+		ReadAt: ns(db.Now()),
+		UserID: userID,
+		FeedID: feedID,
+	})
 }
 
 // MarkAllUnread marks every item unread for a user; pass feedID 0 for all feeds.
 func (s *ItemStore) MarkAllUnread(userID, feedID int64) error {
-	_, err := s.db.Exec(
-		`UPDATE items SET read = 0, read_at = NULL
-		 WHERE feed_id IN (SELECT id FROM feeds WHERE user_id = ?)
-		   AND (? = 0 OR feed_id = ?)`,
-		userID, feedID, feedID,
-	)
-	return err
+	return s.q.MarkAllItemsUnread(context.Background(), sqlcgen.MarkAllItemsUnreadParams{
+		UserID: userID,
+		FeedID: feedID,
+	})
 }
 
 // CountUnread counts unread items for a user; feedID 0 means all feeds.
 func (s *ItemStore) CountUnread(userID, feedID int64) (int, error) {
-	var n int
-	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-		 WHERE f.user_id = ? AND i.read = 0 AND (? = 0 OR f.id = ?)`,
-		userID, feedID, feedID,
-	).Scan(&n)
-	return n, err
+	n, err := s.q.CountUnreadItems(context.Background(), sqlcgen.CountUnreadItemsParams{
+		UserID: userID,
+		FeedID: feedID,
+	})
+	return int(n), err
 }
 
 // CountRead counts read items for a user; feedID 0 means all feeds.
 func (s *ItemStore) CountRead(userID, feedID int64) (int, error) {
-	var n int
-	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-		 WHERE f.user_id = ? AND i.read = 1 AND (? = 0 OR f.id = ?)`,
-		userID, feedID, feedID,
-	).Scan(&n)
-	return n, err
+	n, err := s.q.CountReadItems(context.Background(), sqlcgen.CountReadItemsParams{
+		UserID: userID,
+		FeedID: feedID,
+	})
+	return int(n), err
 }
 
 // CountFavorites counts favorited items for a user; feedID 0 means all feeds.
 func (s *ItemStore) CountFavorites(userID, feedID int64) (int, error) {
-	var n int
-	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-		 WHERE f.user_id = ? AND i.favorite = 1 AND (? = 0 OR f.id = ?)`,
-		userID, feedID, feedID,
-	).Scan(&n)
-	return n, err
+	n, err := s.q.CountFavoriteItems(context.Background(), sqlcgen.CountFavoriteItemsParams{
+		UserID: userID,
+		FeedID: feedID,
+	})
+	return int(n), err
 }
 
 // CountUnreadAuthor counts unread items across an author's feeds.
 func (s *ItemStore) CountUnreadAuthor(userID, authorID int64) (int, error) {
-	var n int
-	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-		 WHERE f.user_id = ? AND i.read = 0 AND f.author_id = ?`,
-		userID, authorID,
-	).Scan(&n)
-	return n, err
+	n, err := s.q.CountUnreadItemsByAuthor(context.Background(), sqlcgen.CountUnreadItemsByAuthorParams{
+		UserID:   userID,
+		AuthorID: ni(authorID),
+	})
+	return int(n), err
 }
 
 // CountReadAuthor counts read items across an author's feeds.
 func (s *ItemStore) CountReadAuthor(userID, authorID int64) (int, error) {
-	var n int
-	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-		 WHERE f.user_id = ? AND i.read = 1 AND f.author_id = ?`,
-		userID, authorID,
-	).Scan(&n)
-	return n, err
+	n, err := s.q.CountReadItemsByAuthor(context.Background(), sqlcgen.CountReadItemsByAuthorParams{
+		UserID:   userID,
+		AuthorID: ni(authorID),
+	})
+	return int(n), err
 }
 
 // CountUnreadCollection counts unread items across a collection's feeds.
 func (s *ItemStore) CountUnreadCollection(userID, collectionID int64) (int, error) {
-	var n int
-	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-		 WHERE f.user_id = ? AND i.read = 0
-		   AND i.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?)`,
-		userID, collectionID,
-	).Scan(&n)
-	return n, err
+	n, err := s.q.CountUnreadItemsByCollection(context.Background(), sqlcgen.CountUnreadItemsByCollectionParams{
+		UserID:       userID,
+		CollectionID: collectionID,
+	})
+	return int(n), err
 }
 
 // CountReadCollection counts read items across a collection's feeds.
 func (s *ItemStore) CountReadCollection(userID, collectionID int64) (int, error) {
-	var n int
-	err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-		 WHERE f.user_id = ? AND i.read = 1
-		   AND i.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?)`,
-		userID, collectionID,
-	).Scan(&n)
-	return n, err
-}
-
-func scanItem(row scanner) (Item, error) {
-	var it Item
-	var imageURL, publishedAt, readAt sql.NullString
-	var read, favorite int
-	err := row.Scan(
-		&it.ID, &it.FeedID, &it.GUID, &it.Title, &it.Link, &it.Summary,
-		&imageURL, &publishedAt, &it.FetchedAt, &read, &favorite, &readAt,
-	)
-	it.ImageURL, it.PublishedAt = imageURL.String, publishedAt.String
-	it.Read = read != 0
-	it.ReadAt = readAt.String
-	it.Favorite = favorite != 0
-	return it, err
-}
-
-func scanItemWithFeed(row scanner) (ItemWithFeed, error) {
-	var it ItemWithFeed
-	var imageURL, publishedAt, authorName, readAt sql.NullString
-	var authorID sql.NullInt64
-	var read, favorite int
-	err := row.Scan(
-		&it.ID, &it.FeedID, &it.GUID, &it.Title, &it.Link, &it.Summary,
-		&imageURL, &publishedAt, &it.FetchedAt, &read, &favorite, &readAt,
-		&it.FeedTitle, &it.FeedURL, &authorID, &authorName,
-	)
-	it.ImageURL, it.PublishedAt = imageURL.String, publishedAt.String
-	it.AuthorID, it.AuthorName = authorID.Int64, authorName.String
-	it.Read = read != 0
-	it.ReadAt = readAt.String
-	it.Favorite = favorite != 0
-	return it, err
+	n, err := s.q.CountReadItemsByCollection(context.Background(), sqlcgen.CountReadItemsByCollectionParams{
+		UserID:       userID,
+		CollectionID: collectionID,
+	})
+	return int(n), err
 }

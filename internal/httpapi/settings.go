@@ -45,17 +45,13 @@ type settingsIconRow struct {
 	Timezone string
 }
 
-func parseID(r *http.Request) (int64, error) {
-	return strconv.ParseInt(r.PathValue("id"), 10, 64)
-}
-
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	web.Render(w, "settings", web.Page{Title: "settings", User: u, Data: settingsData{
+	web.Render(w, r, basePage("settings", u, settingsPage(u, settingsData{
 		settingsAvatarData: settingsAvatarData{HasAvatar: u.HasAvatar},
 		Timezone:           settingsTimezoneData{Timezone: u.Timezone},
 		Icons:              s.settingsIconRows(u.ID, u.Timezone),
-	}})
+	})))
 }
 
 // settingsTimezone stores the user's IANA timezone for relative timestamps.
@@ -66,7 +62,7 @@ func (s *Server) settingsTimezone(w http.ResponseWriter, r *http.Request) {
 		if errMsg != "" {
 			w.WriteHeader(http.StatusBadRequest)
 		}
-		web.RenderFragment(w, "settings_timezone", settingsTimezoneData{Timezone: tz, Error: errMsg})
+		web.Render(w, r, settingsTimezone(settingsTimezoneData{Timezone: tz, Error: errMsg}))
 	}
 	if tz != "" {
 		if _, err := time.LoadLocation(tz); err != nil {
@@ -89,7 +85,7 @@ func (s *Server) settingsAvatar(w http.ResponseWriter, r *http.Request) {
 		if errMsg != "" {
 			w.WriteHeader(http.StatusBadRequest)
 		}
-		web.RenderFragment(w, "settings_avatar", settingsAvatarData{HasAvatar: hasAvatar, Error: errMsg})
+		web.Render(w, r, settingsAvatar(settingsAvatarData{HasAvatar: hasAvatar, Error: errMsg}))
 	}
 
 	file, _, err := r.FormFile("avatar")
@@ -153,26 +149,26 @@ func (s *Server) settingsIconAdd(w http.ResponseWriter, r *http.Request) {
 	iconURL := strings.TrimSpace(r.FormValue("icon_url"))
 
 	if domain == "" {
-		writeFormError(w, "settings-icons-error", "enter a valid domain")
+		writeFormError(w, r, "settings-icons-error", "enter a valid domain")
 		return
 	}
 	if iconURL == "" {
-		writeFormError(w, "settings-icons-error", "enter an icon url")
+		writeFormError(w, r, "settings-icons-error", "enter an icon url")
 		return
 	}
 	if parsed, err := url.Parse(iconURL); err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		writeFormError(w, "settings-icons-error", "enter a valid image url")
+		writeFormError(w, r, "settings-icons-error", "enter a valid image url")
 		return
 	}
 
 	ic, err := s.store.SourceIcons.Create(u.ID, domain, iconURL)
 	if errors.Is(err, store.ErrExists) {
-		writeFormError(w, "settings-icons-error", "an icon for that domain already exists")
+		writeFormError(w, r, "settings-icons-error", "an icon for that domain already exists")
 		return
 	}
 	if err != nil {
 		log.Error("create source icon", "err", err)
-		writeFormError(w, "settings-icons-error", "could not add icon")
+		writeFormError(w, r, "settings-icons-error", "could not add icon")
 		return
 	}
 	// Cache it now; failure is non-fatal (row renders with a "not cached"
@@ -181,7 +177,7 @@ func (s *Server) settingsIconAdd(w http.ResponseWriter, r *http.Request) {
 		log.Error("cache source icon", "domain", domain, "err", err)
 	}
 	ic, _ = s.store.SourceIcons.ByID(u.ID, ic.ID)
-	web.RenderFragment(w, "settings_icon_row", settingsIconRow{SourceIcon: ic, Timezone: u.Timezone})
+	web.Render(w, r, SettingsIconRow(settingsIconRow{SourceIcon: ic, Timezone: u.Timezone}))
 }
 
 // settingsIconRefresh re-fetches and re-caches an icon.
@@ -200,11 +196,11 @@ func (s *Server) settingsIconRefresh(w http.ResponseWriter, r *http.Request) {
 	if err := s.fetchAndCacheIcon(r.Context(), ic); err != nil {
 		log.Error("refresh source icon", "domain", ic.Domain, "err", err)
 		w.WriteHeader(http.StatusBadRequest)
-		web.RenderFragment(w, "settings_icon_row", settingsIconRow{SourceIcon: ic, Flash: "could not refresh icon", Timezone: u.Timezone})
+		web.Render(w, r, SettingsIconRow(settingsIconRow{SourceIcon: ic, Flash: "could not refresh icon", Timezone: u.Timezone}))
 		return
 	}
 	ic, _ = s.store.SourceIcons.ByID(u.ID, id)
-	web.RenderFragment(w, "settings_icon_row", settingsIconRow{SourceIcon: ic, Timezone: u.Timezone})
+	web.Render(w, r, SettingsIconRow(settingsIconRow{SourceIcon: ic, Timezone: u.Timezone}))
 }
 
 // settingsIconDelete removes a domain->icon mapping and its stored object.
@@ -230,7 +226,7 @@ func (s *Server) settingsIconDelete(w http.ResponseWriter, r *http.Request) {
 			log.Error("delete source icon object", "key", ic.IconKey, "err", err)
 		}
 	}
-	s.renderSettingsIconList(w, u.ID, u.Timezone)
+	s.renderSettingsIconList(w, r, u.ID, u.Timezone)
 }
 
 func (s *Server) settingsIconRows(userID int64, tz string) []settingsIconRow {
@@ -242,8 +238,8 @@ func (s *Server) settingsIconRows(userID int64, tz string) []settingsIconRow {
 	return rows
 }
 
-func (s *Server) renderSettingsIconList(w http.ResponseWriter, userID int64, tz string) {
-	web.RenderFragment(w, "settings_icons_list", s.settingsIconRows(userID, tz))
+func (s *Server) renderSettingsIconList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
+	web.Render(w, r, SettingsIconsList(s.settingsIconRows(userID, tz)))
 }
 
 // serveSourceIcon resolves a feed's icon for the current user: their cached

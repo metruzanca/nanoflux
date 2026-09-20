@@ -1,0 +1,31 @@
+services:
+  nanoflux:
+    # Build from source. A published image can be used instead once one
+    # exists: replace the build block with `image: ghcr.io/metruzanca/nanoflux:latest`.
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    environment:
+      RSS_ADDR: ":8080"
+      RSS_DB: "/data/rss.db"
+      RSS_FILE_STORE: "/filestore"
+      # Set these in a .env file to create the first account at startup;
+      # otherwise the default admin/admin account is created.
+      RSS_BOOTSTRAP_USER: "${RSS_BOOTSTRAP_USER:-}"
+      RSS_BOOTSTRAP_PASS: "${RSS_BOOTSTRAP_PASS:-}"
+    volumes:
+      - nanoflux-db:/data
+      - nanoflux-files:/filestore
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  nanoflux-db:
+  nanoflux-files:

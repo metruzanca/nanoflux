@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"github.com/charmbracelet/log"
 	"net/http"
 	"strconv"
@@ -43,7 +42,7 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	pageURL := normalizeURL(r.FormValue("url"))
 	if pageURL == "" {
-		renderError(w, "enter a url")
+		renderError(w, r, "enter a url")
 		return
 	}
 	authors, _ := s.store.Authors.List(u.ID)
@@ -55,51 +54,51 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 		if home == "" {
 			home = pageURL
 		}
-		web.RenderFragment(w, "feed_preview", feedPreviewForm{
+		web.Render(w, r, feedPreviewFields(feedPreviewForm{
 			Title: res.Feed.Title, FeedURL: pageURL, HomeURL: home, Authors: authors,
 			SelectedAuthorID: selectedAuthor,
-		})
+		}))
 		return
 	}
 
 	candidates, err := s.discoverer.Discover(r.Context(), pageURL)
 	if err != nil {
 		log.Error("feed preview discover", "err", err)
-		renderError(w, "could not inspect that url")
+		renderError(w, r, "could not inspect that url")
 		return
 	}
 	if len(candidates) == 0 {
-		renderError(w, "no feed found at that url")
+		renderError(w, r, "no feed found at that url")
 		return
 	}
 
 	if chosen := strings.TrimSpace(r.FormValue("feed_url")); chosen != "" {
 		for _, c := range candidates {
 			if c.FeedURL == chosen {
-				s.renderFeedPreviewForm(r.Context(), w, c, pageURL, authors, selectedAuthor)
+				s.renderFeedPreviewForm(r, w, c, pageURL, authors, selectedAuthor)
 				return
 			}
 		}
 	}
 
 	if len(candidates) == 1 {
-		s.renderFeedPreviewForm(r.Context(), w, candidates[0], pageURL, authors, selectedAuthor)
+		s.renderFeedPreviewForm(r, w, candidates[0], pageURL, authors, selectedAuthor)
 		return
 	}
 
-	web.RenderFragment(w, "feed_choose", feedChoose{URL: pageURL, Candidates: candidates})
+	web.Render(w, r, feedChooser(feedChoose{URL: pageURL, Candidates: candidates}))
 }
 
-func (s *Server) renderFeedPreviewForm(ctx context.Context, w http.ResponseWriter, c discover.Candidate, pageURL string, authors []store.Author, selectedAuthor int64) {
+func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c discover.Candidate, pageURL string, authors []store.Author, selectedAuthor int64) {
 	if c.Title == "" {
-		if meta, err := s.discoverer.PageMeta(ctx, pageURL); err == nil {
+		if meta, err := s.discoverer.PageMeta(r.Context(), pageURL); err == nil {
 			c.Title = meta.Title
 		}
 	}
-	web.RenderFragment(w, "feed_preview", feedPreviewForm{
+	web.Render(w, r, feedPreviewFields(feedPreviewForm{
 		Title: c.Title, FeedURL: c.FeedURL, HomeURL: pageURL, Authors: authors,
 		SelectedAuthorID: selectedAuthor,
-	})
+	}))
 }
 
 // authorPreview inspects a URL and pre-fills name (from <title>) and avatar
@@ -107,20 +106,20 @@ func (s *Server) renderFeedPreviewForm(ctx context.Context, w http.ResponseWrite
 func (s *Server) authorPreview(w http.ResponseWriter, r *http.Request) {
 	pageURL := normalizeURL(r.FormValue("url"))
 	if pageURL == "" {
-		renderError(w, "enter a url")
+		renderError(w, r, "enter a url")
 		return
 	}
 	meta, err := s.discoverer.PageMeta(r.Context(), pageURL)
 	if err != nil {
 		log.Error("author preview", "err", err)
-		renderError(w, "could not inspect that url")
+		renderError(w, r, "could not inspect that url")
 		return
 	}
 	name := meta.Title
 	if name == "" {
 		name = pageURL
 	}
-	web.RenderFragment(w, "author_preview", authorPreviewForm{
+	web.Render(w, r, authorPreviewFields(authorPreviewForm{
 		Name: name, URL: pageURL, AvatarURL: meta.IconURL,
-	})
+	}))
 }
