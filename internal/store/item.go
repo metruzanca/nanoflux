@@ -90,7 +90,7 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 		        f.title, f.feed_url, a.id, a.name
 		 FROM items i
 		 JOIN feeds f ON f.id = i.feed_id
-		 JOIN authors a ON a.id = f.author_id
+		 LEFT JOIN authors a ON a.id = f.author_id
 		 WHERE `+strings.Join(conds, " AND ")+`
 		 ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
 		 LIMIT ?`,
@@ -133,7 +133,7 @@ func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 		        f.title, f.feed_url, a.id, a.name
 		 FROM items i
 		 JOIN feeds f ON f.id = i.feed_id
-		 JOIN authors a ON a.id = f.author_id
+		 LEFT JOIN authors a ON a.id = f.author_id
 		 WHERE i.id = ? AND f.user_id = ?`, itemID, userID,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -217,14 +217,16 @@ func scanItem(row scanner) (Item, error) {
 
 func scanItemWithFeed(row scanner) (ItemWithFeed, error) {
 	var it ItemWithFeed
-	var imageURL, publishedAt sql.NullString
+	var imageURL, publishedAt, authorName sql.NullString
+	var authorID sql.NullInt64
 	var read int
 	err := row.Scan(
 		&it.ID, &it.FeedID, &it.GUID, &it.Title, &it.Link, &it.Summary,
 		&imageURL, &publishedAt, &it.FetchedAt, &read,
-		&it.FeedTitle, &it.FeedURL, &it.AuthorID, &it.AuthorName,
+		&it.FeedTitle, &it.FeedURL, &authorID, &authorName,
 	)
 	it.ImageURL, it.PublishedAt = imageURL.String, publishedAt.String
+	it.AuthorID, it.AuthorName = authorID.Int64, authorName.String
 	it.Read = read != 0
 	return it, err
 }
