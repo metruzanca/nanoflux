@@ -90,6 +90,17 @@ ul.items li:last-child { border-bottom: none; }
 .item-title.unread::before { content: "•"; color: var(--accent); margin-right: 0.4rem; }
 .item-meta { color: var(--muted); font-size: 0.8rem; margin-top: 0.15rem; }
 
+.item-summary {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 0.25rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
 .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
 .chip {
   padding: 0.35rem 0.7rem;
