@@ -52,7 +52,8 @@ main { max-width: 46rem; margin: 1.5rem auto; padding: 0 1.25rem; }
 .login form, form.stack { display: flex; flex-direction: column; gap: 0.75rem; }
 label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; color: var(--muted); }
 
-input[type="text"], input[type="password"], input[type="url"], input[type="number"], select, textarea {
+input[type="text"], input[type="password"], input[type="url"], input[type="number"],
+input[type="email"], input:not([type]), select, textarea {
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -110,3 +111,14 @@ dialog.modal {
 }
 dialog.modal::backdrop { background: rgba(0, 0, 0, 0.55); }
 dialog.modal h2 { margin: 0; }
+
+.avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+
+.choose select { width: 100%; }
+.new-author { border-top: 1px solid var(--border); padding-top: 0.75rem; }

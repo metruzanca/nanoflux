@@ -7,6 +7,7 @@ package discover
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -130,28 +131,121 @@ func dedup(cs []Candidate) []Candidate {
 	return out
 }
 
-// htmlLinks fetches pageURL and returns its <title> and any feed <link> hrefs,
-// resolved against the page URL.
-func (d *Discoverer) htmlLinks(ctx context.Context, pageURL string) (string, []string) {
+// PageMeta is the basic metadata discoverable from a page's HTML.
+type PageMeta struct {
+	Title   string
+	IconURL string
+	HomeURL string
+}
+
+// PageMeta fetches pageURL and extracts its <title> and site icon (favicon).
+// Falls back to /favicon.ico on the host when no icon link is present.
+func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, error) {
+	body, base, err := d.openPage(ctx, pageURL)
+	if err != nil {
+		return PageMeta{}, err
+	}
+	defer body.Close()
+
+	meta := PageMeta{HomeURL: pageURL}
+	z := html.NewTokenizer(io.LimitReader(body, maxBody))
+	inTitle := false
+	for {
+		tt := z.Next()
+		switch tt {
+		case html.ErrorToken:
+			if meta.IconURL == "" {
+				meta.IconURL = fallbackIcon(pageURL)
+			}
+			return meta, nil
+		case html.TextToken:
+			if inTitle && meta.Title == "" {
+				meta.Title = strings.TrimSpace(z.Token().Data)
+			}
+		case html.StartTagToken, html.SelfClosingTagToken:
+			t := z.Token()
+			switch t.Data {
+			case "title":
+				inTitle = true
+			case "link":
+				var rel, href string
+				for _, a := range t.Attr {
+					switch a.Key {
+					case "rel":
+						rel = strings.ToLower(a.Val)
+					case "href":
+						href = a.Val
+					}
+				}
+				if meta.IconURL == "" && href != "" && strings.Contains(rel, "icon") {
+					meta.IconURL = resolveURL(base, href)
+				}
+			}
+		case html.EndTagToken:
+			if z.Token().Data == "title" {
+				inTitle = false
+			}
+		}
+	}
+}
+
+// openPage fetches pageURL and returns its body, the resolved base URL, and an
+// error for non-HTML or error responses.
+func (d *Discoverer) openPage(ctx context.Context, pageURL string) (io.ReadCloser, *url.URL, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
-		return "", nil
+		return nil, nil, err
 	}
 	req.Header.Set("User-Agent", "rss/0.1")
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return "", nil
+		return nil, nil, err
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return "", nil
+		resp.Body.Close()
+		return nil, nil, fmt.Errorf("status %d", resp.StatusCode)
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" && !strings.Contains(ct, "html") && !strings.Contains(ct, "xml") {
+		resp.Body.Close()
+		return nil, nil, errors.New("not an html page")
+	}
+	base, _ := url.Parse(pageURL)
+	return resp.Body, base, nil
+}
+
+func resolveURL(base *url.URL, href string) string {
+	ref, err := url.Parse(href)
+	if err != nil {
+		return ""
+	}
+	u := base.ResolveReference(ref)
+	if !u.IsAbs() {
+		return ""
+	}
+	return u.String()
+}
+
+func fallbackIcon(pageURL string) string {
+	u, err := url.Parse(pageURL)
+	if err != nil {
+		return ""
+	}
+	u.Path = "/favicon.ico"
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
+// htmlLinks fetches pageURL and returns its <title> and any feed <link> hrefs,
+// resolved against the page URL.
+func (d *Discoverer) htmlLinks(ctx context.Context, pageURL string) (string, []string) {
+	body, base, err := d.openPage(ctx, pageURL)
+	if err != nil {
 		return "", nil
 	}
+	defer body.Close()
 
-	base, _ := url.Parse(pageURL)
-	z := html.NewTokenizer(io.LimitReader(resp.Body, maxBody))
+	z := html.NewTokenizer(io.LimitReader(body, maxBody))
 	var title string
 	inTitle := false
 	var links []string
@@ -181,16 +275,9 @@ func (d *Discoverer) htmlLinks(ctx context.Context, pageURL string) (string, []s
 						href = a.Val
 					}
 				}
-				if href == "" {
-					continue
-				}
-				if isFeedLink(rel, typ) {
-					ref, err := url.Parse(href)
-					if err != nil {
-						continue
-					}
-					if u := base.ResolveReference(ref); u.IsAbs() {
-						links = append(links, u.String())
+				if href != "" && isFeedLink(rel, typ) {
+					if u := resolveURL(base, href); u != "" {
+						links = append(links, u)
 					}
 				}
 			}

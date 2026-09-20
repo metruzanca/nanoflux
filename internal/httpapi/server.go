@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/metruzanca/rss/internal/auth"
 	"github.com/metruzanca/rss/internal/config"
@@ -19,6 +20,7 @@ type Server struct {
 	cfg        config.Config
 	poller     *poller.Poller
 	discoverer *discover.Discoverer
+	client     *http.Client
 }
 
 func New(st *store.Store, a *auth.Authenticator, cfg config.Config) *Server {
@@ -27,6 +29,7 @@ func New(st *store.Store, a *auth.Authenticator, cfg config.Config) *Server {
 		auth:       a,
 		cfg:        cfg,
 		discoverer: discover.New(nil),
+		client:     &http.Client{Timeout: 20 * time.Second},
 	}
 }
 
@@ -78,6 +81,8 @@ func (s *Server) Handler() http.Handler {
 
 	// htmx fragments.
 	mux.Handle("GET /fragments/author-form", s.auth.Require(http.HandlerFunc(s.authorFormFragment)))
+	mux.Handle("POST /fragments/feed-preview", s.auth.Require(http.HandlerFunc(s.feedPreview)))
+	mux.Handle("POST /fragments/author-preview", s.auth.Require(http.HandlerFunc(s.authorPreview)))
 
 	// JSON API (for the browser extension).
 	mux.HandleFunc("POST /api/login", s.apiLogin)

@@ -77,12 +77,18 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 		t.Fatal("feeds page missing feed/author")
 	}
 
-	// Missing author -> form error, not a redirect.
+	// Authorless feeds are allowed now.
 	rr = doForm(h, "POST", "/feeds", url.Values{
 		"title": {"NoAuthor"}, "feed_url": {"https://example.com/rss2.xml"},
 	}, cookie)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "select or create an author") {
-		t.Fatalf("feed without author: %d %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "feed-") {
+		t.Fatalf("authorless feed: %d %s", rr.Code, rr.Body.String())
+	}
+	authorless, _ := s.store.Feeds.List(u.ID)
+	for _, f := range authorless {
+		if f.Title == "NoAuthor" && f.AuthorID != 0 {
+			t.Fatalf("expected authorless feed, got author_id %d", f.AuthorID)
+		}
 	}
 
 	// Create a collection and attach the feed.

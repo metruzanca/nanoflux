@@ -31,7 +31,7 @@ func (s *FeedStore) Create(userID, authorID int64, title, feedURL, homeURL, desc
 	res, err := s.db.Exec(
 		`INSERT INTO feeds(user_id, author_id, title, feed_url, home_url, description, poll_interval_sec)
 		 VALUES(?, ?, ?, ?, ?, ?, ?)`,
-		userID, authorID, title, feedURL, nullStr(homeURL), nullStr(description), pollIntervalSec,
+		userID, nullInt64(authorID), title, feedURL, nullStr(homeURL), nullStr(description), pollIntervalSec,
 	)
 	if err != nil {
 		return Feed{}, fmt.Errorf("create feed: %w", err)
@@ -107,7 +107,7 @@ func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, hom
 	res, err := s.db.Exec(
 		`UPDATE feeds SET author_id = ?, title = ?, feed_url = ?, home_url = ?, description = ?,
 		 poll_interval_sec = ?, enabled = ? WHERE id = ? AND user_id = ?`,
-		authorID, title, feedURL, nullStr(homeURL), nullStr(description),
+		nullInt64(authorID), title, feedURL, nullStr(homeURL), nullStr(description),
 		pollIntervalSec, boolInt(enabled), id, userID,
 	)
 	if err != nil {
@@ -167,16 +167,25 @@ func (s *FeedStore) ListDue(now string) ([]Feed, error) {
 func scanFeed(row scanner) (Feed, error) {
 	var f Feed
 	var homeURL, description, etag, lastModified, lastPolledAt sql.NullString
+	var authorID sql.NullInt64
 	var enabled int
 	err := row.Scan(
-		&f.ID, &f.UserID, &f.AuthorID, &f.Title, &f.FeedURL,
+		&f.ID, &f.UserID, &authorID, &f.Title, &f.FeedURL,
 		&homeURL, &description, &etag, &lastModified, &lastPolledAt,
 		&f.PollIntervalSec, &enabled, &f.CreatedAt,
 	)
 	f.HomeURL, f.Description, f.ETag, f.LastModified, f.LastPolledAt =
 		homeURL.String, description.String, etag.String, lastModified.String, lastPolledAt.String
+	f.AuthorID = authorID.Int64 // 0 = no author
 	f.Enabled = enabled != 0
 	return f, err
+}
+
+func nullInt64(n int64) any {
+	if n == 0 {
+		return nil
+	}
+	return n
 }
 
 func boolInt(b bool) int {

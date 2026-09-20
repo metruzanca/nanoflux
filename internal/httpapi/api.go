@@ -175,7 +175,8 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the author: existing id, or create from the provided object.
+	// Resolve the author: existing id, create from the provided object, or
+	// leave authorless.
 	authorID := req.AuthorID
 	if authorID == 0 && req.Author != nil {
 		if req.Author.Name == "" {
@@ -189,13 +190,11 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		}
 		authorID = a.ID
 	}
-	if authorID == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "author_id or author required"})
-		return
-	}
-	if _, err := s.store.Authors.ByID(u.ID, authorID); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "author not found"})
-		return
+	if authorID != 0 {
+		if _, err := s.store.Authors.ByID(u.ID, authorID); err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "author not found"})
+			return
+		}
 	}
 
 	// Confirm the URL is a real feed before saving.

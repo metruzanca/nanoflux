@@ -105,28 +105,28 @@ func TestAuthorFeedFlow(t *testing.T) {
 		t.Fatalf("ListByAuthor: %v %d", err, len(byAuthor))
 	}
 
-	// An author with feeds cannot be deleted (FK RESTRICT).
-	if err := s.Authors.Delete(u.ID, a.ID); err == nil {
-		t.Fatal("expected author delete to fail while feeds exist")
-	}
-
-	if err := s.Feeds.Update(u.ID, f.ID, a.ID, "renamed", "https://metru.dev/rss.xml", "https://metru.dev", "desc", 600, false); err != nil {
-		t.Fatalf("update feed: %v", err)
-	}
-	got, err := s.Feeds.ByID(u.ID, f.ID)
-	if err != nil || got.Title != "renamed" || got.Enabled {
-		t.Fatalf("ByID after update: %v %+v", err, got)
-	}
-
-	if err := s.Feeds.SetPollMeta(f.ID, "etag-1", "", db.Now()); err != nil {
-		t.Fatalf("SetPollMeta: %v", err)
-	}
-
-	if err := s.Feeds.Delete(u.ID, f.ID); err != nil {
-		t.Fatalf("delete feed: %v", err)
-	}
+	// Deleting an author cascades to their feeds and items.
+	s.Items.Upsert(f.ID, Item{GUID: "g", Title: "t", Link: "https://metru.dev/1", FetchedAt: db.Now()})
 	if err := s.Authors.Delete(u.ID, a.ID); err != nil {
-		t.Fatalf("delete author after feeds removed: %v", err)
+		t.Fatalf("author delete should cascade: %v", err)
+	}
+	feeds, _ = s.Feeds.List(u.ID)
+	if len(feeds) != 0 {
+		t.Fatalf("author delete should cascade feeds, got %d", len(feeds))
+	}
+	n, _ := s.Items.CountUnread(u.ID, 0)
+	if n != 0 {
+		t.Fatalf("author delete should cascade items, got %d unread", n)
+	}
+
+	// Authorless feeds are allowed and re-scanned as 0.
+	f2, err := s.Feeds.Create(u.ID, 0, "authorless", "https://x.dev/rss.xml", "", "", 900)
+	if err != nil {
+		t.Fatalf("create authorless feed: %v", err)
+	}
+	got, err := s.Feeds.ByID(u.ID, f2.ID)
+	if err != nil || got.AuthorID != 0 {
+		t.Fatalf("authorless feed scan: %v %+v", err, got)
 	}
 }
 

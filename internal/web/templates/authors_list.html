@@ -15,7 +15,7 @@
     </div>
     <div class="row-actions">
       <a class="small" href="/authors/{{.ID}}/edit">edit</a>
-      <button class="link danger" title="delete" hx-post="/authors/{{.ID}}/delete" hx-target="#author-{{.ID}}" hx-swap="outerHTML" hx-confirm="delete this author?">✕</button>
+      <button class="link danger" title="delete" hx-post="/authors/{{.ID}}/delete" hx-target="#author-{{.ID}}" hx-swap="outerHTML" hx-confirm="{{if .FeedCount}}delete this author and their {{.FeedCount}} feeds?{{else}}delete this author?{{end}}">✕</button>
     </div>
   </div>
 </li>

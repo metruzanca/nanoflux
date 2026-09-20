@@ -80,8 +80,8 @@ func (s *AuthorStore) Update(userID, id int64, name, url, avatarURL, description
 	return nil
 }
 
-// Delete removes an author. It fails if the author still has feeds
-// (the FK on feeds.author_id is RESTRICT).
+// Delete removes an author and cascades to their feeds (and those feeds'
+// items and collection links).
 func (s *AuthorStore) Delete(userID, id int64) error {
 	res, err := s.db.Exec(`DELETE FROM authors WHERE id = ? AND user_id = ?`, id, userID)
 	if err != nil {

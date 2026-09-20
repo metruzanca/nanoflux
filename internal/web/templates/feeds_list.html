@@ -12,7 +12,7 @@
     <div>
       <a href="{{.FeedURL}}"><strong>{{.Title}}</strong></a>
       <div class="item-meta">
-        {{.AuthorName}} · {{.Unread}} unread · last polled {{if .LastPolledAt}}{{.LastPolledAt | timeFmt}}{{else}}never{{end}}
+        {{if .AuthorName}}{{.AuthorName}} · {{else}}<span class="muted">no author</span> · {{end}}{{.Unread}} unread · last polled {{if .LastPolledAt}}{{.LastPolledAt | timeFmt}}{{else}}never{{end}}
       </div>
     </div>
     <div class="row-actions">

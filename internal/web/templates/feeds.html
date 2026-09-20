@@ -14,20 +14,63 @@
 {{template "feeds_list" .Data.Rows}}
 
 <dialog id="add-feed-dialog" class="modal">
-  <form class="stack" hx-post="/feeds" hx-target="#feeds-list" hx-swap="beforeend"
-        hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
-    <div class="row">
-      <h2>add feed</h2>
-      <button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
-    </div>
-    {{template "feed_fields" .Data}}
-    <div id="add-feed-error" class="error"></div>
-    <button type="submit">add feed</button>
+  <div class="row">
+    <h2>add feed</h2>
+    <button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+  </div>
+  <form class="stack" hx-post="/fragments/feed-preview" hx-target="#feed-preview" hx-swap="innerHTML">
+    <label>url
+      <input id="feed-url-input" name="url" type="url" placeholder="https://site.com or /feed.xml" autofocus required>
+    </label>
+    <button type="submit">find feed</button>
   </form>
+  <div id="feed-preview"></div>
 </dialog>
+<script>
+document.getElementById('add-feed-dialog').addEventListener('close', function () {
+  var url = this.querySelector('input[name=url]');
+  if (url) url.value = '';
+  var p = document.getElementById('feed-preview');
+  if (p) p.innerHTML = '';
+});
+</script>
 </main>
 </body>
 </html>
+{{end}}
+
+{{define "feed_preview"}}
+<form class="stack" hx-post="/feeds" hx-target="#feeds-list" hx-swap="beforeend"
+      hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+  <label>title
+    <input name="title" type="text" value="{{.Title}}">
+  </label>
+  <label>feed url
+    <input name="feed_url" type="url" value="{{.FeedURL}}" required>
+  </label>
+  <label>home url
+    <input id="feed-home-url" name="home_url" type="url" value="{{.HomeURL}}">
+  </label>
+  <label>author
+    <select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change" hx-include="#feed-home-url">
+      <option value="">no author</option>
+      {{range .Authors}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+      <option value="new">+ create new author</option>
+    </select>
+  </label>
+  <div id="new-author"></div>
+  <div id="add-feed-error" class="error"></div>
+  <button type="submit">add feed</button>
+</form>
+{{end}}
+
+{{define "feed_choose"}}
+<div class="choose">
+  <p class="muted">found {{len .Candidates}} feeds on that page — pick one</p>
+  <select name="feed_url" hx-post="/fragments/feed-preview" hx-target="#feed-preview" hx-swap="innerHTML" hx-include="#feed-url-input">
+    {{range .Candidates}}<option value="{{.FeedURL}}">{{.Title}}</option>{{end}}
+  </select>
+</div>
 {{end}}
 
 {{define "feed_edit"}}
@@ -63,9 +106,9 @@
 </label>
 <label>author
   <select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change">
-    <option value="">select author</option>
+    <option value="">no author</option>
     {{range .Authors}}<option value="{{.ID}}"{{if eq $.Form.AuthorID .ID}} selected{{end}}>{{.Name}}</option>{{end}}
-    <option value="new">+ new author</option>
+    <option value="new">+ create new author</option>
   </select>
 </label>
 <div id="new-author"></div>

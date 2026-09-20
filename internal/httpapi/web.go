@@ -190,29 +190,28 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 	web.RenderFragment(w, "feed_row", feedRow{Feed: f, AuthorName: author.Name})
 }
 
-// resolveAuthor maps the feed form's author selection to an author id,
-// creating a new author when "new" was chosen. It returns a non-empty error
-// message when the selection is invalid.
+// resolveAuthor maps the feed form's author selection to an author id.
+// "" or "0" means no author; "new" creates one, using the provided url as its
+// home page. It returns a non-empty error message when the selection is invalid.
 func (s *Server) resolveAuthor(r *http.Request, userID int64) (int64, string) {
 	switch r.FormValue("author_id") {
 	case "new":
-		name := r.FormValue("author_name")
-		url := r.FormValue("author_url")
-		if strings.TrimSpace(name) == "" {
+		name := strings.TrimSpace(r.FormValue("author_name"))
+		if name == "" {
 			return 0, "new author needs a name"
 		}
-		a, err := s.store.Authors.Create(userID, name, url, "", "")
+		a, err := s.store.Authors.Create(
+			userID, name, r.FormValue("author_url"), r.FormValue("avatar_url"), "",
+		)
 		if err != nil {
 			log.Printf("create author: %v", err)
 			return 0, "could not create author"
 		}
 		return a.ID, ""
-	case "":
-		return 0, "select or create an author"
 	default:
 		id, err := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
 		if err != nil {
-			return 0, "select or create an author"
+			return 0, "" // empty or unparseable = no author
 		}
 		return id, ""
 	}
@@ -480,11 +479,6 @@ func (s *Server) authorDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	feeds, _ := s.store.Feeds.ListByAuthor(u.ID, id)
-	if len(feeds) > 0 {
-		http.Error(w, "delete this author's feeds first", http.StatusConflict)
-		return
-	}
 	if err := s.store.Authors.Delete(u.ID, id); err != nil {
 		log.Printf("delete author: %v", err)
 		http.Error(w, "delete failed", http.StatusInternalServerError)
@@ -498,7 +492,17 @@ func (s *Server) authorFormFragment(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	web.RenderFragment(w, "author_create_fields", nil)
+	// When adding a feed, the fragment is asked with the feed's home url so the
+	// new author's name/avatar can be derived from it.
+	var name, homeURL, avatar string
+	if home := strings.TrimSpace(r.FormValue("home_url")); home != "" {
+		if meta, err := s.discoverer.PageMeta(r.Context(), home); err == nil {
+			name, homeURL, avatar = meta.Title, meta.HomeURL, meta.IconURL
+		}
+	}
+	web.RenderFragment(w, "author_create_fields", authorPreviewForm{
+		Name: name, URL: homeURL, AvatarURL: avatar,
+	})
 }
 
 func (s *Server) collections(w http.ResponseWriter, r *http.Request) {

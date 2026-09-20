@@ -159,3 +159,41 @@ func TestYouTubeChannelID(t *testing.T) {
 		t.Fatalf("channel id = %q", id)
 	}
 }
+
+func TestPageMeta(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><head>
+		  <title>Metru's Corner</title>
+		  <link rel="icon" type="image/png" href="/static/favicon.png">
+		</head><body>hi</body></html>`))
+	}))
+	defer srv.Close()
+
+	meta, err := New(srv.Client()).PageMeta(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Title != "Metru's Corner" {
+		t.Fatalf("title = %q", meta.Title)
+	}
+	if meta.IconURL != srv.URL+"/static/favicon.png" {
+		t.Fatalf("icon = %q", meta.IconURL)
+	}
+}
+
+func TestPageMetaFallbackIcon(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><head><title>T</title></head></html>`))
+	}))
+	defer srv.Close()
+
+	meta, err := New(srv.Client()).PageMeta(context.Background(), srv.URL+"/some/path")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.IconURL != srv.URL+"/favicon.ico" {
+		t.Fatalf("fallback icon = %q", meta.IconURL)
+	}
+}

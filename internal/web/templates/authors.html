@@ -14,20 +14,47 @@
 {{template "authors_list" .Data.Rows}}
 
 <dialog id="add-author-dialog" class="modal">
-  <form class="stack" hx-post="/authors" hx-target="#authors-list" hx-swap="beforeend"
-        hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
-    <div class="row">
-      <h2>add author</h2>
-      <button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
-    </div>
-    {{template "author_fields" .Data}}
-    <div id="add-author-error" class="error"></div>
-    <button type="submit">add author</button>
+  <div class="row">
+    <h2>add author</h2>
+    <button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+  </div>
+  <form class="stack" hx-post="/fragments/author-preview" hx-target="#author-preview" hx-swap="innerHTML">
+    <label>url
+      <input name="url" type="url" placeholder="https://site.com" autofocus required>
+    </label>
+    <button type="submit">find author</button>
   </form>
+  <div id="author-preview"></div>
 </dialog>
+<script>
+document.getElementById('add-author-dialog').addEventListener('close', function () {
+  var url = this.querySelector('input[name=url]');
+  if (url) url.value = '';
+  var p = document.getElementById('author-preview');
+  if (p) p.innerHTML = '';
+});
+</script>
 </main>
 </body>
 </html>
+{{end}}
+
+{{define "author_preview"}}
+<form class="stack" hx-post="/authors" hx-target="#authors-list" hx-swap="beforeend"
+      hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+  {{if .AvatarURL}}<img class="avatar" src="{{.AvatarURL}}" alt=""> {{end}}
+  <label>name
+    <input name="name" type="text" value="{{.Name}}" required>
+  </label>
+  <label>url
+    <input name="url" type="url" value="{{.URL}}">
+  </label>
+  <label>avatar url
+    <input name="avatar_url" type="url" value="{{.AvatarURL}}">
+  </label>
+  <div id="add-author-error" class="error"></div>
+  <button type="submit">add author</button>
+</form>
 {{end}}
 
 {{define "author_edit"}}
