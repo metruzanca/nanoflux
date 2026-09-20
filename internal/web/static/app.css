@@ -120,7 +120,7 @@ dialog.modal h2 { margin: 0; }
   object-fit: cover;
 }
 
-dialog.modal.wide {
+dialog.modal.wide[open] {
   width: min(60rem, calc(100vw - 2rem));
   height: min(85vh, 65rem);
   display: flex;
