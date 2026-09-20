@@ -138,6 +138,7 @@ type itemViewData struct {
 	FeedURL     string
 	PublishedAt string
 	Body        template.HTML
+	EmbedURL    string
 }
 
 // itemView renders an item's stored content as a fragment, injected into the
@@ -161,6 +162,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		FeedURL:     it.FeedURL,
 		PublishedAt: it.PublishedAt,
 		Body:        template.HTML(it.Summary),
+		EmbedURL:    web.YoutubeEmbedURL(it.Link),
 	})
 }
 
