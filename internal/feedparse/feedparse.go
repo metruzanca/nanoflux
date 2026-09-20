@@ -62,6 +62,9 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 
 	resp, err := client.Do(req)
 	if err != nil {
+		if isYouTubeChannelFeed(feedURL) {
+			return fetchYouTubeChannelViaBrowse(ctx, feedURL, client)
+		}
 		return Result{}, fmt.Errorf("get %s: %w", feedURL, err)
 	}
 	defer resp.Body.Close()
@@ -70,11 +73,17 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 		return Result{}, ErrNotModified
 	}
 	if resp.StatusCode >= 400 {
+		if isYouTubeChannelFeed(feedURL) {
+			return fetchYouTubeChannelViaBrowse(ctx, feedURL, client)
+		}
 		return Result{}, fmt.Errorf("get %s: status %d", feedURL, resp.StatusCode)
 	}
 
 	parsed, err := gofeed.NewParser().Parse(resp.Body)
 	if err != nil {
+		if isYouTubeChannelFeed(feedURL) {
+			return fetchYouTubeChannelViaBrowse(ctx, feedURL, client)
+		}
 		return Result{}, fmt.Errorf("parse %s: %w", feedURL, err)
 	}
 	if parsed == nil {

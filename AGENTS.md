@@ -46,3 +46,21 @@ Every error path must assert both `rr.Code == http.StatusBadRequest` and that
 the message (or the `form_error`/`role="alert"` fragment) appears in the body.
 See `internal/httpapi/preview_test.go` and `internal/httpapi/web_test.go` for
 the pattern.
+
+## YouTube channel feeds
+
+YouTube's public `feeds/videos.xml?channel_id=` endpoint intermittently serves
+404 for active channels (a known upstream issue). `internal/feedparse/youtube.go`
+falls back to the site's internal `youtubei/v1/browse` API whenever a YouTube
+channel feed URL fails to fetch — the two live tests in the git history
+(`TestLiveYouTubeFetch`, `TestLiveYouTubeHandleDiscover`) prove the flow, but
+they are network-dependent and intentionally not committed.
+
+- Feed URLs stay `https://www.youtube.com/feeds/videos.xml?channel_id=<id>`; the
+  fallback is transparent inside `feedparse.Fetch`, so discovery, the poller,
+  and preview all work unchanged.
+- Synthesized item GUIDs use the `yt:video:` prefix so they dedup against the
+  native feed when the endpoint recovers. Do not change that.
+- Published times come from relative text ("1 month ago") parsed by
+  `parseRelativeTime`; they are approximate.
+- `youtubeBrowseBaseURL` is a package var so tests can point it at a mock.
