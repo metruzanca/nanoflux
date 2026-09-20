@@ -704,10 +704,20 @@ func (s *Server) renderCollectionFeeds(w http.ResponseWriter, userID, id int64) 
 }
 
 // writeFormError responds to an htmx add-form submit with an out-of-band swap
-// that renders msg into the modal's error div without disturbing the form.
+// that renders msg into the modal's error div without disturbing the form. The
+// markup matches the form_error fragment (role="alert" banner).
 func writeFormError(w http.ResponseWriter, target, msg string) {
 	w.WriteHeader(http.StatusBadRequest)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	io.WriteString(w, `<div id="`+target+`" hx-swap-oob="innerHTML">`+
-		template.HTMLEscapeString(msg)+`</div>`)
+	io.WriteString(w, `<div id="`+target+`" hx-swap-oob="innerHTML"><div class="error" role="alert">`+
+		template.HTMLEscapeString(msg)+`</div></div>`)
+}
+
+// renderError responds to an htmx request whose target is the preview
+// container itself with a 400 and a styled error fragment swapped in via the
+// normal target swap. The global htmx:beforeSwap listener allows 4xx content
+// to render.
+func renderError(w http.ResponseWriter, msg string) {
+	w.WriteHeader(http.StatusBadRequest)
+	web.RenderFragment(w, "form_error", map[string]string{"Message": msg})
 }

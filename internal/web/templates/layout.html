@@ -4,6 +4,11 @@
 <title>{{if .Title}}{{.Title}} — {{end}}nanoflux</title>
 <link rel="stylesheet" href="/static/app.css">
 <script src="/static/htmx.min.js" defer></script>
+<script>
+document.addEventListener('htmx:beforeSwap', function (e) {
+  if (e.detail.xhr.status >= 400) e.detail.shouldSwap = true;
+});
+</script>
 {{end}}
 
 {{define "topbar"}}
