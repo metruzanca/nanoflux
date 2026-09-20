@@ -26,6 +26,11 @@ type readData struct {
 	ReadCount int
 }
 
+type favoritesData struct {
+	Favorites []store.ItemWithFeed
+	FavCount  int
+}
+
 type feedRow struct {
 	store.Feed
 	AuthorName string
@@ -111,6 +116,15 @@ func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
 	count, _ := s.store.Items.CountRead(u.ID, 0)
 	web.Render(w, "read", web.Page{Title: "read", User: u, Data: readData{
 		Read: items, ReadCount: count,
+	}})
+}
+
+func (s *Server) favoritesPage(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{FavoritesOnly: true, Limit: 100})
+	count, _ := s.store.Items.CountFavorites(u.ID, 0)
+	web.Render(w, "favorites", web.Page{Title: "favorites", User: u, Data: favoritesData{
+		Favorites: items, FavCount: count,
 	}})
 }
 
@@ -203,6 +217,31 @@ func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.Items.SetRead(u.ID, id, !it.Read); err != nil {
 		log.Error("set read", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	row, err := s.store.Items.OneWithFeed(u.ID, id)
+	if err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	web.RenderFragment(w, "item_row", row)
+}
+
+func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	it, err := s.store.Items.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.Items.SetFavorite(u.ID, id, !it.Favorite); err != nil {
+		log.Error("set favorite", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

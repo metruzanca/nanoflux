@@ -18,6 +18,7 @@ type Item struct {
 	PublishedAt string
 	FetchedAt   string
 	Read        bool
+	Favorite    bool
 }
 
 // ItemWithFeed joins an item with its feed and author for display.
@@ -30,12 +31,13 @@ type ItemWithFeed struct {
 }
 
 type ItemFilter struct {
-	UnreadOnly   bool
-	ReadOnly     bool
-	FeedID       int64 // 0 = all
-	AuthorID     int64 // 0 = all
-	CollectionID int64 // 0 = all
-	Limit        int
+	UnreadOnly    bool
+	ReadOnly      bool
+	FavoritesOnly bool
+	FeedID        int64 // 0 = all
+	AuthorID      int64 // 0 = all
+	CollectionID  int64 // 0 = all
+	Limit         int
 }
 
 type ItemStore struct{ db *sql.DB }
@@ -66,6 +68,9 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 	if f.ReadOnly {
 		conds = append(conds, "i.read = 1")
 	}
+	if f.FavoritesOnly {
+		conds = append(conds, "i.favorite = 1")
+	}
 	if f.FeedID != 0 {
 		conds = append(conds, "f.id = ?")
 		args = append(args, f.FeedID)
@@ -86,7 +91,7 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 
 	rows, err := s.db.Query(
 		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
-		        i.published_at, i.fetched_at, i.read,
+		        i.published_at, i.fetched_at, i.read, i.favorite,
 		        f.title, f.feed_url, a.id, a.name
 		 FROM items i
 		 JOIN feeds f ON f.id = i.feed_id
@@ -115,7 +120,7 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 func (s *ItemStore) ByID(userID, id int64) (Item, error) {
 	it, err := scanItem(s.db.QueryRow(
 		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
-		        i.published_at, i.fetched_at, i.read
+		        i.published_at, i.fetched_at, i.read, i.favorite
 		 FROM items i JOIN feeds f ON f.id = i.feed_id
 		 WHERE i.id = ? AND f.user_id = ?`, id, userID,
 	))
@@ -129,7 +134,7 @@ func (s *ItemStore) ByID(userID, id int64) (Item, error) {
 func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 	it, err := scanItemWithFeed(s.db.QueryRow(
 		`SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
-		        i.published_at, i.fetched_at, i.read,
+		        i.published_at, i.fetched_at, i.read, i.favorite,
 		        f.title, f.feed_url, a.id, a.name
 		 FROM items i
 		 JOIN feeds f ON f.id = i.feed_id
@@ -148,6 +153,22 @@ func (s *ItemStore) SetRead(userID, itemID int64, read bool) error {
 		`UPDATE items SET read = ?
 		 WHERE id = ? AND feed_id IN (SELECT id FROM feeds WHERE user_id = ?)`,
 		boolInt(read), itemID, userID,
+	)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetFavorite marks an item as a favorite or not, verifying it belongs to the user.
+func (s *ItemStore) SetFavorite(userID, itemID int64, fav bool) error {
+	res, err := s.db.Exec(
+		`UPDATE items SET favorite = ?
+		 WHERE id = ? AND feed_id IN (SELECT id FROM feeds WHERE user_id = ?)`,
+		boolInt(fav), itemID, userID,
 	)
 	if err != nil {
 		return err
@@ -202,16 +223,28 @@ func (s *ItemStore) CountRead(userID, feedID int64) (int, error) {
 	return n, err
 }
 
+// CountFavorites counts favorited items for a user; feedID 0 means all feeds.
+func (s *ItemStore) CountFavorites(userID, feedID int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
+		 WHERE f.user_id = ? AND i.favorite = 1 AND (? = 0 OR f.id = ?)`,
+		userID, feedID, feedID,
+	).Scan(&n)
+	return n, err
+}
+
 func scanItem(row scanner) (Item, error) {
 	var it Item
 	var imageURL, publishedAt sql.NullString
-	var read int
+	var read, favorite int
 	err := row.Scan(
 		&it.ID, &it.FeedID, &it.GUID, &it.Title, &it.Link, &it.Summary,
-		&imageURL, &publishedAt, &it.FetchedAt, &read,
+		&imageURL, &publishedAt, &it.FetchedAt, &read, &favorite,
 	)
 	it.ImageURL, it.PublishedAt = imageURL.String, publishedAt.String
 	it.Read = read != 0
+	it.Favorite = favorite != 0
 	return it, err
 }
 
@@ -219,14 +252,15 @@ func scanItemWithFeed(row scanner) (ItemWithFeed, error) {
 	var it ItemWithFeed
 	var imageURL, publishedAt, authorName sql.NullString
 	var authorID sql.NullInt64
-	var read int
+	var read, favorite int
 	err := row.Scan(
 		&it.ID, &it.FeedID, &it.GUID, &it.Title, &it.Link, &it.Summary,
-		&imageURL, &publishedAt, &it.FetchedAt, &read,
+		&imageURL, &publishedAt, &it.FetchedAt, &read, &favorite,
 		&it.FeedTitle, &it.FeedURL, &authorID, &authorName,
 	)
 	it.ImageURL, it.PublishedAt = imageURL.String, publishedAt.String
 	it.AuthorID, it.AuthorName = authorID.Int64, authorName.String
 	it.Read = read != 0
+	it.Favorite = favorite != 0
 	return it, err
 }

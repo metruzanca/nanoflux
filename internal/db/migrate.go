@@ -16,7 +16,12 @@ var migrations = []migration{
 	{3, schemaV3},
 	{4, schemaV4},
 	{5, schemaV5},
+	{6, schemaV6},
 }
+
+const schemaV6 = `
+ALTER TABLE items ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;
+`
 
 const schemaV5 = `
 ALTER TABLE users ADD COLUMN avatar_key TEXT;

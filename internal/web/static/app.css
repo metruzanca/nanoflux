@@ -231,6 +231,15 @@ li.link-card .card-body { flex: 1; min-width: 0; }
 
 .row-actions { display: flex; gap: 0.5rem; align-items: center; }
 
+.star {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  color: var(--muted);
+}
+.star.on { color: #ffcf4d; }
+.fav-btn svg { display: block; }
+
 dialog.modal {
   width: min(28rem, calc(100vw - 2rem));
   border: 1px solid var(--border);

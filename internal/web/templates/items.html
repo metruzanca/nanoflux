@@ -36,10 +36,16 @@
       </div>
         {{if and .Summary (not $image) (not $link) (not $gallery)}}<div class="item-summary">{{.Summary | stripHTML}}</div>{{end}}
       </div>
-      <button class="link" title="{{if .Read}}mark unread{{else}}mark read{{end}}"
-        hx-post="/items/{{.ID}}/read" hx-target="#item-{{.ID}}" hx-swap="outerHTML">
-        {{if .Read}}↺{{else}}✓{{end}}
-      </button>
+      <div class="row-actions">
+        <button class="link fav-btn" title="{{if .Favorite}}unfavorite{{else}}favorite{{end}}"
+          hx-post="/items/{{.ID}}/favorite" hx-target="#item-{{.ID}}" hx-swap="outerHTML">
+          {{favIcon .Favorite}}
+        </button>
+        <button class="link read-btn" title="{{if .Read}}mark unread{{else}}mark read{{end}}"
+          hx-post="/items/{{.ID}}/read" hx-target="#item-{{.ID}}" hx-swap="outerHTML">
+          {{if .Read}}↺{{else}}✓{{end}}
+        </button>
+      </div>
     </div>
   </div>
 </li>
