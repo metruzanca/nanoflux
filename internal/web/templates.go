@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -30,6 +31,9 @@ var funcMap = template.FuncMap{
 	"stripHTML": stripHTML,
 	"timeFmt":   timeFmt,
 	"has":       has,
+	"isVideo": func(link string) bool {
+		return YoutubeEmbedURL(link) != ""
+	},
 }
 
 func has(id int64, ids []int64) bool {
@@ -39,6 +43,36 @@ func has(id int64, ids []int64) bool {
 		}
 	}
 	return false
+}
+
+// YoutubeEmbedURL returns the embeddable player URL for a YouTube video link
+// (watch, youtu.be, shorts, live, embed), or "" for anything else.
+func YoutubeEmbedURL(link string) string {
+	u, err := url.Parse(link)
+	if err != nil {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	if strings.HasSuffix(host, "youtu.be") {
+		if id := strings.Trim(u.Path, "/"); id != "" {
+			return "https://www.youtube.com/embed/" + id
+		}
+	}
+	if !strings.HasSuffix(host, "youtube.com") {
+		return ""
+	}
+	switch u.Path {
+	case "/watch":
+		if id := u.Query().Get("v"); id != "" {
+			return "https://www.youtube.com/embed/" + id
+		}
+	default:
+		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+		if len(parts) == 2 && (parts[0] == "shorts" || parts[0] == "live" || parts[0] == "embed") {
+			return "https://www.youtube.com/embed/" + parts[1]
+		}
+	}
+	return ""
 }
 
 var tmpl *template.Template

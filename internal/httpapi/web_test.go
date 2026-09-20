@@ -10,6 +10,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
@@ -179,6 +180,85 @@ func TestReadPage(t *testing.T) {
 	body = doGet(h, "/read", cookie).Body.String()
 	if strings.Contains(body, `data-item-link="https://b.dev/1"`) {
 		t.Fatalf("read page should be empty after mark-all-unread: %s", body)
+	}
+}
+
+func TestYouTubeEmbedURL(t *testing.T) {
+	cases := []struct {
+		link string
+		want string
+	}{
+		{"https://www.youtube.com/watch?v=H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://m.youtube.com/watch?v=H0KAi8AWsnM&t=10s", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://youtu.be/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://www.youtube.com/shorts/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://www.youtube.com/live/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://www.youtube.com/embed/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://example.com/post/1", ""},
+		{"https://youtube.com/watch", ""},
+		{"not a url", ""},
+	}
+	for _, c := range cases {
+		if got := web.YoutubeEmbedURL(c.link); got != c.want {
+			t.Errorf("YoutubeEmbedURL(%q) = %q, want %q", c.link, got, c.want)
+		}
+	}
+}
+
+func TestItemViewYouTubeEmbed(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	f, _ := s.store.Feeds.Create(u.ID, 0, "bigboxSWE", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "yt:video:H0KAi8AWsnM", Title: "Video",
+		Link: "https://www.youtube.com/watch?v=H0KAi8AWsnM", FetchedAt: db.Now(),
+	})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	rr := doGet(h, "/items/"+itoa(items[0].ID)+"/view", cookie)
+	body := rr.Body.String()
+	if !strings.Contains(body, `https://www.youtube.com/embed/H0KAi8AWsnM`) {
+		t.Fatalf("item view should embed the youtube player: %s", body)
+	}
+	if !strings.Contains(body, "video-embed") {
+		t.Fatalf("item view missing video-embed wrapper: %s", body)
+	}
+}
+
+func TestItemCardsRenderThumbnails(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	f, _ := s.store.Feeds.Create(u.ID, 0, "bigboxSWE", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "yt:video:H0KAi8AWsnM", Title: "Video",
+		Link:     "https://www.youtube.com/watch?v=H0KAi8AWsnM",
+		ImageURL: "https://i.ytimg.com/vi/H0KAi8AWsnM/hq720.jpg", FetchedAt: db.Now(),
+	})
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "p1", Title: "Post", Link: "https://example.com/1",
+		Summary: "<p>hello</p>", FetchedAt: db.Now(),
+	})
+
+	body := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `id="item-1" class="video-card"`) {
+		t.Fatalf("video item should render a video-card: %s", body)
+	}
+	if !strings.Contains(body, `src="https://i.ytimg.com/vi/H0KAi8AWsnM/hq720.jpg"`) {
+		t.Fatalf("video card missing thumbnail: %s", body)
+	}
+	if !strings.Contains(body, `id="item-2" class="text-card"`) {
+		t.Fatalf("text item should render a text-card: %s", body)
+	}
+	// The row keeps the modal data attrs and the read toggle.
+	if !strings.Contains(body, `data-item-link="https://www.youtube.com/watch?v=H0KAi8AWsnM"`) {
+		t.Fatalf("video card missing data-item-link: %s", body)
+	}
+	if !strings.Contains(body, `hx-post="/items/2/read"`) {
+		t.Fatalf("text card missing read toggle: %s", body)
 	}
 }
 

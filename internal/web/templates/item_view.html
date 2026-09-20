@@ -1,7 +1,14 @@
 {{define "item_view"}}
 <div class="item-view">
   <h1>{{.Title}}</h1>
-  <p class="item-meta">{{.AuthorName}} · <a href="{{.FeedURL}}">{{.FeedTitle}}</a>{{if .PublishedAt}} · {{.PublishedAt | timeFmt}}{{end}}</p>
-  <div class="item-body">{{.Body}}</div>
+  <p class="item-meta">{{if .AuthorName}}{{.AuthorName}} · {{end}}<a href="{{.FeedURL}}">{{.FeedTitle}}</a>{{if .PublishedAt}} · {{.PublishedAt | timeFmt}}{{end}}</p>
+  {{if .EmbedURL}}
+  <div class="video-embed">
+    <iframe src="{{.EmbedURL}}" title="{{.Title}}" frameborder="0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allowfullscreen loading="lazy"></iframe>
+  </div>
+  {{end}}
+  {{if .Body}}<div class="item-body">{{.Body}}</div>{{end}}
 </div>
 {{end}}
