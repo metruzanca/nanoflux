@@ -35,7 +35,7 @@
   {{range .Feeds}}
   <li>
     <div class="row">
-      <a href="{{.FeedURL}}">{{.Title}}</a>
+      <a href="/feeds/{{.ID}}">{{.Title}}</a>
       <button class="link danger" title="remove" hx-post="/collections/{{$.Collection.ID}}/remove-feed/{{.ID}}" hx-target="#collection-feeds" hx-swap="outerHTML">✕</button>
     </div>
   </li>

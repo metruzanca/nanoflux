@@ -13,7 +13,7 @@
       <a href="/authors/{{.ID}}">
         {{if .AvatarURL}}<img class="avatar avatar-sm" src="/img?u={{.AvatarURL | urlquery}}" onerror="this.style.display='none'" alt=""> {{end}}<strong>{{.Name}}</strong>
       </a>
-      <div class="item-meta">{{.FeedCount}} feeds{{if .URL}} · <a href="{{.URL}}" target="_blank" rel="noopener">{{.URL}}</a>{{end}}</div>
+      <div class="item-meta">{{.FeedCount}} feeds{{if .URL}} · <a href="{{.URL}}" target="_blank" rel="noopener" class="external">{{.URL}}</a>{{end}}</div>
     </div>
     <div class="row-actions">
       <a class="small" href="/authors/{{.ID}}/edit">edit</a>
@@ -40,7 +40,7 @@
     </div>
     <a class="small" href="/authors/{{.Data.Author.ID}}/edit">edit</a>
   </div>
-  {{if .Data.Author.URL}}<p><a href="{{.Data.Author.URL}}" target="_blank" rel="noopener">{{.Data.Author.URL}}</a></p>{{end}}
+  {{if .Data.Author.URL}}<p><a href="{{.Data.Author.URL}}" target="_blank" rel="noopener" class="external">{{.Data.Author.URL}}</a></p>{{end}}
   {{if .Data.Author.Description}}<p>{{.Data.Author.Description}}</p>{{end}}
 </section>
 <div class="row">

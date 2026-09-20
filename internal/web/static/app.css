@@ -21,6 +21,14 @@ body {
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* External links always show a ↗ marker so leaving the app is obvious. */
+a.external::after {
+  content: "↗";
+  margin-left: 0.15em;
+  font-size: 0.85em;
+  opacity: 0.85;
+}
+
 .top {
   display: flex;
   align-items: center;
@@ -107,6 +115,9 @@ ul.items li:last-child { border-bottom: none; }
 li.video-card { display: flex; gap: 0.9rem; padding: 0.9rem 0; align-items: flex-start; }
 li.video-card .card-body { flex: 1; min-width: 0; }
 
+li.image-card { display: flex; gap: 0.9rem; padding: 0.9rem 0; align-items: flex-start; }
+li.image-card .card-body { flex: 1; min-width: 0; }
+
 .thumb {
   position: relative;
   display: block;
@@ -119,6 +130,7 @@ li.video-card .card-body { flex: 1; min-width: 0; }
   border: 1px solid var(--border);
   text-decoration: none;
 }
+.thumb--img { aspect-ratio: 4 / 3; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .thumb:hover img { opacity: 0.9; }
 .thumb-ph {
@@ -168,6 +180,13 @@ dialog.modal {
 dialog.modal::backdrop { background: rgba(0, 0, 0, 0.55); }
 dialog.modal h2 { margin: 0; }
 
+/* Lock the page behind any open modal so wheel/touch/keyboard scroll can't
+   reach elements underneath it. */
+body:has(dialog.modal[open]) {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
 .avatar {
   width: 2.5rem;
   height: 2.5rem;
@@ -190,6 +209,20 @@ dialog.modal.wide[open] {
 #item-dialog-body { flex: 1; min-height: 0; overflow-y: auto; }
 .item-view .item-body img { max-width: 100%; height: auto; }
 .item-view .item-body pre { overflow-x: auto; padding: 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+
+.image-lightbox {
+  display: flex;
+  justify-content: center;
+  margin: 0.75rem 0;
+}
+.image-lightbox img {
+  max-width: 100%;
+  max-height: 65vh;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
 
 .video-embed {
   aspect-ratio: 16 / 9;

@@ -18,7 +18,7 @@
   </div>
   <p class="item-meta">
     {{if .Data.Row.AuthorName}}<a href="/authors/{{.Data.Row.AuthorID}}">{{.Data.Row.AuthorName}}</a> · {{else}}no author · {{end}}
-    <a href="{{.Data.Row.FeedURL}}">feed</a>{{if .Data.Row.HomeURL}} · <a href="{{.Data.Row.HomeURL}}" target="_blank" rel="noopener">home</a>{{end}}
+    <a href="{{.Data.Row.FeedURL}}" class="external">feed</a>{{if .Data.Row.HomeURL}} · <a href="{{.Data.Row.HomeURL}}" target="_blank" rel="noopener" class="external">home</a>{{end}}
   </p>
   <p class="muted small">{{.Data.Row.Unread}} unread · last polled {{if .Data.Row.LastPolledAt}}{{.Data.Row.LastPolledAt | timeFmt}}{{else}}never{{end}}</p>
 </section>

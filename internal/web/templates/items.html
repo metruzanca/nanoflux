@@ -12,10 +12,15 @@
 
 {{define "item_row"}}
 {{$video := isVideo .Link}}
-<li id="item-{{.ID}}" class="{{if $video}}video-card{{else}}text-card{{end}}">
+{{$image := isImagePost .Summary .ImageURL .Title}}
+<li id="item-{{.ID}}" class="{{if $video}}video-card{{else if $image}}image-card{{else}}text-card{{end}}">
   {{if $video}}
   <a class="thumb" href="#item-{{.ID}}" data-item-id="{{.ID}}" data-item-link="{{.Link}}" onclick="return openItem(this)">
     {{if .ImageURL}}<img src="{{.ImageURL}}" alt="" loading="lazy">{{else}}<span class="thumb-ph">▶</span>{{end}}
+  </a>
+  {{else if $image}}
+  <a class="thumb thumb--img" href="#item-{{.ID}}" data-item-id="{{.ID}}" data-item-link="{{.Link}}" onclick="return openItem(this)">
+    <img src="{{.ImageURL}}" alt="" loading="lazy">
   </a>
   {{end}}
   <div class="card-body">
@@ -23,10 +28,10 @@
       <div>
         <a class="item-title{{if not .Read}} unread{{end}}" href="#item-{{.ID}}" data-item-id="{{.ID}}" data-item-link="{{.Link}}" onclick="return openItem(this)">{{.Title}}</a>
 <div class="item-meta">
-        {{if .AuthorName}}{{.AuthorName}} · {{end}}{{sourceIcon .FeedURL}}<a href="{{.FeedURL}}">{{.FeedTitle}}</a>
+        {{if .AuthorName}}<a href="/authors/{{.AuthorID}}">{{.AuthorName}}</a> · {{end}}{{sourceIcon .FeedURL}}<a href="/feeds/{{.FeedID}}">{{.FeedTitle}}</a>
         {{if .PublishedAt}} · {{.PublishedAt | timeFmt}}{{end}}
       </div>
-        {{if .Summary}}<div class="item-summary">{{.Summary | stripHTML}}</div>{{end}}
+        {{if and .Summary (not $image)}}<div class="item-summary">{{.Summary | stripHTML}}</div>{{end}}
       </div>
       <button class="link" title="{{if .Read}}mark unread{{else}}mark read{{end}}"
         hx-post="/items/{{.ID}}/read" hx-target="#item-{{.ID}}" hx-swap="outerHTML">
