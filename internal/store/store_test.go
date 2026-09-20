@@ -180,6 +180,29 @@ func TestItemsFlow(t *testing.T) {
 	}
 }
 
+func TestItemsAuthorlessFeed(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	f, _ := s.Feeds.Create(u.ID, 0, "authorless", "https://x.dev/rss.xml", "", "", 900)
+	s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "One", Link: "https://x.dev/1", FetchedAt: db.Now()})
+
+	items, err := s.Items.List(u.ID, ItemFilter{})
+	if err != nil || len(items) != 1 {
+		t.Fatalf("List authorless feed: %v %d", err, len(items))
+	}
+	it := items[0]
+	if it.AuthorName != "" || it.AuthorID != 0 {
+		t.Fatalf("author fields should be empty: %+v", it)
+	}
+	if it.FeedTitle != "authorless" || it.Title != "One" {
+		t.Fatalf("item malformed: %+v", it)
+	}
+	got, err := s.Items.OneWithFeed(u.ID, it.ID)
+	if err != nil || got.Title != "One" {
+		t.Fatalf("OneWithFeed authorless: %v %+v", err, got)
+	}
+}
+
 func TestCollectionFlow(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
