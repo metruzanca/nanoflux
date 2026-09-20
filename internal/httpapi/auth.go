@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
 
@@ -14,7 +15,7 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
-	web.Render(w, "login", web.Page{Title: "log in"})
+	web.Render(w, r, basePage("log in", store.User{}, loginPage("")))
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +25,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	u, err := s.store.Users.ByUsername(username)
 	if err != nil || !auth.CheckPassword(u.PasswordHash, password) {
 		w.WriteHeader(http.StatusUnauthorized)
-		web.Render(w, "login", web.Page{Title: "log in", Data: "invalid username or password"})
+		web.Render(w, r, basePage("log in", store.User{}, loginPage("invalid username or password")))
 		return
 	}
 
@@ -53,7 +54,7 @@ func (s *Server) signupPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
-	web.Render(w, "signup", web.Page{Title: "create account"})
+	web.Render(w, r, basePage("create account", store.User{}, signupPage("")))
 }
 
 func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +63,7 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 
 	renderErr := func(msg string) {
 		w.WriteHeader(http.StatusBadRequest)
-		web.Render(w, "signup", web.Page{Title: "create account", Data: msg})
+		web.Render(w, r, basePage("create account", store.User{}, signupPage(msg)))
 	}
 
 	switch {

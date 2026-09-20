@@ -1,0 +1,173 @@
+package store
+
+import (
+	"database/sql"
+
+	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
+)
+
+// ns wraps a string for a nullable TEXT column; empty means NULL.
+func ns(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: s, Valid: true}
+}
+
+// ni wraps an id for a nullable INTEGER column; 0 means NULL.
+func ni(n int64) sql.NullInt64 {
+	if n == 0 {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: n, Valid: true}
+}
+
+func boolInt(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func toUser(id int64, username, passwordHash string, avatarKey, timezone sql.NullString, createdAt string) User {
+	return User{
+		ID:           id,
+		Username:     username,
+		PasswordHash: passwordHash,
+		HasAvatar:    avatarKey.Valid,
+		Timezone:     timezone.String,
+		CreatedAt:    createdAt,
+	}
+}
+
+func toFeed(f sqlcgen.Feed) Feed {
+	return Feed{
+		ID:              f.ID,
+		UserID:          f.UserID,
+		AuthorID:        f.AuthorID.Int64,
+		Title:           f.Title,
+		FeedURL:         f.FeedUrl,
+		HomeURL:         f.HomeUrl.String,
+		Description:     f.Description.String,
+		ETag:            f.Etag.String,
+		LastModified:    f.LastModified.String,
+		LastPolledAt:    f.LastPolledAt.String,
+		PollIntervalSec: int(f.PollIntervalSec),
+		Enabled:         f.Enabled,
+		CreatedAt:       f.CreatedAt,
+	}
+}
+
+func toItem(m sqlcgen.Item) Item {
+	return Item{
+		ID:          m.ID,
+		FeedID:      m.FeedID,
+		GUID:        m.Guid,
+		Title:       m.Title,
+		Link:        m.Link,
+		Summary:     m.Summary,
+		ImageURL:    m.ImageUrl.String,
+		PublishedAt: m.PublishedAt.String,
+		FetchedAt:   m.FetchedAt,
+		Read:        m.Read,
+		ReadAt:      m.ReadAt.String,
+		Favorite:    m.Favorite,
+	}
+}
+
+func toItemWithFeed(id, feedID int64, guid, title, link, summary string,
+	imageURL, publishedAt sql.NullString, fetchedAt string, read, favorite bool,
+	readAt sql.NullString, feedTitle, feedURL string,
+	authorID sql.NullInt64, authorName sql.NullString,
+) ItemWithFeed {
+	return ItemWithFeed{
+		Item: Item{
+			ID:          id,
+			FeedID:      feedID,
+			GUID:        guid,
+			Title:       title,
+			Link:        link,
+			Summary:     summary,
+			ImageURL:    imageURL.String,
+			PublishedAt: publishedAt.String,
+			FetchedAt:   fetchedAt,
+			Read:        read,
+			ReadAt:      readAt.String,
+			Favorite:    favorite,
+		},
+		FeedTitle:  feedTitle,
+		FeedURL:    feedURL,
+		AuthorID:   authorID.Int64,
+		AuthorName: authorName.String,
+	}
+}
+
+func toAuthor(a sqlcgen.Author) Author {
+	return Author{
+		ID:          a.ID,
+		UserID:      a.UserID,
+		Name:        a.Name,
+		URL:         a.Url.String,
+		AvatarURL:   a.AvatarUrl.String,
+		Description: a.Description.String,
+		CreatedAt:   a.CreatedAt,
+	}
+}
+
+func toCollection(c sqlcgen.Collection) Collection {
+	return Collection{
+		ID:        c.ID,
+		UserID:    c.UserID,
+		Name:      c.Name,
+		CreatedAt: c.CreatedAt,
+	}
+}
+
+func toSourceIcon(id, userID int64, domain, iconURL string, iconKey, lastFetchedAt sql.NullString, createdAt string) SourceIcon {
+	return SourceIcon{
+		ID:            id,
+		UserID:        userID,
+		Domain:        domain,
+		IconURL:       iconURL,
+		IconKey:       iconKey.String,
+		LastFetchedAt: lastFetchedAt.String,
+		CreatedAt:     createdAt,
+	}
+}
+
+func feedFromUnreadRow(id, userID int64, authorID sql.NullInt64, title, feedURL string,
+	homeURL, description, etag, lastModified, lastPolledAt sql.NullString,
+	pollIntervalSec int64, enabled bool, createdAt string,
+) sqlcgen.Feed {
+	return sqlcgen.Feed{
+		ID:              id,
+		UserID:          userID,
+		AuthorID:        authorID,
+		Title:           title,
+		FeedUrl:         feedURL,
+		HomeUrl:         homeURL,
+		Description:     description,
+		Etag:            etag,
+		LastModified:    lastModified,
+		LastPolledAt:    lastPolledAt,
+		PollIntervalSec: pollIntervalSec,
+		Enabled:         enabled,
+		CreatedAt:       createdAt,
+	}
+}
+
+func toFeedWithUnread(f sqlcgen.ListFeedsWithUnreadRow) FeedWithUnread {
+	return FeedWithUnread{
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
+		AuthorName: f.AuthorName.String,
+		Unread:     int(f.Unread),
+	}
+}
+
+func toFeedByAuthorWithUnread(f sqlcgen.ListFeedsByAuthorWithUnreadRow) FeedWithUnread {
+	return FeedWithUnread{
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
+		AuthorName: f.AuthorName.String,
+		Unread:     int(f.Unread),
+	}
+}

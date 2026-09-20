@@ -45,7 +45,6 @@ extension. SQLite, session auth, background poller, feed discovery.
   - [ ] `cmd/cli` — cobra admin CLI on `internal/store`
   - [ ] Chrome extension (MV3) — popup, badge, save-to-collection
   - [ ] MCP server wrapping `internal/store`
-  - [ ] Dockerfile / container packaging
 
 ## Decisions locked in
 
@@ -70,7 +69,12 @@ extension. SQLite, session auth, background poller, feed discovery.
 - Parsing: `github.com/mmcdole/gofeed` (RSS 2.0 / Atom / JSON-feed).
 - Passwords: `golang.org/x/crypto/bcrypt`.
 - HTTP: stdlib `net/http` with Go 1.22+ method routing. No framework.
-- Templates: `html/template`; htmx served as a vendored static file.
+- Templates: templ (`github.com/a-h/templ`), generated to committed `_templ.go`
+  files; htmx served as a vendored static file.
+- Store access: sqlc-generated queries (`internal/store/sqlcgen`), wrapped by
+  typed `*Store` repositories.
+- Blob storage: minio-go S3 when `S3_ENDPOINT` is set; local disk
+  (`filestore.NewDisk`) otherwise.
 - Session tokens from `crypto/rand`.
 
 ## Repo layout
@@ -85,10 +89,8 @@ internal/auth/              # bcrypt, sessions, middleware
 internal/poller/            # background fetch loop + manual refresh
 internal/feedparse/         # wraps gofeed; normalizes feeds -> items
 internal/discover/          # feed discovery (strategies)
-internal/httpapi/           # route registration, handlers, JSON API
-internal/web/               # html/template + static assets
-web/templates/              # htmx pages & fragments
-web/static/                 # css, htmx.js
+internal/httpapi/           # route registration, handlers, templ views
+internal/web/               # templ helpers/components + static assets
 extension/                  # (later) MV3
 ```
 

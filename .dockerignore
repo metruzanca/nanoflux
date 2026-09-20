@@ -1,0 +1,9 @@
+.git
+.github
+data
+website
+dist
+*.md
+Dockerfile
+docker-compose.yml
+.goreleaser.yaml

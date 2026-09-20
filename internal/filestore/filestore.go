@@ -32,9 +32,11 @@ type Store interface {
 	EnsureBucket(ctx context.Context) error
 }
 
-// Config describes an S3-compatible endpoint.
+// Config describes either a local disk store or an S3-compatible endpoint.
+// When Endpoint is empty the store is backed by the local disk directory Dir.
 type Config struct {
 	Endpoint  string
+	Dir       string
 	Bucket    string
 	AccessKey string
 	SecretKey string
@@ -42,20 +44,23 @@ type Config struct {
 	UseSSL    bool
 }
 
-// ConfigFromEnv reads S3_* environment variables, defaulting to a local
-// SeaweedFS gateway.
+// IsDisk reports whether the config selects the local disk store (the default
+// when no S3 endpoint is configured).
+func (c Config) IsDisk() bool { return c.Endpoint == "" }
+
+// ConfigFromEnv reads S3_* environment variables. With no S3_ENDPOINT the
+// store is a local disk directory (Dir); with one, blobs go to S3-compatible
+// object storage.
 func ConfigFromEnv() Config {
-	useSSL := false
-	if ep := os.Getenv("S3_ENDPOINT"); strings.HasPrefix(ep, "https://") {
-		useSSL = true
-	}
+	endpoint := os.Getenv("S3_ENDPOINT")
 	return Config{
-		Endpoint:  getenv("S3_ENDPOINT", "http://127.0.0.1:8333"),
+		Endpoint:  endpoint,
+		Dir:       os.Getenv("RSS_FILE_STORE"),
 		Bucket:    getenv("S3_BUCKET", "nanoflux"),
 		AccessKey: os.Getenv("S3_ACCESS_KEY"),
 		SecretKey: os.Getenv("S3_SECRET_KEY"),
 		Region:    getenv("S3_REGION", "us-east-1"),
-		UseSSL:    useSSL,
+		UseSSL:    strings.HasPrefix(endpoint, "https://"),
 	}
 }
 

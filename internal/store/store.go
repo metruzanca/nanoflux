@@ -1,8 +1,12 @@
 package store
 
+//go:generate sqlc generate -f ../../sqlc.yaml
+
 import (
 	"database/sql"
 	"errors"
+
+	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 )
 
 var (
@@ -15,6 +19,7 @@ var (
 // share the app's data access paths.
 type Store struct {
 	db          *sql.DB
+	q           *sqlcgen.Queries
 	Users       *UserStore
 	Sessions    *SessionStore
 	Authors     *AuthorStore
@@ -25,25 +30,19 @@ type Store struct {
 }
 
 func New(sqldb *sql.DB) *Store {
+	q := sqlcgen.New(sqldb)
 	return &Store{
 		db:          sqldb,
-		Users:       &UserStore{db: sqldb},
-		Sessions:    &SessionStore{db: sqldb},
-		Authors:     &AuthorStore{db: sqldb},
-		Feeds:       &FeedStore{db: sqldb},
-		Items:       &ItemStore{db: sqldb},
-		Collections: &CollectionStore{db: sqldb},
-		SourceIcons: &SourceIconStore{db: sqldb},
+		q:           q,
+		Users:       &UserStore{q: q},
+		Sessions:    &SessionStore{q: q},
+		Authors:     &AuthorStore{q: q},
+		Feeds:       &FeedStore{q: q},
+		Items:       &ItemStore{q: q},
+		Collections: &CollectionStore{q: q},
+		SourceIcons: &SourceIconStore{q: q},
 	}
 }
 
 // DB exposes the underlying handle for poller and CLI use.
 func (s *Store) DB() *sql.DB { return s.db }
-
-// nullStr returns nil for empty strings so optional columns stay NULL.
-func nullStr(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}

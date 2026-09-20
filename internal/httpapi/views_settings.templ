@@ -1,0 +1,102 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+templ settingsPage(u store.User, d settingsData) {
+	<h1>settings</h1>
+	@settingsAvatar(d.settingsAvatarData)
+	@settingsTimezone(d.Timezone)
+	<section class="card">
+		<h2>custom source icons</h2>
+		<p class="muted small">Add a domain and an icon url to override the built-in icons for that site. Icons are cached by nanoflux; use refresh to re-fetch the latest.</p>
+		<form class="stack" hx-post="/settings/icons" hx-target="#settings-icons-list" hx-swap="beforeend">
+			<div class="row">
+				<label>domain
+					<input name="domain" type="text" placeholder="github.com" required/>
+				</label>
+				<label>icon url
+					<input name="icon_url" type="url" placeholder="https://.../icon.png" required/>
+				</label>
+			</div>
+			<div id="settings-icons-error" class="error"></div>
+			<button type="submit">add icon</button>
+		</form>
+		@SettingsIconsList(d.Icons)
+	</section>
+}
+
+templ settingsAvatar(d settingsAvatarData) {
+	<section class="card" id="settings-avatar-card">
+		<h2>profile picture</h2>
+		<form class="stack" hx-post="/settings/avatar" hx-target="#settings-avatar-card" hx-swap="outerHTML" enctype="multipart/form-data">
+			<div class="row">
+				if d.HasAvatar {
+					<img class="avatar avatar-lg" src={ templ.URL("/avatar") } alt="profile picture"/>
+				} else {
+					<span class="muted">no picture yet</span>
+				}
+				<label>upload a picture
+					<input type="file" name="avatar" accept="image/*"/>
+				</label>
+			</div>
+			if d.Error != "" {
+				<div class="error" role="alert">{ d.Error }</div>
+			}
+			<button type="submit">save</button>
+		</form>
+	</section>
+}
+
+templ settingsTimezone(d settingsTimezoneData) {
+	<section class="card" id="settings-timezone-card">
+		<h2>timezone</h2>
+		<p class="muted small">Timestamps render in this timezone. Leave it empty to use the server's time.</p>
+		<form class="stack" hx-post="/settings/timezone" hx-target="#settings-timezone-card" hx-swap="outerHTML">
+			<label>iana timezone name
+				<input type="text" name="timezone" value={ d.Timezone } placeholder="America/New_York" autocomplete="off"/>
+			</label>
+			if d.Error != "" {
+				<div class="error" role="alert">{ d.Error }</div>
+			}
+			<button type="submit">save</button>
+		</form>
+	</section>
+}
+
+templ SettingsIconsList(rows []settingsIconRow) {
+	<ul class="plain" id="settings-icons-list">
+		for _, r := range rows {
+			@SettingsIconRow(r)
+		}
+	</ul>
+}
+
+templ SettingsIconRow(r settingsIconRow) {
+	<li id={ "settings-icon-" + strconv.FormatInt(r.ID, 10) }>
+		if r.Flash != "" {
+			<div class="error">{ r.Flash }</div>
+		}
+		<div class="row">
+			<div class="row">
+				<img class="src-icon" src={ "/icons/" + r.Domain } width="16" height="16" alt=""/>
+				<strong>{ r.Domain }</strong>
+				<span class="muted small">
+					if r.LastFetchedAt != "" {
+						cached { web.TimeFmt(r.Timezone, r.LastFetchedAt) }
+					} else {
+						not cached yet
+					}
+				</span>
+			</div>
+			<div class="row-actions">
+				<button class="link" title="re-fetch the icon" hx-post={ "/settings/icons/" + strconv.FormatInt(r.ID, 10) + "/refresh" } hx-target={ "#settings-icon-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">refresh</button>
+				<button class="link danger" title="remove" hx-post={ "/settings/icons/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#settings-icons-list" hx-swap="innerHTML" hx-confirm="remove this icon?">✕</button>
+			</div>
+		</div>
+	</li>
+}

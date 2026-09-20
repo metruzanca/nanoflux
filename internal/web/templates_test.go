@@ -1,9 +1,13 @@
 package web
 
 import (
+	"bytes"
+	"context"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/a-h/templ"
 )
 
 func TestFormatRel(t *testing.T) {
@@ -40,14 +44,24 @@ func TestFormatRel(t *testing.T) {
 
 func TestTimeFmt(t *testing.T) {
 	// Unparseable input is returned unchanged.
-	if got := timeFmt("", "not a time"); got != "not a time" {
+	if got := TimeFmt("", "not a time"); got != "not a time" {
 		t.Fatalf("invalid input: %q", got)
 	}
 	// Empty timezone falls back to server local (UTC here), so the output is
 	// a relative label rather than the raw stamp.
-	if got := timeFmt("", "2026-09-20 12:00:00"); !strings.Contains(got, "Today at") && !strings.Contains(got, "Yesterday at") {
+	if got := TimeFmt("", "2026-09-20 12:00:00"); !strings.Contains(got, "Today at") && !strings.Contains(got, "Yesterday at") {
 		t.Fatalf("expected a relative label, got %q", got)
 	}
+}
+
+// renderComponent executes a templ component and returns its HTML output.
+func renderComponent(t *testing.T, c templ.Component) string {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := c.Render(context.Background(), &buf); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
 }
 
 func TestSourceIcon(t *testing.T) {
@@ -62,37 +76,37 @@ func TestSourceIcon(t *testing.T) {
 		{"https://www.example.com/feed.xml", `src="/icons/www.example.com"`},
 	}
 	for _, c := range cases {
-		got := string(sourceIcon(c.url))
+		got := renderComponent(t, SourceIcon(c.url))
 		if !strings.Contains(got, `class="src-icon"`) || !strings.Contains(got, c.want) {
-			t.Errorf("sourceIcon(%q) = %q, want src %q", c.url, got, c.want)
+			t.Errorf("SourceIcon(%q) = %q, want src %q", c.url, got, c.want)
 		}
 	}
 	// Empty/invalid URLs fall back to an inline globe.
-	if got := string(sourceIcon("")); !strings.Contains(got, "svg") {
-		t.Errorf("sourceIcon(\"\") = %q, want inline svg", got)
+	if got := renderComponent(t, SourceIcon("")); !strings.Contains(got, "svg") {
+		t.Errorf("SourceIcon(\"\") = %q, want inline svg", got)
 	}
 }
 
 func TestIsGallery(t *testing.T) {
 	gallery := "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140&crop=1:1,smart&auto=webp&s=x"
-	if !isGallery(gallery) {
+	if !IsGallery(gallery) {
 		t.Fatal("square gallery cover should be detected")
 	}
 	image := "https://preview.redd.it/87u0k8i05brf1.jpeg?width=640&crop=smart&auto=webp&s=y"
-	if isGallery(image) {
+	if IsGallery(image) {
 		t.Fatal("natural-aspect image post should not be a gallery")
 	}
-	if isGallery("https://external-preview.redd.it/x.jpeg?width=320") {
+	if IsGallery("https://external-preview.redd.it/x.jpeg?width=320") {
 		t.Fatal("external-preview should not be a gallery")
 	}
 }
 
 func TestGalleryThumb(t *testing.T) {
 	gallery := "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140&crop=1:1,smart&auto=webp&s=x"
-	if got := galleryThumb(gallery); got != "https://i.redd.it/5t6y7u8i.jpg" {
-		t.Fatalf("galleryThumb = %q", got)
+	if got := GalleryThumb(gallery); got != "https://i.redd.it/5t6y7u8i.jpg" {
+		t.Fatalf("GalleryThumb = %q", got)
 	}
-	if got := galleryThumb("https://preview.redd.it/x.jpeg?width=640&crop=smart&s=y"); got != "" {
+	if got := GalleryThumb("https://preview.redd.it/x.jpeg?width=640&crop=smart&s=y"); got != "" {
 		t.Fatalf("image post should not get a gallery thumb: %q", got)
 	}
 }
@@ -117,8 +131,8 @@ func TestIsImagePost(t *testing.T) {
 		{"empty summary", "", img, "Pic", false},
 	}
 	for _, c := range cases {
-		if got := isImagePost(c.summary, c.imageURL, c.title); got != c.want {
-			t.Errorf("%s: isImagePost = %v, want %v", c.name, got, c.want)
+		if got := IsImagePost(c.summary, c.imageURL, c.title); got != c.want {
+			t.Errorf("%s: IsImagePost = %v, want %v", c.name, got, c.want)
 		}
 	}
 }

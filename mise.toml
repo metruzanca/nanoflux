@@ -1,0 +1,13 @@
+[tasks.gen]
+description = "Regenerate templ components and sqlc queries"
+run = "templ generate && sqlc generate"
+
+[tasks.dev]
+description = "Watch Go sources and rerun the server on change"
+run = "mise watch -r dev-serve"
+
+[tasks.dev-serve]
+hide = true
+description = "Regenerate templates/queries and run the RSS server"
+run = "templ generate && go run cmd/server/main.go"
+sources = ["**/*.go", "**/*.templ", "go.mod", "go.sum"]

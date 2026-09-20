@@ -1,0 +1,90 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/store"
+)
+
+templ collectionsPage(u store.User, rows []store.Collection) {
+	<div class="row">
+		<h1>collections</h1>
+		<button type="button" onclick="document.getElementById('add-collection-dialog').showModal()">+ add collection</button>
+	</div>
+	@CollectionsList(rows)
+
+	<dialog id="add-collection-dialog" class="modal">
+		<form class="stack" hx-post="/collections" hx-target="#collections-list" hx-swap="beforeend" hx-on:after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+			<div class="row">
+				<h2>add collection</h2>
+				<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+			</div>
+			<label>name
+				<input name="name" autofocus required/>
+			</label>
+			<div id="add-collection-error" class="error"></div>
+			<button type="submit">add collection</button>
+		</form>
+	</dialog>
+}
+
+templ CollectionsList(rows []store.Collection) {
+	<ul class="plain" id="collections-list">
+		for _, c := range rows {
+			@CollectionRow(c)
+		}
+	</ul>
+}
+
+templ CollectionRow(c store.Collection) {
+	<li id={ "collection-" + strconv.FormatInt(c.ID, 10) }>
+		<div class="row">
+			<a href={ "/collections/" + strconv.FormatInt(c.ID, 10) }><strong>{ c.Name }</strong></a>
+			<button class="link danger" title="delete" hx-post={ "/collections/" + strconv.FormatInt(c.ID, 10) + "/delete" } hx-target={ "#collection-" + strconv.FormatInt(c.ID, 10) } hx-swap="outerHTML" hx-confirm="delete this collection?">✕</button>
+		</div>
+	</li>
+}
+
+templ collectionPage(u store.User, d collectionData) {
+	<div class="row">
+		<h1>{ d.Collection.Name }</h1>
+	</div>
+	<section class="card">
+		<h2>add feed</h2>
+		<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-feed" } hx-target="#collection-feeds" hx-swap="outerHTML">
+			<input type="hidden" name="view" value={ d.Scoped.View }/>
+			<select name="feed_id">
+				for _, f := range d.AllFeeds {
+					<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Title }</option>
+				}
+			</select>
+			<button type="submit">add</button>
+		</form>
+	</section>
+	<h2>feeds</h2>
+	@collectionFeeds(d)
+	<h2>items</h2>
+	@ScopedItems(d.Scoped)
+}
+
+templ collectionFeeds(d collectionData) {
+	<ul class="plain" id="collection-feeds">
+		if len(d.Feeds) > 0 {
+			for _, f := range d.Feeds {
+				<li>
+					<div class="row">
+						<a href={ "/feeds/" + strconv.FormatInt(f.ID, 10) }>{ f.Title }</a>
+						<button class="link danger" title="remove" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/remove-feed/" + strconv.FormatInt(f.ID, 10) } hx-target="#collection-feeds" hx-swap="outerHTML" hx-vals={ `{"view":"` + d.Scoped.View + `"}` }>✕</button>
+					</div>
+				</li>
+			}
+		} else {
+			<li class="muted">no feeds in this collection</li>
+		}
+	</ul>
+}
+
+templ collectionUpdated(d collectionData) {
+	@collectionFeeds(d)
+	@ScopedItems(d.Scoped)
+}
