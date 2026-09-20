@@ -307,6 +307,13 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 		Summary: `<a href="https://example.com/2"><img src="https://example.com/pic.jpg" alt="Image Post" /></a>`,
 		ImageURL: "https://example.com/pic.jpg", FetchedAt: db.Now(),
 	})
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "p3", Title: "Mittens enjoys a sunny nap",
+		Link:     "https://old.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/",
+		ImageURL: "https://external-preview.redd.it/1q2w3e4r.jpeg?width=320",
+		Summary:  `<a href="https://www.reddit.com/r/cats/comments/1abcde/"><img src="https://external-preview.redd.it/1q2w3e4r.jpeg?width=320" alt="Mittens enjoys a sunny nap"></a>`,
+		FetchedAt: db.Now(),
+	})
 
 	body := doGet(h, "/", cookie).Body.String()
 	if !strings.Contains(body, `id="item-1" class="video-card"`) {
@@ -324,6 +331,15 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	if !strings.Contains(body, `src="https://example.com/pic.jpg"`) {
 		t.Fatalf("image card missing the image: %s", body)
 	}
+	if !strings.Contains(body, `id="item-4" class="link-card"`) {
+		t.Fatalf("link post should render a link-card: %s", body)
+	}
+	if !strings.Contains(body, `src="https://external-preview.redd.it/1q2w3e4r.jpeg?width=320"`) {
+		t.Fatalf("link card missing the external-preview thumbnail: %s", body)
+	}
+	if !strings.Contains(body, `class="thumb-badge"`) || !strings.Contains(body, ">external</span>") {
+		t.Fatalf("link card missing the external badge: %s", body)
+	}
 	// The row keeps the modal data attrs and the read toggle.
 	if !strings.Contains(body, `data-item-link="https://www.youtube.com/watch?v=H0KAi8AWsnM"`) {
 		t.Fatalf("video card missing data-item-link: %s", body)
@@ -333,6 +349,9 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	}
 	if !strings.Contains(body, `hx-post="/items/3/read"`) {
 		t.Fatalf("image card missing read toggle: %s", body)
+	}
+	if !strings.Contains(body, `hx-post="/items/4/read"`) {
+		t.Fatalf("link card missing read toggle: %s", body)
 	}
 	// Feed titles in the item meta link to the internal feed page, never the RSS url.
 	if !strings.Contains(body, `href="/feeds/1">bigboxSWE</a>`) {

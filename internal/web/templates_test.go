@@ -39,6 +39,7 @@ func TestIsImagePost(t *testing.T) {
 	}{
 		{"linked image with alt", `<a href="https://example.com/p"><img src="` + img + `" alt="Your weakness has ears" title="Your weakness has ears" /></a>`, img, "Your weakness has ears", true},
 		{"bare image", `<img src="` + img + `">`, img, "Pic", true},
+		{"reddit link post preview", `<a href="https://www.reddit.com/r/x/comments/1a/"><img src="https://external-preview.redd.it/1q2w3e4r.jpeg?width=320" alt="Mittens enjoys a sunny nap" title="Mittens enjoys a sunny nap"></a>`, "https://external-preview.redd.it/1q2w3e4r.jpeg?width=320", "Mittens enjoys a sunny nap", false},
 		{"image plus caption", `<img src="` + img + `"> caption text`, img, "Pic", false},
 		{"image with real body text", `<p>lots of article text here</p><img src="` + img + `">`, img, "Pic", false},
 		{"text article with feed thumbnail", "<p>article body</p>", img, "Pic", false},

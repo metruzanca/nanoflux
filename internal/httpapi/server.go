@@ -8,6 +8,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/config"
 	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/filestore"
+	"github.com/metruzanca/nanoflux/internal/oembed"
 	"github.com/metruzanca/nanoflux/internal/poller"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
@@ -23,16 +24,19 @@ type Server struct {
 	discoverer *discover.Discoverer
 	client     *http.Client
 	files      filestore.Store
+	oembed     *oembed.Resolver
 }
 
 func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore.Store) *Server {
+	client := &http.Client{Timeout: 20 * time.Second}
 	return &Server{
 		store:      st,
 		auth:       a,
 		cfg:        cfg,
 		discoverer: discover.New(nil),
-		client:     &http.Client{Timeout: 20 * time.Second},
+		client:     client,
 		files:      fs,
+		oembed:     oembed.New(client, 5*time.Minute, 30*time.Second, 2000),
 	}
 }
 

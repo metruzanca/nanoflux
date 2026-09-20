@@ -2,10 +2,16 @@
 {{$image := isImagePost .Summary .ImageURL .Title}}
 <div class="item-view">
   <h1>{{.Title}}</h1>
-  <p class="item-meta">{{if .AuthorName}}<a href="/authors/{{.AuthorID}}">{{.AuthorName}}</a> · {{end}}<a href="/feeds/{{.FeedID}}">{{.FeedTitle}}</a>{{if .PublishedAt}} · {{.PublishedAt | timeFmt}}{{end}}</p>
+  <p class="item-meta">{{if .AuthorName}}<a href="/authors/{{.AuthorID}}">{{.AuthorName}}</a> · {{end}}<a href="/feeds/{{.FeedID}}">{{.FeedTitle}}</a>{{if .PublishedAt}} · {{.PublishedAt | timeFmt}}{{end}}{{if .SourceURL}} · <a href="{{.SourceURL}}" target="_blank" rel="noopener" class="external">source</a>{{end}}</p>
   {{if $image}}
   <div class="image-lightbox">
     <img src="{{.ImageURL}}" alt="{{.Title}}" loading="lazy">
+  </div>
+  {{else if .EmbedSrc}}
+  <div class="video-embed">
+    <iframe src="{{.EmbedSrc}}" title="{{.Title}}" frameborder="0"
+      allow="autoplay; fullscreen; picture-in-picture"
+      allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>
   </div>
   {{else if .EmbedURL}}
   <div class="video-embed">
@@ -14,6 +20,6 @@
       allowfullscreen loading="lazy"></iframe>
   </div>
   {{end}}
-  {{if and .Body (not $image)}}<div class="item-body">{{.Body}}</div>{{end}}
+  {{if and .Body (not $image) (not .SourceURL)}}<div class="item-body">{{.Body}}</div>{{end}}
 </div>
 {{end}}

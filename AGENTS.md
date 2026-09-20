@@ -101,6 +101,29 @@ preview all work unchanged.
   serving a login wall, `fetchXProfile` returns an error and the feed fails
   gracefully.
 
+## Reddit link posts
+
+Reddit "link posts" point at an external site (imgur, a news article,
+...). Their items are identifiable from stored data alone: the thumbnail host
+is `external-preview.redd.it` (vs `preview.redd.it`/`i.redd.it` for in-post
+images) and the summary is a bare link wrapper. The modal resolves the chain
+lazily and generically — no destination site is hardcoded:
+
+- The destination comes from the `[link]` anchor reddit embeds in its feed
+  content (`extractLinkAnchor` in `internal/httpapi/reddit.go`). Feeds whose
+  content was stripped (e.g. a content-stripping proxy) fall back to a lookup in
+  the post's subreddit RSS (`/r/{sub}/.rss`), keyed by the `t3_{id}` from the
+  item link. Subreddit RSS works unauthenticated; reddit's JSON/HTML APIs are
+  login-walled and must not be used.
+- Embedding uses generic oEmbed discovery (`internal/oembed`): fetch the
+  destination page, find its `application/json+oembed` alternate link, and
+  extract the iframe `src` — the provider's raw html is never injected. Results
+  are cached; the whole resolution is timeboxed in `itemView` and degrades to
+  today's behavior on any failure.
+- `redditRSSBaseURL` is a package var so tests can inject a mock host.
+- Link-post thumbnails are not treated as image posts (`isImagePost` in
+  `internal/web/templates.go` rejects `external-preview.redd.it`).
+
 ## Settings and custom source icons
 
 `/settings` lets users set a profile-picture URL and add custom per-domain brand
