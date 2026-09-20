@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/metruzanca/rss/internal/db"
+	"github.com/metruzanca/nanoflux/internal/db"
 )
 
 func newTestStore(t *testing.T) *Store {

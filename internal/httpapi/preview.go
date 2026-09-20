@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/metruzanca/rss/internal/auth"
-	"github.com/metruzanca/rss/internal/discover"
-	"github.com/metruzanca/rss/internal/feedparse"
-	"github.com/metruzanca/rss/internal/store"
-	"github.com/metruzanca/rss/internal/web"
+	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/discover"
+	"github.com/metruzanca/nanoflux/internal/feedparse"
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 // feedPreviewForm is the quick-add form shown once a feed is identified.

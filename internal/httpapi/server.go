@@ -4,12 +4,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/metruzanca/rss/internal/auth"
-	"github.com/metruzanca/rss/internal/config"
-	"github.com/metruzanca/rss/internal/discover"
-	"github.com/metruzanca/rss/internal/poller"
-	"github.com/metruzanca/rss/internal/store"
-	"github.com/metruzanca/rss/internal/web"
+	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/config"
+	"github.com/metruzanca/nanoflux/internal/discover"
+	"github.com/metruzanca/nanoflux/internal/poller"
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 // Server wires the HTTP layer over the store. JSON API routes for the

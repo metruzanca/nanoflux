@@ -1,4 +1,4 @@
-module github.com/metruzanca/rss
+module github.com/metruzanca/nanoflux
 
 go 1.26.6
 

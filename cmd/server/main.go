@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/metruzanca/rss/internal/auth"
-	"github.com/metruzanca/rss/internal/config"
-	"github.com/metruzanca/rss/internal/db"
-	"github.com/metruzanca/rss/internal/httpapi"
-	"github.com/metruzanca/rss/internal/poller"
-	"github.com/metruzanca/rss/internal/store"
+	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/config"
+	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/httpapi"
+	"github.com/metruzanca/nanoflux/internal/poller"
+	"github.com/metruzanca/nanoflux/internal/store"
 )
 
 // version is set at build time via ldflags (see .goreleaser.yaml).
@@ -23,7 +23,7 @@ var version = "dev"
 
 func main() {
 	cfg := config.Load()
-	log.Printf("rss %s starting", version)
+	log.Printf("nanoflux %s starting", version)
 
 	sqldb, err := db.Open(cfg.DBPath)
 	if err != nil {
@@ -56,7 +56,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("rss server listening on %s", cfg.Addr)
+		log.Printf("nanoflux server listening on %s", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("server: %v", err)
 		}

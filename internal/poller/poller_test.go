@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/metruzanca/rss/internal/db"
-	"github.com/metruzanca/rss/internal/store"
+	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/store"
 )
 
 func TestPollOne(t *testing.T) {

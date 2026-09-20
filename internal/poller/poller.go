@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/metruzanca/rss/internal/db"
-	"github.com/metruzanca/rss/internal/feedparse"
-	"github.com/metruzanca/rss/internal/store"
+	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/feedparse"
+	"github.com/metruzanca/nanoflux/internal/store"
 )
 
 const fetchTimeout = 30 * time.Second

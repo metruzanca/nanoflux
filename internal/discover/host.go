@@ -79,7 +79,7 @@ func (d *Discoverer) youtubeChannelID(ctx context.Context, pageURL string) strin
 	if err != nil {
 		return ""
 	}
-	req.Header.Set("User-Agent", "rss/0.1")
+	req.Header.Set("User-Agent", "nanoflux/0.1")
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return ""

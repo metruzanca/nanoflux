@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/metruzanca/rss/internal/auth"
-	"github.com/metruzanca/rss/internal/store"
-	"github.com/metruzanca/rss/internal/web"
+	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 type homeData struct {

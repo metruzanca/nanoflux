@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/net/html"
 
-	"github.com/metruzanca/rss/internal/feedparse"
+	"github.com/metruzanca/nanoflux/internal/feedparse"
 )
 
 const maxBody = 4 << 20
@@ -196,7 +196,7 @@ func (d *Discoverer) openPage(ctx context.Context, pageURL string) (io.ReadClose
 	if err != nil {
 		return nil, nil, err
 	}
-	req.Header.Set("User-Agent", "rss/0.1")
+	req.Header.Set("User-Agent", "nanoflux/0.1")
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return nil, nil, err

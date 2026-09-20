@@ -26,7 +26,7 @@ func (s *Server) imgProxy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad url", http.StatusBadRequest)
 		return
 	}
-	req.Header.Set("User-Agent", "rss/0.1")
+	req.Header.Set("User-Agent", "nanoflux/0.1")
 
 	resp, err := s.client.Do(req)
 	if err != nil {

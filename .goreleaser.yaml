@@ -1,6 +1,6 @@
 version: 2
 
-project_name: rss
+project_name: nanoflux
 
 before:
   hooks:
@@ -9,7 +9,7 @@ before:
 builds:
   - id: server
     main: ./cmd/server
-    binary: rss-server
+    binary: nanoflux
     env:
       - CGO_ENABLED=0
     goos:
@@ -31,7 +31,7 @@ checksum:
 
 dockers_v2:
   - images:
-      - "ghcr.io/metruzanca/rss"
+      - "ghcr.io/metruzanca/nanoflux"
     tags:
       - "{{ .Version }}"
       - "latest"
@@ -49,7 +49,7 @@ dockers_v2:
 release:
   github:
     owner: metruzanca
-    name: rss
+    name: nanoflux
 
 changelog:
   sort: asc

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/metruzanca/rss/internal/auth"
-	"github.com/metruzanca/rss/internal/config"
-	"github.com/metruzanca/rss/internal/db"
-	"github.com/metruzanca/rss/internal/store"
+	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/config"
+	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/store"
 )
 
 func newTestServer(t *testing.T) (*Server, http.Handler) {

@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/metruzanca/rss/internal/db"
-	"github.com/metruzanca/rss/internal/store"
+	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/store"
 )
 
 const apiFeedXML = `<?xml version="1.0"?>

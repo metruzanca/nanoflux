@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/metruzanca/rss/internal/auth"
-	"github.com/metruzanca/rss/internal/web"
+	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {

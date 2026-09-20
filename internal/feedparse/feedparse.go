@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/metruzanca/rss/internal/db"
+	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/mmcdole/gofeed"
 )
 
@@ -51,7 +51,7 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 	if err != nil {
 		return Result{}, err
 	}
-	req.Header.Set("User-Agent", "rss/0.1")
+	req.Header.Set("User-Agent", "nanoflux/0.1")
 	req.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/feed+json, application/xml, text/xml, */*")
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)

@@ -1,4 +1,4 @@
-# rss — Implementation Plan
+# nanoflux — Implementation Plan
 
 Dead-simple self-hosted RSS app. Go backend + htmx frontend + (later) a Chrome
 extension. SQLite, session auth, background poller, feed discovery.
