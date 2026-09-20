@@ -32,8 +32,8 @@
         <a class="item-title{{if not .Read}} unread{{end}}" href="#item-{{.ID}}" data-item-id="{{.ID}}" data-item-link="{{.Link}}" onclick="return openItem(this)">{{.Title}}</a>
 <div class="item-meta">
         {{if .AuthorName}}<a href="/authors/{{.AuthorID}}">{{.AuthorName}}</a> · {{end}}{{sourceIcon .FeedURL}}<a href="/feeds/{{.FeedID}}">{{.FeedTitle}}</a>
-        {{if .PublishedAt}} · {{.PublishedAt | timeFmt}}{{end}}
-        {{if .Read}}{{if .ReadAt}} · <span class="read-at">read {{.ReadAt | timeFmt}}</span>{{end}}{{end}}
+        {{if .PublishedAt}} · {{.PublishedAt | timeFmt .Timezone}}{{end}}
+        {{if .Read}}{{if .ReadAt}} · <span class="read-at">read {{.ReadAt | timeFmt .Timezone}}</span>{{end}}{{end}}
       </div>
         {{if and .Summary (not $image) (not $link) (not $gallery)}}<div class="item-summary">{{.Summary | stripHTML}}</div>{{end}}
       </div>

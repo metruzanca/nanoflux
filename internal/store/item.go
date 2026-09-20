@@ -31,6 +31,7 @@ type ItemWithFeed struct {
 	FeedURL    string
 	AuthorID   int64
 	AuthorName string
+	Timezone   string // user's IANA timezone, for relative timestamps in templates
 }
 
 type ItemFilter struct {

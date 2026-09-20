@@ -108,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 	// Settings.
 	mux.Handle("GET /settings", s.auth.Require(http.HandlerFunc(s.settingsPage)))
 	mux.Handle("POST /settings/avatar", s.auth.Require(http.HandlerFunc(s.settingsAvatar)))
+	mux.Handle("POST /settings/timezone", s.auth.Require(http.HandlerFunc(s.settingsTimezone)))
 	mux.Handle("GET /avatar", s.auth.Require(http.HandlerFunc(s.avatarImage)))
 	mux.Handle("POST /settings/icons", s.auth.Require(http.HandlerFunc(s.settingsIconAdd)))
 	mux.Handle("POST /settings/icons/{id}/refresh", s.auth.Require(http.HandlerFunc(s.settingsIconRefresh)))

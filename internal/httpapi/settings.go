@@ -25,7 +25,8 @@ const maxAvatarBytes = 5 << 20
 
 type settingsData struct {
 	settingsAvatarData
-	Icons []settingsIconRow
+	Timezone settingsTimezoneData
+	Icons    []settingsIconRow
 }
 
 type settingsAvatarData struct {
@@ -33,9 +34,15 @@ type settingsAvatarData struct {
 	Error     string
 }
 
+type settingsTimezoneData struct {
+	Timezone string
+	Error    string
+}
+
 type settingsIconRow struct {
 	store.SourceIcon
-	Flash string
+	Flash    string
+	Timezone string
 }
 
 func parseID(r *http.Request) (int64, error) {
@@ -46,8 +53,33 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	web.Render(w, "settings", web.Page{Title: "settings", User: u, Data: settingsData{
 		settingsAvatarData: settingsAvatarData{HasAvatar: u.HasAvatar},
-		Icons:              s.settingsIconRows(u.ID),
+		Timezone:           settingsTimezoneData{Timezone: u.Timezone},
+		Icons:              s.settingsIconRows(u.ID, u.Timezone),
 	}})
+}
+
+// settingsTimezone stores the user's IANA timezone for relative timestamps.
+func (s *Server) settingsTimezone(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	tz := strings.TrimSpace(r.FormValue("timezone"))
+	render := func(errMsg string) {
+		if errMsg != "" {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+		web.RenderFragment(w, "settings_timezone", settingsTimezoneData{Timezone: tz, Error: errMsg})
+	}
+	if tz != "" {
+		if _, err := time.LoadLocation(tz); err != nil {
+			render("unknown timezone")
+			return
+		}
+	}
+	if err := s.store.Users.SetTimezone(u.ID, tz); err != nil {
+		log.Error("set timezone", "err", err)
+		render("could not save timezone")
+		return
+	}
+	render("")
 }
 
 // settingsAvatar stores an uploaded profile picture.
@@ -149,7 +181,7 @@ func (s *Server) settingsIconAdd(w http.ResponseWriter, r *http.Request) {
 		log.Error("cache source icon", "domain", domain, "err", err)
 	}
 	ic, _ = s.store.SourceIcons.ByID(u.ID, ic.ID)
-	web.RenderFragment(w, "settings_icon_row", settingsIconRow{SourceIcon: ic})
+	web.RenderFragment(w, "settings_icon_row", settingsIconRow{SourceIcon: ic, Timezone: u.Timezone})
 }
 
 // settingsIconRefresh re-fetches and re-caches an icon.
@@ -168,11 +200,11 @@ func (s *Server) settingsIconRefresh(w http.ResponseWriter, r *http.Request) {
 	if err := s.fetchAndCacheIcon(r.Context(), ic); err != nil {
 		log.Error("refresh source icon", "domain", ic.Domain, "err", err)
 		w.WriteHeader(http.StatusBadRequest)
-		web.RenderFragment(w, "settings_icon_row", settingsIconRow{SourceIcon: ic, Flash: "could not refresh icon"})
+		web.RenderFragment(w, "settings_icon_row", settingsIconRow{SourceIcon: ic, Flash: "could not refresh icon", Timezone: u.Timezone})
 		return
 	}
 	ic, _ = s.store.SourceIcons.ByID(u.ID, id)
-	web.RenderFragment(w, "settings_icon_row", settingsIconRow{SourceIcon: ic})
+	web.RenderFragment(w, "settings_icon_row", settingsIconRow{SourceIcon: ic, Timezone: u.Timezone})
 }
 
 // settingsIconDelete removes a domain->icon mapping and its stored object.
@@ -198,20 +230,20 @@ func (s *Server) settingsIconDelete(w http.ResponseWriter, r *http.Request) {
 			log.Error("delete source icon object", "key", ic.IconKey, "err", err)
 		}
 	}
-	s.renderSettingsIconList(w, u.ID)
+	s.renderSettingsIconList(w, u.ID, u.Timezone)
 }
 
-func (s *Server) settingsIconRows(userID int64) []settingsIconRow {
+func (s *Server) settingsIconRows(userID int64, tz string) []settingsIconRow {
 	icons, _ := s.store.SourceIcons.List(userID)
 	rows := make([]settingsIconRow, 0, len(icons))
 	for _, ic := range icons {
-		rows = append(rows, settingsIconRow{SourceIcon: ic})
+		rows = append(rows, settingsIconRow{SourceIcon: ic, Timezone: tz})
 	}
 	return rows
 }
 
-func (s *Server) renderSettingsIconList(w http.ResponseWriter, userID int64) {
-	web.RenderFragment(w, "settings_icons_list", s.settingsIconRows(userID))
+func (s *Server) renderSettingsIconList(w http.ResponseWriter, userID int64, tz string) {
+	web.RenderFragment(w, "settings_icons_list", s.settingsIconRows(userID, tz))
 }
 
 // serveSourceIcon resolves a feed's icon for the current user: their cached

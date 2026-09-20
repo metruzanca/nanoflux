@@ -6,7 +6,10 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
+	_ "time/tzdata"
 
 	"golang.org/x/net/html"
 
@@ -267,11 +270,67 @@ func stripHTML(s string) string {
 	return strings.TrimSpace(b.String())
 }
 
-// timeFmt formats a stored UTC timestamp for display.
-func timeFmt(s string) string {
+// timeFmt renders a stored UTC timestamp relative to the user's timezone.
+// tz is an IANA timezone name; empty means the server's local time. Labels:
+// "Today at 3:04pm", "Yesterday at 3:04pm", "3 days ago", "2 weeks ago",
+// "3 months ago", or an absolute "Sep 2, 2026 at 3:04pm" for past years and
+// future timestamps.
+func timeFmt(tz, s string) string {
 	t, err := db.ParseTime(s)
 	if err != nil {
 		return s
 	}
-	return t.Format("Jan 2, 2006 15:04")
+	return formatRel(t, serverLoc(tz), time.Now())
+}
+
+// serverLoc resolves a user's IANA timezone, defaulting to the server's local
+// timezone when unset or invalid.
+func serverLoc(tz string) *time.Location {
+	if tz == "" {
+		return time.Local
+	}
+	if loc, err := time.LoadLocation(tz); err == nil {
+		return loc
+	}
+	return time.Local
+}
+
+// formatRel renders t relative to now in loc, using calendar days.
+func formatRel(t time.Time, loc *time.Location, now time.Time) string {
+	tl := t.In(loc)
+	nl := now.In(loc)
+	ty, tm, td := tl.Date()
+	ny, nm, nd := nl.Date()
+	dayDiff := int(time.Date(ty, tm, td, 0, 0, 0, 0, loc).
+		Sub(time.Date(ny, nm, nd, 0, 0, 0, 0, loc)).Hours() / 24)
+	timeStr := tl.Format("3:04pm")
+	if dayDiff == 0 {
+		return "Today at " + timeStr
+	}
+	if dayDiff == -1 {
+		return "Yesterday at " + timeStr
+	}
+	if dayDiff > 0 {
+		return tl.Format("Jan 2, 2006 at 3:04pm")
+	}
+	days := -dayDiff
+	switch {
+	case days < 7:
+		return plural(days, "day") + " ago"
+	case days < 30:
+		return plural(days/7, "week") + " ago"
+	case days < 365:
+		return plural(days/30, "month") + " ago"
+	default:
+		return tl.Format("Jan 2, 2006 at 3:04pm")
+	}
+}
+
+// plural renders "1 day" or "2 days" etc.
+func plural(n int, unit string) string {
+	u := unit
+	if n != 1 {
+		u += "s"
+	}
+	return strconv.Itoa(n) + " " + u
 }

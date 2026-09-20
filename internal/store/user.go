@@ -11,6 +11,7 @@ type User struct {
 	Username     string
 	PasswordHash string
 	HasAvatar    bool
+	Timezone     string
 	CreatedAt    string
 }
 
@@ -33,7 +34,7 @@ func (s *UserStore) Create(username, passwordHash string) (User, error) {
 
 func (s *UserStore) ByID(id int64) (User, error) {
 	u, err := scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, (avatar_key IS NOT NULL), created_at FROM users WHERE id = ?`, id,
+		`SELECT id, username, password_hash, (avatar_key IS NOT NULL), timezone, created_at FROM users WHERE id = ?`, id,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound
@@ -43,7 +44,7 @@ func (s *UserStore) ByID(id int64) (User, error) {
 
 func (s *UserStore) ByUsername(username string) (User, error) {
 	u, err := scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, (avatar_key IS NOT NULL), created_at FROM users WHERE username = ?`, username,
+		`SELECT id, username, password_hash, (avatar_key IS NOT NULL), timezone, created_at FROM users WHERE username = ?`, username,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound
@@ -53,7 +54,7 @@ func (s *UserStore) ByUsername(username string) (User, error) {
 
 func (s *UserStore) List() ([]User, error) {
 	rows, err := s.db.Query(
-		`SELECT id, username, password_hash, (avatar_key IS NOT NULL), created_at FROM users ORDER BY username`,
+		`SELECT id, username, password_hash, (avatar_key IS NOT NULL), timezone, created_at FROM users ORDER BY username`,
 	)
 	if err != nil {
 		return nil, err
@@ -95,12 +96,22 @@ func (s *UserStore) SetAvatarKey(userID int64, key string) error {
 	return err
 }
 
+// SetTimezone stores the user's IANA timezone name ("" = server time).
+func (s *UserStore) SetTimezone(userID int64, tz string) error {
+	_, err := s.db.Exec(
+		`UPDATE users SET timezone = ? WHERE id = ?`, nullStr(tz), userID,
+	)
+	return err
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }
 
 func scanUser(row scanner) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HasAvatar, &u.CreatedAt)
+	var timezone sql.NullString
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HasAvatar, &timezone, &u.CreatedAt)
+	u.Timezone = timezone.String
 	return u, err
 }
