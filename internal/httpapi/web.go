@@ -1,12 +1,15 @@
 package httpapi
 
 import (
-	"github.com/charmbracelet/log"
+	"context"
 	"html/template"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/store"
@@ -140,8 +143,11 @@ type itemViewData struct {
 	PublishedAt string
 	Summary     string
 	ImageURL    string
+	Link        string
 	Body        template.HTML
 	EmbedURL    string
+	SourceURL   string // external destination of a reddit link post
+	EmbedSrc    string // iframe src from the destination's oEmbed
 }
 
 // itemView renders an item's stored content as a fragment, injected into the
@@ -163,7 +169,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 			log.Error("auto mark read on view", "item_id", id, "err", err)
 		}
 	}
-	web.RenderFragment(w, "item_view", itemViewData{
+	data := itemViewData{
 		Title:       it.Title,
 		AuthorName:  it.AuthorName,
 		AuthorID:    it.AuthorID,
@@ -172,9 +178,14 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		PublishedAt: it.PublishedAt,
 		Summary:     it.Summary,
 		ImageURL:    it.ImageURL,
+		Link:        it.Link,
 		Body:        template.HTML(it.Summary),
 		EmbedURL:    web.YoutubeEmbedURL(it.Link),
-	})
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+	data.SourceURL, data.EmbedSrc = s.resolveItemSource(ctx, data)
+	web.RenderFragment(w, "item_view", data)
 }
 
 func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
