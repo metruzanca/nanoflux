@@ -23,7 +23,7 @@
   <p class="muted small">{{.Data.Row.Unread}} unread · last polled {{if .Data.Row.LastPolledAt}}{{.Data.Row.LastPolledAt | timeFmt}}{{else}}never{{end}}</p>
 </section>
 <h2>items</h2>
-{{template "items_list" .Data.Items}}
+{{template "scoped_items" .Data.Scoped}}
 </main>
 </body>
 </html>

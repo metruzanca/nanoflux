@@ -13,6 +13,7 @@
 <section class="card">
   <h2>add feed</h2>
   <form class="stack" hx-post="/collections/{{.Data.Collection.ID}}/add-feed" hx-target="#collection-feeds" hx-swap="outerHTML">
+    <input type="hidden" name="view" value="{{.Data.Scoped.View}}">
     <select name="feed_id">
       {{range .Data.AllFeeds}}<option value="{{.ID}}">{{.Title}}</option>{{end}}
     </select>
@@ -22,9 +23,7 @@
 <h2>feeds</h2>
 {{template "collection_feeds" .Data}}
 <h2>items</h2>
-<div id="collection-items">
-{{template "items_list" .Data.Items}}
-</div>
+{{template "scoped_items" .Data.Scoped}}
 </main>
 </body>
 </html>
@@ -36,7 +35,7 @@
   <li>
     <div class="row">
       <a href="/feeds/{{.ID}}">{{.Title}}</a>
-      <button class="link danger" title="remove" hx-post="/collections/{{$.Collection.ID}}/remove-feed/{{.ID}}" hx-target="#collection-feeds" hx-swap="outerHTML">✕</button>
+      <button class="link danger" title="remove" hx-post="/collections/{{$.Collection.ID}}/remove-feed/{{.ID}}" hx-target="#collection-feeds" hx-swap="outerHTML" hx-vals='{"view":"{{$.Scoped.View}}"}'>✕</button>
     </div>
   </li>
   {{else}}
@@ -47,7 +46,5 @@
 
 {{define "collection_updated"}}
 {{template "collection_feeds" .}}
-<div id="collection-items" hx-swap-oob="outerHTML">
-  {{template "items_list" .Items}}
-</div>
+{{template "scoped_items" .Scoped}}
 {{end}}

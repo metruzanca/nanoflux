@@ -50,3 +50,17 @@
   </div>
 </li>
 {{end}}
+
+{{define "scoped_items"}}
+<div id="scoped-items"{{if .SwapOOB}} hx-swap-oob="outerHTML"{{end}}>
+  <nav class="tabs">
+    <a class="{{if eq .View "unread"}}active{{end}}" href="{{.Path}}?view=unread"
+       hx-get="{{.ItemsPath}}?view=unread" hx-target="#scoped-items" hx-swap="outerHTML"
+       hx-push-url="{{.Path}}?view=unread">unread ({{.UnreadCount}})</a>
+    <a class="{{if eq .View "read"}}active{{end}}" href="{{.Path}}?view=read"
+       hx-get="{{.ItemsPath}}?view=read" hx-target="#scoped-items" hx-swap="outerHTML"
+       hx-push-url="{{.Path}}?view=read">read ({{.ReadCount}})</a>
+  </nav>
+  {{template "items_list" .Items}}
+</div>
+{{end}}

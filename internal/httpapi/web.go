@@ -76,19 +76,31 @@ type authorsData struct {
 type authorData struct {
 	Author store.Author
 	Rows   []feedRow
-	Items  []store.ItemWithFeed
+	Scoped scopedItemsData
 }
 
 type feedPageData struct {
-	Row   feedRow
-	Items []store.ItemWithFeed
+	Row    feedRow
+	Scoped scopedItemsData
 }
 
 type collectionData struct {
 	Collection store.Collection
 	Feeds      []store.Feed
 	AllFeeds   []store.Feed
-	Items      []store.ItemWithFeed
+	Scoped     scopedItemsData
+}
+
+// scopedItemsData renders the unread/read tabs and an item list scoped to a
+// single feed, author, or collection.
+type scopedItemsData struct {
+	Path        string // full page URL base, e.g. "/feeds/1"
+	ItemsPath   string // fragment URL base, e.g. "/feeds/1/items"
+	View        string // "unread" or "read"
+	UnreadCount int
+	ReadCount   int
+	Items       []store.ItemWithFeed
+	SwapOOB     bool // render with hx-swap-oob for the collection OOB fragment
 }
 
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
@@ -565,10 +577,39 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	items, _ := s.store.Items.List(u.ID, store.ItemFilter{AuthorID: id, Limit: 100})
+	scoped := s.authorScopedItems(u.ID, id, itemsView(r))
 	web.Render(w, "author", web.Page{Title: a.Name, User: u, Data: authorData{
-		Author: a, Rows: rows, Items: items,
+		Author: a, Rows: rows, Scoped: scoped,
 	}})
+}
+
+// authorScopedItems loads one read/unread item list for an author plus the
+// counts that drive the tabs.
+func (s *Server) authorScopedItems(userID, authorID int64, view string) scopedItemsData {
+	filter := store.ItemFilter{AuthorID: authorID, Limit: 100}
+	if view == "read" {
+		filter.ReadOnly = true
+	} else {
+		filter.UnreadOnly = true
+	}
+	items, _ := s.store.Items.List(userID, filter)
+	unread, _ := s.store.Items.CountUnreadAuthor(userID, authorID)
+	read, _ := s.store.Items.CountReadAuthor(userID, authorID)
+	base := "/authors/" + strconv.FormatInt(authorID, 10)
+	return scopedItemsData{
+		Path: base, ItemsPath: base + "/items", View: view,
+		UnreadCount: unread, ReadCount: read, Items: items,
+	}
+}
+
+func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	web.RenderFragment(w, "scoped_items", s.authorScopedItems(u.ID, id, itemsView(r)))
 }
 
 func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
@@ -590,10 +631,39 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
-	items, _ := s.store.Items.List(u.ID, store.ItemFilter{FeedID: id, Limit: 100})
+	scoped := s.feedScopedItems(u.ID, id, itemsView(r))
 	web.Render(w, "feed", web.Page{Title: feed.Title, User: u, Data: feedPageData{
-		Row: feedRow{Feed: feed, AuthorName: authorName, Unread: unread}, Items: items,
+		Row: feedRow{Feed: feed, AuthorName: authorName, Unread: unread}, Scoped: scoped,
 	}})
+}
+
+// feedScopedItems loads one read/unread item list for a feed plus the counts
+// that drive the tabs.
+func (s *Server) feedScopedItems(userID, feedID int64, view string) scopedItemsData {
+	filter := store.ItemFilter{FeedID: feedID, Limit: 100}
+	if view == "read" {
+		filter.ReadOnly = true
+	} else {
+		filter.UnreadOnly = true
+	}
+	items, _ := s.store.Items.List(userID, filter)
+	unread, _ := s.store.Items.CountUnread(userID, feedID)
+	read, _ := s.store.Items.CountRead(userID, feedID)
+	base := "/feeds/" + strconv.FormatInt(feedID, 10)
+	return scopedItemsData{
+		Path: base, ItemsPath: base + "/items", View: view,
+		UnreadCount: unread, ReadCount: read, Items: items,
+	}
+}
+
+func (s *Server) feedItems(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	web.RenderFragment(w, "scoped_items", s.feedScopedItems(u.ID, id, itemsView(r)))
 }
 
 func (s *Server) feedRowsForAuthor(userID, authorID int64) ([]feedRow, error) {
@@ -709,7 +779,7 @@ func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	d, err := s.collectionDataFor(u.ID, id)
+	d, err := s.collectionDataFor(u.ID, id, itemsView(r))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -717,15 +787,44 @@ func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, "collection", web.Page{Title: d.Collection.Name, User: u, Data: d})
 }
 
-func (s *Server) collectionDataFor(userID, id int64) (collectionData, error) {
+func (s *Server) collectionDataFor(userID, id int64, view string) (collectionData, error) {
 	c, err := s.store.Collections.ByID(userID, id)
 	if err != nil {
 		return collectionData{}, err
 	}
 	feeds, _ := s.store.Collections.Feeds(userID, id)
 	allFeeds, _ := s.store.Feeds.List(userID)
-	items, _ := s.store.Items.List(userID, store.ItemFilter{CollectionID: id, Limit: 100})
-	return collectionData{Collection: c, Feeds: feeds, AllFeeds: allFeeds, Items: items}, nil
+	scoped := s.collectionScopedItems(userID, id, view)
+	return collectionData{Collection: c, Feeds: feeds, AllFeeds: allFeeds, Scoped: scoped}, nil
+}
+
+// collectionScopedItems loads one read/unread item list for a collection plus
+// the counts that drive the tabs.
+func (s *Server) collectionScopedItems(userID, collectionID int64, view string) scopedItemsData {
+	filter := store.ItemFilter{CollectionID: collectionID, Limit: 100}
+	if view == "read" {
+		filter.ReadOnly = true
+	} else {
+		filter.UnreadOnly = true
+	}
+	items, _ := s.store.Items.List(userID, filter)
+	unread, _ := s.store.Items.CountUnreadCollection(userID, collectionID)
+	read, _ := s.store.Items.CountReadCollection(userID, collectionID)
+	base := "/collections/" + strconv.FormatInt(collectionID, 10)
+	return scopedItemsData{
+		Path: base, ItemsPath: base + "/items", View: view,
+		UnreadCount: unread, ReadCount: read, Items: items,
+	}
+}
+
+func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	web.RenderFragment(w, "scoped_items", s.collectionScopedItems(u.ID, id, itemsView(r)))
 }
 
 func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
@@ -754,7 +853,7 @@ func (s *Server) collectionAddFeed(w http.ResponseWriter, r *http.Request) {
 	if feedID != 0 {
 		s.store.Collections.AddFeed(u.ID, id, feedID)
 	}
-	s.renderCollectionFeeds(w, u.ID, id)
+	s.renderCollectionFeeds(w, u.ID, id, normalizeItemsView(r.FormValue("view")))
 }
 
 func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
@@ -770,16 +869,29 @@ func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.Collections.RemoveFeed(u.ID, id, feedID)
-	s.renderCollectionFeeds(w, u.ID, id)
+	s.renderCollectionFeeds(w, u.ID, id, normalizeItemsView(r.FormValue("view")))
 }
 
-func (s *Server) renderCollectionFeeds(w http.ResponseWriter, userID, id int64) {
-	d, err := s.collectionDataFor(userID, id)
+func (s *Server) renderCollectionFeeds(w http.ResponseWriter, userID, id int64, view string) {
+	d, err := s.collectionDataFor(userID, id, view)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	d.Scoped.SwapOOB = true
 	web.RenderFragment(w, "collection_updated", d)
+}
+
+// itemsView reads the ?view= query param and normalizes it to "unread" or "read".
+func itemsView(r *http.Request) string {
+	return normalizeItemsView(r.URL.Query().Get("view"))
+}
+
+func normalizeItemsView(v string) string {
+	if v == "read" {
+		return "read"
+	}
+	return "unread"
 }
 
 // writeFormError responds to an htmx add-form submit with an out-of-band swap

@@ -221,6 +221,47 @@ func TestItemFavorites(t *testing.T) {
 	}
 }
 
+func TestItemScopedCounts(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+	coll, _ := s.Collections.Create(u.ID, "Dev")
+	s.Collections.AddFeed(u.ID, coll.ID, f.ID)
+
+	s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "One", Link: "https://metru.dev/1", FetchedAt: db.Now()})
+	s.Items.Upsert(f.ID, Item{GUID: "g2", Title: "Two", Link: "https://metru.dev/2", FetchedAt: db.Now()})
+
+	items, _ := s.Items.List(u.ID, ItemFilter{})
+	if err := s.Items.SetRead(u.ID, items[0].ID, true); err != nil {
+		t.Fatalf("SetRead: %v", err)
+	}
+
+	if n, _ := s.Items.CountUnreadAuthor(u.ID, a.ID); n != 1 {
+		t.Fatalf("CountUnreadAuthor: %d, want 1", n)
+	}
+	if n, _ := s.Items.CountReadAuthor(u.ID, a.ID); n != 1 {
+		t.Fatalf("CountReadAuthor: %d, want 1", n)
+	}
+	if n, _ := s.Items.CountUnreadCollection(u.ID, coll.ID); n != 1 {
+		t.Fatalf("CountUnreadCollection: %d, want 1", n)
+	}
+	if n, _ := s.Items.CountReadCollection(u.ID, coll.ID); n != 1 {
+		t.Fatalf("CountReadCollection: %d, want 1", n)
+	}
+
+	// Author-scoped read filter returns exactly the read item.
+	read, _ := s.Items.List(u.ID, ItemFilter{AuthorID: a.ID, ReadOnly: true})
+	if len(read) != 1 || read[0].ID != items[0].ID {
+		t.Fatalf("author read list: %+v", read)
+	}
+	// Collection-scoped unread filter returns exactly the unread item.
+	unread, _ := s.Items.List(u.ID, ItemFilter{CollectionID: coll.ID, UnreadOnly: true})
+	if len(unread) != 1 {
+		t.Fatalf("collection unread list: %d items", len(unread))
+	}
+}
+
 func TestItemsAuthorlessFeed(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
