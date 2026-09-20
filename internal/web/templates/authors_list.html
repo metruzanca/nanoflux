@@ -43,10 +43,36 @@
   {{if .Data.Author.URL}}<p><a href="{{.Data.Author.URL}}" target="_blank" rel="noopener">{{.Data.Author.URL}}</a></p>{{end}}
   {{if .Data.Author.Description}}<p>{{.Data.Author.Description}}</p>{{end}}
 </section>
-<h2>feeds</h2>
+<div class="row">
+  <h2>feeds</h2>
+  <button type="button" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>
+</div>
 {{template "feeds_list" .Data.Rows}}
 <h2>items</h2>
 {{template "items_list" .Data.Items}}
+
+<dialog id="add-author-feed-dialog" class="modal">
+  <div class="row">
+    <h2>add feed for {{.Data.Author.Name}}</h2>
+    <button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+  </div>
+  <form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-feed-preview" hx-swap="innerHTML">
+    <input type="hidden" id="feed-author-id" name="author_id" value="{{.Data.Author.ID}}">
+    <label>url
+      <input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required>
+    </label>
+    <button type="submit">find feed</button>
+  </form>
+  <div id="author-feed-preview"></div>
+</dialog>
+<script>
+document.getElementById('add-author-feed-dialog').addEventListener('close', function () {
+  var url = this.querySelector('input[name=url]');
+  if (url) url.value = '';
+  var p = document.getElementById('author-feed-preview');
+  if (p) p.innerHTML = '';
+});
+</script>
 </main>
 </body>
 </html>

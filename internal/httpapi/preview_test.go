@@ -33,9 +33,9 @@ func TestFeedPreviewErrors(t *testing.T) {
 		t.Fatalf("empty url: %d %s", rr.Code, rr.Body.String())
 	}
 
-	// Unparseable url -> discover fails.
+	// Unparseable url -> a visible error, not a crash.
 	rr = doForm(h, "POST", "/fragments/feed-preview", url.Values{"url": {"://not-a-url"}}, cookie)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "could not inspect") {
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `role="alert"`) {
 		t.Fatalf("unparseable url: %d %s", rr.Code, rr.Body.String())
 	}
 
@@ -132,6 +132,35 @@ func TestFeedPreviewMultiple(t *testing.T) {
 	body := rr.Body.String()
 	if !strings.Contains(body, feedSrv.URL+"/atom") || strings.Contains(body, "/rss") {
 		t.Fatalf("chosen preview: %s", body)
+	}
+}
+
+func TestFeedPreviewPreselectsAuthor(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	feedSrv := feedPreviewServer(t)
+	defer feedSrv.Close()
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+
+	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url":       {feedSrv.URL + "/rss"},
+		"author_id": {itoa(a.ID)},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `value="`+itoa(a.ID)+`" selected`) {
+		t.Fatalf("expected author preselected in the form: %s", body)
+	}
+	// Without author_id nothing is preselected.
+	rr = doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url": {feedSrv.URL + "/rss"},
+	}, cookie)
+	if strings.Contains(rr.Body.String(), " selected") {
+		t.Fatalf("no author should be preselected by default: %s", rr.Body.String())
 	}
 }
 

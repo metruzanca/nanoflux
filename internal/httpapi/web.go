@@ -228,7 +228,7 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 
 	title := strings.TrimSpace(r.FormValue("title"))
-	feedURL := strings.TrimSpace(r.FormValue("feed_url"))
+	feedURL := normalizeURL(r.FormValue("feed_url"))
 	homeURL := r.FormValue("home_url")
 	interval, _ := strconv.Atoi(r.FormValue("poll_interval_sec"))
 	if interval <= 0 {
@@ -335,7 +335,7 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title := r.FormValue("title")
-	feedURL := r.FormValue("feed_url")
+	feedURL := normalizeURL(r.FormValue("feed_url"))
 	interval, _ := strconv.Atoi(r.FormValue("poll_interval_sec"))
 	if interval <= 0 {
 		interval = 900
@@ -400,6 +400,21 @@ func unique(ids []int64) []int64 {
 		}
 	}
 	return out
+}
+
+// normalizeURL trims s and prepends https:// when no scheme is present, so
+// user-entered URLs like "x.com/metruzanca" and "https://x.com/metruzanca"
+// are equivalent.
+func normalizeURL(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	lower := strings.ToLower(s)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return s
+	}
+	return "https://" + s
 }
 
 func (s *Server) feedDelete(w http.ResponseWriter, r *http.Request) {

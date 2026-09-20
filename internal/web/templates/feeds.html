@@ -20,7 +20,7 @@
   </div>
   <form class="stack" hx-post="/fragments/feed-preview" hx-target="#feed-preview" hx-swap="innerHTML">
     <label>url
-      <input id="feed-url-input" name="url" type="url" placeholder="https://site.com or /feed.xml" autofocus required>
+      <input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required>
     </label>
     <button type="submit">find feed</button>
   </form>
@@ -46,7 +46,7 @@ document.getElementById('add-feed-dialog').addEventListener('close', function ()
     <input name="title" type="text" value="{{.Title}}">
   </label>
   <label>feed url
-    <input name="feed_url" type="url" value="{{.FeedURL}}" required>
+    <input name="feed_url" type="text" value="{{.FeedURL}}" required>
   </label>
   <label>home url
     <input id="feed-home-url" name="home_url" type="url" value="{{.HomeURL}}">
@@ -54,7 +54,7 @@ document.getElementById('add-feed-dialog').addEventListener('close', function ()
   <label>author
     <select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change" hx-include="#feed-home-url">
       <option value="">no author</option>
-      {{range .Authors}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+      {{range .Authors}}<option value="{{.ID}}"{{if eq $.SelectedAuthorID .ID}} selected{{end}}>{{.Name}}</option>{{end}}
       <option value="new">+ create new author</option>
     </select>
   </label>
@@ -67,7 +67,7 @@ document.getElementById('add-feed-dialog').addEventListener('close', function ()
 {{define "feed_choose"}}
 <div class="choose">
   <p class="muted">found {{len .Candidates}} feeds on that page — pick one</p>
-  <select name="feed_url" hx-post="/fragments/feed-preview" hx-target="#feed-preview" hx-swap="innerHTML" hx-include="#feed-url-input">
+  <select name="feed_url" hx-post="/fragments/feed-preview" hx-target="#feed-preview" hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id">
     {{range .Candidates}}<option value="{{.FeedURL}}">{{.Title}}</option>{{end}}
   </select>
 </div>
@@ -99,7 +99,7 @@ document.getElementById('add-feed-dialog').addEventListener('close', function ()
   <input name="title" value="{{.Form.Title}}" required>
 </label>
 <label>feed url
-  <input name="feed_url" type="url" value="{{.Form.FeedURL}}" required>
+  <input name="feed_url" type="text" value="{{.Form.FeedURL}}" required>
 </label>
 <label>home url
   <input name="home_url" type="url" value="{{.Form.HomeURL}}">
