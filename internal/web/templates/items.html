@@ -14,14 +14,15 @@
 {{$video := isVideo .Link}}
 {{$image := isImagePost .Summary .ImageURL .Title}}
 {{$link := isLinkPost .ImageURL}}
-<li id="item-{{.ID}}" class="{{if $video}}video-card{{else if $image}}image-card{{else if $link}}link-card{{else}}text-card{{end}}">
+{{$gallery := isGallery .ImageURL}}
+<li id="item-{{.ID}}" class="{{if $video}}video-card{{else if or $image $gallery}}image-card{{else if $link}}link-card{{else}}text-card{{end}}">
   {{if $video}}
   <a class="thumb" href="#item-{{.ID}}" data-item-id="{{.ID}}" data-item-link="{{.Link}}" onclick="return openItem(this)">
     {{if .ImageURL}}<img src="{{.ImageURL}}" alt="" loading="lazy">{{else}}<span class="thumb-ph">▶</span>{{end}}
   </a>
-  {{else if or $image $link}}
+  {{else if or $image $link $gallery}}
   <a class="thumb thumb--img" href="#item-{{.ID}}" data-item-id="{{.ID}}" data-item-link="{{.Link}}" onclick="return openItem(this)">
-    <img src="{{.ImageURL}}" alt="" loading="lazy">
+    {{if $gthumb := galleryThumb .ImageURL}}<img src="{{$gthumb}}" alt="" loading="lazy">{{else}}<img src="{{.ImageURL}}" alt="" loading="lazy">{{end}}
     {{if $link}}<span class="thumb-badge" title="content lives on an external site">external</span>{{end}}
   </a>
   {{end}}
@@ -33,7 +34,7 @@
         {{if .AuthorName}}<a href="/authors/{{.AuthorID}}">{{.AuthorName}}</a> · {{end}}{{sourceIcon .FeedURL}}<a href="/feeds/{{.FeedID}}">{{.FeedTitle}}</a>
         {{if .PublishedAt}} · {{.PublishedAt | timeFmt}}{{end}}
       </div>
-        {{if and .Summary (not $image) (not $link)}}<div class="item-summary">{{.Summary | stripHTML}}</div>{{end}}
+        {{if and .Summary (not $image) (not $link) (not $gallery)}}<div class="item-summary">{{.Summary | stripHTML}}</div>{{end}}
       </div>
       <button class="link" title="{{if .Read}}mark unread{{else}}mark read{{end}}"
         hx-post="/items/{{.ID}}/read" hx-target="#item-{{.ID}}" hx-swap="outerHTML">

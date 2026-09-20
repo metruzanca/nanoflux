@@ -28,6 +28,30 @@ func TestSourceIcon(t *testing.T) {
 	}
 }
 
+func TestIsGallery(t *testing.T) {
+	gallery := "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140&crop=1:1,smart&auto=webp&s=x"
+	if !isGallery(gallery) {
+		t.Fatal("square gallery cover should be detected")
+	}
+	image := "https://preview.redd.it/87u0k8i05brf1.jpeg?width=640&crop=smart&auto=webp&s=y"
+	if isGallery(image) {
+		t.Fatal("natural-aspect image post should not be a gallery")
+	}
+	if isGallery("https://external-preview.redd.it/x.jpeg?width=320") {
+		t.Fatal("external-preview should not be a gallery")
+	}
+}
+
+func TestGalleryThumb(t *testing.T) {
+	gallery := "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140&crop=1:1,smart&auto=webp&s=x"
+	if got := galleryThumb(gallery); got != "https://i.redd.it/5t6y7u8i.jpg" {
+		t.Fatalf("galleryThumb = %q", got)
+	}
+	if got := galleryThumb("https://preview.redd.it/x.jpeg?width=640&crop=smart&s=y"); got != "" {
+		t.Fatalf("image post should not get a gallery thumb: %q", got)
+	}
+}
+
 func TestIsImagePost(t *testing.T) {
 	const img = "https://example.com/pic.jpg"
 	cases := []struct {

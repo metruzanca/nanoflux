@@ -314,6 +314,13 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 		Summary:  `<a href="https://www.reddit.com/r/cats/comments/1abcde/"><img src="https://external-preview.redd.it/1q2w3e4r.jpeg?width=320" alt="Mittens enjoys a sunny nap"></a>`,
 		FetchedAt: db.Now(),
 	})
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "p4", Title: "Whiskers at golden hour",
+		Link:     "https://old.reddit.com/r/cats/comments/1fghij/whiskers_at_golden_hour/",
+		ImageURL: "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140&crop=1:1,smart&auto=webp&s=x",
+		Summary:  `<a href="https://www.reddit.com/r/cats/comments/1fghij/"><img src="https://preview.redd.it/5t6y7u8i.jpg" alt="Whiskers"></a><a href="https://www.reddit.com/gallery/1fghij">[link]</a>`,
+		FetchedAt: db.Now(),
+	})
 
 	body := doGet(h, "/", cookie).Body.String()
 	if !strings.Contains(body, `id="item-1" class="video-card"`) {
@@ -339,6 +346,12 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	}
 	if !strings.Contains(body, `class="thumb-badge"`) || !strings.Contains(body, ">external</span>") {
 		t.Fatalf("link card missing the external badge: %s", body)
+	}
+	if !strings.Contains(body, `id="item-5" class="image-card"`) {
+		t.Fatalf("gallery should render an image-card: %s", body)
+	}
+	if !strings.Contains(body, `src="https://i.redd.it/5t6y7u8i.jpg"`) {
+		t.Fatalf("gallery card should use the full-res i.redd.it thumbnail: %s", body)
 	}
 	// The row keeps the modal data attrs and the read toggle.
 	if !strings.Contains(body, `data-item-link="https://www.youtube.com/watch?v=H0KAi8AWsnM"`) {

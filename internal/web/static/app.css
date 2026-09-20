@@ -239,6 +239,16 @@ dialog.modal.wide[open] {
   background: var(--bg);
 }
 
+.gallery { display: flex; flex-direction: column; gap: 0.75rem; margin: 0.75rem 0; }
+.gallery img {
+  width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
 .video-embed {
   aspect-ratio: 16 / 9;
   margin: 0.75rem 0;

@@ -36,6 +36,8 @@ var funcMap = template.FuncMap{
 	},
 	"isImagePost": isImagePost,
 	"isLinkPost":  isLinkPost,
+	"isGallery":   isGallery,
+	"galleryThumb": galleryThumb,
 	"sourceIcon":  sourceIcon,
 }
 
@@ -181,6 +183,43 @@ func isImagePost(summary, imageURL, title string) bool {
 	}
 	t := strings.TrimSpace(text.String())
 	return t == "" || t == strings.TrimSpace(title)
+}
+
+// isGallery reports whether an item is a reddit gallery post, from its stored
+// thumbnail alone: galleries use a small square cover in the feed
+// (width=140&height=140&crop=1:1) rather than the natural-aspect image-post
+// crop.
+func isGallery(imageURL string) bool {
+	u, err := url.Parse(imageURL)
+	if err != nil || u.Hostname() != "preview.redd.it" {
+		return false
+	}
+	q := u.Query()
+	return q.Get("crop") == "1:1,smart"
+}
+
+// galleryThumb returns the full-res first image of a reddit gallery post (the
+// stored thumbnail is a tiny square cover), or "" when the item is not a
+// gallery.
+func galleryThumb(imageURL string) string {
+	if !isGallery(imageURL) {
+		return ""
+	}
+	u, err := url.Parse(imageURL)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) != 1 {
+		return ""
+	}
+	if id, ext, ok := strings.Cut(parts[0], "."); ok && id != "" && ext != "" {
+		if ext == "jpeg" {
+			ext = "jpg"
+		}
+		return "https://i.redd.it/" + id + "." + ext
+	}
+	return ""
 }
 
 // stripHTML extracts plain text from feed-provided HTML.
