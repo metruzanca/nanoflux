@@ -1,0 +1,7 @@
+# -- Main Menu --
+[[main]]
+  name = "GitHub"
+  identifier = "github"
+  pre = "github"
+  url = "https://github.com/metruzanca/nanoflux"
+  weight = 10

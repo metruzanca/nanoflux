@@ -1,0 +1,68 @@
+# -- Theme Options --
+# See https://blowfish.page/docs/configuration/#theme-parameters
+
+colorScheme = "blowfish"
+defaultAppearance = "dark" # valid options: light or dark
+autoSwitchAppearance = true
+
+enableA11y = false
+enableSearch = false
+enableCodeCopy = true
+
+mainSections = []
+
+disableImageOptimization = false
+disableTextInHeader = false
+backgroundCanvas = false
+
+highlightCurrentMenuArea = true
+
+[header]
+  layout = "floating" # valid options: basic, fixed, fixed-fill, fixed-gradient, fixed-fill-blur, floating
+
+[footer]
+  showMenu = false
+  showCopyright = true
+  showThemeAttribution = true
+  showAppearanceSwitcher = true
+  showScrollToTop = true
+
+[homepage]
+  layout = "page" # valid options: page, profile, hero, card, background, landing, custom
+  showRecent = false
+
+[article]
+  showDate = false
+  showViews = false
+  showLikes = false
+  showAuthor = false
+  showHero = false
+  showBreadcrumbs = false
+  showDraftLabel = false
+  showEdit = false
+  showHeadingAnchors = true
+  showPagination = false
+  showReadingTime = false
+  showReadingProgress = false
+  showTableOfContents = false
+  showRelatedContent = false
+  showTaxonomies = false
+  showZenMode = false
+
+[list]
+  showHero = false
+  showBreadcrumbs = false
+  showSummary = false
+  showViews = false
+  showLikes = false
+  showTableOfContents = false
+  showCards = false
+
+[sitemap]
+  excludedKinds = []
+
+[taxonomy]
+  showTermCount = true
+  showHero = false
+  showBreadcrumbs = false
+  showTableOfContents = false
