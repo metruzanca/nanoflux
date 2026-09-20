@@ -86,6 +86,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /fragments/feed-preview", s.auth.Require(http.HandlerFunc(s.feedPreview)))
 	mux.Handle("POST /fragments/author-preview", s.auth.Require(http.HandlerFunc(s.authorPreview)))
 
+	// Image proxy for avatars.
+	mux.Handle("GET /img", s.auth.Require(http.HandlerFunc(s.imgProxy)))
+
 	// JSON API (for the browser extension).
 	mux.HandleFunc("POST /api/login", s.apiLogin)
 	mux.Handle("GET /api/unread-count", s.auth.Require(http.HandlerFunc(s.apiUnreadCount)))

@@ -42,7 +42,7 @@ document.getElementById('add-author-dialog').addEventListener('close', function 
 {{define "author_preview"}}
 <form class="stack" hx-post="/authors" hx-target="#authors-list" hx-swap="beforeend"
       hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
-  {{if .AvatarURL}}<img class="avatar" src="{{.AvatarURL}}" alt=""> {{end}}
+  {{if .AvatarURL}}<img class="avatar" src="/img?u={{.AvatarURL | urlquery}}" onerror="this.style.display='none'" alt=""> {{end}}
   <label>name
     <input name="name" type="text" value="{{.Name}}" required>
   </label>

@@ -10,7 +10,9 @@
 <li id="author-{{.ID}}">
   <div class="row">
     <div>
-      <a href="/authors/{{.ID}}"><strong>{{.Name}}</strong></a>
+      <a href="/authors/{{.ID}}">
+        {{if .AvatarURL}}<img class="avatar avatar-sm" src="/img?u={{.AvatarURL | urlquery}}" onerror="this.style.display='none'" alt=""> {{end}}<strong>{{.Name}}</strong>
+      </a>
       <div class="item-meta">{{.FeedCount}} feeds{{if .URL}} · <a href="{{.URL}}" target="_blank" rel="noopener">{{.URL}}</a>{{end}}</div>
     </div>
     <div class="row-actions">
@@ -32,7 +34,10 @@
 <main>
 <section class="card">
   <div class="row">
-    <h1>{{.Data.Author.Name}}</h1>
+    <div class="row">
+      {{if .Data.Author.AvatarURL}}<img class="avatar avatar-lg" src="/img?u={{.Data.Author.AvatarURL | urlquery}}" onerror="this.style.display='none'" alt=""> {{end}}
+      <h1>{{.Data.Author.Name}}</h1>
+    </div>
     <a class="small" href="/authors/{{.Data.Author.ID}}/edit">edit</a>
   </div>
   {{if .Data.Author.URL}}<p><a href="{{.Data.Author.URL}}" target="_blank" rel="noopener">{{.Data.Author.URL}}</a></p>{{end}}

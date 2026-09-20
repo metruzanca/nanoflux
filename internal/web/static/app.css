@@ -129,7 +129,10 @@ dialog.modal h2 { margin: 0; }
   border-radius: 50%;
   border: 1px solid var(--border);
   object-fit: cover;
+  vertical-align: middle;
 }
+.avatar-sm { width: 1.5rem; height: 1.5rem; }
+.avatar-lg { width: 4rem; height: 4rem; }
 
 dialog.modal.wide[open] {
   width: min(60rem, calc(100vw - 2rem));
