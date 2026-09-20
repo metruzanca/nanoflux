@@ -32,23 +32,56 @@ document.addEventListener('htmx:beforeSwap', function (e) {
   <div class="row">
     <h2 class="muted">item</h2>
     <div class="row-actions">
-      <a id="item-dialog-live" class="small" href="#" target="_blank" rel="noopener">open live ↗</a>
+      <a id="item-dialog-live" class="small external" href="#" target="_blank" rel="noopener">open live</a>
       <button type="button" class="link" onclick="document.getElementById('item-dialog').close()">✕</button>
     </div>
   </div>
   <div id="item-dialog-body" class="item-view"></div>
 </dialog>
 <script>
+var currentItemId = null;
 function openItem(el) {
+  currentItemId = el.dataset.itemId;
   document.getElementById('item-dialog-live').href = el.dataset.itemLink;
   var body = document.getElementById('item-dialog-body');
   body.innerHTML = '<p class="muted">loading…</p>';
   fetch('/items/' + el.dataset.itemId + '/view')
     .then(function (r) { return r.text(); })
-    .then(function (html) { body.innerHTML = html; })
+    .then(function (html) {
+      body.innerHTML = html;
+      markRowRead(el.dataset.itemId);
+    })
     .catch(function () { body.innerHTML = '<p class="error">could not load item</p>'; });
   document.getElementById('item-dialog').showModal();
   return false;
 }
+function markRowRead(id) {
+  var row = document.getElementById('item-' + id);
+  if (!row) return;
+  var title = row.querySelector('.item-title');
+  if (title) title.classList.remove('unread');
+  var btn = row.querySelector('button.link[title]');
+  if (btn) {
+    btn.textContent = '↺';
+    btn.setAttribute('title', 'mark unread');
+  }
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  var dialog = document.getElementById('item-dialog');
+  if (!dialog || !dialog.open || !currentItemId) return;
+  if (e.target.closest && e.target.closest('input, textarea, select')) return;
+  var current = document.getElementById('item-' + currentItemId);
+  if (!current) return;
+  var list = current.closest('ul.items') || current.parentElement;
+  var items = Array.prototype.slice.call(list.querySelectorAll('li[id^="item-"]'));
+  var idx = items.indexOf(current);
+  var next = e.key === 'ArrowRight' ? items[idx + 1] : items[idx - 1];
+  if (!next) return;
+  var link = next.querySelector('[data-item-id]');
+  if (!link) return;
+  e.preventDefault();
+  openItem(link);
+});
 </script>
 {{end}}

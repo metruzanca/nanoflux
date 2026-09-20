@@ -2,6 +2,24 @@
 
 Project-specific guidance for coding agents working in this repository.
 
+## Links: internal by default, ↗ on every external link
+
+The app's own pages are the primary navigation surface. This is a hard rule.
+
+- **Authors/usernames and feed titles are always internal links.** Route them
+  to `/authors/{id}` and `/feeds/{id}` respectively. Never link them to an
+  external URL (e.g. the feed's RSS URL or the author's homepage) — the item
+  listing meta, the item modal meta, and any feed/author listing follow this.
+  See `item_row` in `items.html` and `item_view.html`.
+- **Every link that leaves the app** (href points at an external `http(s)://`
+  origin) MUST carry `class="external"`. `app.css` renders the `↗` marker via
+  `a.external::after`, so external links are always visibly marked — e.g.
+  "feed", "home", an author's homepage URL, and "open live" in the item modal.
+  Do not emit an external link without this class, and do not hard-code a
+  second `↗` character in link text.
+- This applies to the webapp UI only (`internal/web/templates`); the
+  `website/` Hugo marketing site is out of scope.
+
 ## Error handling in the web UI
 
 The web UI is server-rendered with htmx. All user-facing failures must render a

@@ -302,6 +302,11 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 		GUID: "p1", Title: "Post", Link: "https://example.com/1",
 		Summary: "<p>hello</p>", FetchedAt: db.Now(),
 	})
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "p2", Title: "Image Post", Link: "https://example.com/2",
+		Summary: `<a href="https://example.com/2"><img src="https://example.com/pic.jpg" alt="Image Post" /></a>`,
+		ImageURL: "https://example.com/pic.jpg", FetchedAt: db.Now(),
+	})
 
 	body := doGet(h, "/", cookie).Body.String()
 	if !strings.Contains(body, `id="item-1" class="video-card"`) {
@@ -313,12 +318,85 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	if !strings.Contains(body, `id="item-2" class="text-card"`) {
 		t.Fatalf("text item should render a text-card: %s", body)
 	}
+	if !strings.Contains(body, `id="item-3" class="image-card"`) {
+		t.Fatalf("image post should render an image-card: %s", body)
+	}
+	if !strings.Contains(body, `src="https://example.com/pic.jpg"`) {
+		t.Fatalf("image card missing the image: %s", body)
+	}
 	// The row keeps the modal data attrs and the read toggle.
 	if !strings.Contains(body, `data-item-link="https://www.youtube.com/watch?v=H0KAi8AWsnM"`) {
 		t.Fatalf("video card missing data-item-link: %s", body)
 	}
 	if !strings.Contains(body, `hx-post="/items/2/read"`) {
 		t.Fatalf("text card missing read toggle: %s", body)
+	}
+	if !strings.Contains(body, `hx-post="/items/3/read"`) {
+		t.Fatalf("image card missing read toggle: %s", body)
+	}
+	// Feed titles in the item meta link to the internal feed page, never the RSS url.
+	if !strings.Contains(body, `href="/feeds/1">bigboxSWE</a>`) {
+		t.Fatalf("item meta should link to /feeds/1 internally: %s", body)
+	}
+	if strings.Contains(body, `href="https://www.youtube.com/feeds/videos.xml`) {
+		t.Fatalf("item meta must not link to the external feed url: %s", body)
+	}
+}
+
+func TestItemViewImageLightbox(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	f, _ := s.store.Feeds.Create(u.ID, 0, "Pics", "https://pics.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "p1", Title: "Image Post", Link: "https://pics.dev/1",
+		Summary: `<a href="https://pics.dev/1"><img src="https://pics.dev/pic.jpg" alt="Image Post" /></a>`,
+		ImageURL: "https://pics.dev/pic.jpg", FetchedAt: db.Now(),
+	})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	rr := doGet(h, "/items/"+itoa(items[0].ID)+"/view", cookie)
+	body := rr.Body.String()
+	if !strings.Contains(body, `class="image-lightbox"`) {
+		t.Fatalf("image post view missing image-lightbox: %s", body)
+	}
+	if !strings.Contains(body, `src="https://pics.dev/pic.jpg"`) {
+		t.Fatalf("image post view missing the lightbox image: %s", body)
+	}
+	if strings.Contains(body, "item-body") {
+		t.Fatalf("image post view should not render the summary body: %s", body)
+	}
+}
+
+func TestItemViewMarksRead(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	f, _ := s.store.Feeds.Create(u.ID, 0, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now(),
+	})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	id := items[0].ID
+	if items[0].Read {
+		t.Fatal("item should start unread")
+	}
+	rr := doGet(h, "/items/"+itoa(id)+"/view", cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("item view: %d", rr.Code)
+	}
+	after, err := s.store.Items.ByID(u.ID, id)
+	if err != nil || !after.Read {
+		t.Fatalf("viewing should mark the item read: %+v err=%v", after, err)
+	}
+	// Marking read twice is idempotent.
+	doGet(h, "/items/"+itoa(id)+"/view", cookie)
+	after, _ = s.store.Items.ByID(u.ID, id)
+	if !after.Read {
+		t.Fatal("viewing a read item should not toggle it back to unread")
 	}
 }
 
@@ -370,6 +448,17 @@ func TestItemView(t *testing.T) {
 	if !strings.Contains(body, "<b>world</b>") || !strings.Contains(body, "Item") || !strings.Contains(body, "Metru") {
 		t.Fatalf("item view content: %s", body)
 	}
+	// Modal meta links author and feed internally, never to the external RSS url.
+	if !strings.Contains(body, `href="/authors/1">Metru</a>`) {
+		t.Fatalf("modal meta should link the author internally: %s", body)
+	}
+	if !strings.Contains(body, `href="/feeds/1">Blog</a>`) {
+		t.Fatalf("modal meta should link the feed internally: %s", body)
+	}
+	if strings.Contains(body, `href="https://b.dev/rss.xml"`) {
+		t.Fatalf("modal meta must not link to the external feed url: %s", body)
+	}
+	// "open live" lives in the dialog header (layout), not the fragment.
 
 	// Another user cannot view it.
 	other, _ := s.store.Users.Create("bob", "h")
@@ -406,6 +495,42 @@ func TestAuthorPageHasAddFeedDialog(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("author page missing %q: %s", want, body)
 		}
+	}
+}
+
+func TestExternalLinksCarryMarker(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "https://metru.example", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "https://b.dev", "", 900)
+
+	// Feed page: "feed" and "home" links are external and carry the ↗ marker class.
+	body := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
+	if !strings.Contains(body, `href="https://b.dev/rss.xml" class="external">feed`) {
+		t.Fatalf("feed page feed link should be external-marked: %s", body)
+	}
+	if !strings.Contains(body, `href="https://b.dev" target="_blank" rel="noopener" class="external">home`) {
+		t.Fatalf("feed page home link should be external-marked: %s", body)
+	}
+
+	// Author page: the homepage URL is external and marked.
+	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if !strings.Contains(body, `href="https://metru.example" target="_blank" rel="noopener" class="external">`) {
+		t.Fatalf("author homepage should be external-marked: %s", body)
+	}
+
+	// Feeds list row: the "feed" link is external and marked.
+	body = doGet(h, "/feeds", cookie).Body.String()
+	if !strings.Contains(body, `href="https://b.dev/rss.xml" class="external">feed`) {
+		t.Fatalf("feeds list feed link should be external-marked: %s", body)
+	}
+
+	// "open live" in the dialog header is external and marked.
+	body = doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `class="small external"`) {
+		t.Fatalf("open live should be external-marked: %s", body)
 	}
 }
 

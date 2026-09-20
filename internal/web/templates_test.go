@@ -27,3 +27,28 @@ func TestSourceIcon(t *testing.T) {
 		t.Errorf("sourceIcon(\"\") = %q, want inline svg", got)
 	}
 }
+
+func TestIsImagePost(t *testing.T) {
+	const img = "https://example.com/pic.jpg"
+	cases := []struct {
+		name     string
+		summary  string
+		imageURL string
+		title    string
+		want     bool
+	}{
+		{"linked image with alt", `<a href="https://example.com/p"><img src="` + img + `" alt="Your weakness has ears" title="Your weakness has ears" /></a>`, img, "Your weakness has ears", true},
+		{"bare image", `<img src="` + img + `">`, img, "Pic", true},
+		{"image plus caption", `<img src="` + img + `"> caption text`, img, "Pic", false},
+		{"image with real body text", `<p>lots of article text here</p><img src="` + img + `">`, img, "Pic", false},
+		{"text article with feed thumbnail", "<p>article body</p>", img, "Pic", false},
+		{"no image url", `<img src="` + img + `">`, "", "Pic", false},
+		{"no image in summary", "plain text summary", img, "Pic", false},
+		{"empty summary", "", img, "Pic", false},
+	}
+	for _, c := range cases {
+		if got := isImagePost(c.summary, c.imageURL, c.title); got != c.want {
+			t.Errorf("%s: isImagePost = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

@@ -134,9 +134,12 @@ func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID 
 type itemViewData struct {
 	Title       string
 	AuthorName  string
+	AuthorID    int64
 	FeedTitle   string
-	FeedURL     string
+	FeedID      int64
 	PublishedAt string
+	Summary     string
+	ImageURL    string
 	Body        template.HTML
 	EmbedURL    string
 }
@@ -155,12 +158,20 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if !it.Read {
+		if err := s.store.Items.SetRead(u.ID, id, true); err != nil {
+			log.Error("auto mark read on view", "item_id", id, "err", err)
+		}
+	}
 	web.RenderFragment(w, "item_view", itemViewData{
 		Title:       it.Title,
 		AuthorName:  it.AuthorName,
+		AuthorID:    it.AuthorID,
 		FeedTitle:   it.FeedTitle,
-		FeedURL:     it.FeedURL,
+		FeedID:      it.FeedID,
 		PublishedAt: it.PublishedAt,
+		Summary:     it.Summary,
+		ImageURL:    it.ImageURL,
 		Body:        template.HTML(it.Summary),
 		EmbedURL:    web.YoutubeEmbedURL(it.Link),
 	})

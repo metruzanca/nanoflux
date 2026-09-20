@@ -34,7 +34,8 @@ var funcMap = template.FuncMap{
 	"isVideo": func(link string) bool {
 		return YoutubeEmbedURL(link) != ""
 	},
-	"sourceIcon": sourceIcon,
+	"isImagePost": isImagePost,
+	"sourceIcon":  sourceIcon,
 }
 
 func has(id int64, ids []int64) bool {
@@ -120,6 +121,42 @@ func Static() http.Handler {
 		panic(err)
 	}
 	return http.StripPrefix("/static/", http.FileServerFS(sub))
+}
+
+// isImagePost reports whether an item's primary content is a single image:
+// the summary is an <img> (optionally wrapped in a link) with no real text
+// beyond the image's alt text. imageURL is required so items whose thumbnail
+// comes from feed metadata but whose body is text are not treated as images.
+func isImagePost(summary, imageURL, title string) bool {
+	if imageURL == "" {
+		return false
+	}
+	doc, err := html.Parse(strings.NewReader(summary))
+	if err != nil {
+		return false
+	}
+	hasImg := false
+	var text strings.Builder
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.TextNode {
+			text.WriteString(n.Data)
+		}
+		if n.Type == html.ElementNode && n.Data == "img" {
+			hasImg = true
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	for c := doc.FirstChild; c != nil; c = c.NextSibling {
+		walk(c)
+	}
+	if !hasImg {
+		return false
+	}
+	t := strings.TrimSpace(text.String())
+	return t == "" || t == strings.TrimSpace(title)
 }
 
 // stripHTML extracts plain text from feed-provided HTML.
