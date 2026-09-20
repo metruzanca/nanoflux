@@ -115,6 +115,40 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 	}
 }
 
+func TestReadPage(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
+
+	// Mark the item read.
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	doForm(h, "POST", "/items/"+itoa(items[0].ID)+"/read", url.Values{}, cookie)
+
+	// It shows on the read page but not the unread page.
+	body := doGet(h, "/read", cookie).Body.String()
+	if !strings.Contains(body, "Item") || !strings.Contains(body, `hx-post="/items/unread-all"`) {
+		t.Fatalf("read page missing read item: %s", body)
+	}
+	if body := doGet(h, "/", cookie).Body.String(); strings.Contains(body, `data-item-link="https://b.dev/1"`) {
+		t.Fatal("unread page should not show read item")
+	}
+
+	// Mark all unread empties the read page and restores the unread count.
+	doForm(h, "POST", "/items/unread-all", url.Values{}, cookie)
+	n, _ := s.store.Items.CountUnread(u.ID, 0)
+	if n != 1 {
+		t.Fatalf("unread = %d, want 1", n)
+	}
+	body = doGet(h, "/read", cookie).Body.String()
+	if strings.Contains(body, `data-item-link="https://b.dev/1"`) {
+		t.Fatalf("read page should be empty after mark-all-unread: %s", body)
+	}
+}
+
 func TestItemReadToggle(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

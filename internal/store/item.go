@@ -31,6 +31,7 @@ type ItemWithFeed struct {
 
 type ItemFilter struct {
 	UnreadOnly   bool
+	ReadOnly     bool
 	FeedID       int64 // 0 = all
 	AuthorID     int64 // 0 = all
 	CollectionID int64 // 0 = all
@@ -61,6 +62,9 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 	args := []any{userID}
 	if f.UnreadOnly {
 		conds = append(conds, "i.read = 0")
+	}
+	if f.ReadOnly {
+		conds = append(conds, "i.read = 1")
 	}
 	if f.FeedID != 0 {
 		conds = append(conds, "f.id = ?")
@@ -165,12 +169,34 @@ func (s *ItemStore) MarkAllRead(userID, feedID int64) error {
 	return err
 }
 
+// MarkAllUnread marks every item unread for a user; pass feedID 0 for all feeds.
+func (s *ItemStore) MarkAllUnread(userID, feedID int64) error {
+	_, err := s.db.Exec(
+		`UPDATE items SET read = 0
+		 WHERE feed_id IN (SELECT id FROM feeds WHERE user_id = ?)
+		   AND (? = 0 OR feed_id = ?)`,
+		userID, feedID, feedID,
+	)
+	return err
+}
+
 // CountUnread counts unread items for a user; feedID 0 means all feeds.
 func (s *ItemStore) CountUnread(userID, feedID int64) (int, error) {
 	var n int
 	err := s.db.QueryRow(
 		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
 		 WHERE f.user_id = ? AND i.read = 0 AND (? = 0 OR f.id = ?)`,
+		userID, feedID, feedID,
+	).Scan(&n)
+	return n, err
+}
+
+// CountRead counts read items for a user; feedID 0 means all feeds.
+func (s *ItemStore) CountRead(userID, feedID int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
+		 WHERE f.user_id = ? AND i.read = 1 AND (? = 0 OR f.id = ?)`,
 		userID, feedID, feedID,
 	).Scan(&n)
 	return n, err
