@@ -27,12 +27,17 @@
       <button type="button" class="link" onclick="document.getElementById('item-dialog').close()">✕</button>
     </div>
   </div>
-  <iframe id="item-dialog-frame" src="about:blank" title="item preview" sandbox></iframe>
+  <div id="item-dialog-body" class="item-view"></div>
 </dialog>
 <script>
 function openItem(el) {
   document.getElementById('item-dialog-live').href = el.dataset.itemLink;
-  document.getElementById('item-dialog-frame').src = '/items/' + el.dataset.itemId + '/view';
+  var body = document.getElementById('item-dialog-body');
+  body.innerHTML = '<p class="muted">loading…</p>';
+  fetch('/items/' + el.dataset.itemId + '/view')
+    .then(function (r) { return r.text(); })
+    .then(function (html) { body.innerHTML = html; })
+    .catch(function () { body.innerHTML = '<p class="error">could not load item</p>'; });
   document.getElementById('item-dialog').showModal();
   return false;
 }

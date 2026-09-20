@@ -122,15 +122,12 @@ dialog.modal h2 { margin: 0; }
 
 dialog.modal.wide {
   width: min(60rem, calc(100vw - 2rem));
-  height: min(85vh, 65rem);
 }
-dialog.modal.wide iframe {
-  width: 100%;
-  height: calc(100% - 3rem);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-}
+
+.item-view h1 { font-size: 1.3rem; margin: 0 0 0.25rem; line-height: 1.3; }
+#item-dialog-body { max-height: calc(85vh - 3.5rem); overflow-y: auto; }
+.item-view .item-body img { max-width: 100%; height: auto; }
+.item-view .item-body pre { overflow-x: auto; padding: 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
 
 .choose select { width: 100%; }
 .new-author { border-top: 1px solid var(--border); padding-top: 0.75rem; }

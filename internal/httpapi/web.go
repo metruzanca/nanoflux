@@ -111,8 +111,8 @@ type itemViewData struct {
 	Body        template.HTML
 }
 
-// itemView renders a standalone page of an item's stored content, used inside
-// the modal's sandboxed iframe.
+// itemView renders an item's stored content as a fragment, injected into the
+// modal by the frontend.
 func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -125,14 +125,14 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	web.Render(w, "item_view", web.Page{Title: it.Title, User: u, Data: itemViewData{
+	web.RenderFragment(w, "item_view", itemViewData{
 		Title:       it.Title,
 		AuthorName:  it.AuthorName,
 		FeedTitle:   it.FeedTitle,
 		FeedURL:     it.FeedURL,
 		PublishedAt: it.PublishedAt,
 		Body:        template.HTML(it.Summary),
-	}})
+	})
 }
 
 func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
