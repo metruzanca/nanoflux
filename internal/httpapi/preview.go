@@ -41,7 +41,7 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	pageURL := strings.TrimSpace(r.FormValue("url"))
 	if pageURL == "" {
-		writeFormError(w, "feed-preview", "enter a url")
+		renderError(w, "enter a url")
 		return
 	}
 	authors, _ := s.store.Authors.List(u.ID)
@@ -61,11 +61,11 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	candidates, err := s.discoverer.Discover(r.Context(), pageURL)
 	if err != nil {
 		log.Error("feed preview discover", "err", err)
-		writeFormError(w, "feed-preview", "could not inspect that url")
+		renderError(w, "could not inspect that url")
 		return
 	}
 	if len(candidates) == 0 {
-		writeFormError(w, "feed-preview", "no feed found at that url")
+		renderError(w, "no feed found at that url")
 		return
 	}
 
@@ -102,13 +102,13 @@ func (s *Server) renderFeedPreviewForm(ctx context.Context, w http.ResponseWrite
 func (s *Server) authorPreview(w http.ResponseWriter, r *http.Request) {
 	pageURL := strings.TrimSpace(r.FormValue("url"))
 	if pageURL == "" {
-		writeFormError(w, "author-preview", "enter a url")
+		renderError(w, "enter a url")
 		return
 	}
 	meta, err := s.discoverer.PageMeta(r.Context(), pageURL)
 	if err != nil {
 		log.Error("author preview", "err", err)
-		writeFormError(w, "author-preview", "could not inspect that url")
+		renderError(w, "could not inspect that url")
 		return
 	}
 	name := meta.Title

@@ -74,7 +74,15 @@ button {
 
 button.link { background: none; border: none; color: var(--accent); padding: 0; }
 
-.error { color: var(--danger); }
+.error {
+  color: var(--danger);
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  margin-top: 0.75rem;
+}
 
 .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }

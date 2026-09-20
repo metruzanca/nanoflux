@@ -23,6 +23,29 @@ func feedPreviewServer(t *testing.T) *httptest.Server {
 	}))
 }
 
+func TestFeedPreviewErrors(t *testing.T) {
+	_, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	// Empty url.
+	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{"url": {""}}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "enter a url") {
+		t.Fatalf("empty url: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// Unparseable url -> discover fails.
+	rr = doForm(h, "POST", "/fragments/feed-preview", url.Values{"url": {"://not-a-url"}}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "could not inspect") {
+		t.Fatalf("unparseable url: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// Author preview errors too.
+	rr = doForm(h, "POST", "/fragments/author-preview", url.Values{"url": {"://not-a-url"}}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "could not inspect") {
+		t.Fatalf("author preview error: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestFeedPreviewDirect(t *testing.T) {
 	_, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
@@ -76,6 +99,9 @@ func TestFeedPreviewSingleAndNone(t *testing.T) {
 	rr = doForm(h, "POST", "/fragments/feed-preview", url.Values{"url": {empty.URL}}, cookie)
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "no feed found") {
 		t.Fatalf("no-feed preview: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `role="alert"`) {
+		t.Fatalf("no-feed preview should render the error fragment: %s", rr.Body.String())
 	}
 }
 

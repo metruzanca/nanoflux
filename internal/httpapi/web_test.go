@@ -47,6 +47,39 @@ func sessionCookie(t *testing.T, h http.Handler) *http.Cookie {
 	return nil
 }
 
+func TestCreateFormErrors(t *testing.T) {
+	_, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	// Missing required fields -> 400 with an OOB swap into the error slot.
+	rr := doForm(h, "POST", "/feeds", url.Values{"title": {"Blog"}}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "title and feed url are required") {
+		t.Fatalf("feed error: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `id="add-feed-error"`) || !strings.Contains(rr.Body.String(), "hx-swap-oob") {
+		t.Fatalf("feed error should OOB into add-feed-error: %s", rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `role="alert"`) {
+		t.Fatalf("feed error should render the alert banner: %s", rr.Body.String())
+	}
+
+	rr = doForm(h, "POST", "/authors", url.Values{}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "name is required") {
+		t.Fatalf("author error: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `id="add-author-error"`) {
+		t.Fatalf("author error should OOB into add-author-error: %s", rr.Body.String())
+	}
+
+	rr = doForm(h, "POST", "/collections", url.Values{}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "name is required") {
+		t.Fatalf("collection error: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `id="add-collection-error"`) {
+		t.Fatalf("collection error should OOB into add-collection-error: %s", rr.Body.String())
+	}
+}
+
 func TestFeedAuthorCollectionFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
