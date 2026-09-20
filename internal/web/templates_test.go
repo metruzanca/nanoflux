@@ -3,7 +3,52 @@ package web
 import (
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestFormatRel(t *testing.T) {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 20, 12, 0, 0, 0, loc)
+	parse := func(s string) time.Time {
+		tm, err := time.ParseInLocation("2006-01-02 15:04", s, loc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tm
+	}
+	cases := []struct {
+		in, want string
+	}{
+		{"2026-09-20 23:05", "Today at 11:05pm"},
+		{"2026-09-19 23:05", "Yesterday at 11:05pm"},
+		{"2026-09-18 09:15", "2 days ago"},
+		{"2026-09-13 09:15", "1 week ago"},
+		{"2026-09-01 09:15", "2 weeks ago"},
+		{"2026-06-20 09:15", "3 months ago"},
+		{"2025-09-20 09:15", "Sep 20, 2025 at 9:15am"},
+		{"2026-09-21 09:15", "Sep 21, 2026 at 9:15am"}, // future
+	}
+	for _, c := range cases {
+		if got := formatRel(parse(c.in), loc, now); got != c.want {
+			t.Errorf("formatRel(%s) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestTimeFmt(t *testing.T) {
+	// Unparseable input is returned unchanged.
+	if got := timeFmt("", "not a time"); got != "not a time" {
+		t.Fatalf("invalid input: %q", got)
+	}
+	// Empty timezone falls back to server local (UTC here), so the output is
+	// a relative label rather than the raw stamp.
+	if got := timeFmt("", "2026-09-20 12:00:00"); !strings.Contains(got, "Today at") && !strings.Contains(got, "Yesterday at") {
+		t.Fatalf("expected a relative label, got %q", got)
+	}
+}
 
 func TestSourceIcon(t *testing.T) {
 	cases := []struct {

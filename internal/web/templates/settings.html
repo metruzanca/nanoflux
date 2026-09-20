@@ -9,6 +9,7 @@
 <main>
 <h1>settings</h1>
 {{template "settings_avatar" .Data}}
+{{template "settings_timezone" .Data.Timezone}}
 <section class="card">
   <h2>custom source icons</h2>
   <p class="muted small">Add a domain and an icon url to override the built-in icons for that site. Icons are cached by nanoflux; use refresh to re-fetch the latest.</p>
@@ -47,6 +48,20 @@
 </section>
 {{end}}
 
+{{define "settings_timezone"}}
+<section class="card" id="settings-timezone-card">
+  <h2>timezone</h2>
+  <p class="muted small">Timestamps render in this timezone. Leave it empty to use the server's time.</p>
+  <form class="stack" hx-post="/settings/timezone" hx-target="#settings-timezone-card" hx-swap="outerHTML">
+    <label>iana timezone name
+      <input type="text" name="timezone" value="{{.Timezone}}" placeholder="America/New_York" autocomplete="off">
+    </label>
+    {{if .Error}}<div class="error" role="alert">{{.Error}}</div>{{end}}
+    <button type="submit">save</button>
+  </form>
+</section>
+{{end}}
+
 {{define "settings_icons_list"}}
 <ul class="plain" id="settings-icons-list">
   {{range .}}
@@ -62,7 +77,7 @@
     <div class="row">
       <img class="src-icon" src="/icons/{{.Domain}}" width="16" height="16" alt="">
       <strong>{{.Domain}}</strong>
-      <span class="muted small">{{if .LastFetchedAt}}cached {{.LastFetchedAt | timeFmt}}{{else}}not cached yet{{end}}</span>
+      <span class="muted small">{{if .LastFetchedAt}}cached {{.LastFetchedAt | timeFmt .Timezone}}{{else}}not cached yet{{end}}</span>
     </div>
     <div class="row-actions">
       <button class="link" title="re-fetch the icon" hx-post="/settings/icons/{{.ID}}/refresh" hx-target="#settings-icon-{{.ID}}" hx-swap="outerHTML">refresh</button>

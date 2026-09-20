@@ -2,7 +2,7 @@
 {{$image := isImagePost .Summary .ImageURL .Title}}
 <div class="item-view">
   <h1>{{.Title}}</h1>
-  <p class="item-meta">{{if .AuthorName}}<a href="/authors/{{.AuthorID}}">{{.AuthorName}}</a> · {{end}}<a href="/feeds/{{.FeedID}}">{{.FeedTitle}}</a>{{if .PublishedAt}} · {{.PublishedAt | timeFmt}}{{end}}{{if .SourceURL}} · <a href="{{.SourceURL}}" target="_blank" rel="noopener" class="external">source</a>{{end}}</p>
+  <p class="item-meta">{{if .AuthorName}}<a href="/authors/{{.AuthorID}}">{{.AuthorName}}</a> · {{end}}<a href="/feeds/{{.FeedID}}">{{.FeedTitle}}</a>{{if .PublishedAt}} · {{.PublishedAt | timeFmt .Timezone}}{{end}}{{if .SourceURL}} · <a href="{{.SourceURL}}" target="_blank" rel="noopener" class="external">source</a>{{end}}</p>
   {{if .Gallery}}
   <div class="gallery">
     {{range .Gallery}}<img src="{{.}}" alt="" loading="lazy">{{end}}

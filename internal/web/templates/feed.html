@@ -20,7 +20,7 @@
     {{if .Data.Row.AuthorName}}<a href="/authors/{{.Data.Row.AuthorID}}">{{.Data.Row.AuthorName}}</a> · {{else}}no author · {{end}}
     <a href="{{.Data.Row.FeedURL}}" class="external">feed</a>{{if .Data.Row.HomeURL}} · <a href="{{.Data.Row.HomeURL}}" target="_blank" rel="noopener" class="external">home</a>{{end}}
   </p>
-  <p class="muted small">{{.Data.Row.Unread}} unread · last polled {{if .Data.Row.LastPolledAt}}{{.Data.Row.LastPolledAt | timeFmt}}{{else}}never{{end}}</p>
+  <p class="muted small">{{.Data.Row.Unread}} unread · last polled {{if .Data.Row.LastPolledAt}}{{.Data.Row.LastPolledAt | timeFmt .Data.Row.Timezone}}{{else}}never{{end}}</p>
 </section>
 <h2>items</h2>
 {{template "scoped_items" .Data.Scoped}}

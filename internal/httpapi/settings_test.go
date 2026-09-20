@@ -18,9 +18,11 @@ func TestSettingsPage(t *testing.T) {
 	for _, want := range []string{
 		`hx-post="/settings/avatar"`,
 		`hx-post="/settings/icons"`,
+		`hx-post="/settings/timezone"`,
 		`name="domain"`,
 		"custom source icons",
 		"profile picture",
+		"timezone",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("settings page missing %q", want)
@@ -109,6 +111,46 @@ func uploadForm(h http.Handler, path, field, filename string, data []byte, cooki
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	return rr
+}
+
+func TestSettingsTimezone(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// Set a valid IANA timezone.
+	rr := doForm(h, "POST", "/settings/timezone", url.Values{"timezone": {"America/New_York"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set timezone: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `name="timezone"`) ||
+		!strings.Contains(rr.Body.String(), `value="America/New_York"`) {
+		t.Fatalf("timezone card should reflect the saved value: %s", rr.Body.String())
+	}
+	after, _ := s.store.Users.ByID(u.ID)
+	if after.Timezone != "America/New_York" {
+		t.Fatalf("timezone not persisted: %q", after.Timezone)
+	}
+
+	// Invalid timezone -> 400 with a visible error, nothing saved.
+	rr = doForm(h, "POST", "/settings/timezone", url.Values{"timezone": {"Mars/Olympus"}}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `role="alert"`) {
+		t.Fatalf("invalid timezone: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.Timezone != "America/New_York" {
+		t.Fatalf("invalid timezone should not overwrite: %q", after.Timezone)
+	}
+
+	// Clearing the timezone restores the server-time default.
+	rr = doForm(h, "POST", "/settings/timezone", url.Values{"timezone": {""}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("clear timezone: %d", rr.Code)
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.Timezone != "" {
+		t.Fatalf("timezone should be cleared: %q", after.Timezone)
+	}
 }
 
 func iconServer(t *testing.T) *httptest.Server {

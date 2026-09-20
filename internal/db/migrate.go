@@ -18,7 +18,12 @@ var migrations = []migration{
 	{5, schemaV5},
 	{6, schemaV6},
 	{7, schemaV7},
+	{8, schemaV8},
 }
+
+const schemaV8 = `
+ALTER TABLE users ADD COLUMN timezone TEXT;
+`
 
 const schemaV7 = `
 ALTER TABLE items ADD COLUMN read_at TEXT;

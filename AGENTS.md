@@ -20,6 +20,18 @@ The app's own pages are the primary navigation surface. This is a hard rule.
 - This applies to the webapp UI only (`internal/web/templates`); the
   `website/` Hugo marketing site is out of scope.
 
+## Relative timestamps
+
+Timestamps render server-side, relative to the user's configured timezone.
+`timeFmt` in `templates.go` takes the user's IANA timezone name (empty =
+server local time) and renders "Today at 3:04pm", "Yesterday at 3:04pm",
+"N days/weeks/months ago", or an absolute fallback. The timezone is a per-user
+setting (`users.timezone`, set on `/settings`). Every template call passes the
+timezone through the view data — `ItemWithFeed.Timezone`, `feedRow.Timezone`,
+`itemViewData.Timezone`, and `settingsIconRow.Timezone` are stamped by the
+handlers via `withTZ`. Do not render a timestamp with a raw format call; always
+go through `timeFmt` so it respects the user's timezone.
+
 ## Error handling in the web UI
 
 The web UI is server-rendered with htmx. All user-facing failures must render a
