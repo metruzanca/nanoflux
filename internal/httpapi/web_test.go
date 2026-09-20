@@ -200,7 +200,7 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("add feed to collection: %d", rr.Code)
 	}
-	if !strings.Contains(rr.Body.String(), "hx-swap-oob") || !strings.Contains(rr.Body.String(), "collection-items") {
+	if !strings.Contains(rr.Body.String(), "hx-swap-oob") || !strings.Contains(rr.Body.String(), "scoped-items") {
 		t.Fatalf("add-feed response should carry the items oob swap: %s", rr.Body.String())
 	}
 	body = doGet(h, "/collections/"+itoa(cols[0].ID), cookie).Body.String()
@@ -666,5 +666,65 @@ func TestFeedAndAuthorPagesShowItems(t *testing.T) {
 	}
 	if body := rr.Body.String(); !strings.Contains(body, "Feed Item") {
 		t.Fatalf("author page missing item: %s", body)
+	}
+}
+
+func TestScopedReadUnreadTabs(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Unread Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "Read Item", Link: "https://b.dev/2", FetchedAt: db.Now()})
+	coll, _ := s.store.Collections.Create(u.ID, "Dev")
+	s.store.Collections.AddFeed(u.ID, coll.ID, f.ID)
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	var readID int64
+	for _, it := range items {
+		if it.Link == "https://b.dev/2" {
+			readID = it.ID
+		}
+	}
+	if readID == 0 {
+		t.Fatal("read item not found")
+	}
+	if err := s.store.Items.SetRead(u.ID, readID, true); err != nil {
+		t.Fatalf("SetRead: %v", err)
+	}
+
+	for _, scope := range []struct {
+		base string // page URL
+		frag string // fragment URL
+	}{
+		{"/feeds/" + itoa(f.ID), "/feeds/" + itoa(f.ID) + "/items"},
+		{"/authors/" + itoa(a.ID), "/authors/" + itoa(a.ID) + "/items"},
+		{"/collections/" + itoa(coll.ID), "/collections/" + itoa(coll.ID) + "/items"},
+	} {
+		// Default view is unread: only the unread item, tabs show both counts.
+		body := doGet(h, scope.base, cookie).Body.String()
+		for _, want := range []string{`class="tabs"`, "unread (1)", "read (1)", `data-item-link="https://b.dev/1"`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s default view missing %q: %s", scope.base, want, body)
+			}
+		}
+		if strings.Contains(body, `data-item-link="https://b.dev/2"`) {
+			t.Fatalf("%s default view should not show the read item: %s", scope.base, body)
+		}
+
+		// ?view=read shows only the read item.
+		body = doGet(h, scope.base+"?view=read", cookie).Body.String()
+		if !strings.Contains(body, `data-item-link="https://b.dev/2"`) ||
+			strings.Contains(body, `data-item-link="https://b.dev/1"`) {
+			t.Fatalf("%s read view wrong list: %s", scope.base, body)
+		}
+
+		// The fragment endpoint returns the tabbed list for the requested view.
+		rr := doGet(h, scope.frag+"?view=read", cookie)
+		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `data-item-link="https://b.dev/2"`) {
+			t.Fatalf("%s fragment: %d %s", scope.frag, rr.Code, rr.Body.String())
+		}
 	}
 }

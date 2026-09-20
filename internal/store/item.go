@@ -234,6 +234,52 @@ func (s *ItemStore) CountFavorites(userID, feedID int64) (int, error) {
 	return n, err
 }
 
+// CountUnreadAuthor counts unread items across an author's feeds.
+func (s *ItemStore) CountUnreadAuthor(userID, authorID int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
+		 WHERE f.user_id = ? AND i.read = 0 AND f.author_id = ?`,
+		userID, authorID,
+	).Scan(&n)
+	return n, err
+}
+
+// CountReadAuthor counts read items across an author's feeds.
+func (s *ItemStore) CountReadAuthor(userID, authorID int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
+		 WHERE f.user_id = ? AND i.read = 1 AND f.author_id = ?`,
+		userID, authorID,
+	).Scan(&n)
+	return n, err
+}
+
+// CountUnreadCollection counts unread items across a collection's feeds.
+func (s *ItemStore) CountUnreadCollection(userID, collectionID int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
+		 WHERE f.user_id = ? AND i.read = 0
+		   AND i.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?)`,
+		userID, collectionID,
+	).Scan(&n)
+	return n, err
+}
+
+// CountReadCollection counts read items across a collection's feeds.
+func (s *ItemStore) CountReadCollection(userID, collectionID int64) (int, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
+		 WHERE f.user_id = ? AND i.read = 1
+		   AND i.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?)`,
+		userID, collectionID,
+	).Scan(&n)
+	return n, err
+}
+
 func scanItem(row scanner) (Item, error) {
 	var it Item
 	var imageURL, publishedAt sql.NullString
