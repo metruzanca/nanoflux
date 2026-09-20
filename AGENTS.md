@@ -139,3 +139,10 @@ The DB stores object **keys** (`users.avatar_key`, `source_icons.icon_key`).
   at startup; the legacy `avatar_data`/`icon_data` columns are left in place but
   cleared.
 - Object keys: `avatars/<userID>`, `icons/<userID>/<domain>`.
+
+## Running the dev server
+
+`mise dev` runs the server and auto-watches `.go` files, rebuilding and
+restarting on change. If a port is already taken, it's likely a `mise dev`
+instance is still running — no need to kill it, just edit the `.go` files and
+it will rebuild and rerun.
