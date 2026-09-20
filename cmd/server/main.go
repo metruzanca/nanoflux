@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/config"
@@ -23,16 +24,17 @@ var version = "dev"
 
 func main() {
 	cfg := config.Load()
-	log.Printf("nanoflux %s starting", version)
+	setLogLevel(cfg.LogLevel)
+	log.Info("nanoflux starting", "version", version)
 
 	sqldb, err := db.Open(cfg.DBPath)
 	if err != nil {
-		log.Fatalf("db: %v", err)
+		log.Fatal("open database", "err", err)
 	}
 	defer sqldb.Close()
 
 	if err := db.Migrate(sqldb); err != nil {
-		log.Fatalf("migrate: %v", err)
+		log.Fatal("migrate database", "err", err)
 	}
 
 	st := store.New(sqldb)
@@ -56,9 +58,9 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("nanoflux server listening on %s", cfg.Addr)
+		log.Info("nanoflux server listening", "addr", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("server: %v", err)
+			log.Fatal("server", "err", err)
 		}
 	}()
 
@@ -67,7 +69,21 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown: %v", err)
+		log.Warn("shutdown", "err", err)
+	}
+}
+
+// setLogLevel maps the RSS_LOG_LEVEL value onto the logger.
+func setLogLevel(level string) {
+	switch level {
+	case "debug":
+		log.SetLevel(log.DebugLevel)
+	case "warn":
+		log.SetLevel(log.WarnLevel)
+	case "error":
+		log.SetLevel(log.ErrorLevel)
+	default:
+		log.SetLevel(log.InfoLevel)
 	}
 }
 
@@ -77,7 +93,7 @@ func main() {
 func bootstrapUser(st *store.Store, cfg config.Config) {
 	n, err := st.Users.Count()
 	if err != nil {
-		log.Fatalf("count users: %v", err)
+		log.Fatal("count users", "err", err)
 	}
 	if n > 0 {
 		return
@@ -85,20 +101,20 @@ func bootstrapUser(st *store.Store, cfg config.Config) {
 	if cfg.BootstrapUser != "" && cfg.BootstrapPass != "" {
 		hash, err := auth.HashPassword(cfg.BootstrapPass)
 		if err != nil {
-			log.Fatalf("hash password: %v", err)
+			log.Fatal("hash password", "err", err)
 		}
 		if _, err := st.Users.Create(cfg.BootstrapUser, hash); err != nil {
-			log.Fatalf("create bootstrap user: %v", err)
+			log.Fatal("create bootstrap user", "err", err)
 		}
-		log.Printf("created bootstrap user %q", cfg.BootstrapUser)
+		log.Info("created bootstrap user", "username", cfg.BootstrapUser)
 		return
 	}
 	hash, err := auth.HashPassword("admin")
 	if err != nil {
-		log.Fatalf("hash password: %v", err)
+		log.Fatal("hash password", "err", err)
 	}
 	if _, err := st.Users.Create("admin", hash); err != nil {
-		log.Fatalf("create default admin: %v", err)
+		log.Fatal("create default admin", "err", err)
 	}
-	log.Printf("no users found: created default account admin/admin — change the password after logging in")
+	log.Warn("no users found: created default account admin/admin — change the password after logging in")
 }

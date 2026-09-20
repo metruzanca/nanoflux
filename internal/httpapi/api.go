@@ -2,7 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
-	"log"
+	"github.com/charmbracelet/log"
 	"net/http"
 	"strconv"
 	"time"
@@ -42,7 +42,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("write json: %v", err)
+		log.Error("write json", "err", err)
 	}
 }
 
@@ -67,7 +67,7 @@ func (s *Server) apiLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	token, err := s.auth.CreateSession(u.ID)
 	if err != nil {
-		log.Printf("create session: %v", err)
+		log.Error("create session", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
@@ -219,7 +219,7 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.CollectionID != 0 {
 		if err := s.store.Collections.AddFeed(u.ID, req.CollectionID, f.ID); err != nil {
-			log.Printf("add to collection %d: %v", req.CollectionID, err)
+			log.Error("add to collection", "collection_id", req.CollectionID, "err", err)
 		}
 	}
 

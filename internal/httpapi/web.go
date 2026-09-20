@@ -1,9 +1,9 @@
 package httpapi
 
 import (
+	"github.com/charmbracelet/log"
 	"html/template"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -90,7 +90,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 func (s *Server) itemsReadAll(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	if err := s.store.Items.MarkAllRead(u.ID, 0); err != nil {
-		log.Printf("mark all read: %v", err)
+		log.Error("mark all read", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -148,7 +148,7 @@ func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.Items.SetRead(u.ID, id, !it.Read); err != nil {
-		log.Printf("set read: %v", err)
+		log.Error("set read", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -216,7 +216,7 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 
 	f, err := s.store.Feeds.Create(u.ID, authorID, title, feedURL, homeURL, "", interval)
 	if err != nil {
-		log.Printf("create feed: %v", err)
+		log.Error("create feed", "err", err)
 		writeFormError(w, "add-feed-error", "could not create feed")
 		return
 	}
@@ -243,7 +243,7 @@ func (s *Server) resolveAuthor(r *http.Request, userID int64) (int64, string) {
 			userID, name, r.FormValue("author_url"), r.FormValue("avatar_url"), "",
 		)
 		if err != nil {
-			log.Printf("create author: %v", err)
+			log.Error("create author", "err", err)
 			return 0, "could not create author"
 		}
 		return a.ID, ""
@@ -320,7 +320,7 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
 		r.FormValue("home_url"), "", interval, true); err != nil {
-		log.Printf("update feed: %v", err)
+		log.Error("update feed", "err", err)
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
 	}
@@ -379,7 +379,7 @@ func (s *Server) feedDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.Feeds.Delete(u.ID, id); err != nil {
-		log.Printf("delete feed: %v", err)
+		log.Error("delete feed", "err", err)
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		return
 	}
@@ -400,7 +400,7 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.poller != nil {
 		if _, err := s.poller.PollOne(r.Context(), f); err != nil {
-			log.Printf("refresh feed %d: %v", id, err)
+			log.Error("refresh feed", "feed_id", id, "err", err)
 		}
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
@@ -433,7 +433,7 @@ func (s *Server) authorCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := s.store.Authors.Create(u.ID, name, r.FormValue("url"), r.FormValue("avatar_url"), r.FormValue("description"))
 	if err != nil {
-		log.Printf("create author: %v", err)
+		log.Error("create author", "err", err)
 		writeFormError(w, "add-author-error", "could not create author")
 		return
 	}
@@ -532,7 +532,7 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.Authors.Update(u.ID, id, name, r.FormValue("url"), r.FormValue("avatar_url"), r.FormValue("description")); err != nil {
-		log.Printf("update author: %v", err)
+		log.Error("update author", "err", err)
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
 	}
@@ -547,7 +547,7 @@ func (s *Server) authorDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.Authors.Delete(u.ID, id); err != nil {
-		log.Printf("delete author: %v", err)
+		log.Error("delete author", "err", err)
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		return
 	}
@@ -587,7 +587,7 @@ func (s *Server) collectionCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := s.store.Collections.Create(u.ID, name)
 	if err != nil {
-		log.Printf("create collection: %v", err)
+		log.Error("create collection", "err", err)
 		writeFormError(w, "add-collection-error", "could not create collection")
 		return
 	}
@@ -628,7 +628,7 @@ func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.Collections.Delete(u.ID, id); err != nil {
-		log.Printf("delete collection: %v", err)
+		log.Error("delete collection", "err", err)
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		return
 	}

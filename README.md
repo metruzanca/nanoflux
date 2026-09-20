@@ -36,6 +36,7 @@ Configuration (env vars):
 | --- | --- | --- |
 | `RSS_ADDR` | `:8080` | listen address |
 | `RSS_DB` | `./data/rss.db` | sqlite database path |
+| `RSS_LOG_LEVEL` | `info` | log level: `debug`, `info`, `warn`, `error` |
 | `RSS_POLL_INTERVAL` | `15m` | poller wake interval |
 | `RSS_POLL_WORKERS` | `4` | concurrent feed fetches |
 | `RSS_BOOTSTRAP_USER` / `RSS_BOOTSTRAP_PASS` | — | create the first account at startup (takes precedence over admin/admin) |

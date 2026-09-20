@@ -9,6 +9,7 @@ import (
 type Config struct {
 	Addr          string
 	DBPath        string
+	LogLevel      string
 	PollInterval  time.Duration
 	PollWorkers   int
 	BootstrapUser string
@@ -19,6 +20,7 @@ func Load() Config {
 	return Config{
 		Addr:          getenv("RSS_ADDR", ":8080"),
 		DBPath:        getenv("RSS_DB", "./data/rss.db"),
+		LogLevel:      getenv("RSS_LOG_LEVEL", "info"),
 		PollInterval:  durationEnv("RSS_POLL_INTERVAL", 15*time.Minute),
 		PollWorkers:   intEnv("RSS_POLL_WORKERS", 4),
 		BootstrapUser: os.Getenv("RSS_BOOTSTRAP_USER"),

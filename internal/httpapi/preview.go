@@ -2,7 +2,7 @@ package httpapi
 
 import (
 	"context"
-	"log"
+	"github.com/charmbracelet/log"
 	"net/http"
 	"strings"
 
@@ -60,7 +60,7 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 
 	candidates, err := s.discoverer.Discover(r.Context(), pageURL)
 	if err != nil {
-		log.Printf("feed preview discover: %v", err)
+		log.Error("feed preview discover", "err", err)
 		writeFormError(w, "feed-preview", "could not inspect that url")
 		return
 	}
@@ -107,7 +107,7 @@ func (s *Server) authorPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	meta, err := s.discoverer.PageMeta(r.Context(), pageURL)
 	if err != nil {
-		log.Printf("author preview: %v", err)
+		log.Error("author preview", "err", err)
 		writeFormError(w, "author-preview", "could not inspect that url")
 		return
 	}

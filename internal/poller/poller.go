@@ -5,7 +5,7 @@ package poller
 import (
 	"context"
 	"errors"
-	"log"
+	"github.com/charmbracelet/log"
 	"net/http"
 	"sync"
 	"time"
@@ -40,14 +40,14 @@ func New(st *store.Store, interval time.Duration, workers int) *Poller {
 
 // Run polls due feeds immediately, then every interval until ctx is done.
 func (p *Poller) Run(ctx context.Context) {
-	log.Printf("poller starting (interval %s)", p.interval)
+	log.Info("poller starting", "interval", p.interval)
 	p.PollDue(ctx)
 	t := time.NewTicker(p.interval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("poller stopped")
+			log.Info("poller stopped")
 			return
 		case <-t.C:
 			p.PollDue(ctx)
@@ -83,13 +83,13 @@ func (p *Poller) PollDue(ctx context.Context) (int, error) {
 			total += n
 			mu.Unlock()
 			if err != nil {
-				log.Printf("poll feed %d (%s): %v", f.ID, f.FeedURL, err)
+				log.Error("poll feed", "feed_id", f.ID, "url", f.FeedURL, "err", err)
 			}
 		}(f)
 	}
 	wg.Wait()
 	if total > 0 {
-		log.Printf("poller: %d new items across %d feeds", total, len(feeds))
+		log.Info("poller finished", "new_items", total, "feeds", len(feeds))
 	}
 	return total, nil
 }

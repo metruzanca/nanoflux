@@ -97,7 +97,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/discover", s.auth.Require(http.HandlerFunc(s.apiDiscover)))
 	mux.Handle("POST /api/save", s.auth.Require(http.HandlerFunc(s.apiSave)))
 
-	return cors(mux)
+	return logRequests(cors(mux))
 }
 
 // cors answers the browser extension's cross-origin preflights. Auth relies

@@ -1,7 +1,7 @@
 package httpapi
 
 import (
-	"log"
+	"github.com/charmbracelet/log"
 	"net/http"
 	"strings"
 
@@ -30,7 +30,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 
 	token, err := s.auth.CreateSession(u.ID)
 	if err != nil {
-		log.Printf("create session: %v", err)
+		log.Error("create session", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -41,7 +41,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if token := auth.Token(r); token != "" {
 		if err := s.store.Sessions.Delete(token); err != nil {
-			log.Printf("delete session: %v", err)
+			log.Error("delete session", "err", err)
 		}
 	}
 	s.auth.ClearCookie(w)
@@ -80,20 +80,20 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := auth.HashPassword(password)
 	if err != nil {
-		log.Printf("hash password: %v", err)
+		log.Error("hash password", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	u, err := s.store.Users.Create(username, hash)
 	if err != nil {
-		log.Printf("create user: %v", err)
+		log.Error("create user", "err", err)
 		renderErr("that username is taken")
 		return
 	}
 
 	token, err := s.auth.CreateSession(u.ID)
 	if err != nil {
-		log.Printf("create session: %v", err)
+		log.Error("create session", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
