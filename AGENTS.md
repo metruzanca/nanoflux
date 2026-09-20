@@ -124,6 +124,23 @@ lazily and generically — no destination site is hardcoded:
 - Link-post thumbnails are not treated as image posts (`isImagePost` in
   `internal/web/templates.go` rejects `external-preview.redd.it`).
 
+### Reddit galleries
+
+Gallery posts are identified in the listing by their stored thumbnail alone:
+reddit's RSS gives galleries a small square cover (`preview.redd.it` +
+`crop=1:1,smart`) instead of a natural-aspect image-post crop (`isGallery` in
+`internal/web/templates.go`), and the card thumb is upgraded to the full-res
+`i.redd.it/{id}.{ext}` original (`galleryThumb`), which needs no signed params.
+
+In the modal, a gallery's `[link]` anchor points at `reddit.com/gallery/{id}`
+(recognized by `redditGalleryID`), and the images are enumerated from the
+post's embed page on `embed.reddit.com/r/{sub}/comments/{id}/` — an
+unauthenticated render of the post's full media, unlike reddit's login-walled
+JSON/HTML APIs. File ids are rewritten to `i.redd.it` URLs and cached per post
+id; `redditEmbedBaseURL` is a package var so tests can inject a mock host. The
+whole resolution is timeboxed in `itemView` and degrades to today's behavior
+on any failure.
+
 ## Settings and custom source icons
 
 `/settings` lets users set a profile-picture URL and add custom per-domain brand

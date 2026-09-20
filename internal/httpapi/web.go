@@ -146,8 +146,9 @@ type itemViewData struct {
 	Link        string
 	Body        template.HTML
 	EmbedURL    string
-	SourceURL   string // external destination of a reddit link post
-	EmbedSrc    string // iframe src from the destination's oEmbed
+	SourceURL   string   // external destination of a reddit link post
+	EmbedSrc    string   // iframe src from the destination's oEmbed
+	Gallery     []string // full-res images of a reddit gallery post
 }
 
 // itemView renders an item's stored content as a fragment, injected into the
@@ -184,7 +185,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
-	data.SourceURL, data.EmbedSrc = s.resolveItemSource(ctx, data)
+	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemSource(ctx, data)
 	web.RenderFragment(w, "item_view", data)
 }
 

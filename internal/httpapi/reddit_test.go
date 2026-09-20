@@ -194,6 +194,144 @@ func TestItemViewLinkPostFromSummary(t *testing.T) {
 	}
 }
 
+func TestRedditGalleryID(t *testing.T) {
+	cases := []struct {
+		in    string
+		id    string
+		ok    bool
+	}{
+		{"https://www.reddit.com/gallery/1fghij", "1fghij", true},
+		{"https://old.reddit.com/gallery/1fghij", "1fghij", true},
+		{"https://www.imgur.com/gallery/abc", "", false},
+		{"https://www.reddit.com/r/x/comments/1a/", "", false},
+		{"https://www.reddit.com/gallery/", "", false},
+	}
+	for _, c := range cases {
+		id, ok := redditGalleryID(c.in)
+		if id != c.id || ok != c.ok {
+			t.Errorf("redditGalleryID(%q) = %q %v, want %q %v", c.in, id, ok, c.id, c.ok)
+		}
+	}
+}
+
+func TestRedditGalleryImagesFromHTML(t *testing.T) {
+	body := []byte(`<html><img src="https://preview.redd.it/whiskers-v0-9z8x7c6v.jpg?width=320&amp;crop=smart&amp;auto=webp&amp;s=abc">
+<img src="https://preview.redd.it/whiskers-v0-5t6y7u8i.jpg?width=640&amp;crop=smart&amp;auto=webp&amp;s=def">
+<img src="https://preview.redd.it/whiskers-v0-9z8x7c6v.jpg?width=1080&amp;crop=smart&amp;auto=webp&amp;s=ghi"></html>`)
+	got := redditGalleryImagesFromHTML(body)
+	want := []string{"https://i.redd.it/9z8x7c6v.jpg", "https://i.redd.it/5t6y7u8i.jpg"}
+	if len(got) != len(want) {
+		t.Fatalf("gallery images = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("gallery images = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestFullRedditImage(t *testing.T) {
+	if got := fullRedditImage("https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140&crop=1:1,smart&auto=webp&s=x"); got != "https://i.redd.it/5t6y7u8i.jpg" {
+		t.Fatalf("fullRedditImage = %q", got)
+	}
+	if got := fullRedditImage("https://i.redd.it/x.jpg"); got != "" {
+		t.Fatalf("i.redd.it input should not match: %q", got)
+	}
+	if got := fullRedditImage("https://external-preview.redd.it/x.jpeg?width=320"); got != "" {
+		t.Fatalf("external-preview should not match: %q", got)
+	}
+}
+
+func TestItemViewGallery(t *testing.T) {
+	// The proxy-stripped summary has no [link]; the subreddit RSS reveals the
+	// gallery URL and the embed page enumerates both images.
+	embedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/r/cats/comments/1fghij") {
+			w.Write([]byte(`<html><img src="https://preview.redd.it/gallery-v0-9z8x7c6v.jpg?width=320&amp;s=a"><img src="https://preview.redd.it/gallery-v0-5t6y7u8i.jpg?width=320&amp;s=b"></html>`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer embedSrv.Close()
+
+	rss := `<feed xmlns="http://www.w3.org/2005/Atom"><title>r/cats</title>` +
+		`<entry><id>t3_1fghij</id><link href="https://www.reddit.com/r/cats/comments/1fghij/"/><title>T</title>` +
+		`<content type="html">&lt;a href="https://www.reddit.com/gallery/1fghij"&gt;[link]&lt;/a&gt;</content></entry></feed>`
+	redditSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/atom+xml")
+		w.Write([]byte(rss))
+	}))
+	defer redditSrv.Close()
+
+	oldRSS, oldEmbed := redditRSSBaseURL, redditEmbedBaseURL
+	redditRSSBaseURL, redditEmbedBaseURL = redditSrv.URL, embedSrv.URL
+	t.Cleanup(func() { redditRSSBaseURL, redditEmbedBaseURL = oldRSS, oldEmbed })
+
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	f, _ := s.store.Feeds.Create(u.ID, 0, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "t3_1fghij", Title: "Whiskers at golden hour",
+		Link:     "https://old.reddit.com/r/cats/comments/1fghij/whiskers_at_golden_hour/",
+		ImageURL: "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140&crop=1:1,smart&auto=webp&s=8f95727e4cbcb3293619f2368f058017fbe13f5b",
+		Summary:  `<a href="https://www.reddit.com/r/cats/comments/1fghij/"><img src="https://preview.redd.it/5t6y7u8i.jpg?width=140&amp;height=140" alt="Whiskers at golden hour"></a>`,
+		FetchedAt: db.Now(),
+	})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	rr := doGet(h, "/items/"+itoa(items[0].ID)+"/view", cookie)
+	body := rr.Body.String()
+	if rr.Code != http.StatusOK {
+		t.Fatalf("item view: %d %s", rr.Code, body)
+	}
+	if !strings.Contains(body, `<div class="gallery">`) {
+		t.Fatalf("gallery post should render a gallery: %s", body)
+	}
+	for _, img := range []string{"https://i.redd.it/9z8x7c6v.jpg", "https://i.redd.it/5t6y7u8i.jpg"} {
+		if !strings.Contains(body, img) {
+			t.Fatalf("gallery missing %s: %s", img, body)
+		}
+	}
+	if strings.Contains(body, `class="external">source`) {
+		t.Fatalf("gallery should not show an external source link: %s", body)
+	}
+}
+
+func TestItemViewGalleryFallback(t *testing.T) {
+	// When the embed page is unreachable, the item still renders without a
+	// gallery or source.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gone", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	oldRSS, oldEmbed := redditRSSBaseURL, redditEmbedBaseURL
+	redditRSSBaseURL, redditEmbedBaseURL = srv.URL, srv.URL
+	t.Cleanup(func() { redditRSSBaseURL, redditEmbedBaseURL = oldRSS, oldEmbed })
+
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	f, _ := s.store.Feeds.Create(u.ID, 0, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "t3_1fghij", Title: "Whiskers at golden hour",
+		Link:     "https://old.reddit.com/r/cats/comments/1fghij/whiskers_at_golden_hour/",
+		ImageURL: "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140",
+		Summary:  `<a href="https://www.reddit.com/r/cats/comments/1fghij/"><img src="https://preview.redd.it/5t6y7u8i.jpg"></a>`,
+		FetchedAt: db.Now(),
+	})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	rr := doGet(h, "/items/"+itoa(items[0].ID)+"/view", cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("item view should degrade: %d %s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), `class="gallery"`) {
+		t.Fatalf("fallback should omit the gallery: %s", rr.Body.String())
+	}
+}
+
 func TestItemViewLinkPostFallback(t *testing.T) {
 	// When the subreddit RSS is unreachable, the item still renders, just
 	// without the source link or embed.
