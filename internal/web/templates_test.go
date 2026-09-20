@@ -8,25 +8,22 @@ import (
 func TestSourceIcon(t *testing.T) {
 	cases := []struct {
 		url  string
-		icon string
+		want string
 	}{
-		{"https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "src-icon"},
-		{"https://youtu.be/abc", "src-icon"},
-		{"https://x.com/sama", "src-icon"},
-		{"https://twitter.com/sama", "src-icon"},
-		{"https://www.example.com/feed.xml", "src-icon"},
+		{"https://www.youtube.com/feeds/videos.xml?channel_id=UCx", `src="/icons/www.youtube.com"`},
+		{"https://youtu.be/abc", `src="/icons/youtu.be"`},
+		{"https://x.com/sama", `src="/icons/x.com"`},
+		{"https://twitter.com/sama", `src="/icons/twitter.com"`},
+		{"https://www.example.com/feed.xml", `src="/icons/www.example.com"`},
 	}
 	for _, c := range cases {
 		got := string(sourceIcon(c.url))
-		if !strings.Contains(got, `class="src-icon"`) {
-			t.Errorf("sourceIcon(%q) = %q", c.url, got)
+		if !strings.Contains(got, `class="src-icon"`) || !strings.Contains(got, c.want) {
+			t.Errorf("sourceIcon(%q) = %q, want src %q", c.url, got, c.want)
 		}
 	}
-	// Distinct icons for the three kinds.
-	x := string(sourceIcon("https://x.com/sama"))
-	yt := string(sourceIcon("https://www.youtube.com/feeds/videos.xml?channel_id=UCx"))
-	web := string(sourceIcon("https://example.com/feed.xml"))
-	if x == yt || yt == web || x == web {
-		t.Fatalf("expected three distinct icons: x=%q yt=%q web=%q", x, yt, web)
+	// Empty/invalid URLs fall back to an inline globe.
+	if got := string(sourceIcon("")); !strings.Contains(got, "svg") {
+		t.Errorf("sourceIcon(\"\") = %q, want inline svg", got)
 	}
 }
