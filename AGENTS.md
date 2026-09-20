@@ -82,3 +82,60 @@ preview all work unchanged.
 - `xProfileHosts` is a package var so tests can inject a mock host. If X starts
   serving a login wall, `fetchXProfile` returns an error and the feed fails
   gracefully.
+
+## Settings and custom source icons
+
+`/settings` lets users set a profile-picture URL and add custom per-domain brand
+icons that override the built-in X/YouTube/globe set.
+
+- Source icons render as `<img src="/icons/{hostname}">` (see `sourceIcon` in
+  `internal/web/templates.go`); the auth-required `GET /icons/{domain}` handler
+  serves the user's **cached** custom icon bytes, else a built-in SVG. This is
+  what makes per-user icons work without threading the user into every fragment.
+- Custom icons are stored in the `source_icons` table (domain unique per user,
+  `icon_data` BLOB holds the cached bytes). Added/refreshed by fetching the
+  user's `icon_url` server-side (`fetchAndCacheIcon`, capped at 1MB, must be
+  `image/*`); failures keep the row with a "not cached" note and a refresh button.
+- Domain matching is an exact lowercase hostname match (no subdomain
+  wildcards). `normalizeDomain` accepts bare hostnames or URLs.
+- The avatar is a **file upload**: bytes go to object storage (`avatars/<userID>`)
+  and are served at the auth-required `GET /avatar` (`Cache-Control: private,
+  no-cache`); `User.HasAvatar` (from `avatar_key IS NOT NULL`) decides whether
+  the topbar shows it. The avatar form re-renders itself (error inside the
+  swapped card), unlike the create-form OOB pattern.
+
+## Object storage (S3 / SeaweedFS)
+
+Avatars and custom-icon bytes live in S3-compatible object storage, not the DB.
+The DB stores object **keys** (`users.avatar_key`, `source_icons.icon_key`).
+`internal/filestore` exposes the `Store` interface (`Put`/`Get`/`Delete`/
+`EnsureBucket`) over minio-go; tests use `filestore.NewMemory()`.
+
+- Config is `S3_*` env vars (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`,
+  `S3_SECRET_KEY`, `S3_REGION`). When `S3_ENDPOINT` is unset, the server
+  **embeds** a SeaweedFS mini cluster (master+volume+filer+S3) in-process on
+  127.0.0.1 (`filestore.StartEmbedded` in `internal/filestore/embed.go`,
+  using `weed/command`'s `mini` command + `command.MiniClusterCtx`; data under
+  `<db dir>/seaweedfs`). No external weed binary or container is needed; the
+  cluster tears down on the returned stop func (wired to shutdown in main).
+- A configured-but-unreachable endpoint fails fast at startup (see
+  `newFileStore` in `cmd/server/main.go`); the message points at `S3_ENDPOINT`.
+- The `mini` flags are set best-effort (`dir`, `master.port`, `volume.port`,
+  `filer.port`, `s3.port`, `webdav/admin.ui/iceberg/lance=false`); unknown
+  flags are ignored so a renamed upstream flag doesn't break boot.
+- Importing `weed/command` pulls the full SeaweedFS module (rclone, FUSE, all
+  filer stores) — the binary is ~230MB and builds are slow. The charmbracelet
+  stack (lipgloss/cellbuf/ansi/colorprofile) is upgraded to versions
+  compatible with the ansi v0.11.x that rclone forces; do not downgrade those.
+- On SIGINT/SIGTERM SeaweedFS's `weed/util/grace` handler also runs; verified
+  the app's own graceful shutdown still runs first and frees the ports.
+- `StartEmbedded` redirects the cluster's stdout (the mini banner/status rows)
+  to `/dev/null` and pipes its stderr (glog) through the app's charmbracelet
+  logger (`routeOutput` in `embed.go`, glog severity mapped to the matching
+  level, tagged `component=seaweedfs`). The global stdout/stderr swap is safe
+  because charmbracelet captured `os.Stderr` at init; on the normal stop path
+  the globals are intentionally left redirected so shutdown rows don't leak.
+- `Store.MigrateLegacyFiles` moves pre-object-storage DB blobs to objects once,
+  at startup; the legacy `avatar_data`/`icon_data` columns are left in place but
+  cleared.
+- Object keys: `avatars/<userID>`, `icons/<userID>/<domain>`.

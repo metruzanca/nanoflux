@@ -13,7 +13,37 @@ type migration struct {
 var migrations = []migration{
 	{1, schemaV1},
 	{2, schemaV2},
+	{3, schemaV3},
+	{4, schemaV4},
+	{5, schemaV5},
 }
+
+const schemaV5 = `
+ALTER TABLE users ADD COLUMN avatar_key TEXT;
+ALTER TABLE source_icons ADD COLUMN icon_key TEXT;
+`
+
+const schemaV4 = `
+ALTER TABLE users ADD COLUMN avatar_data BLOB;
+ALTER TABLE users ADD COLUMN avatar_content_type TEXT;
+`
+
+const schemaV3 = `
+ALTER TABLE users ADD COLUMN avatar_url TEXT;
+
+CREATE TABLE source_icons (
+    id              INTEGER PRIMARY KEY,
+    user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    domain          TEXT NOT NULL,
+    icon_url        TEXT NOT NULL,
+    content_type    TEXT,
+    icon_data       BLOB,
+    last_fetched_at TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, domain)
+);
+CREATE INDEX idx_source_icons_user ON source_icons(user_id);
+`
 
 const schemaV2 = `
 CREATE TABLE feeds_v2 (

@@ -1,11 +1,14 @@
 package store
 
 import (
+	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/filestore"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -302,5 +305,127 @@ func TestListDue(t *testing.T) {
 	due, _ = s.Feeds.ListDue(db.Now())
 	if len(due) != 0 {
 		t.Fatalf("ListDue should skip disabled feeds")
+	}
+}
+
+func TestSourceIconStore(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	other := mustUser(t, s, "bob")
+
+	ic, err := s.SourceIcons.Create(u.ID, "github.com", "https://example.com/icon.png")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.SourceIcons.ByDomain(u.ID, "github.com")
+	if err != nil || got.ID != ic.ID || got.IconURL != "https://example.com/icon.png" {
+		t.Fatalf("ByDomain: %v %+v", err, got)
+	}
+	// Duplicate domain -> ErrExists.
+	if _, err := s.SourceIcons.Create(u.ID, "github.com", "https://x.dev/i.png"); !errors.Is(err, ErrExists) {
+		t.Fatalf("duplicate: %v", err)
+	}
+	// Scoped to the user.
+	if _, err := s.SourceIcons.ByDomain(other.ID, "github.com"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("other user should not see the icon: %v", err)
+	}
+
+	// Cache and read back.
+	if err := s.SourceIcons.SetIconKey(u.ID, ic.ID, "icons/1/github.com", db.Now()); err != nil {
+		t.Fatalf("SetIconKey: %v", err)
+	}
+	got, _ = s.SourceIcons.ByID(u.ID, ic.ID)
+	if got.IconKey != "icons/1/github.com" || got.LastFetchedAt == "" {
+		t.Fatalf("cached icon: %+v", got)
+	}
+
+	rows, _ := s.SourceIcons.List(u.ID)
+	if len(rows) != 1 {
+		t.Fatalf("List: %d", len(rows))
+	}
+	if err := s.SourceIcons.Delete(u.ID, ic.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := s.SourceIcons.ByID(u.ID, ic.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
+func TestMigrateLegacyFiles(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+
+	// Seed legacy DB blobs directly (as pre-object-storage versions did).
+	if _, err := s.db.Exec(
+		`UPDATE users SET avatar_data = ?, avatar_content_type = 'image/png' WHERE id = ?`,
+		[]byte("avatarbytes"), u.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	ic, _ := s.SourceIcons.Create(u.ID, "github.com", "https://example.com/i.png")
+	if _, err := s.db.Exec(
+		`UPDATE source_icons SET icon_data = ?, content_type = 'image/png' WHERE id = ?`,
+		[]byte("iconbytes"), ic.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := filestore.NewMemory()
+	if err := s.MigrateLegacyFiles(context.Background(), fs); err != nil {
+		t.Fatalf("MigrateLegacyFiles: %v", err)
+	}
+
+	// Bytes moved to object storage and keys recorded; blobs cleared.
+	ct, data, err := fs.Get(context.Background(), "avatars/"+strconv.FormatInt(u.ID, 10))
+	if err != nil || string(data) != "avatarbytes" || ct != "image/png" {
+		t.Fatalf("avatar object: %v %q", err, data)
+	}
+	ct, data, err = fs.Get(context.Background(), "icons/1/github.com")
+	if err != nil || string(data) != "iconbytes" {
+		t.Fatalf("icon object: %v %q", err, data)
+	}
+	got, _ := s.Users.ByID(u.ID)
+	if !got.HasAvatar {
+		t.Fatal("avatar key should be set")
+	}
+	icon, _ := s.SourceIcons.ByID(u.ID, ic.ID)
+	if icon.IconKey != "icons/1/github.com" {
+		t.Fatalf("icon key = %q", icon.IconKey)
+	}
+	var blob int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM users WHERE avatar_data IS NOT NULL`).Scan(&blob); err != nil || blob != 0 {
+		t.Fatalf("legacy avatar blobs remain: %d %v", blob, err)
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM source_icons WHERE icon_data IS NOT NULL`).Scan(&blob); err != nil || blob != 0 {
+		t.Fatalf("legacy icon blobs remain: %d %v", blob, err)
+	}
+	// Idempotent: nothing left to migrate.
+	if err := s.MigrateLegacyFiles(context.Background(), fs); err != nil {
+		t.Fatalf("re-migrate: %v", err)
+	}
+}
+
+func TestUserAvatar(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+
+	if u.HasAvatar {
+		t.Fatal("no avatar initially")
+	}
+	if err := s.Users.SetAvatarKey(u.ID, "avatars/1"); err != nil {
+		t.Fatalf("SetAvatarKey: %v", err)
+	}
+	got, _ := s.Users.ByID(u.ID)
+	if !got.HasAvatar {
+		t.Fatal("HasAvatar should be true")
+	}
+	key, err := s.Users.AvatarKey(u.ID)
+	if err != nil || key != "avatars/1" {
+		t.Fatalf("AvatarKey: %v %q", err, key)
+	}
+	// A user with no avatar key has HasAvatar false.
+	bob := mustUser(t, s, "bob")
+	if bob.HasAvatar {
+		t.Fatal("bob should have no avatar")
 	}
 }

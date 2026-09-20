@@ -10,6 +10,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/config"
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/filestore"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -29,7 +30,7 @@ func newTestServer(t *testing.T) (*Server, http.Handler) {
 		t.Fatal(err)
 	}
 	a := auth.New(st)
-	s := New(st, a, config.Config{})
+	s := New(st, a, config.Config{}, filestore.NewMemory())
 	return s, s.Handler()
 }
 

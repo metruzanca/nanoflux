@@ -10,6 +10,7 @@ type User struct {
 	ID           int64
 	Username     string
 	PasswordHash string
+	HasAvatar    bool
 	CreatedAt    string
 }
 
@@ -32,7 +33,7 @@ func (s *UserStore) Create(username, passwordHash string) (User, error) {
 
 func (s *UserStore) ByID(id int64) (User, error) {
 	u, err := scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, created_at FROM users WHERE id = ?`, id,
+		`SELECT id, username, password_hash, (avatar_key IS NOT NULL), created_at FROM users WHERE id = ?`, id,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound
@@ -42,7 +43,7 @@ func (s *UserStore) ByID(id int64) (User, error) {
 
 func (s *UserStore) ByUsername(username string) (User, error) {
 	u, err := scanUser(s.db.QueryRow(
-		`SELECT id, username, password_hash, created_at FROM users WHERE username = ?`, username,
+		`SELECT id, username, password_hash, (avatar_key IS NOT NULL), created_at FROM users WHERE username = ?`, username,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound
@@ -52,7 +53,7 @@ func (s *UserStore) ByUsername(username string) (User, error) {
 
 func (s *UserStore) List() ([]User, error) {
 	rows, err := s.db.Query(
-		`SELECT id, username, password_hash, created_at FROM users ORDER BY username`,
+		`SELECT id, username, password_hash, (avatar_key IS NOT NULL), created_at FROM users ORDER BY username`,
 	)
 	if err != nil {
 		return nil, err
@@ -76,12 +77,30 @@ func (s *UserStore) Count() (int, error) {
 	return n, err
 }
 
+// AvatarKey returns the object-storage key of the user's profile picture,
+// or "" when none is set.
+func (s *UserStore) AvatarKey(userID int64) (string, error) {
+	var key sql.NullString
+	err := s.db.QueryRow(
+		`SELECT avatar_key FROM users WHERE id = ?`, userID,
+	).Scan(&key)
+	return key.String, err
+}
+
+// SetAvatarKey stores the object-storage key of the user's profile picture.
+func (s *UserStore) SetAvatarKey(userID int64, key string) error {
+	_, err := s.db.Exec(
+		`UPDATE users SET avatar_key = ? WHERE id = ?`, nullStr(key), userID,
+	)
+	return err
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }
 
 func scanUser(row scanner) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.HasAvatar, &u.CreatedAt)
 	return u, err
 }

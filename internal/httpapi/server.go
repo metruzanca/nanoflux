@@ -7,6 +7,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/config"
 	"github.com/metruzanca/nanoflux/internal/discover"
+	"github.com/metruzanca/nanoflux/internal/filestore"
 	"github.com/metruzanca/nanoflux/internal/poller"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
@@ -21,15 +22,17 @@ type Server struct {
 	poller     *poller.Poller
 	discoverer *discover.Discoverer
 	client     *http.Client
+	files      filestore.Store
 }
 
-func New(st *store.Store, a *auth.Authenticator, cfg config.Config) *Server {
+func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore.Store) *Server {
 	return &Server{
 		store:      st,
 		auth:       a,
 		cfg:        cfg,
 		discoverer: discover.New(nil),
 		client:     &http.Client{Timeout: 20 * time.Second},
+		files:      fs,
 	}
 }
 
@@ -90,6 +93,15 @@ func (s *Server) Handler() http.Handler {
 
 	// Image proxy for avatars.
 	mux.Handle("GET /img", s.auth.Require(http.HandlerFunc(s.imgProxy)))
+
+	// Settings.
+	mux.Handle("GET /settings", s.auth.Require(http.HandlerFunc(s.settingsPage)))
+	mux.Handle("POST /settings/avatar", s.auth.Require(http.HandlerFunc(s.settingsAvatar)))
+	mux.Handle("GET /avatar", s.auth.Require(http.HandlerFunc(s.avatarImage)))
+	mux.Handle("POST /settings/icons", s.auth.Require(http.HandlerFunc(s.settingsIconAdd)))
+	mux.Handle("POST /settings/icons/{id}/refresh", s.auth.Require(http.HandlerFunc(s.settingsIconRefresh)))
+	mux.Handle("POST /settings/icons/{id}/delete", s.auth.Require(http.HandlerFunc(s.settingsIconDelete)))
+	mux.Handle("GET /icons/{domain}", s.auth.Require(http.HandlerFunc(s.serveSourceIcon)))
 
 	// JSON API (for the browser extension).
 	mux.HandleFunc("POST /api/login", s.apiLogin)

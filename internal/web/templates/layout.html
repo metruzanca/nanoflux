@@ -21,6 +21,8 @@ document.addEventListener('htmx:beforeSwap', function (e) {
     <a href="/feeds">feeds</a>
     <a href="/authors">authors</a>
     <a href="/collections">collections</a>
+    <a href="/settings">settings</a>
+    {{if .User.HasAvatar}}<a href="/settings" title="settings"><img class="avatar avatar-sm" src="/avatar" alt=""></a>{{end}}
     <form action="/logout" method="post" class="inline"><button class="link" type="submit">log out</button></form>
   </nav>
   {{end}}

@@ -19,7 +19,7 @@ func (s *SessionStore) Create(userID int64, token, expiresAt string) error {
 // UserByToken returns the user for a valid, unexpired session token.
 func (s *SessionStore) UserByToken(token string) (User, error) {
 	u, err := scanUser(s.db.QueryRow(
-		`SELECT u.id, u.username, u.password_hash, u.created_at
+		`SELECT u.id, u.username, u.password_hash, (u.avatar_key IS NOT NULL), u.created_at
 		 FROM sessions se
 		 JOIN users u ON u.id = se.user_id
 		 WHERE se.token = ? AND se.expires_at > datetime('now')`,

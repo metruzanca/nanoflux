@@ -21,6 +21,7 @@ type Store struct {
 	Feeds       *FeedStore
 	Items       *ItemStore
 	Collections *CollectionStore
+	SourceIcons *SourceIconStore
 }
 
 func New(sqldb *sql.DB) *Store {
@@ -32,6 +33,7 @@ func New(sqldb *sql.DB) *Store {
 		Feeds:       &FeedStore{db: sqldb},
 		Items:       &ItemStore{db: sqldb},
 		Collections: &CollectionStore{db: sqldb},
+		SourceIcons: &SourceIconStore{db: sqldb},
 	}
 }
 
