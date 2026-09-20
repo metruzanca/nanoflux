@@ -100,7 +100,7 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 	}
 	cols, _ := s.store.Collections.List(u.ID)
 	feeds, _ := s.store.Feeds.List(u.ID)
-	rr := doForm(h, "POST", "/collections/"+itoa(cols[0].ID)+"/add-feed", url.Values{
+	rr = doForm(h, "POST", "/collections/"+itoa(cols[0].ID)+"/add-feed", url.Values{
 		"feed_id": {itoa(feeds[0].ID)},
 	}, cookie)
 	if rr.Code != http.StatusOK {
