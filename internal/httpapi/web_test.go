@@ -459,6 +459,78 @@ func TestItemReadToggle(t *testing.T) {
 	}
 }
 
+func TestItemFavoriteToggle(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	id := items[0].ID
+	rr := doForm(h, "POST", "/items/"+itoa(id)+"/favorite", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("toggle favorite: %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "item-"+itoa(id)) {
+		t.Fatalf("item row fragment not returned: %s", body)
+	}
+	if !strings.Contains(body, `class="star on"`) {
+		t.Fatalf("star should be filled: %s", body)
+	}
+	after, err := s.store.Items.ByID(u.ID, id)
+	if err != nil || !after.Favorite {
+		t.Fatalf("item should be favorited: %v %+v", err, after)
+	}
+
+	// Toggling again unfavorites.
+	rr = doForm(h, "POST", "/items/"+itoa(id)+"/favorite", url.Values{}, cookie)
+	if rr.Code != http.StatusOK || strings.Contains(rr.Body.String(), `class="star on"`) {
+		t.Fatalf("toggle off: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Items.ByID(u.ID, id)
+	if after.Favorite {
+		t.Fatal("item should no longer be favorited")
+	}
+}
+
+func TestFavoritesPage(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "Other", Link: "https://b.dev/2", FetchedAt: db.Now()})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	var favID int64
+	for _, it := range items {
+		if it.Link == "https://b.dev/1" {
+			favID = it.ID
+		}
+	}
+	if favID == 0 {
+		t.Fatal("test item not found")
+	}
+	s.store.Items.SetFavorite(u.ID, favID, true)
+
+	body := doGet(h, "/favorites", cookie).Body.String()
+	if !strings.Contains(body, "favorites (1)") {
+		t.Fatalf("favorites count wrong: %s", body)
+	}
+	if !strings.Contains(body, `data-item-link="https://b.dev/1"`) {
+		t.Fatalf("favorited item missing from page: %s", body)
+	}
+	if strings.Contains(body, `data-item-link="https://b.dev/2"`) {
+		t.Fatalf("unfavorited item should not appear: %s", body)
+	}
+}
+
 func TestItemView(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

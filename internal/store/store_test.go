@@ -183,6 +183,44 @@ func TestItemsFlow(t *testing.T) {
 	}
 }
 
+func TestItemFavorites(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+
+	s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "One", Link: "https://metru.dev/1", FetchedAt: db.Now()})
+	s.Items.Upsert(f.ID, Item{GUID: "g2", Title: "Two", Link: "https://metru.dev/2", FetchedAt: db.Now()})
+
+	items, _ := s.Items.List(u.ID, ItemFilter{})
+	if err := s.Items.SetFavorite(u.ID, items[0].ID, true); err != nil {
+		t.Fatalf("SetFavorite: %v", err)
+	}
+	fav, err := s.Items.List(u.ID, ItemFilter{FavoritesOnly: true})
+	if err != nil || len(fav) != 1 {
+		t.Fatalf("FavoritesOnly List: %v %d", err, len(fav))
+	}
+	if !fav[0].Favorite || fav[0].ID != items[0].ID {
+		t.Fatalf("wrong favorite row: %+v", fav[0])
+	}
+	n, _ := s.Items.CountFavorites(u.ID, 0)
+	if n != 1 {
+		t.Fatalf("CountFavorites: %d, want 1", n)
+	}
+	it, err := s.Items.ByID(u.ID, items[0].ID)
+	if err != nil || !it.Favorite {
+		t.Fatalf("ByID favorite: %v %+v", err, it)
+	}
+	// Toggle off.
+	if err := s.Items.SetFavorite(u.ID, items[0].ID, false); err != nil {
+		t.Fatalf("SetFavorite off: %v", err)
+	}
+	n, _ = s.Items.CountFavorites(u.ID, 0)
+	if n != 0 {
+		t.Fatalf("CountFavorites after off: %d, want 0", n)
+	}
+}
+
 func TestItemsAuthorlessFeed(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

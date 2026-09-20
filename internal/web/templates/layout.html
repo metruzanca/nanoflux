@@ -21,6 +21,7 @@ document.addEventListener('htmx:beforeSwap', function (e) {
     <a href="/feeds">feeds</a>
     <a href="/authors">authors</a>
     <a href="/collections">collections</a>
+    <a href="/favorites">favorites</a>
     <div class="user-menu">
       <button type="button" id="user-menu-btn" class="avatar-btn" aria-haspopup="true" aria-expanded="false" title="{{.User.Username}}" onclick="toggleUserMenu(event)">
         {{if .User.HasAvatar}}<img class="avatar avatar-sm" src="/avatar" alt="{{.User.Username}}">{{else}}<span class="avatar avatar-sm avatar-default">{{initial .User.Username}}</span>{{end}}
@@ -66,7 +67,7 @@ function markRowRead(id) {
   if (!row) return;
   var title = row.querySelector('.item-title');
   if (title) title.classList.remove('unread');
-  var btn = row.querySelector('button.link[title]');
+  var btn = row.querySelector('.read-btn');
   if (btn) {
     btn.textContent = '↺';
     btn.setAttribute('title', 'mark unread');

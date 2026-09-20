@@ -62,9 +62,11 @@ func (s *Server) Handler() http.Handler {
 	// Items.
 	mux.Handle("GET /{$}", s.auth.Require(http.HandlerFunc(s.home)))
 	mux.Handle("GET /read", s.auth.Require(http.HandlerFunc(s.readPage)))
+	mux.Handle("GET /favorites", s.auth.Require(http.HandlerFunc(s.favoritesPage)))
 	mux.Handle("POST /items/read-all", s.auth.Require(http.HandlerFunc(s.itemsReadAll)))
 	mux.Handle("POST /items/unread-all", s.auth.Require(http.HandlerFunc(s.itemsMarkAllUnread)))
 	mux.Handle("POST /items/{id}/read", s.auth.Require(http.HandlerFunc(s.itemRead)))
+	mux.Handle("POST /items/{id}/favorite", s.auth.Require(http.HandlerFunc(s.itemFavorite)))
 	mux.Handle("GET /items/{id}/view", s.auth.Require(http.HandlerFunc(s.itemView)))
 
 	// Feeds.
