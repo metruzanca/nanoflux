@@ -102,6 +102,39 @@ func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID 
 	web.RenderFragment(w, "items_list", items)
 }
 
+type itemViewData struct {
+	Title       string
+	AuthorName  string
+	FeedTitle   string
+	FeedURL     string
+	PublishedAt string
+	Body        template.HTML
+}
+
+// itemView renders a standalone page of an item's stored content, used inside
+// the modal's sandboxed iframe.
+func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	it, err := s.store.Items.OneWithFeed(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	web.Render(w, "item_view", web.Page{Title: it.Title, User: u, Data: itemViewData{
+		Title:       it.Title,
+		AuthorName:  it.AuthorName,
+		FeedTitle:   it.FeedTitle,
+		FeedURL:     it.FeedURL,
+		PublishedAt: it.PublishedAt,
+		Body:        template.HTML(it.Summary),
+	}})
+}
+
 func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

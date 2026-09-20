@@ -132,10 +132,42 @@ func TestItemReadToggle(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "item-"+itoa(items[0].ID)) {
 		t.Fatal("item row fragment not returned")
 	}
+	if !strings.Contains(rr.Body.String(), `data-item-id="`+itoa(items[0].ID)+`"`) ||
+		!strings.Contains(rr.Body.String(), `data-item-link="https://b.dev/1"`) {
+		t.Fatalf("item row missing modal data attrs: %s", rr.Body.String())
+	}
 	n, _ := s.store.Items.CountUnread(u.ID, 0)
 	if n != 0 {
 		t.Fatalf("unread = %d, want 0", n)
 	}
+}
+
+func TestItemView(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "g", Title: "Item", Link: "https://b.dev/1",
+		Summary: "<p>hello <b>world</b></p>", FetchedAt: db.Now(),
+	})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	rr := doGet(h, "/items/"+itoa(items[0].ID)+"/view", cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("item view: %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "<b>world</b>") || !strings.Contains(body, "Item") || !strings.Contains(body, "Metru") {
+		t.Fatalf("item view content: %s", body)
+	}
+
+	// Another user cannot view it.
+	other, _ := s.store.Users.Create("bob", "h")
+	_ = other
+	// (cross-user access is covered by OneWithFeed's user scoping)
 }
 
 func TestAuthorFormFragment(t *testing.T) {

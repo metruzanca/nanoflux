@@ -14,7 +14,7 @@
 <li id="item-{{.ID}}">
   <div class="row">
     <div>
-      <a class="item-title{{if not .Read}} unread{{end}}" href="{{.Link}}" target="_blank" rel="noopener">{{.Title}}</a>
+      <a class="item-title{{if not .Read}} unread{{end}}" href="#item-{{.ID}}" data-item-id="{{.ID}}" data-item-link="{{.Link}}" onclick="return openItem(this)">{{.Title}}</a>
       <div class="item-meta">
         {{.AuthorName}} · <a href="{{.FeedURL}}">{{.FeedTitle}}</a>
         {{if .PublishedAt}} · {{.PublishedAt | timeFmt}}{{end}}
