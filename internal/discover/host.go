@@ -2,7 +2,7 @@ package discover
 
 import (
 	"context"
-	"net/http"
+	"io"
 	"net/url"
 	"regexp"
 	"strings"
@@ -70,38 +70,72 @@ func hostSpecificURLs(u *url.URL) []string {
 	return nil
 }
 
-var channelIDRe = regexp.MustCompile(`"channelId"\s*:\s*"([A-Za-z0-9_-]{20,})"`)
+var (
+	channelIDRe    = regexp.MustCompile(`"channelId"\s*:\s*"(UC[A-Za-z0-9_-]{20,})"`)
+	externalIDRe   = regexp.MustCompile(`"externalId"\s*:\s*"(UC[A-Za-z0-9_-]{20,})"`)
+	browseIDRe     = regexp.MustCompile(`"browseId"\s*:\s*"(UC[A-Za-z0-9_-]{20,})"`)
+	canonicalTagRe = regexp.MustCompile(`<link[^>]*\brel=["']canonical["'][^>]*>`)
+	hrefAttrRe     = regexp.MustCompile(`href=["']([^"']+)["']`)
+)
 
-// youtubeChannelID fetches a YouTube page and extracts the channel_id embedded
-// in its JSON.
+// youtubeChannelID resolves the channel id (e.g. "UC5--wS0Ljbin1TjWQX6eafA")
+// for a YouTube channel URL. It handles /channel/, /user/, /c/ and /@handle
+// forms. /channel/ URLs carry the id in the path; everything else is resolved
+// from the page's canonical link or its embedded JSON.
 func (d *Discoverer) youtubeChannelID(ctx context.Context, pageURL string) string {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+	u, err := url.Parse(pageURL)
 	if err != nil {
 		return ""
 	}
-	req.Header.Set("User-Agent", "nanoflux/0.1")
-	resp, err := d.client.Do(req)
+	if id := channelIDFromPath(u.Path); id != "" {
+		return id
+	}
+	body, _, err := d.openPage(ctx, pageURL)
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return ""
+	defer body.Close()
+	data, _ := io.ReadAll(io.LimitReader(body, maxBody))
+
+	if id := canonicalChannelID(data); id != "" {
+		return id
 	}
-	body := make([]byte, 0, 64<<10)
-	buf := make([]byte, 32<<10)
-	for {
-		n, err := resp.Body.Read(buf)
-		body = append(body, buf[:n]...)
-		if len(body) > maxBody {
-			return ""
+	for _, re := range []*regexp.Regexp{externalIDRe, browseIDRe, channelIDRe} {
+		if m := re.FindSubmatch(data); len(m) == 2 {
+			return string(m[1])
 		}
-		if err != nil {
-			break
-		}
-	}
-	if m := channelIDRe.FindSubmatch(body); len(m) == 2 {
-		return string(m[1])
 	}
 	return ""
+}
+
+// channelIDFromPath extracts a channel id from a YouTube path like
+// "/channel/UC5--wS0Ljbin1TjWQX6eafA".
+func channelIDFromPath(p string) string {
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) < 2 || parts[0] != "channel" {
+		return ""
+	}
+	id := parts[1]
+	if strings.HasPrefix(id, "UC") && len(id) >= 20 {
+		return id
+	}
+	return ""
+}
+
+// canonicalChannelID reads a channel id out of the page's canonical link
+// (<link rel="canonical" href="https://www.youtube.com/channel/UC...">).
+func canonicalChannelID(data []byte) string {
+	tag := canonicalTagRe.Find(data)
+	if tag == nil {
+		return ""
+	}
+	m := hrefAttrRe.FindSubmatch(tag)
+	if len(m) != 2 {
+		return ""
+	}
+	u, err := url.Parse(string(m[1]))
+	if err != nil || !isYouTube(u.Hostname()) {
+		return ""
+	}
+	return channelIDFromPath(u.Path)
 }

@@ -147,16 +147,65 @@ func TestHostSpecificURLs(t *testing.T) {
 	}
 }
 
+func TestChannelIDFromPath(t *testing.T) {
+	cases := []struct {
+		path string
+		want string
+	}{
+		{"/channel/UC5--wS0Ljbin1TjWQX6eafA", "UC5--wS0Ljbin1TjWQX6eafA"},
+		{"/@bigboxSWE", ""},
+		{"/user/foo", ""},
+		{"/channel/short", ""}, // not a channel id shape
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := channelIDFromPath(c.path); got != c.want {
+			t.Errorf("channelIDFromPath(%q) = %q, want %q", c.path, got, c.want)
+		}
+	}
+}
+
 func TestYouTubeChannelID(t *testing.T) {
+	const id = "UC5--wS0Ljbin1TjWQX6eafA"
+	handlePage := `<html><head>
+	  <title>bigboxSWE</title>
+	  <link rel="canonical" href="https://www.youtube.com/channel/` + id + `">
+	  <script>var ytInitialData = {"header":{"externalId":"` + id + `"}}</script>
+	</head></html>`
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<script>var ytInitialData = {"header":"channelId":"UCrLkzvXK6fN4oD9XVjvjKxQ"`))
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(handlePage))
 	}))
 	defer srv.Close()
 
 	d := New(srv.Client())
-	id := d.youtubeChannelID(context.Background(), srv.URL)
-	if id != "UCrLkzvXK6fN4oD9XVjvjKxQ" {
-		t.Fatalf("channel id = %q", id)
+
+	// /channel/<id> resolves from the path alone, no fetch.
+	if got := d.youtubeChannelID(context.Background(), srv.URL+"/channel/"+id); got != id {
+		t.Fatalf("/channel id = %q", got)
+	}
+	// A handle page resolves via the canonical link.
+	if got := d.youtubeChannelID(context.Background(), srv.URL+"/@bigboxSWE"); got != id {
+		t.Fatalf("handle page id = %q", got)
+	}
+	// The legacy channelId JSON key still works when no canonical/externalId.
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<script>var ytInitialData = {"header":{"channelId":"UCrLkzvXK6fN4oD9XVjvjKxQ"}}</script>`))
+	}))
+	defer srv2.Close()
+	if got := New(srv2.Client()).youtubeChannelID(context.Background(), srv2.URL); got != "UCrLkzvXK6fN4oD9XVjvjKxQ" {
+		t.Fatalf("legacy channelId = %q", got)
+	}
+	// A non-channel page yields nothing.
+	srv3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><head><title>nope</title></head></html>`))
+	}))
+	defer srv3.Close()
+	if got := New(srv3.Client()).youtubeChannelID(context.Background(), srv3.URL); got != "" {
+		t.Fatalf("non-channel id = %q", got)
 	}
 }
 
