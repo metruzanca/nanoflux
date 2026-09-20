@@ -34,6 +34,7 @@ var funcMap = template.FuncMap{
 	"isVideo": func(link string) bool {
 		return YoutubeEmbedURL(link) != ""
 	},
+	"sourceIcon": sourceIcon,
 }
 
 func has(id int64, ids []int64) bool {
@@ -43,6 +44,29 @@ func has(id int64, ids []int64) bool {
 		}
 	}
 	return false
+}
+
+var (
+	youtubeIcon = template.HTML(`<svg class="src-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>`)
+	xIcon       = template.HTML(`<svg class="src-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>`)
+	webIcon     = template.HTML(`<svg class="src-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`)
+)
+
+// sourceIcon returns the brand icon for a feed URL: X, YouTube, or a generic
+// website globe.
+func sourceIcon(rawurl string) template.HTML {
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return webIcon
+	}
+	switch h := strings.ToLower(u.Hostname()); {
+	case strings.HasSuffix(h, "youtube.com"), strings.HasSuffix(h, "youtu.be"):
+		return youtubeIcon
+	case h == "x.com" || h == "www.x.com" || h == "twitter.com" || h == "www.twitter.com":
+		return xIcon
+	default:
+		return webIcon
+	}
 }
 
 // YoutubeEmbedURL returns the embeddable player URL for a YouTube video link

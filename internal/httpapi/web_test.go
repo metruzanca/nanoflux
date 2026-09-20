@@ -48,6 +48,66 @@ func sessionCookie(t *testing.T, h http.Handler) *http.Cookie {
 	return nil
 }
 
+func TestNormalizeURL(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://x.com/sama", "https://x.com/sama"},
+		{"http://x.com/sama", "http://x.com/sama"},
+		{"x.com/sama", "https://x.com/sama"},
+		{"  x.com/sama  ", "https://x.com/sama"},
+		{"www.example.com/feed.xml", "https://www.example.com/feed.xml"},
+		{"", ""},
+		{"   ", ""},
+	}
+	for _, c := range cases {
+		if got := normalizeURL(c.in); got != c.want {
+			t.Errorf("normalizeURL(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestFeedPreviewSchemelessURL(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	feedSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rss" {
+			w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>RSS Feed</title><link>https://home.dev/</link></channel></rss>`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer feedSrv.Close()
+	s.client = feedSrv.Client() // trusts the test TLS cert
+
+	// Strip the scheme; normalization must add it back.
+	schemeless := strings.TrimPrefix(feedSrv.URL, "https://")
+	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url": {schemeless + "/rss"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), feedSrv.URL+"/rss") {
+		t.Fatalf("schemeless url should resolve to the full feed url: %s", rr.Body.String())
+	}
+}
+
+func TestFeedCreateNormalizesURL(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	rr := doForm(h, "POST", "/feeds", url.Values{
+		"title": {"Blog"}, "feed_url": {"example.com/rss.xml"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
+	}
+	feeds, _ := s.store.Feeds.List(u.ID)
+	if len(feeds) != 1 || feeds[0].FeedURL != "https://example.com/rss.xml" {
+		t.Fatalf("stored feed url = %+v", feeds)
+	}
+}
+
 func TestCreateFormErrors(t *testing.T) {
 	_, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
@@ -326,6 +386,26 @@ func TestAuthorFormFragment(t *testing.T) {
 	}
 	if rr := doGet(h, "/fragments/author-form?author_id=5", cookie); rr.Code != http.StatusNoContent {
 		t.Fatalf("expected empty fragment for existing author, got %d", rr.Code)
+	}
+}
+
+func TestAuthorPageHasAddFeedDialog(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	for _, want := range []string{
+		`id="add-author-feed-dialog"`,
+		`name="author_id" value="` + itoa(a.ID) + `"`,
+		`hx-post="/fragments/feed-preview"`,
+		"+ add feed",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("author page missing %q: %s", want, body)
+		}
 	}
 }
 

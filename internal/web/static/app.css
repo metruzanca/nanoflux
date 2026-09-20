@@ -83,9 +83,19 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
   font-size: 0.9rem;
   margin-top: 0.75rem;
 }
+.error:empty { display: none; }
 
 .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }
+
+.src-icon {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  color: var(--muted);
+  margin-right: 0.3em;
+  flex: none;
+}
 
 .row { display: flex; align-items: baseline; gap: 0.75rem; justify-content: space-between; }
 .row h2 { margin: 0; }

@@ -9,7 +9,7 @@
 <main>
 <section class="card">
   <div class="row">
-    <h1>{{.Data.Row.Title}}</h1>
+    <h1>{{sourceIcon .Data.Row.FeedURL}}{{.Data.Row.Title}}</h1>
     <div class="row-actions">
       <a class="small" href="/feeds/{{.Data.Row.ID}}/edit">edit</a>
       <button class="link" title="refresh" hx-post="/feeds/{{.Data.Row.ID}}/refresh"
