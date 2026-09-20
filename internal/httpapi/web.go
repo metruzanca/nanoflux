@@ -63,6 +63,12 @@ type authorsData struct {
 type authorData struct {
 	Author store.Author
 	Rows   []feedRow
+	Items  []store.ItemWithFeed
+}
+
+type feedPageData struct {
+	Row   feedRow
+	Items []store.ItemWithFeed
 }
 
 type collectionData struct {
@@ -418,7 +424,35 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	web.Render(w, "author", web.Page{Title: a.Name, User: u, Data: authorData{Author: a, Rows: rows}})
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{AuthorID: id, Limit: 100})
+	web.Render(w, "author", web.Page{Title: a.Name, User: u, Data: authorData{
+		Author: a, Rows: rows, Items: items,
+	}})
+}
+
+func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	feed, err := s.store.Feeds.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	authorName := ""
+	if feed.AuthorID != 0 {
+		if a, err := s.store.Authors.ByID(u.ID, feed.AuthorID); err == nil {
+			authorName = a.Name
+		}
+	}
+	unread, _ := s.store.Items.CountUnread(u.ID, id)
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{FeedID: id, Limit: 100})
+	web.Render(w, "feed", web.Page{Title: feed.Title, User: u, Data: feedPageData{
+		Row: feedRow{Feed: feed, AuthorName: authorName, Unread: unread}, Items: items,
+	}})
 }
 
 func (s *Server) feedRowsForAuthor(userID, authorID int64) ([]feedRow, error) {

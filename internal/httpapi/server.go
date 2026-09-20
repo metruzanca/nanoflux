@@ -58,6 +58,7 @@ func (s *Server) Handler() http.Handler {
 	// Feeds.
 	mux.Handle("GET /feeds", s.auth.Require(http.HandlerFunc(s.feeds)))
 	mux.Handle("POST /feeds", s.auth.Require(http.HandlerFunc(s.feedCreate)))
+	mux.Handle("GET /feeds/{id}", s.auth.Require(http.HandlerFunc(s.feedPage)))
 	mux.Handle("GET /feeds/{id}/edit", s.auth.Require(http.HandlerFunc(s.feedEdit)))
 	mux.Handle("POST /feeds/{id}/edit", s.auth.Require(http.HandlerFunc(s.feedUpdate)))
 	mux.Handle("POST /feeds/{id}/delete", s.auth.Require(http.HandlerFunc(s.feedDelete)))

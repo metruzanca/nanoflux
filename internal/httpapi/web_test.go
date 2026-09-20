@@ -145,3 +145,34 @@ func TestAuthorFormFragment(t *testing.T) {
 		t.Fatalf("expected empty fragment for existing author, got %d", rr.Code)
 	}
 }
+
+func TestFeedAndAuthorPagesShowItems(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Feed Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
+
+	// Feed detail page shows the feed, its author, and its items.
+	rr := doGet(h, "/feeds/"+itoa(f.ID), cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("feed page: %d", rr.Code)
+	}
+	body := rr.Body.String()
+	for _, want := range []string{"Blog", "Feed Item", "Metru"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("feed page missing %q: %s", want, body)
+		}
+	}
+
+	// Author page shows items from the author's feeds.
+	rr = doGet(h, "/authors/"+itoa(a.ID), cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("author page: %d", rr.Code)
+	}
+	if body := rr.Body.String(); !strings.Contains(body, "Feed Item") {
+		t.Fatalf("author page missing item: %s", body)
+	}
+}

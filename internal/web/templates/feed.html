@@ -1,0 +1,30 @@
+{{define "feed"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head" .}}
+</head>
+<body>
+{{template "topbar" .}}
+<main>
+<section class="card">
+  <div class="row">
+    <h1>{{.Data.Row.Title}}</h1>
+    <div class="row-actions">
+      <a class="small" href="/feeds/{{.Data.Row.ID}}/edit">edit</a>
+      <button class="link" title="refresh" hx-post="/feeds/{{.Data.Row.ID}}/refresh"
+              hx-on::after-request="if(event.detail.successful) window.location.reload()">↻</button>
+    </div>
+  </div>
+  <p class="item-meta">
+    {{if .Data.Row.AuthorName}}<a href="/authors/{{.Data.Row.AuthorID}}">{{.Data.Row.AuthorName}}</a> · {{else}}no author · {{end}}
+    <a href="{{.Data.Row.FeedURL}}">feed</a>{{if .Data.Row.HomeURL}} · <a href="{{.Data.Row.HomeURL}}" target="_blank" rel="noopener">home</a>{{end}}
+  </p>
+  <p class="muted small">{{.Data.Row.Unread}} unread · last polled {{if .Data.Row.LastPolledAt}}{{.Data.Row.LastPolledAt | timeFmt}}{{else}}never{{end}}</p>
+</section>
+<h2>items</h2>
+{{template "items_list" .Data.Items}}
+</main>
+</body>
+</html>
+{{end}}
