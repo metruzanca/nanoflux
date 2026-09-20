@@ -64,3 +64,21 @@ they are network-dependent and intentionally not committed.
 - Published times come from relative text ("1 month ago") parsed by
   `parseRelativeTime`; they are approximate.
 - `youtubeBrowseBaseURL` is a package var so tests can point it at a mock.
+
+## X (Twitter) profile feeds
+
+X removed RSS in 2013 and offers no public guest API in 2026; Nitter is
+DMCA'd. `internal/feedparse/x.go` therefore scrapes the profile page
+(`x.com/<handle>`, `twitter.com/<handle>`) and extracts the posts embedded in
+the web client's Relay payload. `fetchXProfile` runs as a short-circuit inside
+`feedparse.Fetch` when the URL is an X profile, so discovery, the poller, and
+preview all work unchanged.
+
+- The Relay payload is minified, unofficial, and split across `$R[n]` refs;
+  parsing is best-effort. `isXProfileURL` only accepts single-segment profile
+  paths (rejects `/home`, `/search`, status URLs, etc.).
+- Item GUIDs are `tweet:<id>`; publish times come from the tweet's snowflake
+  ID (`(id >> 22) + 1288834974657` ms), not the page's scattered timestamp refs.
+- `xProfileHosts` is a package var so tests can inject a mock host. If X starts
+  serving a login wall, `fetchXProfile` returns an error and the feed fails
+  gracefully.

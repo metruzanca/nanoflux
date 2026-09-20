@@ -47,6 +47,10 @@ type Result struct {
 // Fetch retrieves and parses feedURL. When etag or lastModified are non-empty
 // they are sent as conditional-GET headers; a 304 returns ErrNotModified.
 func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastModified string) (Result, error) {
+	if isXProfileFeedURL(feedURL) {
+		return fetchXProfile(ctx, feedURL, client)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
 		return Result{}, err
