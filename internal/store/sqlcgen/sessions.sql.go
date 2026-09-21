@@ -47,7 +47,7 @@ func (q *Queries) DeleteSession(ctx context.Context, token string) error {
 }
 
 const getUserByToken = `-- name: GetUserByToken :one
-SELECT u.id, u.username, u.password_hash, u.avatar_key, u.timezone, u.theme, u.created_at
+SELECT u.id, u.username, u.password_hash, u.avatar_key, u.timezone, u.theme, u.accent_color, u.created_at
 FROM sessions se
 JOIN users u ON u.id = se.user_id
 WHERE se.token = ? AND se.expires_at > datetime('now')
@@ -60,6 +60,7 @@ type GetUserByTokenRow struct {
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
+	AccentColor  string         `json:"accent_color"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -73,6 +74,7 @@ func (q *Queries) GetUserByToken(ctx context.Context, token string) (GetUserByTo
 		&i.AvatarKey,
 		&i.Timezone,
 		&i.Theme,
+		&i.AccentColor,
 		&i.CreatedAt,
 	)
 	return i, err

@@ -103,7 +103,7 @@ a.external::after {
 }
 .user-menu-pop a:hover,
 .user-menu-pop button:hover {
-  background: rgba(91, 140, 255, 0.15);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
   text-decoration: none;
 }
 .user-menu-pop form { margin: 0; }
@@ -352,6 +352,24 @@ body:has(dialog.modal[open]) {
   font-size: 0.8rem;
   text-transform: uppercase;
   line-height: 1;
+}
+
+.accent-swatches { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.accent-swatch {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+.accent-swatch:hover { border-color: var(--fg); transform: scale(1.1); }
+input[type="color"] {
+  padding: 0.15rem 0.3rem;
+  width: min(8rem, 100%);
+  height: 2.2rem;
+  cursor: pointer;
 }
 
 dialog.modal.wide[open] {

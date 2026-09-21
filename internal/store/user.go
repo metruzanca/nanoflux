@@ -16,6 +16,7 @@ type User struct {
 	HasAvatar    bool
 	Timezone     string
 	Theme        string
+	AccentColor  string
 	CreatedAt    string
 }
 
@@ -30,7 +31,7 @@ func (s *UserStore) Create(username, passwordHash string) (User, error) {
 	if err != nil {
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
 }
 
 func (s *UserStore) ByID(id int64) (User, error) {
@@ -41,7 +42,7 @@ func (s *UserStore) ByID(id int64) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
 }
 
 func (s *UserStore) ByUsername(username string) (User, error) {
@@ -52,7 +53,7 @@ func (s *UserStore) ByUsername(username string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
 }
 
 func (s *UserStore) List() ([]User, error) {
@@ -62,7 +63,7 @@ func (s *UserStore) List() ([]User, error) {
 	}
 	out := make([]User, 0, len(rows))
 	for _, u := range rows {
-		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.CreatedAt))
+		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt))
 	}
 	return out, nil
 }
@@ -103,5 +104,13 @@ func (s *UserStore) SetTheme(userID int64, theme string) error {
 	return s.q.SetUserTheme(context.Background(), sqlcgen.SetUserThemeParams{
 		Theme: theme,
 		ID:    userID,
+	})
+}
+
+// SetAccentColor stores the user's accent color as a "#rrggbb" hex value.
+func (s *UserStore) SetAccentColor(userID int64, color string) error {
+	return s.q.SetUserAccentColor(context.Background(), sqlcgen.SetUserAccentColorParams{
+		AccentColor: color,
+		ID:          userID,
 	})
 }

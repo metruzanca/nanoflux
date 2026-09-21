@@ -24,6 +24,7 @@ var migrations = []migration{
 	{11, schemaV11},
 	{12, schemaV12},
 	{13, schemaV13},
+	{14, schemaV14},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -91,6 +92,12 @@ CREATE TABLE shared_items (
 
 const schemaV9 = `
 ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'dark';
+`
+
+// schemaV14 lets users override the app's accent color with a #rrggbb hex
+// value. The default matches --accent in internal/web/static/app.css.
+const schemaV14 = `
+ALTER TABLE users ADD COLUMN accent_color TEXT NOT NULL DEFAULT '#5b8cff';
 `
 
 const schemaV8 = `

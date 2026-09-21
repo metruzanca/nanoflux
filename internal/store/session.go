@@ -28,7 +28,7 @@ func (s *SessionStore) UserByToken(token string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
 }
 
 func (s *SessionStore) Delete(token string) error {
