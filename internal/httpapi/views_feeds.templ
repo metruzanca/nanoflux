@@ -64,7 +64,7 @@ templ FeedRow(r feedRow) {
 			</div>
 			<div class="row-actions">
 				<a class="small" href={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit" }>edit</a>
-				<button class="link" title={ if r.Enabled { "pause polling" } else { "resume polling" } } hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/toggle" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">
+				<button class="link" title={ toggleTitle(r.Enabled) } hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/toggle" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">
 					if r.Enabled {
 						⏸
 					} else {
@@ -255,6 +255,14 @@ templ feedPage(u store.User, d feedPageData) {
 	</section>
 	<h2>items</h2>
 	@ScopedItems(d.Scoped)
+}
+
+// toggleTitle returns the toggle button tooltip for a feed's enabled state.
+func toggleTitle(enabled bool) string {
+	if enabled {
+		return "pause polling"
+	}
+	return "resume polling"
 }
 
 // hasID reports whether id is present in ids.
