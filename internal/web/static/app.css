@@ -53,7 +53,8 @@ a.external::after {
   background: var(--panel);
 }
 
-.brand { font-weight: 700; color: var(--fg); }
+.brand { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 700; color: var(--fg); }
+.brand-logo { width: 20px; height: 20px; display: block; }
 
 /* Hamburger toggle for the collapsed mobile nav; hidden on desktop. */
 .hamburger {
