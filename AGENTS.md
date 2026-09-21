@@ -161,6 +161,32 @@ id; `redditEmbedBaseURL` is a package var so tests can inject a mock host. The
 whole resolution is timeboxed in `itemView` and degrades to today's behavior
 on any failure.
 
+## Feed pagination (load older items)
+
+Some feeds expose their older history in pages — via a standard `rel="next"`
+link (`<link rel="next" href="...">` / `<atom:link rel="next" ...>`) or a
+`?page=N` / `?paged=N` query-parameter convention. nanoflux never auto-backfills
+that history (it can be extremely long); instead the feed's page offers a
+"load older items" button that fetches the next page(s) on demand.
+
+- Detection lives in `internal/feedparse` (`nextPageFromBody` /
+  `nextPageByParam`): a feed-level `rel="next"` link wins (resolved against the
+  fetched URL), otherwise the fetched URL's own `page`/`paged` param is
+  incremented. `Result.NextPageURL` rides along on every `Feed` result, so
+  discovery, preview, the poller, and the API all stay unchanged.
+- The cursor is stored per feed in `feeds.next_page_url` (schemaV20). The
+  poller records it only on a feed's **first** poll (a newly added feed);
+  routine polls never touch it, so they can't clobber a user's in-progress walk
+  by resetting it to page two. "Load older items" (`POST /feeds/{id}/older` →
+  `Poller.PollOlder`) walks up to `maxBackfillPages` (5) pages per click and
+  stops, clearing the cursor, when a page has no next link, yields zero new
+  items (dedup hit — the terminator for `?page=N` feeds), or loops back to a
+  visited URL. A click that hits the cap keeps the cursor for another click.
+  Errors leave the cursor untouched so the click can be retried.
+- The feed page renders the control via `feedOlderControl` (only when the
+  cursor is set); the endpoint swaps `#feed-older` (button → "full history
+  loaded") and OOB-swaps `#scoped-items` so the imported items appear.
+
 ## Settings and custom source icons
 
 `/settings` lets users set a profile-picture URL and add custom per-domain brand

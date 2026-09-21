@@ -142,7 +142,8 @@ ALTER TABLE feeds ADD COLUMN last_error TEXT;
 // named after the feed (falling back to its home url, then its feed url), then
 // feeds is rebuilt with author_id NOT NULL. Feeds whose title collides with an
 // existing author of the same user may attach to that author — acceptable for
-// a one-time backfill.
+// a one-time backfill. The rebuild also carries forward next_page_url, the
+// "load older items" pagination cursor for feeds that expose paged history.
 const schemaV20 = `
 INSERT INTO authors (user_id, name, url, avatar_url, description, created_at)
 SELECT f.user_id,
@@ -172,15 +173,16 @@ CREATE TABLE feeds_v3 (
     last_modified     TEXT,
     last_polled_at    TEXT,
     last_error        TEXT,
+    next_page_url     TEXT NOT NULL DEFAULT '',
     poll_interval_sec INTEGER NOT NULL DEFAULT 900,
     enabled           INTEGER NOT NULL DEFAULT 1,
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 INSERT INTO feeds_v3 (id, user_id, author_id, title, feed_url, home_url, description,
-                      etag, last_modified, last_polled_at, last_error, poll_interval_sec, enabled, created_at)
+                      etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, enabled, created_at)
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, poll_interval_sec, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, '', poll_interval_sec, enabled, created_at
 FROM feeds;
 
 DROP TABLE feeds;

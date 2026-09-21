@@ -128,6 +128,37 @@ func TestAuthorFeedFlow(t *testing.T) {
 	}
 }
 
+func TestFeedNextPageCursor(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	f, err := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/feed.xml?page=1", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.NextPageURL != "" {
+		t.Fatalf("new feed NextPageURL = %q, want empty", f.NextPageURL)
+	}
+
+	// The poller records pagination; the feed page reads it back.
+	if err := s.Feeds.SetNextPageURL(f.ID, "https://metru.dev/feed.xml?page=2"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Feeds.ByID(u.ID, f.ID)
+	if got.NextPageURL != "https://metru.dev/feed.xml?page=2" {
+		t.Fatalf("NextPageURL = %q, want page=2", got.NextPageURL)
+	}
+
+	// "Load older items" clears it once the history is exhausted.
+	if err := s.Feeds.SetNextPageURL(f.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Feeds.ByID(u.ID, f.ID)
+	if got.NextPageURL != "" {
+		t.Fatalf("NextPageURL = %q, want cleared", got.NextPageURL)
+	}
+}
+
 func TestItemsFlow(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

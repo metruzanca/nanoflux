@@ -3,13 +3,16 @@
 package feedparse
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -53,6 +56,9 @@ type Result struct {
 	Items        []Item
 	ETag         string
 	LastModified string
+	// NextPageURL is the feed's advertised next page, or "" when the feed is
+	// not paginated / this is the last page. Used by "load older items".
+	NextPageURL string
 }
 
 // Fetch retrieves and parses feedURL. When etag or lastModified are non-empty
@@ -94,7 +100,12 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 		return Result{}, fmt.Errorf("get %s: status %d", feedURL, resp.StatusCode)
 	}
 
-	parsed, err := gofeed.NewParser().Parse(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return Result{}, fmt.Errorf("read %s: %w", feedURL, err)
+	}
+
+	parsed, err := gofeed.NewParser().Parse(bytes.NewReader(body))
 	if err != nil {
 		if isYouTubeChannelFeed(feedURL) {
 			return fetchYouTubeChannelViaBrowse(ctx, feedURL, client)
@@ -115,10 +126,79 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 		ETag:         resp.Header.Get("ETag"),
 		LastModified: resp.Header.Get("Last-Modified"),
 	}
+	if next := nextPageFromBody(body, feedURL); next != "" {
+		res.NextPageURL = next
+	} else {
+		res.NextPageURL = nextPageByParam(feedURL)
+	}
 	for _, it := range parsed.Items {
 		res.Items = append(res.Items, normalizeItem(it))
 	}
 	return res, nil
+}
+
+// nextLinkPatterns match a feed-level <link rel="next" href="..."> (Atom, or
+// RSS carrying an atom:link) in either attribute order. Only feed-level links
+// carry a rel attribute, so matching rel="next" cannot collide with an item's
+// <link> element.
+var nextLinkPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?is)<(?:\w+:)?link\b[^>]*?\brel\s*=\s*["']next["'][^>]*?\bhref\s*=\s*["']([^"']+)["']`),
+	regexp.MustCompile(`(?is)<(?:\w+:)?link\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*?\brel\s*=\s*["']next["']`),
+}
+
+// nextPageFromBody extracts the feed-level rel="next" link from the raw feed
+// document, resolved against currentURL (the page that was fetched). The scan
+// is skipped for documents larger than nextLinkScanMax because the regexes are
+// cheap but not free on multi-megabyte bodies.
+func nextPageFromBody(body []byte, currentURL string) string {
+	const nextLinkScanMax = 4 << 20
+	if len(body) == 0 || len(body) > nextLinkScanMax {
+		return ""
+	}
+	base, err := url.Parse(currentURL)
+	if err != nil {
+		return ""
+	}
+	for _, re := range nextLinkPatterns {
+		for _, m := range re.FindAllSubmatch(body, -1) {
+			href := string(m[1])
+			if href == "" {
+				continue
+			}
+			ref, err := url.Parse(href)
+			if err != nil {
+				continue
+			}
+			return base.ResolveReference(ref).String()
+		}
+	}
+	return ""
+}
+
+// nextPageByParam returns currentURL with an existing page or paged query
+// parameter incremented, or "" when the URL carries neither. This is the
+// fallback for feeds that paginate via a ?page=N convention without
+// advertising a rel="next" link.
+func nextPageByParam(currentURL string) string {
+	u, err := url.Parse(currentURL)
+	if err != nil {
+		return ""
+	}
+	q := u.Query()
+	for _, key := range []string{"page", "paged"} {
+		v := q.Get(key)
+		if v == "" {
+			continue
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			continue
+		}
+		q.Set(key, strconv.Itoa(n+1))
+		u.RawQuery = q.Encode()
+		return u.String()
+	}
+	return ""
 }
 
 func normalizeItem(it *gofeed.Item) Item {
