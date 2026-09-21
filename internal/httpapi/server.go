@@ -111,6 +111,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /fragments/author-form", s.auth.Require(http.HandlerFunc(s.authorFormFragment)))
 	mux.Handle("POST /fragments/feed-preview", s.auth.Require(http.HandlerFunc(s.feedPreview)))
 	mux.Handle("POST /fragments/author-preview", s.auth.Require(http.HandlerFunc(s.authorPreview)))
+	mux.Handle("POST /fragments/mapping-test", s.auth.Require(http.HandlerFunc(s.settingsMappingTest)))
 
 	// Image proxy for avatars.
 	mux.Handle("GET /img", s.auth.Require(http.HandlerFunc(s.imgProxy)))
@@ -138,6 +139,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /settings/icons/{id}/refresh", s.auth.Require(http.HandlerFunc(s.settingsIconRefresh)))
 	mux.Handle("POST /settings/icons/{id}/delete", s.auth.Require(http.HandlerFunc(s.settingsIconDelete)))
 	mux.Handle("GET /icons/{domain}", s.auth.Require(http.HandlerFunc(s.serveSourceIcon)))
+	mux.Handle("POST /settings/mappings", s.auth.Require(http.HandlerFunc(s.settingsMappingAdd)))
+	mux.Handle("POST /settings/mappings/{id}", s.auth.Require(http.HandlerFunc(s.settingsMappingUpdate)))
+	mux.Handle("POST /settings/mappings/{id}/delete", s.auth.Require(http.HandlerFunc(s.settingsMappingDelete)))
+	mux.Handle("GET /fragments/mapping-edit/{id}", s.auth.Require(http.HandlerFunc(s.settingsMappingEditFragment)))
+	mux.Handle("GET /fragments/mapping-row/{id}", s.auth.Require(http.HandlerFunc(s.settingsMappingRowFragment)))
 
 	// JSON API (for the browser extension).
 	mux.HandleFunc("POST /api/login", s.apiLogin)

@@ -148,6 +148,7 @@ func (s *Server) apiItemRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiDiscover(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
 	var req struct {
 		URL string `json:"url"`
 	}
@@ -155,10 +156,22 @@ func (s *Server) apiDiscover(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url required"})
 		return
 	}
-	candidates, err := s.discoverer.Discover(r.Context(), req.URL)
+	// Apply the user's url mappings first; fall back to the original when the
+	// mapped url yields nothing.
+	feedURL := req.URL
+	if mapped, ok := s.mappedFeedURL(u.ID, req.URL); ok {
+		feedURL = mapped
+	}
+	candidates, err := s.discoverer.Discover(r.Context(), feedURL)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
+	}
+	if len(candidates) == 0 && feedURL != req.URL {
+		if candidates, err = s.discoverer.Discover(r.Context(), req.URL); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	out := make([]discover.Candidate, 0, len(candidates))
 	out = append(out, candidates...)

@@ -30,6 +30,7 @@ type Store struct {
 	SourceIcons *SourceIconStore
 	Filters     *FilterStore
 	Shares      *ShareStore
+	UrlMappings *UrlMappingStore
 }
 
 func New(sqldb *sql.DB) *Store {
@@ -47,6 +48,7 @@ func New(sqldb *sql.DB) *Store {
 		SourceIcons: &SourceIconStore{q: q},
 		Filters:     &FilterStore{q: q},
 		Shares:      &ShareStore{q: q},
+		UrlMappings: &UrlMappingStore{q: q},
 	}
 }
 

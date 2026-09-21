@@ -150,3 +150,13 @@ CREATE TABLE source_icons (
     UNIQUE(user_id, domain)
 );
 CREATE INDEX idx_source_icons_user ON source_icons(user_id);
+
+CREATE TABLE url_mappings (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pattern    TEXT NOT NULL,
+    template   TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, pattern)
+);
+CREATE INDEX idx_url_mappings_user ON url_mappings(user_id);

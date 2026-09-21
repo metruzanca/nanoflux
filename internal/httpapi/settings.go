@@ -51,6 +51,7 @@ type settingsData struct {
 	Sessions settingsSessionsData
 	Opml     settingsOpmlData
 	Icons    []settingsIconRow
+	Mappings []settingsMappingRow
 }
 
 type settingsPasswordData struct {
@@ -104,6 +105,7 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		Accent:             settingsAccentData{Accent: u.AccentColor},
 		Sessions:           s.settingsSessionsData(u, auth.Token(r)),
 		Icons:              s.settingsIconRows(u.ID, u.Timezone),
+		Mappings:           s.settingsMappingRows(u.ID),
 	})))
 }
 

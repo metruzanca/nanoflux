@@ -140,6 +140,16 @@ func toSourceIcon(id, userID int64, domain, iconURL string, iconKey, lastFetched
 	}
 }
 
+func toUrlMapping(id, userID int64, pattern, template, createdAt string) UrlMapping {
+	return UrlMapping{
+		ID:        id,
+		UserID:    userID,
+		Pattern:   pattern,
+		Template:  template,
+		CreatedAt: createdAt,
+	}
+}
+
 func feedFromUnreadRow(id, userID int64, authorID sql.NullInt64, title, feedURL string,
 	homeURL, description, etag, lastModified, lastPolledAt, lastError sql.NullString,
 	pollIntervalSec int64, enabled bool, createdAt string,

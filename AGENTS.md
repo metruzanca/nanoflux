@@ -184,6 +184,35 @@ icons that override the built-in X/YouTube/globe set.
   avatar form re-renders itself (error inside the
   swapped card), unlike the create-form OOB pattern.
 
+## URL mappings
+
+`/settings` also lets users define "url pattern -> feed url" rules (`url_mappings`
+table, schemaV19) that pre-fill the add-feed form when an entered URL matches.
+They are only consulted at add time — `feedPreview` (`POST /fragments/feed-preview`)
+and `apiDiscover` (`POST /api/discover`) — never retroactively, so editing a
+mapping never changes feeds that were already created (they store their resolved
+`feed_url`).
+
+- The engine is `internal/urlmap` (pure, unit-tested): a pattern is a Go regex
+  with **named groups** (`abc\.com/(?P<user>[^/]+)`), and the template references
+  captures via `{name}` (`{user}.abc.com/feed`). `Compile` wraps the pattern as
+  `(?i)^(?:...)$` — matching is against the scheme-stripped `host/path` (trailing
+  slash trimmed), case-insensitive by default, whole-string only (no substring
+  matches), and captures keep their original case. A pattern must contain ≥1
+  named group and the template may only reference names it defines.
+- `mappedFeedURL` in `internal/httpapi/mappings.go` lists the user's mappings
+  (oldest first) and applies the first match. Mappings that no longer compile
+  are skipped with a server-side log, never fatal.
+- **Fallback:** when a mapped URL yields no feed (direct fetch or discovery), the
+  original URL is discovered instead, so a stale mapping never blocks adding a
+  feed. The entered URL becomes the feed's `home_url` whenever a mapping applied.
+- Settings UI (`views_mappings.templ`) mirrors the icon card: add form with a
+  **test** field that posts pattern/template/test-url to `POST /fragments/mapping-test`
+  (pure transform, preview-target swap), and rows with an inline edit form
+  (`GET /fragments/mapping-edit/{id}` / `POST /settings/mappings/{id}`, cancel via
+  `GET /fragments/mapping-row/{id}`). Every error path uses the standard
+  `writeFormError`/`renderError` shapes with `role="alert"`.
+
 ## Object storage (S3 / local disk)
 
 Avatars and custom-icon bytes live in S3-compatible object storage, not the DB.
