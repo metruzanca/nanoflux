@@ -10,6 +10,17 @@ import (
 	"database/sql"
 )
 
+const countAllFeeds = `-- name: CountAllFeeds :one
+SELECT COUNT(*) FROM feeds
+`
+
+func (q *Queries) CountAllFeeds(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAllFeeds)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createFeed = `-- name: CreateFeed :one
 INSERT INTO feeds (user_id, author_id, title, feed_url, home_url, description, poll_interval_sec)
 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -162,6 +173,70 @@ func (q *Queries) GetFeedByTitle(ctx context.Context, arg GetFeedByTitleParams) 
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listAllFeeds = `-- name: ListAllFeeds :many
+SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
+       f.etag, f.last_modified, f.last_polled_at, f.poll_interval_sec, f.enabled, f.created_at,
+       u.username AS owner
+FROM feeds f
+JOIN users u ON u.id = f.user_id
+ORDER BY u.username, f.title
+`
+
+type ListAllFeedsRow struct {
+	ID              int64          `json:"id"`
+	UserID          int64          `json:"user_id"`
+	AuthorID        sql.NullInt64  `json:"author_id"`
+	Title           string         `json:"title"`
+	FeedUrl         string         `json:"feed_url"`
+	HomeUrl         sql.NullString `json:"home_url"`
+	Description     sql.NullString `json:"description"`
+	Etag            sql.NullString `json:"etag"`
+	LastModified    sql.NullString `json:"last_modified"`
+	LastPolledAt    sql.NullString `json:"last_polled_at"`
+	PollIntervalSec int64          `json:"poll_interval_sec"`
+	Enabled         bool           `json:"enabled"`
+	CreatedAt       string         `json:"created_at"`
+	Owner           string         `json:"owner"`
+}
+
+func (q *Queries) ListAllFeeds(ctx context.Context) ([]ListAllFeedsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllFeeds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllFeedsRow
+	for rows.Next() {
+		var i ListAllFeedsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.AuthorID,
+			&i.Title,
+			&i.FeedUrl,
+			&i.HomeUrl,
+			&i.Description,
+			&i.Etag,
+			&i.LastModified,
+			&i.LastPolledAt,
+			&i.PollIntervalSec,
+			&i.Enabled,
+			&i.CreatedAt,
+			&i.Owner,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listFeeds = `-- name: ListFeeds :many

@@ -78,6 +78,30 @@ func (d *diskStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+// Stat counts the stored blobs (data files, ignoring the .ct metadata
+// siblings) and their total size.
+func (d *diskStore) Stat(_ context.Context) (Stat, error) {
+	var st Stat
+	err := filepath.Walk(d.root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+		if strings.HasSuffix(path, ".ct") {
+			return nil
+		}
+		st.Objects++
+		st.Bytes += info.Size()
+		return nil
+	})
+	return st, err
+}
+
 // pathFor resolves a storage key to a file path under root, rejecting keys
 // that would escape the root directory.
 func (d *diskStore) pathFor(key string) (string, error) {

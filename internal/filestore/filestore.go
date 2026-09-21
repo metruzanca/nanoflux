@@ -24,12 +24,20 @@ const maxBlob = 16 << 20
 // ErrNotFound is returned by Get for a missing key.
 var ErrNotFound = errors.New("not found")
 
+// Stat describes the object store: how many blobs it holds and their total
+// size in bytes.
+type Stat struct {
+	Objects int
+	Bytes   int64
+}
+
 // Store is the blob interface the rest of the app depends on.
 type Store interface {
 	Put(ctx context.Context, key, contentType string, data []byte) error
 	Get(ctx context.Context, key string) (contentType string, data []byte, err error)
 	Delete(ctx context.Context, key string) error
 	EnsureBucket(ctx context.Context) error
+	Stat(ctx context.Context) (Stat, error)
 }
 
 // Config describes either a local disk store or an S3-compatible endpoint.
@@ -165,6 +173,19 @@ func (s *s3Store) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// Stat enumerates the bucket to count objects and total bytes.
+func (s *s3Store) Stat(ctx context.Context) (Stat, error) {
+	var st Stat
+	for obj := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{}) {
+		if obj.Err != nil {
+			return Stat{}, fmt.Errorf("filestore: list %s: %w", s.bucket, obj.Err)
+		}
+		st.Objects++
+		st.Bytes += obj.Size
+	}
+	return st, nil
+}
+
 // Memory is an in-memory Store for tests.
 type Memory struct {
 	mu sync.Mutex
@@ -202,4 +223,15 @@ func (m *Memory) Delete(_ context.Context, key string) error {
 	defer m.mu.Unlock()
 	delete(m.m, key)
 	return nil
+}
+
+func (m *Memory) Stat(_ context.Context) (Stat, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var st Stat
+	for _, o := range m.m {
+		st.Objects++
+		st.Bytes += int64(len(o.data))
+	}
+	return st, nil
 }

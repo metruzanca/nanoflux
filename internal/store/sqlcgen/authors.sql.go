@@ -10,6 +10,17 @@ import (
 	"database/sql"
 )
 
+const countAllAuthors = `-- name: CountAllAuthors :one
+SELECT COUNT(*) FROM authors
+`
+
+func (q *Queries) CountAllAuthors(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAllAuthors)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAuthor = `-- name: CreateAuthor :one
 INSERT INTO authors (user_id, name, url, avatar_url, description)
 VALUES (?, ?, ?, ?, ?)

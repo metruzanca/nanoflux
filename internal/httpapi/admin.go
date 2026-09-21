@@ -1,17 +1,32 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 type adminData struct {
-	Users []adminUserRow
+	Stats       adminStats
+	AllowSignup bool
+	BannerShown bool
+	Users       []adminUserRow
+}
+
+type adminStats struct {
+	Users   int
+	Feeds   int
+	Authors int
+	Items   int
+	Unread  int
+	Objects int
+	Storage string
 }
 
 type adminUserRow struct {
@@ -45,14 +60,44 @@ func (s *Server) adminOnly(next http.Handler) http.Handler {
 
 func (s *Server) adminPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	web.Render(w, r, basePage("admin", u, adminPage(u, s.adminUsers(u.ID, u.Timezone))))
+	d := adminData{
+		Stats: s.adminStats(r.Context()),
+		Users: s.adminUserRows(u.ID, u.Timezone),
+	}
+	d.AllowSignup = s.allowSignup()
+	if d.AllowSignup {
+		dismissed, err := s.store.Users.BannerDismissed(u.ID)
+		if err != nil {
+			log.Error("admin: banner dismissed", "user_id", u.ID, "err", err)
+		}
+		d.BannerShown = !dismissed
+	}
+	web.Render(w, r, basePage("admin", u, adminPage(u, d)))
 }
 
-func (s *Server) adminUsers(selfID int64, tz string) adminData {
+func (s *Server) adminStats(ctx context.Context) adminStats {
+	st := adminStats{}
+	st.Users, _ = s.store.Users.Count()
+	st.Feeds, _ = s.store.Feeds.Count()
+	st.Authors, _ = s.store.Authors.Count()
+	st.Items, _ = s.store.Items.Count()
+	st.Unread, _ = s.store.Items.CountAllUnread()
+	stat, err := s.files.Stat(ctx)
+	if err != nil {
+		log.Warn("admin: file storage stat", "err", err)
+		st.Storage = "unavailable"
+		return st
+	}
+	st.Objects = stat.Objects
+	st.Storage = web.FormatBytes(stat.Bytes)
+	return st
+}
+
+func (s *Server) adminUserRows(selfID int64, tz string) []adminUserRow {
 	users, err := s.store.Users.List()
 	if err != nil {
 		log.Error("admin: list users", "err", err)
-		return adminData{}
+		return nil
 	}
 	rows := make([]adminUserRow, 0, len(users))
 	for _, u := range users {
@@ -65,7 +110,46 @@ func (s *Server) adminUsers(selfID int64, tz string) adminData {
 			Timezone:  tz,
 		})
 	}
-	return adminData{Users: rows}
+	return rows
+}
+
+// adminInstanceData rebuilds the data the instance settings card needs, for
+// re-rendering the card after a mutation.
+func (s *Server) adminInstanceData(u store.User, ctx context.Context) adminData {
+	d := adminData{Stats: s.adminStats(ctx)}
+	d.AllowSignup = s.allowSignup()
+	if d.AllowSignup {
+		dismissed, err := s.store.Users.BannerDismissed(u.ID)
+		if err != nil {
+			log.Error("admin: banner dismissed", "user_id", u.ID, "err", err)
+		}
+		d.BannerShown = !dismissed
+	}
+	return d
+}
+
+// adminSetSignup toggles the global signup setting from the instance card.
+func (s *Server) adminSetSignup(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	allow := r.FormValue("allow") == "true"
+	if err := s.store.Settings.SetAllowSignup(allow); err != nil {
+		log.Error("admin: set allow_signup", "err", err)
+		writeFormError(w, r, "admin-instance-error", "could not update setting")
+		return
+	}
+	web.Render(w, r, AdminInstanceCard(s.adminInstanceData(u, r.Context())))
+}
+
+// adminDismissSignupBanner marks the signup banner as dismissed for the current
+// admin (a per-user preference).
+func (s *Server) adminDismissSignupBanner(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	if err := s.store.Users.SetBannerDismissed(u.ID, true); err != nil {
+		log.Error("admin: dismiss banner", "user_id", u.ID, "err", err)
+		writeFormError(w, r, "admin-instance-error", "could not dismiss")
+		return
+	}
+	web.Render(w, r, AdminInstanceCard(s.adminInstanceData(u, r.Context())))
 }
 
 // adminResetPassword sets a new password for a user and logs out all of their
@@ -95,7 +179,7 @@ func (s *Server) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.Sessions.DeleteUserSessions(userID); err != nil {
 		log.Error("admin: revoke sessions", "user_id", userID, "err", err)
 	}
-	web.Render(w, r, AdminUserList(s.adminUsers(u.ID, u.Timezone).Users))
+	web.Render(w, r, AdminUserList(s.adminUserRows(u.ID, u.Timezone)))
 }
 
 // adminSetAdmin grants or revokes the admin flag. The last remaining admin
@@ -129,7 +213,7 @@ func (s *Server) adminSetAdmin(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, adminErrorTarget(userID), "could not update admin flag")
 		return
 	}
-	web.Render(w, r, AdminUserList(s.adminUsers(u.ID, u.Timezone).Users))
+	web.Render(w, r, AdminUserList(s.adminUserRows(u.ID, u.Timezone)))
 }
 
 // adminDeleteUser removes a user and their data, purging avatar/icon blobs
@@ -176,7 +260,7 @@ func (s *Server) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, adminErrorTarget(userID), "could not delete user")
 		return
 	}
-	web.Render(w, r, AdminUserList(s.adminUsers(u.ID, u.Timezone).Users))
+	web.Render(w, r, AdminUserList(s.adminUserRows(u.ID, u.Timezone)))
 }
 
 // adminUserID parses the {id} path value, writing a 400 error fragment and

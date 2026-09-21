@@ -18,3 +18,5 @@ sql:
             go_type: "bool"
           - column: "users.is_admin"
             go_type: "bool"
+          - column: "users.signup_banner_dismissed"
+            go_type: "bool"

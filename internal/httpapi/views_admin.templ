@@ -9,11 +9,54 @@ import (
 
 templ adminPage(u store.User, d adminData) {
 	<h1>admin</h1>
+	@AdminInstanceCard(d)
+	@AdminStats(d.Stats)
 	<section class="card">
 		<h2>users</h2>
 		<p class="muted small">Manage accounts: reset passwords, grant or revoke the admin flag, or delete users. Deleting a user removes all of their data.</p>
 		@AdminUserList(d.Users)
 	</section>
+}
+
+// AdminInstanceCard carries the global signup setting and, while signups are
+// open and the current admin hasn't dismissed it, the "consider disabling
+// signups" banner. Mutations re-render the card via outerHTML.
+templ AdminInstanceCard(d adminData) {
+	<section class="card" id="admin-instance-card">
+		<h2>instance</h2>
+		if d.BannerShown {
+			<div class="error banner" role="alert">
+				<strong>signups are open to anyone.</strong> Anyone who can reach this instance can create an account — consider disabling signups.
+				<div class="row">
+					<button class="small" hx-post="/admin/settings/signup" hx-vals='{"allow": "false"}' hx-target="#admin-instance-card" hx-swap="outerHTML">disable signups</button>
+					<button class="link" hx-post="/admin/settings/signup-banner-dismiss" hx-target="#admin-instance-card" hx-swap="outerHTML">dismiss</button>
+				</div>
+			</div>
+		}
+		<div id="admin-instance-error" class="error"></div>
+		<div class="row">
+			<span>signups</span>
+			<button class="link" hx-post="/admin/settings/signup" hx-vals={ "{\"allow\": " + strconv.FormatBool(!d.AllowSignup) + "}" } hx-target="#admin-instance-card" hx-swap="outerHTML">
+				if d.AllowSignup {
+					enabled
+				} else {
+					disabled
+				}
+			</button>
+		</div>
+	</section>
+}
+
+templ AdminStats(st adminStats) {
+	<div class="row stats" aria-label="instance statistics">
+		<span><strong>{ st.Users }</strong> users</span>
+		<span><strong>{ st.Feeds }</strong> feeds</span>
+		<span><strong>{ st.Authors }</strong> authors</span>
+		<span><strong>{ st.Items }</strong> items</span>
+		<span><strong>{ st.Unread }</strong> unread</span>
+		<span><strong>{ st.Objects }</strong> objects</span>
+		<span><strong>{ st.Storage }</strong> storage</span>
+	</div>
 }
 
 templ AdminUserList(rows []adminUserRow) {

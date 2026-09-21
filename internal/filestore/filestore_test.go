@@ -76,6 +76,49 @@ func TestDiskStoreRejectsEscapingKeys(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreStat(t *testing.T) {
+	ctx := context.Background()
+	fs := NewMemory()
+	st, err := fs.Stat(ctx)
+	if err != nil || st.Objects != 0 || st.Bytes != 0 {
+		t.Fatalf("empty stat: %+v %v", st, err)
+	}
+	fs.Put(ctx, "a", "image/png", []byte("hello"))
+	fs.Put(ctx, "b", "image/png", []byte("world!"))
+	st, err = fs.Stat(ctx)
+	if err != nil || st.Objects != 2 || st.Bytes != 11 {
+		t.Fatalf("stat after puts: %+v %v", st, err)
+	}
+	fs.Delete(ctx, "a")
+	st, _ = fs.Stat(ctx)
+	if st.Objects != 1 || st.Bytes != 6 {
+		t.Fatalf("stat after delete: %+v", st)
+	}
+}
+
+func TestDiskStoreStat(t *testing.T) {
+	ctx := context.Background()
+	fs := NewDisk(t.TempDir())
+	if err := fs.EnsureBucket(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st, err := fs.Stat(ctx)
+	if err != nil || st.Objects != 0 || st.Bytes != 0 {
+		t.Fatalf("empty disk stat: %+v %v", st, err)
+	}
+	fs.Put(ctx, "avatars/1", "image/png", []byte("0123456789"))
+	fs.Put(ctx, "icons/1/github.com", "image/png", []byte("123"))
+	st, err = fs.Stat(ctx)
+	if err != nil || st.Objects != 2 || st.Bytes != 13 {
+		t.Fatalf("disk stat: %+v %v", st, err)
+	}
+	// A stat on a directory that does not exist is empty, not an error.
+	st, err = NewDisk(t.TempDir() + "/missing").Stat(ctx)
+	if err != nil || st.Objects != 0 {
+		t.Fatalf("missing dir stat: %+v %v", st, err)
+	}
+}
+
 func TestConfigFromEnv(t *testing.T) {
 	t.Setenv("NF_S3_ENDPOINT", "")
 	t.Setenv("NF_S3_BUCKET", "")

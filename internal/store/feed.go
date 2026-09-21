@@ -215,3 +215,33 @@ func (s *FeedStore) ListDue(now string) ([]Feed, error) {
 	}
 	return out, nil
 }
+
+// FeedWithOwner is a feed joined with its owner's username for admin views.
+type FeedWithOwner struct {
+	Feed
+	Owner string
+}
+
+// ListAll returns every feed across all users, ordered by owner then title.
+// Used by the admin CLI's `feed list`; item summaries and content are
+// deliberately excluded so nothing potentially NSFW is rendered.
+func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
+	rows, err := s.q.ListAllFeeds(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FeedWithOwner, 0, len(rows))
+	for _, f := range rows {
+		out = append(out, FeedWithOwner{
+			Feed: toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
+			Owner: f.Owner,
+		})
+	}
+	return out, nil
+}
+
+// Count returns the total number of feeds across all users.
+func (s *FeedStore) Count() (int, error) {
+	n, err := s.q.CountAllFeeds(context.Background())
+	return int(n), err
+}

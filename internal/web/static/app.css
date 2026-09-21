@@ -264,6 +264,10 @@ table.shortcuts { border-collapse: collapse; margin-top: 0.5rem; }
 table.shortcuts td { padding: 0.3rem 1rem 0.3rem 0; font-size: 0.9rem; }
 table.shortcuts td:first-child { color: var(--fg); font-weight: 600; white-space: nowrap; }
 
+div.stats { gap: 1.5rem; margin: 0.9rem 0; flex-wrap: wrap; }
+div.stats strong { font-size: 1.1rem; }
+.error.banner { padding: 0.7rem 0.9rem; }
+
 li.video-card { display: flex; gap: 0.9rem; padding: 0.9rem 0; align-items: flex-start; }
 li.video-card .card-body { flex: 1; min-width: 0; }
 

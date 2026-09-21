@@ -163,6 +163,17 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 	return i, err
 }
 
+const getUserSignupBannerDismissed = `-- name: GetUserSignupBannerDismissed :one
+SELECT signup_banner_dismissed FROM users WHERE id = ?
+`
+
+func (q *Queries) GetUserSignupBannerDismissed(ctx context.Context, id int64) (bool, error) {
+	row := q.db.QueryRowContext(ctx, getUserSignupBannerDismissed, id)
+	var signup_banner_dismissed bool
+	err := row.Scan(&signup_banner_dismissed)
+	return signup_banner_dismissed, err
+}
+
 const listUserIconKeys = `-- name: ListUserIconKeys :many
 SELECT icon_key FROM source_icons WHERE user_id = ? AND icon_key IS NOT NULL
 `
@@ -298,6 +309,21 @@ type SetUserPasswordParams struct {
 
 func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
 	_, err := q.db.ExecContext(ctx, setUserPassword, arg.PasswordHash, arg.ID)
+	return err
+}
+
+const setUserSignupBannerDismissed = `-- name: SetUserSignupBannerDismissed :exec
+UPDATE users SET signup_banner_dismissed = ?
+WHERE id = ?
+`
+
+type SetUserSignupBannerDismissedParams struct {
+	SignupBannerDismissed bool  `json:"signup_banner_dismissed"`
+	ID                    int64 `json:"id"`
+}
+
+func (q *Queries) SetUserSignupBannerDismissed(ctx context.Context, arg SetUserSignupBannerDismissedParams) error {
+	_, err := q.db.ExecContext(ctx, setUserSignupBannerDismissed, arg.SignupBannerDismissed, arg.ID)
 	return err
 }
 

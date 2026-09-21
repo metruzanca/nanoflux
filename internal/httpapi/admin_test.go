@@ -201,3 +201,94 @@ func TestAdminDeleteSelfGuard(t *testing.T) {
 		t.Fatalf("delete self: got %d %s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestAdminSignupBannerAndDismiss(t *testing.T) {
+	s, h := newTestServer(t)
+	root := createUser(t, s, "root")
+	if err := s.store.Users.SetAdmin(root.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	cookie := adminSession(t, s, "root")
+
+	body := doGet(h, "/admin", cookie).Body.String()
+	if !strings.Contains(body, "signups are open to anyone") {
+		t.Fatal("banner should show while signups are on")
+	}
+
+	rr := doForm(h, "POST", "/admin/settings/signup-banner-dismiss", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("dismiss banner: got %d (body %s)", rr.Code, rr.Body.String())
+	}
+	body = doGet(h, "/admin", cookie).Body.String()
+	if strings.Contains(body, "signups are open to anyone") {
+		t.Fatal("banner should be gone after dismiss")
+	}
+}
+
+func TestAdminSetSignup(t *testing.T) {
+	s, h := newTestServer(t)
+	root := createUser(t, s, "root")
+	if err := s.store.Users.SetAdmin(root.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	cookie := adminSession(t, s, "root")
+
+	rr := doForm(h, "POST", "/admin/settings/signup", url.Values{"allow": {"false"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("disable signups: got %d (body %s)", rr.Code, rr.Body.String())
+	}
+	allow, err := s.store.Settings.AllowSignup()
+	if err != nil || allow {
+		t.Fatalf("allow_signup = %v, %v; want false", allow, err)
+	}
+	// Banner must not show once signups are disabled.
+	if strings.Contains(doGet(h, "/admin", cookie).Body.String(), "signups are open") {
+		t.Fatal("banner should not show when signups are disabled")
+	}
+}
+
+func TestAdminStats(t *testing.T) {
+	s, h := newTestServer(t)
+	root := createUser(t, s, "root")
+	if err := s.store.Users.SetAdmin(root.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	// Seed an object so file-storage stats show up.
+	if err := s.files.Put(context.Background(), "avatars/2", "image/png", []byte("0123456789")); err != nil {
+		t.Fatal(err)
+	}
+	body := doGet(h, "/admin", adminSession(t, s, "root")).Body.String()
+	for _, want := range []string{"users", "feeds", "authors", "items", "unread", "objects", "storage", "10 B"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("admin stats missing %q", want)
+		}
+	}
+}
+
+func TestSignupGating(t *testing.T) {
+	s, h := newTestServer(t)
+
+	// Default: signup open, login links to it.
+	if body := doGetRaw(h, "/signup").Body.String(); !strings.Contains(body, "create account") {
+		t.Fatal("signup page should render by default")
+	}
+	if body := doGetRaw(h, "/login").Body.String(); !strings.Contains(body, `href="/signup"`) {
+		t.Fatal("login should link to signup while open")
+	}
+
+	if err := s.store.Settings.SetAllowSignup(false); err != nil {
+		t.Fatal(err)
+	}
+	body := doGetRaw(h, "/signup").Body.String()
+	if !strings.Contains(body, "signups are disabled") {
+		t.Fatal("signup page should show disabled message")
+	}
+	body = doGetRaw(h, "/login").Body.String()
+	if strings.Contains(body, `href="/signup"`) {
+		t.Fatal("login must not link to signup when disabled")
+	}
+	rr := doForm(h, "POST", "/signup", url.Values{"username": {"eve"}, "password": {"longenough"}}, nil)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("signup when disabled: got %d, want 403", rr.Code)
+	}
+}

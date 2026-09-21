@@ -10,6 +10,28 @@ import (
 	"database/sql"
 )
 
+const countAllItems = `-- name: CountAllItems :one
+SELECT COUNT(*) FROM items
+`
+
+func (q *Queries) CountAllItems(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAllItems)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countAllUnreadItems = `-- name: CountAllUnreadItems :one
+SELECT COUNT(*) FROM items WHERE read = 0
+`
+
+func (q *Queries) CountAllUnreadItems(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAllUnreadItems)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countFavoriteItems = `-- name: CountFavoriteItems :one
 SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
 WHERE f.user_id = ?1 AND i.favorite = 1

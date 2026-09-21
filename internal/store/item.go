@@ -414,3 +414,15 @@ func (s *ItemStore) CountReadCollection(userID, collectionID int64) (int, error)
 	})
 	return int(n), err
 }
+
+// Count returns the total number of items across all users.
+func (s *ItemStore) Count() (int, error) {
+	n, err := s.q.CountAllItems(context.Background())
+	return int(n), err
+}
+
+// CountAllUnread returns the total number of unread items across all users.
+func (s *ItemStore) CountAllUnread() (int, error) {
+	n, err := s.q.CountAllUnreadItems(context.Background())
+	return int(n), err
+}

@@ -27,6 +27,7 @@ var migrations = []migration{
 	{14, schemaV14},
 	{15, schemaV15},
 	{16, schemaV16},
+	{17, schemaV17},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -114,6 +115,17 @@ ALTER TABLE collections ADD COLUMN is_auto INTEGER NOT NULL DEFAULT 0;
 // set-admin <username> true` (no automatic promotion here).
 const schemaV16 = `
 ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+`
+
+// schemaV17 adds a global key/value settings table (seeded with signup
+// enabled) and a per-user flag for dismissing the admin signup banner.
+const schemaV17 = `
+CREATE TABLE settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+INSERT INTO settings(key, value) VALUES ('allow_signup', '1');
+ALTER TABLE users ADD COLUMN signup_banner_dismissed INTEGER NOT NULL DEFAULT 0;
 `
 
 const schemaV8 = `

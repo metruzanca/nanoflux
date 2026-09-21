@@ -43,8 +43,10 @@ extension. SQLite, session auth, background poller, feed discovery.
   - [x] CORS preflight handling for extension origin
 - [x] **P6 — Admin** (`nanoflux user` CLI + `/admin` page)
   - [x] `is_admin` flag (schemaV16); bootstrap account is admin
-  - [x] Cobra CLI on `internal/store`: `user list`, `set-admin`, `reset-password`, `delete`
-  - [x] `/admin` web page (list, reset password, toggle admin, delete)
+  - [x] Cobra CLI on `internal/store`: `user list`, `create`, `set-admin`, `reset-password`, `delete`, `feed list`
+  - [x] `/admin` web page (stats, signup toggle + dismissible banner, list, reset password, toggle admin, delete)
+  - [x] Signup control: DB-backed `allow_signup` setting (schemaV17), login/signup gating
+  - [x] Backup/restore: `nanoflux backup`/`restore` + `make restore`, shared `data/`+`filestore/` layout
   - [x] Guards: last admin protected, no self-delete, session revocation on reset
 - [ ] **Deferred (explicitly later)**
   - [ ] Chrome extension (MV3) — popup, badge, save-to-collection

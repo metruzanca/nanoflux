@@ -97,6 +97,11 @@ type Session struct {
 	ExpiresAt string `json:"expires_at"`
 }
 
+type Setting struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 type SharedItem struct {
 	ID        int64  `json:"id"`
 	ItemID    int64  `json:"item_id"`
@@ -117,16 +122,17 @@ type SourceIcon struct {
 }
 
 type User struct {
-	ID                int64          `json:"id"`
-	Username          string         `json:"username"`
-	PasswordHash      string         `json:"password_hash"`
-	IsAdmin           bool           `json:"is_admin"`
-	AvatarKey         sql.NullString `json:"avatar_key"`
-	AvatarData        []byte         `json:"avatar_data"`
-	AvatarContentType sql.NullString `json:"avatar_content_type"`
-	AvatarUrl         sql.NullString `json:"avatar_url"`
-	Timezone          sql.NullString `json:"timezone"`
-	Theme             string         `json:"theme"`
-	AccentColor       string         `json:"accent_color"`
-	CreatedAt         string         `json:"created_at"`
+	ID                    int64          `json:"id"`
+	Username              string         `json:"username"`
+	PasswordHash          string         `json:"password_hash"`
+	IsAdmin               bool           `json:"is_admin"`
+	SignupBannerDismissed bool           `json:"signup_banner_dismissed"`
+	AvatarKey             sql.NullString `json:"avatar_key"`
+	AvatarData            []byte         `json:"avatar_data"`
+	AvatarContentType     sql.NullString `json:"avatar_content_type"`
+	AvatarUrl             sql.NullString `json:"avatar_url"`
+	Timezone              sql.NullString `json:"timezone"`
+	Theme                 string         `json:"theme"`
+	AccentColor           string         `json:"accent_color"`
+	CreatedAt             string         `json:"created_at"`
 }

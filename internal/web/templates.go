@@ -2,6 +2,7 @@ package web
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -24,6 +25,20 @@ var staticFS embed.FS
 func Render(w http.ResponseWriter, r *http.Request, c templ.Component) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	c.Render(r.Context(), w)
+}
+
+// FormatBytes renders a byte count as a human-readable size ("2.4 MB").
+func FormatBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for n >= div*unit && exp < len("KMGTPE")-1 {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 // Static serves embedded assets (css, htmx.js, app.js) at /static/.

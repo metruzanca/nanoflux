@@ -1,7 +1,7 @@
 // Package cli implements the nanoflux admin CLI, a subcommand tree
-// (`nanoflux user ...`) that operates directly on the database, independent of
-// the web server. It shares the store layer so admin actions behave exactly
-// like their web counterparts.
+// (`nanoflux user ...`, `nanoflux feed list`, `nanoflux backup`) that operates
+// directly on the database, independent of the web server. It shares the store
+// layer so admin actions behave exactly like their web counterparts.
 package cli
 
 import (
@@ -32,10 +32,14 @@ func Run(version string, args []string) int {
 		return 1
 	}
 	st := store.New(sqldb)
-	files := func() (filestore.Store, error) {
-		return filestore.NewFromConfig(filestore.ConfigFromEnv(), cfg.FileStoreDir)
+	env := Env{
+		DBPath:       cfg.DBPath,
+		FileStoreDir: cfg.FileStoreDir,
+		Files: func() (filestore.Store, error) {
+			return filestore.NewFromConfig(filestore.ConfigFromEnv(), cfg.FileStoreDir)
+		},
 	}
-	root := New(version, st, files, os.Stdout, os.Stderr)
+	root := New(version, st, env, os.Stdout, os.Stderr)
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
 		return 1
@@ -43,9 +47,18 @@ func Run(version string, args []string) int {
 	return 0
 }
 
+// Env carries the runtime paths and blob-store factory the CLI needs beyond
+// the store: where the database lives, where disk blobs live, and how to build
+// the object-storage client.
+type Env struct {
+	DBPath       string
+	FileStoreDir string
+	Files        func() (filestore.Store, error)
+}
+
 // New builds the command tree with injected dependencies so tests can drive it
 // against an in-memory store and memory filestore.
-func New(version string, st *store.Store, files func() (filestore.Store, error), stdout, stderr io.Writer) *cobra.Command {
+func New(version string, st *store.Store, env Env, stdout, stderr io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "nanoflux",
 		Short:         "nanoflux admin tools",
@@ -55,7 +68,10 @@ func New(version string, st *store.Store, files func() (filestore.Store, error),
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	root.AddCommand(userCmd(st, files, stdout, stderr))
+	root.AddCommand(userCmd(st, env.Files, stdout, stderr))
+	root.AddCommand(feedCmd(st, stdout))
+	root.AddCommand(backupCmd(st, env, stdout, stderr))
+	root.AddCommand(restoreCmd(st, env, stdout, stderr))
 	root.AddCommand(versionCmd(version))
 	return root
 }

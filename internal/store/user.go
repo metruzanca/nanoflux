@@ -96,6 +96,20 @@ func (s *UserStore) SetAdmin(userID int64, admin bool) error {
 	})
 }
 
+// BannerDismissed reports whether the user has dismissed the admin signup
+// banner (a per-user UI preference).
+func (s *UserStore) BannerDismissed(userID int64) (bool, error) {
+	return s.q.GetUserSignupBannerDismissed(context.Background(), userID)
+}
+
+// SetBannerDismissed sets the user's signup-banner dismissal flag.
+func (s *UserStore) SetBannerDismissed(userID int64, dismissed bool) error {
+	return s.q.SetUserSignupBannerDismissed(context.Background(), sqlcgen.SetUserSignupBannerDismissedParams{
+		SignupBannerDismissed: dismissed,
+		ID:                    userID,
+	})
+}
+
 // Delete removes the user; sessions, feeds, items and other per-user rows are
 // removed by the FK cascade. Object-storage bytes (avatar, icons) are not
 // touched here — callers purge them via ListObjectKeys.

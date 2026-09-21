@@ -35,3 +35,6 @@ ORDER BY a.name;
 SELECT id, user_id, name, url, avatar_url, description, created_at
 FROM authors
 WHERE user_id = ? AND name = ? COLLATE NOCASE;
+
+-- name: CountAllAuthors :one
+SELECT COUNT(*) FROM authors;

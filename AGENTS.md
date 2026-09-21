@@ -297,7 +297,22 @@ run inside the container. Both share the store methods (`UserStore.ResetPassword
   any other first argument routes to the CLI. It opens the same SQLite file via
   `config.Load`/`db.Open`/`db.Migrate`, so it works against a running instance.
   `user delete` prompts on a TTY and requires `--yes` otherwise; `--password`
-  skips the prompt on `reset-password`.
+  skips the prompt on `reset-password`/`create`.
+- Signup is a DB-backed global setting (`settings.allow_signup`, default on),
+  read via `SettingStore.AllowSignup` and toggled from `/admin` (`POST
+  /admin/settings/signup`). When off, `/signup` renders a disabled notice and
+  the login page hides its signup link. The admin banner urging admins to
+  consider disabling signup is dismissed per-admin-user
+  (`users.signup_banner_dismissed`, `POST /admin/settings/signup-banner-dismiss`).
+- `/admin` also shows global stats and `feed list` is a cross-user, metadata-only
+  view (owner, title, state, last polled) — it must never render item summaries
+  or content (NSFW). Dashboard counts come from `CountAll*`/`CountAllUnread*`
+  queries.
+- Backups use a `data/` + `filestore/` archive layout shared by `make backup`
+  and `nanoflux backup` (the DB is snapshotted via `VACUUM INTO`; local-disk
+  blobs are tarballed; S3 blobs are the provider's job). `nanoflux restore` and
+  `make restore` (which stops compose first) restore the same layout. Do not
+  change the layout without changing both.
 
 ## htmx and client-side JS
 
