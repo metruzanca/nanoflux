@@ -181,6 +181,17 @@ a.button:hover { text-decoration: none; border-color: var(--accent); }
 .small { font-size: 0.85rem; }
 code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.05rem 0.35rem; font-size: 0.85em; }
 
+.badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: var(--muted);
+  vertical-align: middle;
+}
+
 .src-icon {
   width: 1em;
   height: 1em;

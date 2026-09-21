@@ -253,6 +253,60 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 	return i, err
 }
 
+const getItemWithFeedAny = `-- name: GetItemWithFeedAny :one
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE i.id = ?
+`
+
+type GetItemWithFeedAnyRow struct {
+	ID          int64          `json:"id"`
+	FeedID      int64          `json:"feed_id"`
+	Guid        string         `json:"guid"`
+	Title       string         `json:"title"`
+	Link        string         `json:"link"`
+	Summary     string         `json:"summary"`
+	ImageUrl    sql.NullString `json:"image_url"`
+	PublishedAt sql.NullString `json:"published_at"`
+	FetchedAt   string         `json:"fetched_at"`
+	Read        bool           `json:"read"`
+	Favorite    bool           `json:"favorite"`
+	ReadAt      sql.NullString `json:"read_at"`
+	FeedTitle   string         `json:"feed_title"`
+	FeedUrl     string         `json:"feed_url"`
+	AuthorID    sql.NullInt64  `json:"author_id"`
+	AuthorName  sql.NullString `json:"author_name"`
+}
+
+func (q *Queries) GetItemWithFeedAny(ctx context.Context, id int64) (GetItemWithFeedAnyRow, error) {
+	row := q.db.QueryRowContext(ctx, getItemWithFeedAny, id)
+	var i GetItemWithFeedAnyRow
+	err := row.Scan(
+		&i.ID,
+		&i.FeedID,
+		&i.Guid,
+		&i.Title,
+		&i.Link,
+		&i.Summary,
+		&i.ImageUrl,
+		&i.PublishedAt,
+		&i.FetchedAt,
+		&i.Read,
+		&i.Favorite,
+		&i.ReadAt,
+		&i.FeedTitle,
+		&i.FeedUrl,
+		&i.AuthorID,
+		&i.AuthorName,
+	)
+	return i, err
+}
+
 const insertEnclosure = `-- name: InsertEnclosure :exec
 INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort)
 VALUES (?, ?, ?, ?, ?, ?)

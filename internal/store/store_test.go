@@ -335,6 +335,45 @@ func TestItemEnclosures(t *testing.T) {
 	}
 }
 
+func TestShareStore(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+	if _, err := s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "Post", Link: "https://metru.dev/1", FetchedAt: db.Now()}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	itemID, _ := s.Items.ByFeedGUID(f.ID, "g1")
+
+	sh, err := s.Shares.Create(u.ID, itemID)
+	if err != nil {
+		t.Fatalf("create share: %v", err)
+	}
+	if sh.Token == "" || len(sh.Token) < 24 {
+		t.Fatalf("token should be long and random: %q", sh.Token)
+	}
+	// Creating again returns the same share (idempotent).
+	again, _ := s.Shares.Create(u.ID, itemID)
+	if again.Token != sh.Token {
+		t.Fatalf("repeat create should return the existing share")
+	}
+	// Resolvable by token, and scoped to the owner.
+	if got, err := s.Shares.ByToken(sh.Token); err != nil || got.ItemID != itemID {
+		t.Fatalf("ByToken: %v %+v", err, got)
+	}
+	if _, err := s.Shares.ByItem(u.ID, itemID); err != nil {
+		t.Fatalf("ByItem should find the share: %v", err)
+	}
+
+	// Deleting removes it; the token no longer resolves.
+	if err := s.Shares.Delete(u.ID, itemID); err != nil {
+		t.Fatalf("delete share: %v", err)
+	}
+	if _, err := s.Shares.ByToken(sh.Token); err == nil {
+		t.Fatal("deleted token should not resolve")
+	}
+}
+
 func TestItemFavorites(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

@@ -70,6 +70,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /items/{id}/read", s.auth.Require(http.HandlerFunc(s.itemRead)))
 	mux.Handle("POST /items/{id}/favorite", s.auth.Require(http.HandlerFunc(s.itemFavorite)))
 	mux.Handle("GET /items/{id}/view", s.auth.Require(http.HandlerFunc(s.itemView)))
+	mux.Handle("POST /items/{id}/share", s.auth.Require(http.HandlerFunc(s.itemShare)))
+	mux.Handle("POST /items/{id}/revoke", s.auth.Require(http.HandlerFunc(s.itemRevokeShare)))
+	mux.HandleFunc("GET /shared/{token}", s.sharedPage)
 
 	// Feeds.
 	mux.Handle("GET /feeds", s.auth.Require(http.HandlerFunc(s.feeds)))
@@ -80,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /feeds/{id}/edit", s.auth.Require(http.HandlerFunc(s.feedUpdate)))
 	mux.Handle("POST /feeds/{id}/delete", s.auth.Require(http.HandlerFunc(s.feedDelete)))
 	mux.Handle("POST /feeds/{id}/refresh", s.auth.Require(http.HandlerFunc(s.feedRefresh)))
+	mux.Handle("POST /feeds/{id}/toggle", s.auth.Require(http.HandlerFunc(s.feedToggle)))
 	mux.Handle("POST /feeds/{id}/filters", s.auth.Require(http.HandlerFunc(s.feedRuleCreate)))
 	mux.Handle("POST /filters/{id}/delete", s.auth.Require(http.HandlerFunc(s.filterDelete)))
 

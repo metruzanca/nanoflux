@@ -120,6 +120,13 @@ CREATE TABLE filters (
 CREATE INDEX idx_filters_user ON filters(user_id);
 CREATE INDEX idx_filters_feed ON filters(feed_id);
 
+CREATE TABLE shared_items (
+    id         INTEGER PRIMARY KEY,
+    item_id    INTEGER NOT NULL UNIQUE REFERENCES items(id) ON DELETE CASCADE,
+    token      TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE source_icons (
     id              INTEGER PRIMARY KEY,
     user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

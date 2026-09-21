@@ -96,6 +96,13 @@ type Session struct {
 	ExpiresAt string `json:"expires_at"`
 }
 
+type SharedItem struct {
+	ID        int64  `json:"id"`
+	ItemID    int64  `json:"item_id"`
+	Token     string `json:"token"`
+	CreatedAt string `json:"created_at"`
+}
+
 type SourceIcon struct {
 	ID            int64          `json:"id"`
 	UserID        int64          `json:"user_id"`
