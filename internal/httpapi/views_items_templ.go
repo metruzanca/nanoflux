@@ -1884,7 +1884,7 @@ func itemContent(d itemViewData, v itemVisuals) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if imgs := web.ImageEnclosures(d.Enclosures); len(imgs) > 0 {
+			if imgs := web.ImageEnclosures(d.Enclosures); len(imgs) > 0 && !v.Image && len(d.Gallery) == 0 && !web.BodyHasImage(d.Summary) {
 				if len(imgs) == 1 {
 					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 158, "<div class=\"image-lightbox\"><img src=\"")
 					if templ_7745c5c3_Err != nil {

@@ -299,7 +299,7 @@ templ itemContent(d itemViewData, v itemVisuals) {
 	}
 	if len(d.Enclosures) > 0 {
 		<div class="enclosures">
-			if imgs := web.ImageEnclosures(d.Enclosures); len(imgs) > 0 {
+			if imgs := web.ImageEnclosures(d.Enclosures); len(imgs) > 0 && !v.Image && len(d.Gallery) == 0 && !web.BodyHasImage(d.Summary) {
 				if len(imgs) == 1 {
 					<div class="image-lightbox">
 						<img src={ templ.URL(imgs[0].URL) } alt="" loading="lazy"/>
