@@ -137,6 +137,12 @@ func (s *Server) Handler() http.Handler {
 	// Image proxy for avatars.
 	mux.Handle("GET /img", s.auth.Require(http.HandlerFunc(s.imgProxy)))
 
+	// Brand logo, color-addressed so it caches immutably per accent.
+	mux.Handle("GET /logo.svg", http.HandlerFunc(s.serveLogo))
+
+	// Favicon: the same brand mark in the built-in accent.
+	mux.Handle("GET /favicon.svg", http.HandlerFunc(s.serveFavicon))
+
 	// Admin.
 	mux.Handle("GET /admin", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminPage))))
 	mux.Handle("POST /admin/users/{id}/reset-password", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminResetPassword))))

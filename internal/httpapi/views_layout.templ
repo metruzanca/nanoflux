@@ -5,10 +5,11 @@ import (
 	"github.com/metruzanca/nanoflux/internal/web"
 )
 
-templ head(title string) {
+templ head(title, accent string) {
 	<meta charset="utf-8"/>
 	<meta name="viewport" content="width=device-width, initial-scale=1"/>
 	<title>{ web.PageTitle(title) }</title>
+	<link rel="icon" type="image/svg+xml" href={ templ.URL("/favicon.svg?c=" + logoColorParam(accent)) }/>
 	<link rel="stylesheet" href={ templ.URL("/static/app.css") }/>
 	<script src={ templ.URL("/static/htmx.min.js") } defer></script>
 	<script src={ templ.URL("/static/app.js") } defer></script>
@@ -16,7 +17,10 @@ templ head(title string) {
 
 templ topbar(u store.User) {
 	<header class="top">
-		<a class="brand" href="/">nanoflux</a>
+		<a class="brand" href="/">
+			<img class="brand-logo" src={ templ.URL("/logo.svg?c=" + logoColorParam(u.AccentColor)) } alt="" width="20" height="20"/>
+			<span>nanoflux</span>
+		</a>
 		if u.ID != 0 {
 			<nav id="top-nav">
 				<form class="top-search" action="/search" method="get" role="search">
@@ -105,7 +109,7 @@ templ basePage(title string, u store.User, content templ.Component) {
 			style={ "--accent: " + u.AccentColor }
 		}>
 		<head>
-			@head(title)
+			@head(title, u.AccentColor)
 		</head>
 		<body>
 			@topbar(u)
