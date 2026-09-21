@@ -193,6 +193,7 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		FeedURL  string `json:"feed_url"`
 		Title    string `json:"title,omitempty"`
+		HomeURL  string `json:"home_url,omitempty"`
 		AuthorID int64  `json:"author_id"`
 		Author   *struct {
 			Name string `json:"name"`
@@ -211,6 +212,12 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a feed: " + err.Error()})
 		return
+	}
+	// The entered page URL wins over the feed's own advertised home (e.g. a
+	// YouTube @handle page rather than the /channel/UC... URL).
+	homeURL := req.HomeURL
+	if homeURL == "" {
+		homeURL = res.Feed.HomeURL
 	}
 	title := req.Title
 	if title == "" {
@@ -236,7 +243,7 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		authorID = a.ID
 	}
 	if authorID == 0 {
-		a, err := s.store.Authors.Create(u.ID, title, res.Feed.HomeURL, "", "")
+		a, err := s.store.Authors.Create(u.ID, title, homeURL, "", "")
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "create author failed"})
 			return
@@ -247,7 +254,7 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f, err := s.store.Feeds.Create(u.ID, authorID, title, req.FeedURL, res.Feed.HomeURL, "", 900)
+	f, err := s.store.Feeds.Create(u.ID, authorID, title, req.FeedURL, homeURL, "", 900)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "create feed failed"})
 		return
@@ -257,7 +264,7 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 			log.Error("add to collection", "collection_id", req.CollectionID, "err", err)
 		}
 	}
-	if err := s.store.Collections.AssignAuto(u.ID, f.ID, res.Feed.HomeURL, req.FeedURL); err != nil {
+	if err := s.store.Collections.AssignAuto(u.ID, f.ID, homeURL, req.FeedURL); err != nil {
 		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
 	}
 	s.pollFeedNow(f)

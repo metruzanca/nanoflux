@@ -47,6 +47,15 @@ func isYouTube(host string) bool {
 	return false
 }
 
+// isYouTubePage reports whether a URL points at a YouTube host.
+func isYouTubePage(rawurl string) bool {
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return false
+	}
+	return isYouTube(u.Hostname())
+}
+
 // hostFeed is one host-specific candidate: its feed URL and an optional display
 // title override ("" uses the feed's own title).
 type hostFeed struct {

@@ -178,13 +178,83 @@ func TestAPISave(t *testing.T) {
 	if feed.AuthorName != "API Feed" {
 		t.Fatalf("auto-created author should be named after the feed: %+v", feed)
 	}
+}
+
+func TestAPISaveHomeURL(t *testing.T) {
+	// A provided home_url (the page the user was on) must win over the feed's
+	// own advertised home — e.g. a YouTube @handle page rather than its
+	// /channel/UC... URL.
+	s, h := newTestServer(t)
+	token := apiToken(t, s, h, "alice", "secret")
+	u, _ := s.store.Users.ByUsername("alice")
+	feedSrv := feedServer(t) // apiFeedXML's <link> is https://api.dev/
+	defer feedSrv.Close()
+
+	rr := apiJSON(h, "POST", "/api/save", token, map[string]any{
+		"feed_url": feedSrv.URL,
+		"home_url": "https://www.youtube.com/@ThinkBeforeYouSleepYT",
+		"author":   map[string]string{"name": "Metru"},
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", rr.Code, rr.Body.String())
+	}
+	feeds, _ := s.store.Feeds.List(u.ID)
+	if len(feeds) != 1 || feeds[0].HomeURL != "https://www.youtube.com/@ThinkBeforeYouSleepYT" {
+		t.Fatalf("feed home should be the provided page url: %+v", feeds)
+	}
+}
+
+func TestAPIExtSaveHomeURL(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	feedSrv := feedServer(t)
+	defer feedSrv.Close()
+
+	// Provided home_url wins.
+	rr := doForm(h, "POST", "/api/ext/save", url.Values{
+		"feed_url": {feedSrv.URL},
+		"home_url": {"https://www.youtube.com/@ThinkBeforeYouSleepYT"},
+		"title":    {"Think Before You Sleep"},
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "saved") {
+		t.Fatalf("ext save: %d %s", rr.Code, rr.Body.String())
+	}
+	feeds, _ := s.store.Feeds.List(u.ID)
+	if len(feeds) != 1 || feeds[0].HomeURL != "https://www.youtube.com/@ThinkBeforeYouSleepYT" {
+		t.Fatalf("ext feed home should be the provided page url: %+v", feeds)
+	}
+
+	// Without home_url, fall back to the feed's own home (https://api.dev/).
+	rr = doForm(h, "POST", "/api/ext/save", url.Values{
+		"feed_url": {feedSrv.URL},
+		"title":    {"No Home"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("ext save fallback: %d %s", rr.Code, rr.Body.String())
+	}
+	feeds, _ = s.store.Feeds.List(u.ID)
+	var noHome *store.Feed
+	for i := range feeds {
+		if feeds[i].Title == "No Home" {
+			noHome = &feeds[i]
+		}
+	}
+	if noHome == nil || noHome.HomeURL != "https://api.dev/" {
+		t.Fatalf("ext feed home should fall back to the feed's own home: %+v", feeds)
+	}
+}
+
+func TestAPISaveRejectsNonFeed(t *testing.T) {
+	s, h := newTestServer(t)
+	token := apiToken(t, s, h, "alice", "secret")
 
 	// A non-feed URL must be rejected.
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("<html>nope</html>"))
 	}))
 	defer bad.Close()
-	rr = apiJSON(h, "POST", "/api/save", token, map[string]any{
+	rr := apiJSON(h, "POST", "/api/save", token, map[string]any{
 		"feed_url": bad.URL,
 		"author":   map[string]string{"name": "X"},
 	})

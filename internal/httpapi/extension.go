@@ -21,11 +21,19 @@ import (
 // title, and the author is the selected author_id when given (verified against
 // the user) or auto-created from the feed otherwise (every feed needs one). It
 // reuses the same store/collection/poll paths as the web and JSON API.
-func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, title string, authorID int64) (apiFeed, error) {
+//
+// homeURL is the page the user was on when adding the feed (what the web flow
+// calls the home page) and takes precedence over the feed's own advertised
+// home — e.g. a YouTube @handle page rather than the feed's /channel/UC...
+// URL. When empty it falls back to res.Feed.HomeURL.
+func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, title string, authorID int64) (apiFeed, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	res, err := feedparse.Fetch(ctx, feedURL, client, "", "")
 	if err != nil {
 		return apiFeed{}, err
+	}
+	if homeURL == "" {
+		homeURL = res.Feed.HomeURL
 	}
 	if title == "" {
 		title = res.Feed.Title
@@ -41,17 +49,17 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, title stri
 		}
 		authorName = a.Name
 	} else {
-		a, err := s.store.Authors.Create(u.ID, title, res.Feed.HomeURL, "", "")
+		a, err := s.store.Authors.Create(u.ID, title, homeURL, "", "")
 		if err != nil {
 			return apiFeed{}, err
 		}
 		authorID = a.ID
 	}
-	f, err := s.store.Feeds.Create(u.ID, authorID, title, feedURL, res.Feed.HomeURL, "", 900)
+	f, err := s.store.Feeds.Create(u.ID, authorID, title, feedURL, homeURL, "", 900)
 	if err != nil {
 		return apiFeed{}, err
 	}
-	if err := s.store.Collections.AssignAuto(u.ID, f.ID, res.Feed.HomeURL, feedURL); err != nil {
+	if err := s.store.Collections.AssignAuto(u.ID, f.ID, homeURL, feedURL); err != nil {
 		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
 	}
 	s.pollFeedNow(f)
@@ -86,7 +94,7 @@ func (s *Server) apiExtSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	authorID, _ := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
-	f, err := s.saveFeed(r.Context(), u, feedURL, strings.TrimSpace(r.FormValue("title")), authorID)
+	f, err := s.saveFeed(r.Context(), u, feedURL, normalizeURL(r.FormValue("home_url")), strings.TrimSpace(r.FormValue("title")), authorID)
 	if err != nil {
 		log.Error("extension save feed", "url", feedURL, "err", err)
 		web.Render(w, r, extError("could not add that feed"))
