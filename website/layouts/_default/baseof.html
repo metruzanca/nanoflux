@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="{{ site.Language.Locale | default "en" }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ block "title" . }}{{ if .IsHome }}{{ site.Title }}{{ else }}{{ with .Title }}{{ . }} — {{ end }}{{ site.Title }}{{ end }}{{ end }}</title>
+  <meta name="description" content="{{ with .Description }}{{ . }}{{ else }}{{ site.Params.description }}{{ end }}">
+  {{ with .Params.canonicalURL }}<link rel="canonical" href="{{ . }}">{{ end }}
+  <link rel="stylesheet" href="{{ "css/main.css" | relURL }}">
+  {{ hugo.Generator }}
+</head>
+<body>
+  <header class="site-header">
+    <nav class="container">
+      <a class="site-title" href="{{ site.Home.RelPermalink }}">{{ site.Title }}</a>
+      {{ if site.Menus.main }}
+      <ul class="nav-links">
+        {{ range site.Menus.main }}
+        <li><a href="{{ .URL }}">{{ .Name }}</a></li>
+        {{ end }}
+      </ul>
+      {{ end }}
+    </nav>
+  </header>
+  <main class="container">
+    {{ block "main" . }}{{ end }}
+  </main>
+  <footer class="site-footer">
+    <div class="container">
+      <p>&copy; {{ now.Year }} {{ site.Title }}.</p>
+      {{ if site.Menus.main }}
+      <ul class="nav-links">
+        {{ range site.Menus.main }}
+        <li><a href="{{ .URL }}">{{ .Name }}</a></li>
+        {{ end }}
+      </ul>
+      {{ end }}
+    </div>
+  </footer>
+</body>
+</html>
