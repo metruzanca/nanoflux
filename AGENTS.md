@@ -130,6 +130,41 @@ preview all work unchanged.
   serving a login wall, `fetchXProfile` returns an error and the feed fails
   gracefully.
 
+## Scraped-site feeds (CSS selectors)
+
+Some sites have no feed at all. When discovery finds none, the add-feed preview
+offers "build a feed by scraping this page": the user picks CSS selectors (with
+a best-effort auto-detect) and sees a live sample before saving. The saved feed
+is a normal row — `feeds.kind='scrape'` (schemaV24) — and the poller extracts
+items from the page on every poll, just like the X/YouTube scrapers.
+
+- **Recognition is stored, not URL-shaped.** `feeds.kind` (`store.ScrapeKind`)
+  tells the poller to call `feedparse.Scrape` instead of `feedparse.Fetch`
+  (`PollOne` in `internal/poller/poller.go`). Scrape feeds are created/updated
+  via `FeedStore.CreateScrape`/`UpdateScrape`; the six selectors live in
+  `feeds.scrape_config` as JSON (`ScrapeConfig{Item,Title,Link,Summary,Date,Image}`).
+- **The engine is `internal/feedparse/scrape.go`** using `github.com/andybalholm/cascadia`
+  (CSS selector matching over `x/net/html`, no goquery). Item link/title fall
+  back to the first in-item `<a href>` when their selectors are blank; dates
+  prefer the `datetime` attribute, then text, parsed from a small layout set
+  (approximate, like X); relative URLs resolve against the page base and links
+  run through `StripTracking`. Item GUIDs are `scrape:<sha1(link+title)>` for
+  stable dedup. `AutoDetect` tries common containers (`article`, `.post`,
+  `.entry`, ...) and returns the first that yields ≥2 linked items — best
+  effort, user-editable.
+- **Web flow:** `feedPreview` renders `noFeedFound` (a `role="alert"` banner
+  with an opt-in button) instead of a bare "no feed found" error; the button
+  posts to `POST /fragments/scrape-builder`, which renders the builder
+  (`scrapeBuilder` in `views_feeds.templ`) with the live sample. Selector
+  changes re-preview via `POST /fragments/scrape-preview`. Save posts the normal
+  `/feeds` form with `kind=scrape`; errors use the standard
+  `writeFormError`/`renderError` shapes. The builder and the edit page
+  (`feedFields` renders the selector fields when `kind='scrape'`) share the
+  `scrape_*` form field names — keep them in sync.
+- **Web-only:** the JSON API (`/api/save`) still rejects non-feeds; scrape feeds
+  are created from the web UI only. Do not route a scrape feed through
+  `feedparse.Fetch`.
+
 ## Reddit link posts
 
 Reddit "link posts" point at an external site (imgur, a news article,

@@ -34,6 +34,7 @@ var migrations = []migration{
 	{21, schemaV21},
 	{22, schemaV22},
 	{23, schemaV23},
+	{24, schemaV24},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -409,6 +410,13 @@ SET image_url = (
     ORDER BY e.sort LIMIT 1
 )
 WHERE image_url IS NULL OR image_url = '';
+`
+
+// schemaV24 marks feeds built by scraping a page (kind 'scrape') and stores
+// their CSS-selector config. Regular RSS/Atom feeds stay kind 'feed'.
+const schemaV24 = `
+ALTER TABLE feeds ADD COLUMN kind TEXT NOT NULL DEFAULT 'feed';
+ALTER TABLE feeds ADD COLUMN scrape_config TEXT;
 `
 
 // Migrate applies any pending migrations in order, recording each in

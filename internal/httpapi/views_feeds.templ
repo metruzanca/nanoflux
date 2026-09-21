@@ -103,6 +103,94 @@ templ feedChooser(d feedChoose) {
 	</div>
 }
 
+// noFeedFound is the "no feed at that url" banner with an opt-in scrape
+// builder. The button re-posts the entered url to the scrape builder, which
+// swaps into the same preview container.
+templ noFeedFound(d noFeedFoundData) {
+	<div class="error" role="alert">
+		<p>no feed found at that url</p>
+		<button type="button" hx-post="/fragments/scrape-builder" hx-target={ d.Target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped">build a feed by scraping this page</button>
+	</div>
+}
+
+// scrapeSample renders the items extracted by the current selector config.
+templ scrapeSample(d []scrapeSampleItem) {
+	if len(d) == 0 {
+		<p class="muted small">no items match those selectors yet</p>
+		return
+	}
+	<ol class="plain scrape-sample">
+		for _, it := range d {
+			<li>
+				<a href={ templ.URL(it.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ it.Title }</a>
+				if it.Date != "" {
+					<span class="muted small"> · { it.Date }</span>
+				}
+			</li>
+		}
+	</ol>
+}
+
+// scrapeBuilder is the CSS-selector feed builder shown when a url has no feed.
+// Selector changes live-preview into #scrape-sample; the form submits to the
+// same Action/Target/Swap as a normal add-feed form.
+templ scrapeBuilder(d scrapeBuilderData) {
+	<form class="stack" id="scrape-builder" hx-post={ d.Action } hx-target={ d.Target } hx-swap={ d.Swap } hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+		<input type="hidden" name="kind" value="scrape"/>
+		<input type="hidden" name="feed_url" value={ d.URL }/>
+		<p class="muted small">scrape { d.URL } into a feed. pick the item container (each post) and the selectors read inside it; blank fields are auto-guessed.</p>
+		<label>title
+			<input name="title" type="text" value={ d.Title }/>
+		</label>
+		<label>home url
+			<input id="feed-home-url" name="home_url" type="url" value={ d.HomeURL }/>
+		</label>
+		<label>item selector
+			<input name="scrape_item" type="text" value={ d.Config.Item } placeholder="e.g. article, .post, .entry" hx-trigger="change" hx-post="/fragments/scrape-preview" hx-target="#scrape-sample" hx-swap="innerHTML" hx-include="closest form"/>
+		</label>
+		<label>title selector
+			<input name="scrape_title" type="text" value={ d.Config.Title } placeholder="e.g. h2 a" hx-trigger="change" hx-post="/fragments/scrape-preview" hx-target="#scrape-sample" hx-swap="innerHTML" hx-include="closest form"/>
+		</label>
+		<label>link selector
+			<input name="scrape_link" type="text" value={ d.Config.Link } placeholder="e.g. h2 a" hx-trigger="change" hx-post="/fragments/scrape-preview" hx-target="#scrape-sample" hx-swap="innerHTML" hx-include="closest form"/>
+		</label>
+		<label>summary selector
+			<input name="scrape_summary" type="text" value={ d.Config.Summary } placeholder="e.g. .excerpt p" hx-trigger="change" hx-post="/fragments/scrape-preview" hx-target="#scrape-sample" hx-swap="innerHTML" hx-include="closest form"/>
+		</label>
+		<label>date selector
+			<input name="scrape_date" type="text" value={ d.Config.Date } placeholder="e.g. time" hx-trigger="change" hx-post="/fragments/scrape-preview" hx-target="#scrape-sample" hx-swap="innerHTML" hx-include="closest form"/>
+		</label>
+		<label>image selector
+			<input name="scrape_image" type="text" value={ d.Config.Image } placeholder="e.g. img" hx-trigger="change" hx-post="/fragments/scrape-preview" hx-target="#scrape-sample" hx-swap="innerHTML" hx-include="closest form"/>
+		</label>
+		<div class="row">
+			<button type="button" hx-post="/fragments/scrape-builder" hx-target="#scrape-builder" hx-swap="outerHTML" hx-include="closest form" hx-vals='{"detect":"1"}'>auto-detect selectors</button>
+			<button type="button" hx-post="/fragments/scrape-preview" hx-target="#scrape-sample" hx-swap="innerHTML" hx-include="closest form">preview</button>
+		</div>
+		<div id="scrape-sample">@scrapeSample(d.Sample)</div>
+		if d.FixedAuthor != nil {
+			<input type="hidden" name="author_id" value={ strconv.FormatInt(d.FixedAuthor.ID, 10) }/>
+			<p class="muted small">author · { d.FixedAuthor.Name }</p>
+		} else {
+			<label>author
+				<select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change" hx-include="#feed-home-url">
+					<option value="new">+ create new author</option>
+					for _, a := range d.Authors {
+						if a.ID == d.SelectedAuthorID {
+							<option value={ strconv.FormatInt(a.ID, 10) } selected>{ a.Name }</option>
+						} else {
+							<option value={ strconv.FormatInt(a.ID, 10) }>{ a.Name }</option>
+						}
+					}
+				</select>
+			</label>
+			<div id="new-author">@authorCreateFields(d.newAuthor())</div>
+		}
+		<div id="add-feed-error" class="error"></div>
+		<button type="submit">add feed</button>
+	</form>
+}
+
 templ feedEditPage(u store.User, d feedsData) {
 	<section class="card">
 		<h1>edit feed</h1>
@@ -176,6 +264,27 @@ templ feedFields(d feedsData) {
 	<label>home url
 		<input name="home_url" type="url" value={ d.Form.HomeURL }/>
 	</label>
+	if d.Form.Kind == "scrape" {
+		<p class="muted small">scrape feed · item is the container for each post; the others are read inside it. blank fields are auto-guessed.</p>
+		<label>item selector
+			<input name="scrape_item" type="text" value={ d.Form.ScrapeConfig.Item } placeholder="e.g. article, .post, .entry"/>
+		</label>
+		<label>title selector
+			<input name="scrape_title" type="text" value={ d.Form.ScrapeConfig.Title } placeholder="e.g. h2 a"/>
+		</label>
+		<label>link selector
+			<input name="scrape_link" type="text" value={ d.Form.ScrapeConfig.Link } placeholder="e.g. h2 a"/>
+		</label>
+		<label>summary selector
+			<input name="scrape_summary" type="text" value={ d.Form.ScrapeConfig.Summary } placeholder="e.g. .excerpt p"/>
+		</label>
+		<label>date selector
+			<input name="scrape_date" type="text" value={ d.Form.ScrapeConfig.Date } placeholder="e.g. time"/>
+		</label>
+		<label>image selector
+			<input name="scrape_image" type="text" value={ d.Form.ScrapeConfig.Image } placeholder="e.g. img"/>
+		</label>
+	}
 	<label>author
 		<select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change">
 			<option value="new">+ create new author</option>

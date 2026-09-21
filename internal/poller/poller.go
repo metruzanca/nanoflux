@@ -101,7 +101,17 @@ func (p *Poller) PollDue(ctx context.Context) (int, error) {
 // PollOne fetches a single feed, stores new items, and records poll metadata.
 // It returns the number of new items.
 func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
-	res, err := feedparse.Fetch(ctx, f.FeedURL, p.client, f.ETag, f.LastModified)
+	var res feedparse.Result
+	var err error
+	if f.Kind == store.ScrapeKind {
+		var cfg feedparse.ScrapeConfig
+		cfg, err = feedparse.ParseScrapeConfig(f.ScrapeConfig)
+		if err == nil {
+			res, err = feedparse.Scrape(ctx, f.FeedURL, p.client, cfg, f.ETag, f.LastModified)
+		}
+	} else {
+		res, err = feedparse.Fetch(ctx, f.FeedURL, p.client, f.ETag, f.LastModified)
+	}
 	if errors.Is(err, feedparse.ErrNotModified) {
 		p.store.Feeds.SetPollMeta(f.ID, f.ETag, f.LastModified, db.Now(), "")
 		return 0, nil

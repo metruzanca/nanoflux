@@ -60,6 +60,8 @@ CREATE TABLE feeds (
     last_polled_at    TEXT,
     last_error        TEXT,
     next_page_url     TEXT NOT NULL DEFAULT '',
+    kind              TEXT NOT NULL DEFAULT 'feed',
+    scrape_config     TEXT,
     poll_interval_sec INTEGER NOT NULL DEFAULT 900,
     enabled           INTEGER NOT NULL DEFAULT 1,
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
