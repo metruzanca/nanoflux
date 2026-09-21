@@ -31,6 +31,7 @@ type feedPreviewForm struct {
 	FixedAuthor      *store.Author
 	NewAuthorName    string // prefill for the create-new-author fields
 	NewAuthorAvatar  string
+	Redirect         bool // after saving, send the client to the author page
 }
 
 // newAuthor returns the authorCreateFields payload for the default "create new
@@ -42,8 +43,9 @@ func (f feedPreviewForm) newAuthor() authorPreviewForm {
 // feedChoose is the dropdown shown when a page exposes multiple feeds.
 type feedChoose struct {
 	URL        string
-	Target     string // htmx preview container ("#feed-preview" or "#author-feed-preview")
+	Target     string
 	Candidates []discover.Candidate
+	Redirect   bool // carry the "send to the author page after saving" flag
 }
 
 // authorPreviewForm pre-fills the new-author fields from a detected page.
@@ -128,36 +130,12 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("scoped") == "1" {
 		previewTarget = "#author-feed-preview"
 	}
+	redirect := r.FormValue("redirect") == "1"
 
-	feedURL := pageURL
-	if mapped, ok := s.mappedFeedURL(u.ID, pageURL); ok {
-		feedURL = mapped
-	}
-
-	// The URL itself may already be a feed; if so we can also derive the home page.
-	if res, err := feedparse.Fetch(r.Context(), feedURL, s.client, "", ""); err == nil {
-		home := res.Feed.HomeURL
-		if home == "" || feedURL != pageURL {
-			home = pageURL
-		}
-		s.renderFeedPreviewForm(r, w, discover.Candidate{FeedURL: feedURL, Title: res.Feed.Title, HomeURL: home}, pageURL, home, authors, selectedAuthor, fixedAuthor)
-		return
-	}
-
-	candidates, err := s.discoverer.Discover(r.Context(), feedURL)
+	candidates, err := s.discoverCandidates(r.Context(), u.ID, pageURL)
 	if err != nil {
-		log.Error("feed preview discover", "err", err)
-		if feedURL == pageURL {
-			renderError(w, r, "could not inspect that url")
-			return
-		}
-	}
-	if len(candidates) == 0 && feedURL != pageURL {
-		// A mapping transformed the url but its feed is gone or the page is
-		// not a feed; fall back to the original input.
-		if candidates, err = s.discoverer.Discover(r.Context(), pageURL); err != nil {
-			log.Error("feed preview discover fallback", "err", err)
-		}
+		renderError(w, r, "could not inspect that url")
+		return
 	}
 	if len(candidates) == 0 {
 		web.Render(w, r, noFeedFound(noFeedFoundData{URL: pageURL, Target: previewTarget}))
@@ -167,25 +145,73 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	if chosen := strings.TrimSpace(r.FormValue("feed_url")); chosen != "" {
 		for _, c := range candidates {
 			if c.FeedURL == chosen {
-				s.renderFeedPreviewForm(r, w, c, pageURL, pageURL, authors, selectedAuthor, fixedAuthor)
+				s.renderFeedPreviewForm(r, w, c, pageURL, previewHome(c, pageURL), authors, selectedAuthor, fixedAuthor, redirect)
 				return
 			}
 		}
 	}
 
 	if len(candidates) == 1 {
-		s.renderFeedPreviewForm(r, w, candidates[0], pageURL, pageURL, authors, selectedAuthor, fixedAuthor)
+		s.renderFeedPreviewForm(r, w, candidates[0], pageURL, previewHome(candidates[0], pageURL), authors, selectedAuthor, fixedAuthor, redirect)
 		return
 	}
 
-	web.Render(w, r, feedChooser(feedChoose{URL: pageURL, Target: previewTarget, Candidates: candidates}))
+	web.Render(w, r, feedChooser(feedChoose{URL: pageURL, Target: previewTarget, Candidates: candidates, Redirect: redirect}))
+}
+
+// previewHome returns the home page to pre-fill for a candidate: a direct feed
+// URL carries its own discovered home, while a feed found on a page keeps the
+// page the user entered as home (so a stale mapping never changes it).
+func previewHome(c discover.Candidate, pageURL string) string {
+	if c.Strategy == "direct" {
+		return c.HomeURL
+	}
+	return pageURL
+}
+
+// discoverCandidates resolves the feeds for a page URL: the user's url mappings
+// are applied first (the original url becomes the home page), the direct URL is
+// tried as a feed, then discovery runs, falling back to the original url when a
+// mapping yields nothing so a stale mapping never blocks adding a feed.
+func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL string) ([]discover.Candidate, error) {
+	feedURL := pageURL
+	if mapped, ok := s.mappedFeedURL(userID, pageURL); ok {
+		feedURL = mapped
+	}
+	// The URL itself may already be a feed; if so we can also derive the home page.
+	if res, err := feedparse.Fetch(ctx, feedURL, s.client, "", ""); err == nil {
+		home := res.Feed.HomeURL
+		if home == "" || feedURL != pageURL {
+			home = pageURL
+		}
+		return []discover.Candidate{{FeedURL: feedURL, Title: res.Feed.Title, HomeURL: home, Strategy: "direct"}}, nil
+	}
+
+	candidates, err := s.discoverer.Discover(ctx, feedURL)
+	if err != nil {
+		log.Error("feed preview discover", "err", err)
+		if feedURL == pageURL {
+			return nil, err
+		}
+	}
+	if len(candidates) == 0 && feedURL != pageURL {
+		// A mapping transformed the url but its feed is gone or the page is
+		// not a feed; fall back to the original input.
+		candidates, err = s.discoverer.Discover(ctx, pageURL)
+		if err != nil {
+			log.Error("feed preview discover fallback", "err", err)
+			return nil, err
+		}
+	}
+	return candidates, nil
 }
 
 // renderFeedPreviewForm renders the combined add form for one discovered feed.
 // homeURL is the page the user entered (the feed's home page); the default
 // new-author name is derived from that page's <title>, falling back to the
-// feed title, then the page host; the avatar comes from the site icon.
-func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c discover.Candidate, pageURL, homeURL string, authors []store.Author, selectedAuthor int64, fixedAuthor *store.Author) {
+// feed title, then the page host; the avatar comes from the site icon. When
+// redirect is set the saved feed sends the client to its author page.
+func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c discover.Candidate, pageURL, homeURL string, authors []store.Author, selectedAuthor int64, fixedAuthor *store.Author, redirect bool) {
 	meta, _ := s.discoverer.PageMeta(r.Context(), pageURL)
 	name := meta.Title
 	if name == "" {
@@ -198,7 +224,7 @@ func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c
 	}
 	form := feedPreviewForm{
 		Title: c.Title, FeedURL: stripWWW(c.FeedURL), HomeURL: stripWWW(homeURL), Authors: authors,
-		SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor,
+		SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor, Redirect: redirect,
 		NewAuthorName: name, NewAuthorAvatar: meta.IconURL,
 	}
 	if fixedAuthor != nil {

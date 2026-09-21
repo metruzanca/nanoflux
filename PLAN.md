@@ -54,7 +54,8 @@ extension. SQLite, session auth, background poller, feed discovery.
   - [x] Feed poll error tracking (`feeds.last_error`, owner-only surfacing)
   - [x] Secure session cookie auto-detected from TLS / `X-Forwarded-Proto`
 - [ ] **Deferred (explicitly later)**
-  - [ ] Chrome extension (MV3) — popup, badge, save-to-collection
+  - [x] Chrome extension (MV3) — popup add-feed form (store-free / load-unpacked)
+  - [x] PWA share target (`GET /add?url=…`) for the Android share sheet
   - [ ] MCP server wrapping `internal/store`
 
 ## Decisions locked in

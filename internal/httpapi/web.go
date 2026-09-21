@@ -516,6 +516,12 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-feed-error", errMsg)
 		return
 	}
+	// The share-target flow asks to land on the new author's page.
+	if r.FormValue("redirect") == "1" {
+		w.Header().Set("HX-Redirect", "/authors/"+strconv.FormatInt(authorID, 10))
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	author, _ := s.store.Authors.ByID(u.ID, authorID)
 	feeds, _ := s.store.Feeds.ListByAuthor(u.ID, authorID)
 	unread, _ := s.store.Items.CountUnreadAuthor(u.ID, authorID)

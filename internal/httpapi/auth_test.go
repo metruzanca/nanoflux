@@ -91,7 +91,8 @@ func TestUnauthenticatedRedirects(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/login" {
+	// GET redirects carry the requested path so login returns to it.
+	if rr.Code != http.StatusFound || !strings.HasPrefix(rr.Header().Get("Location"), "/login") {
 		t.Fatalf("unauthenticated GET /: got %d %q", rr.Code, rr.Header().Get("Location"))
 	}
 }

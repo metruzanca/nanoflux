@@ -437,6 +437,31 @@ live), so it only exists to satisfy installability. PWA icons (`pwa-192.png`,
 `tools/iconsgen` (`make icons`). Installation needs HTTPS — the compose
 instance listens on plain HTTP, so it must sit behind a TLS proxy.
 
+The manifest also registers a **share target** (`GET /add?url=…`), so sharing a
+link to the installed app on Android opens nanoflux's add-feed flow. `shareAdd`
+(`internal/httpapi/share.go`) extracts the URL (`url`, else the first URL in
+`text`) and renders `shareAddPage`, which triggers the normal
+`/fragments/feed-preview` flow into `#share-preview` with `redirect=1`; the
+saved feed then returns `HX-Redirect` to its author page (`feedCreate`). The
+discovery step is shared between `feedPreview` and the share flow via
+`discoverCandidates` (`internal/httpapi/preview.go`). Share targets are
+Chromium/Android-only (iOS Safari ignores them).
+
+## Browser extension distribution
+
+The MV3 extension lives in `extension/`. `extension/embed.go` (package
+`extension`) embeds its files so the server can serve them as a zip at the
+auth-required `GET /settings/extension.zip` (`settings_extension.go`), giving
+every user a store-free install path; the `/settings` "browser extension" card
+shows the download plus load-unpacked steps. `make extension` writes the same
+zip to `dist/` via `tools/extzip`. The `*_templ`/`extension.go` JSON API it
+talks to is documented under the API surface (`/api/discover` now returns a
+`saved` flag + `saved_feed_id` and the user's `accent`, and `/api/ext/feed-form`
++ `/api/ext/save` render the add form/save as htmx fragments). Auth that must
+survive a login round trip (e.g. a shared `/add` link opened logged-out) uses a
+safe relative `next` param: `auth.Require` adds `?next=…` to its `/login`
+redirect and `login` returns there.
+
 - **templ syntax quirk (v0.3.1020):** use bare `if`/`for`/`switch` statements
   (not `@if`/`@for` — those generate broken Go). A `{ expr }` block must NOT
   immediately follow a `@Component(...)` call; separate them with a newline.

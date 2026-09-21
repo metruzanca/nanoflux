@@ -1,12 +1,15 @@
 package httpapi
 
-templ loginPage(errMsg string, allowSignup bool) {
+templ loginPage(errMsg string, allowSignup bool, next string) {
 	<section class="card login">
 		<h1>log in</h1>
 		if errMsg != "" {
 			<p class="error">{ errMsg }</p>
 		}
 		<form method="post" action="/login">
+			if next != "" {
+				<input type="hidden" name="next" value={ next }/>
+			}
 			<label>username
 				<input name="username" autofocus autocomplete="username" required/>
 			</label>

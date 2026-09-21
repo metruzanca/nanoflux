@@ -7,6 +7,15 @@
   "display": "standalone",
   "background_color": "#111318",
   "theme_color": "#111318",
+  "share_target": {
+    "action": "/add",
+    "method": "GET",
+    "params": {
+      "url": "url",
+      "text": "text",
+      "title": "title"
+    }
+  },
   "icons": [
     {
       "src": "/static/pwa-192.png",

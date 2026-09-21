@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"archive/zip"
 	"bytes"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -30,6 +32,8 @@ func TestSettingsPage(t *testing.T) {
 		`hx-post="/settings/opml"`,
 		`hx-post="/settings/mappings"`,
 		`/settings/export.opml`,
+		`/settings/extension.zip`,
+		"browser extension",
 		`name="domain"`,
 		"custom source icons",
 		"url mappings",
@@ -42,6 +46,45 @@ func TestSettingsPage(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("settings page missing %q", want)
 		}
+	}
+}
+
+func TestSettingsExtensionZip(t *testing.T) {
+	_, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	rr := doGet(h, "/settings/extension.zip", cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("extension zip: %d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/zip" {
+		t.Fatalf("content-type = %q", ct)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(rr.Body.Bytes()), int64(rr.Body.Len()))
+	if err != nil {
+		t.Fatalf("not a zip: %v", err)
+	}
+	names := map[string]bool{}
+	for _, f := range zr.File {
+		names[f.Name] = true
+	}
+	for _, want := range []string{"manifest.json", "popup.html", "popup.js", "api.js", "icons/icon128.png"} {
+		if !names[want] {
+			t.Fatalf("zip missing %q; got %v", want, names)
+		}
+	}
+	if names["embed.go"] {
+		t.Fatal("zip should not include the embed source")
+	}
+	// The manifest parses and is the extension's.
+	rc, err := zr.Open("manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	data, _ := io.ReadAll(rc)
+	if !bytes.Contains(data, []byte(`"manifest_version": 3`)) {
+		t.Fatalf("unexpected manifest: %s", data)
 	}
 }
 

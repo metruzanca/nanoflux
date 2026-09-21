@@ -15,7 +15,7 @@ latest_image_tag = $(shell \
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop restart update icons status logs shell backup down
+.PHONY: help start stop restart update icons extension status logs shell backup down
 
 help:
 	@echo "nanoflux - manage your instance"
@@ -30,6 +30,8 @@ help:
 	@echo "  backup    snapshot the database and file store into backups/"
 	@echo "  restore   restore from backups/ (usage: make restore ARCHIVE=backups/<file>.tar.gz)"
 	@echo "  down      stop and remove containers (data kept)"
+	@echo "  extension package the browser extension into dist/"
+	@echo "  icons     regenerate the pwa icons"
 	@echo ""
 	@echo "Run with podman: make <cmd> RUNTIME=podman"
 
@@ -64,6 +66,11 @@ status:
 
 icons:
 	go run ./tools/iconsgen
+
+# Package the browser extension for load-unpacked. The app also serves these
+# files as a zip from /settings/extension.zip, built from the embedded copy.
+extension:
+	go run ./tools/extzip
 
 logs:
 	$(COMPOSE) logs -f
