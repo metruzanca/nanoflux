@@ -2,7 +2,7 @@ services:
   nanoflux:
     image: ghcr.io/metruzanca/nanoflux:latest
     ports:
-      - "8080:8080"
+      - "20310:8080"
     environment:
       NF_ADDR: ":8080"
       NF_DB: "/data/rss.db"
