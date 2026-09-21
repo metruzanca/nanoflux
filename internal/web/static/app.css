@@ -501,7 +501,14 @@ dialog.modal.wide[open] {
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.35);
     z-index: 40;
   }
-  .top nav.open { display: flex; }
+  .top nav.open {
+    display: flex;
+    /* The dropdown items add several rows; cap the menu to the viewport
+       below the header so short screens can still reach every item. */
+    max-height: calc(100vh - 4rem);
+    max-height: calc(100dvh - 4rem);
+    overflow-y: auto;
+  }
 
   .top nav > a { padding: 0.5rem 0.25rem; }
   .top nav > a + a { border-top: 1px solid var(--border); }
@@ -509,8 +516,34 @@ dialog.modal.wide[open] {
   .top-search input { width: 100%; }
 
   .top nav > .user-menu {
-    margin-top: 0.5rem;
-    padding-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--border);
+  }
+  .top nav > .user-menu .avatar-btn { display: none; }
+
+  .top nav .user-menu-pop {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    width: 100%;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+  }
+  /* Keep the dropdown items visible inside the hamburger menu even though the
+     server renders the pop with the hidden attribute. */
+  .top nav .user-menu-pop[hidden] { display: flex; }
+  .top nav .user-menu-pop a,
+  .top nav .user-menu-pop button {
+    padding: 0.5rem 0.25rem;
+    white-space: normal;
+  }
+  .top nav .user-menu-pop a + a,
+  .top nav .user-menu-pop a + form,
+  .top nav .user-menu-pop form + form {
     border-top: 1px solid var(--border);
   }
 

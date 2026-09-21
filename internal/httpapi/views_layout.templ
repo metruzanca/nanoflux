@@ -26,7 +26,6 @@ templ topbar(u store.User) {
 				<a href="/feeds">feeds</a>
 				<a href="/authors">authors</a>
 				<a href="/collections">collections</a>
-				<a href="/favorites">favorites</a>
 				<div class="user-menu">
 					<button type="button" id="user-menu-btn" class="avatar-btn" aria-haspopup="true" aria-expanded="false" title={ u.Username } onclick="toggleUserMenu(event)">
 						if u.HasAvatar {
@@ -37,6 +36,7 @@ templ topbar(u store.User) {
 					</button>
 					<div id="user-menu" class="user-menu-pop" role="menu" hidden>
 						<a href="/read" role="menuitem">history</a>
+						<a href="/favorites" role="menuitem">favorites</a>
 						<a href="/settings" role="menuitem">settings</a>
 						<form action="/logout" method="post"><button class="link menu-item" type="submit">log out</button></form>
 					</div>

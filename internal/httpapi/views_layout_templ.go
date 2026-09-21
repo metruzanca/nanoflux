@@ -120,14 +120,14 @@ func topbar(u store.User) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if u.ID != 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<nav id=\"top-nav\"><form class=\"top-search\" action=\"/search\" method=\"get\" role=\"search\"><input id=\"search-input\" name=\"q\" type=\"search\" placeholder=\"search…\" autocomplete=\"off\"></form><a href=\"/\">unread</a> <a href=\"/feeds\">feeds</a> <a href=\"/authors\">authors</a> <a href=\"/collections\">collections</a> <a href=\"/favorites\">favorites</a><div class=\"user-menu\"><button type=\"button\" id=\"user-menu-btn\" class=\"avatar-btn\" aria-haspopup=\"true\" aria-expanded=\"false\" title=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<nav id=\"top-nav\"><form class=\"top-search\" action=\"/search\" method=\"get\" role=\"search\"><input id=\"search-input\" name=\"q\" type=\"search\" placeholder=\"search…\" autocomplete=\"off\"></form><a href=\"/\">unread</a> <a href=\"/feeds\">feeds</a> <a href=\"/authors\">authors</a> <a href=\"/collections\">collections</a><div class=\"user-menu\"><button type=\"button\" id=\"user-menu-btn\" class=\"avatar-btn\" aria-haspopup=\"true\" aria-expanded=\"false\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.Username)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 31, Col: 126}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 30, Col: 126}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 			if templ_7745c5c3_Err != nil {
@@ -145,7 +145,7 @@ func topbar(u store.User) templ.Component {
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.URL("/avatar"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 33, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 32, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 				if templ_7745c5c3_Err != nil {
@@ -158,7 +158,7 @@ func topbar(u store.User) templ.Component {
 				var templ_7745c5c3_Var9 string
 				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.Username)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 33, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 32, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 				if templ_7745c5c3_Err != nil {
@@ -176,7 +176,7 @@ func topbar(u store.User) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(web.Initial(u.Username))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 35, Col: 78}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 34, Col: 78}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -187,7 +187,7 @@ func topbar(u store.User) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</button><div id=\"user-menu\" class=\"user-menu-pop\" role=\"menu\" hidden><a href=\"/read\" role=\"menuitem\">history</a> <a href=\"/settings\" role=\"menuitem\">settings</a><form action=\"/logout\" method=\"post\"><button class=\"link menu-item\" type=\"submit\">log out</button></form></div></div></nav><button type=\"button\" id=\"nav-toggle\" class=\"hamburger\" aria-label=\"menu\" aria-expanded=\"false\" aria-controls=\"top-nav\" onclick=\"toggleNav(event)\"><span></span> <span></span> <span></span></button>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</button><div id=\"user-menu\" class=\"user-menu-pop\" role=\"menu\" hidden><a href=\"/read\" role=\"menuitem\">history</a> <a href=\"/favorites\" role=\"menuitem\">favorites</a> <a href=\"/settings\" role=\"menuitem\">settings</a><form action=\"/logout\" method=\"post\"><button class=\"link menu-item\" type=\"submit\">log out</button></form></div></div></nav><button type=\"button\" id=\"nav-toggle\" class=\"hamburger\" aria-label=\"menu\" aria-expanded=\"false\" aria-controls=\"top-nav\" onclick=\"toggleNav(event)\"><span></span> <span></span> <span></span></button>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
