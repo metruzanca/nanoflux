@@ -46,6 +46,8 @@ type Feed struct {
 	LastPolledAt    sql.NullString `json:"last_polled_at"`
 	LastError       sql.NullString `json:"last_error"`
 	NextPageUrl     string         `json:"next_page_url"`
+	Kind            string         `json:"kind"`
+	ScrapeConfig    sql.NullString `json:"scrape_config"`
 	PollIntervalSec int64          `json:"poll_interval_sec"`
 	Enabled         bool           `json:"enabled"`
 	CreatedAt       string         `json:"created_at"`

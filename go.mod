@@ -15,6 +15,7 @@ require (
 )
 
 require (
+	github.com/andybalholm/cascadia v1.3.5 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect

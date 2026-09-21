@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"html/template"
 	"net/http"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -56,6 +58,8 @@ type feedForm struct {
 	PollIntervalSec int
 	CollectionIDs   []int64
 	Enabled         bool
+	Kind            string                 // "feed" or "scrape"
+	ScrapeConfig    feedparse.ScrapeConfig // selector config for scrape feeds
 }
 
 type feedsData struct {
@@ -547,7 +551,24 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 	if title == "" || feedURL == "" {
 		return store.Feed{}, "title and feed url are required"
 	}
-	f, err := s.store.Feeds.Create(userID, authorID, title, feedURL, homeURL, "", interval)
+	var (
+		f   store.Feed
+		err error
+	)
+	if r.FormValue("kind") == store.ScrapeKind {
+		cfg := scrapeConfigFromForm(r)
+		if strings.TrimSpace(cfg.Item) == "" {
+			return store.Feed{}, "an item selector is required"
+		}
+		raw, err := json.Marshal(cfg)
+		if err != nil {
+			log.Error("marshal scrape config", "err", err)
+			return store.Feed{}, "could not create feed"
+		}
+		f, err = s.store.Feeds.CreateScrape(userID, authorID, title, feedURL, homeURL, "", string(raw), interval)
+	} else {
+		f, err = s.store.Feeds.Create(userID, authorID, title, feedURL, homeURL, "", interval)
+	}
 	if err != nil {
 		log.Error("create feed", "err", err)
 		return store.Feed{}, "could not create feed"
@@ -622,6 +643,12 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 		ID: f.ID, Title: f.Title, FeedURL: f.FeedURL, HomeURL: f.HomeURL,
 		Description: f.Description, AuthorID: f.AuthorID,
 		PollIntervalSec: f.PollIntervalSec, Enabled: f.Enabled,
+		Kind: f.Kind,
+	}
+	if f.Kind == store.ScrapeKind {
+		if cfg, err := feedparse.ParseScrapeConfig(f.ScrapeConfig); err == nil {
+			form.ScrapeConfig = cfg
+		}
 	}
 	collections, _ := s.store.Collections.List(u.ID)
 	form.CollectionIDs = s.collectionIDsForFeed(u.ID, f.ID)
@@ -732,7 +759,25 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, back, http.StatusFound)
 		return
 	}
-	if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
+	if old.Kind == store.ScrapeKind {
+		cfg := scrapeConfigFromForm(r)
+		if strings.TrimSpace(cfg.Item) == "" {
+			http.Redirect(w, r, back, http.StatusFound)
+			return
+		}
+		raw, err := json.Marshal(cfg)
+		if err != nil {
+			log.Error("marshal scrape config", "err", err)
+			http.Error(w, "update failed", http.StatusInternalServerError)
+			return
+		}
+		if err := s.store.Feeds.UpdateScrape(u.ID, id, authorID, title, feedURL,
+			r.FormValue("home_url"), "", string(raw), interval, r.FormValue("enabled") == "1"); err != nil {
+			log.Error("update scrape feed", "err", err)
+			http.Error(w, "update failed", http.StatusInternalServerError)
+			return
+		}
+	} else if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
 		r.FormValue("home_url"), "", interval, r.FormValue("enabled") == "1"); err != nil {
 		log.Error("update feed", "err", err)
 		http.Error(w, "update failed", http.StatusInternalServerError)

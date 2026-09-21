@@ -57,6 +57,8 @@ func toFeed(f sqlcgen.Feed) Feed {
 		LastPolledAt:    f.LastPolledAt.String,
 		LastError:       f.LastError.String,
 		NextPageURL:     f.NextPageUrl,
+		Kind:            f.Kind,
+		ScrapeConfig:    f.ScrapeConfig.String,
 		PollIntervalSec: int(f.PollIntervalSec),
 		Enabled:         f.Enabled,
 		CreatedAt:       f.CreatedAt,
@@ -155,7 +157,7 @@ func toUrlMapping(id, userID int64, pattern, template, createdAt string) UrlMapp
 
 func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 	homeURL, description, etag, lastModified, lastPolledAt, lastError sql.NullString,
-	nextPageURL string, pollIntervalSec int64, enabled bool, createdAt string,
+	nextPageURL, kind string, scrapeConfig sql.NullString, pollIntervalSec int64, enabled bool, createdAt string,
 ) sqlcgen.Feed {
 	return sqlcgen.Feed{
 		ID:              id,
@@ -170,6 +172,8 @@ func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 		LastPolledAt:    lastPolledAt,
 		LastError:       lastError,
 		NextPageUrl:     nextPageURL,
+		Kind:            kind,
+		ScrapeConfig:    scrapeConfig,
 		PollIntervalSec: pollIntervalSec,
 		Enabled:         enabled,
 		CreatedAt:       createdAt,
@@ -178,7 +182,7 @@ func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 
 func toFeedWithUnread(f sqlcgen.ListFeedsWithUnreadRow) FeedWithUnread {
 	return FeedWithUnread{
-		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.Kind, f.ScrapeConfig, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
 		AuthorName: f.AuthorName.String,
 		Unread:     int(f.Unread),
 	}
@@ -186,7 +190,7 @@ func toFeedWithUnread(f sqlcgen.ListFeedsWithUnreadRow) FeedWithUnread {
 
 func toFeedByAuthorWithUnread(f sqlcgen.ListFeedsByAuthorWithUnreadRow) FeedWithUnread {
 	return FeedWithUnread{
-		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.Kind, f.ScrapeConfig, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
 		AuthorName: f.AuthorName.String,
 		Unread:     int(f.Unread),
 	}
