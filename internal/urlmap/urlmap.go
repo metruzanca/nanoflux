@@ -1,11 +1,13 @@
 // Package urlmap transforms a user-entered URL into a feed URL using
-// per-user "pattern -> template" rules. A pattern is a Go regular expression
-// with named capture groups (e.g. `abc\.com/(?P<user>[^/]+)`); the template
-// references captured values with `{name}` (e.g. `{user}.abc.com/feed`).
+// per-user "pattern -> template" rules. A pattern is a literal url with
+// {name} placeholders (e.g. `abc.com/{user}`), where each placeholder
+// matches one path segment; the template references captured values with
+// `{name}` too (e.g. `{user}.abc.com/feed`). Everything that is not a
+// placeholder matches literally — no regex syntax.
 //
 // Matching happens against the scheme-stripped host/path of the input
-// (trailing slash removed) and is case-insensitive by default, but captures
-// keep the original case of the matched text. A pattern must match the whole
+// (trailing slash removed) and is case-insensitive, but captures keep the
+// original case of the matched text. A pattern must match the whole
 // host/path — it is anchored internally, so substrings never match.
 package urlmap
 
@@ -15,18 +17,21 @@ import (
 	"strings"
 )
 
+// nameRe matches a {name} placeholder token.
 var nameRe = regexp.MustCompile(`\{([A-Za-z0-9_]+)\}`)
 
 // Mapping is a compiled pattern/template pair.
 type Mapping struct {
 	re       *regexp.Regexp
-	names    map[string]bool
+	names    []string // placeholder names, in pattern order (parallel to capture groups)
+	hasName  map[string]bool
 	template string
 }
 
-// Compile validates and compiles a pattern/template pair. The pattern must be
-// a valid Go regexp containing at least one named group, and the template may
-// only reference groups the pattern defines.
+// Compile validates and compiles a pattern/template pair. The pattern must
+// contain at least one {name} placeholder (each matching one non-slash
+// segment), and the template may only reference placeholders the pattern
+// defines.
 func Compile(pattern, template string) (*Mapping, error) {
 	pattern = strings.TrimSpace(pattern)
 	template = strings.TrimSpace(template)
@@ -36,28 +41,47 @@ func Compile(pattern, template string) (*Mapping, error) {
 	if template == "" {
 		return nil, fmt.Errorf("feed url is required")
 	}
-	// Case-insensitive and fully anchored so the pattern must describe the
-	// whole host/path. Users can opt out of case-insensitivity per-section
-	// with (?-i:...).
-	re, err := regexp.Compile("(?i)^(?:" + pattern + ")$")
+
+	// Build a case-insensitive, fully anchored regex from the pattern: literal
+	// text matches verbatim, each {name} matches one path segment. Captures
+	// keep the original case because the input is matched as typed.
+	var b strings.Builder
+	b.WriteString("(?i)^")
+	names := []string{}
+	last := 0
+	for _, m := range nameRe.FindAllStringSubmatchIndex(pattern, -1) {
+		seg := pattern[last:m[0]]
+		if strings.ContainsAny(seg, "{}") {
+			return nil, fmt.Errorf("invalid placeholder in pattern")
+		}
+		b.WriteString(regexp.QuoteMeta(seg))
+		names = append(names, pattern[m[2]:m[3]])
+		b.WriteString("([^/]+)")
+		last = m[1]
+	}
+	seg := pattern[last:]
+	if strings.ContainsAny(seg, "{}") {
+		return nil, fmt.Errorf("invalid placeholder in pattern")
+	}
+	b.WriteString(regexp.QuoteMeta(seg))
+	b.WriteString("$")
+	if len(names) == 0 {
+		return nil, fmt.Errorf("pattern must include a placeholder like {user}")
+	}
+	re, err := regexp.Compile(b.String())
 	if err != nil {
 		return nil, fmt.Errorf("invalid pattern: %v", err)
 	}
-	names := map[string]bool{}
-	for _, n := range re.SubexpNames() {
-		if n != "" {
-			names[n] = true
+	hasName := map[string]bool{}
+	for _, n := range names {
+		hasName[n] = true
+	}
+	for _, m := range nameRe.FindAllStringSubmatch(template, -1) {
+		if !hasName[m[1]] {
+			return nil, fmt.Errorf("feed url references {%s} which is not in the pattern", m[1])
 		}
 	}
-	if len(names) == 0 {
-		return nil, fmt.Errorf("pattern must include a named group like (?P<user>...)")
-	}
-	for _, match := range nameRe.FindAllStringSubmatch(template, -1) {
-		if !names[match[1]] {
-			return nil, fmt.Errorf("feed url references {%s} which is not in the pattern", match[1])
-		}
-	}
-	return &Mapping{re: re, names: names, template: template}, nil
+	return &Mapping{re: re, names: names, hasName: hasName, template: template}, nil
 }
 
 // Apply transforms rawURL into the mapped feed URL. It returns ok=false when
@@ -69,9 +93,9 @@ func (m *Mapping) Apply(rawURL string) (string, bool) {
 		return "", false
 	}
 	captures := map[string]string{}
-	for i, name := range m.re.SubexpNames() {
-		if name != "" && i < len(subs) {
-			captures[name] = subs[i]
+	for i, name := range m.names {
+		if i+1 < len(subs) {
+			captures[name] = subs[i+1]
 		}
 	}
 	return expandTemplate(m.template, captures), true
