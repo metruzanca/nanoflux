@@ -1247,6 +1247,39 @@ func TestAuthorsPageShowsUnread(t *testing.T) {
 	}
 }
 
+func TestAuthorEditDeleteFlow(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	_, _ = s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+
+	// The list row no longer carries a delete button; the edit page does.
+	list := doGet(h, "/authors", cookie).Body.String()
+	if strings.Contains(list, "/authors/"+itoa(a.ID)+"/delete") {
+		t.Fatalf("authors list should not offer row-level delete: %s", list)
+	}
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit", cookie).Body.String()
+	if !strings.Contains(edit, `form class="stack delete-form"`) ||
+		!strings.Contains(edit, `action="/authors/`+itoa(a.ID)+`/delete"`) ||
+		!strings.Contains(edit, `class="danger"`) || !strings.Contains(edit, ">delete<") {
+		t.Fatalf("edit page missing the delete form: %s", edit)
+	}
+
+	// Deleting redirects back to the authors list and removes the author (and
+	// cascades its feed).
+	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/delete", url.Values{}, cookie)
+	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/authors" {
+		t.Fatalf("delete: %d %q", rr.Code, rr.Header().Get("Location"))
+	}
+	if _, err := s.store.Authors.ByID(u.ID, a.ID); err == nil {
+		t.Fatal("author should be gone after delete")
+	}
+	if feeds, _ := s.store.Feeds.ListByAuthor(u.ID, a.ID); len(feeds) != 0 {
+		t.Fatalf("feed should cascade with author: %+v", feeds)
+	}
+}
+
 func TestGlobalAddCreatesAuthorWithFeed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
