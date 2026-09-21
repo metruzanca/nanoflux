@@ -214,10 +214,12 @@ templ feedFields(d feedsData) {
 		<fieldset>
 			<legend>collections</legend>
 			for _, c := range d.Collections {
-				if hasID(c.ID, d.Form.CollectionIDs) {
-					<label class="check"><input type="checkbox" name="collections" value={ strconv.FormatInt(c.ID, 10) } checked/> { c.Name }</label>
-				} else {
-					<label class="check"><input type="checkbox" name="collections" value={ strconv.FormatInt(c.ID, 10) }/> { c.Name }</label>
+				if !c.IsAuto {
+					if hasID(c.ID, d.Form.CollectionIDs) {
+						<label class="check"><input type="checkbox" name="collections" value={ strconv.FormatInt(c.ID, 10) } checked/> { c.Name }</label>
+					} else {
+						<label class="check"><input type="checkbox" name="collections" value={ strconv.FormatInt(c.ID, 10) }/> { c.Name }</label>
+					}
 				}
 			}
 		</fieldset>

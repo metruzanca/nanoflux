@@ -65,8 +65,18 @@ func (s *Server) opmlExport(w http.ResponseWriter, r *http.Request) {
 			ungrouped = append(ungrouped, f)
 			continue
 		}
+		// Auto collections are derived from the feed's home url and are not
+		// exported; a feed whose only memberships are auto collections is
+		// exported ungrouped.
+		manual := false
 		for _, cid := range ids {
 			byColl[cid] = append(byColl[cid], f)
+			if !collectionIsAuto(collections, cid) {
+				manual = true
+			}
+		}
+		if !manual {
+			ungrouped = append(ungrouped, f)
 		}
 	}
 
@@ -76,7 +86,7 @@ func (s *Server) opmlExport(w http.ResponseWriter, r *http.Request) {
 		doc.Body.Outlines = append(doc.Body.Outlines, feedOutline(f))
 	}
 	for _, c := range collections {
-		if len(byColl[c.ID]) == 0 {
+		if c.IsAuto || len(byColl[c.ID]) == 0 {
 			continue
 		}
 		group := opmlOutline{Type: "rss", Text: c.Name}
@@ -181,6 +191,9 @@ func (s *Server) opmlImport(w http.ResponseWriter, r *http.Request) {
 		}
 		existing[normalizeFeedKey(feedURL)] = true
 		imported++
+		if err := s.store.Collections.AssignAuto(u.ID, f.ID, homeURL, feedURL); err != nil {
+			log.Error("opml assign auto collection", "feed_id", f.ID, "err", err)
+		}
 		if e.collection != "" {
 			if cid := findCollection(collections, e.collection); cid != 0 {
 				s.store.Collections.AddFeed(u.ID, cid, f.ID)
@@ -220,4 +233,15 @@ func findCollection(cols []store.Collection, name string) int64 {
 		}
 	}
 	return 0
+}
+
+// collectionIsAuto reports whether the given collection id is an auto
+// collection in the provided list.
+func collectionIsAuto(cols []store.Collection, id int64) bool {
+	for _, c := range cols {
+		if c.ID == id {
+			return c.IsAuto
+		}
+	}
+	return false
 }

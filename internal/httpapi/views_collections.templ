@@ -40,7 +40,11 @@ templ CollectionRow(c store.Collection) {
 	<li id={ "collection-" + strconv.FormatInt(c.ID, 10) }>
 		<div class="row">
 			<a href={ "/collections/" + strconv.FormatInt(c.ID, 10) }><strong>{ c.Name }</strong></a>
-			<button class="link danger" title="delete" hx-post={ "/collections/" + strconv.FormatInt(c.ID, 10) + "/delete" } hx-target={ "#collection-" + strconv.FormatInt(c.ID, 10) } hx-swap="outerHTML" hx-confirm="delete this collection?">✕</button>
+			if c.IsAuto {
+				<span class="badge">auto</span>
+			} else {
+				<button class="link danger" title="delete" hx-post={ "/collections/" + strconv.FormatInt(c.ID, 10) + "/delete" } hx-target={ "#collection-" + strconv.FormatInt(c.ID, 10) } hx-swap="outerHTML" hx-confirm="delete this collection?">✕</button>
+			}
 		</div>
 	</li>
 }
@@ -48,19 +52,24 @@ templ CollectionRow(c store.Collection) {
 templ collectionPage(u store.User, d collectionData) {
 	<div class="row">
 		<h1>{ d.Collection.Name }</h1>
+		if d.Collection.IsAuto {
+			<span class="badge">auto</span>
+		}
 	</div>
-	<section class="card">
-		<h2>add feed</h2>
-		<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-feed" } hx-target="#collection-feeds" hx-swap="outerHTML">
-			<input type="hidden" name="view" value={ d.Scoped.View }/>
-			<select name="feed_id">
-				for _, f := range d.AllFeeds {
-					<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Title }</option>
-				}
-			</select>
-			<button type="submit">add</button>
-		</form>
-	</section>
+	if !d.Collection.IsAuto {
+		<section class="card">
+			<h2>add feed</h2>
+			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-feed" } hx-target="#collection-feeds" hx-swap="outerHTML">
+				<input type="hidden" name="view" value={ d.Scoped.View }/>
+				<select name="feed_id">
+					for _, f := range d.AllFeeds {
+						<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Title }</option>
+					}
+				</select>
+				<button type="submit">add</button>
+			</form>
+		</section>
+	}
 	<h2>feeds</h2>
 	@collectionFeeds(d)
 	<h2>items</h2>
@@ -74,7 +83,9 @@ templ collectionFeeds(d collectionData) {
 				<li>
 					<div class="row">
 						<a href={ "/feeds/" + strconv.FormatInt(f.ID, 10) }>{ f.Title }</a>
-						<button class="link danger" title="remove" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/remove-feed/" + strconv.FormatInt(f.ID, 10) } hx-target="#collection-feeds" hx-swap="outerHTML" hx-vals={ `{"view":"` + d.Scoped.View + `"}` }>✕</button>
+						if !d.Collection.IsAuto {
+							<button class="link danger" title="remove" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/remove-feed/" + strconv.FormatInt(f.ID, 10) } hx-target="#collection-feeds" hx-swap="outerHTML" hx-vals={ `{"view":"` + d.Scoped.View + `"}` }>✕</button>
+						}
 					</div>
 				</li>
 			}

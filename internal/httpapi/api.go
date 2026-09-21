@@ -223,6 +223,9 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 			log.Error("add to collection", "collection_id", req.CollectionID, "err", err)
 		}
 	}
+	if err := s.store.Collections.AssignAuto(u.ID, f.ID, res.Feed.HomeURL, req.FeedURL); err != nil {
+		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
+	}
 
 	author, _ := s.store.Authors.ByID(u.ID, authorID)
 	writeJSON(w, http.StatusOK, apiFeed{

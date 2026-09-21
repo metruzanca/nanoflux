@@ -61,23 +61,25 @@ func (q *Queries) CollectionIDsForFeed(ctx context.Context, arg CollectionIDsFor
 }
 
 const createCollection = `-- name: CreateCollection :one
-INSERT INTO collections (user_id, name)
-VALUES (?, ?)
-RETURNING id, user_id, name, created_at
+INSERT INTO collections (user_id, name, is_auto)
+VALUES (?, ?, ?)
+RETURNING id, user_id, name, is_auto, created_at
 `
 
 type CreateCollectionParams struct {
 	UserID int64  `json:"user_id"`
 	Name   string `json:"name"`
+	IsAuto int64  `json:"is_auto"`
 }
 
 func (q *Queries) CreateCollection(ctx context.Context, arg CreateCollectionParams) (Collection, error) {
-	row := q.db.QueryRowContext(ctx, createCollection, arg.UserID, arg.Name)
+	row := q.db.QueryRowContext(ctx, createCollection, arg.UserID, arg.Name, arg.IsAuto)
 	var i Collection
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.Name,
+		&i.IsAuto,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -97,8 +99,32 @@ func (q *Queries) DeleteCollection(ctx context.Context, arg DeleteCollectionPara
 	return q.db.ExecContext(ctx, deleteCollection, arg.ID, arg.UserID)
 }
 
+const getAutoCollection = `-- name: GetAutoCollection :one
+SELECT id, user_id, name, is_auto, created_at
+FROM collections
+WHERE user_id = ? AND name = ? AND is_auto = 1
+`
+
+type GetAutoCollectionParams struct {
+	UserID int64  `json:"user_id"`
+	Name   string `json:"name"`
+}
+
+func (q *Queries) GetAutoCollection(ctx context.Context, arg GetAutoCollectionParams) (Collection, error) {
+	row := q.db.QueryRowContext(ctx, getAutoCollection, arg.UserID, arg.Name)
+	var i Collection
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.IsAuto,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getCollection = `-- name: GetCollection :one
-SELECT id, user_id, name, created_at
+SELECT id, user_id, name, is_auto, created_at
 FROM collections
 WHERE id = ? AND user_id = ?
 `
@@ -115,13 +141,14 @@ func (q *Queries) GetCollection(ctx context.Context, arg GetCollectionParams) (C
 		&i.ID,
 		&i.UserID,
 		&i.Name,
+		&i.IsAuto,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listCollections = `-- name: ListCollections :many
-SELECT id, user_id, name, created_at
+SELECT id, user_id, name, is_auto, created_at
 FROM collections
 WHERE user_id = ?
 ORDER BY name
@@ -140,6 +167,7 @@ func (q *Queries) ListCollections(ctx context.Context, userID int64) ([]Collecti
 			&i.ID,
 			&i.UserID,
 			&i.Name,
+			&i.IsAuto,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
