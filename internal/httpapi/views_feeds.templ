@@ -79,7 +79,7 @@ templ FeedRow(r feedRow) {
 }
 
 templ feedPreviewFields(d feedPreviewForm) {
-	<form class="stack" hx-post="/feeds" hx-target="#feeds-list" hx-swap="beforeend" hx-on:after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+	<form class="stack" hx-post="/feeds" hx-target="#feeds-list" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
 		<label>title
 			<input name="title" type="text" value={ d.Title }/>
 		</label>
@@ -233,7 +233,7 @@ templ feedPage(u store.User, d feedPageData) {
 			{ d.Row.Title }</h1>
 			<div class="row-actions">
 				<a class="small" href={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/edit" }>edit</a>
-				<button class="link" title="refresh" hx-post={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/refresh" } hx-swap="none" hx-on:after-request="if(event.detail.successful) window.location.reload()">↻</button>
+				<button class="link" title="refresh" hx-post={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/refresh" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">↻</button>
 			</div>
 		</div>
 		<p class="item-meta">

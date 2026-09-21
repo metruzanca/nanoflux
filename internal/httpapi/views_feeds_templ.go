@@ -400,7 +400,7 @@ func feedPreviewFields(d feedPreviewForm) templ.Component {
 			templ_7745c5c3_Var20 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<form class=\"stack\" hx-post=\"/feeds\" hx-target=\"#feeds-list\" hx-swap=\"beforeend\" hx-on:after-request=\"if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}\"><label>title <input name=\"title\" type=\"text\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<form class=\"stack\" hx-post=\"/feeds\" hx-target=\"#feeds-list\" hx-swap=\"beforeend\" hx-on::after-request=\"if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}\"><label>title <input name=\"title\" type=\"text\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1122,7 +1122,7 @@ func feedPage(u store.User, d feedPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "\" hx-swap=\"none\" hx-on:after-request=\"if(event.detail.successful) window.location.reload()\">↻</button></div></div><p class=\"item-meta\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "\" hx-swap=\"none\" hx-on::after-request=\"if(event.detail.successful) window.location.reload()\">↻</button></div></div><p class=\"item-meta\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

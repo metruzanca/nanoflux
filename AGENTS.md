@@ -326,7 +326,10 @@ deferred in `views_layout.templ`). When debugging swap/mutation bugs, remember:
   feed-detail refresh button in `views_feeds.templ`) must set `hx-swap="none"`
   so the fragment is discarded; the feeds-list row version instead targets
   `#feed-{id}` with `hx-swap="outerHTML"`.
-- **`hx-on:after-request` (single colon) works** in 2.0.4 — it maps to
+- **Use `hx-on::after-request` (double colon)**, not the single-colon spelling.
+  In htmx 2.0.4 `hx-on:` maps the name to a raw DOM event, so
+  `hx-on:after-request` listens for a DOM event named `after-request` that never
+  fires and the handler silently never runs. `hx-on::after-request` maps to
   `htmx:after-request`. `event.detail.successful` is `false` on `4xx`/`5xx` (see
   the error-handling section), so `if (event.detail.successful) ...` handlers
   that close dialogs or reload leave things in place on error — by design.
