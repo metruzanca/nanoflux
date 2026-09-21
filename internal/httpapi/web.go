@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/a-h/templ"
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
@@ -823,6 +824,53 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
 	web.Render(w, r, FeedRow(feedRow{Feed: f, AuthorName: author.Name, Unread: unread, Timezone: u.Timezone}))
+}
+
+// feedOlder fetches the next page of a paginated feed ("load older items"),
+// stores its items, and re-renders the feed page's item list and the
+// load-older control. The control is the htmx target (preview-style swap);
+// the refreshed list arrives as an out-of-band swap so both update in one
+// round trip.
+func (s *Server) feedOlder(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := s.store.Feeds.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if f.NextPageURL == "" {
+		renderError(w, r, "no more items to load")
+		return
+	}
+	if s.poller == nil {
+		renderError(w, r, "could not load older items")
+		return
+	}
+	newItems, _, err := s.poller.PollOlder(r.Context(), f)
+	if err != nil {
+		log.Error("load older items", "feed_id", id, "err", err)
+		renderError(w, r, "could not load older items")
+		return
+	}
+	if newItems > 0 {
+		log.Info("loaded older items", "feed_id", id, "new_items", newItems)
+	}
+	// Re-read the feed: PollOlder advanced (or cleared) the next-page cursor.
+	f, err = s.store.Feeds.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
+	row := feedRow{Feed: f, AuthorName: author.Name, Timezone: u.Timezone}
+	scoped := s.feedScopedItems(u.ID, id, itemsView(r), u.Timezone)
+	scoped.SwapOOB = true
+	web.Render(w, r, templ.Join(feedOlderControl(row), ScopedItems(scoped)))
 }
 
 // feedToggle pauses or resumes a feed's polling and re-renders its row.

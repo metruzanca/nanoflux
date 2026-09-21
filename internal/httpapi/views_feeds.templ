@@ -245,9 +245,26 @@ templ feedPage(u store.User, d feedPageData) {
 		if d.Row.LastError != "" {
 			<div class="error" role="alert">last poll failed: { d.Row.LastError }</div>
 		}
+		if d.Row.NextPageURL != "" {
+			@feedOlderControl(d.Row)
+		}
 	</section>
 	<h2>items</h2>
 	@ScopedItems(d.Scoped)
+}
+
+// feedOlderControl is the "load older items" control for a paginated feed. It
+// is the htmx swap target for POST /feeds/{id}/older: the response replaces it
+// (button advances to the next page, or becomes a "history complete" note once
+// pages run out) and out-of-band swaps the item list.
+templ feedOlderControl(f feedRow) {
+	<div id="feed-older">
+		if f.NextPageURL != "" {
+			<button class="link" hx-post={ "/feeds/" + strconv.FormatInt(f.ID, 10) + "/older" } hx-target="#feed-older" hx-swap="outerHTML">load older items</button>
+		} else {
+			<span class="muted small">full history loaded</span>
+		}
+	</div>
 }
 
 // toggleTitle returns the toggle button tooltip for a feed's enabled state.

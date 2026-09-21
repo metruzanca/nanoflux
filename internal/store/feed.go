@@ -21,6 +21,7 @@ type Feed struct {
 	LastModified    string
 	LastPolledAt    string
 	LastError       string
+	NextPageURL     string
 	PollIntervalSec int
 	Enabled         bool
 	CreatedAt       string
@@ -194,6 +195,17 @@ func (s *FeedStore) SetPollMeta(id int64, etag, lastModified, lastPolledAt, last
 	})
 }
 
+// SetNextPageURL records the feed's next pagination page, or "" when the feed
+// is not paginated / its history is exhausted. The "load older items" feature
+// reads it to fetch older entries on demand. Not user-scoped: the poller owns
+// writing it, the poller and the feed page read it.
+func (s *FeedStore) SetNextPageURL(id int64, url string) error {
+	return s.q.SetFeedNextPageURL(context.Background(), sqlcgen.SetFeedNextPageURLParams{
+		NextPageUrl: url,
+		ID:          id,
+	})
+}
+
 // SetEnabled pauses or resumes polling for a feed. Disabled feeds keep their
 // items but are skipped by the poller.
 func (s *FeedStore) SetEnabled(userID, id int64, enabled bool) error {
@@ -238,7 +250,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

@@ -2,14 +2,243 @@ package poller
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
+
+// paginatedServer serves `total` Atom/RSS pages via rel="next" links keyed by
+// a ?page= query param. Each page carries 2 items with page-unique GUIDs;
+// pages beyond the last are empty (as real feeds past their end are), which is
+// what lets a ?page=N walk terminate.
+func paginatedServer(total int) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := 1
+		if p := r.URL.Query().Get("page"); p != "" {
+			page, _ = strconv.Atoi(p)
+		}
+		if page > total {
+			fmt.Fprintf(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>B</title></channel></rss>`)
+			return
+		}
+		var items strings.Builder
+		for i := 1; i <= 2; i++ {
+			guid := page*100 + i
+			items.WriteString(fmt.Sprintf(`<item><guid>%d</guid><title>p%d-%d</title><link>https://b.dev/%d</link></item>`, guid, page, i, guid))
+		}
+		next := ""
+		if page < total {
+			next = fmt.Sprintf(`<atom:link rel="next" href="?page=%d"/>`, page+1)
+		}
+		fmt.Fprintf(w, `<?xml version="1.0"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>B</title>%s%s</channel></rss>`, next, items.String())
+	}))
+}
+
+func TestPollOneRecordsNextPageURL(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+
+	srv := paginatedServer(3)
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
+	p := New(st, time.Minute, 1)
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	want := srv.URL + "/feed?page=2"
+	if got.NextPageURL != want {
+		t.Fatalf("NextPageURL = %q, want %q", got.NextPageURL, want)
+	}
+}
+
+func TestPollOneKeepsCursorOnRoutinePoll(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+
+	srv := paginatedServer(3)
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
+	p := New(st, time.Minute, 1)
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+
+	// The user's "load older items" walk advanced the cursor to page 3.
+	if err := st.Feeds.SetNextPageURL(f.ID, srv.URL+"/feed?page=3"); err != nil {
+		t.Fatal(err)
+	}
+	// A routine poll must not clobber it back to page 2.
+	f, _ = st.Feeds.ByID(u.ID, f.ID)
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("PollOne again: %v", err)
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.NextPageURL != srv.URL+"/feed?page=3" {
+		t.Fatalf("NextPageURL = %q, want %q preserved", got.NextPageURL, srv.URL+"/feed?page=3")
+	}
+}
+
+func TestPollOlderImportsAndExhausts(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+
+	srv := paginatedServer(2)
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
+	p := New(st, time.Minute, 1)
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	f, _ = st.Feeds.ByID(u.ID, f.ID) // now carries the page-2 cursor
+
+	n, exhausted, err := p.PollOlder(context.Background(), f)
+	if err != nil {
+		t.Fatalf("PollOlder: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("new items = %d, want 2", n)
+	}
+	if !exhausted {
+		t.Fatal("expected exhausted after last page")
+	}
+	items, _ := st.Items.List(u.ID, store.ItemFilter{})
+	if len(items) != 4 {
+		t.Fatalf("total items = %d, want 4", len(items))
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.NextPageURL != "" {
+		t.Fatalf("NextPageURL = %q, want cleared", got.NextPageURL)
+	}
+}
+
+func TestPollOlderRespectsPageCap(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+
+	srv := paginatedServer(7)
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
+	if err := st.Feeds.SetNextPageURL(f.ID, srv.URL+"/feed?page=2"); err != nil {
+		t.Fatal(err)
+	}
+	f, _ = st.Feeds.ByID(u.ID, f.ID)
+
+	p := New(st, time.Minute, 1)
+	n, exhausted, err := p.PollOlder(context.Background(), f)
+	if err != nil {
+		t.Fatalf("PollOlder: %v", err)
+	}
+	if n != maxBackfillPages*2 {
+		t.Fatalf("new items = %d, want %d (5 pages x 2)", n, maxBackfillPages*2)
+	}
+	if exhausted {
+		t.Fatal("should not be exhausted yet: cap hit with more pages left")
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	want := srv.URL + "/feed?page=7"
+	if got.NextPageURL != want {
+		t.Fatalf("NextPageURL = %q, want %q", got.NextPageURL, want)
+	}
+}
+
+func TestPollOlderStopsOnEmptyPage(t *testing.T) {
+	// A feed whose ?page=2 (and beyond) carries no items: the pagination is
+	// detected through the URL's own page param, and the walk must stop and
+	// clear the cursor instead of incrementing forever.
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") != "" {
+			fmt.Fprint(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>B</title></channel></rss>`)
+			return
+		}
+		fmt.Fprint(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>B</title><item><guid>1</guid><title>one</title><link>https://b.dev/1</link></item></channel></rss>`)
+	}))
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed?page=1", "", "", 900)
+	p := New(st, time.Minute, 1)
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	f, _ = st.Feeds.ByID(u.ID, f.ID)
+	if f.NextPageURL != srv.URL+"/feed?page=2" {
+		t.Fatalf("NextPageURL = %q, want ?page=2", f.NextPageURL)
+	}
+
+	n, exhausted, err := p.PollOlder(context.Background(), f)
+	if err != nil {
+		t.Fatalf("PollOlder: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("new items = %d, want 0", n)
+	}
+	if !exhausted {
+		t.Fatal("expected exhausted when next page is empty")
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.NextPageURL != "" {
+		t.Fatalf("NextPageURL = %q, want cleared", got.NextPageURL)
+	}
+}
 
 func TestPollOne(t *testing.T) {
 	sqldb, err := db.Open(":memory:")

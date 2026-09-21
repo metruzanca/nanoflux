@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 )
 
@@ -250,5 +251,101 @@ func TestMediaThumbnailDirectChild(t *testing.T) {
 	}
 	if got := res.Items[0].ImageURL; got != "https://example.com/ep1.jpg" {
 		t.Errorf("image = %q, want direct media:thumbnail", got)
+	}
+}
+
+func TestNextPageRelNext(t *testing.T) {
+	// resolve builds the expected next URL by resolving href against base (the
+	// URL that was actually fetched, which is the test server's URL).
+	resolve := func(base, href string) string {
+		b, _ := url.Parse(base)
+		r, _ := url.Parse(href)
+		return b.ResolveReference(r).String()
+	}
+	tests := []struct {
+		name string
+		body string
+		// wantHref is resolved against the server URL when set (relative case);
+		// wantAbs is used verbatim otherwise.
+		wantHref string
+		wantAbs  string
+	}{
+		{
+			name:    "atom absolute",
+			body:    `<feed xmlns="http://www.w3.org/2005/Atom"><title>X</title><link rel="next" href="https://x.dev/feed?page=2"/><entry><id>1</id><title>a</title></entry></feed>`,
+			wantAbs: "https://x.dev/feed?page=2",
+		},
+		{
+			name:     "atom relative query",
+			body:     `<feed xmlns="http://www.w3.org/2005/Atom"><title>X</title><link rel="next" href="?page=2"/><entry><id>1</id><title>a</title></entry></feed>`,
+			wantHref: "?page=2",
+		},
+		{
+			name:     "atom relative path",
+			body:     `<feed xmlns="http://www.w3.org/2005/Atom"><title>X</title><link rel="next" href="/feed/page/2"/><entry><id>1</id><title>a</title></entry></feed>`,
+			wantHref: "/feed/page/2",
+		},
+		{
+			name:     "rss atom namespace",
+			body:     `<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>X</title><link>https://x.dev/</link><atom:link rel="next" href="?paged=2"/><item><guid>1</guid><title>a</title></item></channel></rss>`,
+			wantHref: "?paged=2",
+		},
+		{
+			name:    "href before rel",
+			body:    `<feed xmlns="http://www.w3.org/2005/Atom"><title>X</title><link href="https://x.dev/feed?page=3" rel="next" type="application/atom+xml"/><entry><id>1</id><title>a</title></entry></feed>`,
+			wantAbs: "https://x.dev/feed?page=3",
+		},
+		{
+			name:    "no next link",
+			body:    rssBody,
+			wantAbs: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+			want := tt.wantAbs
+			if tt.wantHref != "" {
+				want = resolve(srv.URL, tt.wantHref)
+			}
+			res, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+			if err != nil {
+				t.Fatalf("Fetch: %v", err)
+			}
+			if res.NextPageURL != want {
+				t.Errorf("NextPageURL = %q, want %q", res.NextPageURL, want)
+			}
+		})
+	}
+}
+
+func TestNextPageParamFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(rssBody))
+	}))
+	defer srv.Close()
+
+	tests := []struct {
+		feedURL string
+		want    string
+	}{
+		{srv.URL + "/feed?page=1", srv.URL + "/feed?page=2"},
+		{srv.URL + "/feed?paged=1", srv.URL + "/feed?paged=2"},
+		{srv.URL + "/feed?page=1&per=50", srv.URL + "/feed?page=2&per=50"},
+		{srv.URL + "/feed", ""},
+		{srv.URL + "/feed?offset=10", ""},
+		{srv.URL + "/feed?page=x", ""},
+	}
+	for _, tt := range tests {
+		res, err := Fetch(context.Background(), tt.feedURL, srv.Client(), "", "")
+		if err != nil {
+			t.Fatalf("Fetch(%q): %v", tt.feedURL, err)
+		}
+		if res.NextPageURL != tt.want {
+			t.Errorf("Fetch(%q) NextPageURL = %q, want %q", tt.feedURL, res.NextPageURL, tt.want)
+		}
 	}
 }

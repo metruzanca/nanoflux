@@ -56,6 +56,7 @@ func toFeed(f sqlcgen.Feed) Feed {
 		LastModified:    f.LastModified.String,
 		LastPolledAt:    f.LastPolledAt.String,
 		LastError:       f.LastError.String,
+		NextPageURL:     f.NextPageUrl,
 		PollIntervalSec: int(f.PollIntervalSec),
 		Enabled:         f.Enabled,
 		CreatedAt:       f.CreatedAt,
@@ -152,7 +153,7 @@ func toUrlMapping(id, userID int64, pattern, template, createdAt string) UrlMapp
 
 func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 	homeURL, description, etag, lastModified, lastPolledAt, lastError sql.NullString,
-	pollIntervalSec int64, enabled bool, createdAt string,
+	nextPageURL string, pollIntervalSec int64, enabled bool, createdAt string,
 ) sqlcgen.Feed {
 	return sqlcgen.Feed{
 		ID:              id,
@@ -166,6 +167,7 @@ func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 		LastModified:    lastModified,
 		LastPolledAt:    lastPolledAt,
 		LastError:       lastError,
+		NextPageUrl:     nextPageURL,
 		PollIntervalSec: pollIntervalSec,
 		Enabled:         enabled,
 		CreatedAt:       createdAt,
@@ -174,7 +176,7 @@ func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 
 func toFeedWithUnread(f sqlcgen.ListFeedsWithUnreadRow) FeedWithUnread {
 	return FeedWithUnread{
-		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
 		AuthorName: f.AuthorName.String,
 		Unread:     int(f.Unread),
 	}
@@ -182,7 +184,7 @@ func toFeedWithUnread(f sqlcgen.ListFeedsWithUnreadRow) FeedWithUnread {
 
 func toFeedByAuthorWithUnread(f sqlcgen.ListFeedsByAuthorWithUnreadRow) FeedWithUnread {
 	return FeedWithUnread{
-		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
 		AuthorName: f.AuthorName.String,
 		Unread:     int(f.Unread),
 	}

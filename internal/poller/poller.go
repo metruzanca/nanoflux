@@ -5,6 +5,7 @@ package poller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -113,8 +114,80 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 		return 0, err
 	}
 
-	newItems := 0
 	rules, _ := p.store.Filters.ListByFeed(f.UserID, f.ID)
+	newItems, err := p.ingest(f, res, rules, fetched)
+	if err != nil {
+		return newItems, err
+	}
+	if err := p.store.Feeds.SetPollMeta(f.ID, res.ETag, res.LastModified, fetched, ""); err != nil {
+		return newItems, err
+	}
+	// Record whether the feed advertises a next page so the feed page can offer
+	// "load older items". Detection is cheap (parsing only) — no extra fetches.
+	// This only happens on the first poll (a newly added feed): routine polls
+	// leave the cursor untouched so they can't clobber a user's in-progress
+	// "load older items" walk by resetting it to page two.
+	if f.LastPolledAt == "" {
+		if err := p.store.Feeds.SetNextPageURL(f.ID, res.NextPageURL); err != nil {
+			return newItems, err
+		}
+	}
+	return newItems, nil
+}
+
+// maxBackfillPages caps how many pages a single "load older items" click
+// fetches, so a feed with an unbounded history can't stall the request. The
+// button stays available for further clicks.
+const maxBackfillPages = 5
+
+// PollOlder fetches the feed's next page(s) — its stored next-page URL — and
+// stores the items, advancing the cursor. It returns the number of new items
+// and whether the feed's history is now exhausted (the "load older items"
+// button can disappear). On error the cursor is left untouched so the user can
+// retry.
+func (p *Poller) PollOlder(ctx context.Context, f store.Feed) (newItems int, exhausted bool, err error) {
+	url := f.NextPageURL
+	if url == "" {
+		return 0, true, nil
+	}
+	rules, _ := p.store.Filters.ListByFeed(f.UserID, f.ID)
+	seen := map[string]bool{url: true}
+	for page := 0; page < maxBackfillPages; page++ {
+		res, err := feedparse.Fetch(ctx, url, p.client, "", "")
+		if err != nil {
+			return newItems, false, fmt.Errorf("fetch %s: %w", url, err)
+		}
+		inserted, err := p.ingest(f, res, rules, db.Now())
+		if err != nil {
+			return newItems, false, err
+		}
+		newItems += inserted
+		next := res.NextPageURL
+		if next == "" {
+			// No more pages advertised.
+			p.store.Feeds.SetNextPageURL(f.ID, "")
+			return newItems, true, nil
+		}
+		if inserted == 0 || seen[next] {
+			// A page with zero new items means every older page is already
+			// stored (feeds are newest-first), and a repeated URL is a loop.
+			// Either way the history is exhausted.
+			p.store.Feeds.SetNextPageURL(f.ID, "")
+			return newItems, true, nil
+		}
+		seen[next] = true
+		url = next
+	}
+	// Hit the per-click cap: keep the cursor for another click.
+	p.store.Feeds.SetNextPageURL(f.ID, url)
+	return newItems, false, nil
+}
+
+// ingest stores a fetched page's items for a feed, applying the feed's filter
+// rules and copying enclosures for newly inserted items. It returns how many
+// items were new.
+func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter, fetched string) (int, error) {
+	newItems := 0
 	for _, it := range res.Items {
 		action := ""
 		for _, rule := range rules {
@@ -151,9 +224,6 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 				}
 			}
 		}
-	}
-	if err := p.store.Feeds.SetPollMeta(f.ID, res.ETag, res.LastModified, fetched, ""); err != nil {
-		return newItems, err
 	}
 	return newItems, nil
 }
