@@ -42,6 +42,7 @@ func (f feedPreviewForm) newAuthor() authorPreviewForm {
 // feedChoose is the dropdown shown when a page exposes multiple feeds.
 type feedChoose struct {
 	URL        string
+	Target     string // htmx preview container ("#feed-preview" or "#author-feed-preview")
 	Candidates []discover.Candidate
 }
 
@@ -120,6 +121,13 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 			fixedAuthor = &a
 		}
 	}
+	// The preview container that rendered the fragment. The author-scoped
+	// dialog uses a different id than the global one, so every fragment that
+	// swaps into it (chooser, scrape builder opt-in) must target it.
+	previewTarget := "#feed-preview"
+	if r.FormValue("scoped") == "1" {
+		previewTarget = "#author-feed-preview"
+	}
 
 	feedURL := pageURL
 	if mapped, ok := s.mappedFeedURL(u.ID, pageURL); ok {
@@ -152,11 +160,7 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(candidates) == 0 {
-		target := "#feed-preview"
-		if r.FormValue("scoped") == "1" {
-			target = "#author-feed-preview"
-		}
-		web.Render(w, r, noFeedFound(noFeedFoundData{URL: pageURL, Target: target}))
+		web.Render(w, r, noFeedFound(noFeedFoundData{URL: pageURL, Target: previewTarget}))
 		return
 	}
 
@@ -174,7 +178,7 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	web.Render(w, r, feedChooser(feedChoose{URL: pageURL, Candidates: candidates}))
+	web.Render(w, r, feedChooser(feedChoose{URL: pageURL, Target: previewTarget, Candidates: candidates}))
 }
 
 // renderFeedPreviewForm renders the combined add form for one discovered feed.

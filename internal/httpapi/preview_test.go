@@ -132,6 +132,49 @@ func TestFeedPreviewMultiple(t *testing.T) {
 	}
 }
 
+func TestFeedPreviewMultipleScoped(t *testing.T) {
+	// The author-scoped dialog's preview container is #author-feed-preview, so
+	// the chooser must target it (and the chosen feed must render the form).
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	feedSrv := feedPreviewServer(t)
+	defer feedSrv.Close()
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(fmt.Sprintf(`<html><head><title>Both</title>
+		  <link rel="alternate" type="application/rss+xml" href="%s/rss">
+		  <link rel="alternate" type="application/atom+xml" href="%s/atom"></head></html>`, feedSrv.URL, feedSrv.URL)))
+	}))
+	defer page.Close()
+
+	// Step 1: the chooser targets the scoped preview container.
+	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url": {page.URL}, "author_id": {itoa(a.ID)}, "scoped": {"1"},
+	}, cookie)
+	body := rr.Body.String()
+	if !strings.Contains(body, "pick one") || !strings.Contains(body, `hx-target="#author-feed-preview"`) {
+		t.Fatalf("scoped choose fragment: %s", body)
+	}
+	if strings.Contains(body, `hx-target="#feed-preview"`) {
+		t.Fatalf("scoped chooser must not target the global container: %s", body)
+	}
+
+	// Step 2: picking a feed renders the author-scoped add form with submit.
+	rr = doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url": {page.URL}, "author_id": {itoa(a.ID)}, "scoped": {"1"}, "feed_url": {feedSrv.URL + "/atom"},
+	}, cookie)
+	body = rr.Body.String()
+	if !strings.Contains(body, feedSrv.URL+"/atom") || !strings.Contains(body, "<button type=\"submit\">add</button>") {
+		t.Fatalf("scoped chosen preview: %s", body)
+	}
+	if !strings.Contains(body, `hx-post="/authors/`+itoa(a.ID)+`/feeds"`) {
+		t.Fatalf("scoped form should submit to the author feeds endpoint: %s", body)
+	}
+}
+
 func TestFeedPreviewPreselectsAuthor(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
