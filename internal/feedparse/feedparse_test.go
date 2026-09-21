@@ -289,6 +289,41 @@ func TestMediaThumbnailDirectChild(t *testing.T) {
 	}
 }
 
+func TestBodyImageBecomesThumbnail(t *testing.T) {
+	// Blogger-style: a tiny media:thumbnail plus the real images in the body.
+	// The first body <img> (higher resolution) should win as the thumbnail.
+	summary := `&lt;p&gt;&lt;/p&gt;&lt;div class="separator"&gt;&lt;a href="https://p.dev/full/1.jpg"&gt;&lt;img src="https://p.dev/320/1.jpg" width="320"/&gt;&lt;/a&gt;&lt;/div&gt;&lt;div&gt;&lt;a href="https://p.dev/full/2.jpg"&gt;&lt;img src="https://p.dev/320/2.jpg" width="320"/&gt;&lt;/a&gt;&lt;/div&gt;`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+<channel>
+  <title>Photos</title>
+  <link>https://p.dev/</link>
+  <description>shots</description>
+  <item>
+    <guid>shot1</guid>
+    <title>7946 to 7950</title>
+    <link>https://p.dev/post</link>
+    <description>` + summary + `</description>
+    <media:thumbnail url="https://p.dev/s72-c/1.jpg"/>
+  </item>
+</channel>
+</rss>`))
+	}))
+	defer srv.Close()
+
+	res, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(res.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(res.Items))
+	}
+	if got := res.Items[0].ImageURL; got != "https://p.dev/320/1.jpg" {
+		t.Errorf("image = %q, want the first body <img> over the tiny media:thumbnail", got)
+	}
+}
+
 func TestNextPageRelNext(t *testing.T) {
 	// resolve builds the expected next URL by resolving href against base (the
 	// URL that was actually fetched, which is the test server's URL).
