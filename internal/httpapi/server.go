@@ -118,6 +118,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /settings/avatar", s.auth.Require(http.HandlerFunc(s.settingsAvatar)))
 	mux.Handle("POST /settings/timezone", s.auth.Require(http.HandlerFunc(s.settingsTimezone)))
 	mux.Handle("POST /settings/theme", s.auth.Require(http.HandlerFunc(s.settingsTheme)))
+	mux.Handle("POST /settings/accent", s.auth.Require(http.HandlerFunc(s.settingsAccent)))
 	mux.Handle("GET /settings/export.opml", s.auth.Require(http.HandlerFunc(s.opmlExport)))
 	mux.Handle("POST /settings/opml", s.auth.Require(http.HandlerFunc(s.opmlImport)))
 	mux.Handle("GET /avatar", s.auth.Require(http.HandlerFunc(s.avatarImage)))

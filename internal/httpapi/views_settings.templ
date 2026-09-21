@@ -12,6 +12,7 @@ templ settingsPage(u store.User, d settingsData) {
 	@settingsAvatar(d.settingsAvatarData)
 	@settingsTimezone(d.Timezone)
 	@settingsTheme(d.Theme)
+	@settingsAccent(d.Accent)
 	@settingsOpml(d.Opml)
 	<section class="card">
 		<h2>custom source icons</h2>
@@ -86,6 +87,27 @@ templ settingsTheme(d settingsThemeData) {
 					<input type="radio" name="theme" value="system" checked={ d.Theme == "system" }/> system
 				</label>
 			</div>
+			<button type="submit">save</button>
+		</form>
+	</section>
+}
+
+templ settingsAccent(d settingsAccentData) {
+	<section class="card" id="settings-accent-card">
+		<h2>accent color</h2>
+		<p class="muted small">Used across the app for links, buttons, and highlights. Presets apply immediately; the picker needs save.</p>
+		<form class="stack" hx-post="/settings/accent" hx-target="#settings-accent-card" hx-swap="outerHTML">
+			<div class="accent-swatches" role="list" aria-label="preset accent colors">
+				for _, c := range accentPresets {
+					<button type="button" class="accent-swatch" data-accent-preset={ c } style={ "background: " + c } title={ c } aria-label={ "use accent " + c }></button>
+				}
+			</div>
+			<label>custom color
+				<input type="color" name="accent" value={ d.Accent }/>
+			</label>
+			if d.Error != "" {
+				<div class="error" role="alert">{ d.Error }</div>
+			}
 			<button type="submit">save</button>
 		</form>
 	</section>

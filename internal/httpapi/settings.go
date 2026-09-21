@@ -23,10 +23,30 @@ import (
 const maxIconBytes = 1 << 20
 const maxAvatarBytes = 5 << 20
 
+// defaultAccent matches the built-in --accent in internal/web/static/app.css.
+const defaultAccent = "#5b8cff"
+
+// accentRe validates a normalized lowercase "#rrggbb" hex color.
+var accentRe = regexp.MustCompile(`^#[0-9a-f]{6}$`)
+
+// accentPresets are quick choices shown as swatches in the accent color card.
+// The first entry matches the built-in default.
+var accentPresets = []string{
+	"#5b8cff",
+	"#3ddc84",
+	"#9b6bff",
+	"#ff9f43",
+	"#ff6b9d",
+	"#ff6b6b",
+	"#2dd4bf",
+	"#f5c542",
+}
+
 type settingsData struct {
 	settingsAvatarData
 	Timezone settingsTimezoneData
 	Theme    settingsThemeData
+	Accent   settingsAccentData
 	Opml     settingsOpmlData
 	Icons    []settingsIconRow
 }
@@ -45,6 +65,11 @@ type settingsThemeData struct {
 	Theme string
 }
 
+type settingsAccentData struct {
+	Accent string
+	Error  string
+}
+
 type settingsIconRow struct {
 	store.SourceIcon
 	Flash    string
@@ -57,6 +82,7 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		settingsAvatarData: settingsAvatarData{HasAvatar: u.HasAvatar},
 		Timezone:           settingsTimezoneData{Timezone: u.Timezone},
 		Theme:              settingsThemeData{Theme: u.Theme},
+		Accent:             settingsAccentData{Accent: u.AccentColor},
 		Icons:              s.settingsIconRows(u.ID, u.Timezone),
 	})))
 }
@@ -82,6 +108,27 @@ func (s *Server) settingsTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	web.Render(w, r, settingsTheme(settingsThemeData{Theme: theme}))
+}
+
+// settingsAccent stores the user's accent color as a "#rrggbb" hex value.
+func (s *Server) settingsAccent(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	accent := strings.ToLower(strings.TrimSpace(r.FormValue("accent")))
+	if accent == "" {
+		accent = defaultAccent
+	}
+	if !accentRe.MatchString(accent) {
+		w.WriteHeader(http.StatusBadRequest)
+		web.Render(w, r, settingsAccent(settingsAccentData{Accent: u.AccentColor, Error: "enter a hex color like #5b8cff"}))
+		return
+	}
+	if err := s.store.Users.SetAccentColor(u.ID, accent); err != nil {
+		log.Error("set accent color", "err", err)
+		w.WriteHeader(http.StatusBadRequest)
+		web.Render(w, r, settingsAccent(settingsAccentData{Accent: u.AccentColor, Error: "could not save accent color"}))
+		return
+	}
+	web.Render(w, r, settingsAccent(settingsAccentData{Accent: accent}))
 }
 
 // settingsTimezone stores the user's IANA timezone for relative timestamps.

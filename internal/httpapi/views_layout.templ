@@ -76,10 +76,15 @@ templ topbar(u store.User) {
 
 // basePage renders a full HTML document: head, topbar, and the page content.
 // The data-theme attribute on <html> selects the CSS variable set in app.css;
-// "system" is resolved client-side via prefers-color-scheme.
+// "system" is resolved client-side via prefers-color-scheme. A per-user accent
+// color (stored as "#rrggbb") is applied inline as --accent so it overrides
+// both theme palettes; when unset the stylesheet's default is used.
 templ basePage(title string, u store.User, content templ.Component) {
 	<!DOCTYPE html>
-	<html lang="en" data-theme={ u.Theme }>
+	<html lang="en" data-theme={ u.Theme }
+		if u.AccentColor != "" {
+			style={ "--accent: " + u.AccentColor }
+		}>
 		<head>
 			@head(title)
 		</head>

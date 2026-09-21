@@ -26,6 +26,27 @@ document.body.addEventListener('htmx:afterRequest', function (e) {
     var checked = document.querySelector('#settings-theme-card input[name="theme"]:checked');
     if (checked) applyTheme(checked.value);
   }
+  if (e.detail.path && e.detail.path.indexOf('/settings/accent') !== -1) {
+    var input = document.querySelector('#settings-accent-card input[name="accent"]');
+    if (input && input.value) applyAccent(input.value);
+  }
+});
+
+// Accent color. The server renders --accent inline on <html>; this keeps it
+// in sync when the setting changes via htmx without a full page load.
+function applyAccent(color) {
+  document.documentElement.style.setProperty('--accent', color);
+}
+document.addEventListener('click', function (e) {
+  var swatch = e.target.closest('.accent-swatch');
+  if (!swatch) return;
+  var card = document.getElementById('settings-accent-card');
+  if (!card) return;
+  var input = card.querySelector('input[name="accent"]');
+  var form = card.querySelector('form');
+  if (!input || !form) return;
+  input.value = swatch.dataset.accentPreset || '';
+  form.requestSubmit();
 });
 
 // Item modal.

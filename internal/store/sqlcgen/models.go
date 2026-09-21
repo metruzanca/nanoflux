@@ -125,5 +125,6 @@ type User struct {
 	AvatarUrl         sql.NullString `json:"avatar_url"`
 	Timezone          sql.NullString `json:"timezone"`
 	Theme             string         `json:"theme"`
+	AccentColor       string         `json:"accent_color"`
 	CreatedAt         string         `json:"created_at"`
 }

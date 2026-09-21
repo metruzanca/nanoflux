@@ -21,6 +21,7 @@ func TestSettingsPage(t *testing.T) {
 		`hx-post="/settings/icons"`,
 		`hx-post="/settings/timezone"`,
 		`hx-post="/settings/theme"`,
+		`hx-post="/settings/accent"`,
 		`hx-post="/settings/opml"`,
 		`/settings/export.opml`,
 		`name="domain"`,
@@ -200,6 +201,55 @@ func TestSettingsTheme(t *testing.T) {
 	after, _ = s.store.Users.ByID(u.ID)
 	if after.Theme != "system" {
 		t.Fatalf("theme not persisted: %q", after.Theme)
+	}
+}
+
+func TestSettingsAccent(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// Default accent is rendered inline on <html>.
+	body := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `style="--accent: #5b8cff;"`) {
+		t.Fatalf("home should render the default accent: %s", body)
+	}
+
+	// Set a custom accent.
+	rr := doForm(h, "POST", "/settings/accent", url.Values{"accent": {"#ff0000"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set accent: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ := s.store.Users.ByID(u.ID)
+	if after.AccentColor != "#ff0000" {
+		t.Fatalf("accent not persisted: %q", after.AccentColor)
+	}
+	body = doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `style="--accent: #ff0000;"`) {
+		t.Fatalf("home should render the custom accent: %s", body)
+	}
+
+	// Invalid value -> 400, nothing saved.
+	rr = doForm(h, "POST", "/settings/accent", url.Values{"accent": {"notacolor"}}, cookie)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid accent: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `role="alert"`) {
+		t.Fatalf("invalid accent should render an error: %s", rr.Body.String())
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.AccentColor != "#ff0000" {
+		t.Fatalf("invalid accent should not overwrite: %q", after.AccentColor)
+	}
+
+	// Empty resets to the default.
+	rr = doForm(h, "POST", "/settings/accent", url.Values{"accent": {""}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("reset accent: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.AccentColor != "#5b8cff" {
+		t.Fatalf("accent should reset to default: %q", after.AccentColor)
 	}
 }
 

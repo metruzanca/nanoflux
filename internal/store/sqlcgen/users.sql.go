@@ -24,7 +24,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
-RETURNING id, username, password_hash, avatar_key, timezone, theme, created_at
+RETURNING id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
 `
 
 type CreateUserParams struct {
@@ -39,6 +39,7 @@ type CreateUserRow struct {
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
+	AccentColor  string         `json:"accent_color"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -52,6 +53,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.AvatarKey,
 		&i.Timezone,
 		&i.Theme,
+		&i.AccentColor,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -70,7 +72,7 @@ func (q *Queries) GetUserAvatarKey(ctx context.Context, id int64) (sql.NullStrin
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, avatar_key, timezone, theme, created_at
+SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 WHERE id = ?
 `
@@ -82,6 +84,7 @@ type GetUserByIDRow struct {
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
+	AccentColor  string         `json:"accent_color"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -95,13 +98,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, er
 		&i.AvatarKey,
 		&i.Timezone,
 		&i.Theme,
+		&i.AccentColor,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, avatar_key, timezone, theme, created_at
+SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 WHERE username = ?
 `
@@ -113,6 +117,7 @@ type GetUserByUsernameRow struct {
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
+	AccentColor  string         `json:"accent_color"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -126,13 +131,14 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 		&i.AvatarKey,
 		&i.Timezone,
 		&i.Theme,
+		&i.AccentColor,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, avatar_key, timezone, theme, created_at
+SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 ORDER BY username
 `
@@ -144,6 +150,7 @@ type ListUsersRow struct {
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
+	AccentColor  string         `json:"accent_color"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -163,6 +170,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.AvatarKey,
 			&i.Timezone,
 			&i.Theme,
+			&i.AccentColor,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -176,6 +184,21 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const setUserAccentColor = `-- name: SetUserAccentColor :exec
+UPDATE users SET accent_color = ?
+WHERE id = ?
+`
+
+type SetUserAccentColorParams struct {
+	AccentColor string `json:"accent_color"`
+	ID          int64  `json:"id"`
+}
+
+func (q *Queries) SetUserAccentColor(ctx context.Context, arg SetUserAccentColorParams) error {
+	_, err := q.db.ExecContext(ctx, setUserAccentColor, arg.AccentColor, arg.ID)
+	return err
 }
 
 const setUserAvatarKey = `-- name: SetUserAvatarKey :exec

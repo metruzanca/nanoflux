@@ -1,20 +1,20 @@
 -- name: CreateUser :one
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
-RETURNING id, username, password_hash, avatar_key, timezone, theme, created_at;
+RETURNING id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at;
 
 -- name: GetUserByID :one
-SELECT id, username, password_hash, avatar_key, timezone, theme, created_at
+SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 WHERE id = ?;
 
 -- name: GetUserByUsername :one
-SELECT id, username, password_hash, avatar_key, timezone, theme, created_at
+SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 WHERE username = ?;
 
 -- name: ListUsers :many
-SELECT id, username, password_hash, avatar_key, timezone, theme, created_at
+SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 ORDER BY username;
 
@@ -35,4 +35,8 @@ WHERE id = ?;
 
 -- name: SetUserTheme :exec
 UPDATE users SET theme = ?
+WHERE id = ?;
+
+-- name: SetUserAccentColor :exec
+UPDATE users SET accent_color = ?
 WHERE id = ?;

@@ -11,6 +11,7 @@ CREATE TABLE users (
     avatar_url    TEXT,
     timezone      TEXT,
     theme         TEXT NOT NULL DEFAULT 'dark',
+    accent_color  TEXT NOT NULL DEFAULT '#5b8cff',
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
