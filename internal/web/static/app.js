@@ -129,43 +129,63 @@ function markRowRead(id) {
   }
 }
 
-// Item menu (the "⋯" button on the item modal): opens a small dropdown whose
-// "add to list" entry shows the list picker dialog.
+// Item "⋯" menu on cards (list/grid) and in the item modal. Each menu is
+// scoped per item via data-item-id, so many cards can each have one; the
+// "add to list" entry fetches the shared #item-lists-dialog picker.
+function openItemMenus() {
+  return Array.prototype.slice.call(document.querySelectorAll('.item-menu .menu-pop'));
+}
+function closeItemMenus() {
+  openItemMenus().forEach(function (menu) {
+    menu.hidden = true;
+    var ctl = menu.closest('.item-menu');
+    if (!ctl) return;
+    var btn = ctl.querySelector('.menu-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+    var li = ctl.closest('li');
+    if (li) li.classList.remove('menu-open');
+  });
+}
 function toggleItemMenu(e) {
   e.stopPropagation();
-  var menu = document.getElementById('item-menu-pop');
-  var btn = document.getElementById('item-menu-btn');
-  if (!menu) return;
-  var open = menu.hidden;
-  menu.hidden = !open;
-  if (btn) btn.setAttribute('aria-expanded', String(open));
+  var ctl = e.currentTarget.closest('.item-menu');
+  if (!ctl) return;
+  closeItemMenus();
+  var menu = ctl.querySelector('.menu-pop');
+  var open = !menu.hidden;
+  menu.hidden = open;
+  e.currentTarget.setAttribute('aria-expanded', String(!open));
+  // Let the dropdown escape the row's overflow:hidden (the swipe container)
+  // while it's open.
+  var li = ctl.closest('li');
+  if (li) li.classList.toggle('menu-open', !open);
 }
-function showItemListsDialog(e) {
-  if (e) e.stopPropagation();
-  var menu = document.getElementById('item-menu-pop');
-  if (menu) menu.hidden = true;
-  var btn = document.getElementById('item-menu-btn');
-  if (btn) btn.setAttribute('aria-expanded', 'false');
+function itemMenuAction(e, action) {
+  e.stopPropagation();
+  var ctl = e.currentTarget.closest('.item-menu');
+  if (!ctl) return;
+  closeItemMenus();
+  if (action !== 'lists') return;
   var d = document.getElementById('item-lists-dialog');
-  if (d && !d.open) d.showModal();
+  if (!d) return;
+  d.innerHTML = '<p class="muted">loading…</p>';
+  d.showModal();
+  fetch('/items/' + ctl.dataset.itemId + '/lists')
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      d.innerHTML = html;
+      // The picker's form carries hx attributes; it was injected via innerHTML,
+      // so initialize it.
+      htmx.process(d);
+    })
+    .catch(function () { d.innerHTML = '<p class="error">could not load lists</p>'; });
 }
 document.addEventListener('click', function (e) {
-  var menu = document.getElementById('item-menu-pop');
-  if (!menu || menu.hidden) return;
-  if (!e.target.closest('.item-menu')) {
-    menu.hidden = true;
-    var btn = document.getElementById('item-menu-btn');
-    if (btn) btn.setAttribute('aria-expanded', 'false');
-  }
+  if (e.target.closest && e.target.closest('.item-menu')) return;
+  closeItemMenus();
 });
 document.addEventListener('keydown', function (e) {
-  if (e.key !== 'Escape') return;
-  var menu = document.getElementById('item-menu-pop');
-  var btn = document.getElementById('item-menu-btn');
-  if (menu && !menu.hidden) {
-    menu.hidden = true;
-    if (btn) btn.setAttribute('aria-expanded', 'false');
-  }
+  if (e.key === 'Escape') closeItemMenus();
 });
 
 // User dropdown menu.

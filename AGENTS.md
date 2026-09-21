@@ -373,6 +373,12 @@ package (`internal/store/sqlcgen`, `//go:generate sqlc generate`). The public
 `*Store` types wrap the generated `Queries` and convert `sql.Null*` to plain
 domain types; never hand-write `row.Scan` calls or `nullStr`/`boolInt`
 boilerplate — add a query to the `.sql` files and regenerate. The generated
+with the migrations in `internal/db/migrate.go`), queries live in
+`internal/store/queries/*.sql`, and code is generated into the `sqlcgen`
+package (`internal/store/sqlcgen`, `//go:generate sqlc generate`). The public
+`*Store` types wrap the generated `Queries` and convert `sql.Null*` to plain
+domain types; never hand-write `row.Scan` calls or `nullStr`/`boolInt`
+boilerplate — add a query to the `.sql` files and regenerate. The generated
 files are committed, so CI/builds need no sqlc step.
 
 **Full-text search is the one exception.** `ItemStore.SearchPage` runs a
@@ -383,6 +389,12 @@ set and reuses the generated `sqlcgen.ListItemsRow` scanner. In `schema.sql`,
 so sqlc stays happy; the real DB builds it as an external-content FTS5 table in
 migration `schemaV10`. Do not try to fold the search query back into sqlc, and
 keep the plain-table declaration in sync with the virtual table's columns.
+
+**Bulk range-read.** `MarkItemsBeforeRead`/`MarkItemsAfterRead` mark every
+unread item in the **same feed** as the target that is newer (before) or older
+(after) than it — the list order is `COALESCE(published_at, fetched_at), id`
+DESC. They are deliberately feed-scoped (not whole-list), so the `⋯` menu's
+"mark all before/after as read" is unambiguous on any page.
 
 ## Web UI (templ)
 
@@ -545,6 +557,16 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
 - Item modal: `openItem(el)` fetches `/items/{id}/view` into
   `#item-dialog-body` and `markRowRead(id)` flips the row to read. `currentItemId`
   tracks the open item.
+- Item "⋯" menu: the per-item `itemMenu` (`views_items.templ`) sits at the right
+  of every card's `.row-actions` (list and masonry grid) and in the item modal.
+  Menus are scoped by `data-item-id` (`toggleItemMenu`/`itemMenuAction`/`closeItemMenus`
+  in app.js), so many cards can each have one. Opening a menu adds `menu-open` to
+  the row `<li>` so its dropdown escapes the swipe container's `overflow:hidden`.
+  "add to list" fetches `GET /items/{id}/lists` and injects `itemListsDialogInner`
+  into the single shared `<dialog id="item-lists-dialog">` (in `views_layout.templ`);
+  `itemListsUpdate` re-renders that inner content with an `innerHTML` swap.
+  "mark all before/after as read" POSTs `/items/{id}/read-before|after` and reloads
+  on success.
 - User dropdown: `toggleUserMenu` + outside-click and Escape handlers.
 - Keyboard: ArrowLeft/Right move through the item list while the modal is open;
   `j`/`k` (or arrows) move an `.active-row` cursor, `o`/Enter open, `v` opens

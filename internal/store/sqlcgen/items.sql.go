@@ -538,6 +538,52 @@ func (q *Queries) MarkAllItemsUnread(ctx context.Context, arg MarkAllItemsUnread
 	return err
 }
 
+const markItemsAfterRead = `-- name: MarkItemsAfterRead :exec
+UPDATE items
+SET read = 1, read_at = ?1
+WHERE read = 0
+  AND feed_id = (SELECT i.feed_id FROM items i WHERE i.id = ?2)
+  AND feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?3)
+  AND (COALESCE(items.published_at, items.fetched_at), items.id) <
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?2)
+`
+
+type MarkItemsAfterReadParams struct {
+	ReadAt sql.NullString `json:"readAt"`
+	ItemID int64          `json:"itemID"`
+	UserID int64          `json:"userID"`
+}
+
+// Mark unread items older than itemID (listed below it, newest first) in the
+// same feed as read.
+func (q *Queries) MarkItemsAfterRead(ctx context.Context, arg MarkItemsAfterReadParams) error {
+	_, err := q.db.ExecContext(ctx, markItemsAfterRead, arg.ReadAt, arg.ItemID, arg.UserID)
+	return err
+}
+
+const markItemsBeforeRead = `-- name: MarkItemsBeforeRead :exec
+UPDATE items
+SET read = 1, read_at = ?1
+WHERE read = 0
+  AND feed_id = (SELECT i.feed_id FROM items i WHERE i.id = ?2)
+  AND feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?3)
+  AND (COALESCE(items.published_at, items.fetched_at), items.id) >
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?2)
+`
+
+type MarkItemsBeforeReadParams struct {
+	ReadAt sql.NullString `json:"readAt"`
+	ItemID int64          `json:"itemID"`
+	UserID int64          `json:"userID"`
+}
+
+// Mark unread items newer than itemID (listed above it, newest first) in the
+// same feed as read.
+func (q *Queries) MarkItemsBeforeRead(ctx context.Context, arg MarkItemsBeforeReadParams) error {
+	_, err := q.db.ExecContext(ctx, markItemsBeforeRead, arg.ReadAt, arg.ItemID, arg.UserID)
+	return err
+}
+
 const setItemFavorite = `-- name: SetItemFavorite :execresult
 UPDATE items
 SET favorite = ?

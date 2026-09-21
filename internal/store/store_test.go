@@ -501,6 +501,67 @@ func TestItemScopedCounts(t *testing.T) {
 	}
 }
 
+func TestMarkRangeRead(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+	f2, _ := s.Feeds.Create(u.ID, a.ID, "Other", "https://other.dev/rss.xml", "", "", 900)
+
+	s.Items.Upsert(f.ID, Item{GUID: "a1", Title: "newest", Link: "https://metru.dev/1", PublishedAt: "2026-01-03 00:00:00", FetchedAt: db.Now()})
+	s.Items.Upsert(f.ID, Item{GUID: "a2", Title: "middle", Link: "https://metru.dev/2", PublishedAt: "2026-01-02 00:00:00", FetchedAt: db.Now()})
+	s.Items.Upsert(f.ID, Item{GUID: "a3", Title: "oldest", Link: "https://metru.dev/3", PublishedAt: "2026-01-01 00:00:00", FetchedAt: db.Now()})
+	s.Items.Upsert(f2.ID, Item{GUID: "b1", Title: "other", Link: "https://other.dev/1", PublishedAt: "2026-01-10 00:00:00", FetchedAt: db.Now()})
+
+	items, _ := s.Items.List(u.ID, ItemFilter{})
+	readState := func(title string) bool {
+		for _, it := range items {
+			if it.Title == title {
+				got, _ := s.Items.ByID(u.ID, it.ID)
+				return got.Read
+			}
+		}
+		t.Fatalf("missing item %q", title)
+		return false
+	}
+	var middle int64
+	for _, it := range items {
+		if it.Title == "middle" {
+			middle = it.ID
+		}
+	}
+
+	// "before" = newer items in the same feed.
+	if err := s.Items.MarkBeforeRead(u.ID, middle); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		title string
+		want  bool
+	}{
+		{"newest", true}, {"middle", false}, {"oldest", false}, {"other", false},
+	} {
+		if got := readState(c.title); got != c.want {
+			t.Fatalf("after MarkBeforeRead: %s read=%v want %v", c.title, got, c.want)
+		}
+	}
+
+	// "after" = older items in the same feed.
+	if err := s.Items.MarkAfterRead(u.ID, middle); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		title string
+		want  bool
+	}{
+		{"newest", true}, {"middle", false}, {"oldest", true}, {"other", false},
+	} {
+		if got := readState(c.title); got != c.want {
+			t.Fatalf("after MarkAfterRead: %s read=%v want %v", c.title, got, c.want)
+		}
+	}
+}
+
 func TestListAuthorsWithFeedCountUnread(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

@@ -81,6 +81,28 @@ SET read = 0, read_at = NULL
 WHERE items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = sqlc.arg('userID'))
   AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR items.feed_id = CAST(sqlc.arg('feedID') AS INTEGER));
 
+-- name: MarkItemsBeforeRead :exec
+-- Mark unread items newer than itemID (listed above it, newest first) in the
+-- same feed as read.
+UPDATE items
+SET read = 1, read_at = sqlc.arg('readAt')
+WHERE read = 0
+  AND feed_id = (SELECT i.feed_id FROM items i WHERE i.id = sqlc.arg('itemID'))
+  AND feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = sqlc.arg('userID'))
+  AND (COALESCE(items.published_at, items.fetched_at), items.id) >
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = sqlc.arg('itemID'));
+
+-- name: MarkItemsAfterRead :exec
+-- Mark unread items older than itemID (listed below it, newest first) in the
+-- same feed as read.
+UPDATE items
+SET read = 1, read_at = sqlc.arg('readAt')
+WHERE read = 0
+  AND feed_id = (SELECT i.feed_id FROM items i WHERE i.id = sqlc.arg('itemID'))
+  AND feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = sqlc.arg('userID'))
+  AND (COALESCE(items.published_at, items.fetched_at), items.id) <
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = sqlc.arg('itemID'));
+
 -- name: GetItemByFeedGuid :one
 SELECT id FROM items
 WHERE feed_id = ? AND guid = ?;

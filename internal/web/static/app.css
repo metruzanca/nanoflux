@@ -286,6 +286,9 @@ ul.items li {
 }
 ul.items li:last-child { border-bottom: none; }
 ul.items li.active-row { box-shadow: inset 3px 0 0 var(--accent); }
+/* While an item's "⋯" menu is open, let its dropdown escape the row's
+   overflow:hidden (the swipe container) and stack above the neighbors. */
+ul.items li.menu-open { overflow: visible; z-index: 20; }
 
 /* Tinder-style swipe actions (touch only). The row's children translate over
    a fixed hint (★ = favorite right, ✓ = read left); JS clicks the matching

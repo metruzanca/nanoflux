@@ -175,6 +175,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor bool) {
 								hx-vals={ `{"hideAuthor":"1"}` }
 							}>✓</button>
 					}
+					@itemMenu(it.ID)
 				</div>
 			</div>
 		</div>
@@ -267,7 +268,7 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 			}
 		</p>
 		@shareControl(d.ID, d.ShareToken)
-		@itemMenu(d.ID, d.Favorite, d.Lists, d.ItemListIDs)
+		@itemMenu(d.ID)
 		@itemContent(d, v)
 	</div>
 }
@@ -347,48 +348,51 @@ templ shareControl(itemID int64, token string) {
 	</div>
 }
 
-// itemMenu is the "⋯" action menu on an item. It opens a dropdown whose "add
-// to list" entry shows the item-lists picker dialog. Removing from a list uses
-// the same dialog — unchecking a list and saving drops the item from it.
-templ itemMenu(itemID int64, favorite bool, lists []store.List, itemListIDs []int64) {
-	<div class="item-menu">
-		<button type="button" id="item-menu-btn" class="link" aria-haspopup="true" aria-expanded="false" onclick="toggleItemMenu(event)">⋯</button>
-		<div id="item-menu-pop" class="menu-pop" role="menu" hidden>
-			<button type="button" class="link menu-item" role="menuitem" onclick="showItemListsDialog(event)">add to list</button>
+// itemMenu is the "⋯" action menu on an item card (list/grid) and in the item
+// modal. It opens a dropdown of extra options: "add to list" (fetches the
+// shared lists picker into the layout's dialog) and bulk "mark all before/after
+// as read" for the item's feed. The dropdown is scoped per item via
+// data-item-id so many cards can each have one.
+templ itemMenu(itemID int64) {
+	<div class="item-menu" data-item-id={ strconv.FormatInt(itemID, 10) }>
+		<button type="button" class="link menu-btn" aria-haspopup="true" aria-expanded="false" title="more actions" onclick="toggleItemMenu(event)">⋯</button>
+		<div class="menu-pop" role="menu" hidden>
+			<button type="button" class="link menu-item" role="menuitem" onclick="itemMenuAction(event, 'lists')">add to list</button>
+			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-before" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">mark all before as read</button>
+			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-after" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">mark all after as read</button>
 		</div>
 	</div>
-	@itemListsDialog(itemID, favorite, lists, itemListIDs)
 }
 
-// itemListsDialog is the "add to list" picker. Favorites is the special list
-// (its checkbox mirrors items.favorite); the others are the user's lists. The
-// form is the fragment target of the apply endpoint, so it re-renders with
-// fresh membership state and closes on success.
-templ itemListsDialog(itemID int64, favorite bool, lists []store.List, itemListIDs []int64) {
-	<dialog id="item-lists-dialog" class="modal">
-		<form class="stack" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/lists" } hx-target="#item-lists-dialog" hx-swap="outerHTML" hx-on::after-request="if(event.detail.successful){document.getElementById('item-lists-dialog').close()}">
-			<div class="row">
-				<h2>add to list</h2>
-				<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
-			</div>
+// itemListsDialogInner is the add-to-list picker content, injected into the
+// shared #item-lists-dialog (declared in views_layout.templ) by the "add to
+// list" menu action. Favorites is the special list (its checkbox mirrors
+// items.favorite); the others are the user's lists. The form is the fragment
+// target of the apply endpoint, so it re-renders with fresh membership state
+// and closes on success.
+templ itemListsDialogInner(itemID int64, favorite bool, lists []store.List, itemListIDs []int64) {
+	<div class="row">
+		<h2>add to list</h2>
+		<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+	</div>
+	<form class="stack" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/lists" } hx-target="#item-lists-dialog" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){document.getElementById('item-lists-dialog').close()}">
+		<label>
+			<input type="checkbox" name="lists" value="favorites"
+			if favorite {
+				checked
+			}/> favorites
+		</label>
+		for _, l := range lists {
 			<label>
-				<input type="checkbox" name="lists" value="favorites"
-				if favorite {
+				<input type="checkbox" name="lists" value={ strconv.FormatInt(l.ID, 10) }
+				if containsListID(itemListIDs, l.ID) {
 					checked
-				}/> favorites
+				}/> { l.Name }
 			</label>
-			for _, l := range lists {
-				<label>
-					<input type="checkbox" name="lists" value={ strconv.FormatInt(l.ID, 10) }
-					if containsListID(itemListIDs, l.ID) {
-						checked
-					}/> { l.Name }
-				</label>
-			}
-			<div id="item-lists-error" class="error"></div>
-			<button type="submit">save</button>
-		</form>
-	</dialog>
+		}
+		<div id="item-lists-error" class="error"></div>
+		<button type="submit">save</button>
+	</form>
 }
 
 // sharedItemPage is the public, unauthenticated view of a shared item. It

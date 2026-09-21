@@ -209,7 +209,7 @@ func TestLoadMoreFlow(t *testing.T) {
 	if !strings.Contains(home, `id="load-more"`) {
 		t.Fatalf("home should render a load-more button: %s", home)
 	}
-	if got := strings.Count(home, `data-item-id=`); got != pageSize {
+	if got := strings.Count(home, `<li id="item-`); got != pageSize {
 		t.Fatalf("home should show %d items, got %d", pageSize, got)
 	}
 
@@ -225,7 +225,7 @@ func TestLoadMoreFlow(t *testing.T) {
 	if !strings.Contains(body, `hx-swap-oob`) {
 		t.Fatalf("next page should carry an OOB load-more swap: %s", body)
 	}
-	if strings.Count(body, `data-item-id=`) != pageSize {
+	if strings.Count(body, `<li id="item-`) != pageSize {
 		t.Fatalf("next page should append %d rows, got: %s", pageSize, body)
 	}
 
@@ -1277,6 +1277,79 @@ func TestAuthorEditDeleteFlow(t *testing.T) {
 	}
 	if feeds, _ := s.store.Feeds.ListByAuthor(u.ID, a.ID); len(feeds) != 0 {
 		t.Fatalf("feed should cascade with author: %+v", feeds)
+	}
+}
+
+func TestItemMenuOnCards(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Post", Link: "https://b.dev/1", FetchedAt: db.Now()})
+
+	// Each card in the list/grid carries the ⋯ menu with all three options.
+	body := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `class="item-menu"`) ||
+		!strings.Contains(body, "mark all before as read") ||
+		!strings.Contains(body, "mark all after as read") ||
+		!strings.Contains(body, `hx-post="/items/1/read-before"`) ||
+		!strings.Contains(body, `hx-post="/items/1/read-after"`) {
+		t.Fatalf("item cards should carry the ⋯ menu: %s", body)
+	}
+}
+
+func TestMarkRangeReadHTTP(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "a1", Title: "newest", Link: "https://b.dev/1", PublishedAt: "2026-01-03 00:00:00", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "a2", Title: "middle", Link: "https://b.dev/2", PublishedAt: "2026-01-02 00:00:00", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "a3", Title: "oldest", Link: "https://b.dev/3", PublishedAt: "2026-01-01 00:00:00", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f2.ID, store.Item{GUID: "b1", Title: "other", Link: "https://o.dev/1", PublishedAt: "2026-01-10 00:00:00", FetchedAt: db.Now()})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	var middle int64
+	for _, it := range items {
+		if it.Title == "middle" {
+			middle = it.ID
+		}
+	}
+	readState := func(title string) bool {
+		for _, it := range items {
+			if it.Title == title {
+				got, _ := s.store.Items.ByID(u.ID, it.ID)
+				return got.Read
+			}
+		}
+		t.Fatalf("missing item %q", title)
+		return false
+	}
+
+	rr := doForm(h, "POST", "/items/"+itoa(middle)+"/read-before", url.Values{}, cookie)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("read-before: %d", rr.Code)
+	}
+	for _, c := range []struct {
+		title string
+		want  bool
+	}{
+		{"newest", true}, {"middle", false}, {"oldest", false}, {"other", false},
+	} {
+		if got := readState(c.title); got != c.want {
+			t.Fatalf("after read-before: %s read=%v want %v", c.title, got, c.want)
+		}
+	}
+
+	rr = doForm(h, "POST", "/items/"+itoa(middle)+"/read-after", url.Values{}, cookie)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("read-after: %d", rr.Code)
+	}
+	if got := readState("oldest"); !got {
+		t.Fatalf("after read-after: oldest should be read")
 	}
 }
 
