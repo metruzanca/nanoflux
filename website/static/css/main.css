@@ -192,3 +192,12 @@ img {
 .site-footer p {
   margin: 0;
 }
+
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.footer-brand .kofi { line-height: 0; }

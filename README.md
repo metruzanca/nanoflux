@@ -274,3 +274,23 @@ go vet ./...
 goreleaser check
 goreleaser release --snapshot --skip=docker   # build binaries locally
 ```
+
+## Contributing
+
+I'm not accepting contributions at this time — but issues are very welcome for
+feature requests and bug reports.
+
+This is an AI coding project: if your agent can write a feature, mine probably
+can too. The difference is that I have a better understanding of the project, so
+I'd rather build it myself. A clear issue describing the feature or the bug is
+the most useful thing you can send — though coffee is a close second:
+
+<a href='https://ko-fi.com/C1C51JBGUD' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
+
+## License
+
+License: PolyForm Perimeter 1.0.1
+Source-available. Free to self-host. Commercial hosted offerings require permission.
+
+- Website: https://nanoflux.app
+- Source: https://github.com/metruzanca/nanoflux

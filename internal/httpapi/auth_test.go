@@ -74,6 +74,21 @@ func TestLoginFlow(t *testing.T) {
 	}
 }
 
+func TestLoginPageFooter(t *testing.T) {
+	_, h := newTestServer(t)
+	rr := doGetRaw(h, "/login")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("login page: %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `class="site-foot"`) ||
+		!strings.Contains(body, "https://nanoflux.app") ||
+		!strings.Contains(body, "https://github.com/metruzanca/nanoflux") ||
+		!strings.Contains(body, "https://ko-fi.com/C1C51JBGUD") {
+		t.Fatalf("login page should carry the footer: %s", body)
+	}
+}
+
 func TestLoginRejectsBadPassword(t *testing.T) {
 	_, h := newTestServer(t)
 	form := url.Values{"username": {"alice"}, "password": {"wrong"}}
