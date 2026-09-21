@@ -1,6 +1,18 @@
 RUNTIME ?= $(shell command -v docker >/dev/null 2>&1 && echo docker || (command -v podman >/dev/null 2>&1 && echo podman || echo docker))
 COMPOSE := $(RUNTIME) compose
 
+GHCR_REPO := metruzanca/nanoflux
+GHCR_IMAGE := ghcr.io/$(GHCR_REPO)
+
+# The image is published under a concrete version tag (goreleaser strips the
+# leading "v" from the git tag, so release v0.5.0 -> image 0.5.0) alongside
+# "latest". Pulling the concrete version instead of "latest" busts the local
+# Docker cache, which otherwise keeps serving a stale "latest" manifest.
+latest_image_tag = $(shell \
+	curl -fsSL "https://api.github.com/repos/$(GHCR_REPO)/releases/latest" 2>/dev/null \
+	| sed -n 's/.*"tag_name": *"\(v[0-9][^"]*\)".*/\1/p' \
+	| sed 's/^v//')
+
 .DEFAULT_GOAL := help
 
 .PHONY: help start stop restart update status logs shell backup down
@@ -11,7 +23,7 @@ help:
 	@echo "  start     start the app (pulls the image, creates .env on first run)"
 	@echo "  stop      shut the app down (containers and data kept)"
 	@echo "  restart   restart the app"
-	@echo "  update    pull the latest image and redeploy"
+	@echo "  update    pull the latest release image (by version) and redeploy"
 	@echo "  status    show container status"
 	@echo "  logs      tail the app logs"
 	@echo "  shell     open a shell in the app container"
@@ -36,7 +48,15 @@ restart:
 	$(COMPOSE) restart
 
 update:
-	$(COMPOSE) pull
+	@TAG="$(latest_image_tag)"; \
+	if [ -z "$$TAG" ]; then \
+		echo "could not determine the latest release from GitHub; falling back to 'latest'"; \
+		$(COMPOSE) pull; \
+	else \
+		echo "updating to $(GHCR_IMAGE):$$TAG"; \
+		$(RUNTIME) pull $(GHCR_IMAGE):$$TAG; \
+		$(RUNTIME) tag $(GHCR_IMAGE):$$TAG $(GHCR_IMAGE):latest; \
+	fi; \
 	$(COMPOSE) up -d
 
 status:
