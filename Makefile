@@ -8,7 +8,7 @@ COMPOSE := $(RUNTIME) compose
 help:
 	@echo "nanoflux - manage your instance"
 	@echo ""
-	@echo "  start     start the app (pulls the image on first run)"
+	@echo "  start     start the app (pulls the image, creates .env on first run)"
 	@echo "  stop      shut the app down (containers and data kept)"
 	@echo "  restart   restart the app"
 	@echo "  update    pull the latest image and redeploy"
@@ -21,6 +21,11 @@ help:
 	@echo "Run with podman: make <cmd> RUNTIME=podman"
 
 start:
+	@if [ ! -f .env ]; then \
+		PW="$$(openssl rand -hex 24 2>/dev/null || od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"; \
+		printf 'RSS_BOOTSTRAP_USER=admin\nRSS_BOOTSTRAP_PASS=%s\n' "$$PW" > .env; \
+		echo "created .env - log in as admin with password $$PW"; \
+	fi
 	$(COMPOSE) up -d
 
 stop:
