@@ -107,6 +107,38 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
+// Mobile nav (hamburger). The nav links collapse behind a toggle on narrow
+// screens; it closes on outside click, Escape, or when a link is tapped.
+function toggleNav(e) {
+  if (e) e.stopPropagation();
+  var nav = document.getElementById('top-nav');
+  var btn = document.getElementById('nav-toggle');
+  if (!nav) return;
+  var open = nav.classList.toggle('open');
+  if (btn) btn.setAttribute('aria-expanded', String(open));
+}
+function closeNav() {
+  var nav = document.getElementById('top-nav');
+  var btn = document.getElementById('nav-toggle');
+  if (!nav) return;
+  nav.classList.remove('open');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+document.addEventListener('click', function (e) {
+  var nav = document.getElementById('top-nav');
+  if (!nav || !nav.classList.contains('open')) return;
+  if (e.target.closest('.hamburger')) return;
+  if (!e.target.closest('.top')) closeNav();
+});
+document.addEventListener('click', function (e) {
+  var nav = document.getElementById('top-nav');
+  if (!nav || !nav.classList.contains('open')) return;
+  if (nav.contains(e.target) && e.target.closest('a, form')) closeNav();
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeNav();
+});
+
 // Arrow keys move through the item list while the modal is open.
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;

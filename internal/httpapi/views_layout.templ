@@ -18,7 +18,7 @@ templ topbar(u store.User) {
 	<header class="top">
 		<a class="brand" href="/">nanoflux</a>
 		if u.ID != 0 {
-			<nav>
+			<nav id="top-nav">
 				<form class="top-search" action="/search" method="get" role="search">
 					<input id="search-input" name="q" type="search" placeholder="search…" autocomplete="off"/>
 				</form>
@@ -42,6 +42,11 @@ templ topbar(u store.User) {
 					</div>
 				</div>
 			</nav>
+			<button type="button" id="nav-toggle" class="hamburger" aria-label="menu" aria-expanded="false" aria-controls="top-nav" onclick="toggleNav(event)">
+				<span></span>
+				<span></span>
+				<span></span>
+			</button>
 		}
 	</header>
 
