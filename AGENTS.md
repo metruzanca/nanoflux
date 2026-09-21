@@ -111,6 +111,12 @@ discovery rules in `internal/discover/host.go` (`hostSpecificURLs`):
 
 ## YouTube channel feeds
 
+The **embed** player in the item modal (`itemContent`, the `EmbedURL` iframe)
+carries `referrerpolicy="origin"`. The app sets a global
+`Referrer-Policy: no-referrer` header, which would otherwise strip the Referer
+the YouTube player requires to authorize playback (error 153); sending the
+embedding origin satisfies it. Keep that per-element override in place.
+
 YouTube's public `feeds/videos.xml?channel_id=` endpoint intermittently serves
 404 for active channels (a known upstream issue). `internal/feedparse/youtube.go`
 falls back to the site's internal `youtubei/v1/browse` API whenever a YouTube

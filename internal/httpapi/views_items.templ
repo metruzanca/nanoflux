@@ -292,7 +292,10 @@ templ itemContent(d itemViewData, v itemVisuals) {
 		</div>
 	} else if d.EmbedURL != "" {
 		<div class="video-embed">
-			<iframe src={ templ.URL(d.EmbedURL) } title={ d.Title } frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe>
+			<!-- The app's global Referrer-Policy: no-referrer would strip the
+			     Referer the YouTube player needs (error 153). Override it here
+			     so only the embedding origin is sent. -->
+			<iframe src={ templ.URL(d.EmbedURL) } title={ d.Title } frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="origin"></iframe>
 		</div>
 	}
 	if d.Body != "" && !v.Image && d.SourceURL == "" && len(d.Gallery) == 0 {
