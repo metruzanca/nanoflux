@@ -104,7 +104,7 @@ templ listPage(u store.User, d listPageData) {
 			</form>
 		</div>
 	</div>
-	@ItemsListPage(d.Items, d.More)
+	@ItemsListPage(d.Items, d.More, false)
 }
 
 // sharedListPage is the public, unauthenticated view of a shared list (or the

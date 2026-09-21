@@ -222,6 +222,41 @@ func TestMediaThumbnailFromGroup(t *testing.T) {
 	}
 }
 
+func TestImageEnclosureBecomesThumbnail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0"?>
+<rss version="2.0">
+<channel>
+  <title>Photos</title>
+  <link>https://p.dev/</link>
+  <description>shots</description>
+  <item>
+    <guid>shot1</guid>
+    <title>A shot</title>
+    <link>https://p.dev/shot1</link>
+    <description>a caption with real text</description>
+    <enclosure url="https://p.dev/photo.jpg?e=1790070194&amp;t=signed" type="image/jpeg" length="100"/>
+  </item>
+</channel>
+</rss>`))
+	}))
+	defer srv.Close()
+
+	res, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(res.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(res.Items))
+	}
+	if got := res.Items[0].ImageURL; got != "https://p.dev/photo.jpg?e=1790070194&t=signed" {
+		t.Errorf("image = %q, want first image enclosure", got)
+	}
+	if len(res.Items[0].Enclosures) != 1 {
+		t.Fatalf("enclosures = %d, want 1", len(res.Items[0].Enclosures))
+	}
+}
+
 func TestMediaThumbnailDirectChild(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`<?xml version="1.0"?>

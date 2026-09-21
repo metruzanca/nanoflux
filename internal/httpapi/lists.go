@@ -97,7 +97,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := "/lists/" + strconv.FormatInt(id, 10) + "/items"
-	web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more)))
+	web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more), false))
 }
 
 // listDelete removes a list. From the index it re-renders the whole list (an
