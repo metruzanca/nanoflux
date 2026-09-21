@@ -144,17 +144,39 @@ func TestItemsFlow(t *testing.T) {
 	if err != nil || !inserted {
 		t.Fatalf("upsert new: %v %v", inserted, err)
 	}
-	// Duplicate guid -> no insert.
+	// Duplicate guid -> no insert, but the stored snapshot is refreshed.
 	inserted, err = s.Items.Upsert(f.ID, base)
 	if err != nil || inserted {
 		t.Fatalf("upsert dup: %v %v", inserted, err)
+	}
+	refresh := Item{
+		GUID:      "g1",
+		Title:     "One",
+		Link:      "https://metru.dev/1",
+		Summary:   "updated summary",
+		ImageURL:  "https://metru.dev/thumb.jpg",
+		FetchedAt: db.Now(),
+	}
+	inserted, err = s.Items.Upsert(f.ID, refresh)
+	if err != nil || inserted {
+		t.Fatalf("upsert refresh: %v %v", inserted, err)
+	}
+	items, err := s.Items.List(u.ID, ItemFilter{})
+	if err != nil || len(items) != 1 {
+		t.Fatalf("List after refresh: %v %d", err, len(items))
+	}
+	if items[0].Summary != "updated summary" || items[0].ImageURL != "https://metru.dev/thumb.jpg" {
+		t.Fatalf("snapshot not refreshed: %+v", items[0].Item)
+	}
+	if items[0].Title != "One" {
+		t.Fatalf("identity touched on refresh: title = %q", items[0].Title)
 	}
 
 	second := base
 	second.GUID, second.Title = "g2", "Two"
 	s.Items.Upsert(f.ID, second)
 
-	items, err := s.Items.List(u.ID, ItemFilter{})
+	items, err = s.Items.List(u.ID, ItemFilter{})
 	if err != nil || len(items) != 2 {
 		t.Fatalf("List: %v %d", err, len(items))
 	}

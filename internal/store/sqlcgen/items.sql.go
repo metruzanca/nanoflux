@@ -554,6 +554,31 @@ func (q *Queries) SetItemRead(ctx context.Context, arg SetItemReadParams) (sql.R
 	)
 }
 
+const updateItemSnapshot = `-- name: UpdateItemSnapshot :exec
+UPDATE items
+SET summary = ?, image_url = ?
+WHERE feed_id = ? AND guid = ?
+`
+
+type UpdateItemSnapshotParams struct {
+	Summary  string         `json:"summary"`
+	ImageUrl sql.NullString `json:"image_url"`
+	FeedID   int64          `json:"feed_id"`
+	Guid     string         `json:"guid"`
+}
+
+// Refresh the content snapshot of an existing item (summary, thumbnail) on
+// poll. Identity, published_at and read state are left untouched.
+func (q *Queries) UpdateItemSnapshot(ctx context.Context, arg UpdateItemSnapshotParams) error {
+	_, err := q.db.ExecContext(ctx, updateItemSnapshot,
+		arg.Summary,
+		arg.ImageUrl,
+		arg.FeedID,
+		arg.Guid,
+	)
+	return err
+}
+
 const upsertItem = `-- name: UpsertItem :execresult
 INSERT INTO items (feed_id, guid, title, link, summary, image_url, published_at, fetched_at, read, read_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

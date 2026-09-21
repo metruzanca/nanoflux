@@ -181,7 +181,7 @@ func youtubeLockupItem(lv map[string]any) (Item, bool) {
 		GUID:    "yt:video:" + id,
 		Title:   title,
 		Link:    "https://www.youtube.com/watch?v=" + id,
-		Summary: strings.Join(parts, " • "),
+		Summary: strings.Join(nonRelativeParts(parts), " • "),
 	}
 	if thumb != "" {
 		it.ImageURL = thumb
@@ -247,6 +247,21 @@ func relativePart(parts []string) string {
 		}
 	}
 	return ""
+}
+
+// nonRelativeParts filters out metadata parts that look like relative times
+// ("4 days ago"). The publish time is derived from those into PublishedAt and
+// rendered live by the UI, so keeping the raw text in the summary would show a
+// stale duplicate date next to it.
+func nonRelativeParts(parts []string) []string {
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if relTimeRe.MatchString(strings.ToLower(p)) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // firstSourceURL returns the first image source URL under a key path.
