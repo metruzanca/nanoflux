@@ -15,7 +15,7 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
-	web.Render(w, r, basePage("log in", store.User{}, loginPage("")))
+	web.Render(w, r, basePage("log in", store.User{}, loginPage("", s.allowSignup())))
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +25,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	u, err := s.store.Users.ByUsername(username)
 	if err != nil || !auth.CheckPassword(u.PasswordHash, password) {
 		w.WriteHeader(http.StatusUnauthorized)
-		web.Render(w, r, basePage("log in", store.User{}, loginPage("invalid username or password")))
+		web.Render(w, r, basePage("log in", store.User{}, loginPage("invalid username or password", s.allowSignup())))
 		return
 	}
 
@@ -37,6 +37,17 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auth.SetCookie(w, token)
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// allowSignup reports the global signup setting, defaulting to open when the
+// setting cannot be read so an error never locks everyone out.
+func (s *Server) allowSignup() bool {
+	allow, err := s.store.Settings.AllowSignup()
+	if err != nil {
+		log.Error("read allow_signup", "err", err)
+		return true
+	}
+	return allow
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -54,10 +65,19 @@ func (s *Server) signupPage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
+	if !s.allowSignup() {
+		web.Render(w, r, basePage("create account", store.User{}, signupDisabledPage()))
+		return
+	}
 	web.Render(w, r, basePage("create account", store.User{}, signupPage("")))
 }
 
 func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
+	if !s.allowSignup() {
+		w.WriteHeader(http.StatusForbidden)
+		web.Render(w, r, basePage("create account", store.User{}, signupDisabledPage()))
+		return
+	}
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 

@@ -131,3 +131,8 @@ WHERE f.user_id = ? AND i.read = 0
 SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
 WHERE f.user_id = ? AND i.read = 1
   AND i.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?);
+-- name: CountAllItems :one
+SELECT COUNT(*) FROM items;
+
+-- name: CountAllUnreadItems :one
+SELECT COUNT(*) FROM items WHERE read = 0;

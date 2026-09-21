@@ -93,6 +93,7 @@ survive container restarts and updates.
 | `make logs` | tail the app logs |
 | `make shell` | open a shell in the app container |
 | `make backup` | snapshot the database and file store into `backups/` |
+| `make restore ARCHIVE=backups/<file>.tar.gz` | stop the app and restore from a backup |
 | `make down` | stop and remove containers (data kept) |
 
 `make help` lists these, and `make <cmd> RUNTIME=podman` forces podman.
@@ -122,17 +123,24 @@ Substitute `podman` for `docker` as needed. If the image is private,
 
 ## Admin
 
-nanoflux has two admin surfaces with the same capabilities: list users, reset
-passwords, grant/revoke the admin flag, and delete users. Deleting a user
-removes all of their data (feeds, items, avatars, icons). The first account
-created at startup (the bootstrap account) is always an admin.
+nanoflux has two admin surfaces with the same capabilities: list users, create
+users, reset passwords, grant/revoke the admin flag, and delete users. Deleting
+a user removes all of their data (feeds, items, avatars, icons). The first
+account created at startup (the bootstrap account) is always an admin.
 
 ### Web
 
-Log in as an admin and open **admin** from the user menu (top-right). Each
-user row has a password-reset form, a make/remove-admin toggle, and a delete
-button with confirmation. You cannot delete your own account, and the last
-admin can never be removed.
+Log in as an admin and open **admin** from the user menu (top-right). The page
+shows instance stats (users, feeds, authors, items, unread), a **signups**
+toggle, and a banner suggesting you disable open signup (dismissible per
+admin). Each user row has a password-reset form, a make/remove-admin toggle,
+and a delete button with confirmation. You cannot delete your own account, and
+the last admin can never be removed.
+
+Signups are **open by default** so a fresh instance is usable; once you have
+your account, disable them on `/admin` so strangers can't register. With
+signup off, the signup page shows a notice and the login page stops linking to
+it — new accounts come from the CLI's `user create`.
 
 ### CLI
 
@@ -141,9 +149,11 @@ The same operations run inside the container:
 ```bash
 make shell
 nanoflux user list
+nanoflux user create <username>              # prompts for the password; --admin grants admin
 nanoflux user set-admin <username> true
 nanoflux user reset-password <username>     # prompts for the new password
 nanoflux user delete <username>             # prompts to confirm; use --yes to skip
+nanoflux feed list                          # every feed across users (no item content)
 nanoflux user --help
 ```
 
@@ -151,6 +161,30 @@ nanoflux user --help
 the docker image and compose file are unchanged; any other first argument
 routes to the CLI. Instances created before the admin flag existed grant one
 with `nanoflux user set-admin <your-username> true`.
+
+### Backup and restore
+
+`make backup` writes a tarball of the database and file store to `backups/`:
+
+```bash
+make backup
+ls backups/
+make restore ARCHIVE=backups/nanoflux-20260921-120000.tar.gz
+```
+
+`make restore` stops the app, replaces the data volumes from the archive, and
+leaves the instance stopped for you to start (`make start`) when ready.
+
+The same format is available from the CLI for host installs:
+
+```bash
+nanoflux backup                # writes backups/nanoflux-<timestamp>.tar.gz
+nanoflux restore backups/nanoflux-20260921-120000.tar.gz   # refuses while the server is running
+```
+
+The database is always backed up. Blobs on local disk are included; if you
+point `NF_S3_ENDPOINT` at S3-compatible storage, back up those objects with
+your provider.
 
 ## Release
 

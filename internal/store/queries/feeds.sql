@@ -81,3 +81,14 @@ SELECT id, user_id, author_id, title, feed_url, home_url, description,
        etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at
 FROM feeds
 WHERE user_id = ? AND title = ? COLLATE NOCASE;
+
+-- name: ListAllFeeds :many
+SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
+       f.etag, f.last_modified, f.last_polled_at, f.poll_interval_sec, f.enabled, f.created_at,
+       u.username AS owner
+FROM feeds f
+JOIN users u ON u.id = f.user_id
+ORDER BY u.username, f.title;
+
+-- name: CountAllFeeds :one
+SELECT COUNT(*) FROM feeds;

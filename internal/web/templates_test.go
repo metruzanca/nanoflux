@@ -136,3 +136,20 @@ func TestIsImagePost(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatBytes(t *testing.T) {
+	for _, tc := range []struct {
+		in   int64
+		want string
+	}{
+		{0, "0 B"},
+		{500, "500 B"},
+		{1536, "1.5 KB"},
+		{5 << 20, "5.0 MB"},
+		{3 << 30, "3.0 GB"},
+	} {
+		if got := FormatBytes(tc.in); got != tc.want {
+			t.Errorf("FormatBytes(%d) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

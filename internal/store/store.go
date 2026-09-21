@@ -22,6 +22,7 @@ type Store struct {
 	q           *sqlcgen.Queries
 	Users       *UserStore
 	Sessions    *SessionStore
+	Settings    *SettingStore
 	Authors     *AuthorStore
 	Feeds       *FeedStore
 	Items       *ItemStore
@@ -38,6 +39,7 @@ func New(sqldb *sql.DB) *Store {
 		q:           q,
 		Users:       &UserStore{q: q},
 		Sessions:    &SessionStore{q: q},
+		Settings:    &SettingStore{q: q},
 		Authors:     &AuthorStore{q: q},
 		Feeds:       &FeedStore{q: q},
 		Items:       &ItemStore{q: q, db: sqldb},

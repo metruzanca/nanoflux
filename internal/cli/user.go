@@ -21,12 +21,63 @@ func userCmd(st *store.Store, files func() (filestore.Store, error), stdout, std
 	cmd := &cobra.Command{
 		Use:   "user",
 		Short: "Manage users",
-		Long:  "List, modify and remove users. Grant the admin flag with `user set-admin <username> true`.",
+		Long:  "List, create, modify and remove users. Grant the admin flag with `user set-admin <username> true`.",
 	}
 	cmd.AddCommand(userListCmd(st, stdout))
+	cmd.AddCommand(userCreateCmd(st, stdout, stderr))
 	cmd.AddCommand(userSetAdminCmd(st, stdout))
 	cmd.AddCommand(userResetPasswordCmd(st, stdout, stderr))
 	cmd.AddCommand(userDeleteCmd(st, files, stdout, stderr))
+	return cmd
+}
+
+func userCreateCmd(st *store.Store, out, errOut io.Writer) *cobra.Command {
+	var password string
+	var admin bool
+	cmd := &cobra.Command{
+		Use:   "create <username>",
+		Short: "Create a user account",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			username := strings.TrimSpace(args[0])
+			if username == "" {
+				return fmt.Errorf("username is required")
+			}
+			if _, err := st.Users.ByUsername(username); err == nil {
+				return fmt.Errorf("user %q already exists", username)
+			}
+			pw := password
+			if pw == "" {
+				var err error
+				pw, err = promptPassword(errOut)
+				if err != nil {
+					return err
+				}
+			}
+			if len(pw) < 8 {
+				return fmt.Errorf("password must be at least 8 characters")
+			}
+			hash, err := auth.HashPassword(pw)
+			if err != nil {
+				return err
+			}
+			u, err := st.Users.Create(username, hash)
+			if err != nil {
+				return err
+			}
+			if admin {
+				if err := st.Users.SetAdmin(u.ID, true); err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "created user %q as admin\n", username)
+				return nil
+			}
+			fmt.Fprintf(out, "created user %q\n", username)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&password, "password", "p", "", "password (prompted for if omitted)")
+	cmd.Flags().BoolVar(&admin, "admin", false, "grant the admin flag")
 	return cmd
 }
 

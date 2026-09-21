@@ -16,6 +16,7 @@ help:
 	@echo "  logs      tail the app logs"
 	@echo "  shell     open a shell in the app container"
 	@echo "  backup    snapshot the database and file store into backups/"
+	@echo "  restore   restore from backups/ (usage: make restore ARCHIVE=backups/<file>.tar.gz)"
 	@echo "  down      stop and remove containers (data kept)"
 	@echo ""
 	@echo "Run with podman: make <cmd> RUNTIME=podman"
@@ -54,7 +55,19 @@ backup:
 		-v nanoflux-files:/filestore:ro \
 		-v $(CURDIR)/backups:/backup \
 		alpine:3.20 \
-		sh -c 'tar czf /backup/nanoflux-$$(date +%Y%m%d-%H%M%S).tar.gz -C /data . -C /filestore .'
+		sh -c 'tar czf /backup/nanoflux-$$(date +%Y%m%d-%H%M%S).tar.gz -C / data filestore'
+
+restore:
+	@test -n "$(ARCHIVE)" || (echo "usage: make restore ARCHIVE=backups/nanoflux-<timestamp>.tar.gz"; exit 1)
+	@case "$(ARCHIVE)" in */*) echo "ARCHIVE must be a filename inside backups/"; exit 1;; esac
+	$(COMPOSE) stop
+	$(RUNTIME) run --rm \
+		-v nanoflux-db:/data \
+		-v nanoflux-files:/filestore \
+		-v $(CURDIR)/backups:/backup:ro \
+		alpine:3.20 \
+		sh -c 'tar xzf "/backup/$(ARCHIVE)" -C / data filestore'
+	@echo "restore complete - start the instance with: make start"
 
 down:
 	$(COMPOSE) down

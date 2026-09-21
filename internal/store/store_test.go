@@ -797,3 +797,99 @@ func TestUserDeleteCascadesAndPurgesKeys(t *testing.T) {
 		t.Fatalf("password hash = %q", got.PasswordHash)
 	}
 }
+
+func TestSettingStore(t *testing.T) {
+	s := newTestStore(t)
+	// Migration seeds allow_signup = '1'.
+	allow, err := s.Settings.AllowSignup()
+	if err != nil || !allow {
+		t.Fatalf("default allow_signup = %v, %v; want true", allow, err)
+	}
+	if err := s.Settings.SetAllowSignup(false); err != nil {
+		t.Fatalf("SetAllowSignup: %v", err)
+	}
+	allow, _ = s.Settings.AllowSignup()
+	if allow {
+		t.Fatal("allow_signup should be false")
+	}
+	// A missing row defaults back to true.
+	if _, err := s.db.Exec(`DELETE FROM settings WHERE key = 'allow_signup'`); err != nil {
+		t.Fatal(err)
+	}
+	allow, err = s.Settings.AllowSignup()
+	if err != nil || !allow {
+		t.Fatalf("missing setting should default true: %v %v", allow, err)
+	}
+}
+
+func TestBannerDismissed(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	d, err := s.Users.BannerDismissed(u.ID)
+	if err != nil || d {
+		t.Fatalf("new user banner dismissed = %v, %v", d, err)
+	}
+	if err := s.Users.SetBannerDismissed(u.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = s.Users.BannerDismissed(u.ID)
+	if !d {
+		t.Fatal("banner should be dismissed")
+	}
+}
+
+func TestGlobalCounts(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	mustUser(t, s, "bob")
+	a, err := s.Authors.Create(alice.ID, "blog", "https://example.com", "https://example.com/a.png", "desc")
+	if err != nil {
+		t.Fatalf("create author: %v", err)
+	}
+	f, err := s.Feeds.Create(alice.ID, a.ID, "Example", "https://example.com/feed.xml", "https://example.com", "", 900)
+	if err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	if _, err := s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "hello", Link: "https://example.com/1", Summary: "sum", FetchedAt: db.Now()}); err != nil {
+		t.Fatalf("upsert item: %v", err)
+	}
+
+	if n, _ := s.Users.Count(); n != 2 {
+		t.Fatalf("users count = %d", n)
+	}
+	if n, _ := s.Feeds.Count(); n != 1 {
+		t.Fatalf("feeds count = %d", n)
+	}
+	if n, _ := s.Authors.Count(); n != 1 {
+		t.Fatalf("authors count = %d", n)
+	}
+	if n, _ := s.Items.Count(); n != 1 {
+		t.Fatalf("items count = %d", n)
+	}
+	if n, _ := s.Items.CountAllUnread(); n != 1 {
+		t.Fatalf("unread count = %d", n)
+	}
+}
+
+func TestListAllFeeds(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	bob := mustUser(t, s, "bob")
+	if _, err := s.Feeds.Create(alice.ID, 0, "A", "https://a/feed.xml", "", "", 900); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Feeds.Create(bob.ID, 0, "B", "https://b/feed.xml", "", "", 900); err != nil {
+		t.Fatal(err)
+	}
+	feeds, err := s.Feeds.ListAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(feeds) != 2 {
+		t.Fatalf("ListAll len = %d", len(feeds))
+	}
+	owners := map[string]string{feeds[0].Title: feeds[0].Owner, feeds[1].Title: feeds[1].Owner}
+	if owners["A"] != "alice" || owners["B"] != "bob" {
+		t.Fatalf("owners = %v", owners)
+	}
+}

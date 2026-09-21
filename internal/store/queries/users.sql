@@ -24,6 +24,13 @@ SELECT COUNT(*) FROM users;
 -- name: CountAdmins :one
 SELECT COUNT(*) FROM users WHERE is_admin = 1;
 
+-- name: GetUserSignupBannerDismissed :one
+SELECT signup_banner_dismissed FROM users WHERE id = ?;
+
+-- name: SetUserSignupBannerDismissed :exec
+UPDATE users SET signup_banner_dismissed = ?
+WHERE id = ?;
+
 -- name: GetUserAvatarKey :one
 SELECT avatar_key FROM users
 WHERE id = ?;

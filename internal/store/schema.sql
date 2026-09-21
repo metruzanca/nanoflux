@@ -6,6 +6,7 @@ CREATE TABLE users (
     username      TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     is_admin      INTEGER NOT NULL DEFAULT 0,
+    signup_banner_dismissed INTEGER NOT NULL DEFAULT 0,
     avatar_key    TEXT,
     avatar_data   BLOB,
     avatar_content_type TEXT,
@@ -25,6 +26,11 @@ CREATE TABLE sessions (
 );
 CREATE INDEX idx_sessions_user ON sessions(user_id);
 CREATE INDEX idx_sessions_token ON sessions(token);
+
+CREATE TABLE settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 
 CREATE TABLE authors (
     id          INTEGER PRIMARY KEY,

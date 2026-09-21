@@ -105,6 +105,12 @@ func (s *AuthorStore) ListWithFeedCount(userID int64) ([]AuthorWithCount, error)
 	return out, nil
 }
 
+// Count returns the total number of authors across all users.
+func (s *AuthorStore) Count() (int, error) {
+	n, err := s.q.CountAllAuthors(context.Background())
+	return int(n), err
+}
+
 func (s *AuthorStore) Update(userID, id int64, name, url, avatarURL, description string) error {
 	res, err := s.q.UpdateAuthor(context.Background(), sqlcgen.UpdateAuthorParams{
 		Name:        name,

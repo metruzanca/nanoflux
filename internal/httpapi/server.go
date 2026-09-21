@@ -118,6 +118,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/users/{id}/reset-password", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminResetPassword))))
 	mux.Handle("POST /admin/users/{id}/set-admin", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminSetAdmin))))
 	mux.Handle("POST /admin/users/{id}/delete", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminDeleteUser))))
+	mux.Handle("POST /admin/settings/signup", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminSetSignup))))
+	mux.Handle("POST /admin/settings/signup-banner-dismiss", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminDismissSignupBanner))))
 
 	// Settings.
 	mux.Handle("GET /settings", s.auth.Require(http.HandlerFunc(s.settingsPage)))
