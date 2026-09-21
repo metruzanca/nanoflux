@@ -4,18 +4,19 @@ go 1.26.6
 
 require (
 	github.com/a-h/templ v0.3.1020
+	github.com/andybalholm/cascadia v1.3.5
 	github.com/charmbracelet/log v1.0.0
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/mmcdole/gofeed v1.4.2
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.57.0
+	golang.org/x/image v0.46.0
 	golang.org/x/net v0.58.0
 	golang.org/x/term v0.46.0
 	modernc.org/sqlite v1.58.0
 )
 
 require (
-	github.com/andybalholm/cascadia v1.3.5 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
