@@ -721,3 +721,79 @@ func TestUserAvatar(t *testing.T) {
 		t.Fatal("bob should have no avatar")
 	}
 }
+
+func TestUserAdminFlag(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	mustUser(t, s, "bob")
+
+	if alice.IsAdmin {
+		t.Fatal("new users are not admins")
+	}
+	if err := s.Users.SetAdmin(alice.ID, true); err != nil {
+		t.Fatalf("SetAdmin: %v", err)
+	}
+	got, err := s.Users.ByID(alice.ID)
+	if err != nil || !got.IsAdmin {
+		t.Fatalf("alice should be admin: %+v %v", got, err)
+	}
+	admins, err := s.Users.CountAdmins()
+	if err != nil || admins != 1 {
+		t.Fatalf("count admins = %d %v", admins, err)
+	}
+}
+
+func TestUserDeleteCascadesAndPurgesKeys(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	bob := mustUser(t, s, "bob")
+
+	if err := s.Users.SetAvatarKey(bob.ID, "avatars/2"); err != nil {
+		t.Fatalf("SetAvatarKey: %v", err)
+	}
+	icon, err := s.SourceIcons.Create(bob.ID, "github.com", "https://x/icon.png")
+	if err != nil {
+		t.Fatalf("create icon: %v", err)
+	}
+	if err := s.SourceIcons.SetIconKey(bob.ID, icon.ID, "icons/2/github.com", db.Now()); err != nil {
+		t.Fatalf("SetIconKey: %v", err)
+	}
+	if err := s.Sessions.Create(bob.ID, "bob-token", db.Now()); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	keys, err := s.Users.ListObjectKeys(bob.ID)
+	if err != nil {
+		t.Fatalf("ListObjectKeys: %v", err)
+	}
+	if len(keys) != 2 || keys[0] != "icons/2/github.com" || keys[1] != "avatars/2" {
+		t.Fatalf("object keys = %v", keys)
+	}
+
+	if err := s.Users.Delete(bob.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := s.Users.ByID(bob.ID); err == nil {
+		t.Fatal("bob still present after delete")
+	}
+	if _, err := s.Sessions.UserByToken("bob-token"); err == nil {
+		t.Fatal("bob's session should cascade away")
+	}
+	var icons int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM source_icons WHERE user_id = ?`, bob.ID).Scan(&icons); err != nil || icons != 0 {
+		t.Fatalf("bob's icons remain: %d %v", icons, err)
+	}
+
+	// ResetPassword + session revocation.
+	alice, _ = s.Users.ByID(alice.ID)
+	if err := s.Sessions.Create(alice.ID, "alice-token", db.Now()); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if err := s.Users.ResetPassword(alice.ID, "newhash"); err != nil {
+		t.Fatalf("ResetPassword: %v", err)
+	}
+	got, _ := s.Users.ByID(alice.ID)
+	if got.PasswordHash != "newhash" {
+		t.Fatalf("password hash = %q", got.PasswordHash)
+	}
+}

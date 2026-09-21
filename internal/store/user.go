@@ -13,6 +13,7 @@ type User struct {
 	ID           int64
 	Username     string
 	PasswordHash string
+	IsAdmin      bool
 	HasAvatar    bool
 	Timezone     string
 	Theme        string
@@ -31,7 +32,7 @@ func (s *UserStore) Create(username, passwordHash string) (User, error) {
 	if err != nil {
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
 }
 
 func (s *UserStore) ByID(id int64) (User, error) {
@@ -42,7 +43,7 @@ func (s *UserStore) ByID(id int64) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
 }
 
 func (s *UserStore) ByUsername(username string) (User, error) {
@@ -53,7 +54,7 @@ func (s *UserStore) ByUsername(username string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
 }
 
 func (s *UserStore) List() ([]User, error) {
@@ -63,7 +64,7 @@ func (s *UserStore) List() ([]User, error) {
 	}
 	out := make([]User, 0, len(rows))
 	for _, u := range rows {
-		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt))
+		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt))
 	}
 	return out, nil
 }
@@ -71,6 +72,56 @@ func (s *UserStore) List() ([]User, error) {
 func (s *UserStore) Count() (int, error) {
 	n, err := s.q.CountUsers(context.Background())
 	return int(n), err
+}
+
+// CountAdmins returns how many users have the admin flag set.
+func (s *UserStore) CountAdmins() (int, error) {
+	n, err := s.q.CountAdmins(context.Background())
+	return int(n), err
+}
+
+// ResetPassword stores a new bcrypt password hash for the user.
+func (s *UserStore) ResetPassword(userID int64, passwordHash string) error {
+	return s.q.SetUserPassword(context.Background(), sqlcgen.SetUserPasswordParams{
+		PasswordHash: passwordHash,
+		ID:           userID,
+	})
+}
+
+// SetAdmin grants or revokes the admin flag.
+func (s *UserStore) SetAdmin(userID int64, admin bool) error {
+	return s.q.SetUserAdmin(context.Background(), sqlcgen.SetUserAdminParams{
+		IsAdmin: admin,
+		ID:      userID,
+	})
+}
+
+// Delete removes the user; sessions, feeds, items and other per-user rows are
+// removed by the FK cascade. Object-storage bytes (avatar, icons) are not
+// touched here — callers purge them via ListObjectKeys.
+func (s *UserStore) Delete(userID int64) error {
+	return s.q.DeleteUser(context.Background(), userID)
+}
+
+// ListObjectKeys returns the object-storage keys owned by the user (avatar and
+// custom icon blobs), for cleanup when the user is deleted.
+func (s *UserStore) ListObjectKeys(userID int64) ([]string, error) {
+	rows, err := s.q.ListUserIconKeys(context.Background(), userID)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(rows)+1)
+	for _, k := range rows {
+		if k.Valid && k.String != "" {
+			keys = append(keys, k.String)
+		}
+	}
+	if k, err := s.AvatarKey(userID); err != nil {
+		return nil, err
+	} else if k != "" {
+		keys = append(keys, k)
+	}
+	return keys, nil
 }
 
 // AvatarKey returns the object-storage key of the user's profile picture,

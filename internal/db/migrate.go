@@ -26,6 +26,7 @@ var migrations = []migration{
 	{13, schemaV13},
 	{14, schemaV14},
 	{15, schemaV15},
+	{16, schemaV16},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -106,6 +107,13 @@ ALTER TABLE users ADD COLUMN accent_color TEXT NOT NULL DEFAULT '#5b8cff';
 // created lazily when a feed whose hostname maps to their name is added.
 const schemaV15 = `
 ALTER TABLE collections ADD COLUMN is_auto INTEGER NOT NULL DEFAULT 0;
+`
+
+// schemaV16 flags admin users. The bootstrap account is marked admin by the
+// server at creation; existing installs grant admin via `nanoflux user
+// set-admin <username> true` (no automatic promotion here).
+const schemaV16 = `
+ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
 `
 
 const schemaV8 = `

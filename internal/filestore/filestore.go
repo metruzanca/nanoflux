@@ -92,6 +92,28 @@ func New(cfg Config) (Store, error) {
 	return &s3Store{client: client, bucket: cfg.Bucket, region: cfg.Region}, nil
 }
 
+// NewFromConfig builds the store selected by cfg (local disk when IsDisk,
+// S3-compatible otherwise) and ensures its bucket/directory exists. diskDir is
+// the local directory used when no S3 endpoint is configured.
+func NewFromConfig(cfg Config, diskDir string) (Store, error) {
+	if cfg.IsDisk() {
+		cfg.Dir = diskDir
+		st := NewDisk(cfg.Dir)
+		if err := st.EnsureBucket(context.Background()); err != nil {
+			return nil, err
+		}
+		return st, nil
+	}
+	st, err := New(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := st.EnsureBucket(context.Background()); err != nil {
+		return nil, fmt.Errorf("reach %s (set NF_S3_ENDPOINT): %w", cfg.Endpoint, err)
+	}
+	return st, nil
+}
+
 func (s *s3Store) EnsureBucket(ctx context.Context) error {
 	exists, err := s.client.BucketExists(ctx, s.bucket)
 	if err != nil {

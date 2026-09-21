@@ -120,6 +120,38 @@ docker run -d --name nanoflux -p 8080:8080 \
 Substitute `podman` for `docker` as needed. If the image is private,
 `podman login ghcr.io -u <user>` first.
 
+## Admin
+
+nanoflux has two admin surfaces with the same capabilities: list users, reset
+passwords, grant/revoke the admin flag, and delete users. Deleting a user
+removes all of their data (feeds, items, avatars, icons). The first account
+created at startup (the bootstrap account) is always an admin.
+
+### Web
+
+Log in as an admin and open **admin** from the user menu (top-right). Each
+user row has a password-reset form, a make/remove-admin toggle, and a delete
+button with confirmation. You cannot delete your own account, and the last
+admin can never be removed.
+
+### CLI
+
+The same operations run inside the container:
+
+```bash
+make shell
+nanoflux user list
+nanoflux user set-admin <username> true
+nanoflux user reset-password <username>     # prompts for the new password
+nanoflux user delete <username>             # prompts to confirm; use --yes to skip
+nanoflux user --help
+```
+
+`nanoflux` with no arguments (or `nanoflux server`) starts the web server, so
+the docker image and compose file are unchanged; any other first argument
+routes to the CLI. Instances created before the admin flag existed grant one
+with `nanoflux user set-admin <your-username> true`.
+
 ## Release
 
 Tags push `v*` trigger GitHub Actions to build the multi-arch

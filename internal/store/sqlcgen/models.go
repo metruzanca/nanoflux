@@ -120,6 +120,7 @@ type User struct {
 	ID                int64          `json:"id"`
 	Username          string         `json:"username"`
 	PasswordHash      string         `json:"password_hash"`
+	IsAdmin           bool           `json:"is_admin"`
 	AvatarKey         sql.NullString `json:"avatar_key"`
 	AvatarData        []byte         `json:"avatar_data"`
 	AvatarContentType sql.NullString `json:"avatar_content_type"`
