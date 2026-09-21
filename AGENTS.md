@@ -337,7 +337,20 @@ The DB stores object **keys** (`users.avatar_key`, `source_icons.icon_key`).
   avatar renders from `GET /authors/{id}/avatar` once cached, else falls back
   to the `/img` proxy; the author edit page has a "refetch avatar" button
   (`POST /authors/{id}/avatar-refresh`). Changing/clearing `avatar_url` on
-  update and deleting an author both purge the cached object (best-effort).
+  update and deleting an author both purge the cached object (best-effort). On
+  the author edit page the avatar url input sits with the avatar image/heading
+  inside the edit form (`authorAvatarFields`); the refetch button swaps only
+  the inner `#author-avatar-card` (image + status), so it never clobbers an
+  unsaved avatar url value.
+
+## Collections and feed editing
+
+- The collections index renders each collection as a `.card` with feed/unread/
+  read counts, from `CollectionStore.ListWithCounts` (one query per user).
+- Feed rows on the author page only offer **edit** and **refresh**; pausing is
+  the feed edit page's "enabled (poll this feed)" checkbox, and **delete** lives
+  on the feed edit page (`feedDelete` redirects `303` back to the author page).
+  The `/toggle` route remains but has no UI.
 
 ## Environment variables
 

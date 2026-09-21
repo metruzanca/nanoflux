@@ -40,15 +40,7 @@ templ FeedRow(r feedRow) {
 			</div>
 			<div class="row-actions">
 				<a class="small" href={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit" }>edit</a>
-				<button class="link" title={ toggleTitle(r.Enabled) } hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/toggle" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">
-					if r.Enabled {
-						⏸
-					} else {
-						▶
-					}
-				</button>
 				<button class="link" title="refresh" hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/refresh" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">↻</button>
-				<button class="link danger" title="delete" hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML" hx-confirm="delete this feed?">✕</button>
 			</div>
 		</div>
 	</li>
@@ -197,6 +189,9 @@ templ feedEditPage(u store.User, d feedsData) {
 		<form class="stack" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
 			@feedFields(d)
 			<button type="submit">save</button>
+		</form>
+		<form class="stack delete-form" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } onsubmit="return confirm('delete this feed?')">
+			<button type="submit" class="danger">delete</button>
 		</form>
 	</section>
 	@feedRulesSection(d.Rules)
@@ -369,14 +364,6 @@ templ feedOlderControl(f feedRow) {
 			<span class="muted small">full history loaded</span>
 		}
 	</div>
-}
-
-// toggleTitle returns the toggle button tooltip for a feed's enabled state.
-func toggleTitle(enabled bool) string {
-	if enabled {
-		return "pause polling"
-	}
-	return "resume polling"
 }
 
 // hasID reports whether id is present in ids.

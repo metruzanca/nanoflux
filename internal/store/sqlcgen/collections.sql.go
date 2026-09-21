@@ -183,6 +183,63 @@ func (q *Queries) ListCollections(ctx context.Context, userID int64) ([]Collecti
 	return items, nil
 }
 
+const listCollectionsWithCounts = `-- name: ListCollectionsWithCounts :many
+SELECT c.id, c.user_id, c.name, c.is_auto, c.created_at,
+       COUNT(DISTINCT cf.feed_id) AS feed_count,
+       (SELECT COUNT(*) FROM items i JOIN collection_feeds cf2 ON cf2.feed_id = i.feed_id
+         WHERE cf2.collection_id = c.id AND i.read = 0) AS unread_count,
+       (SELECT COUNT(*) FROM items i JOIN collection_feeds cf2 ON cf2.feed_id = i.feed_id
+         WHERE cf2.collection_id = c.id AND i.read = 1) AS read_count
+FROM collections c
+LEFT JOIN collection_feeds cf ON cf.collection_id = c.id
+WHERE c.user_id = ?
+GROUP BY c.id
+ORDER BY c.name
+`
+
+type ListCollectionsWithCountsRow struct {
+	ID          int64  `json:"id"`
+	UserID      int64  `json:"user_id"`
+	Name        string `json:"name"`
+	IsAuto      int64  `json:"is_auto"`
+	CreatedAt   string `json:"created_at"`
+	FeedCount   int64  `json:"feed_count"`
+	UnreadCount int64  `json:"unread_count"`
+	ReadCount   int64  `json:"read_count"`
+}
+
+func (q *Queries) ListCollectionsWithCounts(ctx context.Context, userID int64) ([]ListCollectionsWithCountsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCollectionsWithCounts, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCollectionsWithCountsRow
+	for rows.Next() {
+		var i ListCollectionsWithCountsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.IsAuto,
+			&i.CreatedAt,
+			&i.FeedCount,
+			&i.UnreadCount,
+			&i.ReadCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listFeedsInCollection = `-- name: ListFeedsInCollection :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
        f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.kind, f.scrape_config, f.poll_interval_sec, f.enabled, f.created_at

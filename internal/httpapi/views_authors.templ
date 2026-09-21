@@ -63,9 +63,6 @@ templ AuthorRow(r authorRow) {
 					}
 				</div>
 			</div>
-			<div class="row-actions">
-				<a class="small" href={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/edit" }>edit</a>
-			</div>
 		</div>
 	</li>
 }
@@ -75,18 +72,22 @@ templ authorEditPage(u store.User, d authorsData) {
 		<h1>edit author</h1>
 		<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
 			@authorFields(d)
+			@authorAvatarFields(d.AvatarCard)
 			<button type="submit">save</button>
 		</form>
 		<form class="stack delete-form" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } onsubmit="return confirm('delete this author and their feeds?')">
 			<button type="submit" class="danger">delete</button>
 		</form>
 	</section>
-	@authorAvatarCard(d.AvatarCard)
 }
 
-templ authorAvatarCard(d authorAvatarCardData) {
-	<section class="card" id="author-avatar-card">
-		<h2>avatar</h2>
+// authorAvatarFields renders the avatar section inside the edit form: the
+// image, its cache status, the refetch button, and the avatar url input sit
+// together. The refetch button swaps only the inner #author-avatar-card (image
+// + status + button), leaving the avatar url input's unsaved value alone.
+templ authorAvatarFields(d authorAvatarCardData) {
+	<h2>avatar</h2>
+	<div id="author-avatar-card">
 		if d.Flash != "" {
 			<div class="error" role="alert">{ d.Flash }</div>
 		}
@@ -108,10 +109,13 @@ templ authorAvatarCard(d authorAvatarCardData) {
 				</span>
 			</div>
 			<div class="row-actions">
-				<button class="link" title="re-fetch the avatar from its url" hx-post={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar-refresh" } hx-target="#author-avatar-card" hx-swap="outerHTML">refetch avatar</button>
+				<button type="button" class="link" title="re-fetch the avatar from its url" hx-post={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar-refresh" } hx-target="#author-avatar-card" hx-swap="outerHTML">refetch avatar</button>
 			</div>
 		</div>
-	</section>
+	</div>
+	<label>avatar url
+		<input name="avatar_url" type="url" value={ d.AvatarURL }/>
+	</label>
 }
 
 templ authorFields(d authorsData) {
@@ -120,9 +124,6 @@ templ authorFields(d authorsData) {
 	</label>
 	<label>url
 		<input name="url" type="url" value={ d.Form.URL }/>
-	</label>
-	<label>avatar url
-		<input name="avatar_url" type="url" value={ d.Form.AvatarURL }/>
 	</label>
 	<label>description
 		<textarea name="description" rows="3">{ d.Form.Description }</textarea>
