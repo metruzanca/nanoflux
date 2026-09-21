@@ -48,13 +48,19 @@ func TestListsFlow(t *testing.T) {
 		t.Fatalf("lists index missing entries: %s", body)
 	}
 
-	// The item modal offers the ⋯ menu and the list picker.
+	// The item modal offers the ⋯ menu; the list picker is fetched on demand
+	// into the shared dialog, not rendered inline.
 	body = doGet(h, "/items/"+itoa(item.ID)+"/view", cookie).Body.String()
-	if !strings.Contains(body, `id="item-menu-btn"`) || !strings.Contains(body, `id="item-lists-dialog"`) {
-		t.Fatalf("item modal should include the list menu + picker: %s", body)
+	if !strings.Contains(body, `class="item-menu"`) || !strings.Contains(body, `data-item-id="`+itoa(item.ID)+`"`) {
+		t.Fatalf("item modal should include the ⋯ menu: %s", body)
 	}
-	if !strings.Contains(body, "reading") {
-		t.Fatalf("picker should list the user's lists: %s", body)
+	if !strings.Contains(body, `itemMenuAction(event, 'lists')`) {
+		t.Fatalf("item menu should offer add to list: %s", body)
+	}
+	// The picker fragment lists the user's lists.
+	picker := doGet(h, "/items/"+itoa(item.ID)+"/lists", cookie).Body.String()
+	if !strings.Contains(picker, `hx-target="#item-lists-dialog"`) || !strings.Contains(picker, "reading") {
+		t.Fatalf("picker fragment should render the shared dialog form: %s", picker)
 	}
 
 	// Add the item to the reading list and favorites via the picker.

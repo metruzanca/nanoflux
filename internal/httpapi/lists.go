@@ -187,6 +187,26 @@ func (s *Server) favoritesRevoke(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, favoritesShareControl(""))
 }
 
+// itemLists renders the add-to-list picker for a single item, as a fragment
+// injected into the shared dialog. The card/modal "add to list" menu entries
+// fetch this before showing the dialog.
+func (s *Server) itemLists(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	it, err := s.store.Items.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	rows, _ := s.store.Lists.List(u.ID)
+	ids, _ := s.store.Lists.ItemListIDs(u.ID, id)
+	web.Render(w, r, itemListsDialogInner(id, it.Favorite, listsOnly(rows), ids))
+}
+
 // itemListsUpdate applies the add-to-list picker's selections to an item:
 // checked lists gain the item, unchecked ones drop it, and the special
 // favorites checkbox flips items.favorite. It re-renders the picker dialog so
@@ -252,7 +272,7 @@ func (s *Server) itemListsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	freshIDs, _ := s.store.Lists.ItemListIDs(u.ID, id)
 	it, _ = s.store.Items.ByID(u.ID, id)
-	web.Render(w, r, itemListsDialog(id, it.Favorite, listsOnly(rows), freshIDs))
+	web.Render(w, r, itemListsDialogInner(id, it.Favorite, listsOnly(rows), freshIDs))
 }
 
 // listsOnly strips the item-count wrapper off a List list.

@@ -285,11 +285,8 @@ type itemViewData struct {
 	EmbedSrc    string   // iframe src from the destination's oEmbed
 	Gallery     []string // full-res images of a reddit gallery post
 	Enclosures  []store.Enclosure
-	ShareToken  string       // public share token, "" when the item is not shared
-	Favorite    bool         // whether the item is in the special favorites list
-	Lists       []store.List // the user's lists, for the add-to-list picker
-	ItemListIDs []int64      // ids of the user's lists that already contain this item
-	Timezone    string       // user's IANA timezone, for relative timestamps in templates
+	ShareToken  string // public share token, "" when the item is not shared
+	Timezone    string // user's IANA timezone, for relative timestamps in templates
 }
 
 // itemView renders an item's stored content as a fragment, injected into the
@@ -330,13 +327,6 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemSource(ctx, data)
 	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
-	data.Favorite = it.Favorite
-	if rows, err := s.store.Lists.List(u.ID); err == nil {
-		data.Lists = listsOnly(rows)
-	}
-	if ids, err := s.store.Lists.ItemListIDs(u.ID, it.ID); err == nil {
-		data.ItemListIDs = ids
-	}
 	if sh, err := s.store.Shares.ByItem(u.ID, it.ID); err == nil {
 		data.ShareToken = sh.Token
 	}
@@ -438,6 +428,45 @@ func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
 	// Author-scoped pages suppress the (self-referential) author link; the row's
 	// toggle buttons carry hideAuthor=1 so a swapped row stays consistent.
 	web.Render(w, r, ItemRow(row, r.FormValue("hideAuthor") == "1"))
+}
+
+// itemReadBefore marks every unread item newer than this one (in the same feed)
+// as read, then lets the client reload the list.
+func (s *Server) itemReadBefore(w http.ResponseWriter, r *http.Request) {
+	s.markRangeRead(w, r, true)
+}
+
+// itemReadAfter marks every unread item older than this one (in the same feed)
+// as read, then lets the client reload the list.
+func (s *Server) itemReadAfter(w http.ResponseWriter, r *http.Request) {
+	s.markRangeRead(w, r, false)
+}
+
+// markRangeRead marks items newer (before) or older (after) than the target
+// item in its feed as read. The target item itself is left alone.
+func (s *Server) markRangeRead(w http.ResponseWriter, r *http.Request, before bool) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.Items.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var derr error
+	if before {
+		derr = s.store.Items.MarkBeforeRead(u.ID, id)
+	} else {
+		derr = s.store.Items.MarkAfterRead(u.ID, id)
+	}
+	if derr != nil {
+		log.Error("mark range read", "item_id", id, "before", before, "err", derr)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {

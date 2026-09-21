@@ -319,6 +319,26 @@ func (s *ItemStore) SetRead(userID, itemID int64, read bool) error {
 	return nil
 }
 
+// MarkBeforeRead marks every unread item in the same feed as itemID that is
+// newer than it (listed above it, newest first) as read.
+func (s *ItemStore) MarkBeforeRead(userID, itemID int64) error {
+	return s.q.MarkItemsBeforeRead(context.Background(), sqlcgen.MarkItemsBeforeReadParams{
+		ReadAt: ns(db.Now()),
+		ItemID: itemID,
+		UserID: userID,
+	})
+}
+
+// MarkAfterRead marks every unread item in the same feed as itemID that is
+// older than it (listed below it, newest first) as read.
+func (s *ItemStore) MarkAfterRead(userID, itemID int64) error {
+	return s.q.MarkItemsAfterRead(context.Background(), sqlcgen.MarkItemsAfterReadParams{
+		ReadAt: ns(db.Now()),
+		ItemID: itemID,
+		UserID: userID,
+	})
+}
+
 // SetFavorite marks an item as a favorite or not, verifying it belongs to the user.
 func (s *ItemStore) SetFavorite(userID, itemID int64, fav bool) error {
 	res, err := s.q.SetItemFavorite(context.Background(), sqlcgen.SetItemFavoriteParams{
