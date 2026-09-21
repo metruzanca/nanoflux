@@ -143,6 +143,9 @@ func normalizeItem(it *gofeed.Item) Item {
 	if it.Image != nil {
 		out.ImageURL = StripTracking(it.Image.URL)
 	}
+	if out.ImageURL == "" {
+		out.ImageURL = StripTracking(mediaThumbnailURL(it))
+	}
 	for _, e := range it.Enclosures {
 		if e == nil || e.URL == "" {
 			continue
@@ -229,4 +232,29 @@ func imageURL(img *gofeed.Image) string {
 		return ""
 	}
 	return img.URL
+}
+
+// mediaThumbnailURL returns the first media:thumbnail URL on an item, from a
+// direct <media:thumbnail> child or nested inside <media:group> (the shape
+// YouTube uses). gofeed's Item.Image ignores media:thumbnail, so feeds that
+// advertise their artwork only through it (YouTube, podcasts, ...) need this
+// fallback.
+func mediaThumbnailURL(it *gofeed.Item) string {
+	media, ok := it.Extensions["media"]
+	if !ok {
+		return ""
+	}
+	for _, g := range media["group"] {
+		for _, th := range g.Children["thumbnail"] {
+			if u := th.Attrs["url"]; u != "" {
+				return u
+			}
+		}
+	}
+	for _, th := range media["thumbnail"] {
+		if u := th.Attrs["url"]; u != "" {
+			return u
+		}
+	}
+	return ""
 }
