@@ -60,35 +60,60 @@ prefixes enable TLS).
 ## Run with containers (docker / podman)
 
 The release pipeline builds a multi-arch image (linux/amd64 + linux/arm64) and
-publishes it to the GitHub Container Registry. A `docker-compose.yml` is
-included for building and running from source:
+publishes it to the GitHub Container Registry as
+`ghcr.io/metruzanca/nanoflux:latest`. Clone the repo and drive the included
+`docker-compose.yml` with `make` (docker or podman, auto-detected):
 
 ```bash
-docker compose up --build
+git clone https://github.com/metruzanca/nanoflux
+cd nanoflux
+make start
 ```
 
-This mounts two named volumes: `nanoflux-db` at `/data` (the sqlite database)
-and `nanoflux-files` at `/filestore` (avatars and custom icons), so both
-survive container restarts. Point your browser at http://localhost:8080. Set
+Point your browser at http://localhost:8080. Set
 `RSS_BOOTSTRAP_USER`/`RSS_BOOTSTRAP_PASS` in a `.env` file to create the first
 account at startup; otherwise the default `admin/admin` account is created.
 
-To run a published image instead, replace the `build:` block in
-`docker-compose.yml` with `image: ghcr.io/metruzanca/nanoflux:latest`, or run
-it directly:
+This mounts two named volumes: `nanoflux-db` at `/data` (the sqlite database)
+and `nanoflux-files` at `/filestore` (avatars and custom icons), so both
+survive container restarts and updates.
+
+### Daily use
+
+| Command | What it does |
+| --- | --- |
+| `make start` | start the app (pulls the image on first run) |
+| `make stop` | shut the app down (containers and data kept) |
+| `make restart` | restart the app |
+| `make status` | show container status |
+| `make logs` | tail the app logs |
+| `make shell` | open a shell in the app container |
+| `make backup` | snapshot the database and file store into `backups/` |
+| `make down` | stop and remove containers (data kept) |
+
+`make help` lists these, and `make <cmd> RUNTIME=podman` forces podman.
+
+### Updating
 
 ```bash
-podman pull ghcr.io/metruzanca/nanoflux:latest
+make update
+```
 
-podman run -d --name nanoflux -p 8080:8080 \
-  -v nanoflux-data:/data \
+Pulls the latest `latest` image and redeploys the container; your data is
+preserved.
+
+To run a published image directly, without the Makefile:
+
+```bash
+docker run -d --name nanoflux -p 8080:8080 \
+  -v nanoflux-db:/data \
   -v nanoflux-files:/filestore \
   -e RSS_FILE_STORE=/filestore \
   -e RSS_BOOTSTRAP_USER=admin -e RSS_BOOTSTRAP_PASS=changeme \
   ghcr.io/metruzanca/nanoflux:latest
 ```
 
-With docker, substitute `docker` for `podman`. If the image is private,
+Substitute `podman` for `docker` as needed. If the image is private,
 `podman login ghcr.io -u <user>` first.
 
 ## Release

@@ -1,10 +1,6 @@
 services:
   nanoflux:
-    # Build from source. A published image can be used instead once one
-    # exists: replace the build block with `image: ghcr.io/metruzanca/nanoflux:latest`.
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
+    image: ghcr.io/metruzanca/nanoflux:latest
     ports:
       - "8080:8080"
     environment:
