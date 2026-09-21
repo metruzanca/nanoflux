@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -67,6 +68,48 @@ func TestNormalizeURL(t *testing.T) {
 		if got := normalizeURL(c.in); got != c.want {
 			t.Errorf("normalizeURL(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestStripWWW(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://www.example.com", "https://example.com"},
+		{"https://www.example.com/feed.xml", "https://example.com/feed.xml"},
+		{"http://www.example.com", "http://example.com"},
+		{"https://www.example.com:8080/x", "https://example.com:8080/x"},
+		{"https://WWW.Example.COM/path", "https://Example.COM/path"},
+		{"https://example.com", "https://example.com"},
+		{"https://www", "https://www"},
+		{"www.example.com/feed", "www.example.com/feed"}, // no scheme: not a host
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := stripWWW(c.in); got != c.want {
+			t.Errorf("stripWWW(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestFeedPreviewFormStripsWWW(t *testing.T) {
+	s, _ := newTestServer(t)
+	// pageURL is deliberately unusable so PageMeta fails fast with no network;
+	// the rendered form fields prove the www stripping.
+	req := httptest.NewRequest(http.MethodPost, "/fragments/feed-preview", nil)
+	w := httptest.NewRecorder()
+	s.renderFeedPreviewForm(req, w, discover.Candidate{
+		FeedURL: "https://www.example.com/feed.xml",
+		Title:   "Example",
+		HomeURL: "https://www.example.com",
+	}, "not-a-url", "https://www.example.com", nil, 0, nil)
+	body := w.Body.String()
+	if strings.Contains(body, "www.") {
+		t.Fatalf("preview form should strip www from auto-filled urls: %s", body)
+	}
+	if !strings.Contains(body, `value="https://example.com/feed.xml"`) {
+		t.Fatalf("feed url should be stripped: %s", body)
+	}
+	if !strings.Contains(body, `value="https://example.com"`) {
+		t.Fatalf("home url should be stripped: %s", body)
 	}
 }
 

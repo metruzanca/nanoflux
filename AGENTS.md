@@ -275,6 +275,11 @@ mapping never changes feeds that were already created (they store their resolved
 - `mappedFeedURL` in `internal/httpapi/mappings.go` lists the user's mappings
   (oldest first) and applies the first match. Mappings that no longer compile
   are skipped with a server-side log, never fatal.
+- **Auto-filled urls strip a leading `www.` subdomain** (`stripWWW` in
+  `internal/httpapi/web.go`): the find-author preview form's feed/home fields,
+  the scrape builder, and the new-author url prefill are all cleaned so
+  "https://www.example.com" shows up as "https://example.com". Manual edits on
+  save are left alone.
 - **Fallback:** when a mapped URL yields no feed (direct fetch or discovery), the
   original URL is discovered instead, so a stale mapping never blocks adding a
   feed. The entered URL becomes the feed's `home_url` whenever a mapping applied.
