@@ -178,7 +178,7 @@ func (s *CollectionStore) Feeds(userID, collectionID int64) ([]Feed, error) {
 	}
 	out := make([]Feed, 0, len(rows))
 	for _, f := range rows {
-		out = append(out, toFeed(f))
+		out = append(out, toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.PollIntervalSec, f.Enabled, f.CreatedAt)))
 	}
 	return out, nil
 }

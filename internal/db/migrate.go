@@ -28,6 +28,7 @@ var migrations = []migration{
 	{15, schemaV15},
 	{16, schemaV16},
 	{17, schemaV17},
+	{18, schemaV18},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -126,6 +127,12 @@ CREATE TABLE settings (
 );
 INSERT INTO settings(key, value) VALUES ('allow_signup', '1');
 ALTER TABLE users ADD COLUMN signup_banner_dismissed INTEGER NOT NULL DEFAULT 0;
+`
+
+// schemaV18 records the last poll failure on each feed so owners can see when
+// a feed is broken. NULL/empty means the last poll succeeded.
+const schemaV18 = `
+ALTER TABLE feeds ADD COLUMN last_error TEXT;
 `
 
 const schemaV8 = `

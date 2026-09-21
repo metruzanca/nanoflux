@@ -20,6 +20,7 @@ type Feed struct {
 	ETag            string
 	LastModified    string
 	LastPolledAt    string
+	LastError       string
 	PollIntervalSec int
 	Enabled         bool
 	CreatedAt       string
@@ -180,11 +181,15 @@ func (s *FeedStore) Delete(userID, id int64) error {
 
 // SetPollMeta records the result of a fetch: entity tags for conditional GET
 // and the time of the poll. Not user-scoped because the poller owns it.
-func (s *FeedStore) SetPollMeta(id int64, etag, lastModified, lastPolledAt string) error {
+// SetPollMeta records etag/last_modified/last_polled_at and the last poll
+// outcome. lastError is "" on success and the (truncated) failure text
+// otherwise.
+func (s *FeedStore) SetPollMeta(id int64, etag, lastModified, lastPolledAt, lastError string) error {
 	return s.q.SetFeedPollMeta(context.Background(), sqlcgen.SetFeedPollMetaParams{
 		Etag:         ns(etag),
 		LastModified: ns(lastModified),
 		LastPolledAt: ns(lastPolledAt),
+		LastError:    ns(lastError),
 		ID:           id,
 	})
 }
@@ -233,7 +238,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed: toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

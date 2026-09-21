@@ -48,6 +48,11 @@ extension. SQLite, session auth, background poller, feed discovery.
   - [x] Signup control: DB-backed `allow_signup` setting (schemaV17), login/signup gating
   - [x] Backup/restore: `nanoflux backup`/`restore` + `make restore`, shared `data/`+`filestore/` layout
   - [x] Guards: last admin protected, no self-delete, session revocation on reset
+- [x] **P7 — Self-hosting hardening**
+  - [x] Change-password UI + session management on `/settings`
+  - [x] Login rate limiting (per-IP, web + API)
+  - [x] Feed poll error tracking (`feeds.last_error`, owner-only surfacing)
+  - [x] Secure session cookie auto-detected from TLS / `X-Forwarded-Proto`
 - [ ] **Deferred (explicitly later)**
   - [ ] Chrome extension (MV3) — popup, badge, save-to-collection
   - [ ] MCP server wrapping `internal/store`

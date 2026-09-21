@@ -102,13 +102,14 @@ func (p *Poller) PollDue(ctx context.Context) (int, error) {
 func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 	res, err := feedparse.Fetch(ctx, f.FeedURL, p.client, f.ETag, f.LastModified)
 	if errors.Is(err, feedparse.ErrNotModified) {
-		p.store.Feeds.SetPollMeta(f.ID, f.ETag, f.LastModified, db.Now())
+		p.store.Feeds.SetPollMeta(f.ID, f.ETag, f.LastModified, db.Now(), "")
 		return 0, nil
 	}
 	fetched := db.Now()
 	if err != nil {
-		// Record the attempt so a broken feed isn't retried every tick.
-		p.store.Feeds.SetPollMeta(f.ID, "", "", fetched)
+		// Record the attempt and the failure so the owner can see the feed is
+		// broken; a broken feed isn't retried every tick.
+		p.store.Feeds.SetPollMeta(f.ID, "", "", fetched, truncateError(err.Error()))
 		return 0, err
 	}
 
@@ -151,10 +152,20 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 			}
 		}
 	}
-	if err := p.store.Feeds.SetPollMeta(f.ID, res.ETag, res.LastModified, fetched); err != nil {
+	if err := p.store.Feeds.SetPollMeta(f.ID, res.ETag, res.LastModified, fetched, ""); err != nil {
 		return newItems, err
 	}
 	return newItems, nil
+}
+
+// truncateError caps the stored failure text so a runaway error message can't
+// bloat the row.
+func truncateError(msg string) string {
+	const maxErrLen = 200
+	if len(msg) > maxErrLen {
+		return msg[:maxErrLen] + "…"
+	}
+	return msg
 }
 
 // matchFilter reports whether a rule's pattern matches an item's selected

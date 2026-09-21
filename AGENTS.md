@@ -314,6 +314,32 @@ run inside the container. Both share the store methods (`UserStore.ResetPassword
   `make restore` (which stops compose first) restore the same layout. Do not
   change the layout without changing both.
 
+## Auth and session hardening
+
+- **Login throttling** is `loginLimiter` in `internal/httpapi/loginlimiter.go`,
+  keyed by client IP (5 failures / 15 min → 429 for the rest of the window).
+  It guards both `POST /login` and `POST /api/login`; a successful login clears
+  the count. `clientIP` uses `RemoteAddr` — it deliberately does not trust
+  `X-Forwarded-For`, so behind a proxy the limit is per-proxy-IP.
+- **Secure cookies** are auto-detected, not configured: `auth.SecureRequest`
+  returns true when `r.TLS` is set or `X-Forwarded-Proto`/`X-Forwarded-Ssl`
+  indicate https. `SetCookie`/`ClearCookie` take the request and set `Secure`
+  accordingly. Plain HTTP (LAN/dev) must keep working — never force Secure via
+  an env var.
+- **Change password** (`POST /settings/password`) verifies the current password
+  and calls `DeleteUserSessionsExcept(userID, currentToken)` so only the active
+  session survives. **Sessions** are listed/managed at `/settings`
+  (`ListUserSessions`, `POST /settings/sessions/{token}/revoke`); revoking the
+  current session logs the user out.
+
+## Feed poll failures
+
+`feeds.last_error` (schemaV18) records the last poll failure; `SetPollMeta`
+takes the error text (empty = success, truncated at 200 chars by the poller).
+The error is surfaced only to the feed's owner: a "last poll failed" badge on
+the feed row, the full (truncated) text on the feed page, and `feed list` marks
+the state `error`. Never render it cross-user (NSFW).
+
 ## htmx and client-side JS
 
 The web UI uses **htmx v2.0.4** (vendored at `internal/web/static/htmx.min.js`, loaded

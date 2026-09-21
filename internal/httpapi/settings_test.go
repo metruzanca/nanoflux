@@ -9,7 +9,10 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -498,4 +501,133 @@ func isAllDigits(s string) bool {
 		}
 	}
 	return true
+}
+
+func TestSettingsChangePassword(t *testing.T) {
+	s, h := newTestServer(t)
+	u, _ := s.store.Users.ByUsername("alice")
+	other := "other-token"
+	if err := s.store.Sessions.Create(u.ID, other, db.FormatTime(time.Now().Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	cookie := sessionCookie(t, h)
+
+	// Wrong current password rejected.
+	rr := doForm(h, "POST", "/settings/password", url.Values{
+		"current_password": {"nope"}, "new_password": {"newpass123"}, "confirm_password": {"newpass123"},
+	}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "current password is incorrect") {
+		t.Fatalf("wrong current pw: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// Mismatched confirm rejected.
+	rr = doForm(h, "POST", "/settings/password", url.Values{
+		"current_password": {"secret"}, "new_password": {"newpass123"}, "confirm_password": {"different"},
+	}, cookie)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("mismatched confirm: %d", rr.Code)
+	}
+
+	// Success rotates the hash and logs out other sessions.
+	rr = doForm(h, "POST", "/settings/password", url.Values{
+		"current_password": {"secret"}, "new_password": {"newpass123"}, "confirm_password": {"newpass123"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("change password: %d %s", rr.Code, rr.Body.String())
+	}
+	got, _ := s.store.Users.ByID(u.ID)
+	if !auth.CheckPassword(got.PasswordHash, "newpass123") {
+		t.Fatal("password hash not updated")
+	}
+	if _, err := s.store.Sessions.UserByToken(other); err == nil {
+		t.Fatal("other session should be revoked")
+	}
+	// The current session survives.
+	if _, err := s.store.Sessions.UserByToken(cookie.Value); err != nil {
+		t.Fatalf("current session should survive: %v", err)
+	}
+}
+
+func TestSettingsSessionsRevoke(t *testing.T) {
+	s, h := newTestServer(t)
+	u, _ := s.store.Users.ByUsername("alice")
+	if err := s.store.Sessions.Create(u.ID, "ghost", db.FormatTime(time.Now().Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	cookie := sessionCookie(t, h)
+
+	body := doGet(h, "/settings", cookie).Body.String()
+	if !strings.Contains(body, "this device") || !strings.Contains(body, "ghost") {
+		t.Fatal("settings should list sessions")
+	}
+
+	rr := doForm(h, "POST", "/settings/sessions/ghost/revoke", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("revoke: %d %s", rr.Code, rr.Body.String())
+	}
+	if _, err := s.store.Sessions.UserByToken("ghost"); err == nil {
+		t.Fatal("ghost session should be gone")
+	}
+
+	// Revoking the current session logs out.
+	rr = doForm(h, "POST", "/settings/sessions/"+cookie.Value+"/revoke", url.Values{}, cookie)
+	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/login" {
+		t.Fatalf("revoke current: %d %s", rr.Code, rr.Header().Get("Location"))
+	}
+}
+
+func TestLoginRateLimit(t *testing.T) {
+	_, h := newTestServer(t)
+	for i := 0; i < 5; i++ {
+		rr := doForm(h, "POST", "/login", url.Values{"username": {"alice"}, "password": {"wrong"}}, nil)
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: got %d", i, rr.Code)
+		}
+	}
+	rr := doForm(h, "POST", "/login", url.Values{"username": {"alice"}, "password": {"secret"}}, nil)
+	if rr.Code != http.StatusTooManyRequests {
+		t.Fatalf("6th attempt with correct password: got %d, want 429", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "too many attempts") {
+		t.Fatalf("429 should show a message: %s", rr.Body.String())
+	}
+}
+
+func TestLoginRateLimitClearsOnSuccess(t *testing.T) {
+	_, h := newTestServer(t)
+	for i := 0; i < 4; i++ {
+		doForm(h, "POST", "/login", url.Values{"username": {"alice"}, "password": {"wrong"}}, nil)
+	}
+	// A successful login below the threshold resets the counter.
+	if rr := doForm(h, "POST", "/login", url.Values{"username": {"alice"}, "password": {"secret"}}, nil); rr.Code != http.StatusFound {
+		t.Fatalf("successful login: %d", rr.Code)
+	}
+	if rr := doForm(h, "POST", "/login", url.Values{"username": {"alice"}, "password": {"wrong"}}, nil); rr.Code == http.StatusTooManyRequests {
+		t.Fatal("limiter should have been cleared after success")
+	}
+}
+
+func TestSecureCookieDetection(t *testing.T) {
+	_, h := newTestServer(t)
+
+	// Plain HTTP -> not Secure.
+	rr := login(t, h)
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == auth.SessionCookieName && c.Secure {
+			t.Fatal("plain HTTP cookie should not be Secure")
+		}
+	}
+
+	// X-Forwarded-Proto: https -> Secure.
+	form := url.Values{"username": {"alice"}, "password": {"secret"}}
+	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rr2 := httptest.NewRecorder()
+	h.ServeHTTP(rr2, req)
+	for _, c := range rr2.Result().Cookies() {
+		if c.Name == auth.SessionCookieName && !c.Secure {
+			t.Fatal("cookie behind https proxy should be Secure")
+		}
+	}
 }

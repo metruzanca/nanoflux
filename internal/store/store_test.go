@@ -581,7 +581,7 @@ func TestListDue(t *testing.T) {
 	}
 
 	// Just polled -> not due.
-	if err := s.Feeds.SetPollMeta(f.ID, "", "", db.Now()); err != nil {
+	if err := s.Feeds.SetPollMeta(f.ID, "", "", db.Now(), ""); err != nil {
 		t.Fatal(err)
 	}
 	due, _ = s.Feeds.ListDue(db.Now())
@@ -591,7 +591,7 @@ func TestListDue(t *testing.T) {
 
 	// Disabled feeds are never due.
 	s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://a.dev/rss.xml", "", "", 900, false)
-	if err := s.Feeds.SetPollMeta(f.ID, "", "", ""); err != nil {
+	if err := s.Feeds.SetPollMeta(f.ID, "", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	due, _ = s.Feeds.ListDue(db.Now())
@@ -891,5 +891,57 @@ func TestListAllFeeds(t *testing.T) {
 	owners := map[string]string{feeds[0].Title: feeds[0].Owner, feeds[1].Title: feeds[1].Owner}
 	if owners["A"] != "alice" || owners["B"] != "bob" {
 		t.Fatalf("owners = %v", owners)
+	}
+}
+
+func TestFeedLastError(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	f, err := s.Feeds.Create(u.ID, 0, "Example", "https://example.com/feed.xml", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.LastError != "" {
+		t.Fatalf("new feed LastError = %q", f.LastError)
+	}
+	if err := s.Feeds.SetPollMeta(f.ID, "", "", db.Now(), "boom: feed exploded"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Feeds.ByID(u.ID, f.ID)
+	if got.LastError != "boom: feed exploded" {
+		t.Fatalf("LastError = %q", got.LastError)
+	}
+	// A successful poll clears it.
+	if err := s.Feeds.SetPollMeta(f.ID, "etag", "", db.Now(), ""); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Feeds.ByID(u.ID, f.ID)
+	if got.LastError != "" {
+		t.Fatalf("LastError should be cleared, got %q", got.LastError)
+	}
+}
+
+func TestSessionsExceptAndList(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	for _, tok := range []string{"a", "b", "c"} {
+		if err := s.Sessions.Create(u.ID, tok, db.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sess, err := s.Sessions.ListUserSessions(u.ID)
+	if err != nil || len(sess) != 3 {
+		t.Fatalf("ListUserSessions = %d %v", len(sess), err)
+	}
+	if err := s.Sessions.DeleteUserSessionsExcept(u.ID, "b"); err != nil {
+		t.Fatal(err)
+	}
+	sess, _ = s.Sessions.ListUserSessions(u.ID)
+	got := map[string]bool{}
+	for _, se := range sess {
+		got[se.Token] = true
+	}
+	if len(sess) != 1 || !got["b"] {
+		t.Fatalf("expected only token b to remain, got %v", got)
 	}
 }

@@ -16,6 +16,16 @@ WHERE token = ?;
 DELETE FROM sessions
 WHERE user_id = ?;
 
+-- name: DeleteSessionsByUserExcept :exec
+DELETE FROM sessions
+WHERE user_id = ? AND token != ?;
+
+-- name: ListSessionsByUser :many
+SELECT token, created_at, expires_at
+FROM sessions
+WHERE user_id = ?
+ORDER BY created_at DESC;
+
 -- name: TouchSession :exec
 UPDATE sessions SET expires_at = ?
 WHERE token = ?;

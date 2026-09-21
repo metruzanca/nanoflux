@@ -25,7 +25,7 @@ const createFeed = `-- name: CreateFeed :one
 INSERT INTO feeds (user_id, author_id, title, feed_url, home_url, description, poll_interval_sec)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING id, user_id, author_id, title, feed_url, home_url, description,
-         etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at
+         etag, last_modified, last_polled_at, last_error, poll_interval_sec, enabled, created_at
 `
 
 type CreateFeedParams struct {
@@ -60,6 +60,7 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		&i.Etag,
 		&i.LastModified,
 		&i.LastPolledAt,
+		&i.LastError,
 		&i.PollIntervalSec,
 		&i.Enabled,
 		&i.CreatedAt,
@@ -83,7 +84,7 @@ func (q *Queries) DeleteFeed(ctx context.Context, arg DeleteFeedParams) (sql.Res
 
 const getFeed = `-- name: GetFeed :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, poll_interval_sec, enabled, created_at
 FROM feeds
 WHERE id = ? AND user_id = ?
 `
@@ -107,6 +108,7 @@ func (q *Queries) GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error) 
 		&i.Etag,
 		&i.LastModified,
 		&i.LastPolledAt,
+		&i.LastError,
 		&i.PollIntervalSec,
 		&i.Enabled,
 		&i.CreatedAt,
@@ -116,7 +118,7 @@ func (q *Queries) GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error) 
 
 const getFeedAny = `-- name: GetFeedAny :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, poll_interval_sec, enabled, created_at
 FROM feeds
 WHERE id = ?
 `
@@ -135,6 +137,7 @@ func (q *Queries) GetFeedAny(ctx context.Context, id int64) (Feed, error) {
 		&i.Etag,
 		&i.LastModified,
 		&i.LastPolledAt,
+		&i.LastError,
 		&i.PollIntervalSec,
 		&i.Enabled,
 		&i.CreatedAt,
@@ -144,7 +147,7 @@ func (q *Queries) GetFeedAny(ctx context.Context, id int64) (Feed, error) {
 
 const getFeedByTitle = `-- name: GetFeedByTitle :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, poll_interval_sec, enabled, created_at
 FROM feeds
 WHERE user_id = ? AND title = ? COLLATE NOCASE
 `
@@ -168,6 +171,7 @@ func (q *Queries) GetFeedByTitle(ctx context.Context, arg GetFeedByTitleParams) 
 		&i.Etag,
 		&i.LastModified,
 		&i.LastPolledAt,
+		&i.LastError,
 		&i.PollIntervalSec,
 		&i.Enabled,
 		&i.CreatedAt,
@@ -177,7 +181,7 @@ func (q *Queries) GetFeedByTitle(ctx context.Context, arg GetFeedByTitleParams) 
 
 const listAllFeeds = `-- name: ListAllFeeds :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.poll_interval_sec, f.enabled, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.poll_interval_sec, f.enabled, f.created_at,
        u.username AS owner
 FROM feeds f
 JOIN users u ON u.id = f.user_id
@@ -195,6 +199,7 @@ type ListAllFeedsRow struct {
 	Etag            sql.NullString `json:"etag"`
 	LastModified    sql.NullString `json:"last_modified"`
 	LastPolledAt    sql.NullString `json:"last_polled_at"`
+	LastError       sql.NullString `json:"last_error"`
 	PollIntervalSec int64          `json:"poll_interval_sec"`
 	Enabled         bool           `json:"enabled"`
 	CreatedAt       string         `json:"created_at"`
@@ -221,6 +226,7 @@ func (q *Queries) ListAllFeeds(ctx context.Context) ([]ListAllFeedsRow, error) {
 			&i.Etag,
 			&i.LastModified,
 			&i.LastPolledAt,
+			&i.LastError,
 			&i.PollIntervalSec,
 			&i.Enabled,
 			&i.CreatedAt,
@@ -241,7 +247,7 @@ func (q *Queries) ListAllFeeds(ctx context.Context) ([]ListAllFeedsRow, error) {
 
 const listFeeds = `-- name: ListFeeds :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, poll_interval_sec, enabled, created_at
 FROM feeds
 WHERE user_id = ?
 ORDER BY title
@@ -267,6 +273,7 @@ func (q *Queries) ListFeeds(ctx context.Context, userID int64) ([]Feed, error) {
 			&i.Etag,
 			&i.LastModified,
 			&i.LastPolledAt,
+			&i.LastError,
 			&i.PollIntervalSec,
 			&i.Enabled,
 			&i.CreatedAt,
@@ -286,7 +293,7 @@ func (q *Queries) ListFeeds(ctx context.Context, userID int64) ([]Feed, error) {
 
 const listFeedsByAuthor = `-- name: ListFeedsByAuthor :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, poll_interval_sec, enabled, created_at
 FROM feeds
 WHERE user_id = ? AND author_id = ?
 ORDER BY title
@@ -317,6 +324,7 @@ func (q *Queries) ListFeedsByAuthor(ctx context.Context, arg ListFeedsByAuthorPa
 			&i.Etag,
 			&i.LastModified,
 			&i.LastPolledAt,
+			&i.LastError,
 			&i.PollIntervalSec,
 			&i.Enabled,
 			&i.CreatedAt,
@@ -336,7 +344,7 @@ func (q *Queries) ListFeedsByAuthor(ctx context.Context, arg ListFeedsByAuthorPa
 
 const listFeedsByAuthorWithUnread = `-- name: ListFeedsByAuthorWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.poll_interval_sec, f.enabled, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.poll_interval_sec, f.enabled, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.read = 0) AS unread
 FROM feeds f
@@ -361,6 +369,7 @@ type ListFeedsByAuthorWithUnreadRow struct {
 	Etag            sql.NullString `json:"etag"`
 	LastModified    sql.NullString `json:"last_modified"`
 	LastPolledAt    sql.NullString `json:"last_polled_at"`
+	LastError       sql.NullString `json:"last_error"`
 	PollIntervalSec int64          `json:"poll_interval_sec"`
 	Enabled         bool           `json:"enabled"`
 	CreatedAt       string         `json:"created_at"`
@@ -388,6 +397,7 @@ func (q *Queries) ListFeedsByAuthorWithUnread(ctx context.Context, arg ListFeeds
 			&i.Etag,
 			&i.LastModified,
 			&i.LastPolledAt,
+			&i.LastError,
 			&i.PollIntervalSec,
 			&i.Enabled,
 			&i.CreatedAt,
@@ -409,7 +419,7 @@ func (q *Queries) ListFeedsByAuthorWithUnread(ctx context.Context, arg ListFeeds
 
 const listFeedsDue = `-- name: ListFeedsDue :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, poll_interval_sec, enabled, created_at
 FROM feeds
 WHERE enabled = 1
   AND (last_polled_at IS NULL OR last_polled_at <= datetime(CAST(?1 AS TEXT), '-' || poll_interval_sec || ' seconds'))
@@ -435,6 +445,7 @@ func (q *Queries) ListFeedsDue(ctx context.Context, now string) ([]Feed, error) 
 			&i.Etag,
 			&i.LastModified,
 			&i.LastPolledAt,
+			&i.LastError,
 			&i.PollIntervalSec,
 			&i.Enabled,
 			&i.CreatedAt,
@@ -454,7 +465,7 @@ func (q *Queries) ListFeedsDue(ctx context.Context, now string) ([]Feed, error) 
 
 const listFeedsWithUnread = `-- name: ListFeedsWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.poll_interval_sec, f.enabled, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.poll_interval_sec, f.enabled, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.read = 0) AS unread
 FROM feeds f
@@ -474,6 +485,7 @@ type ListFeedsWithUnreadRow struct {
 	Etag            sql.NullString `json:"etag"`
 	LastModified    sql.NullString `json:"last_modified"`
 	LastPolledAt    sql.NullString `json:"last_polled_at"`
+	LastError       sql.NullString `json:"last_error"`
 	PollIntervalSec int64          `json:"poll_interval_sec"`
 	Enabled         bool           `json:"enabled"`
 	CreatedAt       string         `json:"created_at"`
@@ -501,6 +513,7 @@ func (q *Queries) ListFeedsWithUnread(ctx context.Context, userID int64) ([]List
 			&i.Etag,
 			&i.LastModified,
 			&i.LastPolledAt,
+			&i.LastError,
 			&i.PollIntervalSec,
 			&i.Enabled,
 			&i.CreatedAt,
@@ -539,7 +552,7 @@ func (q *Queries) SetFeedEnabled(ctx context.Context, arg SetFeedEnabledParams) 
 
 const setFeedPollMeta = `-- name: SetFeedPollMeta :exec
 UPDATE feeds
-SET etag = ?, last_modified = ?, last_polled_at = ?
+SET etag = ?, last_modified = ?, last_polled_at = ?, last_error = ?
 WHERE id = ?
 `
 
@@ -547,6 +560,7 @@ type SetFeedPollMetaParams struct {
 	Etag         sql.NullString `json:"etag"`
 	LastModified sql.NullString `json:"last_modified"`
 	LastPolledAt sql.NullString `json:"last_polled_at"`
+	LastError    sql.NullString `json:"last_error"`
 	ID           int64          `json:"id"`
 }
 
@@ -555,6 +569,7 @@ func (q *Queries) SetFeedPollMeta(ctx context.Context, arg SetFeedPollMetaParams
 		arg.Etag,
 		arg.LastModified,
 		arg.LastPolledAt,
+		arg.LastError,
 		arg.ID,
 	)
 	return err

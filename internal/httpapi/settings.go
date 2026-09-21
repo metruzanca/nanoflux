@@ -47,8 +47,27 @@ type settingsData struct {
 	Timezone settingsTimezoneData
 	Theme    settingsThemeData
 	Accent   settingsAccentData
+	Password settingsPasswordData
+	Sessions settingsSessionsData
 	Opml     settingsOpmlData
 	Icons    []settingsIconRow
+}
+
+type settingsPasswordData struct {
+	Error   string
+	Success string
+}
+
+type settingsSessionsData struct {
+	Rows         []settingsSessionRow
+	Timezone     string
+	CurrentToken string
+}
+
+type settingsSessionRow struct {
+	Token     string
+	IsCurrent bool
+	CreatedAt string
 }
 
 type settingsAvatarData struct {
@@ -83,8 +102,89 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		Timezone:           settingsTimezoneData{Timezone: u.Timezone},
 		Theme:              settingsThemeData{Theme: u.Theme},
 		Accent:             settingsAccentData{Accent: u.AccentColor},
+		Sessions:           s.settingsSessionsData(u, auth.Token(r)),
 		Icons:              s.settingsIconRows(u.ID, u.Timezone),
 	})))
+}
+
+// settingsPassword changes the user's password, logging out every other
+// session.
+func (s *Server) settingsPassword(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	render := func(d settingsPasswordData) {
+		if d.Error != "" {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+		web.Render(w, r, settingsPassword(d))
+	}
+	current := r.FormValue("current_password")
+	newpw := r.FormValue("new_password")
+	if !auth.CheckPassword(u.PasswordHash, current) {
+		render(settingsPasswordData{Error: "current password is incorrect"})
+		return
+	}
+	if len(newpw) < 8 {
+		render(settingsPasswordData{Error: "new password must be at least 8 characters"})
+		return
+	}
+	if newpw != r.FormValue("confirm_password") {
+		render(settingsPasswordData{Error: "new passwords do not match"})
+		return
+	}
+	hash, err := auth.HashPassword(newpw)
+	if err != nil {
+		log.Error("change password: hash", "err", err)
+		render(settingsPasswordData{Error: "could not change password"})
+		return
+	}
+	if err := s.store.Users.ResetPassword(u.ID, hash); err != nil {
+		log.Error("change password: reset", "user_id", u.ID, "err", err)
+		render(settingsPasswordData{Error: "could not change password"})
+		return
+	}
+	if err := s.store.Sessions.DeleteUserSessionsExcept(u.ID, auth.Token(r)); err != nil {
+		log.Error("change password: revoke sessions", "user_id", u.ID, "err", err)
+	}
+	render(settingsPasswordData{Success: "password changed — other devices have been logged out"})
+}
+
+// settingsSessionsRevoke deletes a session. Revoking the current session logs
+// the user out; revoking another just re-renders the list.
+func (s *Server) settingsSessionsRevoke(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	token := r.PathValue("token")
+	if token == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.Sessions.Delete(token); err != nil {
+		log.Error("revoke session", "err", err)
+		http.NotFound(w, r)
+		return
+	}
+	if token == auth.Token(r) {
+		s.auth.ClearCookie(w, r)
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+	web.Render(w, r, settingsSessions(s.settingsSessionsData(u, auth.Token(r))))
+}
+
+func (s *Server) settingsSessionsData(u store.User, currentToken string) settingsSessionsData {
+	sessions, err := s.store.Sessions.ListUserSessions(u.ID)
+	if err != nil {
+		log.Error("list sessions", "user_id", u.ID, "err", err)
+		return settingsSessionsData{}
+	}
+	rows := make([]settingsSessionRow, 0, len(sessions))
+	for _, se := range sessions {
+		rows = append(rows, settingsSessionRow{
+			Token:     se.Token,
+			IsCurrent: se.Token == currentToken,
+			CreatedAt: se.CreatedAt,
+		})
+	}
+	return settingsSessionsData{Rows: rows, Timezone: u.Timezone, CurrentToken: currentToken}
 }
 
 // settingsTheme stores the user's theme preference: dark, light, or system.

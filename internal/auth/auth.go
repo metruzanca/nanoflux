@@ -44,13 +44,18 @@ func (a *Authenticator) CreateSession(userID int64) (string, error) {
 	return token, nil
 }
 
-// SetCookie sets the session cookie for the web UI.
-func (a *Authenticator) SetCookie(w http.ResponseWriter, token string) {
+// SetCookie sets the session cookie for the web UI. The Secure flag is derived
+// from the request so it is only set when the client connection was HTTPS —
+// either TLS terminated at the app or forwarded by a reverse proxy
+// (X-Forwarded-Proto/X-Forwarded-Ssl). Plain-HTTP LAN and dev installs keep a
+// non-Secure cookie.
+func (a *Authenticator) SetCookie(w http.ResponseWriter, r *http.Request, token string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   SecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(SessionTTL.Seconds()),
 		Expires:  time.Now().Add(SessionTTL),
@@ -58,16 +63,29 @@ func (a *Authenticator) SetCookie(w http.ResponseWriter, token string) {
 }
 
 // ClearCookie expires the session cookie.
-func (a *Authenticator) ClearCookie(w http.ResponseWriter) {
+func (a *Authenticator) ClearCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   SecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 		Expires:  time.Unix(1, 0),
 	})
+}
+
+// SecureRequest reports whether the client connection is (or was, via a
+// reverse proxy) HTTPS.
+func SecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Ssl"), "on")
 }
 
 // Token returns the session token from the cookie or Authorization header.
