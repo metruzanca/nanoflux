@@ -14,20 +14,11 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
-      - darwin
-      - windows
     goarch:
       - amd64
       - arm64
     ldflags:
       - -s -w -X main.version={{ .Version }}
-
-archives:
-  - formats: [tar.gz]
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-
-checksum:
-  name_template: "checksums.txt"
 
 dockers_v2:
   - images:
@@ -50,6 +41,18 @@ release:
   github:
     owner: metruzanca
     name: nanoflux
+  footer: |
+
+    ## Containers
+
+    This release ships as container images only — no binaries are published.
+    Find the images on the package registry:
+
+    [ghcr.io/metruzanca/nanoflux](https://github.com/users/metruzanca/packages/container/package/nanoflux)
+
+    ```sh
+    docker pull ghcr.io/metruzanca/nanoflux:{{ .Tag }}
+    ```
 
 changelog:
   sort: asc

@@ -122,8 +122,10 @@ Substitute `podman` for `docker` as needed. If the image is private,
 
 ## Release
 
-Tags push `v*` trigger GitHub Actions to build binaries, a GitHub release, and
-the `ghcr.io/metruzanca/nanoflux` images:
+Tags push `v*` trigger GitHub Actions to build the multi-arch
+`ghcr.io/metruzanca/nanoflux` images and draft a GitHub release with the
+changelog. Releases carry no binary artifacts — the app ships as containers
+only, and the release notes link to the package registry:
 
 ```bash
 git tag v0.1.0 && git push origin v0.1.0
