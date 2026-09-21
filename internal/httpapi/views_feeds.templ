@@ -95,7 +95,7 @@ templ feedPreviewFields(d feedPreviewForm) {
 templ feedChooser(d feedChoose) {
 	<div class="choose">
 		<p class="muted">found { len(d.Candidates) } feeds on that page — pick one</p>
-		<select name="feed_url" hx-post="/fragments/feed-preview" hx-target="#feed-preview" hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped">
+		<select name="feed_url" hx-post="/fragments/feed-preview" hx-target={ d.Target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped">
 			for _, c := range d.Candidates {
 				<option value={ c.FeedURL }>{ c.Title }</option>
 			}
