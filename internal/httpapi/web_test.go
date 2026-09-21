@@ -234,6 +234,10 @@ func TestSearchRoute(t *testing.T) {
 	if !strings.Contains(home, `name="q"`) || !strings.Contains(home, `/search`) {
 		t.Fatalf("topbar should carry the search form: %s", home)
 	}
+	// The mobile hamburger toggle is part of the same header.
+	if !strings.Contains(home, `id="nav-toggle"`) || !strings.Contains(home, `id="top-nav"`) {
+		t.Fatalf("topbar should carry the mobile nav toggle: %s", home)
+	}
 }
 
 func TestItemModalShowsEnclosure(t *testing.T) {
