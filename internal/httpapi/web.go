@@ -492,6 +492,9 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 			s.store.Collections.AddFeed(u.ID, n, f.ID)
 		}
 	}
+	if err := s.store.Collections.AssignAuto(u.ID, f.ID, homeURL, feedURL); err != nil {
+		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
+	}
 	// Auto-cache the site's favicon when the form supplied a home url. Best
 	// effort and bounded so a slow site can't stall the create response.
 	if homeURL != "" {
@@ -650,11 +653,24 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/feeds", http.StatusFound)
 		return
 	}
+	old, err := s.store.Feeds.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
 	if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
 		r.FormValue("home_url"), "", interval, r.FormValue("enabled") == "1"); err != nil {
 		log.Error("update feed", "err", err)
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
+	}
+	// Auto collections track the feed's website; re-assign when its host
+	// changes, and drop the feed from its old site collection.
+	if err := s.store.Collections.UnassignAuto(u.ID, id, old.HomeURL, old.FeedURL); err != nil {
+		log.Error("unassign auto collection", "feed_id", id, "err", err)
+	}
+	if err := s.store.Collections.AssignAuto(u.ID, id, r.FormValue("home_url"), feedURL); err != nil {
+		log.Error("assign auto collection", "feed_id", id, "err", err)
 	}
 	// Sync collection memberships.
 	form := feedForm{}
@@ -666,6 +682,9 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	form.CollectionIDs = unique(form.CollectionIDs)
 	for _, c := range collections {
+		if c.IsAuto {
+			continue
+		}
 		has := false
 		for _, want := range form.CollectionIDs {
 			if want == c.ID {
@@ -1100,6 +1119,15 @@ func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	c, err := s.store.Collections.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if c.IsAuto {
+		renderError(w, r, "auto collections cannot be deleted")
+		return
+	}
 	if err := s.store.Collections.Delete(u.ID, id); err != nil {
 		log.Error("delete collection", "err", err)
 		http.Error(w, "delete failed", http.StatusInternalServerError)
@@ -1115,6 +1143,13 @@ func (s *Server) collectionAddFeed(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if c, err := s.store.Collections.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	} else if c.IsAuto {
+		renderError(w, r, "auto collections are managed automatically")
+		return
+	}
 	feedID, _ := strconv.ParseInt(r.FormValue("feed_id"), 10, 64)
 	if feedID != 0 {
 		s.store.Collections.AddFeed(u.ID, id, feedID)
@@ -1127,6 +1162,13 @@ func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
 	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	if c, err := s.store.Collections.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	} else if c.IsAuto {
+		renderError(w, r, "auto collections are managed automatically")
 		return
 	}
 	feedID, err := strconv.ParseInt(r.PathValue("feed_id"), 10, 64)

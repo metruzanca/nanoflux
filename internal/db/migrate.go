@@ -25,6 +25,7 @@ var migrations = []migration{
 	{12, schemaV12},
 	{13, schemaV13},
 	{14, schemaV14},
+	{15, schemaV15},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -98,6 +99,13 @@ ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'dark';
 // value. The default matches --accent in internal/web/static/app.css.
 const schemaV14 = `
 ALTER TABLE users ADD COLUMN accent_color TEXT NOT NULL DEFAULT '#5b8cff';
+`
+
+// schemaV15 marks auto-generated per-website collections so they can be
+// rendered distinctly and never deleted by the user. Auto collections are
+// created lazily when a feed whose hostname maps to their name is added.
+const schemaV15 = `
+ALTER TABLE collections ADD COLUMN is_auto INTEGER NOT NULL DEFAULT 0;
 `
 
 const schemaV8 = `

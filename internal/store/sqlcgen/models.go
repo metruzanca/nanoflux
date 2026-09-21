@@ -22,6 +22,7 @@ type Collection struct {
 	ID        int64  `json:"id"`
 	UserID    int64  `json:"user_id"`
 	Name      string `json:"name"`
+	IsAuto    int64  `json:"is_auto"`
 	CreatedAt string `json:"created_at"`
 }
 

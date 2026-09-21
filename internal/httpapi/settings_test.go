@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/metruzanca/nanoflux/internal/store"
 )
 
 func TestSettingsPage(t *testing.T) {
@@ -360,14 +362,34 @@ func TestOpmlImport(t *testing.T) {
 	if len(feeds) != 2 {
 		t.Fatalf("expected 2 imported feeds, got %d", len(feeds))
 	}
-	// The grouped feed lands in a "tech" collection.
+	// The grouped feed lands in a "tech" collection; each imported feed also
+	// auto-lands in a per-website collection.
 	cols, _ := s.store.Collections.List(u.ID)
-	if len(cols) != 1 || cols[0].Name != "tech" {
+	var tech store.Collection
+	for _, c := range cols {
+		if c.Name == "tech" {
+			tech = c
+		}
+	}
+	if tech.ID == 0 {
 		t.Fatalf("expected a tech collection: %+v", cols)
 	}
-	in, _ := s.store.Collections.Feeds(u.ID, cols[0].ID)
+	if tech.IsAuto {
+		t.Fatalf("tech collection should be a manual collection: %+v", tech)
+	}
+	in, _ := s.store.Collections.Feeds(u.ID, tech.ID)
 	if len(in) != 1 {
 		t.Fatalf("collection should contain the grouped feed: %+v", in)
+	}
+	// The imp.dev home url maps to an auto collection for that site.
+	var imp store.Collection
+	for _, c := range cols {
+		if c.IsAuto && c.Name == "imp.dev" {
+			imp = c
+		}
+	}
+	if imp.ID == 0 {
+		t.Fatalf("expected an imp.dev auto collection: %+v", cols)
 	}
 
 	// Re-importing skips the existing feed urls.

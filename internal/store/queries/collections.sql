@@ -1,15 +1,20 @@
 -- name: CreateCollection :one
-INSERT INTO collections (user_id, name)
-VALUES (?, ?)
-RETURNING id, user_id, name, created_at;
+INSERT INTO collections (user_id, name, is_auto)
+VALUES (?, ?, ?)
+RETURNING id, user_id, name, is_auto, created_at;
 
 -- name: GetCollection :one
-SELECT id, user_id, name, created_at
+SELECT id, user_id, name, is_auto, created_at
 FROM collections
 WHERE id = ? AND user_id = ?;
 
+-- name: GetAutoCollection :one
+SELECT id, user_id, name, is_auto, created_at
+FROM collections
+WHERE user_id = ? AND name = ? AND is_auto = 1;
+
 -- name: ListCollections :many
-SELECT id, user_id, name, created_at
+SELECT id, user_id, name, is_auto, created_at
 FROM collections
 WHERE user_id = ?
 ORDER BY name;
