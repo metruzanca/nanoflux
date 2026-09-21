@@ -214,6 +214,18 @@ button {
 
 button.link { background: none; border: none; color: var(--accent); padding: 0; }
 
+/* Red ghost button for destructive actions: transparent, red border + text,
+   light red fill on hover. */
+button.danger {
+  background: none;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+button.danger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
 a.button {
   display: inline-block;
   padding: 0.5rem 0.9rem;
@@ -614,6 +626,16 @@ dialog.modal.wide[open] {
 
 .choose select { width: 100%; }
 .new-author { border-top: 1px solid var(--border); padding-top: 0.75rem; }
+
+/* Authors list: roomier rows so the entries are easier to scan. */
+#authors-list li { padding: 0.9rem 0; }
+
+/* A destructive action separated from the edit form above it. */
+form.delete-form {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
 
 /* Collection feeds collapse behind a native <details> summary that reads like
    the page's h2 headings. Closed by default; htmx swaps the list inside it. */

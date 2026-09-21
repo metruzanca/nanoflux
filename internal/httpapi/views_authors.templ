@@ -65,11 +65,6 @@ templ AuthorRow(r authorRow) {
 			</div>
 			<div class="row-actions">
 				<a class="small" href={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/edit" }>edit</a>
-				if r.FeedCount > 0 {
-					<button class="link danger" title="delete" hx-post={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target={ "#author-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML" hx-confirm={ "delete this author and their " + strconv.Itoa(r.FeedCount) + " feeds?" }>✕</button>
-				} else {
-					<button class="link danger" title="delete" hx-post={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target={ "#author-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML" hx-confirm="delete this author?">✕</button>
-				}
 			</div>
 		</div>
 	</li>
@@ -81,6 +76,9 @@ templ authorEditPage(u store.User, d authorsData) {
 		<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
 			@authorFields(d)
 			<button type="submit">save</button>
+		</form>
+		<form class="stack delete-form" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } onsubmit="return confirm('delete this author and their feeds?')">
+			<button type="submit" class="danger">delete</button>
 		</form>
 	</section>
 	@authorAvatarCard(d.AvatarCard)
