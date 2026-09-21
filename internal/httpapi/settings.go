@@ -44,14 +44,20 @@ var accentPresets = []string{
 
 type settingsData struct {
 	settingsAvatarData
-	Timezone settingsTimezoneData
-	Theme    settingsThemeData
-	Accent   settingsAccentData
-	Password settingsPasswordData
-	Sessions settingsSessionsData
-	Opml     settingsOpmlData
-	Icons    []settingsIconRow
-	Mappings []settingsMappingRow
+	Timezone  settingsTimezoneData
+	Theme     settingsThemeData
+	Accent    settingsAccentData
+	Password  settingsPasswordData
+	Sessions  settingsSessionsData
+	Opml      settingsOpmlData
+	Extension settingsExtensionData
+	Icons     []settingsIconRow
+	Mappings  []settingsMappingRow
+}
+
+// settingsExtensionData drives the browser-extension download card.
+type settingsExtensionData struct {
+	ServerURL string // this server's origin, shown in the setup instructions
 }
 
 type settingsPasswordData struct {
@@ -104,9 +110,20 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		Theme:              settingsThemeData{Theme: u.Theme},
 		Accent:             settingsAccentData{Accent: u.AccentColor},
 		Sessions:           s.settingsSessionsData(u, auth.Token(r)),
+		Extension:          settingsExtensionData{ServerURL: requestBaseURL(r)},
 		Icons:              s.settingsIconRows(u.ID, u.Timezone),
 		Mappings:           s.settingsMappingRows(u.ID),
 	})))
+}
+
+// requestBaseURL returns the origin (scheme + host) the request was served on,
+// for instructions that reference this server (e.g. the extension setup).
+func requestBaseURL(r *http.Request) string {
+	scheme := "http"
+	if auth.SecureRequest(r) {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
 }
 
 // settingsPassword changes the user's password, logging out every other

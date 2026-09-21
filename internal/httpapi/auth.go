@@ -11,18 +11,20 @@ import (
 )
 
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
+	next := safeNext(r.URL.Query().Get("next"))
 	if _, err := s.auth.User(r); err == nil {
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, redirectTarget(next), http.StatusFound)
 		return
 	}
-	web.Render(w, r, basePage("log in", store.User{}, loginPage("", s.allowSignup())))
+	web.Render(w, r, basePage("log in", store.User{}, loginPage("", s.allowSignup(), next)))
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	next := safeNext(r.FormValue("next"))
 	ip := clientIP(r)
 	if s.loginLimiter.blocked(ip) {
 		w.WriteHeader(http.StatusTooManyRequests)
-		web.Render(w, r, basePage("log in", store.User{}, loginPage("too many attempts — try again later", s.allowSignup())))
+		web.Render(w, r, basePage("log in", store.User{}, loginPage("too many attempts — try again later", s.allowSignup(), next)))
 		return
 	}
 
@@ -33,7 +35,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if err != nil || !auth.CheckPassword(u.PasswordHash, password) {
 		s.loginLimiter.fail(ip)
 		w.WriteHeader(http.StatusUnauthorized)
-		web.Render(w, r, basePage("log in", store.User{}, loginPage("invalid username or password", s.allowSignup())))
+		web.Render(w, r, basePage("log in", store.User{}, loginPage("invalid username or password", s.allowSignup(), next)))
 		return
 	}
 	s.loginLimiter.success(ip)
@@ -45,7 +47,24 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auth.SetCookie(w, r, token)
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, redirectTarget(next), http.StatusFound)
+}
+
+// safeNext accepts only same-site relative paths so a crafted ?next= can't
+// redirect off-site. It returns "" for anything unsafe (including "//host").
+func safeNext(next string) string {
+	if strings.HasPrefix(next, "/") && !strings.HasPrefix(next, "//") && !strings.Contains(next, "\\") {
+		return next
+	}
+	return ""
+}
+
+// redirectTarget returns next when set, else the unread home.
+func redirectTarget(next string) string {
+	if next != "" {
+		return next
+	}
+	return "/"
 }
 
 // allowSignup reports the global signup setting, defaulting to open when the

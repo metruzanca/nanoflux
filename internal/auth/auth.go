@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -139,7 +140,12 @@ func (a *Authenticator) Require(next http.Handler) http.Handler {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
-			http.Redirect(w, r, "/login", http.StatusFound)
+			// Send GETs back to where they were headed after login.
+			target := "/login"
+			if r.Method == http.MethodGet {
+				target += "?next=" + url.QueryEscape(r.URL.RequestURI())
+			}
+			http.Redirect(w, r, target, http.StatusFound)
 			return
 		}
 		next.ServeHTTP(w, WithUser(r, u))

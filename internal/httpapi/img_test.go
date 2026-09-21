@@ -61,7 +61,7 @@ func TestImgProxy(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/img?u="+url.QueryEscape(upstream.URL), nil)
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/login" {
+	if rr.Code != http.StatusFound || !strings.HasPrefix(rr.Header().Get("Location"), "/login") {
 		t.Fatalf("unauthed proxy: %d %q", rr.Code, rr.Header().Get("Location"))
 	}
 }

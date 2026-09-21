@@ -245,14 +245,26 @@ The `extension/` directory is a Manifest V3 browser extension (Chrome/Edge). Cli
 its toolbar icon to find feeds on the current page and save them to nanoflux: the
 popup loads a server-rendered add-feed form for the discovered feed.
 
-- Open `chrome://extensions`, enable **Developer mode**, and **Load unpacked**,
-  pointing at the `extension/` directory.
-- Open the extension's **settings** and enter your nanoflux server URL plus your
-  username/password. It logs in via `POST /api/login` and stores the session
-  token in `chrome.storage.local`.
-- The extension uses the same discovery (`POST /api/discover`) and add-feed
-  (`POST /api/ext/save`, an htmx HTML fragment wrapping the app's save logic) as
-  the web UI, so app-side improvements carry over automatically.
+**Install it from your own instance:** on `/settings` the **browser extension**
+card downloads the extension as a zip (served by the app itself — no browser
+store needed). Unzip it, open `chrome://extensions` (or `brave://extensions`),
+enable **Developer mode**, click **Load unpacked**, and pick the unzipped folder.
+Then open the extension's settings and enter your server URL + username/password
+— it logs in via `POST /api/login` and stores the session token in
+`chrome.storage.local`.
+
+The extension uses the same discovery (`POST /api/discover`) and add-feed
+(`POST /api/ext/save`, an htmx HTML fragment wrapping the app's save logic) as
+the web UI, so app-side improvements carry over automatically. `make extension`
+writes `dist/nanoflux-extension.zip` from the same embedded file set.
+
+### PWA share target (Android)
+
+Installing nanoflux as a PWA also registers it as a **share target**: sharing a
+link from any Android app opens `GET /add?url=…` in nanoflux, which runs the
+normal discovery + add-feed flow for that page. This is Chromium/Android-only —
+iOS Safari does not implement `share_target` — and requires the app to be
+installed (HTTPS).
 
 ## Development
 

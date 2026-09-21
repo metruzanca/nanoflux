@@ -16,6 +16,7 @@ templ settingsPage(u store.User, d settingsData) {
 	@settingsPassword(d.Password)
 	@settingsSessions(d.Sessions)
 	@settingsOpml(d.Opml)
+	@settingsExtension(d.Extension)
 	<section class="card">
 		<h2>custom source icons</h2>
 		<p class="muted small">Add a domain and an icon url to override the built-in icons for that site. Icons are cached by nanoflux; use refresh to re-fetch the latest.</p>
@@ -37,6 +38,25 @@ templ settingsPage(u store.User, d settingsData) {
 	@settingsMappings(d)
 
 	@settingsShortcuts()
+}
+
+// settingsExtension is the browser-extension download card: the extension is
+// served from this install (no browser store needed), with load-unpacked
+// instructions that point at this server.
+templ settingsExtension(d settingsExtensionData) {
+	<section class="card" id="settings-extension-card">
+		<h2>browser extension</h2>
+		<p class="muted small">Save feeds from the page you're reading. The extension is served from this install — no browser store needed.</p>
+		<div class="row">
+			<a class="button" href="/settings/extension.zip">download extension (.zip)</a>
+		</div>
+		<ol class="muted small">
+			<li>Unzip the download.</li>
+			<li>Open <code>chrome://extensions</code> (or <code>brave://extensions</code>) and turn on <strong>Developer mode</strong>.</li>
+			<li>Click <strong>Load unpacked</strong> and pick the unzipped folder.</li>
+			<li>Open the extension's settings and enter this server: <code>{ d.ServerURL }</code>, then log in.</li>
+		</ol>
+	</section>
 }
 
 templ settingsShortcuts() {

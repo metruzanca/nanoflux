@@ -52,6 +52,9 @@ templ FeedRow(r feedRow) {
 // and only the feed fields render.
 templ feedPreviewFields(d feedPreviewForm) {
 	<form class="stack" hx-post={ d.Action } hx-target={ d.Target } hx-swap={ d.Swap } hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+		if d.Redirect {
+			<input type="hidden" name="redirect" value="1"/>
+		}
 		<label>title
 			<input name="title" type="text" value={ d.Title }/>
 		</label>
@@ -87,7 +90,10 @@ templ feedPreviewFields(d feedPreviewForm) {
 templ feedChooser(d feedChoose) {
 	<div class="choose">
 		<p class="muted">found { len(d.Candidates) } feeds on that page — pick one</p>
-		<select name="feed_url" hx-post="/fragments/feed-preview" hx-target={ d.Target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped">
+		if d.Redirect {
+			<input type="hidden" id="feed-redirect" name="redirect" value="1"/>
+		}
+		<select name="feed_url" hx-post="/fragments/feed-preview" hx-target={ d.Target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped, #feed-redirect">
 			for _, c := range d.Candidates {
 				<option value={ c.FeedURL }>{ c.Title }</option>
 			}

@@ -88,6 +88,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /items/{id}/revoke", s.auth.Require(http.HandlerFunc(s.itemRevokeShare)))
 	mux.HandleFunc("GET /shared/{token}", s.sharedPage)
 
+	// PWA share target: the OS share sheet opens GET /add?url=…
+	mux.Handle("GET /add", s.auth.Require(http.HandlerFunc(s.shareAdd)))
+
 	// Feeds (always viewed from an author).
 	mux.Handle("POST /feeds", s.auth.Require(http.HandlerFunc(s.feedCreate)))
 	mux.Handle("GET /feeds/{id}", s.auth.Require(http.HandlerFunc(s.feedPage)))
@@ -170,6 +173,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /settings/password", s.auth.Require(http.HandlerFunc(s.settingsPassword)))
 	mux.Handle("POST /settings/sessions/{token}/revoke", s.auth.Require(http.HandlerFunc(s.settingsSessionsRevoke)))
 	mux.Handle("GET /settings/export.opml", s.auth.Require(http.HandlerFunc(s.opmlExport)))
+	mux.Handle("GET /settings/extension.zip", s.auth.Require(http.HandlerFunc(s.settingsExtensionZip)))
 	mux.Handle("POST /settings/opml", s.auth.Require(http.HandlerFunc(s.opmlImport)))
 	mux.Handle("GET /avatar", s.auth.Require(http.HandlerFunc(s.avatarImage)))
 	mux.Handle("POST /settings/icons", s.auth.Require(http.HandlerFunc(s.settingsIconAdd)))
