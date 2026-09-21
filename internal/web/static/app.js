@@ -60,6 +60,9 @@ function openItem(el) {
     .then(function (r) { return r.text(); })
     .then(function (html) {
       body.innerHTML = html;
+      // The modal is injected via plain innerHTML, so htmx never processed its
+      // elements (e.g. the share button's hx-post). Initialize them here.
+      htmx.process(body);
       markRowRead(el.dataset.itemId);
     })
     .catch(function () { body.innerHTML = '<p class="error">could not load item</p>'; });
@@ -77,6 +80,45 @@ function markRowRead(id) {
     btn.setAttribute('title', 'mark unread');
   }
 }
+
+// Item menu (the "⋯" button on the item modal): opens a small dropdown whose
+// "add to list" entry shows the list picker dialog.
+function toggleItemMenu(e) {
+  e.stopPropagation();
+  var menu = document.getElementById('item-menu-pop');
+  var btn = document.getElementById('item-menu-btn');
+  if (!menu) return;
+  var open = menu.hidden;
+  menu.hidden = !open;
+  if (btn) btn.setAttribute('aria-expanded', String(open));
+}
+function showItemListsDialog(e) {
+  if (e) e.stopPropagation();
+  var menu = document.getElementById('item-menu-pop');
+  if (menu) menu.hidden = true;
+  var btn = document.getElementById('item-menu-btn');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+  var d = document.getElementById('item-lists-dialog');
+  if (d && !d.open) d.showModal();
+}
+document.addEventListener('click', function (e) {
+  var menu = document.getElementById('item-menu-pop');
+  if (!menu || menu.hidden) return;
+  if (!e.target.closest('.item-menu')) {
+    menu.hidden = true;
+    var btn = document.getElementById('item-menu-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  var menu = document.getElementById('item-menu-pop');
+  var btn = document.getElementById('item-menu-btn');
+  if (menu && !menu.hidden) {
+    menu.hidden = true;
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+});
 
 // User dropdown menu.
 function toggleUserMenu(e) {

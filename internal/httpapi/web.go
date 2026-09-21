@@ -33,9 +33,10 @@ type readData struct {
 }
 
 type favoritesData struct {
-	Favorites []store.ItemWithFeed
-	FavCount  int
-	More      *loadMoreData
+	Favorites  []store.ItemWithFeed
+	FavCount   int
+	ShareToken string // public share token for the favorites list, "" when unshared
+	More       *loadMoreData
 }
 
 type feedRow struct {
@@ -198,8 +199,10 @@ func (s *Server) favoritesPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{FavoritesOnly: true, Limit: pageSize})
 	count, _ := s.store.Items.CountFavorites(u.ID, 0)
+	tok, _ := s.store.Users.FavoritesShareToken(u.ID)
 	web.Render(w, r, basePage("favorites", u, favoritesPage(favoritesData{
-		Favorites: withTZ(u.Timezone, items), FavCount: count, More: pageCursor("/items?fav=1", items, more),
+		Favorites: withTZ(u.Timezone, items), FavCount: count, ShareToken: tok,
+		More: pageCursor("/items?fav=1", items, more),
 	})))
 }
 
@@ -274,8 +277,11 @@ type itemViewData struct {
 	EmbedSrc    string   // iframe src from the destination's oEmbed
 	Gallery     []string // full-res images of a reddit gallery post
 	Enclosures  []store.Enclosure
-	ShareToken  string // public share token, "" when the item is not shared
-	Timezone    string // user's IANA timezone, for relative timestamps in templates
+	ShareToken  string       // public share token, "" when the item is not shared
+	Favorite    bool         // whether the item is in the special favorites list
+	Lists       []store.List // the user's lists, for the add-to-list picker
+	ItemListIDs []int64      // ids of the user's lists that already contain this item
+	Timezone    string       // user's IANA timezone, for relative timestamps in templates
 }
 
 // itemView renders an item's stored content as a fragment, injected into the
@@ -316,6 +322,13 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemSource(ctx, data)
 	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
+	data.Favorite = it.Favorite
+	if rows, err := s.store.Lists.List(u.ID); err == nil {
+		data.Lists = listsOnly(rows)
+	}
+	if ids, err := s.store.Lists.ItemListIDs(u.ID, it.ID); err == nil {
+		data.ItemListIDs = ids
+	}
 	if sh, err := s.store.Shares.ByItem(u.ID, it.ID); err == nil {
 		data.ShareToken = sh.Token
 	}

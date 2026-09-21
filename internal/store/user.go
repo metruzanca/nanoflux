@@ -189,3 +189,54 @@ func (s *UserStore) SetAccentColor(userID int64, color string) error {
 		ID:          userID,
 	})
 }
+
+// FavoritesShareToken returns the user's public favorites share token, or ""
+// when the favorites list is not shared.
+func (s *UserStore) FavoritesShareToken(userID int64) (string, error) {
+	token, err := s.q.GetFavoritesShareToken(context.Background(), userID)
+	if err != nil {
+		return "", err
+	}
+	return token.String, nil
+}
+
+// SetFavoritesShareToken stores (or, with an empty token, clears) the user's
+// public favorites share token.
+func (s *UserStore) SetFavoritesShareToken(userID int64, token string) error {
+	return s.q.SetFavoritesShareToken(context.Background(), sqlcgen.SetFavoritesShareTokenParams{
+		Token:  ns(token),
+		UserID: userID,
+	})
+}
+
+// ShareFavorites creates a public share token for the favorites list, reusing
+// an existing one when the list is already shared.
+func (s *UserStore) ShareFavorites(userID int64) (string, error) {
+	tok, err := s.FavoritesShareToken(userID)
+	if err != nil {
+		return "", err
+	}
+	if tok != "" {
+		return tok, nil
+	}
+	tok, err = newToken()
+	if err != nil {
+		return "", err
+	}
+	if err := s.SetFavoritesShareToken(userID, tok); err != nil {
+		return "", err
+	}
+	return tok, nil
+}
+
+// ByFavoritesShareToken resolves the owner of a public favorites share link.
+func (s *UserStore) ByFavoritesShareToken(token string) (User, error) {
+	u, err := s.q.GetUserByFavoritesShareToken(context.Background(), ns(token))
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, ErrNotFound
+	}
+	if err != nil {
+		return User{}, err
+	}
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
+}

@@ -459,6 +459,39 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
 - Dialog cleanup: on `close`, every dialog's form inputs are cleared and
   `[id$="-preview"]` containers emptied.
 
+## Lists and favorites
+
+Favorites is the **special list**: it is still backed by the `items.favorite`
+column (the row's `fav-btn`, the `s` shortcut, swipe actions, and `/favorites`
+all work unchanged). User-created lists of items live in `lists`/`list_items`
+(schemaV22) and are an extension of favorites.
+
+- **Add-to-list picker:** the item modal has a `⋯` button (`itemMenu` in
+  `views_items.templ`, JS in `app.js`) whose "add to list" entry opens
+  `#item-lists-dialog`. The picker lists **favorites** first (its checkbox
+  mirrors `items.favorite`) plus every user list. `POST /items/{id}/lists`
+  reconciles `list_items` (and favorites) and re-renders the dialog, so
+  unchecking a list in the same dialog is how an item is removed from it.
+- **Index/detail:** `/lists` pins favorites first (`FavoritesListRow`) then the
+  user's lists; `/lists/{id}` lists its items newest-added first, keyed on
+  `list_items.created_at`, paged with the standard `before=` cursor
+  (`ListStore.ItemList`). `ListStore.AddItem`/`RemoveItem` verify both list and
+  item belong to the user (like collection feed membership).
+- **Sharing:** every list has a public link — `lists.share_token` for
+  user-created lists, `users.favorites_share_token` (unique index) for the
+  favorites list. `SetShare`/`ShareFavorites` reuse an existing token, so
+  sharing is idempotent. The public pages `/l/{token}` (lists) and `/f/{token}`
+  (favorites) are unauthenticated, render via `sharedListPage`, and follow the
+  same rule as `sharedItemPage`: links go only to external content with
+  `class="external"`, never to internal author/feed pages. `ListStore` and
+  `UserStore` resolve tokens by `ByToken`/`ByFavoritesShareToken`.
+- **Modal htmx binding (load-bearing):** `openItem` in `app.js` injects the
+  item modal via plain `fetch` + `innerHTML`, so htmx never binds elements
+  inside it on its own. Every htmx control rendered inside the modal — the
+  item's share button and the list-picker form — depends on the
+  `htmx.process(body)` call after the innerHTML assignment. Do not remove it;
+  a newly added modal control that "does nothing" is usually missing this.
+
 ## Running the dev server
 
 `mise dev` runs the server and auto-watches `.go` and `.templ` files,

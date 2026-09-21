@@ -32,6 +32,7 @@ var migrations = []migration{
 	{19, schemaV19},
 	{20, schemaV20},
 	{21, schemaV21},
+	{22, schemaV22},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -192,6 +193,32 @@ ALTER TABLE feeds_v3 RENAME TO feeds;
 
 CREATE INDEX idx_feeds_user ON feeds(user_id);
 CREATE INDEX idx_feeds_author ON feeds(author_id);
+`
+
+// schemaV22 adds user-defined lists of items. Favorites remains the special
+// list (items.favorite); lists are curated sets of posts users can also share
+// publicly. share_token is NULL until the list is shared. users gains a
+// favorites share token so the special list can be shared the same way.
+const schemaV22 = `
+CREATE TABLE lists (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    share_token TEXT UNIQUE,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_lists_user ON lists(user_id);
+
+CREATE TABLE list_items (
+    list_id    INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+    item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (list_id, item_id)
+);
+CREATE INDEX idx_list_items_item ON list_items(item_id);
+
+ALTER TABLE users ADD COLUMN favorites_share_token TEXT;
+CREATE UNIQUE INDEX idx_users_favorites_share_token ON users(favorites_share_token);
 `
 
 // schemaV21 caches author avatars in object storage. avatar_url stays the

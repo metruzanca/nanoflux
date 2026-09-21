@@ -14,8 +14,10 @@ CREATE TABLE users (
     timezone      TEXT,
     theme         TEXT NOT NULL DEFAULT 'dark',
     accent_color  TEXT NOT NULL DEFAULT '#5b8cff',
+    favorites_share_token TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE UNIQUE INDEX idx_users_favorites_share_token ON users(favorites_share_token);
 
 CREATE TABLE sessions (
     id         INTEGER PRIMARY KEY,
@@ -139,6 +141,25 @@ CREATE TABLE shared_items (
     token      TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- User-defined lists of items. Favorites is the special list (items.favorite),
+-- not a row here; share_token is set when a list is shared publicly.
+CREATE TABLE lists (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    share_token TEXT UNIQUE,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_lists_user ON lists(user_id);
+
+CREATE TABLE list_items (
+    list_id    INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+    item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (list_id, item_id)
+);
+CREATE INDEX idx_list_items_item ON list_items(item_id);
 
 CREATE TABLE source_icons (
     id              INTEGER PRIMARY KEY,

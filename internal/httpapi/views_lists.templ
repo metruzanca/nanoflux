@@ -1,0 +1,159 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+templ listsPage(u store.User, d listsPageData) {
+	<div class="row">
+		<h1>lists</h1>
+		<button type="button" onclick="document.getElementById('add-list-dialog').showModal()">+ add list</button>
+	</div>
+	@ListsList(d)
+
+	<dialog id="add-list-dialog" class="modal">
+		<form class="stack" hx-post="/lists" hx-target="#lists-list" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+			<div class="row">
+				<h2>add list</h2>
+				<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+			</div>
+			<label>name
+				<input name="name" autofocus required/>
+			</label>
+			<div id="add-list-error" class="error"></div>
+			<button type="submit">add list</button>
+		</form>
+	</dialog>
+}
+
+// ListsList is the index list: the special favorites list pinned first, then
+// every user-created list.
+templ ListsList(d listsPageData) {
+	<ul class="plain" id="lists-list">
+		@FavoritesListRow(d)
+		for _, l := range d.Lists {
+			@ListRow(l)
+		}
+	</ul>
+}
+
+templ FavoritesListRow(d listsPageData) {
+	<li id="favorites-list">
+		<div class="row">
+			<div>
+				<a href="/favorites"><strong>favorites</strong></a>
+				<span class="muted">({ d.FavoritesCount })</span>
+			</div>
+			<div class="row-actions">
+				@favoritesShareControl(d.FavoritesShareTok)
+			</div>
+		</div>
+	</li>
+}
+
+templ ListRow(l store.ListWithCount) {
+	<li id={ "list-" + strconv.FormatInt(l.ID, 10) }>
+		<div class="row">
+			<div>
+				<a href={ "/lists/" + strconv.FormatInt(l.ID, 10) }><strong>{ l.Name }</strong></a>
+				<span class="muted">({ l.ItemCount })</span>
+			</div>
+			<div class="row-actions">
+				@listShareControl(l.ID, l.ShareToken)
+				<button class="link danger" title="delete" hx-post={ "/lists/" + strconv.FormatInt(l.ID, 10) + "/delete" } hx-target="#lists-list" hx-swap="outerHTML" hx-confirm="delete this list?">✕</button>
+			</div>
+		</div>
+	</li>
+}
+
+// listShareControl toggles a list's public share link. Re-swapped in place by
+// the share/revoke endpoints.
+templ listShareControl(id int64, token string) {
+	<span id={ "list-share-" + strconv.FormatInt(id, 10) } class="item-meta">
+		if token != "" {
+			<span>shared · <a href={ "/l/" + token } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">link</a></span>
+			<button class="link danger" hx-post={ "/lists/" + strconv.FormatInt(id, 10) + "/revoke" } hx-target={ "#list-share-" + strconv.FormatInt(id, 10) } hx-swap="outerHTML">stop sharing</button>
+		} else {
+			<button class="link" hx-post={ "/lists/" + strconv.FormatInt(id, 10) + "/share" } hx-target={ "#list-share-" + strconv.FormatInt(id, 10) } hx-swap="outerHTML">share</button>
+		}
+	</span>
+}
+
+// favoritesShareControl toggles the special favorites list's public share link.
+templ favoritesShareControl(token string) {
+	<span id="favorites-share" class="item-meta">
+		if token != "" {
+			<span>shared · <a href={ "/f/" + token } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">link</a></span>
+			<button class="link danger" hx-post="/favorites/revoke" hx-target="#favorites-share" hx-swap="outerHTML">stop sharing</button>
+		} else {
+			<button class="link" hx-post="/favorites/share" hx-target="#favorites-share" hx-swap="outerHTML">share</button>
+		}
+	</span>
+}
+
+templ listPage(u store.User, d listPageData) {
+	<div class="row">
+		<h1>{ d.List.Name }</h1>
+		<div class="row-actions">
+			@listShareControl(d.List.ID, d.List.ShareToken)
+			<form method="post" action={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/delete" }>
+				<button class="link danger" type="submit">delete</button>
+			</form>
+		</div>
+	</div>
+	@ItemsListPage(d.Items, d.More)
+}
+
+// sharedListPage is the public, unauthenticated view of a shared list (or the
+// shared favorites list). It reuses item rows that link only to external
+// content — internal feed/author pages require a login.
+templ sharedListPage(d sharedListData) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			@head(d.Name)
+		</head>
+		<body>
+			<main>
+				<div class="row">
+					<h1>{ d.Name }</h1>
+				</div>
+				<ul class="items">
+					for _, it := range d.Items {
+						@sharedItemRow(it)
+					}
+				</ul>
+				if d.More != 0 {
+					<a href={ templ.URL(d.Path + "?before=" + strconv.FormatInt(d.More, 10)) }>load more</a>
+				}
+			</main>
+		</body>
+	</html>
+}
+
+// sharedItemRow renders one item for the public list pages: the title links to
+// the original article, the feed name is plain text, and there are no internal
+// navigation links.
+templ sharedItemRow(it store.ItemWithFeed) {
+	<li>
+		<div class="card-body">
+			<div class="row">
+				<div>
+					<a class="item-title" href={ templ.URL(it.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ it.Title }</a>
+					<div class="item-meta">
+						{ it.FeedTitle }
+						if it.PublishedAt != "" {
+							· { web.TimeFmt("", it.PublishedAt) }
+						}
+					</div>
+					if it.Summary != "" {
+						<div class="item-summary">{ web.StripHTML(it.Summary) }</div>
+					}
+				</div>
+			</div>
+		</div>
+	</li>
+}
