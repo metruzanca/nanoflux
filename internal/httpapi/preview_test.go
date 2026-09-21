@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/metruzanca/nanoflux/internal/discover"
 )
 
 func feedPreviewServer(t *testing.T) *httptest.Server {
@@ -253,5 +255,75 @@ func TestAuthorFormFragmentPrefill(t *testing.T) {
 	rr := doGet(h, "/fragments/author-form?author_id=new&home_url="+url.QueryEscape(page.URL), cookie)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `value="Detected Author"`) {
 		t.Fatalf("prefilled author fragment: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+// rewriteTo is a RoundTripper that redirects every request to base, so a test
+// can serve a page under a "real" hostname (youtube.com) that discovery
+// recognizes while actually hitting the test server.
+type rewriteTo struct {
+	base *url.URL
+	rt   http.RoundTripper
+}
+
+func (w rewriteTo) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	r.URL.Scheme = w.base.Scheme
+	r.URL.Host = w.base.Host
+	return w.rt.RoundTrip(r)
+}
+
+func hostClient(srv *httptest.Server) *http.Client {
+	base, _ := url.Parse(srv.URL)
+	transport := srv.Client().Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	return &http.Client{Transport: rewriteTo{base: base, rt: transport}}
+}
+
+// TestYouTubePreviewHandleAndAvatar asserts that adding a YouTube channel via
+// its @handle keeps the handle as the feed home (not the /channel/UC... URL)
+// and prefills the author avatar from the channel's og:image, not YouTube's
+// generic favicon.
+func TestYouTubePreviewHandleAndAvatar(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	yt := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/feeds/videos.xml"):
+			w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel>
+			  <title>Think Before You Sleep</title>
+			  <link>https://www.youtube.com/channel/UCwu</link>
+			  <item><guid>1</guid><title>v</title><link>https://youtu.be/x</link></item>
+			</channel></rss>`))
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(`<html><head><title>Think Before You Sleep</title>
+			  <meta property="og:image" content="https://yt3.googleusercontent.com/abc=s900-c-k-c0x00ffffff-no-rj">
+			  <link rel="shortcut icon" href="https://www.youtube.com/s/desktop/hash/img/favicon.ico">
+			  <link rel="alternate" type="application/rss+xml" href="https://www.youtube.com/feeds/videos.xml?channel_id=UCwu">
+			</head><body>hi</body></html>`))
+		}
+	}))
+	defer yt.Close()
+
+	client := hostClient(yt)
+	s.client = client
+	s.discoverer = discover.New(client)
+
+	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url": {"https://www.youtube.com/@ThinkBeforeYouSleepYT"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `name="home_url" type="url" value="https://youtube.com/@ThinkBeforeYouSleepYT"`) {
+		t.Fatalf("home should be the entered handle url: %s", body)
+	}
+	if !strings.Contains(body, `name="avatar_url" type="url" value="https://yt3.googleusercontent.com/abc=s900-c-k-c0x00ffffff-no-rj"`) {
+		t.Fatalf("avatar should be the channel og:image: %s", body)
 	}
 }

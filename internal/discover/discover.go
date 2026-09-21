@@ -151,12 +151,19 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 	defer body.Close()
 
 	meta := PageMeta{HomeURL: pageURL}
+	isYT := isYouTubePage(pageURL)
 	z := html.NewTokenizer(io.LimitReader(body, maxBody))
 	inTitle := false
+	var ogImage string
 	for {
 		tt := z.Next()
 		switch tt {
 		case html.ErrorToken:
+			// A YouTube channel page's real avatar is its og:image
+			// (yt3.googleusercontent.com), not the hashed build favicon.
+			if isYT && ogImage != "" {
+				meta.IconURL = ogImage
+			}
 			if meta.IconURL == "" {
 				meta.IconURL = fallbackIcon(pageURL)
 			}
@@ -182,6 +189,19 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 				}
 				if meta.IconURL == "" && href != "" && strings.Contains(rel, "icon") {
 					meta.IconURL = resolveURL(base, href)
+				}
+			case "meta":
+				var prop, content string
+				for _, a := range t.Attr {
+					switch a.Key {
+					case "property":
+						prop = strings.ToLower(a.Val)
+					case "content":
+						content = a.Val
+					}
+				}
+				if ogImage == "" && prop == "og:image" && content != "" {
+					ogImage = content
 				}
 			}
 		case html.EndTagToken:

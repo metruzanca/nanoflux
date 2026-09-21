@@ -263,3 +263,81 @@ func TestPageMetaFallbackIcon(t *testing.T) {
 		t.Fatalf("fallback icon = %q", meta.IconURL)
 	}
 }
+
+// hostRewriter is a RoundTripper that redirects every request to base, letting
+// tests serve a page under a "real" hostname (e.g. youtube.com) that isYouTube
+// recognizes while actually hitting the test server.
+type hostRewriter struct {
+	base *url.URL
+	rt   http.RoundTripper
+}
+
+func (h hostRewriter) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	r.URL.Scheme = h.base.Scheme
+	r.URL.Host = h.base.Host
+	return h.rt.RoundTrip(r)
+}
+
+// clientTo serves youtube.com via the test server.
+func clientTo(srv *httptest.Server) *http.Client {
+	transport := srv.Client().Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	return &http.Client{Transport: hostRewriter{base: mustURL(srv.URL), rt: transport}}
+}
+
+func mustURL(s string) *url.URL {
+	u, err := url.Parse(s)
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
+
+// TestPageMetaYouTubeAvatar asserts that for a YouTube channel page the real
+// channel avatar (og:image, yt3.googleusercontent.com) wins over the generic,
+// hash-addressed favicon.
+func TestPageMetaYouTubeAvatar(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><head>
+		  <title>Think Before You Sleep</title>
+		  <meta property="og:image" content="https://yt3.googleusercontent.com/abc=s900-c-k-c0x00ffffff-no-rj">
+		  <link rel="shortcut icon" href="https://www.youtube.com/s/desktop/hash/img/favicon.ico">
+		</head><body>hi</body></html>`))
+	}))
+	defer srv.Close()
+
+	meta, err := New(clientTo(srv)).PageMeta(context.Background(), "https://www.youtube.com/@ThinkBeforeYouSleepYT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://yt3.googleusercontent.com/abc=s900-c-k-c0x00ffffff-no-rj"
+	if meta.IconURL != want {
+		t.Fatalf("icon = %q, want the channel avatar %q", meta.IconURL, want)
+	}
+}
+
+// TestPageMetaOgImageNotPreferred asserts the og:image preference is YouTube
+// only — other sites keep their <link rel=icon> favicon.
+func TestPageMetaOgImageNotPreferred(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><head>
+		  <title>Blog</title>
+		  <meta property="og:image" content="https://cdn.example.com/hero.png">
+		  <link rel="icon" href="/favicon.png">
+		</head><body>hi</body></html>`))
+	}))
+	defer srv.Close()
+
+	meta, err := New(srv.Client()).PageMeta(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.IconURL != srv.URL+"/favicon.png" {
+		t.Fatalf("non-youtube icon = %q, want the favicon", meta.IconURL)
+	}
+}
