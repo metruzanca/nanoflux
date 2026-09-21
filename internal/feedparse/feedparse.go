@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/mmcdole/gofeed"
+	"golang.org/x/net/html"
 )
 
 // ErrNotModified is returned when the server answers 304 for a conditional GET.
@@ -27,6 +29,13 @@ type Feed struct {
 	ImageURL    string
 }
 
+// Enclosure is one media attachment (podcast episode, video, file) on an item.
+type Enclosure struct {
+	URL      string
+	MIMEType string
+	Length   int64
+}
+
 // Item is one normalized entry.
 type Item struct {
 	GUID        string
@@ -35,6 +44,7 @@ type Item struct {
 	Summary     string
 	ImageURL    string
 	PublishedAt string // "" when unknown
+	Enclosures  []Enclosure
 }
 
 // Result is the normalized output of a successful fetch.
@@ -133,6 +143,13 @@ func normalizeItem(it *gofeed.Item) Item {
 	if it.Image != nil {
 		out.ImageURL = StripTracking(it.Image.URL)
 	}
+	for _, e := range it.Enclosures {
+		if e == nil || e.URL == "" {
+			continue
+		}
+		length, _ := strconv.ParseInt(e.Length, 10, 64)
+		out.Enclosures = append(out.Enclosures, Enclosure{URL: StripTracking(e.URL), MIMEType: e.Type, Length: length})
+	}
 	switch {
 	case it.PublishedParsed != nil:
 		out.PublishedAt = db.FormatTime(*it.PublishedParsed)
@@ -179,6 +196,32 @@ func StripTracking(raw string) string {
 	}
 	u.RawQuery = q.Encode()
 	return u.String()
+}
+
+// PlainText extracts visible text from feed-provided HTML, for rule matching
+// and plain-text contexts.
+func PlainText(s string) string {
+	if s == "" || !strings.Contains(s, "<") {
+		return strings.TrimSpace(s)
+	}
+	doc, err := html.Parse(strings.NewReader(s))
+	if err != nil {
+		return s
+	}
+	var b strings.Builder
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.TextNode {
+			b.WriteString(n.Data)
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	for c := doc.FirstChild; c != nil; c = c.NextSibling {
+		walk(c)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func imageURL(img *gofeed.Image) string {

@@ -64,6 +64,22 @@ func (s *AuthorStore) List(userID int64) ([]Author, error) {
 	return out, nil
 }
 
+// ByName returns the user's author matching name (case-insensitive), or
+// ErrNotFound. Used by search qualifiers.
+func (s *AuthorStore) ByName(userID int64, name string) (Author, error) {
+	a, err := s.q.GetAuthorByName(context.Background(), sqlcgen.GetAuthorByNameParams{
+		UserID: userID,
+		Name:   name,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return Author{}, ErrNotFound
+	}
+	if err != nil {
+		return Author{}, err
+	}
+	return toAuthor(a), nil
+}
+
 // ListWithFeedCount returns the user's authors with their feed counts in one
 // query.
 func (s *AuthorStore) ListWithFeedCount(userID int64) ([]AuthorWithCount, error) {

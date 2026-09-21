@@ -46,6 +46,17 @@ type Feed struct {
 	CreatedAt       string         `json:"created_at"`
 }
 
+type Filter struct {
+	ID        int64         `json:"id"`
+	UserID    int64         `json:"user_id"`
+	FeedID    sql.NullInt64 `json:"feed_id"`
+	Action    string        `json:"action"`
+	Field     string        `json:"field"`
+	Pattern   string        `json:"pattern"`
+	IsRegex   int64         `json:"is_regex"`
+	CreatedAt string        `json:"created_at"`
+}
+
 type Item struct {
 	ID          int64          `json:"id"`
 	FeedID      int64          `json:"feed_id"`
@@ -59,6 +70,22 @@ type Item struct {
 	Read        bool           `json:"read"`
 	ReadAt      sql.NullString `json:"read_at"`
 	Favorite    bool           `json:"favorite"`
+}
+
+type ItemEnclosure struct {
+	ID       int64          `json:"id"`
+	ItemID   int64          `json:"item_id"`
+	Url      string         `json:"url"`
+	Title    string         `json:"title"`
+	MimeType sql.NullString `json:"mime_type"`
+	Size     int64          `json:"size"`
+	Sort     int64          `json:"sort"`
+}
+
+type ItemsFt struct {
+	Rowid   int64  `json:"rowid"`
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
 }
 
 type Session struct {

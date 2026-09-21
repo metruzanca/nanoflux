@@ -134,6 +134,16 @@ func (q *Queries) CountUnreadItemsByCollection(ctx context.Context, arg CountUnr
 	return count, err
 }
 
+const deleteEnclosures = `-- name: DeleteEnclosures :exec
+DELETE FROM item_enclosures
+WHERE item_id = ?
+`
+
+func (q *Queries) DeleteEnclosures(ctx context.Context, itemID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteEnclosures, itemID)
+	return err
+}
+
 const getItem = `-- name: GetItem :one
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
@@ -165,6 +175,23 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 		&i.Favorite,
 	)
 	return i, err
+}
+
+const getItemByFeedGuid = `-- name: GetItemByFeedGuid :one
+SELECT id FROM items
+WHERE feed_id = ? AND guid = ?
+`
+
+type GetItemByFeedGuidParams struct {
+	FeedID int64  `json:"feed_id"`
+	Guid   string `json:"guid"`
+}
+
+func (q *Queries) GetItemByFeedGuid(ctx context.Context, arg GetItemByFeedGuidParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getItemByFeedGuid, arg.FeedID, arg.Guid)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getItemWithFeed = `-- name: GetItemWithFeed :one
@@ -224,6 +251,76 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 		&i.AuthorName,
 	)
 	return i, err
+}
+
+const insertEnclosure = `-- name: InsertEnclosure :exec
+INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort)
+VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type InsertEnclosureParams struct {
+	ItemID   int64          `json:"item_id"`
+	Url      string         `json:"url"`
+	Title    string         `json:"title"`
+	MimeType sql.NullString `json:"mime_type"`
+	Size     int64          `json:"size"`
+	Sort     int64          `json:"sort"`
+}
+
+func (q *Queries) InsertEnclosure(ctx context.Context, arg InsertEnclosureParams) error {
+	_, err := q.db.ExecContext(ctx, insertEnclosure,
+		arg.ItemID,
+		arg.Url,
+		arg.Title,
+		arg.MimeType,
+		arg.Size,
+		arg.Sort,
+	)
+	return err
+}
+
+const listEnclosures = `-- name: ListEnclosures :many
+SELECT url, title, mime_type, size, sort
+FROM item_enclosures
+WHERE item_id = ?
+ORDER BY sort
+`
+
+type ListEnclosuresRow struct {
+	Url      string         `json:"url"`
+	Title    string         `json:"title"`
+	MimeType sql.NullString `json:"mime_type"`
+	Size     int64          `json:"size"`
+	Sort     int64          `json:"sort"`
+}
+
+func (q *Queries) ListEnclosures(ctx context.Context, itemID int64) ([]ListEnclosuresRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEnclosures, itemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEnclosuresRow
+	for rows.Next() {
+		var i ListEnclosuresRow
+		if err := rows.Scan(
+			&i.Url,
+			&i.Title,
+			&i.MimeType,
+			&i.Size,
+			&i.Sort,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listItems = `-- name: ListItems :many
@@ -404,8 +501,8 @@ func (q *Queries) SetItemRead(ctx context.Context, arg SetItemReadParams) (sql.R
 }
 
 const upsertItem = `-- name: UpsertItem :execresult
-INSERT INTO items (feed_id, guid, title, link, summary, image_url, published_at, fetched_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO items (feed_id, guid, title, link, summary, image_url, published_at, fetched_at, read, read_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (feed_id, guid) DO NOTHING
 `
 
@@ -418,6 +515,8 @@ type UpsertItemParams struct {
 	ImageUrl    sql.NullString `json:"image_url"`
 	PublishedAt sql.NullString `json:"published_at"`
 	FetchedAt   string         `json:"fetched_at"`
+	Read        bool           `json:"read"`
+	ReadAt      sql.NullString `json:"read_at"`
 }
 
 func (q *Queries) UpsertItem(ctx context.Context, arg UpsertItemParams) (sql.Result, error) {
@@ -430,5 +529,7 @@ func (q *Queries) UpsertItem(ctx context.Context, arg UpsertItemParams) (sql.Res
 		arg.ImageUrl,
 		arg.PublishedAt,
 		arg.FetchedAt,
+		arg.Read,
+		arg.ReadAt,
 	)
 }

@@ -131,6 +131,39 @@ func (q *Queries) GetFeedAny(ctx context.Context, id int64) (Feed, error) {
 	return i, err
 }
 
+const getFeedByTitle = `-- name: GetFeedByTitle :one
+SELECT id, user_id, author_id, title, feed_url, home_url, description,
+       etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at
+FROM feeds
+WHERE user_id = ? AND title = ? COLLATE NOCASE
+`
+
+type GetFeedByTitleParams struct {
+	UserID int64  `json:"user_id"`
+	Title  string `json:"title"`
+}
+
+func (q *Queries) GetFeedByTitle(ctx context.Context, arg GetFeedByTitleParams) (Feed, error) {
+	row := q.db.QueryRowContext(ctx, getFeedByTitle, arg.UserID, arg.Title)
+	var i Feed
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.AuthorID,
+		&i.Title,
+		&i.FeedUrl,
+		&i.HomeUrl,
+		&i.Description,
+		&i.Etag,
+		&i.LastModified,
+		&i.LastPolledAt,
+		&i.PollIntervalSec,
+		&i.Enabled,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listFeeds = `-- name: ListFeeds :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
        etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at

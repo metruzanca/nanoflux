@@ -27,6 +27,7 @@ type Store struct {
 	Items       *ItemStore
 	Collections *CollectionStore
 	SourceIcons *SourceIconStore
+	Filters     *FilterStore
 }
 
 func New(sqldb *sql.DB) *Store {
@@ -38,9 +39,10 @@ func New(sqldb *sql.DB) *Store {
 		Sessions:    &SessionStore{q: q},
 		Authors:     &AuthorStore{q: q},
 		Feeds:       &FeedStore{q: q},
-		Items:       &ItemStore{q: q},
+		Items:       &ItemStore{q: q, db: sqldb},
 		Collections: &CollectionStore{q: q},
 		SourceIcons: &SourceIconStore{q: q},
+		Filters:     &FilterStore{q: q},
 	}
 }
 

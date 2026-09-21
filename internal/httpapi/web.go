@@ -3,8 +3,8 @@ package httpapi
 import (
 	"context"
 	"html/template"
-
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +60,13 @@ type feedsData struct {
 	Authors     []store.Author
 	Collections []store.Collection
 	Form        feedForm
+	Rules       feedRulesData
+}
+
+// feedRulesData drives the filter-rule section on the feed edit page.
+type feedRulesData struct {
+	FeedID int64
+	Rows   []store.Filter
 }
 
 type authorRow struct {
@@ -254,7 +261,8 @@ type itemViewData struct {
 	SourceURL   string   // external destination of a reddit link post
 	EmbedSrc    string   // iframe src from the destination's oEmbed
 	Gallery     []string // full-res images of a reddit gallery post
-	Timezone    string   // user's IANA timezone, for relative timestamps in templates
+	Enclosures  []store.Enclosure
+	Timezone    string // user's IANA timezone, for relative timestamps in templates
 }
 
 // itemView renders an item's stored content as a fragment, injected into the
@@ -293,6 +301,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
 	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemSource(ctx, data)
+	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
 	web.Render(w, r, ItemView(data))
 }
 
@@ -468,7 +477,74 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 
 	web.Render(w, r, basePage("edit "+f.Title, u, feedEditPage(u, feedsData{
 		Authors: authors, Collections: collections, Form: form,
+		Rules: s.feedRules(u.ID, f.ID),
 	})))
+}
+
+// feedRules returns a feed's filter rules (its own plus feed-wide rules).
+func (s *Server) feedRules(userID, feedID int64) feedRulesData {
+	rows, _ := s.store.Filters.ListByFeed(userID, feedID)
+	return feedRulesData{FeedID: feedID, Rows: rows}
+}
+
+// feedRuleCreate adds a filter rule from the feed edit page.
+func (s *Server) feedRuleCreate(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	pattern := strings.TrimSpace(r.FormValue("pattern"))
+	if pattern == "" {
+		writeFormError(w, r, "feed-rules-error", "a pattern is required")
+		return
+	}
+	action := r.FormValue("action")
+	if action != "hide" && action != "mark_read" {
+		action = "hide"
+	}
+	field := r.FormValue("field")
+	switch field {
+	case "title", "summary", "link":
+	default:
+		field = "title"
+	}
+	isRegex := r.FormValue("is_regex") == "1"
+	if isRegex {
+		if _, err := regexp.Compile(pattern); err != nil {
+			writeFormError(w, r, "feed-rules-error", "invalid regex")
+			return
+		}
+	}
+	if _, err := s.store.Filters.Create(u.ID, id, action, field, pattern, isRegex); err != nil {
+		log.Error("create filter", "err", err)
+		writeFormError(w, r, "feed-rules-error", "could not add rule")
+		return
+	}
+	web.Render(w, r, feedRulesSection(s.feedRules(u.ID, id)))
+}
+
+// filterDelete removes a filter rule and re-renders the list.
+func (s *Server) filterDelete(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	fid, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := s.store.Filters.ByID(u.ID, fid)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.Filters.Delete(u.ID, fid); err != nil {
+		log.Error("delete filter", "err", err)
+		http.Error(w, "delete failed", http.StatusInternalServerError)
+		return
+	}
+	rows, _ := s.store.Filters.ListByFeed(u.ID, f.FeedID)
+	web.Render(w, r, FilterList(f.FeedID, rows))
 }
 
 func (s *Server) collectionIDsForFeed(userID, feedID int64) []int64 {

@@ -33,6 +33,7 @@ func TestPollOne(t *testing.T) {
     <guid>1</guid>
     <title>One</title>
     <link>https://blog.dev/1</link>
+    <enclosure url="https://blog.dev/ep1.mp3" type="audio/mpeg" length="12345"/>
   </item>
   <item>
     <guid>2</guid>
@@ -83,10 +84,89 @@ func TestPollOne(t *testing.T) {
 		t.Fatalf("server hits = %d, want 2", hits)
 	}
 
+	// Item 1's enclosure is stored and playable.
+	itemID, err := st.Items.ByFeedGUID(f.ID, "1")
+	if err != nil || itemID == 0 {
+		t.Fatalf("ByFeedGUID: %v %d", err, itemID)
+	}
+	encs, err := st.Items.Enclosures(itemID)
+	if err != nil || len(encs) != 1 {
+		t.Fatalf("enclosures: %v %+v", err, encs)
+	}
+	if encs[0].URL != "https://blog.dev/ep1.mp3" || encs[0].MIMEType != "audio/mpeg" || encs[0].Size != 12345 {
+		t.Fatalf("enclosure mismatch: %+v", encs[0])
+	}
+
 	// Poll metadata recorded.
 	got, _ := st.Feeds.ByID(u.ID, f.ID)
 	if got.ETag != `"v1"` || got.LastPolledAt == "" {
 		t.Fatalf("poll meta not recorded: %+v", got)
+	}
+}
+
+func TestPollOneAppliesFilters(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+
+	var body = `<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <title>Blog</title>
+  <link>https://blog.dev/</link>
+  <item><guid>1</guid><title>hide me</title><link>https://blog.dev/1</link></item>
+  <item><guid>2</guid><title>spoiler alert</title><link>https://blog.dev/2</link></item>
+  <item><guid>3</guid><title>normal post</title><link>https://blog.dev/3</link></item>
+</channel></rss>`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL, "", "", 900)
+	if _, err := st.Filters.Create(u.ID, f.ID, "hide", "title", "hide me", false); err != nil {
+		t.Fatalf("create hide rule: %v", err)
+	}
+	if _, err := st.Filters.Create(u.ID, f.ID, "mark_read", "title", "^spoiler", true); err != nil {
+		t.Fatalf("create mark_read rule: %v", err)
+	}
+
+	p := New(st, time.Minute, 1)
+	n, err := p.PollOne(context.Background(), f)
+	if err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("new items = %d, want 2 (hidden item dropped)", n)
+	}
+
+	items, _ := st.Items.List(u.ID, store.ItemFilter{})
+	if len(items) != 2 {
+		t.Fatalf("stored items = %d, want 2", len(items))
+	}
+	byTitle := map[string]bool{}
+	for _, it := range items {
+		byTitle[it.Title] = true
+	}
+	if byTitle["hide me"] {
+		t.Fatal("hidden item should not be stored")
+	}
+	if !byTitle["spoiler alert"] || !byTitle["normal post"] {
+		t.Fatalf("expected both non-hidden items, got %v", byTitle)
+	}
+	// The mark_read rule stored the spoiler item as read.
+	for _, it := range items {
+		if it.Title == "spoiler alert" && !it.Read {
+			t.Fatal("spoiler item should be stored read")
+		}
 	}
 }
 

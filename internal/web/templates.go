@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"golang.org/x/net/html"
 
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/store"
 )
 
 //go:embed static/*
@@ -174,6 +176,38 @@ func GalleryThumb(imageURL string) string {
 		return "https://i.redd.it/" + id + "." + ext
 	}
 	return ""
+}
+
+// EnclosureKind reports whether an enclosure should render as an embedded
+// media player: "audio", "video", or "" when it is just a file link.
+func EnclosureKind(e store.Enclosure) string {
+	mt := strings.ToLower(e.MIMEType)
+	if strings.HasPrefix(mt, "audio/") {
+		return "audio"
+	}
+	if strings.HasPrefix(mt, "video/") {
+		return "video"
+	}
+	switch strings.ToLower(path.Ext(e.URL)) {
+	case ".mp3", ".m4a", ".ogg", ".oga", ".opus", ".wav", ".flac", ".aac":
+		return "audio"
+	case ".mp4", ".m4v", ".webm", ".ogv", ".mov", ".mkv":
+		return "video"
+	}
+	return ""
+}
+
+// EnclosureLabel renders a display name for an enclosure's download link:
+// its explicit title, else the filename from the URL.
+func EnclosureLabel(e store.Enclosure) string {
+	if strings.TrimSpace(e.Title) != "" {
+		return e.Title
+	}
+	name := path.Base(e.URL)
+	if name == "." || name == "/" || name == "" {
+		return e.URL
+	}
+	return name
 }
 
 // StripHTML extracts plain text from feed-provided HTML.

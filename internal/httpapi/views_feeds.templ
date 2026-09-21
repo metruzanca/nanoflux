@@ -117,6 +117,59 @@ templ feedEditPage(u store.User, d feedsData) {
 			<button type="submit">save</button>
 		</form>
 	</section>
+	@feedRulesSection(d.Rules)
+}
+
+templ feedRulesSection(d feedRulesData) {
+	<section class="card" id="feed-rules">
+		<h2>filters</h2>
+		<p class="muted small">Rules run against new items when the feed is polled. "hide" drops the item; "mark read" stores it as already read.</p>
+		<form class="stack" hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters" } hx-target="#feed-rules" hx-swap="outerHTML">
+			<div class="row">
+				<label>action
+					<select name="action">
+						<option value="hide">hide</option>
+						<option value="mark_read">mark read</option>
+					</select>
+				</label>
+				<label>field
+					<select name="field">
+						<option value="title">title</option>
+						<option value="summary">summary</option>
+						<option value="link">link</option>
+					</select>
+				</label>
+				<label>pattern
+					<input name="pattern" type="text" placeholder="e.g. sponsored" required/>
+				</label>
+				<label class="check"><input type="checkbox" name="is_regex" value="1"/> regex</label>
+			</div>
+			<div id="feed-rules-error" class="error"></div>
+			<button type="submit">add rule</button>
+		</form>
+		@FilterList(d.FeedID, d.Rows)
+	</section>
+}
+
+templ FilterList(feedID int64, rows []store.Filter) {
+	<ul class="plain" id="feed-filters-list">
+		for _, r := range rows {
+			<li id={ "filter-" + strconv.FormatInt(r.ID, 10) }>
+				<div class="row">
+					<span class="muted small">
+						{ r.Action } · { r.Field } · <code>{ r.Pattern }</code>
+						if r.IsRegex {
+							· regex
+						}
+					</span>
+					<button class="link danger" title="delete rule" hx-post={ "/filters/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#feed-filters-list" hx-swap="outerHTML" hx-confirm="delete this rule?">✕</button>
+				</div>
+			</li>
+		}
+		if len(rows) == 0 {
+			<li class="muted small">no rules yet</li>
+		}
+	</ul>
 }
 
 templ feedFields(d feedsData) {

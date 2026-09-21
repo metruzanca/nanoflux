@@ -27,6 +27,7 @@ type settingsData struct {
 	settingsAvatarData
 	Timezone settingsTimezoneData
 	Theme    settingsThemeData
+	Opml     settingsOpmlData
 	Icons    []settingsIconRow
 }
 

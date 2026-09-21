@@ -12,6 +12,7 @@ templ settingsPage(u store.User, d settingsData) {
 	@settingsAvatar(d.settingsAvatarData)
 	@settingsTimezone(d.Timezone)
 	@settingsTheme(d.Theme)
+	@settingsOpml(d.Opml)
 	<section class="card">
 		<h2>custom source icons</h2>
 		<p class="muted small">Add a domain and an icon url to override the built-in icons for that site. Icons are cached by nanoflux; use refresh to re-fetch the latest.</p>
@@ -87,6 +88,26 @@ templ settingsTheme(d settingsThemeData) {
 			</div>
 			<button type="submit">save</button>
 		</form>
+	</section>
+}
+
+templ settingsOpml(d settingsOpmlData) {
+	<section class="card" id="settings-opml-card">
+		<h2>opml</h2>
+		<p class="muted small">Export your subscriptions or import them from another reader. Feed urls that already exist are skipped.</p>
+		<div class="row">
+			<a class="button" href="/settings/export.opml">export</a>
+			<form class="stack" hx-post="/settings/opml" hx-target="#settings-opml-card" hx-swap="outerHTML" enctype="multipart/form-data">
+				<label>import file
+					<input type="file" name="file" accept=".opml,.xml,application/xml,text/xml"/>
+				</label>
+				<div id="opml-error" class="error"></div>
+				<button type="submit">import</button>
+			</form>
+		</div>
+		if d.Message != "" {
+			<p class="muted">{ d.Message }</p>
+		}
 	</section>
 }
 

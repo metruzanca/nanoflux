@@ -1,6 +1,6 @@
 -- name: UpsertItem :execresult
-INSERT INTO items (feed_id, guid, title, link, summary, image_url, published_at, fetched_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO items (feed_id, guid, title, link, summary, image_url, published_at, fetched_at, read, read_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (feed_id, guid) DO NOTHING;
 
 -- name: ListItems :many
@@ -63,6 +63,24 @@ UPDATE items
 SET read = 0, read_at = NULL
 WHERE items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = sqlc.arg('userID'))
   AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR items.feed_id = CAST(sqlc.arg('feedID') AS INTEGER));
+
+-- name: GetItemByFeedGuid :one
+SELECT id FROM items
+WHERE feed_id = ? AND guid = ?;
+
+-- name: ListEnclosures :many
+SELECT url, title, mime_type, size, sort
+FROM item_enclosures
+WHERE item_id = ?
+ORDER BY sort;
+
+-- name: DeleteEnclosures :exec
+DELETE FROM item_enclosures
+WHERE item_id = ?;
+
+-- name: InsertEnclosure :exec
+INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort)
+VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: CountUnreadItems :one
 SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id

@@ -85,6 +85,41 @@ CREATE TABLE collection_feeds (
     PRIMARY KEY (collection_id, feed_id)
 );
 
+-- Full-text search over items. In the real DB (internal/db/migrate.go,
+-- schemaV10) this is an FTS5 virtual table kept in sync by triggers; sqlc
+-- cannot introspect FTS5 virtual tables, so it is declared here as a plain
+-- table with the same columns. Generated queries run unchanged against the
+-- virtual table at runtime.
+CREATE TABLE items_fts (
+    rowid   INTEGER PRIMARY KEY,
+    title   TEXT NOT NULL,
+    summary TEXT NOT NULL
+);
+
+CREATE TABLE item_enclosures (
+    id        INTEGER PRIMARY KEY,
+    item_id   INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    url       TEXT NOT NULL,
+    title     TEXT NOT NULL DEFAULT '',
+    mime_type TEXT,
+    size      INTEGER NOT NULL DEFAULT 0,
+    sort      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_enclosures_item ON item_enclosures(item_id);
+
+CREATE TABLE filters (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    feed_id    INTEGER REFERENCES feeds(id) ON DELETE CASCADE,
+    action     TEXT NOT NULL,
+    field      TEXT NOT NULL,
+    pattern    TEXT NOT NULL,
+    is_regex   INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_filters_user ON filters(user_id);
+CREATE INDEX idx_filters_feed ON filters(feed_id);
+
 CREATE TABLE source_icons (
     id              INTEGER PRIMARY KEY,
     user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
