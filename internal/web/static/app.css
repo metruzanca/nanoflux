@@ -224,9 +224,39 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 .row h2 { margin: 0; }
 
 ul.items, ul.plain { list-style: none; padding: 0; margin: 0; }
-ul.items li { padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+ul.items li {
+  position: relative;
+  overflow: hidden;
+  touch-action: pan-y;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
 ul.items li:last-child { border-bottom: none; }
 ul.items li.active-row { box-shadow: inset 3px 0 0 var(--accent); }
+
+/* Tinder-style swipe actions (touch only). The row's children translate over
+   a fixed hint (★ = favorite right, ✓ = read left); JS clicks the matching
+   .fav-btn / .read-btn to reuse the existing htmx toggle and row swap. */
+ul.items li > * { transition: transform 0.2s ease; }
+ul.items li.dragging > * { transition: none; }
+ul.items li.swiping-right > *,
+ul.items li.swiping-left > * {
+  transform: translateX(var(--swipe-x, 0px));
+  will-change: transform;
+}
+ul.items li.swiping-right { background: rgba(76, 191, 124, 0.18); }
+ul.items li.swiping-left { background: rgba(91, 140, 255, 0.18); }
+ul.items li.swiping-right::before,
+ul.items li.swiping-left::after {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.6rem;
+  line-height: 1;
+  pointer-events: none;
+}
+ul.items li.swiping-right::before { content: "★"; right: 1rem; color: #4cbf7c; }
+ul.items li.swiping-left::after { content: "✓"; left: 1rem; color: var(--accent); }
 
 table.shortcuts { border-collapse: collapse; margin-top: 0.5rem; }
 table.shortcuts td { padding: 0.3rem 1rem 0.3rem 0; font-size: 0.9rem; }

@@ -283,6 +283,14 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   the original, `s` favorite, `m` read toggle, `g`/`G` first/last, `?` shows the
   shortcut sheet; `/` focuses the search box. `htmx:afterSwap` re-adds
   `.active-row` after a row is swapped.
+- Swipe actions (touch only): swiping an item row right toggles favorite, left
+  toggles read, by clicking the row's `.fav-btn`/`.read-btn` so the htmx swap
+  is reused. Implemented with touch events (`touchmove` is `passive: false` and
+  `preventDefault()`ed once the gesture is horizontal so Android never cancels
+  it as a scroll); `touch-action: pan-y` on `ul.items li` keeps vertical
+  scrolling native. A `data-suppress` marker swallows the leftover synthetic
+  click so a swipe can't open the modal. NOTE: static JS/CSS are `//go:embed`-ed,
+  so `mise dev` serves stale app.js/app.css until the server rebuilds/restarts.
 - Dialog cleanup: on `close`, every dialog's form inputs are cleared and
   `[id$="-preview"]` containers emptied.
 

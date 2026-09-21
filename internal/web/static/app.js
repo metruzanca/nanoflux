@@ -286,6 +286,106 @@ document.body.addEventListener('htmx:afterSwap', function () {
   }
 });
 
+// Tinder-style swipe actions on item rows (touch only). Swiping right toggles
+// favorite, left toggles read, by clicking the row's existing buttons so the
+// htmx swap and error handling are reused. touch-action: pan-y keeps vertical
+// scrolling native; the touchmove handler preventDefaults once a horizontal
+// swipe is detected so the browser never treats it as a scroll/pan (which on
+// Android can fire touchcancel and kill the gesture). A data-suppress marker
+// swallows any leftover synthetic click so a swipe can't open the modal.
+(function () {
+  var SWIPE_THRESHOLD = 12;   // px of horizontal travel before it's a swipe
+  var COMMIT_RATIO = 0.4;     // fraction of the row width to commit
+  var COMMIT_MIN = 80;        // px floor for committing a swipe
+  var SETTLE_MS = 200;        // animation before clicking the action button
+
+  var row = null;
+  var startX = 0;
+  var startY = 0;
+  var swiping = false;
+
+  function reset() {
+    if (row) {
+      row.classList.remove('swiping-right', 'swiping-left', 'dragging');
+      row.style.removeProperty('--swipe-x');
+    }
+    row = null;
+    swiping = false;
+  }
+
+  document.addEventListener('touchstart', function (e) {
+    if (row) return;
+    var t = e.changedTouches[0];
+    var r = t.target.closest && t.target.closest('li[id^="item-"]');
+    if (!r) return;
+    row = r;
+    startX = t.clientX;
+    startY = t.clientY;
+    swiping = false;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function (e) {
+    if (!row) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - startX;
+    var dy = t.clientY - startY;
+    if (!swiping) {
+      if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) <= Math.abs(dy)) return;
+      swiping = true;
+      // Disable the CSS transition on the row's children so the card tracks
+      // the finger 1:1 instead of easing toward it on every move.
+      row.classList.add('dragging');
+    }
+    // Stop the browser from scrolling/pulling-to-refresh once it's horizontal.
+    e.preventDefault();
+    var width = row.offsetWidth;
+    var clamped = Math.max(-width * 0.8, Math.min(width * 0.8, dx));
+    row.style.setProperty('--swipe-x', clamped + 'px');
+    row.classList.toggle('swiping-right', clamped > 0);
+    row.classList.toggle('swiping-left', clamped < 0);
+  }, { passive: false });
+
+  function settle(e) {
+    if (!row) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - startX;
+    if (!swiping) { reset(); return; }
+    var commit = Math.abs(dx) >= Math.min(row.offsetWidth * COMMIT_RATIO, COMMIT_MIN);
+    if (!commit) { reset(); return; }
+    var dir = dx > 0 ? 1 : -1;
+    // Guard against a synthetic click sneaking through on this touch.
+    row.setAttribute('data-suppress', '1');
+    // Re-enable the transition so the slide-off (and snap-back) animate.
+    row.classList.remove('dragging');
+    row.style.setProperty('--swipe-x', dir * row.offsetWidth + 'px');
+    setTimeout(function () {
+      var r = row;
+      var fav = r.querySelector('.fav-btn');
+      var read = r.querySelector('.read-btn');
+      // Leave --swipe-x in place so the row stays slid off until the htmx
+      // outerHTML swap replaces it with the fresh row.
+      row = null;
+      swiping = false;
+      r.removeAttribute('data-suppress');
+      r.classList.remove('swiping-right', 'swiping-left', 'dragging');
+      if (dir > 0) { if (fav) fav.click(); } else { if (read) read.click(); }
+    }, SETTLE_MS);
+  }
+
+  document.addEventListener('touchend', settle);
+  document.addEventListener('touchcancel', reset);
+})();
+
+// Swallow any synthetic click on a row that just got swiped (the button clicks
+// fire after data-suppress is cleared, so htmx actions are unaffected).
+document.addEventListener('click', function (e) {
+  var r = e.target.closest && e.target.closest('[data-suppress]');
+  if (!r) return;
+  e.preventDefault();
+  e.stopPropagation();
+  r.removeAttribute('data-suppress');
+}, true);
+
 // When any modal dialog closes, reset its form and clear the feed/author
 // preview container so stale state doesn't leak into the next open.
 document.addEventListener('close', function (e) {

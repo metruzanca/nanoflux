@@ -10,4 +10,4 @@ run = "mise watch -r dev-serve"
 hide = true
 description = "Regenerate templates/queries and run the RSS server"
 run = "templ generate && go run cmd/server/main.go"
-sources = ["**/*.go", "**/*.templ", "go.mod", "go.sum"]
+sources = ["**/*.go", "**/*.templ", "internal/web/static/**", "go.mod", "go.sum"]
