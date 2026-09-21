@@ -165,6 +165,9 @@ func TestYouTubeBrowseFallback(t *testing.T) {
 	if !strings.Contains(first.Summary, "485K views") {
 		t.Errorf("summary = %q", first.Summary)
 	}
+	if strings.Contains(first.Summary, "ago") {
+		t.Errorf("summary should not repeat the relative publish time: %q", first.Summary)
+	}
 	if first.ImageURL != "https://i.ytimg.com/vi/H0KAi8AWsnM/hq720.jpg" {
 		t.Errorf("image = %q", first.ImageURL)
 	}

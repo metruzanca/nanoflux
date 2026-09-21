@@ -61,7 +61,9 @@ type ItemStore struct {
 }
 
 // Upsert inserts an item, ignoring duplicates on (feed_id, guid). It reports
-// whether a new row was actually inserted.
+// whether a new row was actually inserted; when the item already exists its
+// content snapshot (summary, thumbnail) is refreshed so the listing tracks the
+// live feed without touching identity, published_at or read state.
 func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 	res, err := s.q.UpsertItem(context.Background(), sqlcgen.UpsertItemParams{
 		FeedID:      feedID,
@@ -79,7 +81,21 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 		return false, fmt.Errorf("upsert item: %w", err)
 	}
 	n, err := res.RowsAffected()
-	return n > 0, err
+	if err != nil {
+		return false, fmt.Errorf("upsert item rows affected: %w", err)
+	}
+	if n > 0 {
+		return true, nil
+	}
+	if err := s.q.UpdateItemSnapshot(context.Background(), sqlcgen.UpdateItemSnapshotParams{
+		Summary:  it.Summary,
+		ImageUrl: ns(it.ImageURL),
+		FeedID:   feedID,
+		Guid:     it.GUID,
+	}); err != nil {
+		return false, fmt.Errorf("refresh item snapshot: %w", err)
+	}
+	return false, nil
 }
 
 func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {

@@ -3,6 +3,13 @@ INSERT INTO items (feed_id, guid, title, link, summary, image_url, published_at,
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (feed_id, guid) DO NOTHING;
 
+-- name: UpdateItemSnapshot :exec
+-- Refresh the content snapshot of an existing item (summary, thumbnail) on
+-- poll. Identity, published_at and read state are left untouched.
+UPDATE items
+SET summary = ?, image_url = ?
+WHERE feed_id = ? AND guid = ?;
+
 -- name: ListItems :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
