@@ -13,6 +13,8 @@ templ settingsPage(u store.User, d settingsData) {
 	@settingsTimezone(d.Timezone)
 	@settingsTheme(d.Theme)
 	@settingsAccent(d.Accent)
+	@settingsPassword(d.Password)
+	@settingsSessions(d.Sessions)
 	@settingsOpml(d.Opml)
 	<section class="card">
 		<h2>custom source icons</h2>
@@ -120,6 +122,57 @@ templ settingsAccent(d settingsAccentData) {
 			}
 			<button type="submit">save</button>
 		</form>
+	</section>
+}
+
+templ settingsPassword(d settingsPasswordData) {
+	<section class="card" id="settings-password-card">
+		<h2>password</h2>
+		<form class="stack" hx-post="/settings/password" hx-target="#settings-password-card" hx-swap="outerHTML">
+			<label>current password
+				<input name="current_password" type="password" autocomplete="current-password" required/>
+			</label>
+			<label>new password
+				<input name="new_password" type="password" autocomplete="new-password" minlength="8" required/>
+			</label>
+			<label>confirm new password
+				<input name="confirm_password" type="password" autocomplete="new-password" required/>
+			</label>
+			if d.Error != "" {
+				<div class="error" role="alert">{ d.Error }</div>
+			}
+			if d.Success != "" {
+				<p class="muted">{ d.Success }</p>
+			}
+			<button type="submit">change password</button>
+		</form>
+	</section>
+}
+
+templ settingsSessions(d settingsSessionsData) {
+	<section class="card" id="settings-sessions-card">
+		<h2>sessions</h2>
+		<p class="muted small">Devices logged into your account. Log out anything you don't recognize.</p>
+		<ul class="plain" id="settings-sessions-list">
+			for _, r := range d.Rows {
+				<li id={ "session-" + r.Token }>
+					<div class="row">
+						<div class="item-meta">
+							signed in { web.TimeFmt(d.Timezone, r.CreatedAt) }
+							if r.IsCurrent {
+								· <span class="badge">this device</span>
+							}
+						</div>
+						<div class="row-actions">
+							<button class="link" hx-post={ "/settings/sessions/" + r.Token + "/revoke" } hx-target="#settings-sessions-card" hx-swap="outerHTML">log out</button>
+						</div>
+					</div>
+				</li>
+			}
+			if len(d.Rows) == 0 {
+				<li class="muted small">no active sessions</li>
+			}
+		</ul>
 	</section>
 }
 

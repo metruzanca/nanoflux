@@ -17,28 +17,30 @@ import (
 // Server wires the HTTP layer over the store. JSON API routes for the
 // extension live here too (see api.go).
 type Server struct {
-	store      *store.Store
-	auth       *auth.Authenticator
-	cfg        config.Config
-	poller     *poller.Poller
-	discoverer *discover.Discoverer
-	client     *http.Client
-	files      filestore.Store
-	oembed     *oembed.Resolver
-	reddit     *redditCache
+	store        *store.Store
+	auth         *auth.Authenticator
+	cfg          config.Config
+	poller       *poller.Poller
+	discoverer   *discover.Discoverer
+	client       *http.Client
+	files        filestore.Store
+	oembed       *oembed.Resolver
+	reddit       *redditCache
+	loginLimiter *loginLimiter
 }
 
 func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore.Store) *Server {
 	client := &http.Client{Timeout: 20 * time.Second}
 	return &Server{
-		store:      st,
-		auth:       a,
-		cfg:        cfg,
-		discoverer: discover.New(nil),
-		client:     client,
-		files:      fs,
-		oembed:     oembed.New(client, 5*time.Minute, 30*time.Second, 2000),
-		reddit:     newRedditCache(),
+		store:        st,
+		auth:         a,
+		cfg:          cfg,
+		discoverer:   discover.New(nil),
+		client:       client,
+		files:        fs,
+		oembed:       oembed.New(client, 5*time.Minute, 30*time.Second, 2000),
+		reddit:       newRedditCache(),
+		loginLimiter: newLoginLimiter(),
 	}
 }
 
@@ -127,6 +129,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /settings/timezone", s.auth.Require(http.HandlerFunc(s.settingsTimezone)))
 	mux.Handle("POST /settings/theme", s.auth.Require(http.HandlerFunc(s.settingsTheme)))
 	mux.Handle("POST /settings/accent", s.auth.Require(http.HandlerFunc(s.settingsAccent)))
+	mux.Handle("POST /settings/password", s.auth.Require(http.HandlerFunc(s.settingsPassword)))
+	mux.Handle("POST /settings/sessions/{token}/revoke", s.auth.Require(http.HandlerFunc(s.settingsSessionsRevoke)))
 	mux.Handle("GET /settings/export.opml", s.auth.Require(http.HandlerFunc(s.opmlExport)))
 	mux.Handle("POST /settings/opml", s.auth.Require(http.HandlerFunc(s.opmlImport)))
 	mux.Handle("GET /avatar", s.auth.Require(http.HandlerFunc(s.avatarImage)))

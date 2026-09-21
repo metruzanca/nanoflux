@@ -42,6 +42,7 @@ type Feed struct {
 	Etag            sql.NullString `json:"etag"`
 	LastModified    sql.NullString `json:"last_modified"`
 	LastPolledAt    sql.NullString `json:"last_polled_at"`
+	LastError       sql.NullString `json:"last_error"`
 	PollIntervalSec int64          `json:"poll_interval_sec"`
 	Enabled         bool           `json:"enabled"`
 	CreatedAt       string         `json:"created_at"`

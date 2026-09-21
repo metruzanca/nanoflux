@@ -185,7 +185,7 @@ func (q *Queries) ListCollections(ctx context.Context, userID int64) ([]Collecti
 
 const listFeedsInCollection = `-- name: ListFeedsInCollection :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.poll_interval_sec, f.enabled, f.created_at
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.poll_interval_sec, f.enabled, f.created_at
 FROM feeds f
 JOIN collection_feeds cf ON cf.feed_id = f.id
 WHERE cf.collection_id = ? AND f.user_id = ?
@@ -217,6 +217,7 @@ func (q *Queries) ListFeedsInCollection(ctx context.Context, arg ListFeedsInColl
 			&i.Etag,
 			&i.LastModified,
 			&i.LastPolledAt,
+			&i.LastError,
 			&i.PollIntervalSec,
 			&i.Enabled,
 			&i.CreatedAt,

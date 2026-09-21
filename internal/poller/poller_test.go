@@ -219,3 +219,49 @@ func TestPollDue(t *testing.T) {
 		t.Fatal("broken feed poll attempt not recorded")
 	}
 }
+
+func TestPollOneRecordsLastError(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, 0, "Broken", srv.URL, "", "", 900)
+	p := New(st, time.Minute, 1)
+
+	if _, err := p.PollOne(context.Background(), f); err == nil {
+		t.Fatal("expected poll error")
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.LastError == "" {
+		t.Fatal("last_error should be recorded on failure")
+	}
+
+	// A successful poll clears it.
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title><item><guid>1</guid><title>One</title></item></channel></rss>`))
+	}))
+	defer ok.Close()
+	if err := st.Feeds.Update(u.ID, f.ID, 0, "Broken", ok.URL, "", "", 900, true); err != nil {
+		t.Fatal(err)
+	}
+	fresh, _ := st.Feeds.ByID(u.ID, f.ID)
+	if _, err := p.PollOne(context.Background(), fresh); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = st.Feeds.ByID(u.ID, f.ID)
+	if got.LastError != "" {
+		t.Fatalf("last_error should clear on success, got %q", got.LastError)
+	}
+}

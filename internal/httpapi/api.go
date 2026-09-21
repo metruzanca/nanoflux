@@ -52,6 +52,11 @@ func readJSON(r *http.Request, v any) error {
 }
 
 func (s *Server) apiLogin(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	if s.loginLimiter.blocked(ip) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts — try again later"})
+		return
+	}
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -62,16 +67,18 @@ func (s *Server) apiLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.store.Users.ByUsername(req.Username)
 	if err != nil || !auth.CheckPassword(u.PasswordHash, req.Password) {
+		s.loginLimiter.fail(ip)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
+	s.loginLimiter.success(ip)
 	token, err := s.auth.CreateSession(u.ID)
 	if err != nil {
 		log.Error("create session", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 		return
 	}
-	s.auth.SetCookie(w, token) // convenience for same-origin web use
+	s.auth.SetCookie(w, r, token) // convenience for same-origin web use
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token":    token,
 		"user_id":  u.ID,

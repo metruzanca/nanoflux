@@ -56,6 +56,21 @@ func (q *Queries) DeleteSessionsByUser(ctx context.Context, userID int64) error 
 	return err
 }
 
+const deleteSessionsByUserExcept = `-- name: DeleteSessionsByUserExcept :exec
+DELETE FROM sessions
+WHERE user_id = ? AND token != ?
+`
+
+type DeleteSessionsByUserExceptParams struct {
+	UserID int64  `json:"user_id"`
+	Token  string `json:"token"`
+}
+
+func (q *Queries) DeleteSessionsByUserExcept(ctx context.Context, arg DeleteSessionsByUserExceptParams) error {
+	_, err := q.db.ExecContext(ctx, deleteSessionsByUserExcept, arg.UserID, arg.Token)
+	return err
+}
+
 const getUserByToken = `-- name: GetUserByToken :one
 SELECT u.id, u.username, u.password_hash, u.is_admin, u.avatar_key, u.timezone, u.theme, u.accent_color, u.created_at
 FROM sessions se
@@ -90,6 +105,42 @@ func (q *Queries) GetUserByToken(ctx context.Context, token string) (GetUserByTo
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const listSessionsByUser = `-- name: ListSessionsByUser :many
+SELECT token, created_at, expires_at
+FROM sessions
+WHERE user_id = ?
+ORDER BY created_at DESC
+`
+
+type ListSessionsByUserRow struct {
+	Token     string `json:"token"`
+	CreatedAt string `json:"created_at"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+func (q *Queries) ListSessionsByUser(ctx context.Context, userID int64) ([]ListSessionsByUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionsByUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSessionsByUserRow
+	for rows.Next() {
+		var i ListSessionsByUserRow
+		if err := rows.Scan(&i.Token, &i.CreatedAt, &i.ExpiresAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const touchSession = `-- name: TouchSession :exec

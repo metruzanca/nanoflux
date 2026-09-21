@@ -48,6 +48,9 @@ templ FeedRow(r feedRow) {
 				if !r.Enabled {
 					<span class="badge">paused</span>
 				}
+				if r.LastError != "" {
+					<span class="badge danger" title={ r.LastError }>last poll failed</span>
+				}
 				<div class="item-meta">
 					if r.AuthorName != "" {
 						<a href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.AuthorName }</a> ·
@@ -254,6 +257,9 @@ templ feedPage(u store.User, d feedPageData) {
 			never
 		}
 	</p>
+		if d.Row.LastError != "" {
+			<div class="error" role="alert">last poll failed: { d.Row.LastError }</div>
+		}
 	</section>
 	<h2>items</h2>
 	@ScopedItems(d.Scoped)

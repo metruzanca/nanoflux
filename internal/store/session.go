@@ -41,6 +41,36 @@ func (s *SessionStore) DeleteUserSessions(userID int64) error {
 	return s.q.DeleteSessionsByUser(context.Background(), userID)
 }
 
+// DeleteUserSessionsExcept revokes every session belonging to a user except
+// keepToken, which survives (used when a password is changed: log out all
+// devices but keep the one making the change).
+func (s *SessionStore) DeleteUserSessionsExcept(userID int64, keepToken string) error {
+	return s.q.DeleteSessionsByUserExcept(context.Background(), sqlcgen.DeleteSessionsByUserExceptParams{
+		UserID: userID,
+		Token:  keepToken,
+	})
+}
+
+// Session is a user's active session for display and management.
+type Session struct {
+	Token     string
+	CreatedAt string
+	ExpiresAt string
+}
+
+// ListUserSessions returns a user's sessions, newest first.
+func (s *SessionStore) ListUserSessions(userID int64) ([]Session, error) {
+	rows, err := s.q.ListSessionsByUser(context.Background(), userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Session, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Session{Token: r.Token, CreatedAt: r.CreatedAt, ExpiresAt: r.ExpiresAt})
+	}
+	return out, nil
+}
+
 // Touch extends a session's expiry (sliding sessions).
 func (s *SessionStore) Touch(token, expiresAt string) error {
 	return s.q.TouchSession(context.Background(), sqlcgen.TouchSessionParams{

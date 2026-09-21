@@ -19,15 +19,24 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	if s.loginLimiter.blocked(ip) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		web.Render(w, r, basePage("log in", store.User{}, loginPage("too many attempts — try again later", s.allowSignup())))
+		return
+	}
+
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
 	u, err := s.store.Users.ByUsername(username)
 	if err != nil || !auth.CheckPassword(u.PasswordHash, password) {
+		s.loginLimiter.fail(ip)
 		w.WriteHeader(http.StatusUnauthorized)
 		web.Render(w, r, basePage("log in", store.User{}, loginPage("invalid username or password", s.allowSignup())))
 		return
 	}
+	s.loginLimiter.success(ip)
 
 	token, err := s.auth.CreateSession(u.ID)
 	if err != nil {
@@ -35,7 +44,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	s.auth.SetCookie(w, token)
+	s.auth.SetCookie(w, r, token)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -56,7 +65,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 			log.Error("delete session", "err", err)
 		}
 	}
-	s.auth.ClearCookie(w)
+	s.auth.ClearCookie(w, r)
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
@@ -118,6 +127,6 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	s.auth.SetCookie(w, token)
+	s.auth.SetCookie(w, r, token)
 	http.Redirect(w, r, "/", http.StatusFound)
 }

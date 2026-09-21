@@ -324,6 +324,24 @@ func TestFeedList(t *testing.T) {
 	}
 }
 
+func TestFeedListMarksErrors(t *testing.T) {
+	h := newCLI(t)
+	u := createUser(t, h.st, "alice")
+	f, err := h.st.Feeds.Create(u.ID, 0, "Broken", "https://broken.dev/feed.xml", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.st.Feeds.SetPollMeta(f.ID, "", "", db.Now(), "timeout"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.exec(t, "feed", "list"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout.String(), "error") {
+		t.Fatalf("feed list should mark the errored feed: %q", h.stdout.String())
+	}
+}
+
 func TestBackupRestoreRoundtrip(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "data", "rss.db")

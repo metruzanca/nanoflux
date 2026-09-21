@@ -107,6 +107,29 @@ make update
 Pulls the latest `latest` image and redeploys the container; your data is
 preserved.
 
+### HTTPS
+
+nanoflux detects whether a request arrived over HTTPS and only then marks the
+session cookie `Secure` — so plain-HTTP LAN and dev installs keep working. It
+checks TLS directly and the `X-Forwarded-Proto`/`X-Forwarded-Ssl` headers from
+a reverse proxy, so serving through Caddy, Traefik or Tailscale-serve hardens
+the cookie automatically. If you use Nginx, forward the scheme explicitly:
+
+```nginx
+location / {
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_pass http://127.0.0.1:8080;
+}
+```
+
+A simple Caddy setup:
+
+```caddy
+nanoflux.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
 To run a published image directly, without the Makefile:
 
 ```bash

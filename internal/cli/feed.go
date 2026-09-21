@@ -39,6 +39,9 @@ func feedListCmd(st *store.Store, out io.Writer) *cobra.Command {
 				if !f.Enabled {
 					state = "paused"
 				}
+				if f.LastError != "" {
+					state = "error"
+				}
 				last := f.LastPolledAt
 				if last == "" {
 					last = "never"

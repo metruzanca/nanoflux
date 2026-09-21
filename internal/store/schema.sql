@@ -54,6 +54,7 @@ CREATE TABLE feeds (
     etag              TEXT,
     last_modified     TEXT,
     last_polled_at    TEXT,
+    last_error        TEXT,
     poll_interval_sec INTEGER NOT NULL DEFAULT 900,
     enabled           INTEGER NOT NULL DEFAULT 1,
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
