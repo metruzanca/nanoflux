@@ -511,3 +511,13 @@ document.addEventListener('close', function (e) {
     el.innerHTML = '';
   });
 }, true);
+// Installable PWA. Register the (minimal, non-caching) service worker so the
+// browser offers "Add to Home screen"/"Install app". Only runs in a secure
+// context (https or localhost), which is required for service workers.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function () {
+      // Non-fatal: the app works fine without the worker.
+    });
+  });
+}

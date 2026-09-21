@@ -21,6 +21,12 @@ import (
 //go:embed static/*
 var staticFS embed.FS
 
+// ReadStatic returns the bytes of an embedded asset under static/ (e.g.
+// "sw.js", "manifest.webmanifest"), for serving at a non-/static/ route.
+func ReadStatic(name string) ([]byte, error) {
+	return staticFS.ReadFile("static/" + name)
+}
+
 // Render executes a templ component against w.
 func Render(w http.ResponseWriter, r *http.Request, c templ.Component) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

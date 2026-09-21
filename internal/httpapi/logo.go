@@ -3,6 +3,8 @@ package httpapi
 import (
 	"net/http"
 	"strings"
+
+	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 // logoAccent returns a valid "#rrggbb" accent for the brand logo, falling back
@@ -51,4 +53,18 @@ func (s *Server) serveFavicon(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	_, _ = w.Write([]byte(logoSVG(color)))
+}
+
+// serveEmbedded serves a static asset embedded under internal/web/static at a
+// non-/static/ route (the PWA manifest and service worker), with the given
+// content type and cache policy.
+func serveEmbedded(w http.ResponseWriter, r *http.Request, name, contentType, cache string) {
+	data, err := web.ReadStatic(name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", cache)
+	_, _ = w.Write(data)
 }

@@ -15,7 +15,7 @@ latest_image_tag = $(shell \
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop restart update status logs shell backup down
+.PHONY: help start stop restart update icons status logs shell backup down
 
 help:
 	@echo "nanoflux - manage your instance"
@@ -61,6 +61,9 @@ update:
 
 status:
 	$(COMPOSE) ps
+
+icons:
+	go run ./tools/iconsgen
 
 logs:
 	$(COMPOSE) logs -f

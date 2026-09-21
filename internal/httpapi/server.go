@@ -55,6 +55,16 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.Handle("GET /static/", web.Static())
 
+	// PWA: the manifest and service worker are served at the root so the
+	// worker's scope is "/" and the manifest URL is stable. The service worker
+	// is deliberately not HTTP-cached so the browser revalidates it.
+	mux.HandleFunc("GET /manifest.webmanifest", func(w http.ResponseWriter, r *http.Request) {
+		serveEmbedded(w, r, "manifest.webmanifest", "application/manifest+json; charset=utf-8", "public, max-age=86400")
+	})
+	mux.HandleFunc("GET /sw.js", func(w http.ResponseWriter, r *http.Request) {
+		serveEmbedded(w, r, "sw.js", "application/javascript; charset=utf-8", "no-cache")
+	})
+
 	mux.HandleFunc("GET /login", s.loginPage)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("GET /signup", s.signupPage)
