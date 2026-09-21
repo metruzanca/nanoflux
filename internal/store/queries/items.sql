@@ -19,6 +19,9 @@ WHERE f.user_id = sqlc.arg('userID')
   AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
+  AND (CAST(sqlc.arg('beforeID') AS INTEGER) = 0 OR
+       (COALESCE(i.published_at, i.fetched_at), i.id) <
+       (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(sqlc.arg('beforeID') AS INTEGER)))
 ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
 LIMIT sqlc.arg('limit');
 

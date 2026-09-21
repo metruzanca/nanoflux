@@ -46,18 +46,37 @@ templ topbar(u store.User) {
 		<div class="row">
 			<h2 class="muted">item</h2>
 			<div class="row-actions">
-				<a id="item-dialog-live" class="small external" href="#" target="_blank" rel="noopener">open live</a>
+				<a id="item-dialog-live" class="small external" href="#" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">open live</a>
 				<button type="button" class="link" onclick="document.getElementById('item-dialog').close()">✕</button>
 			</div>
 		</div>
 		<div id="item-dialog-body" class="item-view"></div>
 	</dialog>
+
+	<dialog id="shortcuts-dialog" class="modal">
+		<div class="row">
+			<h2 class="muted">keyboard shortcuts</h2>
+			<button type="button" class="link" onclick="document.getElementById('shortcuts-dialog').close()">✕</button>
+		</div>
+		<table class="shortcuts">
+			<tr><td>j / k</td><td>next / previous item</td></tr>
+			<tr><td>o / Enter</td><td>open item</td></tr>
+			<tr><td>v</td><td>open original in a new tab</td></tr>
+			<tr><td>s</td><td>favorite / unfavorite</td></tr>
+			<tr><td>m</td><td>mark read / unread</td></tr>
+			<tr><td>g / G</td><td>first / last item</td></tr>
+			<tr><td>← / →</td><td>previous / next while reading</td></tr>
+			<tr><td>Esc</td><td>close dialog</td></tr>
+		</table>
+	</dialog>
 }
 
 // basePage renders a full HTML document: head, topbar, and the page content.
+// The data-theme attribute on <html> selects the CSS variable set in app.css;
+// "system" is resolved client-side via prefers-color-scheme.
 templ basePage(title string, u store.User, content templ.Component) {
 	<!DOCTYPE html>
-	<html lang="en">
+	<html lang="en" data-theme={ u.Theme }>
 		<head>
 			@head(title)
 		</head>

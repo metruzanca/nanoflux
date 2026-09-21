@@ -242,8 +242,11 @@ WHERE f.user_id = ?1
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(?7 AS INTEGER) = 0 OR i.favorite = 1)
+  AND (CAST(?8 AS INTEGER) = 0 OR
+       (COALESCE(i.published_at, i.fetched_at), i.id) <
+       (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(?8 AS INTEGER)))
 ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
-LIMIT ?8
+LIMIT ?9
 `
 
 type ListItemsParams struct {
@@ -254,6 +257,7 @@ type ListItemsParams struct {
 	Unread       int64 `json:"unread"`
 	Read         int64 `json:"read"`
 	Favorites    int64 `json:"favorites"`
+	BeforeID     int64 `json:"beforeID"`
 	Limit        int64 `json:"limit"`
 }
 
@@ -285,6 +289,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 		arg.Unread,
 		arg.Read,
 		arg.Favorites,
+		arg.BeforeID,
 		arg.Limit,
 	)
 	if err != nil {

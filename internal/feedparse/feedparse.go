@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/db"
@@ -130,7 +131,7 @@ func normalizeItem(it *gofeed.Item) Item {
 		out.Summary = it.Content
 	}
 	if it.Image != nil {
-		out.ImageURL = it.Image.URL
+		out.ImageURL = StripTracking(it.Image.URL)
 	}
 	switch {
 	case it.PublishedParsed != nil:
@@ -138,7 +139,46 @@ func normalizeItem(it *gofeed.Item) Item {
 	case it.UpdatedParsed != nil:
 		out.PublishedAt = db.FormatTime(*it.UpdatedParsed)
 	}
+	// The GUID is derived from the raw link above; the stored link is the
+	// cleaned one so tracking params never leak to the client.
+	out.Link = StripTracking(out.Link)
 	return out
+}
+
+// trackingParams are query-string keys that exist only for marketing and
+// analytics. They are dropped from stored links for privacy (Miniflux does the
+// same). Generic keys like "ref" or "s" are left alone — they are often
+// functional.
+var trackingParams = []string{
+	"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+	"utm_id", "utm_visitor_id", "utm_reader", "utm_ref",
+	"fbclid", "gclid", "dclid", "gbraid", "wbraid",
+	"mc_cid", "mc_eid", "igshid", "ref_src", "ref_url", "spm",
+}
+
+// StripTracking removes well-known tracking parameters from a URL. The URL is
+// returned unchanged when it has no query string or cannot be parsed.
+func StripTracking(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	q := u.Query()
+	changed := false
+	for _, k := range trackingParams {
+		if _, ok := q[k]; ok {
+			q.Del(k)
+			changed = true
+		}
+	}
+	if !changed {
+		return raw
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func imageURL(img *gofeed.Image) string {

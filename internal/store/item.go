@@ -42,6 +42,7 @@ type ItemFilter struct {
 	FeedID        int64 // 0 = all
 	AuthorID      int64 // 0 = all
 	CollectionID  int64 // 0 = all
+	BeforeID      int64 // keyset cursor: only items ordered before this id
 	Limit         int
 }
 
@@ -68,6 +69,15 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 }
 
 func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
+	items, _, err := s.ListPage(userID, f)
+	return items, err
+}
+
+// ListPage returns up to f.Limit items plus whether more exist beyond them,
+// so callers can render a "load more" button. Items are ordered newest first;
+// pass the last returned id as f.BeforeID to page further. The limit is
+// clamped like List, but one extra row is fetched to detect the next page.
+func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, error) {
 	limit := f.Limit
 	if limit <= 0 || limit > 500 {
 		limit = 100
@@ -80,10 +90,15 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 		Unread:       boolInt(f.UnreadOnly),
 		Read:         boolInt(f.ReadOnly),
 		Favorites:    boolInt(f.FavoritesOnly),
-		Limit:        int64(limit),
+		BeforeID:     f.BeforeID,
+		Limit:        int64(limit) + 1,
 	})
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
 	}
 	out := make([]ItemWithFeed, 0, len(rows))
 	for _, r := range rows {
@@ -91,7 +106,7 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 			r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.AuthorID, r.AuthorName))
 	}
-	return out, nil
+	return out, hasMore, nil
 }
 
 func (s *ItemStore) ByID(userID, id int64) (Item, error) {

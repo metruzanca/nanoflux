@@ -38,6 +38,12 @@ func itemCardClass(v itemVisuals) string {
 	}
 }
 
+// loadMoreData carries the fragment URL for a "load more" button. It is nil
+// when there is no next page.
+type loadMoreData struct {
+	URL string // full fragment URL including the before= cursor
+}
+
 templ ItemsList(items []store.ItemWithFeed) {
 	if len(items) > 0 {
 		<ul class="items" id="items-list">
@@ -47,6 +53,38 @@ templ ItemsList(items []store.ItemWithFeed) {
 		</ul>
 	} else {
 		<p class="muted" id="items-list">nothing here</p>
+	}
+}
+
+// ItemsListPage renders the item list plus a "load more" button when more
+// pages exist. The button appends the next page into the list via htmx.
+templ ItemsListPage(items []store.ItemWithFeed, more *loadMoreData) {
+	@ItemsList(items)
+	if more != nil {
+		<button id="load-more" hx-get={ templ.URL(more.URL) } hx-target="#items-list" hx-swap="beforeend">load more</button>
+	}
+}
+
+// ItemsSection wraps the list and its load-more button so list-wide actions
+// (e.g. "mark all read") can swap the whole section atomically instead of
+// orphaning a stale load-more button.
+templ ItemsSection(items []store.ItemWithFeed, more *loadMoreData) {
+	<div id="items-section">
+		@ItemsListPage(items, more)
+	</div>
+}
+
+// ItemsPage is the fragment response for a load-more request: the appended
+// item rows plus an out-of-band swap that replaces (or removes) the load-more
+// button.
+templ ItemsPage(items []store.ItemWithFeed, more *loadMoreData) {
+	for _, it := range items {
+		@ItemRow(it)
+	}
+	if more != nil {
+		<button id="load-more" hx-swap-oob="outerHTML" hx-get={ templ.URL(more.URL) } hx-target="#items-list" hx-swap="beforeend">load more</button>
+	} else {
+		<button id="load-more" hx-swap-oob="delete" hidden></button>
 	}
 }
 
@@ -147,7 +185,7 @@ templ scopedItemsInner(d scopedItemsData) {
 			<a href={ d.Path + "?view=read" } hx-get={ d.ItemsPath + "?view=read" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read" }>read ({ d.ReadCount })</a>
 		}
 	</nav>
-	@ItemsList(d.Items)
+	@ItemsListPage(d.Items, d.More)
 }
 
 templ ItemView(d itemViewData) {
@@ -173,7 +211,7 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 				· { web.TimeFmt(d.Timezone, d.PublishedAt) }
 			}
 			if d.SourceURL != "" {
-				· <a href={ templ.URL(d.SourceURL) } target="_blank" rel="noopener" class="external">source</a>
+				· <a href={ templ.URL(d.SourceURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">source</a>
 			}
 		</p>
 		if len(d.Gallery) > 0 {

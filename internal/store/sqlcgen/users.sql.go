@@ -24,7 +24,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
-RETURNING id, username, password_hash, avatar_key, timezone, created_at
+RETURNING id, username, password_hash, avatar_key, timezone, theme, created_at
 `
 
 type CreateUserParams struct {
@@ -38,6 +38,7 @@ type CreateUserRow struct {
 	PasswordHash string         `json:"password_hash"`
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
+	Theme        string         `json:"theme"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -50,6 +51,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.PasswordHash,
 		&i.AvatarKey,
 		&i.Timezone,
+		&i.Theme,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -68,7 +70,7 @@ func (q *Queries) GetUserAvatarKey(ctx context.Context, id int64) (sql.NullStrin
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, avatar_key, timezone, created_at
+SELECT id, username, password_hash, avatar_key, timezone, theme, created_at
 FROM users
 WHERE id = ?
 `
@@ -79,6 +81,7 @@ type GetUserByIDRow struct {
 	PasswordHash string         `json:"password_hash"`
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
+	Theme        string         `json:"theme"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -91,13 +94,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, er
 		&i.PasswordHash,
 		&i.AvatarKey,
 		&i.Timezone,
+		&i.Theme,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, avatar_key, timezone, created_at
+SELECT id, username, password_hash, avatar_key, timezone, theme, created_at
 FROM users
 WHERE username = ?
 `
@@ -108,6 +112,7 @@ type GetUserByUsernameRow struct {
 	PasswordHash string         `json:"password_hash"`
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
+	Theme        string         `json:"theme"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -120,13 +125,14 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 		&i.PasswordHash,
 		&i.AvatarKey,
 		&i.Timezone,
+		&i.Theme,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, avatar_key, timezone, created_at
+SELECT id, username, password_hash, avatar_key, timezone, theme, created_at
 FROM users
 ORDER BY username
 `
@@ -137,6 +143,7 @@ type ListUsersRow struct {
 	PasswordHash string         `json:"password_hash"`
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
+	Theme        string         `json:"theme"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -155,6 +162,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.PasswordHash,
 			&i.AvatarKey,
 			&i.Timezone,
+			&i.Theme,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -182,6 +190,21 @@ type SetUserAvatarKeyParams struct {
 
 func (q *Queries) SetUserAvatarKey(ctx context.Context, arg SetUserAvatarKeyParams) error {
 	_, err := q.db.ExecContext(ctx, setUserAvatarKey, arg.AvatarKey, arg.ID)
+	return err
+}
+
+const setUserTheme = `-- name: SetUserTheme :exec
+UPDATE users SET theme = ?
+WHERE id = ?
+`
+
+type SetUserThemeParams struct {
+	Theme string `json:"theme"`
+	ID    int64  `json:"id"`
+}
+
+func (q *Queries) SetUserTheme(ctx context.Context, arg SetUserThemeParams) error {
+	_, err := q.db.ExecContext(ctx, setUserTheme, arg.Theme, arg.ID)
 	return err
 }
 

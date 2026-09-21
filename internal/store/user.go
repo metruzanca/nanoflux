@@ -15,6 +15,7 @@ type User struct {
 	PasswordHash string
 	HasAvatar    bool
 	Timezone     string
+	Theme        string
 	CreatedAt    string
 }
 
@@ -29,7 +30,7 @@ func (s *UserStore) Create(username, passwordHash string) (User, error) {
 	if err != nil {
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.CreatedAt), nil
 }
 
 func (s *UserStore) ByID(id int64) (User, error) {
@@ -40,7 +41,7 @@ func (s *UserStore) ByID(id int64) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.CreatedAt), nil
 }
 
 func (s *UserStore) ByUsername(username string) (User, error) {
@@ -51,7 +52,7 @@ func (s *UserStore) ByUsername(username string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.CreatedAt), nil
 }
 
 func (s *UserStore) List() ([]User, error) {
@@ -61,7 +62,7 @@ func (s *UserStore) List() ([]User, error) {
 	}
 	out := make([]User, 0, len(rows))
 	for _, u := range rows {
-		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.CreatedAt))
+		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.CreatedAt))
 	}
 	return out, nil
 }
@@ -94,5 +95,13 @@ func (s *UserStore) SetTimezone(userID int64, tz string) error {
 	return s.q.SetUserTimezone(context.Background(), sqlcgen.SetUserTimezoneParams{
 		Timezone: ns(tz),
 		ID:       userID,
+	})
+}
+
+// SetTheme stores the user's theme preference: "dark", "light", or "system".
+func (s *UserStore) SetTheme(userID int64, theme string) error {
+	return s.q.SetUserTheme(context.Background(), sqlcgen.SetUserThemeParams{
+		Theme: theme,
+		ID:    userID,
 	})
 }

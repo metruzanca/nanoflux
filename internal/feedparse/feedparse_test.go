@@ -66,6 +66,52 @@ func TestFetchNormalizesRSS(t *testing.T) {
 	}
 }
 
+func TestStripTracking(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"https://example.com/a?utm_source=rss&utm_medium=feed&id=5", "https://example.com/a?id=5"},
+		{"https://example.com/a?fbclid=abc&b=1", "https://example.com/a?b=1"},
+		{"https://example.com/a?ref=x&id=1", "https://example.com/a?ref=x&id=1"}, // generic keys stay
+		{"https://example.com/a?utm_campaign=x", "https://example.com/a"},
+		{"https://example.com/a", "https://example.com/a"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := StripTracking(tt.in); got != tt.want {
+			t.Errorf("StripTracking(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestFetchStripsTracking(t *testing.T) {
+	const body = `<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <title>Example</title>
+  <link>https://example.com/</link>
+  <item>
+    <title>Post</title>
+    <link>https://example.com/1?utm_source=rss&utm_campaign=x&keep=1</link>
+    <enclosure url="https://example.com/audio.mp3" type="audio/mpeg" length="123"/>
+  </item>
+</channel></rss>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	res, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(res.Items) != 1 {
+		t.Fatalf("items = %d", len(res.Items))
+	}
+	if got := res.Items[0].Link; got != "https://example.com/1?keep=1" {
+		t.Errorf("link = %q, want tracking params stripped", got)
+	}
+}
+
 func TestFetchConditionalGET(t *testing.T) {
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

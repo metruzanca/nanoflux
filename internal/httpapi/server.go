@@ -61,6 +61,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Items.
 	mux.Handle("GET /{$}", s.auth.Require(http.HandlerFunc(s.home)))
+	mux.Handle("GET /items", s.auth.Require(http.HandlerFunc(s.itemsFragment)))
 	mux.Handle("GET /read", s.auth.Require(http.HandlerFunc(s.readPage)))
 	mux.Handle("GET /favorites", s.auth.Require(http.HandlerFunc(s.favoritesPage)))
 	mux.Handle("POST /items/read-all", s.auth.Require(http.HandlerFunc(s.itemsReadAll)))
@@ -109,6 +110,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /settings", s.auth.Require(http.HandlerFunc(s.settingsPage)))
 	mux.Handle("POST /settings/avatar", s.auth.Require(http.HandlerFunc(s.settingsAvatar)))
 	mux.Handle("POST /settings/timezone", s.auth.Require(http.HandlerFunc(s.settingsTimezone)))
+	mux.Handle("POST /settings/theme", s.auth.Require(http.HandlerFunc(s.settingsTheme)))
 	mux.Handle("GET /avatar", s.auth.Require(http.HandlerFunc(s.avatarImage)))
 	mux.Handle("POST /settings/icons", s.auth.Require(http.HandlerFunc(s.settingsIconAdd)))
 	mux.Handle("POST /settings/icons/{id}/refresh", s.auth.Require(http.HandlerFunc(s.settingsIconRefresh)))
@@ -123,7 +125,15 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/discover", s.auth.Require(http.HandlerFunc(s.apiDiscover)))
 	mux.Handle("POST /api/save", s.auth.Require(http.HandlerFunc(s.apiSave)))
 
-	return logRequests(cors(mux))
+	return logRequests(privacyHeaders(cors(mux)))
+}
+
+// privacyHeaders prevents referrer leakage on every response.
+func privacyHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // cors answers the browser extension's cross-origin preflights. Auth relies

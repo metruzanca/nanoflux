@@ -10,6 +10,7 @@ CREATE TABLE users (
     avatar_content_type TEXT,
     avatar_url    TEXT,
     timezone      TEXT,
+    theme         TEXT NOT NULL DEFAULT 'dark',
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

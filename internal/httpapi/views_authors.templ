@@ -49,7 +49,7 @@ templ AuthorRow(r authorRow) {
 				</a>
 				<div class="item-meta">{ r.FeedCount } feeds
 					if r.URL != "" {
-						· <a href={ templ.URL(r.URL) } target="_blank" rel="noopener" class="external">{ r.URL }</a>
+						· <a href={ templ.URL(r.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ r.URL }</a>
 					}
 				</div>
 			</div>
@@ -121,7 +121,7 @@ templ authorPage(u store.User, d authorData) {
 			<a class="small" href={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/edit" }>edit</a>
 		</div>
 		if d.Author.URL != "" {
-			<p><a href={ templ.URL(d.Author.URL) } target="_blank" rel="noopener" class="external">{ d.Author.URL }</a></p>
+			<p><a href={ templ.URL(d.Author.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ d.Author.URL }</a></p>
 		}
 		if d.Author.Description != "" {
 			<p>{ d.Author.Description }</p>

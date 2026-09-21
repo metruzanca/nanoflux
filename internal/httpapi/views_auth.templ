@@ -42,25 +42,25 @@ templ homePage(d homeData) {
 	<div class="row">
 		<h1>unread ({ d.UnreadCount })</h1>
 		if d.UnreadCount > 0 {
-			<button hx-post="/items/read-all" hx-target="#items-list" hx-swap="outerHTML">mark all read</button>
+			<button hx-post="/items/read-all" hx-target="#items-section" hx-swap="outerHTML">mark all read</button>
 		}
 	</div>
-	@ItemsList(d.Unread)
+	@ItemsSection(d.Unread, d.More)
 }
 
 templ readPage(d readData) {
 	<div class="row">
 		<h1>history ({ d.ReadCount })</h1>
 		if d.ReadCount > 0 {
-			<button hx-post="/items/unread-all" hx-target="#items-list" hx-swap="outerHTML">mark all unread</button>
+			<button hx-post="/items/unread-all" hx-target="#items-section" hx-swap="outerHTML">mark all unread</button>
 		}
 	</div>
-	@ItemsList(d.Read)
+	@ItemsSection(d.Read, d.More)
 }
 
 templ favoritesPage(d favoritesData) {
 	<div class="row">
 		<h1>favorites ({ d.FavCount })</h1>
 	</div>
-	@ItemsList(d.Favorites)
+	@ItemsListPage(d.Favorites, d.More)
 }

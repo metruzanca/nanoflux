@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,7 @@ func TestSettingsPage(t *testing.T) {
 		`hx-post="/settings/avatar"`,
 		`hx-post="/settings/icons"`,
 		`hx-post="/settings/timezone"`,
+		`hx-post="/settings/theme"`,
 		`name="domain"`,
 		"custom source icons",
 		"profile picture",
@@ -150,6 +152,99 @@ func TestSettingsTimezone(t *testing.T) {
 	after, _ = s.store.Users.ByID(u.ID)
 	if after.Timezone != "" {
 		t.Fatalf("timezone should be cleared: %q", after.Timezone)
+	}
+}
+
+func TestSettingsTheme(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// Default is dark; the layout renders it on <html>.
+	body := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `data-theme="dark"`) {
+		t.Fatalf("home should render data-theme=dark by default: %s", body)
+	}
+
+	// Switch to light.
+	rr := doForm(h, "POST", "/settings/theme", url.Values{"theme": {"light"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set theme: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ := s.store.Users.ByID(u.ID)
+	if after.Theme != "light" {
+		t.Fatalf("theme not persisted: %q", after.Theme)
+	}
+	body = doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `data-theme="light"`) {
+		t.Fatalf("home should render data-theme=light: %s", body)
+	}
+
+	// Invalid value -> 400, nothing saved.
+	rr = doForm(h, "POST", "/settings/theme", url.Values{"theme": {"neon"}}, cookie)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid theme: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.Theme != "light" {
+		t.Fatalf("invalid theme should not overwrite: %q", after.Theme)
+	}
+
+	// "system" is accepted.
+	rr = doForm(h, "POST", "/settings/theme", url.Values{"theme": {"system"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set system theme: %d", rr.Code)
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.Theme != "system" {
+		t.Fatalf("theme not persisted: %q", after.Theme)
+	}
+}
+
+func TestFeedCreateAutoFavicon(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// A fake site that serves an HTML page with a favicon link plus the icon.
+	var iconReq bool
+	var base string
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			fmt.Fprintf(w, `<html><head><link rel="icon" href="%s/icon.png"></head><body>hi</body></html>`, base)
+		case "/icon.png":
+			iconReq = true
+			w.Header().Set("Content-Type", "image/png")
+			w.Write([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer site.Close()
+	base = site.URL
+
+	rr := doForm(h, "POST", "/feeds", url.Values{
+		"title": {"Site"}, "feed_url": {base + "/rss.xml"}, "home_url": {base},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
+	}
+	if !iconReq {
+		t.Fatal("feed create should have fetched the site favicon")
+	}
+
+	domain := normalizeDomain(base)
+	icons, _ := s.store.SourceIcons.List(u.ID)
+	if len(icons) != 1 || icons[0].Domain != domain || icons[0].IconKey == "" {
+		t.Fatalf("expected one cached icon for %q: %+v", domain, icons)
+	}
+
+	// The icon is served at /icons/{domain}.
+	got := doGet(h, "/icons/"+domain, cookie)
+	if got.Code != http.StatusOK || got.Body.String() != string([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}) {
+		t.Fatalf("cached icon: %d %q", got.Code, got.Body.String())
 	}
 }
 

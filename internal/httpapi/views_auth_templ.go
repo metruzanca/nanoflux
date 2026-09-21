@@ -151,7 +151,7 @@ func homePage(d homeData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if d.UnreadCount > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<button hx-post=\"/items/read-all\" hx-target=\"#items-list\" hx-swap=\"outerHTML\">mark all read</button>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<button hx-post=\"/items/read-all\" hx-target=\"#items-section\" hx-swap=\"outerHTML\">mark all read</button>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -160,7 +160,7 @@ func homePage(d homeData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ItemsList(d.Unread).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ItemsSection(d.Unread, d.More).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -207,7 +207,7 @@ func readPage(d readData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if d.ReadCount > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<button hx-post=\"/items/unread-all\" hx-target=\"#items-list\" hx-swap=\"outerHTML\">mark all unread</button>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<button hx-post=\"/items/unread-all\" hx-target=\"#items-section\" hx-swap=\"outerHTML\">mark all unread</button>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -216,7 +216,7 @@ func readPage(d readData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ItemsList(d.Read).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ItemsSection(d.Read, d.More).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -262,7 +262,7 @@ func favoritesPage(d favoritesData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ItemsList(d.Favorites).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ItemsListPage(d.Favorites, d.More).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

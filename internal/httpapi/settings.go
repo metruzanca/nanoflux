@@ -26,6 +26,7 @@ const maxAvatarBytes = 5 << 20
 type settingsData struct {
 	settingsAvatarData
 	Timezone settingsTimezoneData
+	Theme    settingsThemeData
 	Icons    []settingsIconRow
 }
 
@@ -39,6 +40,10 @@ type settingsTimezoneData struct {
 	Error    string
 }
 
+type settingsThemeData struct {
+	Theme string
+}
+
 type settingsIconRow struct {
 	store.SourceIcon
 	Flash    string
@@ -50,8 +55,32 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage("settings", u, settingsPage(u, settingsData{
 		settingsAvatarData: settingsAvatarData{HasAvatar: u.HasAvatar},
 		Timezone:           settingsTimezoneData{Timezone: u.Timezone},
+		Theme:              settingsThemeData{Theme: u.Theme},
 		Icons:              s.settingsIconRows(u.ID, u.Timezone),
 	})))
+}
+
+// settingsTheme stores the user's theme preference: dark, light, or system.
+func (s *Server) settingsTheme(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	theme := strings.TrimSpace(r.FormValue("theme"))
+	switch theme {
+	case "", "dark", "light", "system":
+	default:
+		w.WriteHeader(http.StatusBadRequest)
+		web.Render(w, r, settingsTheme(settingsThemeData{Theme: u.Theme}))
+		return
+	}
+	if theme == "" {
+		theme = "dark"
+	}
+	if err := s.store.Users.SetTheme(u.ID, theme); err != nil {
+		log.Error("set theme", "err", err)
+		w.WriteHeader(http.StatusBadRequest)
+		web.Render(w, r, settingsTheme(settingsThemeData{Theme: u.Theme}))
+		return
+	}
+	web.Render(w, r, settingsTheme(settingsThemeData{Theme: theme}))
 }
 
 // settingsTimezone stores the user's IANA timezone for relative timestamps.
@@ -263,6 +292,36 @@ func (s *Server) serveSourceIcon(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Write([]byte(builtinIcon(domain)))
+}
+
+// autoCacheFeedIcon fetches and caches the favicon for a new feed's home
+// domain, so the /icons/{domain} handler serves a real brand icon instead of
+// the globe. It only runs when a home url was supplied (the add-feed form
+// fills it from page metadata). Failures are non-fatal: the built-in globe is
+// shown and the user can add a custom icon in settings.
+func (s *Server) autoCacheFeedIcon(ctx context.Context, userID int64, homeURL string) {
+	domain := normalizeDomain(homeURL)
+	if domain == "" {
+		return
+	}
+	// Keep the built-in X/YouTube brand icons; a favicon adds nothing there.
+	if builtinIcon(domain) != builtinIcons["globe"] {
+		return
+	}
+	if _, err := s.store.SourceIcons.ByDomain(userID, domain); err == nil {
+		return // user already configured a custom icon for this domain
+	}
+	meta, err := s.discoverer.PageMeta(ctx, homeURL)
+	if err != nil || meta.IconURL == "" {
+		return
+	}
+	ic, err := s.store.SourceIcons.Create(userID, domain, meta.IconURL)
+	if err != nil {
+		return
+	}
+	if err := s.fetchAndCacheIcon(ctx, ic); err != nil {
+		log.Error("cache auto feed icon", "domain", domain, "err", err)
+	}
 }
 
 // fetchAndCacheIcon downloads the icon's bytes and stores them in object

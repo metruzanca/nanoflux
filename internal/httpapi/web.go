@@ -19,16 +19,19 @@ import (
 type homeData struct {
 	Unread      []store.ItemWithFeed
 	UnreadCount int
+	More        *loadMoreData
 }
 
 type readData struct {
 	Read      []store.ItemWithFeed
 	ReadCount int
+	More      *loadMoreData
 }
 
 type favoritesData struct {
 	Favorites []store.ItemWithFeed
 	FavCount  int
+	More      *loadMoreData
 }
 
 type feedRow struct {
@@ -101,15 +104,53 @@ type scopedItemsData struct {
 	UnreadCount int
 	ReadCount   int
 	Items       []store.ItemWithFeed
-	SwapOOB     bool // render with hx-swap-oob for the collection OOB fragment
+	More        *loadMoreData // "load more" cursor, nil when no next page
+	SwapOOB     bool          // render with hx-swap-oob for the collection OOB fragment
+}
+
+// moreURL builds the load-more fragment URL preserving the current filters:
+// base may already carry a query string, in which case before= is appended.
+func moreURL(base string, id int64) string {
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	return base + sep + "before=" + strconv.FormatInt(id, 10)
+}
+
+// pageCursor returns the load-more cursor for a fetched page, or nil when the
+// list is empty or there is no next page.
+func pageCursor(base string, items []store.ItemWithFeed, hasMore bool) *loadMoreData {
+	if !hasMore || len(items) == 0 {
+		return nil
+	}
+	return &loadMoreData{URL: moreURL(base, items[len(items)-1].ID)}
+}
+
+// scopedFilter builds the item filter for a feed/author/collection read/unread
+// list, honoring a keyset cursor.
+func scopedFilter(view string, before int64, feedID, authorID, collectionID int64) store.ItemFilter {
+	f := store.ItemFilter{FeedID: feedID, AuthorID: authorID, CollectionID: collectionID, BeforeID: before, Limit: 100}
+	if view == "read" {
+		f.ReadOnly = true
+	} else {
+		f.UnreadOnly = true
+	}
+	return f
+}
+
+// beforeID reads the ?before= keyset cursor from a load-more request.
+func beforeID(r *http.Request) int64 {
+	n, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+	return n
 }
 
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	items, _ := s.store.Items.List(u.ID, store.ItemFilter{UnreadOnly: true, Limit: 100})
+	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: 100})
 	unread, _ := s.store.Items.CountUnread(u.ID, 0)
 	web.Render(w, r, basePage("unread", u, homePage(homeData{
-		Unread: withTZ(u.Timezone, items), UnreadCount: unread,
+		Unread: withTZ(u.Timezone, items), UnreadCount: unread, More: pageCursor("/items", items, more),
 	})))
 }
 
@@ -125,19 +166,19 @@ func (s *Server) itemsReadAll(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	items, _ := s.store.Items.List(u.ID, store.ItemFilter{ReadOnly: true, Limit: 100})
+	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{ReadOnly: true, Limit: 100})
 	count, _ := s.store.Items.CountRead(u.ID, 0)
 	web.Render(w, r, basePage("history", u, readPage(readData{
-		Read: withTZ(u.Timezone, items), ReadCount: count,
+		Read: withTZ(u.Timezone, items), ReadCount: count, More: pageCursor("/items?read=1", items, more),
 	})))
 }
 
 func (s *Server) favoritesPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	items, _ := s.store.Items.List(u.ID, store.ItemFilter{FavoritesOnly: true, Limit: 100})
+	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{FavoritesOnly: true, Limit: 100})
 	count, _ := s.store.Items.CountFavorites(u.ID, 0)
 	web.Render(w, r, basePage("favorites", u, favoritesPage(favoritesData{
-		Favorites: withTZ(u.Timezone, items), FavCount: count,
+		Favorites: withTZ(u.Timezone, items), FavCount: count, More: pageCursor("/items?fav=1", items, more),
 	})))
 }
 
@@ -152,13 +193,38 @@ func (s *Server) itemsMarkAllUnread(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderReadItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
-	items, _ := s.store.Items.List(userID, store.ItemFilter{ReadOnly: true, Limit: 100})
-	web.Render(w, r, ItemsList(withTZ(tz, items)))
+	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{ReadOnly: true, Limit: 100})
+	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items?read=1", items, more)))
 }
 
 func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
-	items, _ := s.store.Items.List(userID, store.ItemFilter{UnreadOnly: true, Limit: 100})
-	web.Render(w, r, ItemsList(withTZ(tz, items)))
+	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{UnreadOnly: true, Limit: 100})
+	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items", items, more)))
+}
+
+// itemsFragment serves a "load more" page of rows for the home/read/favorites
+// lists. The fragment targets the existing #items-list element.
+func (s *Server) itemsFragment(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	base := "/items"
+	filter := store.ItemFilter{Limit: 100, BeforeID: beforeID(r)}
+	switch {
+	case r.URL.Query().Get("fav") == "1":
+		filter.FavoritesOnly = true
+		base = "/items?fav=1"
+	case r.URL.Query().Get("read") == "1":
+		filter.ReadOnly = true
+		base = "/items?read=1"
+	default:
+		filter.UnreadOnly = true
+	}
+	items, more, err := s.store.Items.ListPage(u.ID, filter)
+	if err != nil {
+		log.Error("items fragment", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more)))
 }
 
 // withTZ stamps the user's timezone onto each item so templates can render
@@ -337,6 +403,13 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 		if n, err := strconv.ParseInt(cid, 10, 64); err == nil {
 			s.store.Collections.AddFeed(u.ID, n, f.ID)
 		}
+	}
+	// Auto-cache the site's favicon when the form supplied a home url. Best
+	// effort and bounded so a slow site can't stall the create response.
+	if homeURL != "" {
+		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+		s.autoCacheFeedIcon(ctx, u.ID, homeURL)
+		cancel()
 	}
 	author, _ := s.store.Authors.ByID(u.ID, authorID)
 	web.Render(w, r, FeedRow(feedRow{Feed: f, AuthorName: author.Name, Timezone: u.Timezone}))
@@ -584,19 +657,14 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 // authorScopedItems loads one read/unread item list for an author plus the
 // counts that drive the tabs.
 func (s *Server) authorScopedItems(userID, authorID int64, view, tz string) scopedItemsData {
-	filter := store.ItemFilter{AuthorID: authorID, Limit: 100}
-	if view == "read" {
-		filter.ReadOnly = true
-	} else {
-		filter.UnreadOnly = true
-	}
-	items, _ := s.store.Items.List(userID, filter)
+	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, 0, authorID, 0))
 	unread, _ := s.store.Items.CountUnreadAuthor(userID, authorID)
 	read, _ := s.store.Items.CountReadAuthor(userID, authorID)
 	base := "/authors/" + strconv.FormatInt(authorID, 10)
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
+		More: pageCursor(base+"/items?view="+view, items, more),
 	}
 }
 
@@ -607,7 +675,18 @@ func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	web.Render(w, r, ScopedItems(s.authorScopedItems(u.ID, id, itemsView(r), u.Timezone)))
+	view := itemsView(r)
+	if before := beforeID(r); before > 0 {
+		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, before, 0, id, 0))
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		base := "/authors/" + strconv.FormatInt(id, 10) + "/items?view=" + view
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more)))
+		return
+	}
+	web.Render(w, r, ScopedItems(s.authorScopedItems(u.ID, id, view, u.Timezone)))
 }
 
 func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
@@ -638,19 +717,14 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 // feedScopedItems loads one read/unread item list for a feed plus the counts
 // that drive the tabs.
 func (s *Server) feedScopedItems(userID, feedID int64, view, tz string) scopedItemsData {
-	filter := store.ItemFilter{FeedID: feedID, Limit: 100}
-	if view == "read" {
-		filter.ReadOnly = true
-	} else {
-		filter.UnreadOnly = true
-	}
-	items, _ := s.store.Items.List(userID, filter)
+	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, feedID, 0, 0))
 	unread, _ := s.store.Items.CountUnread(userID, feedID)
 	read, _ := s.store.Items.CountRead(userID, feedID)
 	base := "/feeds/" + strconv.FormatInt(feedID, 10)
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
+		More: pageCursor(base+"/items?view="+view, items, more),
 	}
 }
 
@@ -661,7 +735,18 @@ func (s *Server) feedItems(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	web.Render(w, r, ScopedItems(s.feedScopedItems(u.ID, id, itemsView(r), u.Timezone)))
+	view := itemsView(r)
+	if before := beforeID(r); before > 0 {
+		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, before, id, 0, 0))
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		base := "/feeds/" + strconv.FormatInt(id, 10) + "/items?view=" + view
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more)))
+		return
+	}
+	web.Render(w, r, ScopedItems(s.feedScopedItems(u.ID, id, view, u.Timezone)))
 }
 
 func (s *Server) feedRowsForAuthor(userID, authorID int64, tz string) ([]feedRow, error) {
@@ -797,19 +882,14 @@ func (s *Server) collectionDataFor(userID, id int64, view, tz string) (collectio
 // collectionScopedItems loads one read/unread item list for a collection plus
 // the counts that drive the tabs.
 func (s *Server) collectionScopedItems(userID, collectionID int64, view, tz string) scopedItemsData {
-	filter := store.ItemFilter{CollectionID: collectionID, Limit: 100}
-	if view == "read" {
-		filter.ReadOnly = true
-	} else {
-		filter.UnreadOnly = true
-	}
-	items, _ := s.store.Items.List(userID, filter)
+	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, 0, 0, collectionID))
 	unread, _ := s.store.Items.CountUnreadCollection(userID, collectionID)
 	read, _ := s.store.Items.CountReadCollection(userID, collectionID)
 	base := "/collections/" + strconv.FormatInt(collectionID, 10)
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
+		More: pageCursor(base+"/items?view="+view, items, more),
 	}
 }
 
@@ -820,7 +900,18 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, itemsView(r), u.Timezone)))
+	view := itemsView(r)
+	if before := beforeID(r); before > 0 {
+		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, before, 0, 0, id))
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		base := "/collections/" + strconv.FormatInt(id, 10) + "/items?view=" + view
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more)))
+		return
+	}
+	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, view, u.Timezone)))
 }
 
 func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
