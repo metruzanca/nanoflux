@@ -112,11 +112,14 @@ func IsLinkPost(imageURL string) bool {
 }
 
 // IsImagePost reports whether an item's primary content is a single image:
-// the summary is an <img> (optionally wrapped in a link) with no real text
-// beyond the image's alt text. imageURL is required so items whose thumbnail
-// comes from feed metadata but whose body is text are not treated as images.
-// Reddit's external-preview.redd.it thumbnails are excluded: they preview a
-// link post's external destination, not an in-post image.
+// the summary is exactly one <img> (optionally wrapped in a link) with no
+// real text beyond the image's alt text. imageURL is required so items whose
+// thumbnail comes from feed metadata but whose body is text are not treated
+// as images. Summaries with more than one image are NOT image posts — they
+// are multi-image posts whose full body (all images) should be rendered, not
+// collapsed to a single thumbnail. Reddit's external-preview.redd.it
+// thumbnails are excluded: they preview a link post's external destination,
+// not an in-post image.
 func IsImagePost(summary, imageURL, title string) bool {
 	if imageURL == "" {
 		return false
@@ -132,7 +135,7 @@ func IsImagePost(summary, imageURL, title string) bool {
 	if err != nil {
 		return false
 	}
-	hasImg := false
+	imgs := 0
 	var text strings.Builder
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
@@ -140,7 +143,7 @@ func IsImagePost(summary, imageURL, title string) bool {
 			text.WriteString(n.Data)
 		}
 		if n.Type == html.ElementNode && n.Data == "img" {
-			hasImg = true
+			imgs++
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			walk(c)
@@ -149,7 +152,7 @@ func IsImagePost(summary, imageURL, title string) bool {
 	for c := doc.FirstChild; c != nil; c = c.NextSibling {
 		walk(c)
 	}
-	if !hasImg {
+	if imgs != 1 {
 		return false
 	}
 	t := strings.TrimSpace(text.String())
@@ -285,6 +288,131 @@ func BodyHasImage(htmlBody string) bool {
 		walk(c)
 	}
 	return has
+}
+
+// isImageHref reports whether href looks like it points at an image, by
+// extension (used to recognise the common "thumbnail wrapped in a link to the
+// full-size image" pattern).
+func isImageHref(href string) bool {
+	u, err := url.Parse(href)
+	if err != nil || u.Path == "" {
+		return false
+	}
+	switch strings.ToLower(path.Ext(u.Path)) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg", ".bmp":
+		return true
+	}
+	return false
+}
+
+// UpgradeImageSrcs rewrites an item body so that every <img> wrapped in an
+// <a href> pointing at an image uses that href as its src. Many sites (e.g.
+// Blogger) show a downscaled <img> inside a link to the full-size original;
+// rendering the linked image inline lets users see the full quality without
+// opening the post. Non-image links and bare <img>s are left untouched.
+func UpgradeImageSrcs(htmlBody string) string {
+	if !strings.Contains(htmlBody, "<") {
+		return htmlBody
+	}
+	doc, err := html.Parse(strings.NewReader(htmlBody))
+	if err != nil {
+		return htmlBody
+	}
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "a" {
+			href := ""
+			for _, a := range n.Attr {
+				if a.Key == "href" {
+					href = a.Val
+					break
+				}
+			}
+			if isImageHref(href) {
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					if c.Type == html.ElementNode && c.Data == "img" {
+						for i := range c.Attr {
+							if c.Attr[i].Key == "src" {
+								c.Attr[i].Val = href
+							}
+						}
+					}
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	for c := doc.FirstChild; c != nil; c = c.NextSibling {
+		walk(c)
+	}
+	// html.Parse wraps the fragment in <html><head><body>, so render only the
+	// <body> children to return a clean fragment (no stray wrapper tags in the
+	// modal).
+	var b strings.Builder
+	for c := doc.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode || c.Data != "html" {
+			continue
+		}
+		for b2 := c.FirstChild; b2 != nil; b2 = b2.NextSibling {
+			if b2.Type != html.ElementNode || b2.Data != "body" {
+				continue
+			}
+			for cc := b2.FirstChild; cc != nil; cc = cc.NextSibling {
+				html.Render(&b, cc)
+			}
+			return b.String()
+		}
+	}
+	for c := doc.FirstChild; c != nil; c = c.NextSibling {
+		html.Render(&b, c)
+	}
+	return b.String()
+}
+
+// BestImageURL returns the highest-quality src for an image post's primary
+// image: when the summary wraps the image in a link to a full-size image, that
+// linked URL is returned; otherwise imageURL itself is kept.
+func BestImageURL(summary, imageURL string) string {
+	if !strings.Contains(summary, "<") {
+		return imageURL
+	}
+	doc, err := html.Parse(strings.NewReader(summary))
+	if err != nil {
+		return imageURL
+	}
+	var walk func(*html.Node) string
+	walk = func(n *html.Node) string {
+		if n.Type == html.ElementNode && n.Data == "a" {
+			href := ""
+			for _, a := range n.Attr {
+				if a.Key == "href" {
+					href = a.Val
+					break
+				}
+			}
+			if isImageHref(href) {
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					if c.Type == html.ElementNode && c.Data == "img" {
+						return href
+					}
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if u := walk(c); u != "" {
+				return u
+			}
+		}
+		return ""
+	}
+	for c := doc.FirstChild; c != nil; c = c.NextSibling {
+		if u := walk(c); u != "" {
+			return u
+		}
+	}
+	return imageURL
 }
 
 // StripHTML extracts plain text from feed-provided HTML.

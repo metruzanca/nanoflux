@@ -284,7 +284,7 @@ templ itemContent(d itemViewData, v itemVisuals) {
 		</div>
 	} else if v.Image {
 		<div class="image-lightbox">
-			<img src={ templ.URL(d.ImageURL) } alt={ d.Title } loading="lazy"/>
+			<img src={ templ.URL(web.BestImageURL(d.Summary, d.ImageURL)) } alt={ d.Title } loading="lazy"/>
 		</div>
 	} else if d.EmbedSrc != "" {
 		<div class="video-embed">
@@ -296,7 +296,7 @@ templ itemContent(d itemViewData, v itemVisuals) {
 		</div>
 	}
 	if d.Body != "" && !v.Image && d.SourceURL == "" && len(d.Gallery) == 0 {
-		<div class="item-body">@templ.Raw(d.Body)</div>
+		<div class="item-body">@templ.Raw(web.UpgradeImageSrcs(string(d.Body)))</div>
 	}
 	if len(d.Enclosures) > 0 {
 		<div class="enclosures">

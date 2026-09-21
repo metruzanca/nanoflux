@@ -253,6 +253,12 @@ func normalizeItem(it *gofeed.Item) Item {
 	if it.Image != nil {
 		out.ImageURL = StripTracking(it.Image.URL)
 	}
+	// Prefer the first image actually embedded in the post body: it is the
+	// real content, and many feeds ship a tiny media:thumbnail crop (e.g.
+	// Blogger's 72px s72-c) while the body holds the full-size image.
+	if out.ImageURL == "" {
+		out.ImageURL = StripTracking(firstSummaryImageURL(it))
+	}
 	if out.ImageURL == "" {
 		out.ImageURL = StripTracking(mediaThumbnailURL(it))
 	}
@@ -369,6 +375,48 @@ func mediaThumbnailURL(it *gofeed.Item) string {
 	}
 	for _, th := range media["thumbnail"] {
 		if u := th.Attrs["url"]; u != "" {
+			return u
+		}
+	}
+	return ""
+}
+
+// firstSummaryImageURL returns the src of the first <img> in an item's
+// summary HTML. Many feeds embed their actual images in the content (Blogger
+// being the clearest example) with only a tiny media:thumbnail alongside, so
+// the body's first image is a better listing thumbnail. Returns "" when the
+// summary has no <img> or cannot be parsed.
+func firstSummaryImageURL(it *gofeed.Item) string {
+	body := it.Description
+	if body == "" {
+		body = it.Content
+	}
+	if body == "" || !strings.Contains(body, "<") {
+		return ""
+	}
+	doc, err := html.Parse(strings.NewReader(body))
+	if err != nil {
+		return ""
+	}
+	var find func(*html.Node) string
+	find = func(n *html.Node) string {
+		if n.Type == html.ElementNode && n.Data == "img" {
+			for _, a := range n.Attr {
+				if a.Key == "src" && a.Val != "" {
+					return a.Val
+				}
+			}
+			return ""
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if u := find(c); u != "" {
+				return u
+			}
+		}
+		return ""
+	}
+	for c := doc.FirstChild; c != nil; c = c.NextSibling {
+		if u := find(c); u != "" {
 			return u
 		}
 	}

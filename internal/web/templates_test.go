@@ -127,6 +127,7 @@ func TestIsImagePost(t *testing.T) {
 		{"reddit link post preview", `<a href="https://www.reddit.com/r/x/comments/1a/"><img src="https://external-preview.redd.it/1q2w3e4r.jpeg?width=320" alt="Mittens enjoys a sunny nap" title="Mittens enjoys a sunny nap"></a>`, "https://external-preview.redd.it/1q2w3e4r.jpeg?width=320", "Mittens enjoys a sunny nap", false},
 		{"image plus caption", `<img src="` + img + `"> caption text`, img, "Pic", false},
 		{"image with real body text", `<p>lots of article text here</p><img src="` + img + `">`, img, "Pic", false},
+		{"multi image post, no text", `<div><a href="https://example.com/full1.jpg"><img src="https://example.com/t1.jpg"></a></div><div><a href="https://example.com/full2.jpg"><img src="https://example.com/t2.jpg"></a></div>`, "https://example.com/t1.jpg", "Pic", false},
 		{"text article with feed thumbnail", "<p>article body</p>", img, "Pic", false},
 		{"no image url", `<img src="` + img + `">`, "", "Pic", false},
 		{"no image in summary", "plain text summary", img, "Pic", false},
@@ -185,6 +186,43 @@ func TestBodyHasImage(t *testing.T) {
 		if got := BodyHasImage(c.body); got != c.want {
 			t.Errorf("BodyHasImage(%q) = %v, want %v", c.body, got, c.want)
 		}
+	}
+}
+
+func TestUpgradeImageSrcs(t *testing.T) {
+	// Blogger-style: img thumbnails inside <a> links to the full-size image.
+	body := `<div class="separator"><a href="https://p.dev/full/1.jpg"><img src="https://p.dev/320/1.jpg" width="320"/></a></div><div><a href="https://p.dev/full/2.jpg"><img src="https://p.dev/320/2.jpg"/></a></div>`
+	got := UpgradeImageSrcs(body)
+	if !strings.Contains(got, `src="https://p.dev/full/1.jpg"`) || !strings.Contains(got, `src="https://p.dev/full/2.jpg"`) {
+		t.Fatalf("body img srcs should be upgraded to the full-size links: %s", got)
+	}
+	if strings.Contains(got, `src="https://p.dev/320/1.jpg"`) {
+		t.Fatalf("thumbnail src should be replaced: %s", got)
+	}
+	for _, stray := range []string{"<html", "<head", "<body"} {
+		if strings.Contains(got, stray) {
+			t.Fatalf("output must be a clean fragment, got stray %q: %s", stray, got)
+		}
+	}
+	// A link to a non-image leaves the img alone.
+	keep := `<a href="https://p.dev/article.html"><img src="https://p.dev/hero.jpg"></a>`
+	if got := UpgradeImageSrcs(keep); !strings.Contains(got, `src="https://p.dev/hero.jpg"`) {
+		t.Fatalf("non-image link must not upgrade the img: %s", got)
+	}
+	// A bare img is untouched.
+	if got := UpgradeImageSrcs(`<img src="https://p.dev/plain.jpg">`); !strings.Contains(got, `src="https://p.dev/plain.jpg"`) {
+		t.Fatalf("bare img must be untouched: %s", got)
+	}
+}
+
+func TestBestImageURL(t *testing.T) {
+	summary := `<a href="https://p.dev/full/1.jpg"><img src="https://p.dev/320/1.jpg"></a>`
+	if got := BestImageURL(summary, "https://p.dev/320/1.jpg"); got != "https://p.dev/full/1.jpg" {
+		t.Errorf("BestImageURL = %q, want the linked full-size image", got)
+	}
+	// No linked image: keep the given url.
+	if got := BestImageURL(`<img src="https://p.dev/plain.jpg">`, "https://p.dev/plain.jpg"); got != "https://p.dev/plain.jpg" {
+		t.Errorf("BestImageURL = %q, want the given url", got)
 	}
 }
 
