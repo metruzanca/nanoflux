@@ -639,6 +639,11 @@ func TestItemViewYouTubeEmbed(t *testing.T) {
 	if !strings.Contains(body, "video-embed") {
 		t.Fatalf("item view missing video-embed wrapper: %s", body)
 	}
+	// The player must send an origin Referer so YouTube doesn't return error 153
+	// (the page strips referrers via Referrer-Policy: no-referrer).
+	if !strings.Contains(body, `referrerpolicy="origin"`) {
+		t.Fatalf("youtube embed should carry referrerpolicy=origin: %s", body)
+	}
 }
 
 func TestItemCardsRenderThumbnails(t *testing.T) {
