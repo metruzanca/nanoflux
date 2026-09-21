@@ -493,8 +493,23 @@ ul.items.masonry li {
   padding: 0;
   border-bottom: 1px solid var(--border);
 }
+/* Show each image at its full natural aspect (no cropping): fill the column
+   width and let the image's own ratio drive the card height, so grid mode
+   displays as much of the image as possible and the varying heights create a
+   true masonry stagger. */
 ul.items.masonry .thumb,
-ul.items.masonry .thumb--img { width: 100%; }
+ul.items.masonry .thumb--img {
+  width: 100%;
+  aspect-ratio: auto;
+  height: auto;
+}
+ul.items.masonry .thumb img {
+  width: 100%;
+  height: auto;
+}
+/* A thumb with no <img> (the video ▶ placeholder) would collapse to zero
+   height with the rules above; keep it a fixed 16:9 box. */
+ul.items.masonry .thumb:not(:has(img)) { aspect-ratio: 16 / 9; }
 ul.items.masonry .item-summary { -webkit-line-clamp: 3; line-clamp: 3; }
 
 #load-more {
