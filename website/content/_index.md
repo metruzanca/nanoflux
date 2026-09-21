@@ -17,6 +17,6 @@ A dead-simple, self-hosted RSS reader. Go backend, htmx UI, and SQLite — own y
 
 ## Get started
 
-The project is free and open source. Grab the source on
+The project is free and source-available. Grab the source on
 [GitHub](https://github.com/metruzanca/nanoflux), run it with Docker or podman,
 and you're reading within minutes.

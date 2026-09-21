@@ -252,6 +252,19 @@ a.button:hover { text-decoration: none; border-color: var(--accent); }
 
 .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }
+
+/* Small site footer on the login and settings pages. */
+.site-foot {
+  margin: 2rem 0 0.5rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.site-foot a { color: var(--muted); }
+.site-foot a:hover { color: var(--accent); }
+.site-foot .kofi { margin-top: 0.6rem; line-height: 0; }
+/* Image-only external links (e.g. the ko-fi badge) skip the ↗ marker. */
+a.external:has(img)::after { content: none; }
 code { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.05rem 0.35rem; font-size: 0.85em; }
 
 .badge {

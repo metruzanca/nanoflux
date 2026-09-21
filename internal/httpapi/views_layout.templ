@@ -139,3 +139,17 @@ templ FormErrorOOB(target, msg string) {
 		<div class="error" role="alert">{ msg }</div>
 	</div>
 }
+
+// footer is the small site footer shown at the bottom of the login and settings
+// pages: the project's website and source, its source-available license, and a
+// ko-fi tip link.
+templ footer() {
+	<footer class="site-foot">
+		<a href="https://nanoflux.app" class="external" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">nanoflux.app</a>
+		· <a href="https://github.com/metruzanca/nanoflux" class="external" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">github</a>
+		· source available
+		<div class="kofi">
+			<a href="https://ko-fi.com/C1C51JBGUD" class="external" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer"><img src="https://storage.ko-fi.com/cdn/kofi3.png?v=6" alt="Buy me a coffee at ko-fi.com" height="36" style="border:0;height:36px;"/></a>
+		</div>
+	</footer>
+}
