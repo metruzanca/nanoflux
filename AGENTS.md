@@ -242,6 +242,50 @@ their page component directly (e.g. `basePage("unread", u, homePage(...))`).
 - Generated `_templ.go` files are committed; regenerate with `templ generate`
   (wired into `mise dev` and `mise gen`).
 
+## htmx and client-side JS
+
+The web UI uses **htmx v2.0.4** (vendored at `internal/web/static/htmx.min.js`, loaded
+deferred in `views_layout.templ`). When debugging swap/mutation bugs, remember:
+
+- **Defaults are the foot-gun:** an `hx-*` element with no `hx-target` targets
+  *itself*, and the default swap is `innerHTML`. A button that `hx-post`s a
+  fragment without setting both will inject the response into its own innerHTML.
+  Buttons that only trigger server work and then reload the page (e.g. the
+  feed-detail refresh button in `views_feeds.templ`) must set `hx-swap="none"`
+  so the fragment is discarded; the feeds-list row version instead targets
+  `#feed-{id}` with `hx-swap="outerHTML"`.
+- **`hx-on:after-request` (single colon) works** in 2.0.4 — it maps to
+  `htmx:after-request`. `event.detail.successful` is `false` on `4xx`/`5xx` (see
+  the error-handling section), so `if (event.detail.successful) ...` handlers
+  that close dialogs or reload leave things in place on error — by design.
+- The global `htmx:beforeSwap` override (below) makes `>= 400` bodies swap;
+  `hx-swap="none"` still suppresses them, so an error response to a
+  no-swap/reload button is invisible to the user — log it server-side.
+- `htmx:afterRequest`/`htmx:afterSwap` fire for all requests; app.js uses the
+  former to re-apply theme/accent after settings swaps and the latter to
+  re-highlight the active row after a row `outerHTML` swap.
+
+**Global JS** all lives in `internal/web/static/app.js` (no inline scripts —
+templ cannot parse `{}` in raw `<script>` blocks). It installs:
+
+- `htmx:beforeSwap` override: `shouldSwap = true` for any `status >= 400` so
+  error fragments render. Load-bearing — do not remove or narrow.
+- Theme + accent: resolves `data-theme="system"` against
+  `prefers-color-scheme`, and re-applies theme/accent via `htmx:afterRequest`
+  after `/settings/theme` and `/settings/accent` swaps. `applyTheme` /
+  `applyAccent` are globals.
+- Item modal: `openItem(el)` fetches `/items/{id}/view` into
+  `#item-dialog-body` and `markRowRead(id)` flips the row to read. `currentItemId`
+  tracks the open item.
+- User dropdown: `toggleUserMenu` + outside-click and Escape handlers.
+- Keyboard: ArrowLeft/Right move through the item list while the modal is open;
+  `j`/`k` (or arrows) move an `.active-row` cursor, `o`/Enter open, `v` opens
+  the original, `s` favorite, `m` read toggle, `g`/`G` first/last, `?` shows the
+  shortcut sheet; `/` focuses the search box. `htmx:afterSwap` re-adds
+  `.active-row` after a row is swapped.
+- Dialog cleanup: on `close`, every dialog's form inputs are cleared and
+  `[id$="-preview"]` containers emptied.
+
 ## Running the dev server
 
 `mise dev` runs the server and auto-watches `.go` and `.templ` files,
