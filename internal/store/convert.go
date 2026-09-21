@@ -29,13 +29,14 @@ func boolInt(b bool) int64 {
 	return 0
 }
 
-func toUser(id int64, username, passwordHash string, avatarKey, timezone sql.NullString, createdAt string) User {
+func toUser(id int64, username, passwordHash string, avatarKey, timezone sql.NullString, theme, createdAt string) User {
 	return User{
 		ID:           id,
 		Username:     username,
 		PasswordHash: passwordHash,
 		HasAvatar:    avatarKey.Valid,
 		Timezone:     timezone.String,
+		Theme:        theme,
 		CreatedAt:    createdAt,
 	}
 }

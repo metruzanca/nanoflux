@@ -51,7 +51,7 @@ templ FeedRow(r feedRow) {
 					} else {
 						<span class="muted">no author</span> ·
 					}
-					<a href={ templ.URL(r.FeedURL) } class="external">feed</a> · { r.Unread } unread · last polled 
+					<a href={ templ.URL(r.FeedURL) } class="external" referrerpolicy="no-referrer">feed</a> · { r.Unread } unread · last polled 
 					if r.LastPolledAt != "" {
 						{ web.TimeFmt(r.Timezone, r.LastPolledAt) }
 					} else {
@@ -176,9 +176,9 @@ templ feedPage(u store.User, d feedPageData) {
 			} else {
 				no author ·
 			}
-			<a href={ templ.URL(d.Row.FeedURL) } class="external">feed</a>
+			<a href={ templ.URL(d.Row.FeedURL) } class="external" referrerpolicy="no-referrer">feed</a>
 			if d.Row.HomeURL != "" {
-				· <a href={ templ.URL(d.Row.HomeURL) } target="_blank" rel="noopener" class="external">home</a>
+				· <a href={ templ.URL(d.Row.HomeURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home</a>
 			}
 		</p>
 		<p class="muted small">{ d.Row.Unread } unread · last polled 

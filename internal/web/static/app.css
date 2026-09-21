@@ -8,6 +8,18 @@
   --danger: #ff6b6b;
 }
 
+/* Light theme: selected via data-theme on <html> (user setting, "system"
+   resolved client-side against prefers-color-scheme). */
+:root[data-theme="light"] {
+  --bg: #f5f7fa;
+  --panel: #ffffff;
+  --border: #d9dfe8;
+  --fg: #1c2430;
+  --muted: #5b6472;
+  --accent: #3b6ee8;
+  --danger: #d64545;
+}
+
 * { box-sizing: border-box; }
 
 body {
@@ -106,6 +118,7 @@ main { max-width: 46rem; margin: 1.5rem auto; padding: 0 1.25rem; }
 .login { max-width: 22rem; margin: 4rem auto; }
 .login form, form.stack { display: flex; flex-direction: column; gap: 0.75rem; }
 label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; color: var(--muted); }
+label.check { flex-direction: row; align-items: center; gap: 0.35rem; }
 
 input[type="text"], input[type="password"], input[type="url"], input[type="number"],
 input[type="email"], input:not([type]), select, textarea {
@@ -158,6 +171,11 @@ button.link { background: none; border: none; color: var(--accent); padding: 0; 
 ul.items, ul.plain { list-style: none; padding: 0; margin: 0; }
 ul.items li { padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
 ul.items li:last-child { border-bottom: none; }
+ul.items li.active-row { box-shadow: inset 3px 0 0 var(--accent); }
+
+table.shortcuts { border-collapse: collapse; margin-top: 0.5rem; }
+table.shortcuts td { padding: 0.3rem 1rem 0.3rem 0; font-size: 0.9rem; }
+table.shortcuts td:first-child { color: var(--fg); font-weight: 600; white-space: nowrap; }
 
 li.video-card { display: flex; gap: 0.9rem; padding: 0.9rem 0; align-items: flex-start; }
 li.video-card .card-body { flex: 1; min-width: 0; }
@@ -241,6 +259,15 @@ li.link-card .card-body { flex: 1; min-width: 0; }
 .tabs a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 .row-actions { display: flex; gap: 0.5rem; align-items: center; }
+
+#load-more {
+  display: block;
+  margin: 1rem auto 0;
+  background: var(--panel);
+  color: var(--fg);
+  border-color: var(--border);
+}
+#load-more:hover { border-color: var(--accent); }
 
 .star {
   width: 1em;

@@ -141,6 +141,54 @@ func TestCreateFormErrors(t *testing.T) {
 	}
 }
 
+func TestLoadMoreFlow(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	for i := 1; i <= 105; i++ {
+		guid := "g" + strconv.Itoa(i)
+		if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: guid, Title: "Post " + strconv.Itoa(i), Link: "https://b.dev/" + guid, FetchedAt: db.Now()}); err != nil {
+			t.Fatalf("upsert: %v", err)
+		}
+	}
+
+	// Home renders the first page plus a load-more button.
+	home := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(home, `id="load-more"`) {
+		t.Fatalf("home should render a load-more button: %s", home)
+	}
+
+	// The first page ends at the 100th newest item.
+	first, hasMore, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: 100})
+	if len(first) != 100 || !hasMore {
+		t.Fatalf("first page: %d items, more=%v", len(first), hasMore)
+	}
+	cursor := first[len(first)-1].ID
+
+	// Loading the next page through the fragment appends rows and an OOB swap.
+	body := doGet(h, "/items?before="+itoa(cursor), cookie).Body.String()
+	if !strings.Contains(body, `hx-swap-oob`) {
+		t.Fatalf("next page should carry an OOB load-more swap: %s", body)
+	}
+	if !strings.Contains(body, "item-") {
+		t.Fatalf("next page should append rows: %s", body)
+	}
+
+	// Only the 5 remaining items exist; there is no third page.
+	next, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: 100, BeforeID: cursor})
+	if len(next) != 5 || more {
+		t.Fatalf("second page: %d items, more=%v", len(next), more)
+	}
+
+	// After "mark all read", the section swaps atomically with no stale button.
+	rr := doForm(h, "POST", "/items/read-all", url.Values{}, cookie)
+	if rr.Code != http.StatusOK || strings.Contains(rr.Body.String(), `id="load-more"`) {
+		t.Fatalf("mark all read should clear the list and load-more button: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestFeedAuthorCollectionFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
@@ -613,24 +661,25 @@ func TestExternalLinksCarryMarker(t *testing.T) {
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "https://metru.example", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "https://b.dev", "", 900)
 
-	// Feed page: "feed" and "home" links are external and carry the ↗ marker class.
+	// Feed page: "feed" and "home" links are external, carry the ↗ marker
+	// class, and are hardened against referrer leakage.
 	body := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
-	if !strings.Contains(body, `href="https://b.dev/rss.xml" class="external">feed`) {
+	if !strings.Contains(body, `href="https://b.dev/rss.xml" class="external" referrerpolicy="no-referrer">feed`) {
 		t.Fatalf("feed page feed link should be external-marked: %s", body)
 	}
-	if !strings.Contains(body, `href="https://b.dev" target="_blank" rel="noopener" class="external">home`) {
+	if !strings.Contains(body, `href="https://b.dev" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home`) {
 		t.Fatalf("feed page home link should be external-marked: %s", body)
 	}
 
 	// Author page: the homepage URL is external and marked.
 	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
-	if !strings.Contains(body, `href="https://metru.example" target="_blank" rel="noopener" class="external">`) {
+	if !strings.Contains(body, `href="https://metru.example" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">`) {
 		t.Fatalf("author homepage should be external-marked: %s", body)
 	}
 
 	// Feeds list row: the "feed" link is external and marked.
 	body = doGet(h, "/feeds", cookie).Body.String()
-	if !strings.Contains(body, `href="https://b.dev/rss.xml" class="external">feed`) {
+	if !strings.Contains(body, `href="https://b.dev/rss.xml" class="external" referrerpolicy="no-referrer">feed`) {
 		t.Fatalf("feeds list feed link should be external-marked: %s", body)
 	}
 
@@ -638,6 +687,14 @@ func TestExternalLinksCarryMarker(t *testing.T) {
 	body = doGet(h, "/", cookie).Body.String()
 	if !strings.Contains(body, `class="small external"`) {
 		t.Fatalf("open live should be external-marked: %s", body)
+	}
+}
+
+func TestReferrerPolicyHeader(t *testing.T) {
+	_, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	if got := doGet(h, "/", cookie).Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Fatalf("Referrer-Policy = %q, want no-referrer", got)
 	}
 }
 

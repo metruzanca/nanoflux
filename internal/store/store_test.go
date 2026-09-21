@@ -198,6 +198,62 @@ func TestItemsFlow(t *testing.T) {
 	}
 }
 
+func TestItemsListPagePagination(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+
+	// 5 items; page size 2 -> 2, 2, 1.
+	for i := 1; i <= 5; i++ {
+		guid := "g" + strconv.Itoa(i)
+		it := Item{GUID: guid, Title: "Post " + strconv.Itoa(i), Link: "https://metru.dev/" + guid, FetchedAt: db.Now()}
+		if _, err := s.Items.Upsert(f.ID, it); err != nil {
+			t.Fatalf("upsert %d: %v", i, err)
+		}
+	}
+
+	var seen []int64
+	cursor := int64(0)
+	wantMore := []bool{true, true, false}
+	for page := 0; page < 3; page++ {
+		items, more, err := s.Items.ListPage(u.ID, ItemFilter{Limit: 2, BeforeID: cursor})
+		if err != nil {
+			t.Fatalf("ListPage: %v", err)
+		}
+		if more != wantMore[page] {
+			t.Fatalf("page %d: more = %v, want %v", page, more, wantMore[page])
+		}
+		wantLen := 2
+		if page == 2 {
+			wantLen = 1
+		}
+		if len(items) != wantLen {
+			t.Fatalf("page %d: got %d items, want %d", page, len(items), wantLen)
+		}
+		for _, it := range items {
+			if it.ID == cursor {
+				t.Fatalf("page %d: item repeated after cursor %d", page, cursor)
+			}
+			seen = append(seen, it.ID)
+		}
+		if len(items) > 0 {
+			cursor = items[len(items)-1].ID
+		}
+	}
+	if len(seen) != 5 {
+		t.Fatalf("seen %d ids, want all 5", len(seen))
+	}
+	// All 5 ids are distinct and present.
+	uniq := map[int64]bool{}
+	for _, id := range seen {
+		uniq[id] = true
+	}
+	if len(uniq) != 5 {
+		t.Fatalf("pagination returned duplicates: %v", seen)
+	}
+}
+
 func TestItemFavorites(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

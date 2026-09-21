@@ -19,7 +19,12 @@ var migrations = []migration{
 	{6, schemaV6},
 	{7, schemaV7},
 	{8, schemaV8},
+	{9, schemaV9},
 }
+
+const schemaV9 = `
+ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'dark';
+`
 
 const schemaV8 = `
 ALTER TABLE users ADD COLUMN timezone TEXT;

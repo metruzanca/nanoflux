@@ -11,6 +11,7 @@ templ settingsPage(u store.User, d settingsData) {
 	<h1>settings</h1>
 	@settingsAvatar(d.settingsAvatarData)
 	@settingsTimezone(d.Timezone)
+	@settingsTheme(d.Theme)
 	<section class="card">
 		<h2>custom source icons</h2>
 		<p class="muted small">Add a domain and an icon url to override the built-in icons for that site. Icons are cached by nanoflux; use refresh to re-fetch the latest.</p>
@@ -63,6 +64,27 @@ templ settingsTimezone(d settingsTimezoneData) {
 			if d.Error != "" {
 				<div class="error" role="alert">{ d.Error }</div>
 			}
+			<button type="submit">save</button>
+		</form>
+	</section>
+}
+
+templ settingsTheme(d settingsThemeData) {
+	<section class="card" id="settings-theme-card">
+		<h2>theme</h2>
+		<p class="muted small">system follows your device's light/dark preference.</p>
+		<form class="stack" hx-post="/settings/theme" hx-target="#settings-theme-card" hx-swap="outerHTML">
+			<div class="row">
+				<label class="check">
+					<input type="radio" name="theme" value="dark" checked={ d.Theme == "dark" }/> dark
+				</label>
+				<label class="check">
+					<input type="radio" name="theme" value="light" checked={ d.Theme == "light" }/> light
+				</label>
+				<label class="check">
+					<input type="radio" name="theme" value="system" checked={ d.Theme == "system" }/> system
+				</label>
+			</div>
 			<button type="submit">save</button>
 		</form>
 	</section>
