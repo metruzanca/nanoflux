@@ -22,6 +22,9 @@ type homeData struct {
 	More        *loadMoreData
 }
 
+// pageSize is the number of items rendered per page on every list.
+const pageSize = 25
+
 type readData struct {
 	Read      []store.ItemWithFeed
 	ReadCount int
@@ -130,7 +133,7 @@ func pageCursor(base string, items []store.ItemWithFeed, hasMore bool) *loadMore
 // scopedFilter builds the item filter for a feed/author/collection read/unread
 // list, honoring a keyset cursor.
 func scopedFilter(view string, before int64, feedID, authorID, collectionID int64) store.ItemFilter {
-	f := store.ItemFilter{FeedID: feedID, AuthorID: authorID, CollectionID: collectionID, BeforeID: before, Limit: 100}
+	f := store.ItemFilter{FeedID: feedID, AuthorID: authorID, CollectionID: collectionID, BeforeID: before, Limit: pageSize}
 	if view == "read" {
 		f.ReadOnly = true
 	} else {
@@ -147,7 +150,7 @@ func beforeID(r *http.Request) int64 {
 
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: 100})
+	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: pageSize})
 	unread, _ := s.store.Items.CountUnread(u.ID, 0)
 	web.Render(w, r, basePage("unread", u, homePage(homeData{
 		Unread: withTZ(u.Timezone, items), UnreadCount: unread, More: pageCursor("/items", items, more),
@@ -166,7 +169,7 @@ func (s *Server) itemsReadAll(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{ReadOnly: true, Limit: 100})
+	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{ReadOnly: true, Limit: pageSize})
 	count, _ := s.store.Items.CountRead(u.ID, 0)
 	web.Render(w, r, basePage("history", u, readPage(readData{
 		Read: withTZ(u.Timezone, items), ReadCount: count, More: pageCursor("/items?read=1", items, more),
@@ -175,7 +178,7 @@ func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) favoritesPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{FavoritesOnly: true, Limit: 100})
+	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{FavoritesOnly: true, Limit: pageSize})
 	count, _ := s.store.Items.CountFavorites(u.ID, 0)
 	web.Render(w, r, basePage("favorites", u, favoritesPage(favoritesData{
 		Favorites: withTZ(u.Timezone, items), FavCount: count, More: pageCursor("/items?fav=1", items, more),
@@ -193,12 +196,12 @@ func (s *Server) itemsMarkAllUnread(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderReadItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
-	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{ReadOnly: true, Limit: 100})
+	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{ReadOnly: true, Limit: pageSize})
 	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items?read=1", items, more)))
 }
 
 func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
-	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{UnreadOnly: true, Limit: 100})
+	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{UnreadOnly: true, Limit: pageSize})
 	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items", items, more)))
 }
 
@@ -207,7 +210,7 @@ func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID 
 func (s *Server) itemsFragment(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	base := "/items"
-	filter := store.ItemFilter{Limit: 100, BeforeID: beforeID(r)}
+	filter := store.ItemFilter{Limit: pageSize, BeforeID: beforeID(r)}
 	switch {
 	case r.URL.Query().Get("fav") == "1":
 		filter.FavoritesOnly = true
