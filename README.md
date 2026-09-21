@@ -70,9 +70,13 @@ cd nanoflux
 make start
 ```
 
-Point your browser at http://localhost:8080. Set
-`RSS_BOOTSTRAP_USER`/`RSS_BOOTSTRAP_PASS` in a `.env` file to create the first
-account at startup; otherwise the default `admin/admin` account is created.
+Point your browser at http://localhost:8080. On first start, `make start`
+generates a `.env` file with `RSS_BOOTSTRAP_USER=admin` and a random
+`RSS_BOOTSTRAP_PASS` (printed to the console and recoverable from `.env`). The
+file is only created when missing, so a restart won't change your password.
+Set the variables yourself in `.env` before the first run to pick your own
+credentials; otherwise the default `admin/admin` account is created only when
+no bootstrap credentials exist.
 
 This mounts two named volumes: `nanoflux-db` at `/data` (the sqlite database)
 and `nanoflux-files` at `/filestore` (avatars and custom icons), so both
@@ -82,7 +86,7 @@ survive container restarts and updates.
 
 | Command | What it does |
 | --- | --- |
-| `make start` | start the app (pulls the image on first run) |
+| `make start` | start the app (pulls the image, creates `.env` on first run) |
 | `make stop` | shut the app down (containers and data kept) |
 | `make restart` | restart the app |
 | `make status` | show container status |
