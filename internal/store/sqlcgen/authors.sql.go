@@ -198,9 +198,11 @@ func (q *Queries) ListAuthorsAvatarKeys(ctx context.Context, userID int64) ([]sq
 
 const listAuthorsWithFeedCount = `-- name: ListAuthorsWithFeedCount :many
 SELECT a.id, a.user_id, a.name, a.url, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.created_at,
-       COUNT(f.id) AS feed_count
+       COUNT(DISTINCT f.id) AS feed_count,
+       COUNT(DISTINCT i.id) AS unread_count
 FROM authors a
 LEFT JOIN feeds f ON f.author_id = a.id AND f.user_id = a.user_id
+LEFT JOIN items i ON i.feed_id = f.id AND i.read = 0
 WHERE a.user_id = ?
 GROUP BY a.id
 ORDER BY a.name
@@ -217,6 +219,7 @@ type ListAuthorsWithFeedCountRow struct {
 	Description   sql.NullString `json:"description"`
 	CreatedAt     string         `json:"created_at"`
 	FeedCount     int64          `json:"feed_count"`
+	UnreadCount   int64          `json:"unread_count"`
 }
 
 func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([]ListAuthorsWithFeedCountRow, error) {
@@ -239,6 +242,7 @@ func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([
 			&i.Description,
 			&i.CreatedAt,
 			&i.FeedCount,
+			&i.UnreadCount,
 		); err != nil {
 			return nil, err
 		}

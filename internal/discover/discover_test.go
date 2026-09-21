@@ -123,26 +123,43 @@ func TestHostSpecificURLs(t *testing.T) {
 	}
 
 	cases := []struct {
-		page string
-		want string
+		page   string
+		want   []string
+		titles map[string]string
 	}{
-		{"https://bsk.app/profile/metru.dev", "https://bsk.app/profile/metru.dev/rss"},
-		{"https://bsky.app/profile/metru.dev.bsky.social", "https://bsky.app/profile/metru.dev.bsky.social/rss"},
-		{"https://www.reddit.com/r/golang/", "https://www.reddit.com/r/golang/.rss"},
-		{"https://github.com/spf13/cobra", "https://github.com/spf13/cobra/releases.atom"},
-		{"https://example.com/anything", ""},
-		{"https://www.youtube.com/watch?v=x", ""}, // needs channel_id scraping
+		{"https://bsk.app/profile/metru.dev", []string{"https://bsk.app/profile/metru.dev/rss"}, nil},
+		{"https://bsky.app/profile/metru.dev.bsky.social", []string{"https://bsky.app/profile/metru.dev.bsky.social/rss"}, nil},
+		{"https://www.reddit.com/r/golang/", []string{"https://www.reddit.com/r/golang/.rss"}, nil},
+		{"https://github.com/metru", []string{"https://github.com/metru.atom"}, map[string]string{"https://github.com/metru.atom": "metru's Github activity"}},
+		{"https://github.com/spf13/cobra", []string{
+			"https://github.com/spf13/cobra/releases.atom",
+			"https://github.com/spf13/cobra/commits.atom",
+			"https://github.com/spf13/cobra/tags.atom",
+		}, nil},
+		{"https://example.com/anything", nil, nil},
+		{"https://www.youtube.com/watch?v=x", nil, nil}, // needs channel_id scraping
 	}
 	for _, c := range cases {
 		got := hostSpecificURLs(u(c.page))
-		if c.want == "" {
+		if c.want == nil {
 			if len(got) != 0 {
 				t.Errorf("%s: got %v, want none", c.page, got)
 			}
 			continue
 		}
-		if len(got) != 1 || got[0] != c.want {
-			t.Errorf("%s: got %v, want [%s]", c.page, got, c.want)
+		if len(got) != len(c.want) {
+			t.Errorf("%s: got %d candidates %v, want %d", c.page, len(got), got, len(c.want))
+			continue
+		}
+		for i, w := range c.want {
+			if got[i].URL != w {
+				t.Errorf("%s[%d]: url = %q, want %q", c.page, i, got[i].URL, w)
+			}
+			if c.titles != nil {
+				if want := c.titles[w]; got[i].Title != want {
+					t.Errorf("%s[%d]: title = %q, want %q", c.page, i, got[i].Title, want)
+				}
+			}
 		}
 	}
 }

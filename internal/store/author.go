@@ -21,10 +21,11 @@ type Author struct {
 	CreatedAt     string
 }
 
-// AuthorWithCount joins an author with its number of feeds.
+// AuthorWithCount joins an author with its number of feeds and unread items.
 type AuthorWithCount struct {
 	Author
-	FeedCount int
+	FeedCount   int
+	UnreadCount int
 }
 
 type AuthorStore struct{ q *sqlcgen.Queries }
@@ -82,8 +83,8 @@ func (s *AuthorStore) ByName(userID int64, name string) (Author, error) {
 	return toAuthor(a), nil
 }
 
-// ListWithFeedCount returns the user's authors with their feed counts in one
-// query.
+// ListWithFeedCount returns the user's authors with their feed and unread item
+// counts in one query.
 func (s *AuthorStore) ListWithFeedCount(userID int64) ([]AuthorWithCount, error) {
 	rows, err := s.q.ListAuthorsWithFeedCount(context.Background(), userID)
 	if err != nil {
@@ -103,7 +104,8 @@ func (s *AuthorStore) ListWithFeedCount(userID int64) ([]AuthorWithCount, error)
 				Description:   r.Description,
 				CreatedAt:     r.CreatedAt,
 			}),
-			FeedCount: int(r.FeedCount),
+			FeedCount:   int(r.FeedCount),
+			UnreadCount: int(r.UnreadCount),
 		})
 	}
 	return out, nil

@@ -56,14 +56,17 @@ func (d *Discoverer) Discover(ctx context.Context, pageURL string) ([]Candidate,
 		return []Candidate{c}, nil
 	}
 
-	// 2. Scan the page HTML for feed <link>s.
-	title, links := d.htmlLinks(ctx, pageURL)
-	if cs := d.validateAll(ctx, links, "html", pageURL, title); len(cs) > 0 {
+	// 2. Host-specific rules (GitHub, Reddit, Bluesky, YouTube). These are the
+	// site's canonical feeds (e.g. a GitHub profile's activity atom, a repo's
+	// releases/commits/tags), so they take precedence over whatever the page's
+	// HTML advertises — and may carry a fixed display title.
+	if cs := d.hostSpecific(ctx, pageURL); len(cs) > 0 {
 		return dedup(cs), nil
 	}
 
-	// 3. Host-specific rules.
-	if cs := d.hostSpecific(ctx, pageURL); len(cs) > 0 {
+	// 3. Scan the page HTML for feed <link>s.
+	title, links := d.htmlLinks(ctx, pageURL)
+	if cs := d.validateAll(ctx, links, "html", pageURL, title); len(cs) > 0 {
 		return dedup(cs), nil
 	}
 

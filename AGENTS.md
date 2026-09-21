@@ -94,6 +94,21 @@ the message (or the `form_error`/`role="alert"` fragment) appears in the body.
 See `internal/httpapi/preview_test.go` and `internal/httpapi/web_test.go` for
 the pattern.
 
+## GitHub feeds
+
+GitHub exposes per-user and per-repo Atom feeds, wired up as host-specific
+discovery rules in `internal/discover/host.go` (`hostSpecificURLs`):
+
+- `github.com/USERNAME` maps to `https://github.com/USERNAME.atom`, whose
+  candidate title is overridden to "USERNAME's Github activity".
+- `github.com/OWNER/REPO` offers three candidates to pick from:
+  `releases.atom`, `commits.atom`, `tags.atom`. Candidates that fail to fetch
+  (e.g. a repo with no releases) are dropped by the usual `tryFeed` filter, so
+  the picker only lists feeds that exist.
+- Host-specific rules run **before** the page-HTML scan in `Discover` (step 2),
+  so the fixed GitHub titles aren't preempted by any `<link rel="alternate">`
+  the page advertises. Direct feed URLs still win (step 1).
+
 ## YouTube channel feeds
 
 YouTube's public `feeds/videos.xml?channel_id=` endpoint intermittently serves
@@ -221,12 +236,17 @@ that history (it can be extremely long); instead the feed's page offers a
 - The cursor is stored per feed in `feeds.next_page_url` (schemaV20). The
   poller records it only on a feed's **first** poll (a newly added feed);
   routine polls never touch it, so they can't clobber a user's in-progress walk
-  by resetting it to page two. "Load older items" (`POST /feeds/{id}/older` →
-  `Poller.PollOlder`) walks up to `maxBackfillPages` (5) pages per click and
-  stops, clearing the cursor, when a page has no next link, yields zero new
-  items (dedup hit — the terminator for `?page=N` feeds), or loops back to a
-  visited URL. A click that hits the cap keeps the cursor for another click.
-  Errors leave the cursor untouched so the click can be retried.
+  by resetting it to page two. A newly added feed also gets that first poll
+  immediately: `Server.pollFeedNow` (`internal/httpapi/web.go`) fires a
+  detached `Poller.PollOne` from the add flows (`createFeed`, `apiSave`) so
+  items appear without waiting for the next tick — it's a no-op when no poller
+  is attached (tests) or the feed is disabled. "Load older items"
+  (`POST /feeds/{id}/older` → `Poller.PollOlder`) walks up to
+  `maxBackfillPages` (5) pages per click and stops, clearing the cursor, when a
+  page has no next link, yields zero new items (dedup hit — the terminator for
+  `?page=N` feeds), or loops back to a visited URL. A click that hits the cap
+  keeps the cursor for another click. Errors leave the cursor untouched so the
+  click can be retried.
 - The feed page renders the control via `feedOlderControl` (only when the
   cursor is set); the endpoint swaps `#feed-older` (button → "full history
   loaded") and OOB-swaps `#scoped-items` so the imported items appear.

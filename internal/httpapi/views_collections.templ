@@ -74,9 +74,10 @@ templ collectionPage(u store.User, d collectionData) {
 			</form>
 		</section>
 	}
-	<h2>feeds</h2>
-	@collectionFeeds(d)
-	<h2>items</h2>
+	<details class="feeds-section">
+		<summary>feeds</summary>
+		@collectionFeeds(d)
+	</details>
 	@ScopedItems(d.Scoped)
 }
 
