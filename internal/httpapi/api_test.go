@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/metruzanca/nanoflux/internal/db"
@@ -218,5 +220,130 @@ func TestAPIRequiresAuth(t *testing.T) {
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil || resp.Error == "" {
 		t.Fatalf("expected json error body, got %s", rr.Body.String())
+	}
+}
+
+func feedServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(apiFeedXML))
+	}))
+}
+
+func TestAPIDiscoverSavedFlag(t *testing.T) {
+	s, h := newTestServer(t)
+	token := apiToken(t, s, h, "alice", "secret")
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	feedSrv := feedServer(t)
+	defer feedSrv.Close()
+
+	type candidate struct {
+		FeedURL string `json:"feed_url"`
+		Saved   bool   `json:"saved"`
+	}
+	var resp struct {
+		Candidates []candidate `json:"candidates"`
+	}
+
+	rr := apiJSON(h, "POST", "/api/discover", token, map[string]string{"url": feedSrv.URL})
+	json.Unmarshal(rr.Body.Bytes(), &resp)
+	if len(resp.Candidates) != 1 || resp.Candidates[0].Saved {
+		t.Fatalf("unsaved candidate: %+v", resp)
+	}
+
+	s.store.Feeds.Create(u.ID, a.ID, "Blog", feedSrv.URL, "", "", 900)
+	rr = apiJSON(h, "POST", "/api/discover", token, map[string]string{"url": feedSrv.URL})
+	json.Unmarshal(rr.Body.Bytes(), &resp)
+	if len(resp.Candidates) != 1 || !resp.Candidates[0].Saved {
+		t.Fatalf("saved candidate: %+v", resp)
+	}
+}
+
+func TestAPIExtFeedForm(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	feedSrv := feedServer(t)
+	defer feedSrv.Close()
+	u, _ := s.store.Users.ByUsername("alice")
+	s.store.Authors.Create(u.ID, "Metru", "", "", "")
+
+	rr := doForm(h, "POST", "/api/ext/feed-form", url.Values{
+		"url": {feedSrv.URL}, "feed_url": {feedSrv.URL}, "title": {"My Feed"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("feed-form: %d %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `hx-post="/api/ext/save"`) ||
+		!strings.Contains(body, `name="feed_url"`) ||
+		!strings.Contains(body, `id="ext-result"`) ||
+		!strings.Contains(body, "My Feed") ||
+		!strings.Contains(body, `name="author_id"`) ||
+		!strings.Contains(body, "auto") || !strings.Contains(body, "Metru") {
+		t.Fatalf("feed-form should render the add form with an author picker: %s", body)
+	}
+}
+
+func TestAPIExtSave(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	feedSrv := feedServer(t)
+	defer feedSrv.Close()
+
+	// Saving with a selected author assigns the feed to it.
+	metru, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	rr := doForm(h, "POST", "/api/ext/save", url.Values{
+		"feed_url": {feedSrv.URL}, "title": {"My Feed"}, "author_id": {itoa(metru.ID)},
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "saved") ||
+		!strings.Contains(rr.Body.String(), "My Feed") {
+		t.Fatalf("ext save should return a saved fragment: %d %s", rr.Code, rr.Body.String())
+	}
+	feeds, _ := s.store.Feeds.List(u.ID)
+	if len(feeds) != 1 || feeds[0].Title != "My Feed" || feeds[0].AuthorID != metru.ID {
+		t.Fatalf("feed not stored under selected author: %+v", feeds)
+	}
+
+	// Missing feed_url -> error banner.
+	rr = doForm(h, "POST", "/api/ext/save", url.Values{"title": {"X"}}, cookie)
+	if !strings.Contains(rr.Body.String(), `role="alert"`) {
+		t.Fatalf("ext save error should render an alert banner: %s", rr.Body.String())
+	}
+}
+
+// A page must not be reported "already saved" just because a saved feed shares
+// its home URL — only the discovered feed's own URL counts.
+func TestSavedFeedsNoFalsePositive(t *testing.T) {
+	s, _ := newTestServer(t)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	// A saved feed whose home_url is the page, but a different feed_url.
+	s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://example.com/actual-feed", "https://example.com", "", 900)
+
+	sf := s.savedFeedsFor(u.ID)
+	if id := sf.saved("https://example.com/other-feed"); id != 0 {
+		t.Fatal("an unsaved feed on the page must not be marked saved")
+	}
+	if id := sf.saved("https://example.com/actual-feed"); id == 0 {
+		t.Fatal("the actually-saved feed should match")
+	}
+}
+
+// Feeds that differ only by query string (e.g. YouTube channel_id=…) must not
+// collide under normalization.
+func TestSavedFeedsDistinguishesQueryParams(t *testing.T) {
+	s, _ := newTestServer(t)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	s.store.Feeds.Create(u.ID, a.ID, "Saved", "https://www.youtube.com/feeds/videos.xml?channel_id=AAAA", "", "", 900)
+
+	sf := s.savedFeedsFor(u.ID)
+	if id := sf.saved("https://www.youtube.com/feeds/videos.xml?channel_id=BBBB"); id != 0 {
+		t.Fatal("a different channel must not be marked saved")
+	}
+	if id := sf.saved("https://www.youtube.com/feeds/videos.xml?channel_id=AAAA"); id == 0 {
+		t.Fatal("the saved channel should match")
 	}
 }

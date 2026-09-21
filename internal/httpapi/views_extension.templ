@@ -1,0 +1,41 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/store"
+)
+
+// extFeedForm is the add-feed form the browser extension loads into its popup.
+// The popup sets <base href="{server}/"> and a global hx-headers with the auth
+// token, so the relative hx-post resolves to the nanoflux server; the result is
+// swapped into #ext-result.
+templ extFeedForm(feedURL, homeURL, title string, authors []store.Author) {
+	<form class="stack" hx-post="/api/ext/save" hx-target="#ext-result" hx-swap="innerHTML">
+		<input type="hidden" name="feed_url" value={ feedURL }/>
+		<input type="hidden" name="home_url" value={ homeURL }/>
+		<label>title
+			<input name="title" type="text" value={ title } required/>
+		</label>
+		<label>author
+			<select name="author_id">
+				<option value="">auto — new author</option>
+				for _, a := range authors {
+					<option value={ strconv.FormatInt(a.ID, 10) }>{ a.Name }</option>
+				}
+			</select>
+		</label>
+		<button type="submit">add feed</button>
+	</form>
+	<div id="ext-result"></div>
+}
+
+// extSaved is the success fragment shown after saving a feed from the extension.
+templ extSaved(title string) {
+	<div class="ext-ok" role="status">saved <strong>{ title }</strong> ✓</div>
+}
+
+// extError is the error banner for the extension popup.
+templ extError(msg string) {
+	<div class="error" role="alert">{ msg }</div>
+}

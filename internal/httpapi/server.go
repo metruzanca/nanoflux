@@ -191,6 +191,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/discover", s.auth.Require(http.HandlerFunc(s.apiDiscover)))
 	mux.Handle("POST /api/save", s.auth.Require(http.HandlerFunc(s.apiSave)))
 
+	// Browser-extension HTML fragments (loaded/submitted with htmx).
+	mux.Handle("POST /api/ext/feed-form", s.auth.Require(http.HandlerFunc(s.apiExtFeedForm)))
+	mux.Handle("POST /api/ext/save", s.auth.Require(http.HandlerFunc(s.apiExtSave)))
+
 	return logRequests(privacyHeaders(cors(mux)))
 }
 

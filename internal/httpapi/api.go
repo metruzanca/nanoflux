@@ -173,9 +173,18 @@ func (s *Server) apiDiscover(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	out := make([]discover.Candidate, 0, len(candidates))
-	out = append(out, candidates...)
-	writeJSON(w, http.StatusOK, map[string]any{"url": req.URL, "candidates": out})
+	saved := s.savedFeedsFor(u.ID)
+	type apiCandidate struct {
+		discover.Candidate
+		Saved       bool  `json:"saved"`
+		SavedFeedID int64 `json:"saved_feed_id,omitempty"`
+	}
+	out := make([]apiCandidate, 0, len(candidates))
+	for _, c := range candidates {
+		id := saved.saved(c.FeedURL)
+		out = append(out, apiCandidate{Candidate: c, Saved: id != 0, SavedFeedID: id})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"url": req.URL, "accent": u.AccentColor, "candidates": out})
 }
 
 func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
