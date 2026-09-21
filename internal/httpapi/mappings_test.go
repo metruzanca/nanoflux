@@ -61,19 +61,19 @@ func TestSettingsMappingsFlow(t *testing.T) {
 
 	// Test endpoint: match, no-match, and invalid input.
 	rr := doForm(h, "POST", "/fragments/mapping-test", url.Values{
-		"pattern": {`abc\.com/(?P<user>[^/]+)`}, "template": {"{user}.abc.com/feed"}, "test_url": {"https://abc.com/john"},
+		"pattern": {`abc.com/{user}`}, "template": {"{user}.abc.com/feed"}, "test_url": {"https://abc.com/john"},
 	}, cookie)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "mapped url") || !strings.Contains(rr.Body.String(), "john.abc.com/feed") {
 		t.Fatalf("test match: %d %s", rr.Code, rr.Body.String())
 	}
 	rr = doForm(h, "POST", "/fragments/mapping-test", url.Values{
-		"pattern": {`abc\.com/(?P<user>[^/]+)`}, "template": {"{user}.abc.com/feed"}, "test_url": {"https://other.com/john"},
+		"pattern": {`abc.com/{user}`}, "template": {"{user}.abc.com/feed"}, "test_url": {"https://other.com/john"},
 	}, cookie)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "no match") {
 		t.Fatalf("test no match: %d %s", rr.Code, rr.Body.String())
 	}
 	rr = doForm(h, "POST", "/fragments/mapping-test", url.Values{
-		"pattern": {`abc\.com/(?P<user>[^/]`}, "template": {"{user}.abc.com/feed"}, "test_url": {"https://abc.com/john"},
+		"pattern": {`abc.com/{bad name}`}, "template": {"{user}.abc.com/feed"}, "test_url": {"https://abc.com/john"},
 	}, cookie)
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `role="alert"`) {
 		t.Fatalf("test invalid pattern: %d %s", rr.Code, rr.Body.String())
@@ -81,7 +81,7 @@ func TestSettingsMappingsFlow(t *testing.T) {
 
 	// Add a valid mapping.
 	rr = doForm(h, "POST", "/settings/mappings", url.Values{
-		"pattern": {`abc\.com/(?P<user>[^/]+)`}, "template": {"{user}.abc.com/feed"},
+		"pattern": {`abc.com/{user}`}, "template": {"{user}.abc.com/feed"},
 	}, cookie)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `id="settings-mapping-`) || !strings.Contains(rr.Body.String(), "{user}.abc.com/feed") {
 		t.Fatalf("add mapping: %d %s", rr.Code, rr.Body.String())
@@ -89,7 +89,7 @@ func TestSettingsMappingsFlow(t *testing.T) {
 
 	// Duplicate pattern -> 400 with a visible error.
 	rr = doForm(h, "POST", "/settings/mappings", url.Values{
-		"pattern": {`abc\.com/(?P<user>[^/]+)`}, "template": {"{user}.abc.com/rss"},
+		"pattern": {`abc.com/{user}`}, "template": {"{user}.abc.com/rss"},
 	}, cookie)
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "already exists") || !strings.Contains(rr.Body.String(), `role="alert"`) {
 		t.Fatalf("duplicate mapping: %d %s", rr.Code, rr.Body.String())
@@ -97,7 +97,7 @@ func TestSettingsMappingsFlow(t *testing.T) {
 
 	// Invalid pattern/template on add -> 400 with the compile error.
 	rr = doForm(h, "POST", "/settings/mappings", url.Values{
-		"pattern": {`abc\.com/(?P<user>[^/]+)`}, "template": {"{missing}.abc.com/feed"},
+		"pattern": {`abc.com/{user}`}, "template": {"{missing}.abc.com/feed"},
 	}, cookie)
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "references {missing}") {
 		t.Fatalf("template referencing unknown group: %d %s", rr.Code, rr.Body.String())
@@ -106,23 +106,23 @@ func TestSettingsMappingsFlow(t *testing.T) {
 	// Edit fragment swaps in the inline form with current values.
 	id := mappingIDs(t, h, cookie)[0]
 	rr = doGet(h, "/fragments/mapping-edit/"+id, cookie)
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `value="abc\.com/(?P&lt;user&gt;[^/]+)"`) || !strings.Contains(rr.Body.String(), `hx-post="/settings/mappings/`+id) {
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `value="abc.com/{user}"`) || !strings.Contains(rr.Body.String(), `hx-post="/settings/mappings/`+id) {
 		t.Fatalf("edit fragment: %d %s", rr.Code, rr.Body.String())
 	}
 
 	// Update the template.
 	rr = doForm(h, "POST", "/settings/mappings/"+id, url.Values{
-		"pattern": {`abc\.com/(?P<user>[^/]+)`}, "template": {"{user}.abc.com/rss"},
+		"pattern": {`abc.com/{user}`}, "template": {"{user}.abc.com/rss"},
 	}, cookie)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "{user}.abc.com/rss") {
 		t.Fatalf("update mapping: %d %s", rr.Code, rr.Body.String())
 	}
 
 	// Update with a duplicate pattern -> 400.
-	userMapping(t, s, `def\.com/(?P<name>[^/]+)`, "{name}.def.com/feed")
+	userMapping(t, s, `def.com/{name}`, "{name}.def.com/feed")
 	otherID := mappingIDs(t, h, cookie)[1]
 	rr = doForm(h, "POST", "/settings/mappings/"+otherID, url.Values{
-		"pattern": {`abc\.com/(?P<user>[^/]+)`}, "template": {"{user}.abc.com/rss"},
+		"pattern": {`abc.com/{user}`}, "template": {"{user}.abc.com/rss"},
 	}, cookie)
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "already exists") {
 		t.Fatalf("update duplicate pattern: %d %s", rr.Code, rr.Body.String())
@@ -164,7 +164,7 @@ func TestFeedPreviewUrlMapping(t *testing.T) {
 	cookie := sessionCookie(t, h)
 	srv := mappingFeedServer(t)
 	defer srv.Close()
-	userMapping(t, s, `127\.0\.0\.1:`+srvPort(srv)+`/(?P<user>[^/]+)`, srv.URL+"/feed/{user}")
+	userMapping(t, s, `127.0.0.1:`+srvPort(srv)+`/{user}`, srv.URL+"/feed/{user}")
 
 	// A profile url that matches the mapping pre-fills the mapped feed url.
 	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{
@@ -188,7 +188,7 @@ func TestFeedPreviewUrlMappingFallback(t *testing.T) {
 	srv := mappingFeedServer(t)
 	defer srv.Close()
 	// The mapped url 404s; discovery must fall back to the original page.
-	userMapping(t, s, `127\.0\.0\.1:`+srvPort(srv)+`/(?P<user>[^/]+)`, srv.URL+"/gone/{user}")
+	userMapping(t, s, `127.0.0.1:`+srvPort(srv)+`/{user}`, srv.URL+"/gone/{user}")
 
 	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{
 		"url": {srv.URL + "/jane"},
@@ -210,7 +210,7 @@ func TestAPIDiscoverUrlMapping(t *testing.T) {
 	token := apiToken(t, s, h, "alice", "secret")
 	srv := mappingFeedServer(t)
 	defer srv.Close()
-	userMapping(t, s, `127\.0\.0\.1:`+srvPort(srv)+`/(?P<user>[^/]+)`, srv.URL+"/feed/{user}")
+	userMapping(t, s, `127.0.0.1:`+srvPort(srv)+`/{user}`, srv.URL+"/feed/{user}")
 
 	rr := apiJSON(h, "POST", "/api/discover", token, map[string]string{"url": srv.URL + "/jane"})
 	if rr.Code != http.StatusOK {

@@ -710,16 +710,16 @@ func TestUrlMappingStore(t *testing.T) {
 	u := mustUser(t, s, "alice")
 	other := mustUser(t, s, "bob")
 
-	m, err := s.UrlMappings.Create(u.ID, `abc\.com/(?P<user>[^/]+)`, `{user}.abc.com/feed`)
+	m, err := s.UrlMappings.Create(u.ID, `abc.com/{user}`, `{user}.abc.com/feed`)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	got, err := s.UrlMappings.ByID(u.ID, m.ID)
-	if err != nil || got.Pattern != `abc\.com/(?P<user>[^/]+)` || got.Template != "{user}.abc.com/feed" {
+	if err != nil || got.Pattern != `abc.com/{user}` || got.Template != "{user}.abc.com/feed" {
 		t.Fatalf("ByID: %v %+v", err, got)
 	}
 	// Duplicate pattern -> ErrExists.
-	if _, err := s.UrlMappings.Create(u.ID, `abc\.com/(?P<user>[^/]+)`, `{user}.abc.com/rss`); !errors.Is(err, ErrExists) {
+	if _, err := s.UrlMappings.Create(u.ID, `abc.com/{user}`, `{user}.abc.com/rss`); !errors.Is(err, ErrExists) {
 		t.Fatalf("duplicate: %v", err)
 	}
 	// Scoped to the user.
@@ -728,7 +728,7 @@ func TestUrlMappingStore(t *testing.T) {
 	}
 
 	// Update keeps the id and applies to the user only.
-	if err := s.UrlMappings.Update(u.ID, m.ID, `abc\.com/(?P<user>[^/]+)`, `{user}.abc.com/rss`); err != nil {
+	if err := s.UrlMappings.Update(u.ID, m.ID, `abc.com/{user}`, `{user}.abc.com/rss`); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	got, _ = s.UrlMappings.ByID(u.ID, m.ID)

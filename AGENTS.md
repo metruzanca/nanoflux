@@ -285,13 +285,15 @@ and `apiDiscover` (`POST /api/discover`) — never retroactively, so editing a
 mapping never changes feeds that were already created (they store their resolved
 `feed_url`).
 
-- The engine is `internal/urlmap` (pure, unit-tested): a pattern is a Go regex
-  with **named groups** (`abc\.com/(?P<user>[^/]+)`), and the template references
-  captures via `{name}` (`{user}.abc.com/feed`). `Compile` wraps the pattern as
-  `(?i)^(?:...)$` — matching is against the scheme-stripped `host/path` (trailing
-  slash trimmed), case-insensitive by default, whole-string only (no substring
-  matches), and captures keep their original case. A pattern must contain ≥1
-  named group and the template may only reference names it defines.
+- The engine is `internal/urlmap` (pure, unit-tested): a pattern is a literal
+  url with **`{name}` placeholders** (`abc.com/{user}`), each matching one
+  non-slash segment, and the template references captures via `{name}`
+  (`{user}.abc.com/feed`). `Compile` builds a `(?i)^...$` regex from it — no
+  regex syntax in the pattern (dots, `*`, etc. match literally), matching is
+  against the scheme-stripped `host/path` (trailing slash trimmed),
+  case-insensitive, whole-string only (no substring matches), and captures
+  keep their original case. A pattern must contain ≥1 placeholder and the
+  template may only reference names the pattern defines.
 - `mappedFeedURL` in `internal/httpapi/mappings.go` lists the user's mappings
   (oldest first) and applies the first match. Mappings that no longer compile
   are skipped with a server-side log, never fatal.

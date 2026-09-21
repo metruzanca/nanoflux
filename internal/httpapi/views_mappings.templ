@@ -7,11 +7,11 @@ import (
 templ settingsMappings(d settingsData) {
 	<section class="card">
 		<h2>url mappings</h2>
-		<p class="muted small">Turn a profile or page url into a feed url when adding a feed. The pattern is a regular expression with named groups; captured values are used in the feed url. The first matching rule wins.</p>
+		<p class="muted small">Turn a profile or page url into a feed url when adding a feed. Put <code>{ "{name}" }</code> placeholders in the pattern where a value varies; each matches one path segment and can be reused in the feed url. The first matching rule wins.</p>
 		<form class="stack" hx-post="/settings/mappings" hx-target="#settings-mappings-list" hx-swap="beforeend">
 			<div class="row">
 				<label>pattern
-					<input name="pattern" type="text" placeholder="abc\.com/(?P&lt;user&gt;[^/]+)" required/>
+					<input name="pattern" type="text" placeholder="abc.com/{user}" required/>
 				</label>
 				<label>feed url
 					<input name="template" type="text" placeholder="{user}.abc.com/feed" required/>
