@@ -185,18 +185,42 @@ The DB stores object **keys** (`users.avatar_key`, `source_icons.icon_key`).
 `internal/filestore` exposes the `Store` interface (`Put`/`Get`/`Delete`/
 `EnsureBucket`); tests use `filestore.NewMemory()`.
 
-- Config is `S3_*` env vars (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`,
-  `S3_SECRET_KEY`, `S3_REGION`). When `S3_ENDPOINT` is unset, the store is the
-  local disk directory `RSS_FILE_STORE` (default `<db dir>/filestore`) via
+- Config is `NF_S3_*` env vars (`NF_S3_ENDPOINT`, `NF_S3_BUCKET`, `NF_S3_ACCESS_KEY`,
+  `NF_S3_SECRET_KEY`, `NF_S3_REGION`). When `NF_S3_ENDPOINT` is unset, the store is the
+  local disk directory `NF_FILE_STORE` (default `<db dir>/filestore`) via
   `filestore.NewDisk` (`internal/filestore/disk.go`); keys map to files under
   that root, and the content type is written to a sibling `.ct` file. Set
-  `S3_ENDPOINT` (use an `https://` prefix for TLS) to switch to S3 via minio-go.
+  `NF_S3_ENDPOINT` (use an `https://` prefix for TLS) to switch to S3 via minio-go.
 - A configured-but-unreachable endpoint fails fast at startup (see
-  `newFileStore` in `cmd/server/main.go`); the message points at `S3_ENDPOINT`.
+  `newFileStore` in `cmd/server/main.go`); the message points at `NF_S3_ENDPOINT`.
 - `Store.MigrateLegacyFiles` moves pre-object-storage DB blobs to objects once,
   at startup; the legacy `avatar_data`/`icon_data` columns are left in place but
   cleared.
 - Object keys: `avatars/<userID>`, `icons/<userID>/<domain>`.
+
+## Environment variables
+
+All application configuration flows through environment variables with a single
+`NF_` prefix (the app's codename, nanoflux). This is a hard convention — do not
+introduce a variable with any other prefix.
+
+- **Naming:** `NF_<GROUP>_<NAME>` (e.g. `NF_POLL_INTERVAL`, `NF_S3_BUCKET`).
+  Server settings are read in `internal/config/config.go`; object-storage
+  settings in `internal/filestore/filestore.go` (`ConfigFromEnv`). The first
+  account's bootstrap credentials are `NF_ADMIN_USER` / `NF_ADMIN_PASS` — never
+  rename them back to a `RSS_*`/bootstrap spelling.
+- **Defaults and types:** `config.Load` uses `getenv`/`durationEnv`/`intEnv`
+  helpers; a new option must follow the existing pattern (empty string means
+  "unset", fall back to the default) and get a sensible default so the app runs
+  with zero configuration.
+- **Documenting:** every env var is listed in three places: the README
+  configuration table(s), the committed `.env.example`, and this file when the
+  setting is load-bearing. Adding a variable means touching all of them.
+- **Backward compatibility:** renames are intentional breaking changes — legacy
+  spellings (e.g. the old `RSS_*` / `S3_*` names) are read by nobody and
+  silently ignored. Do not add fallback reads for them.
+- Config is only ever read from env at startup; there is no config file, and
+  `config.Load` is pure (no I/O) so tests can call it with `t.Setenv`.
 
 ## Store layer (sqlc)
 

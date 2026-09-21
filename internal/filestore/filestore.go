@@ -48,18 +48,18 @@ type Config struct {
 // when no S3 endpoint is configured).
 func (c Config) IsDisk() bool { return c.Endpoint == "" }
 
-// ConfigFromEnv reads S3_* environment variables. With no S3_ENDPOINT the
+// ConfigFromEnv reads NF_S3_* environment variables. With no NF_S3_ENDPOINT the
 // store is a local disk directory (Dir); with one, blobs go to S3-compatible
 // object storage.
 func ConfigFromEnv() Config {
-	endpoint := os.Getenv("S3_ENDPOINT")
+	endpoint := os.Getenv("NF_S3_ENDPOINT")
 	return Config{
 		Endpoint:  endpoint,
-		Dir:       os.Getenv("RSS_FILE_STORE"),
-		Bucket:    getenv("S3_BUCKET", "nanoflux"),
-		AccessKey: os.Getenv("S3_ACCESS_KEY"),
-		SecretKey: os.Getenv("S3_SECRET_KEY"),
-		Region:    getenv("S3_REGION", "us-east-1"),
+		Dir:       os.Getenv("NF_FILE_STORE"),
+		Bucket:    getenv("NF_S3_BUCKET", "nanoflux"),
+		AccessKey: os.Getenv("NF_S3_ACCESS_KEY"),
+		SecretKey: os.Getenv("NF_S3_SECRET_KEY"),
+		Region:    getenv("NF_S3_REGION", "us-east-1"),
 		UseSSL:    strings.HasPrefix(endpoint, "https://"),
 	}
 }

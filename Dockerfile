@@ -5,8 +5,8 @@ RUN apk add --no-cache ca-certificates tzdata
 
 COPY $TARGETPLATFORM/nanoflux /usr/local/bin/nanoflux
 
-ENV RSS_ADDR=:8080 \
-    RSS_DB=/data/rss.db
+ENV NF_ADDR=:8080 \
+    NF_DB=/data/rss.db
 
 VOLUME /data
 

@@ -19,16 +19,16 @@ type Config struct {
 }
 
 func Load() Config {
-	dbPath := getenv("RSS_DB", "./data/rss.db")
+	dbPath := getenv("NF_DB", "./data/rss.db")
 	return Config{
-		Addr:          getenv("RSS_ADDR", ":8080"),
+		Addr:          getenv("NF_ADDR", ":8080"),
 		DBPath:        dbPath,
-		FileStoreDir:  getenv("RSS_FILE_STORE", filepath.Join(filepath.Dir(dbPath), "filestore")),
-		LogLevel:      getenv("RSS_LOG_LEVEL", "info"),
-		PollInterval:  durationEnv("RSS_POLL_INTERVAL", 15*time.Minute),
-		PollWorkers:   intEnv("RSS_POLL_WORKERS", 4),
-		BootstrapUser: os.Getenv("RSS_BOOTSTRAP_USER"),
-		BootstrapPass: os.Getenv("RSS_BOOTSTRAP_PASS"),
+		FileStoreDir:  getenv("NF_FILE_STORE", filepath.Join(filepath.Dir(dbPath), "filestore")),
+		LogLevel:      getenv("NF_LOG_LEVEL", "info"),
+		PollInterval:  durationEnv("NF_POLL_INTERVAL", 15*time.Minute),
+		PollWorkers:   intEnv("NF_POLL_WORKERS", 4),
+		BootstrapUser: os.Getenv("NF_ADMIN_USER"),
+		BootstrapPass: os.Getenv("NF_ADMIN_PASS"),
 	}
 }
 

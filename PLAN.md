@@ -7,7 +7,7 @@ extension. SQLite, session auth, background poller, feed discovery.
 
 - [x] **P0 — Scaffolding**
   - [x] Add dependencies (modernc sqlite, gofeed, bcrypt)
-  - [x] `internal/config` — env config (`RSS_ADDR`, `RSS_DB`, `RSS_POLL_INTERVAL`, `RSS_BOOTSTRAP_USER/PASS`)
+  - [x] `internal/config` — env config (`NF_ADDR`, `NF_DB`, `NF_POLL_INTERVAL`, `NF_ADMIN_USER/PASS`)
   - [x] `internal/db` — open sqlite (WAL, FK on), embedded migration runner
   - [x] `cmd/server/main.go` — boots config, db, serves `/healthz`
 - [x] **P1 — Store layer** (shared by server + future CLI)
@@ -73,7 +73,7 @@ extension. SQLite, session auth, background poller, feed discovery.
   files; htmx served as a vendored static file.
 - Store access: sqlc-generated queries (`internal/store/sqlcgen`), wrapped by
   typed `*Store` repositories.
-- Blob storage: minio-go S3 when `S3_ENDPOINT` is set; local disk
+- Blob storage: minio-go S3 when `NF_S3_ENDPOINT` is set; local disk
   (`filestore.NewDisk`) otherwise.
 - Session tokens from `crypto/rand`.
 

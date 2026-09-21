@@ -4,13 +4,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      RSS_ADDR: ":8080"
-      RSS_DB: "/data/rss.db"
-      RSS_FILE_STORE: "/filestore"
+      NF_ADDR: ":8080"
+      NF_DB: "/data/rss.db"
+      NF_FILE_STORE: "/filestore"
       # Set these in a .env file to create the first account at startup;
       # otherwise the default admin/admin account is created.
-      RSS_BOOTSTRAP_USER: "${RSS_BOOTSTRAP_USER:-}"
-      RSS_BOOTSTRAP_PASS: "${RSS_BOOTSTRAP_PASS:-}"
+      NF_ADMIN_USER: "${NF_ADMIN_USER:-}"
+      NF_ADMIN_PASS: "${NF_ADMIN_PASS:-}"
     volumes:
       - nanoflux-db:/data
       - nanoflux-files:/filestore

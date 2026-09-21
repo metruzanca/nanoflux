@@ -34,28 +34,28 @@ Configuration (env vars):
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `RSS_ADDR` | `:8080` | listen address |
-| `RSS_DB` | `./data/rss.db` | sqlite database path |
-| `RSS_FILE_STORE` | `<db dir>/filestore` | local directory for avatars and custom icons when no S3 endpoint is configured |
-| `RSS_LOG_LEVEL` | `info` | log level: `debug`, `info`, `warn`, `error` |
-| `RSS_POLL_INTERVAL` | `15m` | poller wake interval |
-| `RSS_POLL_WORKERS` | `4` | concurrent feed fetches |
-| `RSS_BOOTSTRAP_USER` / `RSS_BOOTSTRAP_PASS` | — | create the first account at startup (takes precedence over admin/admin) |
+| `NF_ADDR` | `:8080` | listen address |
+| `NF_DB` | `./data/rss.db` | sqlite database path |
+| `NF_FILE_STORE` | `<db dir>/filestore` | local directory for avatars and custom icons when no S3 endpoint is configured |
+| `NF_LOG_LEVEL` | `info` | log level: `debug`, `info`, `warn`, `error` |
+| `NF_POLL_INTERVAL` | `15m` | poller wake interval |
+| `NF_POLL_WORKERS` | `4` | concurrent feed fetches |
+| `NF_ADMIN_USER` / `NF_ADMIN_PASS` | — | create the first account at startup (takes precedence over admin/admin) |
 
 ### Object storage
 
 Avatars and custom source icons live in S3-compatible object storage. With no
 S3 endpoint configured they fall back to the local disk directory
-`RSS_FILE_STORE`; set `S3_ENDPOINT` to switch to S3 (note that `https://`
+`NF_FILE_STORE`; set `NF_S3_ENDPOINT` to switch to S3 (note that `https://`
 prefixes enable TLS).
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `S3_ENDPOINT` | unset → local disk | S3-compatible object-storage endpoint |
-| `S3_BUCKET` | `nanoflux` | bucket name |
-| `S3_ACCESS_KEY` | — | access key |
-| `S3_SECRET_KEY` | — | secret key |
-| `S3_REGION` | `us-east-1` | bucket region |
+| `NF_S3_ENDPOINT` | unset → local disk | S3-compatible object-storage endpoint |
+| `NF_S3_BUCKET` | `nanoflux` | bucket name |
+| `NF_S3_ACCESS_KEY` | — | access key |
+| `NF_S3_SECRET_KEY` | — | secret key |
+| `NF_S3_REGION` | `us-east-1` | bucket region |
 
 ## Run with containers (docker / podman)
 
@@ -71,12 +71,12 @@ make start
 ```
 
 Point your browser at http://localhost:8080. On first start, `make start`
-generates a `.env` file with `RSS_BOOTSTRAP_USER=admin` and a random
-`RSS_BOOTSTRAP_PASS` (printed to the console and recoverable from `.env`). The
+generates a `.env` file with `NF_ADMIN_USER=admin` and a random
+`NF_ADMIN_PASS` (printed to the console and recoverable from `.env`). The
 file is only created when missing, so a restart won't change your password.
 Set the variables yourself in `.env` before the first run to pick your own
 credentials; otherwise the default `admin/admin` account is created only when
-no bootstrap credentials exist.
+no bootstrap credentials exist. All variables are documented in `.env.example`.
 
 This mounts two named volumes: `nanoflux-db` at `/data` (the sqlite database)
 and `nanoflux-files` at `/filestore` (avatars and custom icons), so both
@@ -112,8 +112,8 @@ To run a published image directly, without the Makefile:
 docker run -d --name nanoflux -p 8080:8080 \
   -v nanoflux-db:/data \
   -v nanoflux-files:/filestore \
-  -e RSS_FILE_STORE=/filestore \
-  -e RSS_BOOTSTRAP_USER=admin -e RSS_BOOTSTRAP_PASS=changeme \
+  -e NF_FILE_STORE=/filestore \
+  -e NF_ADMIN_USER=admin -e NF_ADMIN_PASS=changeme \
   ghcr.io/metruzanca/nanoflux:latest
 ```
 
