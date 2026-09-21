@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <h1 class="brand">nanoflux extension</h1>
+    <p class="muted">Point the extension at your nanoflux server. Logging in stores a session token in this browser only.</p>
+    <form id="opts" class="stack">
+      <label>server url
+        <input name="server" type="url" placeholder="https://rss.example.com" required>
+      </label>
+      <label>username
+        <input name="username" type="text" autocomplete="username" required>
+      </label>
+      <label>password
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit">save & connect</button>
+      <p id="status"></p>
+    </form>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
