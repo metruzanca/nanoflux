@@ -49,6 +49,54 @@ document.addEventListener('click', function (e) {
   form.requestSubmit();
 });
 
+// Display mode (list / masonry grid). The choice is client-side (localStorage)
+// and applied to whatever item list is on the page; htmx swaps re-create the
+// list (tab switch, mark all read, load-more), so applyDisplayMode re-runs on
+// every afterSwap just like the active-row highlight below.
+var DISPLAY_MODE_KEY = 'nanoflux.items.mode';
+function displayMode() {
+  var m = localStorage.getItem(DISPLAY_MODE_KEY);
+  return m === 'grid' ? 'grid' : 'list';
+}
+function applyDisplayMode() {
+  var mode = displayMode();
+  var list = document.getElementById('items-list');
+  if (list && list.tagName === 'UL') {
+    list.classList.toggle('masonry', mode === 'grid');
+  }
+  document.querySelectorAll('.display-mode').forEach(function (ctl) {
+    ctl.setAttribute('data-mode', mode);
+    ctl.querySelectorAll('.mode-option').forEach(function (opt) {
+      opt.setAttribute('aria-checked', String(opt.dataset.mode === mode));
+    });
+  });
+}
+function toggleDisplayMode(e) {
+  e.stopPropagation();
+  var ctl = e.currentTarget.closest('.display-mode');
+  var menu = ctl.querySelector('.mode-menu');
+  var open = menu.hidden;
+  menu.hidden = !open;
+  e.currentTarget.setAttribute('aria-expanded', String(!open));
+}
+function setDisplayMode(mode, e) {
+  if (e) e.stopPropagation();
+  localStorage.setItem(DISPLAY_MODE_KEY, mode);
+  applyDisplayMode();
+  document.querySelectorAll('.mode-menu:not([hidden])').forEach(function (m) { m.hidden = true; });
+}
+document.addEventListener('click', function (e) {
+  var menu = document.querySelectorAll('.mode-menu:not([hidden])');
+  menu.forEach(function (m) {
+    if (!m.contains(e.target) && !e.target.closest('.display-mode')) m.hidden = true;
+  });
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  document.querySelectorAll('.mode-menu:not([hidden])').forEach(function (m) { m.hidden = true; });
+});
+applyDisplayMode();
+
 // Item modal.
 var currentItemId = null;
 function openItem(el) {
@@ -320,8 +368,10 @@ document.addEventListener('keydown', function (e) {
 });
 
 // Keep the row cursor highlighted when htmx re-renders the row (favorite/read
-// toggles swap it via outerHTML).
+// toggles swap it via outerHTML), and re-apply the display mode after any swap
+// that recreates the item list (tab switch, mark all read, load-more).
 document.body.addEventListener('htmx:afterSwap', function () {
+  applyDisplayMode();
   if (activeItemId) {
     var r = document.getElementById(activeItemId);
     if (r) r.classList.add('active-row');

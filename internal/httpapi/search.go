@@ -145,7 +145,7 @@ func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
 	}
 	base := "/search?q=" + url.QueryEscape(q)
 	if before > 0 {
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more)))
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more), false))
 		return
 	}
 	web.Render(w, r, basePage("search", u, searchResultsPage(searchData{

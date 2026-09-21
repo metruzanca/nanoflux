@@ -30,11 +30,6 @@ templ FeedRow(r feedRow) {
 					<span class="badge danger" title={ r.LastError }>last poll failed</span>
 				}
 				<div class="item-meta">
-					if r.AuthorName != "" {
-						<a href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.AuthorName }</a> ·
-					} else {
-						<span class="muted">no author</span> ·
-					}
 					<a href={ templ.URL(r.FeedURL) } class="external" referrerpolicy="no-referrer">feed</a> · { r.Unread } unread · last polled 
 					if r.LastPolledAt != "" {
 						{ web.TimeFmt(r.Timezone, r.LastPolledAt) }

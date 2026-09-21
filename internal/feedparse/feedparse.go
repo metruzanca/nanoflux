@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -201,6 +202,35 @@ func nextPageByParam(currentURL string) string {
 	return ""
 }
 
+// isImageEnclosure reports whether an enclosure is an image, by MIME type or
+// URL extension. The URL's parsed path is used so signed URLs
+// ("photo.jpg?e=…&t=…") still match.
+func isImageEnclosure(e Enclosure) bool {
+	if strings.HasPrefix(strings.ToLower(e.MIMEType), "image/") {
+		return true
+	}
+	u, err := url.Parse(e.URL)
+	if err != nil || u.Path == "" {
+		return false
+	}
+	switch strings.ToLower(path.Ext(u.Path)) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg", ".bmp":
+		return true
+	}
+	return false
+}
+
+// firstImageEnclosureURL returns the URL of an item's first image enclosure,
+// or "" when it has none.
+func firstImageEnclosureURL(encs []Enclosure) string {
+	for _, e := range encs {
+		if isImageEnclosure(e) {
+			return e.URL
+		}
+	}
+	return ""
+}
+
 func normalizeItem(it *gofeed.Item) Item {
 	out := Item{
 		Title: it.Title,
@@ -232,6 +262,12 @@ func normalizeItem(it *gofeed.Item) Item {
 		}
 		length, _ := strconv.ParseInt(e.Length, 10, 64)
 		out.Enclosures = append(out.Enclosures, Enclosure{URL: StripTracking(e.URL), MIMEType: e.Type, Length: length})
+	}
+	// Some feeds ship images only as enclosures with no media:thumbnail, so a
+	// text item would otherwise have no image. Fall back to the first image
+	// enclosure so it renders a thumbnail in lists (and the masonry grid).
+	if out.ImageURL == "" {
+		out.ImageURL = firstImageEnclosureURL(out.Enclosures)
 	}
 	switch {
 	case it.PublishedParsed != nil:

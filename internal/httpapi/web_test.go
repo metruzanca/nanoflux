@@ -1058,6 +1058,100 @@ func TestScopedReadUnreadTabs(t *testing.T) {
 	}
 }
 
+func TestAuthorPageDropsSelfLinks(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Feed Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
+
+	self := `href="/authors/` + itoa(a.ID) + `">`
+	authorPage := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if strings.Contains(authorPage, self) {
+		t.Fatalf("author page must not link back to itself in item/feed meta: %s", authorPage)
+	}
+	// The feed row meta now omits the author entirely.
+	if strings.Contains(authorPage, `>Metru</a>`) {
+		t.Fatalf("feed rows should not render the author name as a link: %s", authorPage)
+	}
+
+	// Home (cross-author) list keeps the author links.
+	home := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(home, self) {
+		t.Fatalf("home list should still link the author: %s", home)
+	}
+
+	// Read/favorite toggles propagate the suppression so a swapped row on the
+	// author page stays consistent.
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	if len(items) != 1 {
+		t.Fatalf("expected one item, got %d", len(items))
+	}
+	hidden := doForm(h, "POST", "/items/"+itoa(items[0].ID)+"/read", url.Values{"hideAuthor": {"1"}}, cookie)
+	if strings.Contains(hidden.Body.String(), self) {
+		t.Fatalf("row swapped on an author page must hide the author link: %s", hidden.Body.String())
+	}
+	shown := doForm(h, "POST", "/items/"+itoa(items[0].ID)+"/read", url.Values{}, cookie)
+	if !strings.Contains(shown.Body.String(), self) {
+		t.Fatalf("row swapped elsewhere must keep the author link: %s", shown.Body.String())
+	}
+}
+
+func TestDisplayModeControlPresent(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Feed Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	coll, _ := s.store.Collections.Create(u.ID, "Dev")
+	s.store.Collections.AddFeed(u.ID, coll.ID, f.ID)
+
+	control := `class="display-mode" data-mode="list"`
+	option := `role="menuitemradio" data-mode="grid"`
+	for _, path := range []string{
+		"/", "/read", "/favorites",
+		"/authors/" + itoa(a.ID), "/feeds/" + itoa(f.ID), "/collections/" + itoa(coll.ID),
+	} {
+		body := doGet(h, path, cookie).Body.String()
+		if !strings.Contains(body, control) || !strings.Contains(body, option) {
+			t.Fatalf("%s missing display-mode control: %s", path, body)
+		}
+	}
+}
+
+func TestItemModalShowsImageEnclosure(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Photos", "https://p.dev/rss.xml", "", "", 900)
+	if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Shot", Link: "https://p.dev/1", FetchedAt: db.Now()}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	itemID, _ := s.store.Items.ByFeedGUID(f.ID, "g1")
+	s.store.Items.ReplaceEnclosures(itemID, []store.Enclosure{
+		{URL: "https://p.dev/photo.jpg?e=1790070194&t=signed", Title: "Photo", MIMEType: "image/jpeg", Size: 100},
+		{URL: "https://p.dev/notes.txt", Title: "Notes", MIMEType: "text/plain", Size: 10},
+	})
+
+	body := doGet(h, "/items/"+itoa(itemID)+"/view", cookie).Body.String()
+	if !strings.Contains(body, `<img src="https://p.dev/photo.jpg?e=1790070194&amp;t=signed"`) {
+		t.Fatalf("item modal should embed the image enclosure: %s", body)
+	}
+	// The image enclosure is rendered inline, not as a bare download link; the
+	// non-image enclosure still is.
+	if strings.Contains(body, `<a href="https://p.dev/photo.jpg`) {
+		t.Fatalf("image enclosure should not appear as a bare link: %s", body)
+	}
+	if !strings.Contains(body, `<a href="https://p.dev/notes.txt"`) {
+		t.Fatalf("non-image enclosure should keep its download link: %s", body)
+	}
+}
+
 func TestGlobalAddCreatesAuthorWithFeed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

@@ -193,23 +193,54 @@ func GalleryThumb(imageURL string) string {
 	return ""
 }
 
-// EnclosureKind reports whether an enclosure should render as an embedded
-// media player: "audio", "video", or "" when it is just a file link.
+// EnclosureKind reports how an enclosure should render: "audio", "video",
+// "image" (embedded inline), or "" when it is just a file link. A URL whose
+// query string carries signed params (e.g. "photo.jpg?e=…&t=…") is matched via
+// its parsed path, not the raw string.
 func EnclosureKind(e store.Enclosure) string {
 	mt := strings.ToLower(e.MIMEType)
+	if strings.HasPrefix(mt, "image/") {
+		return "image"
+	}
 	if strings.HasPrefix(mt, "audio/") {
 		return "audio"
 	}
 	if strings.HasPrefix(mt, "video/") {
 		return "video"
 	}
-	switch strings.ToLower(path.Ext(e.URL)) {
+	ext := strings.ToLower(path.Ext(enclosurePath(e.URL)))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg", ".bmp":
+		return "image"
 	case ".mp3", ".m4a", ".ogg", ".oga", ".opus", ".wav", ".flac", ".aac":
 		return "audio"
 	case ".mp4", ".m4v", ".webm", ".ogv", ".mov", ".mkv":
 		return "video"
 	}
 	return ""
+}
+
+// enclosurePath returns the path portion of an enclosure URL, or "" when it
+// cannot be parsed. Path.Ext on the raw URL string would treat the query string
+// as part of the filename, so lookups must go through here.
+func enclosurePath(rawurl string) string {
+	u, err := url.Parse(rawurl)
+	if err != nil || u.Path == "" {
+		return ""
+	}
+	return u.Path
+}
+
+// ImageEnclosures returns an item's image enclosures in order, for inline
+// rendering instead of a bare download link.
+func ImageEnclosures(encs []store.Enclosure) []store.Enclosure {
+	var imgs []store.Enclosure
+	for _, e := range encs {
+		if EnclosureKind(e) == "image" {
+			imgs = append(imgs, e)
+		}
+	}
+	return imgs
 }
 
 // EnclosureLabel renders a display name for an enclosure's download link:

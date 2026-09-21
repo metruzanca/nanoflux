@@ -51,31 +51,38 @@ templ signupDisabledPage() {
 templ homePage(d homeData) {
 	<div class="row">
 		<h1>unread ({ d.UnreadCount })</h1>
-		if d.UnreadCount > 0 {
-			<button hx-post="/items/read-all" hx-target="#items-section" hx-swap="outerHTML">mark all read</button>
-		}
+		<div class="row-actions">
+			@DisplayModeControl()
+			if d.UnreadCount > 0 {
+				<button hx-post="/items/read-all" hx-target="#items-section" hx-swap="outerHTML">mark all read</button>
+			}
+		</div>
 	</div>
-	@ItemsSection(d.Unread, d.More)
+	@ItemsSection(d.Unread, d.More, false)
 }
 
 templ readPage(d readData) {
 	<div class="row">
 		<h1>history ({ d.ReadCount })</h1>
-		if d.ReadCount > 0 {
-			<button hx-post="/items/unread-all" hx-target="#items-section" hx-swap="outerHTML">mark all unread</button>
-		}
+		<div class="row-actions">
+			@DisplayModeControl()
+			if d.ReadCount > 0 {
+				<button hx-post="/items/unread-all" hx-target="#items-section" hx-swap="outerHTML">mark all unread</button>
+			}
+		</div>
 	</div>
-	@ItemsSection(d.Read, d.More)
+	@ItemsSection(d.Read, d.More, false)
 }
 
 templ favoritesPage(d favoritesData) {
 	<div class="row">
 		<h1>favorites ({ d.FavCount })</h1>
 		<div class="row-actions">
+			@DisplayModeControl()
 			@favoritesShareControl(d.ShareToken)
 		</div>
 	</div>
-	@ItemsListPage(d.Favorites, d.More)
+	@ItemsListPage(d.Favorites, d.More, false)
 }
 
 templ searchResultsPage(d searchData) {
@@ -83,5 +90,5 @@ templ searchResultsPage(d searchData) {
 	if d.Query != "" {
 		<p class="muted small">results for “{ d.Query }”</p>
 	}
-	@ItemsListPage(d.Items, d.More)
+	@ItemsListPage(d.Items, d.More, false)
 }

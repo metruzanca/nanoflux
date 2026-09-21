@@ -33,6 +33,7 @@ var migrations = []migration{
 	{20, schemaV20},
 	{21, schemaV21},
 	{22, schemaV22},
+	{23, schemaV23},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -392,6 +393,22 @@ CREATE TABLE collection_feeds (
     feed_id       INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
     PRIMARY KEY (collection_id, feed_id)
 );
+`
+
+// schemaV23 backfills a thumbnail for items that carried their image only as
+// an enclosure (no media:thumbnail). Rendering now treats image enclosures as
+// the item's image, so existing rows gain an image_url from their first
+// image/* enclosure.
+const schemaV23 = `
+UPDATE items
+SET image_url = (
+    SELECT e.url
+    FROM item_enclosures e
+    WHERE e.item_id = items.id
+      AND e.mime_type LIKE 'image/%'
+    ORDER BY e.sort LIMIT 1
+)
+WHERE image_url IS NULL OR image_url = '';
 `
 
 // Migrate applies any pending migrations in order, recording each in

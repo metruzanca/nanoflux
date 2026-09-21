@@ -317,6 +317,11 @@ li.image-card .card-body { flex: 1; min-width: 0; }
 li.link-card { display: flex; gap: 0.9rem; padding: 0.9rem 0; align-items: flex-start; }
 li.link-card .card-body { flex: 1; min-width: 0; }
 
+/* Text posts: flex so a text item that still carries a thumbnail (e.g. one
+   delivered only as an image enclosure) gets the thumb beside its text. */
+li.text-card { display: flex; gap: 0.9rem; padding: 0.9rem 0; align-items: flex-start; }
+li.text-card .card-body { flex: 1; min-width: 0; }
+
 .thumb {
   position: relative;
   display: block;
@@ -391,6 +396,91 @@ li.link-card .card-body { flex: 1; min-width: 0; }
 
 .row-actions { display: flex; gap: 0.5rem; align-items: center; }
 
+/* The unread/read tabs sit left, the display-mode picker right. */
+.tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+}
+.tabs-row .tabs { margin: 0; }
+
+/* Display-mode picker (list/grid). The server renders the default state; the
+   .display-mode[data-mode=…] attribute drives which icon/label is visible and
+   is set client-side from localStorage (see app.js applyDisplayMode). */
+.display-mode { position: relative; flex: none; }
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.mode-btn:hover { border-color: var(--accent); color: var(--fg); }
+.mode-btn svg { width: 1em; height: 1em; }
+.mode-label { color: var(--fg); }
+.display-mode[data-mode="grid"] .mode-ic--list,
+.display-mode[data-mode="list"] .mode-ic--grid,
+.display-mode[data-mode="grid"] .mode-label--list,
+.display-mode[data-mode="list"] .mode-label--grid { display: none; }
+
+.mode-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 50;
+  min-width: 7.5rem;
+  padding: 0.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.mode-menu:not([hidden]) { display: flex; flex-direction: column; }
+.mode-option {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.75rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mode-option svg { width: 1em; height: 1em; flex: none; }
+.mode-option:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--fg);
+}
+.mode-option[aria-checked="true"] { color: var(--fg); }
+
+/* Grid display mode: a two-column masonry built on the same item rows. The
+   thumbs go full-width so image-heavy feeds shine; text items keep their
+   summary. One column below 720px keeps cards at a reasonable size. */
+ul.items.masonry { columns: 2; column-gap: 1.25rem; }
+ul.items.masonry li {
+  display: block;
+  break-inside: avoid;
+  margin: 0 0 1rem;
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+}
+ul.items.masonry .thumb,
+ul.items.masonry .thumb--img { width: 100%; }
+ul.items.masonry .item-summary { -webkit-line-clamp: 3; line-clamp: 3; }
+
 #load-more {
   display: block;
   margin: 1rem auto 0;
@@ -435,8 +525,8 @@ body:has(dialog.modal[open]) {
   object-fit: cover;
   vertical-align: middle;
 }
-.avatar-sm { width: 1.5rem; height: 1.5rem; }
-.avatar-lg { width: 4rem; height: 4rem; }
+.avatar-sm { width: 2rem; height: 2rem; }
+.avatar-lg { width: 6rem; height: 6rem; }
 .avatar-default {
   display: inline-flex;
   align-items: center;
@@ -444,7 +534,7 @@ body:has(dialog.modal[open]) {
   background: var(--accent);
   color: #fff;
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 1rem;
   text-transform: uppercase;
   line-height: 1;
 }
@@ -515,6 +605,8 @@ dialog.modal.wide[open] {
 
 .enclosures { margin: 0.75rem 0; }
 .enclosures figure { margin: 0 0 0.5rem; }
+.enclosures .image-lightbox,
+.enclosures .gallery { margin: 0 0 0.75rem; }
 .enclosures audio,
 .enclosures video { width: 100%; border-radius: 8px; }
 .enclosures ul { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; }
@@ -596,6 +688,9 @@ dialog.modal.wide[open] {
   main { margin: 1rem auto; padding: 0 0.75rem; }
 
   .thumb { width: 9rem; }
+
+  /* Narrow screens get a single masonry column so cards keep a usable size. */
+  ul.items.masonry { columns: 1; }
 
   .row { flex-wrap: wrap; }
 }

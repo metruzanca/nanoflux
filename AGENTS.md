@@ -23,6 +23,15 @@ The app's own pages are the primary navigation surface. This is a hard rule.
   "feed", "home", an author's homepage URL, and "open live" in the item modal.
   Do not emit an external link without this class, and do not hard-code a
   second `↗` character in link text.
+- **No self-links on scoped pages.** An author page is already "on" that
+  author, so it must not link back to itself: `FeedRow` never renders the
+  author name (feed rows only ever appear under their own author page), and
+  author-scoped item rows suppress the author link. The suppression is a
+  `HideAuthor` flag threaded through `scopedItemsData` →
+  `ItemsListPage`/`ItemsList`/`ItemRow`/`itemRowInner`; read/favorite toggle
+  handlers get it back via `hx-vals='{"hideAuthor":"1"}'` on the row's buttons
+  so a swapped row stays consistent. The item modal meta keeps its author link
+  (it's an overlay cross-link).
 - This applies to the webapp UI only (`internal/web/templates`); the
   `website/` Hugo marketing site is out of scope.
 
@@ -396,6 +405,23 @@ run inside the container. Both share the store methods (`UserStore.ResetPassword
   (`ListUserSessions`, `POST /settings/sessions/{token}/revoke`); revoking the
   current session logs the user out.
 
+## Image enclosures
+
+Some feeds deliver an item's image only as an `<enclosure>` with no
+`media:thumbnail`; those items used to render as a bare external link.
+
+- `EnclosureKind` (`internal/web/templates.go`) returns `"image"` for MIME
+  `image/*` or common image extensions, matched on the URL's parsed path so
+  signed URLs (`photo.jpg?e=…&t=…`) still hit. `itemContent` renders image
+  enclosures inline (single → `.image-lightbox`, several → `.gallery`) and
+  drops them from the bare-link list; `ImageEnclosures` collects them.
+- At poll time `normalizeItem` falls back to the first image enclosure's URL
+  as `image_url` when the feed supplied none, so image-enclosure items get a
+  thumbnail in lists (and the masonry grid). They stay text posts —
+  `IsImagePost` still requires an img-only summary.
+- schemaV23 backfills `items.image_url` from existing rows' first `image/*`
+  enclosure for items that predate the fallback.
+
 ## Feed poll failures
 
 `feeds.last_error` (schemaV18) records the last poll failure; `SetPollMeta`
@@ -428,7 +454,8 @@ deferred in `views_layout.templ`). When debugging swap/mutation bugs, remember:
   no-swap/reload button is invisible to the user — log it server-side.
 - `htmx:afterRequest`/`htmx:afterSwap` fire for all requests; app.js uses the
   former to re-apply theme/accent after settings swaps and the latter to
-  re-highlight the active row after a row `outerHTML` swap.
+  re-highlight the active row after a row `outerHTML` swap and to re-apply the
+  display mode.
 
 **Global JS** all lives in `internal/web/static/app.js` (no inline scripts —
 templ cannot parse `{}` in raw `<script>` blocks). It installs:
@@ -439,6 +466,16 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   `prefers-color-scheme`, and re-applies theme/accent via `htmx:afterRequest`
   after `/settings/theme` and `/settings/accent` swaps. `applyTheme` /
   `applyAccent` are globals.
+- Display mode: the list/grid picker (`DisplayModeControl` in
+  `views_items.templ`, rendered in the unread/read `.tabs-row` on scoped
+  pages and in the home/history/favorites headers). The choice is client-side
+  (`localStorage["nanoflux.items.mode"]`, default `list`); `applyDisplayMode()`
+  toggles the `masonry` class on `#items-list` and syncs the button/menu state,
+  and re-runs on every `htmx:afterSwap` because tab switches, "mark all read",
+  and load-more all recreate the list. The server renders the default state —
+  do not try to read localStorage server-side. Grid mode is a two-column CSS
+  masonry (`ul.items.masonry`, one column below 720px); it reuses the same item
+  rows, with thumbs going full-width.
 - Item modal: `openItem(el)` fetches `/items/{id}/view` into
   `#item-dialog-body` and `markRowRead(id)` flips the row to read. `currentItemId`
   tracks the open item.

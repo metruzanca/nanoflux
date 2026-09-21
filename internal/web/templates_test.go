@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
+
+	"github.com/metruzanca/nanoflux/internal/store"
 )
 
 func TestFormatRel(t *testing.T) {
@@ -134,6 +136,35 @@ func TestIsImagePost(t *testing.T) {
 		if got := IsImagePost(c.summary, c.imageURL, c.title); got != c.want {
 			t.Errorf("%s: IsImagePost = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+func TestEnclosureKindAndImages(t *testing.T) {
+	cases := []struct {
+		enc  store.Enclosure
+		want string
+	}{
+		{store.Enclosure{URL: "https://p.dev/ep1.mp3", MIMEType: "audio/mpeg"}, "audio"},
+		{store.Enclosure{URL: "https://p.dev/clip.mp4", MIMEType: "video/mp4"}, "video"},
+		{store.Enclosure{URL: "https://p.dev/photo.jpg?e=1790070194&t=signed", MIMEType: "image/jpeg"}, "image"},
+		// Signed URLs match on the parsed path even with no MIME type.
+		{store.Enclosure{URL: "https://p.dev/photo.jpg?e=1&t=2", MIMEType: ""}, "image"},
+		{store.Enclosure{URL: "https://p.dev/demo.webp"}, "image"},
+		{store.Enclosure{URL: "https://p.dev/notes.txt", MIMEType: "text/plain"}, ""},
+		{store.Enclosure{URL: "https://p.dev/ep1.mp3"}, "audio"},
+	}
+	for _, c := range cases {
+		if got := EnclosureKind(c.enc); got != c.want {
+			t.Errorf("EnclosureKind(%+v) = %q, want %q", c.enc, got, c.want)
+		}
+	}
+	imgs := ImageEnclosures([]store.Enclosure{
+		{URL: "https://p.dev/photo.jpg?e=1&t=2", MIMEType: "image/jpeg"},
+		{URL: "https://p.dev/ep1.mp3", MIMEType: "audio/mpeg"},
+		{URL: "https://p.dev/other.png"},
+	})
+	if len(imgs) != 2 {
+		t.Fatalf("ImageEnclosures = %d, want 2", len(imgs))
 	}
 }
 

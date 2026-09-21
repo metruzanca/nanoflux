@@ -44,11 +44,11 @@ type loadMoreData struct {
 	URL string // full fragment URL including the before= cursor
 }
 
-templ ItemsList(items []store.ItemWithFeed) {
+templ ItemsList(items []store.ItemWithFeed, hideAuthor bool) {
 	if len(items) > 0 {
 		<ul class="items" id="items-list">
 			for _, it := range items {
-				@ItemRow(it)
+				@ItemRow(it, hideAuthor)
 			}
 		</ul>
 	} else {
@@ -58,8 +58,8 @@ templ ItemsList(items []store.ItemWithFeed) {
 
 // ItemsListPage renders the item list plus a "load more" button when more
 // pages exist. The button appends the next page into the list via htmx.
-templ ItemsListPage(items []store.ItemWithFeed, more *loadMoreData) {
-	@ItemsList(items)
+templ ItemsListPage(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool) {
+	@ItemsList(items, hideAuthor)
 	if more != nil {
 		<button id="load-more" hx-get={ templ.URL(more.URL) } hx-target="#items-list" hx-swap="beforeend">load more</button>
 	}
@@ -68,18 +68,18 @@ templ ItemsListPage(items []store.ItemWithFeed, more *loadMoreData) {
 // ItemsSection wraps the list and its load-more button so list-wide actions
 // (e.g. "mark all read") can swap the whole section atomically instead of
 // orphaning a stale load-more button.
-templ ItemsSection(items []store.ItemWithFeed, more *loadMoreData) {
+templ ItemsSection(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool) {
 	<div id="items-section">
-		@ItemsListPage(items, more)
+		@ItemsListPage(items, more, hideAuthor)
 	</div>
 }
 
 // ItemsPage is the fragment response for a load-more request: the appended
 // item rows plus an out-of-band swap that replaces (or removes) the load-more
 // button.
-templ ItemsPage(items []store.ItemWithFeed, more *loadMoreData) {
+templ ItemsPage(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool) {
 	for _, it := range items {
-		@ItemRow(it)
+		@ItemRow(it, hideAuthor)
 	}
 	if more != nil {
 		<button id="load-more" hx-swap-oob="outerHTML" hx-get={ templ.URL(more.URL) } hx-target="#items-list" hx-swap="beforeend">load more</button>
@@ -88,11 +88,11 @@ templ ItemsPage(items []store.ItemWithFeed, more *loadMoreData) {
 	}
 }
 
-templ ItemRow(it store.ItemWithFeed) {
-	@itemRowInner(it, visualsOf(it))
+templ ItemRow(it store.ItemWithFeed, hideAuthor bool) {
+	@itemRowInner(it, visualsOf(it), hideAuthor)
 }
 
-templ itemRowInner(it store.ItemWithFeed, v itemVisuals) {
+templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor bool) {
 	<li id={ "item-" + strconv.FormatInt(it.ID, 10) } class={ itemCardClass(v) }>
 		if v.Video {
 			<a class="thumb" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
@@ -113,6 +113,12 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals) {
 					<span class="thumb-badge" title="content lives on an external site">external</span>
 				}
 			</a>
+		} else if it.ImageURL != "" {
+			// A text post that still carries a thumbnail (e.g. one that arrived
+			// only as an image enclosure) gets a thumb beside its text.
+			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
+				<img src={ templ.URL(it.ImageURL) } alt="" loading="lazy"/>
+			</a>
 		}
 		<div class="card-body">
 			<div class="row">
@@ -123,7 +129,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals) {
 						<a class="item-title unread" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">{ it.Title }</a>
 					}
 					<div class="item-meta">
-						if it.AuthorName != "" {
+						if it.AuthorName != "" && !hideAuthor {
 							<a href={ "/authors/" + strconv.FormatInt(it.AuthorID, 10) }>{ it.AuthorName }</a> ·
 						}
 @web.SourceIcon(it.FeedURL)
@@ -144,18 +150,30 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals) {
 				</div>
 				<div class="row-actions">
 					if it.Favorite {
-						<button class="link fav-btn" title="unfavorite" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/favorite" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML">
+						<button class="link fav-btn" title="unfavorite" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/favorite" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML"
+							if hideAuthor {
+								hx-vals={ `{"hideAuthor":"1"}` }
+							}>
 							@web.FavIcon(true)
 						</button>
 					} else {
-						<button class="link fav-btn" title="favorite" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/favorite" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML">
+						<button class="link fav-btn" title="favorite" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/favorite" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML"
+							if hideAuthor {
+								hx-vals={ `{"hideAuthor":"1"}` }
+							}>
 							@web.FavIcon(false)
 						</button>
 					}
 					if it.Read {
-						<button class="link read-btn" title="mark unread" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML">↺</button>
+						<button class="link read-btn" title="mark unread" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML"
+							if hideAuthor {
+								hx-vals={ `{"hideAuthor":"1"}` }
+							}>↺</button>
 					} else {
-						<button class="link read-btn" title="mark read" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML">✓</button>
+						<button class="link read-btn" title="mark read" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML"
+							if hideAuthor {
+								hx-vals={ `{"hideAuthor":"1"}` }
+							}>✓</button>
 					}
 				</div>
 			</div>
@@ -176,19 +194,50 @@ templ ScopedItems(d scopedItemsData) {
 }
 
 templ scopedItemsInner(d scopedItemsData) {
-	<nav class="tabs">
-		if d.View == "unread" {
-			<a class="active" href={ d.Path + "?view=unread" } hx-get={ d.ItemsPath + "?view=unread" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=unread" }>unread ({ d.UnreadCount })</a>
-		} else {
-			<a href={ d.Path + "?view=unread" } hx-get={ d.ItemsPath + "?view=unread" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=unread" }>unread ({ d.UnreadCount })</a>
-		}
-		if d.View == "read" {
-			<a class="active" href={ d.Path + "?view=read" } hx-get={ d.ItemsPath + "?view=read" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read" }>read ({ d.ReadCount })</a>
-		} else {
-			<a href={ d.Path + "?view=read" } hx-get={ d.ItemsPath + "?view=read" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read" }>read ({ d.ReadCount })</a>
-		}
-	</nav>
-	@ItemsListPage(d.Items, d.More)
+	<div class="tabs-row">
+		<nav class="tabs">
+			if d.View == "unread" {
+				<a class="active" href={ d.Path + "?view=unread" } hx-get={ d.ItemsPath + "?view=unread" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=unread" }>unread ({ d.UnreadCount })</a>
+			} else {
+				<a href={ d.Path + "?view=unread" } hx-get={ d.ItemsPath + "?view=unread" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=unread" }>unread ({ d.UnreadCount })</a>
+			}
+			if d.View == "read" {
+				<a class="active" href={ d.Path + "?view=read" } hx-get={ d.ItemsPath + "?view=read" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read" }>read ({ d.ReadCount })</a>
+			} else {
+				<a href={ d.Path + "?view=read" } hx-get={ d.ItemsPath + "?view=read" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read" }>read ({ d.ReadCount })</a>
+			}
+		</nav>
+		@DisplayModeControl()
+	</div>
+	@ItemsListPage(d.Items, d.More, d.HideAuthor)
+}
+
+// DisplayModeControl is the list/grid picker shown alongside the unread/read
+// tabs and in the home/history/favorites headers. The server renders the
+// default (list) state; app.js re-syncs it from localStorage on load and after
+// every htmx swap.
+templ DisplayModeControl() {
+	<div class="display-mode" data-mode="list">
+		<button type="button" id="display-mode-btn" class="mode-btn" aria-haspopup="true" aria-expanded="false" title="display mode" onclick="toggleDisplayMode(event)">
+			<span class="mode-ic mode-ic--list">@ModeIcon("list")</span>
+			<span class="mode-ic mode-ic--grid">@ModeIcon("grid")</span>
+			<span class="mode-label mode-label--list">list</span>
+			<span class="mode-label mode-label--grid">grid</span>
+		</button>
+		<div id="display-mode-menu" class="mode-menu" role="menu" hidden>
+			<button type="button" class="mode-option" role="menuitemradio" data-mode="list" aria-checked="true" onclick="setDisplayMode('list', event)">@ModeIcon("list") list</button>
+			<button type="button" class="mode-option" role="menuitemradio" data-mode="grid" aria-checked="false" onclick="setDisplayMode('grid', event)">@ModeIcon("grid") grid</button>
+		</div>
+	</div>
+}
+
+// ModeIcon renders the small icon for a display mode ("list" or "grid").
+templ ModeIcon(mode string) {
+	if mode == "grid" {
+		<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+	} else {
+		<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+	}
 }
 
 templ ItemView(d itemViewData) {
@@ -250,20 +299,35 @@ templ itemContent(d itemViewData, v itemVisuals) {
 	}
 	if len(d.Enclosures) > 0 {
 		<div class="enclosures">
-			for _, e := range d.Enclosures {
-				if kind := web.EnclosureKind(e); kind != "" {
-					<figure>
-						if kind == "video" {
-							<video controls preload="none" src={ templ.URL(e.URL) }></video>
-						} else {
-							<audio controls preload="none" src={ templ.URL(e.URL) }></audio>
+			if imgs := web.ImageEnclosures(d.Enclosures); len(imgs) > 0 {
+				if len(imgs) == 1 {
+					<div class="image-lightbox">
+						<img src={ templ.URL(imgs[0].URL) } alt="" loading="lazy"/>
+					</div>
+				} else {
+					<div class="gallery">
+						for _, e := range imgs {
+							<img src={ templ.URL(e.URL) } alt="" loading="lazy"/>
 						}
+					</div>
+				}
+			}
+			for _, e := range d.Enclosures {
+				if kind := web.EnclosureKind(e); kind == "video" {
+					<figure>
+						<video controls preload="none" src={ templ.URL(e.URL) }></video>
+					</figure>
+				} else if kind == "audio" {
+					<figure>
+						<audio controls preload="none" src={ templ.URL(e.URL) }></audio>
 					</figure>
 				}
 			}
 			<ul class="plain small">
 				for _, e := range d.Enclosures {
-					<li>· <a href={ templ.URL(e.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ web.EnclosureLabel(e) }</a></li>
+					if kind := web.EnclosureKind(e); kind != "image" {
+						<li>· <a href={ templ.URL(e.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ web.EnclosureLabel(e) }</a></li>
+					}
 				}
 			</ul>
 		</div>

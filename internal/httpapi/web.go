@@ -128,6 +128,7 @@ type scopedItemsData struct {
 	Items       []store.ItemWithFeed
 	More        *loadMoreData // "load more" cursor, nil when no next page
 	SwapOOB     bool          // render with hx-swap-oob for the collection OOB fragment
+	HideAuthor  bool          // drop the author link from item meta (author-scoped page)
 }
 
 // moreURL builds the load-more fragment URL preserving the current filters:
@@ -218,12 +219,12 @@ func (s *Server) itemsMarkAllUnread(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderReadItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
 	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{ReadOnly: true, Limit: pageSize})
-	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items?read=1", items, more)))
+	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items?read=1", items, more), false))
 }
 
 func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
 	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{UnreadOnly: true, Limit: pageSize})
-	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items", items, more)))
+	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items", items, more), false))
 }
 
 // itemsFragment serves a "load more" page of rows for the home/read/favorites
@@ -248,7 +249,7 @@ func (s *Server) itemsFragment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more)))
+	web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more), false))
 }
 
 // withTZ stamps the user's timezone onto each item so templates can render
@@ -427,7 +428,9 @@ func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row.Timezone = u.Timezone
-	web.Render(w, r, ItemRow(row))
+	// Author-scoped pages suppress the (self-referential) author link; the row's
+	// toggle buttons carry hideAuthor=1 so a swapped row stays consistent.
+	web.Render(w, r, ItemRow(row, r.FormValue("hideAuthor") == "1"))
 }
 
 func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {
@@ -453,7 +456,7 @@ func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	row.Timezone = u.Timezone
-	web.Render(w, r, ItemRow(row))
+	web.Render(w, r, ItemRow(row, r.FormValue("hideAuthor") == "1"))
 }
 
 // feedCreate is the global add flow: the URL auto-detect result is an author
@@ -985,7 +988,7 @@ func (s *Server) authorScopedItems(userID, authorID int64, view, tz string) scop
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
-		More: pageCursor(base+"/items?view="+view, items, more),
+		More: pageCursor(base+"/items?view="+view, items, more), HideAuthor: true,
 	}
 }
 
@@ -1004,7 +1007,7 @@ func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		base := "/authors/" + strconv.FormatInt(id, 10) + "/items?view=" + view
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more)))
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more), true))
 		return
 	}
 	web.Render(w, r, ScopedItems(s.authorScopedItems(u.ID, id, view, u.Timezone)))
@@ -1062,7 +1065,7 @@ func (s *Server) feedItems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		base := "/feeds/" + strconv.FormatInt(id, 10) + "/items?view=" + view
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more)))
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more), false))
 		return
 	}
 	web.Render(w, r, ScopedItems(s.feedScopedItems(u.ID, id, view, u.Timezone)))
@@ -1274,7 +1277,7 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		base := "/collections/" + strconv.FormatInt(id, 10) + "/items?view=" + view
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more)))
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more), false))
 		return
 	}
 	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, view, u.Timezone)))
