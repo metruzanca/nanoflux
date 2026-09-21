@@ -109,13 +109,15 @@ func toItemWithFeed(id, feedID int64, guid, title, link, summary string,
 
 func toAuthor(a sqlcgen.Author) Author {
 	return Author{
-		ID:          a.ID,
-		UserID:      a.UserID,
-		Name:        a.Name,
-		URL:         a.Url.String,
-		AvatarURL:   a.AvatarUrl.String,
-		Description: a.Description.String,
-		CreatedAt:   a.CreatedAt,
+		ID:            a.ID,
+		UserID:        a.UserID,
+		Name:          a.Name,
+		URL:           a.Url.String,
+		AvatarURL:     a.AvatarUrl.String,
+		AvatarKey:     a.AvatarKey.String,
+		LastFetchedAt: a.LastFetchedAt.String,
+		Description:   a.Description.String,
+		CreatedAt:     a.CreatedAt,
 	}
 }
 

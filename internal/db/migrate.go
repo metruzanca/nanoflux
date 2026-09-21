@@ -31,6 +31,7 @@ var migrations = []migration{
 	{18, schemaV18},
 	{19, schemaV19},
 	{20, schemaV20},
+	{21, schemaV21},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -191,6 +192,15 @@ ALTER TABLE feeds_v3 RENAME TO feeds;
 
 CREATE INDEX idx_feeds_user ON feeds(user_id);
 CREATE INDEX idx_feeds_author ON feeds(author_id);
+`
+
+// schemaV21 caches author avatars in object storage. avatar_url stays the
+// source of truth for the remote image; avatar_key points at the cached bytes
+// (fetched and overwritten in place on refetch), last_fetched_at records when
+// they were cached.
+const schemaV21 = `
+ALTER TABLE authors ADD COLUMN avatar_key TEXT;
+ALTER TABLE authors ADD COLUMN last_fetched_at TEXT;
 `
 
 // schemaV19 stores per-user "url pattern -> feed url" mappings used to

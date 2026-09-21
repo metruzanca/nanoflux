@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 templ authorsPage(u store.User, d authorsData) {
@@ -45,7 +46,9 @@ templ AuthorRow(r authorRow) {
 		<div class="row">
 			<div>
 				<a href={ "/authors/" + strconv.FormatInt(r.ID, 10) }>
-					if r.AvatarURL != "" {
+					if r.AvatarKey != "" {
+						<img class="avatar avatar-sm" src={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/avatar?v=" + url.QueryEscape(r.LastFetchedAt) } alt=""/>
+					} else if r.AvatarURL != "" {
 						<img class="avatar avatar-sm" src={ "/img?u=" + url.QueryEscape(r.AvatarURL) } onerror="this.style.display='none'" alt=""/>
 					}
 					<strong>{ r.Name }</strong>
@@ -76,6 +79,37 @@ templ authorEditPage(u store.User, d authorsData) {
 			<button type="submit">save</button>
 		</form>
 	</section>
+	@authorAvatarCard(d.AvatarCard)
+}
+
+templ authorAvatarCard(d authorAvatarCardData) {
+	<section class="card" id="author-avatar-card">
+		<h2>avatar</h2>
+		if d.Flash != "" {
+			<div class="error" role="alert">{ d.Flash }</div>
+		}
+		<div class="row">
+			<div class="row">
+				if d.AvatarKey != "" {
+					<img class="avatar avatar-lg" src={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar?v=" + url.QueryEscape(d.LastFetchedAt) } alt=""/>
+				} else if d.AvatarURL != "" {
+					<img class="avatar avatar-lg" src={ "/img?u=" + url.QueryEscape(d.AvatarURL) } onerror="this.style.display='none'" alt=""/>
+				} else {
+					<span class="muted">no avatar url set</span>
+				}
+				<span class="muted small">
+					if d.AvatarKey != "" {
+						cached { web.TimeFmt(d.Timezone, d.LastFetchedAt) }
+					} else {
+						not cached yet
+					}
+				</span>
+			</div>
+			<div class="row-actions">
+				<button class="link" title="re-fetch the avatar from its url" hx-post={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar-refresh" } hx-target="#author-avatar-card" hx-swap="outerHTML">refetch avatar</button>
+			</div>
+		</div>
+	</section>
 }
 
 templ authorFields(d authorsData) {
@@ -97,7 +131,9 @@ templ authorPage(u store.User, d authorData) {
 	<section class="card">
 		<div class="row">
 			<div class="row">
-				if d.Author.AvatarURL != "" {
+				if d.Author.AvatarKey != "" {
+					<img class="avatar avatar-lg" src={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/avatar?v=" + url.QueryEscape(d.Author.LastFetchedAt) } alt=""/>
+				} else if d.Author.AvatarURL != "" {
 					<img class="avatar avatar-lg" src={ "/img?u=" + url.QueryEscape(d.Author.AvatarURL) } onerror="this.style.display='none'" alt=""/>
 				}
 				<h1>{ d.Author.Name }</h1>

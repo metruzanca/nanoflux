@@ -259,7 +259,14 @@ The DB stores object **keys** (`users.avatar_key`, `source_icons.icon_key`).
 - `Store.MigrateLegacyFiles` moves pre-object-storage DB blobs to objects once,
   at startup; the legacy `avatar_data`/`icon_data` columns are left in place but
   cleared.
-- Object keys: `avatars/<userID>`, `icons/<userID>/<domain>`.
+- Object keys: `avatars/<userID>`, `icons/<userID>/<domain>`,
+  `author-avatars/<userID>/<authorID>`. All keys are deterministic — a refetch
+  overwrites the same object in place and never creates an orphaned file.
+- Author avatars are cached here from `authors.avatar_url` (schemaV21). The
+  avatar renders from `GET /authors/{id}/avatar` once cached, else falls back
+  to the `/img` proxy; the author edit page has a "refetch avatar" button
+  (`POST /authors/{id}/avatar-refresh`). Changing/clearing `avatar_url` on
+  update and deleting an author both purge the cached object (best-effort).
 
 ## Environment variables
 

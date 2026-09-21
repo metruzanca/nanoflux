@@ -9,13 +9,15 @@ import (
 )
 
 type Author struct {
-	ID          int64          `json:"id"`
-	UserID      int64          `json:"user_id"`
-	Name        string         `json:"name"`
-	Url         sql.NullString `json:"url"`
-	AvatarUrl   sql.NullString `json:"avatar_url"`
-	Description sql.NullString `json:"description"`
-	CreatedAt   string         `json:"created_at"`
+	ID            int64          `json:"id"`
+	UserID        int64          `json:"user_id"`
+	Name          string         `json:"name"`
+	Url           sql.NullString `json:"url"`
+	AvatarUrl     sql.NullString `json:"avatar_url"`
+	AvatarKey     sql.NullString `json:"avatar_key"`
+	LastFetchedAt sql.NullString `json:"last_fetched_at"`
+	Description   sql.NullString `json:"description"`
+	CreatedAt     string         `json:"created_at"`
 }
 
 type Collection struct {

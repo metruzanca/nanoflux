@@ -85,8 +85,9 @@ type authorForm struct {
 }
 
 type authorsData struct {
-	Rows []authorRow
-	Form authorForm
+	Rows       []authorRow
+	Form       authorForm
+	AvatarCard authorAvatarCardData // edit page avatar cache card
 }
 
 type authorData struct {
@@ -571,6 +572,11 @@ func (s *Server) resolveAuthor(r *http.Request, userID int64) (int64, bool, stri
 			log.Error("create author", "err", err)
 			return 0, false, "could not create author"
 		}
+		if a.AvatarURL != "" {
+			ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+			s.autoCacheAuthorAvatar(ctx, a)
+			cancel()
+		}
 		return a.ID, true, ""
 	default:
 		id, err := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
@@ -925,6 +931,11 @@ func (s *Server) authorCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-author-error", "could not create author")
 		return
 	}
+	if a.AvatarURL != "" {
+		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+		s.autoCacheAuthorAvatar(ctx, a)
+		cancel()
+	}
 	web.Render(w, r, AuthorRow(authorRow{Author: a}))
 }
 
@@ -1069,7 +1080,8 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
-		Form: authorForm{ID: a.ID, Name: a.Name, URL: a.URL, AvatarURL: a.AvatarURL, Description: a.Description},
+		Form:       authorForm{ID: a.ID, Name: a.Name, URL: a.URL, AvatarURL: a.AvatarURL, Description: a.Description},
+		AvatarCard: s.authorAvatarCardData(a, u.Timezone, ""),
 	})))
 }
 
@@ -1080,17 +1092,36 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	old, err := s.store.Authors.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
 	name := r.FormValue("name")
 	if name == "" {
 		http.Redirect(w, r, "/authors", http.StatusFound)
 		return
 	}
-	if err := s.store.Authors.Update(u.ID, id, name, r.FormValue("url"), r.FormValue("avatar_url"), r.FormValue("description")); err != nil {
+	avatarURL := r.FormValue("avatar_url")
+	if avatarURL != old.AvatarURL {
+		// The source changed (or was cleared): drop the stale cache before the
+		// row changes so neither an orphaned object nor a stale key survives.
+		s.clearAuthorAvatar(r.Context(), old)
+	}
+	if err := s.store.Authors.Update(u.ID, id, name, r.FormValue("url"), avatarURL, r.FormValue("description")); err != nil {
 		log.Error("update author", "err", err)
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/authors/"+r.PathValue("id"), http.StatusFound)
+	if avatarURL != "" {
+		a, _ := s.store.Authors.ByID(u.ID, id)
+		if a.ID != 0 {
+			ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+			s.autoCacheAuthorAvatar(ctx, a)
+			cancel()
+		}
+	}
+	http.Redirect(w, r, "/authors/"+strconv.FormatInt(id, 10), http.StatusFound)
 }
 
 func (s *Server) authorDelete(w http.ResponseWriter, r *http.Request) {
@@ -1100,6 +1131,12 @@ func (s *Server) authorDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	a, err := s.store.Authors.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.clearAuthorAvatar(r.Context(), a)
 	if err := s.store.Authors.Delete(u.ID, id); err != nil {
 		log.Error("delete author", "err", err)
 		http.Error(w, "delete failed", http.StatusInternalServerError)

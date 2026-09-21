@@ -38,6 +38,8 @@ CREATE TABLE authors (
     name        TEXT NOT NULL,
     url         TEXT,
     avatar_url  TEXT,
+    avatar_key  TEXT,
+    last_fetched_at TEXT,
     description TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );

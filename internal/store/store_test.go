@@ -867,6 +867,63 @@ func TestUserDeleteCascadesAndPurgesKeys(t *testing.T) {
 	}
 }
 
+func TestAuthorAvatarKey(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, err := s.Authors.Create(u.ID, "Metru", "", "https://example.com/favicon.png", "")
+	if err != nil {
+		t.Fatalf("create author: %v", err)
+	}
+	if a.AvatarKey != "" || a.LastFetchedAt != "" {
+		t.Fatalf("new author should have no cache: %+v", a)
+	}
+	key := "author-avatars/" + strconv.FormatInt(u.ID, 10) + "/" + strconv.FormatInt(a.ID, 10)
+	if err := s.Authors.SetAvatarKey(u.ID, a.ID, key, db.Now()); err != nil {
+		t.Fatalf("SetAvatarKey: %v", err)
+	}
+	got, err := s.Authors.ByID(u.ID, a.ID)
+	if err != nil {
+		t.Fatalf("ByID: %v", err)
+	}
+	if got.AvatarKey != key || got.LastFetchedAt == "" {
+		t.Fatalf("avatar cache not recorded: %+v", got)
+	}
+	rows, err := s.Authors.ListWithFeedCount(u.ID)
+	if err != nil || len(rows) != 1 || rows[0].AvatarKey != key {
+		t.Fatalf("ListWithFeedCount avatar key: %+v %v", rows, err)
+	}
+	if err := s.Authors.ClearAvatarKey(u.ID, a.ID); err != nil {
+		t.Fatalf("ClearAvatarKey: %v", err)
+	}
+	got, _ = s.Authors.ByID(u.ID, a.ID)
+	if got.AvatarKey != "" || got.LastFetchedAt != "" {
+		t.Fatalf("clear should drop key and timestamp: %+v", got)
+	}
+}
+
+func TestListObjectKeysIncludesAuthorAvatars(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "https://x/av.png", "")
+	key := "author-avatars/" + strconv.FormatInt(u.ID, 10) + "/" + strconv.FormatInt(a.ID, 10)
+	if err := s.Authors.SetAvatarKey(u.ID, a.ID, key, db.Now()); err != nil {
+		t.Fatalf("SetAvatarKey: %v", err)
+	}
+	keys, err := s.Users.ListObjectKeys(u.ID)
+	if err != nil {
+		t.Fatalf("ListObjectKeys: %v", err)
+	}
+	found := false
+	for _, k := range keys {
+		if k == key {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("author avatar key missing from %v", keys)
+	}
+}
+
 func TestSettingStore(t *testing.T) {
 	s := newTestStore(t)
 	// Migration seeds allow_signup = '1'.

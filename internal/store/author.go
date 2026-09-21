@@ -10,13 +10,15 @@ import (
 )
 
 type Author struct {
-	ID          int64
-	UserID      int64
-	Name        string
-	URL         string
-	AvatarURL   string
-	Description string
-	CreatedAt   string
+	ID            int64
+	UserID        int64
+	Name          string
+	URL           string
+	AvatarURL     string
+	AvatarKey     string
+	LastFetchedAt string
+	Description   string
+	CreatedAt     string
 }
 
 // AuthorWithCount joins an author with its number of feeds.
@@ -91,13 +93,15 @@ func (s *AuthorStore) ListWithFeedCount(userID int64) ([]AuthorWithCount, error)
 	for _, r := range rows {
 		out = append(out, AuthorWithCount{
 			Author: toAuthor(sqlcgen.Author{
-				ID:          r.ID,
-				UserID:      r.UserID,
-				Name:        r.Name,
-				Url:         r.Url,
-				AvatarUrl:   r.AvatarUrl,
-				Description: r.Description,
-				CreatedAt:   r.CreatedAt,
+				ID:            r.ID,
+				UserID:        r.UserID,
+				Name:          r.Name,
+				Url:           r.Url,
+				AvatarUrl:     r.AvatarUrl,
+				AvatarKey:     r.AvatarKey,
+				LastFetchedAt: r.LastFetchedAt,
+				Description:   r.Description,
+				CreatedAt:     r.CreatedAt,
 			}),
 			FeedCount: int(r.FeedCount),
 		})
@@ -129,8 +133,34 @@ func (s *AuthorStore) Update(userID, id int64, name, url, avatarURL, description
 	return nil
 }
 
+// SetAvatarKey records the object-storage key of the author's cached avatar
+// and when it was fetched. The key is deterministic (one object per author),
+// so re-fetching overwrites in place and never orphans a file.
+func (s *AuthorStore) SetAvatarKey(userID, id int64, key, fetchedAt string) error {
+	res, err := s.q.SetAuthorAvatarKey(context.Background(), sqlcgen.SetAuthorAvatarKeyParams{
+		AvatarKey:     ns(key),
+		LastFetchedAt: ns(fetchedAt),
+		ID:            id,
+		UserID:        userID,
+	})
+	if err != nil {
+		return fmt.Errorf("set author avatar key: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ClearAvatarKey drops the object-storage key so a cached avatar is no longer
+// served.
+func (s *AuthorStore) ClearAvatarKey(userID, id int64) error {
+	return s.SetAvatarKey(userID, id, "", "")
+}
+
 // Delete removes an author and cascades to their feeds (and those feeds'
-// items and collection links).
+// items and collection links). The cached avatar object is not touched here —
+// callers purge it via AvatarKey.
 func (s *AuthorStore) Delete(userID, id int64) error {
 	res, err := s.q.DeleteAuthor(context.Background(), sqlcgen.DeleteAuthorParams{ID: id, UserID: userID})
 	if err != nil {
