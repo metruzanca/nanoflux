@@ -65,6 +65,11 @@ UPDATE feeds
 SET etag = ?, last_modified = ?, last_polled_at = ?
 WHERE id = ?;
 
+-- name: SetFeedEnabled :exec
+UPDATE feeds
+SET enabled = ?
+WHERE id = ? AND user_id = ?;
+
 -- name: ListFeedsDue :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
        etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at

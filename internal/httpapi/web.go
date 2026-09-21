@@ -53,6 +53,7 @@ type feedForm struct {
 	AuthorID        int64
 	PollIntervalSec int
 	CollectionIDs   []int64
+	Enabled         bool
 }
 
 type feedsData struct {
@@ -247,6 +248,7 @@ func withTZ(tz string, items []store.ItemWithFeed) []store.ItemWithFeed {
 }
 
 type itemViewData struct {
+	ID          int64
 	Title       string
 	AuthorName  string
 	AuthorID    int64
@@ -262,6 +264,7 @@ type itemViewData struct {
 	EmbedSrc    string   // iframe src from the destination's oEmbed
 	Gallery     []string // full-res images of a reddit gallery post
 	Enclosures  []store.Enclosure
+	ShareToken  string // public share token, "" when the item is not shared
 	Timezone    string // user's IANA timezone, for relative timestamps in templates
 }
 
@@ -285,6 +288,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data := itemViewData{
+		ID:          it.ID,
 		Title:       it.Title,
 		AuthorName:  it.AuthorName,
 		AuthorID:    it.AuthorID,
@@ -302,7 +306,79 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemSource(ctx, data)
 	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
+	if sh, err := s.store.Shares.ByItem(u.ID, it.ID); err == nil {
+		data.ShareToken = sh.Token
+	}
 	web.Render(w, r, ItemView(data))
+}
+
+// itemShare creates a public share link for an item and re-renders the share
+// control in the modal.
+func (s *Server) itemShare(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.Items.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	sh, err := s.store.Shares.Create(u.ID, id)
+	if err != nil {
+		log.Error("share item", "item_id", id, "err", err)
+		http.Error(w, "share failed", http.StatusInternalServerError)
+		return
+	}
+	web.Render(w, r, shareControl(id, sh.Token))
+}
+
+// itemRevokeShare removes an item's public share link.
+func (s *Server) itemRevokeShare(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.Shares.Delete(u.ID, id); err != nil {
+		log.Error("revoke share", "item_id", id, "err", err)
+		http.Error(w, "revoke failed", http.StatusInternalServerError)
+		return
+	}
+	web.Render(w, r, shareControl(id, ""))
+}
+
+// sharedPage serves an item publicly by its share token. It is intentionally
+// unauthenticated, never marks the item read, and links only to external
+// content — the author/feed pages require a login.
+func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
+	sh, err := s.store.Shares.ByToken(r.PathValue("token"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	it, err := s.store.Items.OneWithFeedAny(sh.ItemID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	data := itemViewData{
+		ID:        it.ID,
+		Title:     it.Title,
+		PublishedAt: it.PublishedAt,
+		Summary:   it.Summary,
+		ImageURL:  it.ImageURL,
+		Link:      it.Link,
+		Body:      template.HTML(it.Summary),
+		EmbedURL:  web.YoutubeEmbedURL(it.Link),
+	}
+	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemSource(ctx, data)
+	web.Render(w, r, sharedItemPage(it, data))
 }
 
 func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
@@ -469,7 +545,7 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 	form := feedForm{
 		ID: f.ID, Title: f.Title, FeedURL: f.FeedURL, HomeURL: f.HomeURL,
 		Description: f.Description, AuthorID: f.AuthorID,
-		PollIntervalSec: f.PollIntervalSec,
+		PollIntervalSec: f.PollIntervalSec, Enabled: f.Enabled,
 	}
 	collections, _ := s.store.Collections.List(u.ID)
 	form.CollectionIDs = s.collectionIDsForFeed(u.ID, f.ID)
@@ -575,7 +651,7 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
-		r.FormValue("home_url"), "", interval, true); err != nil {
+		r.FormValue("home_url"), "", interval, r.FormValue("enabled") == "1"); err != nil {
 		log.Error("update feed", "err", err)
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
@@ -679,6 +755,30 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, FeedRow(feedRow{Feed: f, AuthorName: author.Name, Unread: unread, Timezone: u.Timezone}))
 }
 
+// feedToggle pauses or resumes a feed's polling and re-renders its row.
+func (s *Server) feedToggle(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := s.store.Feeds.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.Feeds.SetEnabled(u.ID, id, !f.Enabled); err != nil {
+		log.Error("toggle feed", "feed_id", id, "err", err)
+		http.Error(w, "toggle failed", http.StatusInternalServerError)
+		return
+	}
+	f.Enabled = !f.Enabled
+	unread, _ := s.store.Items.CountUnread(u.ID, id)
+	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
+	web.Render(w, r, FeedRow(feedRow{Feed: f, AuthorName: author.Name, Unread: unread, Timezone: u.Timezone}))
+}
+
 func (s *Server) authors(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	rows := s.authorRows(u.ID)
@@ -742,7 +842,7 @@ func (s *Server) authorScopedItems(userID, authorID int64, view, tz string) scop
 	base := "/authors/" + strconv.FormatInt(authorID, 10)
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view,
-		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
+		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
 		More: pageCursor(base+"/items?view="+view, items, more),
 	}
 }
@@ -762,7 +862,7 @@ func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		base := "/authors/" + strconv.FormatInt(id, 10) + "/items?view=" + view
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more)))
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more)))
 		return
 	}
 	web.Render(w, r, ScopedItems(s.authorScopedItems(u.ID, id, view, u.Timezone)))
@@ -967,7 +1067,7 @@ func (s *Server) collectionScopedItems(userID, collectionID int64, view, tz stri
 	base := "/collections/" + strconv.FormatInt(collectionID, 10)
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view,
-		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
+		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
 		More: pageCursor(base+"/items?view="+view, items, more),
 	}
 }
@@ -987,7 +1087,7 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		base := "/collections/" + strconv.FormatInt(id, 10) + "/items?view=" + view
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more)))
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more)))
 		return
 	}
 	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, view, u.Timezone)))

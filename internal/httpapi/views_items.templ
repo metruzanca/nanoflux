@@ -126,9 +126,12 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals) {
 						if it.AuthorName != "" {
 							<a href={ "/authors/" + strconv.FormatInt(it.AuthorID, 10) }>{ it.AuthorName }</a> ·
 						}
-						@web.SourceIcon(it.FeedURL)
-						<a href={ "/feeds/" + strconv.FormatInt(it.FeedID, 10) }>{ it.FeedTitle }</a>
-						if it.PublishedAt != "" {
+@web.SourceIcon(it.FeedURL)
+					<a href={ "/feeds/" + strconv.FormatInt(it.FeedID, 10) }>{ it.FeedTitle }</a>
+					for _, src := range it.Sources {
+						· also in <a href={ "/feeds/" + strconv.FormatInt(src.FeedID, 10) }>{ src.FeedTitle }</a><a href={ templ.URL(src.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external"></a>
+					}
+					if it.PublishedAt != "" {
 							· { web.TimeFmt(it.Timezone, it.PublishedAt) }
 						}
 						if it.Read && it.ReadAt != "" {
@@ -214,47 +217,100 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 				· <a href={ templ.URL(d.SourceURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">source</a>
 			}
 		</p>
-		if len(d.Gallery) > 0 {
-			<div class="gallery">
-				for _, img := range d.Gallery {
-					<img src={ templ.URL(img) } alt="" loading="lazy"/>
+		@shareControl(d.ID, d.ShareToken)
+		@itemContent(d, v)
+	</div>
+}
+
+// itemContent renders an item's media, body, and enclosures. Shared between the
+// authenticated modal and the public share page.
+templ itemContent(d itemViewData, v itemVisuals) {
+	if len(d.Gallery) > 0 {
+		<div class="gallery">
+			for _, img := range d.Gallery {
+				<img src={ templ.URL(img) } alt="" loading="lazy"/>
+			}
+		</div>
+	} else if v.Image {
+		<div class="image-lightbox">
+			<img src={ templ.URL(d.ImageURL) } alt={ d.Title } loading="lazy"/>
+		</div>
+	} else if d.EmbedSrc != "" {
+		<div class="video-embed">
+			<iframe src={ templ.URL(d.EmbedSrc) } title={ d.Title } frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>
+		</div>
+	} else if d.EmbedURL != "" {
+		<div class="video-embed">
+			<iframe src={ templ.URL(d.EmbedURL) } title={ d.Title } frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe>
+		</div>
+	}
+	if d.Body != "" && !v.Image && d.SourceURL == "" && len(d.Gallery) == 0 {
+		<div class="item-body">@templ.Raw(d.Body)</div>
+	}
+	if len(d.Enclosures) > 0 {
+		<div class="enclosures">
+			for _, e := range d.Enclosures {
+				if kind := web.EnclosureKind(e); kind != "" {
+					<figure>
+						if kind == "video" {
+							<video controls preload="none" src={ templ.URL(e.URL) }></video>
+						} else {
+							<audio controls preload="none" src={ templ.URL(e.URL) }></audio>
+						}
+					</figure>
 				}
-			</div>
-		} else if v.Image {
-			<div class="image-lightbox">
-				<img src={ templ.URL(d.ImageURL) } alt={ d.Title } loading="lazy"/>
-			</div>
-		} else if d.EmbedSrc != "" {
-			<div class="video-embed">
-				<iframe src={ templ.URL(d.EmbedSrc) } title={ d.Title } frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>
-			</div>
-		} else if d.EmbedURL != "" {
-			<div class="video-embed">
-				<iframe src={ templ.URL(d.EmbedURL) } title={ d.Title } frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe>
-			</div>
-		}
-		if d.Body != "" && !v.Image && d.SourceURL == "" && len(d.Gallery) == 0 {
-			<div class="item-body">@templ.Raw(d.Body)</div>
-		}
-		if len(d.Enclosures) > 0 {
-			<div class="enclosures">
+			}
+			<ul class="plain small">
 				for _, e := range d.Enclosures {
-					if kind := web.EnclosureKind(e); kind != "" {
-						<figure>
-							if kind == "video" {
-								<video controls preload="none" src={ templ.URL(e.URL) }></video>
-							} else {
-								<audio controls preload="none" src={ templ.URL(e.URL) }></audio>
-							}
-						</figure>
-					}
+					<li>· <a href={ templ.URL(e.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ web.EnclosureLabel(e) }</a></li>
 				}
-				<ul class="plain small">
-					for _, e := range d.Enclosures {
-						<li>· <a href={ templ.URL(e.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ web.EnclosureLabel(e) }</a></li>
-					}
-				</ul>
-			</div>
+			</ul>
+		</div>
+	}
+}
+
+// shareControl toggles the public share link for an item. Rendered inside the
+// item modal; re-swapped in place by the share/revoke endpoints.
+templ shareControl(itemID int64, token string) {
+	<div id="item-share" class="item-meta">
+		if token != "" {
+			<span>shared · <a href={ "/shared/" + token } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">link</a></span>
+			<button class="link danger" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/revoke" } hx-target="#item-share" hx-swap="outerHTML">stop sharing</button>
+		} else {
+			<button class="link" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/share" } hx-target="#item-share" hx-swap="outerHTML">share</button>
 		}
 	</div>
+}
+
+// sharedItemPage is the public, unauthenticated view of a shared item. It
+// reuses itemContent but never links to internal author/feed pages.
+templ sharedItemPage(it store.ItemWithFeed, d itemViewData) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			@head(it.Title)
+		</head>
+		<body>
+			<main>
+				<div class="item-view">
+					<h1>{ d.Title }</h1>
+					<p class="item-meta">
+						{ it.FeedTitle }
+						if d.PublishedAt != "" {
+							· { web.TimeFmt("", d.PublishedAt) }
+						}
+						· <a href={ templ.URL(d.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">open live</a>
+					</p>
+					@itemContent(d, visualsOf(store.ItemWithFeed{
+						Item: store.Item{
+							Link:     d.Link,
+							Summary:  d.Summary,
+							ImageURL: d.ImageURL,
+							Title:    d.Title,
+						},
+					}))
+				</div>
+			</main>
+		</body>
+	</html>
 }

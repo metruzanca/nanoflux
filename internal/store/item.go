@@ -32,7 +32,16 @@ type ItemWithFeed struct {
 	FeedURL    string
 	AuthorID   int64
 	AuthorName string
-	Timezone   string // user's IANA timezone, for relative timestamps in templates
+	Sources    []ItemSource // additional feeds this item appears in (view-time dedup)
+	Timezone   string       // user's IANA timezone, for relative timestamps in templates
+}
+
+// ItemSource is one alternate copy of an item that was merged into the
+// surviving row during view-time dedup.
+type ItemSource struct {
+	FeedID    int64
+	FeedTitle string
+	Link      string
 }
 
 type ItemFilter struct {
@@ -246,6 +255,21 @@ func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
 // OneWithFeed returns a single item joined with its feed and author.
 func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 	it, err := s.q.GetItemWithFeed(context.Background(), sqlcgen.GetItemWithFeedParams{ID: itemID, UserID: userID})
+	if errors.Is(err, sql.ErrNoRows) {
+		return ItemWithFeed{}, ErrNotFound
+	}
+	if err != nil {
+		return ItemWithFeed{}, err
+	}
+	return toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary,
+		it.ImageUrl, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
+		it.FeedTitle, it.FeedUrl, it.AuthorID, it.AuthorName), nil
+}
+
+// OneWithFeedAny returns a single item regardless of user. Used by the public
+// share page, which serves an item identified only by its share token.
+func (s *ItemStore) OneWithFeedAny(itemID int64) (ItemWithFeed, error) {
+	it, err := s.q.GetItemWithFeedAny(context.Background(), itemID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ItemWithFeed{}, ErrNotFound
 	}

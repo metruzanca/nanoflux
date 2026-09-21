@@ -445,6 +445,23 @@ func (q *Queries) ListFeedsWithUnread(ctx context.Context, userID int64) ([]List
 	return items, nil
 }
 
+const setFeedEnabled = `-- name: SetFeedEnabled :exec
+UPDATE feeds
+SET enabled = ?
+WHERE id = ? AND user_id = ?
+`
+
+type SetFeedEnabledParams struct {
+	Enabled bool  `json:"enabled"`
+	ID      int64 `json:"id"`
+	UserID  int64 `json:"user_id"`
+}
+
+func (q *Queries) SetFeedEnabled(ctx context.Context, arg SetFeedEnabledParams) error {
+	_, err := q.db.ExecContext(ctx, setFeedEnabled, arg.Enabled, arg.ID, arg.UserID)
+	return err
+}
+
 const setFeedPollMeta = `-- name: SetFeedPollMeta :exec
 UPDATE feeds
 SET etag = ?, last_modified = ?, last_polled_at = ?

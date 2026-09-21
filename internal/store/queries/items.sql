@@ -42,6 +42,16 @@ JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE i.id = ? AND f.user_id = ?;
 
+-- name: GetItemWithFeedAny :one
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE i.id = ?;
+
 -- name: SetItemRead :execresult
 UPDATE items
 SET read = ?, read_at = ?

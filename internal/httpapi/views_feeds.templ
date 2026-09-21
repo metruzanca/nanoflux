@@ -45,6 +45,9 @@ templ FeedRow(r feedRow) {
 					<strong>@web.SourceIcon(r.FeedURL)
 					{ r.Title }</strong>
 				</a>
+				if !r.Enabled {
+					<span class="badge">paused</span>
+				}
 				<div class="item-meta">
 					if r.AuthorName != "" {
 						<a href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.AuthorName }</a> ·
@@ -61,6 +64,13 @@ templ FeedRow(r feedRow) {
 			</div>
 			<div class="row-actions">
 				<a class="small" href={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit" }>edit</a>
+				<button class="link" title={ if r.Enabled { "pause polling" } else { "resume polling" } } hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/toggle" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">
+					if r.Enabled {
+						⏸
+					} else {
+						▶
+					}
+				</button>
 				<button class="link" title="refresh" hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/refresh" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">↻</button>
 				<button class="link danger" title="delete" hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML" hx-confirm="delete this feed?">✕</button>
 			</div>
@@ -199,6 +209,7 @@ templ feedFields(d feedsData) {
 	<label>poll interval (seconds)
 		<input name="poll_interval_sec" type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min="60"/>
 	</label>
+	<label class="check"><input type="checkbox" name="enabled" value="1" checked={ d.Form.Enabled }/> enabled (poll this feed)</label>
 	if len(d.Collections) > 0 {
 		<fieldset>
 			<legend>collections</legend>

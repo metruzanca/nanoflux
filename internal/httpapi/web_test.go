@@ -36,6 +36,11 @@ func doGet(h http.Handler, path string, cookie *http.Cookie) *httptest.ResponseR
 	return rr
 }
 
+// doGetRaw issues a GET with no session, for unauthenticated routes.
+func doGetRaw(h http.Handler, path string) *httptest.ResponseRecorder {
+	return doGet(h, path, nil)
+}
+
 func sessionCookie(t *testing.T, h http.Handler) *http.Cookie {
 	t.Helper()
 	rr := login(t, h)
@@ -295,6 +300,140 @@ func TestFeedFilterRulesFlow(t *testing.T) {
 	rules, _ = s.store.Filters.ListByFeed(u.ID, f.ID)
 	if len(rules) != 0 {
 		t.Fatalf("expected no rules after delete, got %d", len(rules))
+	}
+}
+
+func TestCollectionPageDedups(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f1, _ := s.store.Feeds.Create(u.ID, a.ID, "r/videos", "https://v.dev/rss.xml", "", "", 900)
+	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Metru's feed", "https://m.dev/rss.xml", "", "", 900)
+	c, _ := s.store.Collections.Create(u.ID, "all")
+	s.store.Collections.AddFeed(u.ID, c.ID, f1.ID)
+	s.store.Collections.AddFeed(u.ID, c.ID, f2.ID)
+	s.store.Items.Upsert(f1.ID, store.Item{GUID: "a", Title: "Funny cat video", Link: "https://v.dev/1", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f2.ID, store.Item{GUID: "b", Title: "Funny cat video", Link: "https://m.dev/1", FetchedAt: db.Now()})
+
+	// The collection page shows the post once, with the other feed as a source.
+	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
+	if got := strings.Count(body, "Funny cat video"); got != 1 {
+		t.Fatalf("dedup should collapse to one row, saw %d: %s", got, body)
+	}
+	if !strings.Contains(body, "also in") || !strings.Contains(body, "r/videos") {
+		t.Fatalf("row should list the alternate feed as a source: %s", body)
+	}
+
+	// The feed page still lists the item (dedup is collection/author-scoped only).
+	body = doGet(h, "/feeds/"+itoa(f1.ID), cookie).Body.String()
+	if got := strings.Count(body, "Funny cat video"); got != 1 {
+		t.Fatalf("feed page should show its own item: %d", got)
+	}
+}
+
+func TestFeedToggle(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+
+	// Pause the feed: the row shows the paused badge.
+	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/toggle", url.Values{}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "paused") {
+		t.Fatalf("toggle off: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ := s.store.Feeds.ByID(u.ID, f.ID)
+	if after.Enabled {
+		t.Fatal("feed should be disabled after toggle")
+	}
+
+	// The feeds list shows the paused badge too.
+	body := doGet(h, "/feeds", cookie).Body.String()
+	if !strings.Contains(body, "paused") {
+		t.Fatalf("feeds list should show the paused badge: %s", body)
+	}
+
+	// Resume: the badge disappears and the feed is enabled again.
+	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/toggle", url.Values{}, cookie)
+	if rr.Code != http.StatusOK || strings.Contains(rr.Body.String(), "paused") {
+		t.Fatalf("toggle on: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Feeds.ByID(u.ID, f.ID)
+	if !after.Enabled {
+		t.Fatal("feed should be enabled after toggle")
+	}
+
+	// Pausing via the edit form persists the disabled state.
+	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/edit", url.Values{
+		"title": {"Blog"}, "feed_url": {"https://b.dev/rss.xml"}, "poll_interval_sec": {"900"},
+	}, cookie)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("edit without enabled checkbox should disable: %d", rr.Code)
+	}
+	after, _ = s.store.Feeds.ByID(u.ID, f.ID)
+	if after.Enabled {
+		t.Fatal("edit without the enabled checkbox should pause the feed")
+	}
+}
+
+func TestShareFlow(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Shareable post", Link: "https://b.dev/1", Summary: "body text", FetchedAt: db.Now()})
+	itemID, _ := s.store.Items.ByFeedGUID(f.ID, "g1")
+
+	// The modal shows a share button when unshared.
+	body := doGet(h, "/items/"+itoa(itemID)+"/view", cookie).Body.String()
+	if !strings.Contains(body, `hx-post="/items/`+itoa(itemID)+`/share"`) {
+		t.Fatalf("item modal should offer sharing: %s", body)
+	}
+
+	// Share it.
+	rr := doForm(h, "POST", "/items/"+itoa(itemID)+"/share", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("share: %d %s", rr.Code, rr.Body.String())
+	}
+	sh, err := s.store.Shares.ByItem(u.ID, itemID)
+	if err != nil {
+		t.Fatalf("share not stored: %v", err)
+	}
+	if !strings.Contains(rr.Body.String(), "/shared/"+sh.Token) {
+		t.Fatalf("share control should show the link: %s", rr.Body.String())
+	}
+
+	// The public page is reachable WITHOUT a session and does not require login.
+	pub := httptest.NewRequest(http.MethodGet, "/shared/"+sh.Token, nil)
+	prr := httptest.NewRecorder()
+	h.ServeHTTP(prr, pub)
+	if prr.Code != http.StatusOK {
+		t.Fatalf("public share page: %d %s", prr.Code, prr.Body.String())
+	}
+	if !strings.Contains(prr.Body.String(), "Shareable post") || !strings.Contains(prr.Body.String(), "body text") {
+		t.Fatalf("public page should render the item: %s", prr.Body.String())
+	}
+	if strings.Contains(prr.Body.String(), `href="/authors/`) || strings.Contains(prr.Body.String(), `href="/feeds/`) {
+		t.Fatalf("public page should not expose internal links: %s", prr.Body.String())
+	}
+
+	// Unknown token -> 404.
+	got := doGetRaw(h, "/shared/nope")
+	if got.Code != http.StatusNotFound {
+		t.Fatalf("unknown token: %d", got.Code)
+	}
+
+	// Revoke: the token no longer resolves.
+	rr = doForm(h, "POST", "/items/"+itoa(itemID)+"/revoke", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("revoke: %d %s", rr.Code, rr.Body.String())
+	}
+	got = doGetRaw(h, "/shared/"+sh.Token)
+	if got.Code != http.StatusNotFound {
+		t.Fatalf("revoked token should 404, got %d", got.Code)
 	}
 }
 

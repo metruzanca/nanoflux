@@ -23,6 +23,7 @@ var migrations = []migration{
 	{10, schemaV10},
 	{11, schemaV11},
 	{12, schemaV12},
+	{13, schemaV13},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -75,6 +76,17 @@ CREATE TABLE filters (
 );
 CREATE INDEX idx_filters_user ON filters(user_id);
 CREATE INDEX idx_filters_feed ON filters(feed_id);
+`
+
+// schemaV13 adds public share links for individual items. Each share carries a
+// random, unguessable token; tokens are never enumerated.
+const schemaV13 = `
+CREATE TABLE shared_items (
+    id         INTEGER PRIMARY KEY,
+    item_id    INTEGER NOT NULL UNIQUE REFERENCES items(id) ON DELETE CASCADE,
+    token      TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 const schemaV9 = `

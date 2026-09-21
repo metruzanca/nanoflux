@@ -189,6 +189,19 @@ func (s *FeedStore) SetPollMeta(id int64, etag, lastModified, lastPolledAt strin
 	})
 }
 
+// SetEnabled pauses or resumes polling for a feed. Disabled feeds keep their
+// items but are skipped by the poller.
+func (s *FeedStore) SetEnabled(userID, id int64, enabled bool) error {
+	if err := s.q.SetFeedEnabled(context.Background(), sqlcgen.SetFeedEnabledParams{
+		Enabled: enabled,
+		ID:      id,
+		UserID:  userID,
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ListDue returns enabled feeds that have not been polled within their own
 // poll_interval_sec of now.
 func (s *FeedStore) ListDue(now string) ([]Feed, error) {
