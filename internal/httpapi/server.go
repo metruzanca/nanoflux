@@ -98,6 +98,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /authors/{id}/edit", s.auth.Require(http.HandlerFunc(s.authorEdit)))
 	mux.Handle("POST /authors/{id}/edit", s.auth.Require(http.HandlerFunc(s.authorUpdate)))
 	mux.Handle("POST /authors/{id}/delete", s.auth.Require(http.HandlerFunc(s.authorDelete)))
+	mux.Handle("GET /authors/{id}/avatar", s.auth.Require(http.HandlerFunc(s.authorAvatar)))
+	mux.Handle("POST /authors/{id}/avatar-refresh", s.auth.Require(http.HandlerFunc(s.authorAvatarRefresh)))
 
 	// Collections.
 	mux.Handle("GET /collections", s.auth.Require(http.HandlerFunc(s.collections)))

@@ -24,7 +24,7 @@ func (q *Queries) CountAllAuthors(ctx context.Context) (int64, error) {
 const createAuthor = `-- name: CreateAuthor :one
 INSERT INTO authors (user_id, name, url, avatar_url, description)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, user_id, name, url, avatar_url, description, created_at
+RETURNING id, user_id, name, url, avatar_url, avatar_key, last_fetched_at, description, created_at
 `
 
 type CreateAuthorParams struct {
@@ -50,6 +50,8 @@ func (q *Queries) CreateAuthor(ctx context.Context, arg CreateAuthorParams) (Aut
 		&i.Name,
 		&i.Url,
 		&i.AvatarUrl,
+		&i.AvatarKey,
+		&i.LastFetchedAt,
 		&i.Description,
 		&i.CreatedAt,
 	)
@@ -71,7 +73,7 @@ func (q *Queries) DeleteAuthor(ctx context.Context, arg DeleteAuthorParams) (sql
 }
 
 const getAuthor = `-- name: GetAuthor :one
-SELECT id, user_id, name, url, avatar_url, description, created_at
+SELECT id, user_id, name, url, avatar_url, avatar_key, last_fetched_at, description, created_at
 FROM authors
 WHERE id = ? AND user_id = ?
 `
@@ -90,6 +92,8 @@ func (q *Queries) GetAuthor(ctx context.Context, arg GetAuthorParams) (Author, e
 		&i.Name,
 		&i.Url,
 		&i.AvatarUrl,
+		&i.AvatarKey,
+		&i.LastFetchedAt,
 		&i.Description,
 		&i.CreatedAt,
 	)
@@ -97,7 +101,7 @@ func (q *Queries) GetAuthor(ctx context.Context, arg GetAuthorParams) (Author, e
 }
 
 const getAuthorByName = `-- name: GetAuthorByName :one
-SELECT id, user_id, name, url, avatar_url, description, created_at
+SELECT id, user_id, name, url, avatar_url, avatar_key, last_fetched_at, description, created_at
 FROM authors
 WHERE user_id = ? AND name = ? COLLATE NOCASE
 `
@@ -116,6 +120,8 @@ func (q *Queries) GetAuthorByName(ctx context.Context, arg GetAuthorByNameParams
 		&i.Name,
 		&i.Url,
 		&i.AvatarUrl,
+		&i.AvatarKey,
+		&i.LastFetchedAt,
 		&i.Description,
 		&i.CreatedAt,
 	)
@@ -123,7 +129,7 @@ func (q *Queries) GetAuthorByName(ctx context.Context, arg GetAuthorByNameParams
 }
 
 const listAuthors = `-- name: ListAuthors :many
-SELECT id, user_id, name, url, avatar_url, description, created_at
+SELECT id, user_id, name, url, avatar_url, avatar_key, last_fetched_at, description, created_at
 FROM authors
 WHERE user_id = ?
 ORDER BY name
@@ -144,6 +150,8 @@ func (q *Queries) ListAuthors(ctx context.Context, userID int64) ([]Author, erro
 			&i.Name,
 			&i.Url,
 			&i.AvatarUrl,
+			&i.AvatarKey,
+			&i.LastFetchedAt,
 			&i.Description,
 			&i.CreatedAt,
 		); err != nil {
@@ -160,8 +168,36 @@ func (q *Queries) ListAuthors(ctx context.Context, userID int64) ([]Author, erro
 	return items, nil
 }
 
+const listAuthorsAvatarKeys = `-- name: ListAuthorsAvatarKeys :many
+SELECT avatar_key FROM authors
+WHERE user_id = ? AND avatar_key IS NOT NULL
+`
+
+func (q *Queries) ListAuthorsAvatarKeys(ctx context.Context, userID int64) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, listAuthorsAvatarKeys, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []sql.NullString
+	for rows.Next() {
+		var avatar_key sql.NullString
+		if err := rows.Scan(&avatar_key); err != nil {
+			return nil, err
+		}
+		items = append(items, avatar_key)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listAuthorsWithFeedCount = `-- name: ListAuthorsWithFeedCount :many
-SELECT a.id, a.user_id, a.name, a.url, a.avatar_url, a.description, a.created_at,
+SELECT a.id, a.user_id, a.name, a.url, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.created_at,
        COUNT(f.id) AS feed_count
 FROM authors a
 LEFT JOIN feeds f ON f.author_id = a.id AND f.user_id = a.user_id
@@ -171,14 +207,16 @@ ORDER BY a.name
 `
 
 type ListAuthorsWithFeedCountRow struct {
-	ID          int64          `json:"id"`
-	UserID      int64          `json:"user_id"`
-	Name        string         `json:"name"`
-	Url         sql.NullString `json:"url"`
-	AvatarUrl   sql.NullString `json:"avatar_url"`
-	Description sql.NullString `json:"description"`
-	CreatedAt   string         `json:"created_at"`
-	FeedCount   int64          `json:"feed_count"`
+	ID            int64          `json:"id"`
+	UserID        int64          `json:"user_id"`
+	Name          string         `json:"name"`
+	Url           sql.NullString `json:"url"`
+	AvatarUrl     sql.NullString `json:"avatar_url"`
+	AvatarKey     sql.NullString `json:"avatar_key"`
+	LastFetchedAt sql.NullString `json:"last_fetched_at"`
+	Description   sql.NullString `json:"description"`
+	CreatedAt     string         `json:"created_at"`
+	FeedCount     int64          `json:"feed_count"`
 }
 
 func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([]ListAuthorsWithFeedCountRow, error) {
@@ -196,6 +234,8 @@ func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([
 			&i.Name,
 			&i.Url,
 			&i.AvatarUrl,
+			&i.AvatarKey,
+			&i.LastFetchedAt,
 			&i.Description,
 			&i.CreatedAt,
 			&i.FeedCount,
@@ -211,6 +251,28 @@ func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const setAuthorAvatarKey = `-- name: SetAuthorAvatarKey :execresult
+UPDATE authors
+SET avatar_key = ?, last_fetched_at = ?
+WHERE id = ? AND user_id = ?
+`
+
+type SetAuthorAvatarKeyParams struct {
+	AvatarKey     sql.NullString `json:"avatar_key"`
+	LastFetchedAt sql.NullString `json:"last_fetched_at"`
+	ID            int64          `json:"id"`
+	UserID        int64          `json:"user_id"`
+}
+
+func (q *Queries) SetAuthorAvatarKey(ctx context.Context, arg SetAuthorAvatarKeyParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, setAuthorAvatarKey,
+		arg.AvatarKey,
+		arg.LastFetchedAt,
+		arg.ID,
+		arg.UserID,
+	)
 }
 
 const updateAuthor = `-- name: UpdateAuthor :execresult
