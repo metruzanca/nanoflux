@@ -2,6 +2,12 @@
 
 Project-specific guidance for coding agents working in this repository.
 
+## Conventional commits
+
+Commit messages must follow the Conventional Commits spec (`<type>: <description>`,
+imperative, lowercase, under ~70 chars). The project's older commits predate this
+convention and are not a template.
+
 ## Links: internal by default, ↗ on every external link
 
 The app's own pages are the primary navigation surface. This is a hard rule.
