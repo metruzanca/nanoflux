@@ -154,15 +154,18 @@ func TestLoadMoreFlow(t *testing.T) {
 		}
 	}
 
-	// Home renders the first page plus a load-more button.
+	// Home renders the first page of items plus a load-more button.
 	home := doGet(h, "/", cookie).Body.String()
 	if !strings.Contains(home, `id="load-more"`) {
 		t.Fatalf("home should render a load-more button: %s", home)
 	}
+	if got := strings.Count(home, `data-item-id=`); got != pageSize {
+		t.Fatalf("home should show %d items, got %d", pageSize, got)
+	}
 
-	// The first page ends at the 100th newest item.
-	first, hasMore, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: 100})
-	if len(first) != 100 || !hasMore {
+	// The first page ends at the pageSize-th newest item.
+	first, hasMore, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: pageSize})
+	if len(first) != pageSize || !hasMore {
 		t.Fatalf("first page: %d items, more=%v", len(first), hasMore)
 	}
 	cursor := first[len(first)-1].ID
@@ -172,14 +175,20 @@ func TestLoadMoreFlow(t *testing.T) {
 	if !strings.Contains(body, `hx-swap-oob`) {
 		t.Fatalf("next page should carry an OOB load-more swap: %s", body)
 	}
-	if !strings.Contains(body, "item-") {
-		t.Fatalf("next page should append rows: %s", body)
+	if strings.Count(body, `data-item-id=`) != pageSize {
+		t.Fatalf("next page should append %d rows, got: %s", pageSize, body)
 	}
 
-	// Only the 5 remaining items exist; there is no third page.
-	next, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: 100, BeforeID: cursor})
-	if len(next) != 5 || more {
-		t.Fatalf("second page: %d items, more=%v", len(next), more)
+	// Page through the first 4 pages to reach the 100th item; the 5 remaining
+	// items form a final short page with nothing after it.
+	cur := int64(0)
+	for page := 0; page < 4; page++ {
+		pg, _, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: pageSize, BeforeID: cur})
+		cur = pg[len(pg)-1].ID
+	}
+	last, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: pageSize, BeforeID: cur})
+	if len(last) != 5 || more {
+		t.Fatalf("last page: %d items, more=%v", len(last), more)
 	}
 
 	// After "mark all read", the section swaps atomically with no stale button.
