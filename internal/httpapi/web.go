@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"html/template"
+	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -856,6 +858,29 @@ func normalizeURL(s string) string {
 	return "https://" + s
 }
 
+// stripWWW removes a leading "www." subdomain from a URL's host, preserving the
+// rest of the host's case and any port. Auto-filled urls (the find-author
+// preview form's feed/home fields, the scrape builder, new-author prefill) are
+// cleaned through this so "https://www.example.com" shows up as
+// "https://example.com". Returns s unchanged when it can't be parsed.
+func stripWWW(s string) string {
+	u, err := url.Parse(s)
+	if err != nil {
+		return s
+	}
+	host := u.Hostname()
+	if !strings.HasPrefix(strings.ToLower(host), "www.") || len(host) <= 4 {
+		return s
+	}
+	rest := host[4:]
+	if p := u.Port(); p != "" {
+		u.Host = net.JoinHostPort(rest, p)
+	} else {
+		u.Host = rest
+	}
+	return u.String()
+}
+
 func (s *Server) feedDelete(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -1216,7 +1241,7 @@ func (s *Server) authorFormFragment(w http.ResponseWriter, r *http.Request) {
 	var name, homeURL, avatar string
 	if home := strings.TrimSpace(r.FormValue("home_url")); home != "" {
 		if meta, err := s.discoverer.PageMeta(r.Context(), home); err == nil {
-			name, homeURL, avatar = meta.Title, meta.HomeURL, meta.IconURL
+			name, homeURL, avatar = meta.Title, stripWWW(meta.HomeURL), meta.IconURL
 		}
 	}
 	web.Render(w, r, authorCreateFields(authorPreviewForm{

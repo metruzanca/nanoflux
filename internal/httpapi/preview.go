@@ -188,12 +188,12 @@ func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c
 		name = c.Title
 	}
 	if name == "" {
-		if u, err := url.Parse(pageURL); err == nil && u.Host != "" {
+		if u, err := url.Parse(stripWWW(pageURL)); err == nil && u.Host != "" {
 			name = u.Host
 		}
 	}
 	form := feedPreviewForm{
-		Title: c.Title, FeedURL: c.FeedURL, HomeURL: homeURL, Authors: authors,
+		Title: c.Title, FeedURL: stripWWW(c.FeedURL), HomeURL: stripWWW(homeURL), Authors: authors,
 		SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor,
 		NewAuthorName: name, NewAuthorAvatar: meta.IconURL,
 	}
@@ -267,7 +267,7 @@ func (s *Server) scrapeBuilder(w http.ResponseWriter, r *http.Request) {
 		homeURL = pageURL
 	}
 	form := scrapeBuilderData{
-		URL: pageURL, Title: title, HomeURL: homeURL, Config: cfg, Sample: sample,
+		URL: stripWWW(pageURL), Title: title, HomeURL: stripWWW(homeURL), Config: cfg, Sample: sample,
 		Authors: authors, SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor,
 		NewAuthorName: name, NewAuthorAvatar: avatar, Timezone: u.Timezone,
 	}
@@ -354,7 +354,7 @@ func (s *Server) authorPrefill(ctx context.Context, pageURL, fallback string) (s
 	meta, _ := s.discoverer.PageMeta(ctx, pageURL)
 	name := meta.Title
 	if name == "" {
-		if u, err := url.Parse(fallback); err == nil && u.Host != "" {
+		if u, err := url.Parse(stripWWW(fallback)); err == nil && u.Host != "" {
 			name = u.Host
 		}
 	}
