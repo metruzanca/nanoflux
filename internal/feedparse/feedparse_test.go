@@ -180,7 +180,75 @@ func TestFetchRejectsNonFeed(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := Fetch(context.Background(), srv.URL, srv.Client(), "", ""); err == nil {
-		t.Fatal("expected parse error for non-feed body")
+	_, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	if err == nil {
+		t.Fatal("expected error for non-feed body")
+	}
+}
+
+func TestMediaThumbnailFromGroup(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+<channel>
+  <title>YouTube</title>
+  <link>https://www.youtube.com/channel/UCx</link>
+  <description>videos</description>
+  <item>
+    <guid>yt:video:abc</guid>
+    <title>Some video</title>
+    <link>https://www.youtube.com/watch?v=abc</link>
+    <description>plain text only</description>
+    <media:group>
+      <media:content url="https://www.youtube.com/v/abc" type="application/x-shockwave-flash" width="640" height="390"/>
+      <media:thumbnail url="https://i.ytimg.com/vi/abc/hqdefault.jpg" width="480" height="360"/>
+    </media:group>
+  </item>
+</channel>
+</rss>`))
+	}))
+	defer srv.Close()
+
+	res, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(res.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(res.Items))
+	}
+	if got := res.Items[0].ImageURL; got != "https://i.ytimg.com/vi/abc/hqdefault.jpg" {
+		t.Errorf("image = %q, want media:thumbnail inside media:group", got)
+	}
+}
+
+func TestMediaThumbnailDirectChild(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0"?>
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+<channel>
+  <title>Podcast</title>
+  <link>https://example.com/</link>
+  <description>episodes</description>
+  <item>
+    <guid>ep1</guid>
+    <title>Episode 1</title>
+    <link>https://example.com/ep1</link>
+    <description>text</description>
+    <media:thumbnail url="https://example.com/ep1.jpg"/>
+  </item>
+</channel>
+</rss>`))
+	}))
+	defer srv.Close()
+
+	res, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(res.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(res.Items))
+	}
+	if got := res.Items[0].ImageURL; got != "https://example.com/ep1.jpg" {
+		t.Errorf("image = %q, want direct media:thumbnail", got)
 	}
 }
