@@ -62,8 +62,12 @@ templ collectionPage(u store.User, d collectionData) {
 			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-feed" } hx-target="#collection-feeds" hx-swap="outerHTML">
 				<input type="hidden" name="view" value={ d.Scoped.View }/>
 				<select name="feed_id">
-					for _, f := range d.AllFeeds {
-						<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Title }</option>
+					for _, g := range d.AllFeeds {
+						<optgroup label={ g.AuthorName }>
+							for _, f := range g.Feeds {
+								<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Title }</option>
+							}
+						</optgroup>
 					}
 				</select>
 				<button type="submit">add</button>

@@ -237,7 +237,8 @@ func TestPollOneRecordsLastError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	f, _ := st.Feeds.Create(u.ID, 0, "Broken", srv.URL, "", "", 900)
+	a, _ := st.Authors.Create(u.ID, "Broken", "", "", "")
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Broken", srv.URL, "", "", 900)
 	p := New(st, time.Minute, 1)
 
 	if _, err := p.PollOne(context.Background(), f); err == nil {
@@ -253,7 +254,7 @@ func TestPollOneRecordsLastError(t *testing.T) {
 		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title><item><guid>1</guid><title>One</title></item></channel></rss>`))
 	}))
 	defer ok.Close()
-	if err := st.Feeds.Update(u.ID, f.ID, 0, "Broken", ok.URL, "", "", 900, true); err != nil {
+	if err := st.Feeds.Update(u.ID, f.ID, a.ID, "Broken", ok.URL, "", "", 900, true); err != nil {
 		t.Fatal(err)
 	}
 	fresh, _ := st.Feeds.ByID(u.ID, f.ID)

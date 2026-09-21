@@ -383,7 +383,7 @@ func (s *ItemStore) CountFavorites(userID, feedID int64) (int, error) {
 func (s *ItemStore) CountUnreadAuthor(userID, authorID int64) (int, error) {
 	n, err := s.q.CountUnreadItemsByAuthor(context.Background(), sqlcgen.CountUnreadItemsByAuthorParams{
 		UserID:   userID,
-		AuthorID: ni(authorID),
+		AuthorID: authorID,
 	})
 	return int(n), err
 }
@@ -392,7 +392,7 @@ func (s *ItemStore) CountUnreadAuthor(userID, authorID int64) (int, error) {
 func (s *ItemStore) CountReadAuthor(userID, authorID int64) (int, error) {
 	n, err := s.q.CountReadItemsByAuthor(context.Background(), sqlcgen.CountReadItemsByAuthorParams{
 		UserID:   userID,
-		AuthorID: ni(authorID),
+		AuthorID: authorID,
 	})
 	return int(n), err
 }

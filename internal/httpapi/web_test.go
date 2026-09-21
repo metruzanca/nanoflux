@@ -101,8 +101,10 @@ func TestFeedCreateNormalizesURL(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Blog", "", "", "")
 	rr := doForm(h, "POST", "/feeds", url.Values{
 		"title": {"Blog"}, "feed_url": {"example.com/rss.xml"},
+		"author_id": {itoa(a.ID)},
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
@@ -353,10 +355,10 @@ func TestFeedToggle(t *testing.T) {
 		t.Fatal("feed should be disabled after toggle")
 	}
 
-	// The feeds list shows the paused badge too.
-	body := doGet(h, "/feeds", cookie).Body.String()
+	// The author page's feeds list shows the paused badge too.
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
 	if !strings.Contains(body, "paused") {
-		t.Fatalf("feeds list should show the paused badge: %s", body)
+		t.Fatalf("author page feeds list should show the paused badge: %s", body)
 	}
 
 	// Resume: the badge disappears and the feed is enabled again.
@@ -372,6 +374,7 @@ func TestFeedToggle(t *testing.T) {
 	// Pausing via the edit form persists the disabled state.
 	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/edit", url.Values{
 		"title": {"Blog"}, "feed_url": {"https://b.dev/rss.xml"}, "poll_interval_sec": {"900"},
+		"author_id": {itoa(a.ID)},
 	}, cookie)
 	if rr.Code != http.StatusFound {
 		t.Fatalf("edit without enabled checkbox should disable: %d", rr.Code)
@@ -456,32 +459,36 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 		t.Fatal("authors page missing author")
 	}
 
-	// Create a feed referencing that author (returns the row fragment).
+	// Global add with an existing author: the feed lands under that author and
+	// the response is the author's (refreshed) row, retargeted at it.
 	u, _ := s.store.Users.ByUsername("alice")
 	authors, _ := s.store.Authors.List(u.ID)
 	rr = doForm(h, "POST", "/feeds", url.Values{
 		"title": {"Blog"}, "feed_url": {"https://example.com/rss.xml"},
 		"author_id": {itoa(authors[0].ID)}, "poll_interval_sec": {"900"},
 	}, cookie)
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "feed-") {
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "author-") {
 		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
 	}
-	body := doGet(h, "/feeds", cookie).Body.String()
+	if retarget := rr.Header().Get("HX-Retarget"); retarget != "#author-"+itoa(authors[0].ID) {
+		t.Fatalf("existing-author add should retarget the author row, got %q", retarget)
+	}
+	body := doGet(h, "/authors/"+itoa(authors[0].ID), cookie).Body.String()
 	if !strings.Contains(body, "Blog") || !strings.Contains(body, "Metru") {
-		t.Fatal("feeds page missing feed/author")
+		t.Fatal("author page missing feed/author")
 	}
 
-	// Authorless feeds are allowed now.
+	// A feed without an author is rejected.
 	rr = doForm(h, "POST", "/feeds", url.Values{
 		"title": {"NoAuthor"}, "feed_url": {"https://example.com/rss2.xml"},
 	}, cookie)
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "feed-") {
-		t.Fatalf("authorless feed: %d %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "feed needs an author") {
+		t.Fatalf("authorless feed should be rejected: %d %s", rr.Code, rr.Body.String())
 	}
-	authorless, _ := s.store.Feeds.List(u.ID)
-	for _, f := range authorless {
-		if f.Title == "NoAuthor" && f.AuthorID != 0 {
-			t.Fatalf("expected authorless feed, got author_id %d", f.AuthorID)
+	feeds, _ := s.store.Feeds.List(u.ID)
+	for _, f := range feeds {
+		if f.Title == "NoAuthor" {
+			t.Fatal("authorless feed should not have been created")
 		}
 	}
 
@@ -493,7 +500,7 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 		t.Fatalf("create collection: %d %s", rr.Code, rr.Body.String())
 	}
 	cols, _ := s.store.Collections.List(u.ID)
-	feeds, _ := s.store.Feeds.List(u.ID)
+	feeds, _ = s.store.Feeds.List(u.ID)
 	rr = doForm(h, "POST", "/collections/"+itoa(cols[0].ID)+"/add-feed", url.Values{
 		"feed_id": {itoa(feeds[0].ID)},
 	}, cookie)
@@ -573,7 +580,8 @@ func TestItemViewYouTubeEmbed(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	f, _ := s.store.Feeds.Create(u.ID, 0, "bigboxSWE", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "bigboxSWE", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "bigboxSWE", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "yt:video:H0KAi8AWsnM", Title: "Video",
 		Link: "https://www.youtube.com/watch?v=H0KAi8AWsnM", FetchedAt: db.Now(),
@@ -595,7 +603,8 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	f, _ := s.store.Feeds.Create(u.ID, 0, "bigboxSWE", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "bigboxSWE", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "bigboxSWE", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "yt:video:H0KAi8AWsnM", Title: "Video",
 		Link:     "https://www.youtube.com/watch?v=H0KAi8AWsnM",
@@ -607,21 +616,21 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	})
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "p2", Title: "Image Post", Link: "https://example.com/2",
-		Summary: `<a href="https://example.com/2"><img src="https://example.com/pic.jpg" alt="Image Post" /></a>`,
+		Summary:  `<a href="https://example.com/2"><img src="https://example.com/pic.jpg" alt="Image Post" /></a>`,
 		ImageURL: "https://example.com/pic.jpg", FetchedAt: db.Now(),
 	})
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "p3", Title: "Mittens enjoys a sunny nap",
-		Link:     "https://old.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/",
-		ImageURL: "https://external-preview.redd.it/1q2w3e4r.jpeg?width=320",
-		Summary:  `<a href="https://www.reddit.com/r/cats/comments/1abcde/"><img src="https://external-preview.redd.it/1q2w3e4r.jpeg?width=320" alt="Mittens enjoys a sunny nap"></a>`,
+		Link:      "https://old.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/",
+		ImageURL:  "https://external-preview.redd.it/1q2w3e4r.jpeg?width=320",
+		Summary:   `<a href="https://www.reddit.com/r/cats/comments/1abcde/"><img src="https://external-preview.redd.it/1q2w3e4r.jpeg?width=320" alt="Mittens enjoys a sunny nap"></a>`,
 		FetchedAt: db.Now(),
 	})
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "p4", Title: "Whiskers at golden hour",
-		Link:     "https://old.reddit.com/r/cats/comments/1fghij/whiskers_at_golden_hour/",
-		ImageURL: "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140&crop=1:1,smart&auto=webp&s=x",
-		Summary:  `<a href="https://www.reddit.com/r/cats/comments/1fghij/"><img src="https://preview.redd.it/5t6y7u8i.jpg" alt="Whiskers"></a><a href="https://www.reddit.com/gallery/1fghij">[link]</a>`,
+		Link:      "https://old.reddit.com/r/cats/comments/1fghij/whiskers_at_golden_hour/",
+		ImageURL:  "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140&crop=1:1,smart&auto=webp&s=x",
+		Summary:   `<a href="https://www.reddit.com/r/cats/comments/1fghij/"><img src="https://preview.redd.it/5t6y7u8i.jpg" alt="Whiskers"></a><a href="https://www.reddit.com/gallery/1fghij">[link]</a>`,
 		FetchedAt: db.Now(),
 	})
 
@@ -683,10 +692,11 @@ func TestItemViewImageLightbox(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	f, _ := s.store.Feeds.Create(u.ID, 0, "Pics", "https://pics.dev/rss.xml", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "Pics", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Pics", "https://pics.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "p1", Title: "Image Post", Link: "https://pics.dev/1",
-		Summary: `<a href="https://pics.dev/1"><img src="https://pics.dev/pic.jpg" alt="Image Post" /></a>`,
+		Summary:  `<a href="https://pics.dev/1"><img src="https://pics.dev/pic.jpg" alt="Image Post" /></a>`,
 		ImageURL: "https://pics.dev/pic.jpg", FetchedAt: db.Now(),
 	})
 
@@ -709,7 +719,8 @@ func TestItemViewMarksRead(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	f, _ := s.store.Feeds.Create(u.ID, 0, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "Blog", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now(),
 	})
@@ -929,10 +940,10 @@ func TestExternalLinksCarryMarker(t *testing.T) {
 		t.Fatalf("author homepage should be external-marked: %s", body)
 	}
 
-	// Feeds list row: the "feed" link is external and marked.
-	body = doGet(h, "/feeds", cookie).Body.String()
+	// Author page feeds list row: the "feed" link is external and marked.
+	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
 	if !strings.Contains(body, `href="https://b.dev/rss.xml" class="external" referrerpolicy="no-referrer">feed`) {
-		t.Fatalf("feeds list feed link should be external-marked: %s", body)
+		t.Fatalf("author page feeds list feed link should be external-marked: %s", body)
 	}
 
 	// "open live" in the dialog header is external and marked.
@@ -1044,5 +1055,101 @@ func TestScopedReadUnreadTabs(t *testing.T) {
 		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `data-item-link="https://b.dev/2"`) {
 			t.Fatalf("%s fragment: %d %s", scope.frag, rr.Code, rr.Body.String())
 		}
+	}
+}
+
+func TestGlobalAddCreatesAuthorWithFeed(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// The global add with a new author yields an author with their first feed.
+	rr := doForm(h, "POST", "/feeds", url.Values{
+		"title": {"Blog"}, "feed_url": {"https://example.com/rss.xml"},
+		"author_id": {"new"}, "author_name": {"Metru"}, "author_url": {"https://metru.dev"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("global add: %d %s", rr.Code, rr.Body.String())
+	}
+	if retarget := rr.Header().Get("HX-Retarget"); retarget != "#authors-list" {
+		t.Fatalf("new-author add should append to the authors list, retarget %q", retarget)
+	}
+	if !strings.Contains(rr.Body.String(), `id="author-`) {
+		t.Fatalf("global add should respond with an author row: %s", rr.Body.String())
+	}
+	authors, _ := s.store.Authors.List(u.ID)
+	if len(authors) != 1 || authors[0].Name != "Metru" {
+		t.Fatalf("expected one author: %+v", authors)
+	}
+	feeds, _ := s.store.Feeds.ListByAuthor(u.ID, authors[0].ID)
+	if len(feeds) != 1 || feeds[0].Title != "Blog" {
+		t.Fatalf("author should own the first feed: %+v", feeds)
+	}
+
+	// The authors page shows the author with a feed count; the author page the feed.
+	body := doGet(h, "/authors", cookie).Body.String()
+	if !strings.Contains(body, "Metru") || !strings.Contains(body, "1 feeds") {
+		t.Fatalf("authors page should show the author and feed count: %s", body)
+	}
+	body = doGet(h, "/authors/"+itoa(authors[0].ID), cookie).Body.String()
+	if !strings.Contains(body, "Blog") {
+		t.Fatalf("author page should list the feed: %s", body)
+	}
+}
+
+func TestAuthorPageAddFeed(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+
+	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/feeds", url.Values{
+		"title": {"Blog"}, "feed_url": {"https://example.com/rss.xml"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("author add feed: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `id="feed-`) {
+		t.Fatalf("author add feed should respond with a feed row: %s", rr.Body.String())
+	}
+	feeds, _ := s.store.Feeds.ListByAuthor(u.ID, a.ID)
+	if len(feeds) != 1 || feeds[0].AuthorID != a.ID {
+		t.Fatalf("feed should belong to the author: %+v", feeds)
+	}
+
+	// Missing fields are rejected visibly.
+	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/feeds", url.Values{}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "title and feed url are required") {
+		t.Fatalf("missing fields: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestFeedsPageRemoved(t *testing.T) {
+	_, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	// The top-level feeds listing page is gone.
+	rr := doGet(h, "/feeds", cookie)
+	if rr.Code != http.StatusNotFound && rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("/feeds should no longer serve a page, got %d", rr.Code)
+	}
+	// The topbar no longer links to it.
+	home := doGet(h, "/", cookie).Body.String()
+	if strings.Contains(home, `href="/feeds"`) {
+		t.Fatal("topbar should not link to a feeds page")
+	}
+}
+
+func TestCollectionAddFeedGroupedByAuthor(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	c, _ := s.store.Collections.Create(u.ID, "Dev")
+
+	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
+	if !strings.Contains(body, `<optgroup label="Metru">`) {
+		t.Fatalf("collection add-feed dropdown should group feeds by author: %s", body)
 	}
 }

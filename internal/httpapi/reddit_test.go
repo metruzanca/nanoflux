@@ -27,9 +27,9 @@ func TestExtractLinkAnchor(t *testing.T) {
 
 func TestRedditPostID(t *testing.T) {
 	cases := []struct {
-		in       string
-		sub, id  string
-		ok       bool
+		in      string
+		sub, id string
+		ok      bool
 	}{
 		{"https://old.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/", "cats", "1abcde", true},
 		{"https://www.reddit.com/comments/1abcde/", "", "1abcde", true},
@@ -123,12 +123,13 @@ func TestItemViewLinkPost(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	f, _ := s.store.Feeds.Create(u.ID, 0, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "t3_1abcde", Title: "Mittens enjoys a sunny nap",
-		Link:     "https://old.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/",
-		ImageURL: "https://external-preview.redd.it/1q2w3e4r.jpeg?width=320",
-		Summary:  `<a href="https://www.reddit.com/r/cats/comments/1abcde/"><img src="https://external-preview.redd.it/1q2w3e4r.jpeg?width=320" alt="Mittens enjoys a sunny nap"></a>`,
+		Link:      "https://old.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/",
+		ImageURL:  "https://external-preview.redd.it/1q2w3e4r.jpeg?width=320",
+		Summary:   `<a href="https://www.reddit.com/r/cats/comments/1abcde/"><img src="https://external-preview.redd.it/1q2w3e4r.jpeg?width=320" alt="Mittens enjoys a sunny nap"></a>`,
 		FetchedAt: db.Now(),
 	})
 
@@ -177,12 +178,13 @@ func TestItemViewLinkPostFromSummary(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	f, _ := s.store.Feeds.Create(u.ID, 0, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "t3_1abcde", Title: "Mittens enjoys a sunny nap",
-		Link:     "https://www.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/",
-		ImageURL: "https://external-preview.redd.it/x.jpeg?width=320",
-		Summary:  `<a href="` + oembedSrv.URL + `/watch/abc">[link]</a>`,
+		Link:      "https://www.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/",
+		ImageURL:  "https://external-preview.redd.it/x.jpeg?width=320",
+		Summary:   `<a href="` + oembedSrv.URL + `/watch/abc">[link]</a>`,
 		FetchedAt: db.Now(),
 	})
 
@@ -196,9 +198,9 @@ func TestItemViewLinkPostFromSummary(t *testing.T) {
 
 func TestRedditGalleryID(t *testing.T) {
 	cases := []struct {
-		in    string
-		id    string
-		ok    bool
+		in string
+		id string
+		ok bool
 	}{
 		{"https://www.reddit.com/gallery/1fghij", "1fghij", true},
 		{"https://old.reddit.com/gallery/1fghij", "1fghij", true},
@@ -270,12 +272,13 @@ func TestItemViewGallery(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	f, _ := s.store.Feeds.Create(u.ID, 0, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "t3_1fghij", Title: "Whiskers at golden hour",
-		Link:     "https://old.reddit.com/r/cats/comments/1fghij/whiskers_at_golden_hour/",
-		ImageURL: "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140&crop=1:1,smart&auto=webp&s=8f95727e4cbcb3293619f2368f058017fbe13f5b",
-		Summary:  `<a href="https://www.reddit.com/r/cats/comments/1fghij/"><img src="https://preview.redd.it/5t6y7u8i.jpg?width=140&amp;height=140" alt="Whiskers at golden hour"></a>`,
+		Link:      "https://old.reddit.com/r/cats/comments/1fghij/whiskers_at_golden_hour/",
+		ImageURL:  "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140&crop=1:1,smart&auto=webp&s=8f95727e4cbcb3293619f2368f058017fbe13f5b",
+		Summary:   `<a href="https://www.reddit.com/r/cats/comments/1fghij/"><img src="https://preview.redd.it/5t6y7u8i.jpg?width=140&amp;height=140" alt="Whiskers at golden hour"></a>`,
 		FetchedAt: db.Now(),
 	})
 
@@ -313,12 +316,13 @@ func TestItemViewGalleryFallback(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	f, _ := s.store.Feeds.Create(u.ID, 0, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "t3_1fghij", Title: "Whiskers at golden hour",
-		Link:     "https://old.reddit.com/r/cats/comments/1fghij/whiskers_at_golden_hour/",
-		ImageURL: "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140",
-		Summary:  `<a href="https://www.reddit.com/r/cats/comments/1fghij/"><img src="https://preview.redd.it/5t6y7u8i.jpg"></a>`,
+		Link:      "https://old.reddit.com/r/cats/comments/1fghij/whiskers_at_golden_hour/",
+		ImageURL:  "https://preview.redd.it/5t6y7u8i.jpg?width=140&height=140",
+		Summary:   `<a href="https://www.reddit.com/r/cats/comments/1fghij/"><img src="https://preview.redd.it/5t6y7u8i.jpg"></a>`,
 		FetchedAt: db.Now(),
 	})
 
@@ -347,12 +351,13 @@ func TestItemViewLinkPostFallback(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	f, _ := s.store.Feeds.Create(u.ID, 0, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "t3_1abcde", Title: "Mittens enjoys a sunny nap",
-		Link:     "https://old.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/",
-		ImageURL: "https://external-preview.redd.it/1q2w3e4r.jpeg?width=320",
-		Summary:  `<a href="https://www.reddit.com/r/cats/comments/1abcde/"><img src="https://external-preview.redd.it/x.jpeg"></a>`,
+		Link:      "https://old.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/",
+		ImageURL:  "https://external-preview.redd.it/1q2w3e4r.jpeg?width=320",
+		Summary:   `<a href="https://www.reddit.com/r/cats/comments/1abcde/"><img src="https://external-preview.redd.it/x.jpeg"></a>`,
 		FetchedAt: db.Now(),
 	})
 

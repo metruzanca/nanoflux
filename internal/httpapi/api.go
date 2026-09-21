@@ -196,28 +196,6 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the author: existing id, create from the provided object, or
-	// leave authorless.
-	authorID := req.AuthorID
-	if authorID == 0 && req.Author != nil {
-		if req.Author.Name == "" {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "author name required"})
-			return
-		}
-		a, err := s.store.Authors.Create(u.ID, req.Author.Name, req.Author.URL, "", "")
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "create author failed"})
-			return
-		}
-		authorID = a.ID
-	}
-	if authorID != 0 {
-		if _, err := s.store.Authors.ByID(u.ID, authorID); err != nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "author not found"})
-			return
-		}
-	}
-
 	// Confirm the URL is a real feed before saving.
 	client := &http.Client{Timeout: 15 * time.Second}
 	res, err := feedparse.Fetch(r.Context(), req.FeedURL, client, "", "")
@@ -231,6 +209,33 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 	}
 	if title == "" {
 		title = req.FeedURL
+	}
+
+	// Resolve the author: an existing id, one created from the provided object,
+	// or (every feed needs an author) one auto-created from the feed itself.
+	authorID := req.AuthorID
+	if authorID == 0 && req.Author != nil {
+		if req.Author.Name == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "author name required"})
+			return
+		}
+		a, err := s.store.Authors.Create(u.ID, req.Author.Name, req.Author.URL, "", "")
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "create author failed"})
+			return
+		}
+		authorID = a.ID
+	}
+	if authorID == 0 {
+		a, err := s.store.Authors.Create(u.ID, title, res.Feed.HomeURL, "", "")
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "create author failed"})
+			return
+		}
+		authorID = a.ID
+	} else if _, err := s.store.Authors.ByID(u.ID, authorID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "author not found"})
+		return
 	}
 
 	f, err := s.store.Feeds.Create(u.ID, authorID, title, req.FeedURL, res.Feed.HomeURL, "", 900)

@@ -46,7 +46,7 @@ CREATE INDEX idx_authors_user ON authors(user_id);
 CREATE TABLE feeds (
     id                INTEGER PRIMARY KEY,
     user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    author_id         INTEGER REFERENCES authors(id) ON DELETE CASCADE,
+    author_id         INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
     title             TEXT NOT NULL,
     feed_url          TEXT NOT NULL,
     home_url          TEXT,

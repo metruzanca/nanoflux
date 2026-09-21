@@ -76,8 +76,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /items/{id}/revoke", s.auth.Require(http.HandlerFunc(s.itemRevokeShare)))
 	mux.HandleFunc("GET /shared/{token}", s.sharedPage)
 
-	// Feeds.
-	mux.Handle("GET /feeds", s.auth.Require(http.HandlerFunc(s.feeds)))
+	// Feeds (always viewed from an author).
 	mux.Handle("POST /feeds", s.auth.Require(http.HandlerFunc(s.feedCreate)))
 	mux.Handle("GET /feeds/{id}", s.auth.Require(http.HandlerFunc(s.feedPage)))
 	mux.Handle("GET /feeds/{id}/items", s.auth.Require(http.HandlerFunc(s.feedItems)))
@@ -92,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 	// Authors.
 	mux.Handle("GET /authors", s.auth.Require(http.HandlerFunc(s.authors)))
 	mux.Handle("POST /authors", s.auth.Require(http.HandlerFunc(s.authorCreate)))
+	mux.Handle("POST /authors/{id}/feeds", s.auth.Require(http.HandlerFunc(s.authorFeedCreate)))
 	mux.Handle("GET /authors/{id}", s.auth.Require(http.HandlerFunc(s.authorPage)))
 	mux.Handle("GET /authors/{id}/items", s.auth.Require(http.HandlerFunc(s.authorItems)))
 	mux.Handle("GET /authors/{id}/edit", s.auth.Require(http.HandlerFunc(s.authorEdit)))
@@ -110,7 +110,6 @@ func (s *Server) Handler() http.Handler {
 	// htmx fragments.
 	mux.Handle("GET /fragments/author-form", s.auth.Require(http.HandlerFunc(s.authorFormFragment)))
 	mux.Handle("POST /fragments/feed-preview", s.auth.Require(http.HandlerFunc(s.feedPreview)))
-	mux.Handle("POST /fragments/author-preview", s.auth.Require(http.HandlerFunc(s.authorPreview)))
 	mux.Handle("POST /fragments/mapping-test", s.auth.Require(http.HandlerFunc(s.settingsMappingTest)))
 
 	// Image proxy for avatars.

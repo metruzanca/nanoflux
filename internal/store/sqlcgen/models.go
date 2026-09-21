@@ -34,7 +34,7 @@ type CollectionFeed struct {
 type Feed struct {
 	ID              int64          `json:"id"`
 	UserID          int64          `json:"user_id"`
-	AuthorID        sql.NullInt64  `json:"author_id"`
+	AuthorID        int64          `json:"author_id"`
 	Title           string         `json:"title"`
 	FeedUrl         string         `json:"feed_url"`
 	HomeUrl         sql.NullString `json:"home_url"`

@@ -11,7 +11,8 @@ func TestFeedErrorSurface(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	f, err := s.store.Feeds.Create(u.ID, 0, "Broken Feed", "https://broken.dev/feed.xml", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "", "")
+	f, err := s.store.Feeds.Create(u.ID, a.ID, "Broken Feed", "https://broken.dev/feed.xml", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,10 +26,10 @@ func TestFeedErrorSurface(t *testing.T) {
 		t.Fatalf("feed page missing error text: %s", body)
 	}
 
-	// The feeds list row gets a badge.
-	body = doGet(h, "/feeds", cookie).Body.String()
+	// The author's feeds list row gets a badge.
+	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
 	if !strings.Contains(body, "last poll failed") {
-		t.Fatalf("feeds list missing error badge: %s", body)
+		t.Fatalf("author page feeds list missing error badge: %s", body)
 	}
 }
 
@@ -36,7 +37,8 @@ func TestFeedErrorHiddenAfterSuccess(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	f, err := s.store.Feeds.Create(u.ID, 0, "Fine Feed", "https://fine.dev/feed.xml", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "", "")
+	f, err := s.store.Feeds.Create(u.ID, a.ID, "Fine Feed", "https://fine.dev/feed.xml", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
 	}

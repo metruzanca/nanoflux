@@ -74,8 +74,8 @@ WHERE f.user_id = ? AND i.read = 1 AND f.author_id = ?
 `
 
 type CountReadItemsByAuthorParams struct {
-	UserID   int64         `json:"user_id"`
-	AuthorID sql.NullInt64 `json:"author_id"`
+	UserID   int64 `json:"user_id"`
+	AuthorID int64 `json:"author_id"`
 }
 
 func (q *Queries) CountReadItemsByAuthor(ctx context.Context, arg CountReadItemsByAuthorParams) (int64, error) {
@@ -127,8 +127,8 @@ WHERE f.user_id = ? AND i.read = 0 AND f.author_id = ?
 `
 
 type CountUnreadItemsByAuthorParams struct {
-	UserID   int64         `json:"user_id"`
-	AuthorID sql.NullInt64 `json:"author_id"`
+	UserID   int64 `json:"user_id"`
+	AuthorID int64 `json:"author_id"`
 }
 
 func (q *Queries) CountUnreadItemsByAuthor(ctx context.Context, arg CountUnreadItemsByAuthorParams) (int64, error) {

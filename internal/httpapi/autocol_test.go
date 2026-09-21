@@ -28,9 +28,10 @@ func TestFeedCreateAutoCollection(t *testing.T) {
 	u, _ := s.store.Users.ByUsername("alice")
 
 	rr := doForm(h, "POST", "/feeds", url.Values{
-		"title":    {"Channel"},
-		"feed_url": {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
-		"home_url": {"https://www.youtube.com/channel/UCx"},
+		"title":     {"Channel"},
+		"feed_url":  {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"home_url":  {"https://www.youtube.com/channel/UCx"},
+		"author_id": {"new"}, "author_name": {"Channel"},
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
@@ -50,8 +51,9 @@ func TestFeedCreateAutoCollectionFallsBackToFeedURL(t *testing.T) {
 
 	// No home_url; the host is derived from the feed url. Subdomains collapse.
 	rr := doForm(h, "POST", "/feeds", url.Values{
-		"title":    {"Channel"},
-		"feed_url": {"https://music.youtube.com/feeds/videos.xml"},
+		"title":     {"Channel"},
+		"feed_url":  {"https://music.youtube.com/feeds/videos.xml"},
+		"author_id": {"new"}, "author_name": {"Channel"},
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
@@ -66,9 +68,10 @@ func TestFeedUpdateMovesAutoCollection(t *testing.T) {
 	u, _ := s.store.Users.ByUsername("alice")
 
 	rr := doForm(h, "POST", "/feeds", url.Values{
-		"title":    {"Blog"},
-		"feed_url": {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
-		"home_url": {"https://www.youtube.com/channel/UCx"},
+		"title":     {"Blog"},
+		"feed_url":  {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"home_url":  {"https://www.youtube.com/channel/UCx"},
+		"author_id": {"new"}, "author_name": {"Channel"},
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
@@ -80,6 +83,7 @@ func TestFeedUpdateMovesAutoCollection(t *testing.T) {
 	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/edit", url.Values{
 		"title": {"Blog"}, "feed_url": {"https://example.com/rss.xml"},
 		"home_url": {"https://example.com"}, "poll_interval_sec": {"900"},
+		"author_id": {itoa(f.AuthorID)},
 	}, cookie)
 	if rr.Code != http.StatusFound {
 		t.Fatalf("edit feed: %d %s", rr.Code, rr.Body.String())
@@ -103,8 +107,9 @@ func TestAutoCollectionDeleteBlocked(t *testing.T) {
 	u, _ := s.store.Users.ByUsername("alice")
 
 	rr := doForm(h, "POST", "/feeds", url.Values{
-		"title":    {"Channel"},
-		"feed_url": {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"title":     {"Channel"},
+		"feed_url":  {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"author_id": {"new"}, "author_name": {"Channel"},
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
@@ -128,8 +133,9 @@ func TestAutoCollectionAddRemoveFeedBlocked(t *testing.T) {
 	u, _ := s.store.Users.ByUsername("alice")
 
 	rr := doForm(h, "POST", "/feeds", url.Values{
-		"title":    {"Channel"},
-		"feed_url": {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"title":     {"Channel"},
+		"feed_url":  {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"author_id": {"new"}, "author_name": {"Channel"},
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
@@ -169,8 +175,9 @@ func TestAutoCollectionHiddenFromFeedEditCheckboxes(t *testing.T) {
 
 	// A youtube feed creates the auto collection; a manual collection also exists.
 	rr := doForm(h, "POST", "/feeds", url.Values{
-		"title":    {"Channel"},
-		"feed_url": {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"title":     {"Channel"},
+		"feed_url":  {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"author_id": {"new"}, "author_name": {"Channel"},
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
@@ -192,7 +199,7 @@ func TestAutoCollectionHiddenFromFeedEditCheckboxes(t *testing.T) {
 	doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/edit", url.Values{
 		"title": {"Channel"}, "feed_url": {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
 		"home_url": {"https://www.youtube.com/channel/UCx"}, "poll_interval_sec": {"900"},
-		"collections": {itoa(manual.ID)},
+		"author_id": {itoa(f.AuthorID)}, "collections": {itoa(manual.ID)},
 	}, cookie)
 	c := autoCollection(t, s, u.ID, "youtube.com")
 	in, _ := s.store.Collections.Feeds(u.ID, c.ID)
@@ -207,8 +214,9 @@ func TestCollectionsPageHidesDeleteForAuto(t *testing.T) {
 	u, _ := s.store.Users.ByUsername("alice")
 
 	doForm(h, "POST", "/feeds", url.Values{
-		"title":    {"Channel"},
-		"feed_url": {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"title":     {"Channel"},
+		"feed_url":  {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"author_id": {"new"}, "author_name": {"Channel"},
 	}, cookie)
 
 	body := doGet(h, "/collections", cookie).Body.String()
@@ -241,8 +249,9 @@ func TestOpmlExportExcludesAutoCollections(t *testing.T) {
 	// One feed lands in a youtube.com auto collection; the other is grouped in
 	// a manual "tech" collection.
 	doForm(h, "POST", "/feeds", url.Values{
-		"title":    {"Channel"},
-		"feed_url": {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"title":     {"Channel"},
+		"feed_url":  {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"author_id": {"new"}, "author_name": {"Channel"},
 	}, cookie)
 	manual, _ := s.store.Collections.Create(u.ID, "tech")
 	feeds, _ := s.store.Feeds.List(u.ID)
@@ -254,7 +263,8 @@ func TestOpmlExportExcludesAutoCollections(t *testing.T) {
 		grouped = f
 	}
 	if grouped.ID == 0 {
-		grouped, _ = s.store.Feeds.Create(u.ID, 0, "Grouped", "https://group.dev/rss.xml", "https://group.dev", "", 900)
+		a, _ := s.store.Authors.Create(u.ID, "Grouped", "https://group.dev", "", "")
+		grouped, _ = s.store.Feeds.Create(u.ID, a.ID, "Grouped", "https://group.dev/rss.xml", "https://group.dev", "", 900)
 	}
 	s.store.Collections.AddFeed(u.ID, manual.ID, grouped.ID)
 
