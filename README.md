@@ -7,10 +7,12 @@ storage.
 ## Features
 
 - **Automagical adds** — paste a URL (a feed or a page); nanoflux discovers the
-  feed, derives the title/home url, and pre-fills the author (name + avatar
-  from the page).
-- **Profiles (authors)** — one author can own many feeds; feeds can also be
-  authorless and assigned later.
+  feed, derives the title/home url, and creates an **author** with their first
+  feed attached.
+- **Author-centric** — every feed belongs to an author; feeds are always
+  viewed through the author who publishes them (see
+  [docs/authors-and-feeds.md](docs/authors-and-feeds.md)). Lots of one-feed
+  authors is fine.
 - **Collections** — group feeds into folders.
 - **Read/unread** — mark items read, mark-all-read; items per feed and author.
 - **Item preview** — click an item to preview it in a modal, or open the live

@@ -163,6 +163,20 @@ func TestAPISave(t *testing.T) {
 		t.Fatalf("collection membership wrong: %+v", feeds)
 	}
 
+	// Save with no author at all: one is auto-created from the feed.
+	rr = apiJSON(h, "POST", "/api/save", token, map[string]any{
+		"feed_url": feedSrv.URL,
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save auto-author: %d %s", rr.Code, rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &feed); err != nil {
+		t.Fatal(err)
+	}
+	if feed.AuthorName != "API Feed" {
+		t.Fatalf("auto-created author should be named after the feed: %+v", feed)
+	}
+
 	// A non-feed URL must be rejected.
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("<html>nope</html>"))

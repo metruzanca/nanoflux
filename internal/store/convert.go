@@ -47,7 +47,7 @@ func toFeed(f sqlcgen.Feed) Feed {
 	return Feed{
 		ID:              f.ID,
 		UserID:          f.UserID,
-		AuthorID:        f.AuthorID.Int64,
+		AuthorID:        f.AuthorID,
 		Title:           f.Title,
 		FeedURL:         f.FeedUrl,
 		HomeURL:         f.HomeUrl.String,
@@ -150,7 +150,7 @@ func toUrlMapping(id, userID int64, pattern, template, createdAt string) UrlMapp
 	}
 }
 
-func feedFromUnreadRow(id, userID int64, authorID sql.NullInt64, title, feedURL string,
+func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 	homeURL, description, etag, lastModified, lastPolledAt, lastError sql.NullString,
 	pollIntervalSec int64, enabled bool, createdAt string,
 ) sqlcgen.Feed {

@@ -30,7 +30,7 @@ RETURNING id, user_id, author_id, title, feed_url, home_url, description,
 
 type CreateFeedParams struct {
 	UserID          int64          `json:"user_id"`
-	AuthorID        sql.NullInt64  `json:"author_id"`
+	AuthorID        int64          `json:"author_id"`
 	Title           string         `json:"title"`
 	FeedUrl         string         `json:"feed_url"`
 	HomeUrl         sql.NullString `json:"home_url"`
@@ -191,7 +191,7 @@ ORDER BY u.username, f.title
 type ListAllFeedsRow struct {
 	ID              int64          `json:"id"`
 	UserID          int64          `json:"user_id"`
-	AuthorID        sql.NullInt64  `json:"author_id"`
+	AuthorID        int64          `json:"author_id"`
 	Title           string         `json:"title"`
 	FeedUrl         string         `json:"feed_url"`
 	HomeUrl         sql.NullString `json:"home_url"`
@@ -300,8 +300,8 @@ ORDER BY title
 `
 
 type ListFeedsByAuthorParams struct {
-	UserID   int64         `json:"user_id"`
-	AuthorID sql.NullInt64 `json:"author_id"`
+	UserID   int64 `json:"user_id"`
+	AuthorID int64 `json:"author_id"`
 }
 
 func (q *Queries) ListFeedsByAuthor(ctx context.Context, arg ListFeedsByAuthorParams) ([]Feed, error) {
@@ -354,14 +354,14 @@ ORDER BY f.title
 `
 
 type ListFeedsByAuthorWithUnreadParams struct {
-	UserID   int64         `json:"user_id"`
-	AuthorID sql.NullInt64 `json:"author_id"`
+	UserID   int64 `json:"user_id"`
+	AuthorID int64 `json:"author_id"`
 }
 
 type ListFeedsByAuthorWithUnreadRow struct {
 	ID              int64          `json:"id"`
 	UserID          int64          `json:"user_id"`
-	AuthorID        sql.NullInt64  `json:"author_id"`
+	AuthorID        int64          `json:"author_id"`
 	Title           string         `json:"title"`
 	FeedUrl         string         `json:"feed_url"`
 	HomeUrl         sql.NullString `json:"home_url"`
@@ -477,7 +477,7 @@ ORDER BY f.title
 type ListFeedsWithUnreadRow struct {
 	ID              int64          `json:"id"`
 	UserID          int64          `json:"user_id"`
-	AuthorID        sql.NullInt64  `json:"author_id"`
+	AuthorID        int64          `json:"author_id"`
 	Title           string         `json:"title"`
 	FeedUrl         string         `json:"feed_url"`
 	HomeUrl         sql.NullString `json:"home_url"`
@@ -583,7 +583,7 @@ WHERE id = ? AND user_id = ?
 `
 
 type UpdateFeedParams struct {
-	AuthorID        sql.NullInt64  `json:"author_id"`
+	AuthorID        int64          `json:"author_id"`
 	Title           string         `json:"title"`
 	FeedUrl         string         `json:"feed_url"`
 	HomeUrl         sql.NullString `json:"home_url"`

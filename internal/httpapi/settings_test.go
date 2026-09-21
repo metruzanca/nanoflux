@@ -289,6 +289,7 @@ func TestFeedCreateAutoFavicon(t *testing.T) {
 
 	rr := doForm(h, "POST", "/feeds", url.Values{
 		"title": {"Site"}, "feed_url": {base + "/rss.xml"}, "home_url": {base},
+		"author_id": {"new"}, "author_name": {"Site"},
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
@@ -366,6 +367,20 @@ func TestOpmlImport(t *testing.T) {
 	feeds, _ := s.store.Feeds.List(u.ID)
 	if len(feeds) != 2 {
 		t.Fatalf("expected 2 imported feeds, got %d", len(feeds))
+	}
+	// Every imported feed belongs to an author named after its outline.
+	authors, _ := s.store.Authors.List(u.ID)
+	byName := map[string]store.Author{}
+	for _, a := range authors {
+		byName[a.Name] = a
+	}
+	if byName["Imported Feed"].ID == 0 || byName["Grouped Feed"].ID == 0 || len(byName) != 2 {
+		t.Fatalf("import should create one author per feed outline: %+v", byName)
+	}
+	for _, f := range feeds {
+		if f.AuthorID == 0 {
+			t.Fatalf("imported feed missing author: %+v", f)
+		}
 	}
 	// The grouped feed lands in a "tech" collection; each imported feed also
 	// auto-lands in a per-website collection.

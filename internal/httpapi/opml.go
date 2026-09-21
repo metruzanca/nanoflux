@@ -160,6 +160,7 @@ func (s *Server) opmlImport(w http.ResponseWriter, r *http.Request) {
 
 	client := s.client
 	var imported, skipped, failed int
+	authorsByName := map[string]int64{}
 	for _, e := range entries {
 		feedURL := strings.TrimSpace(e.outline.XMLURL)
 		if feedURL == "" || existing[normalizeFeedKey(feedURL)] {
@@ -183,7 +184,28 @@ func (s *Server) opmlImport(w http.ResponseWriter, r *http.Request) {
 		if homeURL == "" {
 			homeURL = res.Feed.HomeURL
 		}
-		f, err := s.store.Feeds.Create(u.ID, 0, title, feedURL, homeURL, "", 900)
+		// Every feed belongs to an author. One author per imported feed, named
+		// after the outline (or the feed); feeds sharing an outline name share
+		// an author.
+		authorName := strings.TrimSpace(e.outline.Title)
+		if authorName == "" {
+			authorName = strings.TrimSpace(e.outline.Text)
+		}
+		if authorName == "" {
+			authorName = title
+		}
+		authorID, ok := authorsByName[authorName]
+		if !ok {
+			a, err := s.store.Authors.Create(u.ID, authorName, homeURL, "", "")
+			if err != nil {
+				log.Error("opml import author", "name", authorName, "err", err)
+				failed++
+				continue
+			}
+			authorID = a.ID
+			authorsByName[authorName] = authorID
+		}
+		f, err := s.store.Feeds.Create(u.ID, authorID, title, feedURL, homeURL, "", 900)
 		if err != nil {
 			log.Error("opml import create", "url", feedURL, "err", err)
 			failed++

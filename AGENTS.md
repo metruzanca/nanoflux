@@ -56,15 +56,17 @@ leave the dialog open on error — which is what lets the user read the message.
 
 ### Two error response shapes
 
-1. **Preview endpoints** (`/fragments/feed-preview`, `/fragments/author-preview`):
+1. **Preview endpoints** (`/fragments/feed-preview` — the combined add form
+   for an author + their first feed):
    the form's `hx-target` *is* the preview container, so errors replace it via a
    normal swap. Return `400` + the `form_error` fragment using `renderError(w, msg)`.
    Do NOT use OOB here — an out-of-band div targeting the same element as the
    normal target is fragile.
 
-2. **Mutation forms** (`POST /feeds`, `/authors`, `/collections`): the target is
-   the list; the error slot is a separate `#add-…-error` div inside the open
-   dialog. Return `400` + an OOB swap into that slot using `writeFormError(w, target, msg)`.
+2. **Mutation forms** (`POST /feeds`, `POST /authors/{id}/feeds`, `/authors`,
+   `/collections`): the target is the list; the error slot is a separate
+   `#add-…-error` div inside the open dialog. Return `400` + an OOB swap into
+   that slot using `writeFormError(w, target, msg)`.
 
 Error messages are short, user-facing, and generic. Log the underlying cause
 server-side with `log.Error(...)`; never leak internals (SQL, URLs, stack traces)

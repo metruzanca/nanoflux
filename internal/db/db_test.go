@@ -44,8 +44,8 @@ func TestMigrate(t *testing.T) {
 	}
 }
 
-// TestMigrateUpgrade simulates a v1 database with data and verifies the v2
-// rebuild preserves rows and makes author_id nullable.
+// TestMigrateUpgrade simulates a v1 database with data and verifies the
+// rebuilds (v2, v20) preserve rows.
 func TestMigrateUpgrade(t *testing.T) {
 	sqldb, err := Open(":memory:")
 	if err != nil {
@@ -99,11 +99,79 @@ func TestMigrateUpgrade(t *testing.T) {
 		t.Fatalf("items after upgrade: %d", itemCount)
 	}
 
-	// author_id is now nullable.
+	// author_id is now required (schemaV20), not nullable.
 	if _, err := sqldb.Exec(
 		`INSERT INTO feeds(id, user_id, author_id, title, feed_url) VALUES(2, 1, NULL, 'f2', 'https://f/2')`,
+	); err == nil {
+		t.Fatalf("author_id must be NOT NULL after schemaV20")
+	}
+}
+
+// TestMigrateBackfillsAuthorlessFeeds builds a v2-era database holding an
+// authorless feed and verifies schemaV20 backfills an author for it and makes
+// author_id NOT NULL.
+func TestMigrateBackfillsAuthorlessFeeds(t *testing.T) {
+	sqldb, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+
+	// v1 + v2 (v2 makes author_id nullable).
+	if _, err := sqldb.Exec(schemaV1); err != nil {
+		t.Fatalf("apply v1: %v", err)
+	}
+	if _, err := sqldb.Exec(schemaV2); err != nil {
+		t.Fatalf("apply v2: %v", err)
+	}
+	if _, err := sqldb.Exec(
+		`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+		 INSERT INTO schema_migrations(version, applied_at) VALUES(1, 'x'), (2, 'x');`,
 	); err != nil {
-		t.Fatalf("insert authorless feed: %v", err)
+		t.Fatal(err)
+	}
+	if _, err := sqldb.Exec(
+		`INSERT INTO users(id, username, password_hash) VALUES(1, 'u', 'h');
+		 INSERT INTO authors(id, user_id, name, url) VALUES(1, 1, 'authored', 'https://a');
+		 INSERT INTO feeds(id, user_id, author_id, title, feed_url, home_url) VALUES(1, 1, 1, 'authored', 'https://a/x', 'https://a');
+		 INSERT INTO feeds(id, user_id, author_id, title, feed_url, home_url) VALUES(2, 1, NULL, 'orphan', 'https://o/x', 'https://o');`,
+	); err != nil {
+		t.Fatalf("seed v2: %v", err)
+	}
+
+	if err := Migrate(sqldb); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	// The authorless feed was assigned a backfilled author, named after the feed.
+	var authorID int64
+	if err := sqldb.QueryRow(`SELECT author_id FROM feeds WHERE id = 2`).Scan(&authorID); err != nil {
+		t.Fatalf("read orphan feed: %v", err)
+	}
+	if authorID == 0 {
+		t.Fatal("orphan feed should have been assigned an author")
+	}
+	var backfilled string
+	if err := sqldb.QueryRow(`SELECT name FROM authors WHERE id = ?`, authorID).Scan(&backfilled); err != nil {
+		t.Fatalf("read backfilled author: %v", err)
+	}
+	if backfilled != "orphan" {
+		t.Fatalf("backfilled author name = %q, want %q", backfilled, "orphan")
+	}
+	// The already-authored feed is untouched.
+	var title string
+	var aID int64
+	if err := sqldb.QueryRow(`SELECT title, author_id FROM feeds WHERE id = 1`).Scan(&title, &aID); err != nil {
+		t.Fatal(err)
+	}
+	if title != "authored" || aID != 1 {
+		t.Fatalf("authored feed changed: title=%q author=%d", title, aID)
+	}
+	// New feeds must now carry an author.
+	if _, err := sqldb.Exec(
+		`INSERT INTO feeds(id, user_id, author_id, title, feed_url) VALUES(3, 1, NULL, 'f3', 'https://f/3')`,
+	); err == nil {
+		t.Fatal("author_id must be NOT NULL after schemaV20")
 	}
 }
 

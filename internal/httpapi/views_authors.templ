@@ -13,15 +13,18 @@ templ authorsPage(u store.User, d authorsData) {
 		<button type="button" onclick="document.getElementById('add-author-dialog').showModal()">+ add author</button>
 	</div>
 	@AuthorsList(d.Rows)
+	if len(d.Rows) == 0 {
+		<p class="muted">start by adding an author — paste their site or feed url and nanoflux will create the author and their first feed.</p>
+	}
 
 	<dialog id="add-author-dialog" class="modal">
 		<div class="row">
 			<h2>add author</h2>
 			<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
 		</div>
-		<form class="stack" hx-post="/fragments/author-preview" hx-target="#author-preview" hx-swap="innerHTML">
+		<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-preview" hx-swap="innerHTML">
 			<label>url
-				<input name="url" type="url" placeholder="https://site.com" autofocus required/>
+				<input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required/>
 			</label>
 			<button type="submit">find author</button>
 		</form>
@@ -63,25 +66,6 @@ templ AuthorRow(r authorRow) {
 			</div>
 		</div>
 	</li>
-}
-
-templ authorPreviewFields(d authorPreviewForm) {
-	<form class="stack" hx-post="/authors" hx-target="#authors-list" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
-		if d.AvatarURL != "" {
-			<img class="avatar" src={ "/img?u=" + url.QueryEscape(d.AvatarURL) } onerror="this.style.display='none'" alt=""/>
-		}
-		<label>name
-			<input name="name" type="text" value={ d.Name } required/>
-		</label>
-		<label>url
-			<input name="url" type="url" value={ d.URL }/>
-		</label>
-		<label>avatar url
-			<input name="avatar_url" type="url" value={ d.AvatarURL }/>
-		</label>
-		<div id="add-author-error" class="error"></div>
-		<button type="submit">add author</button>
-	</form>
 }
 
 templ authorEditPage(u store.User, d authorsData) {
@@ -142,6 +126,7 @@ templ authorPage(u store.User, d authorData) {
 		</div>
 		<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-feed-preview" hx-swap="innerHTML">
 			<input type="hidden" id="feed-author-id" name="author_id" value={ strconv.FormatInt(d.Author.ID, 10) }/>
+			<input type="hidden" id="feed-author-scoped" name="scoped" value="1"/>
 			<label>url
 				<input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required/>
 			</label>

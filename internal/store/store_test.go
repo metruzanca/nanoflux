@@ -122,14 +122,9 @@ func TestAuthorFeedFlow(t *testing.T) {
 		t.Fatalf("author delete should cascade items, got %d unread", n)
 	}
 
-	// Authorless feeds are allowed and re-scanned as 0.
-	f2, err := s.Feeds.Create(u.ID, 0, "authorless", "https://x.dev/rss.xml", "", "", 900)
-	if err != nil {
-		t.Fatalf("create authorless feed: %v", err)
-	}
-	got, err := s.Feeds.ByID(u.ID, f2.ID)
-	if err != nil || got.AuthorID != 0 {
-		t.Fatalf("authorless feed scan: %v %+v", err, got)
+	// A feed must belong to an author; the store enforces it.
+	if _, err := s.Feeds.Create(u.ID, 0, "orphan", "https://x.dev/rss.xml", "", "", 900); err == nil {
+		t.Fatal("create without author should fail")
 	}
 }
 
@@ -475,26 +470,27 @@ func TestItemScopedCounts(t *testing.T) {
 	}
 }
 
-func TestItemsAuthorlessFeed(t *testing.T) {
+func TestItemsCarryAuthor(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	f, _ := s.Feeds.Create(u.ID, 0, "authorless", "https://x.dev/rss.xml", "", "", 900)
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://x.dev/rss.xml", "", "", 900)
 	s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "One", Link: "https://x.dev/1", FetchedAt: db.Now()})
 
 	items, err := s.Items.List(u.ID, ItemFilter{})
 	if err != nil || len(items) != 1 {
-		t.Fatalf("List authorless feed: %v %d", err, len(items))
+		t.Fatalf("List feed: %v %d", err, len(items))
 	}
 	it := items[0]
-	if it.AuthorName != "" || it.AuthorID != 0 {
-		t.Fatalf("author fields should be empty: %+v", it)
+	if it.AuthorName != "Metru" || it.AuthorID != a.ID {
+		t.Fatalf("author fields should be populated: %+v", it)
 	}
-	if it.FeedTitle != "authorless" || it.Title != "One" {
+	if it.FeedTitle != "Blog" || it.Title != "One" {
 		t.Fatalf("item malformed: %+v", it)
 	}
 	got, err := s.Items.OneWithFeed(u.ID, it.ID)
 	if err != nil || got.Title != "One" {
-		t.Fatalf("OneWithFeed authorless: %v %+v", err, got)
+		t.Fatalf("OneWithFeed: %v %+v", err, got)
 	}
 }
 
@@ -917,10 +913,12 @@ func TestListAllFeeds(t *testing.T) {
 	s := newTestStore(t)
 	alice := mustUser(t, s, "alice")
 	bob := mustUser(t, s, "bob")
-	if _, err := s.Feeds.Create(alice.ID, 0, "A", "https://a/feed.xml", "", "", 900); err != nil {
+	aliceAuthor, _ := s.Authors.Create(alice.ID, "AA", "", "", "")
+	bobAuthor, _ := s.Authors.Create(bob.ID, "BB", "", "", "")
+	if _, err := s.Feeds.Create(alice.ID, aliceAuthor.ID, "A", "https://a/feed.xml", "", "", 900); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Feeds.Create(bob.ID, 0, "B", "https://b/feed.xml", "", "", 900); err != nil {
+	if _, err := s.Feeds.Create(bob.ID, bobAuthor.ID, "B", "https://b/feed.xml", "", "", 900); err != nil {
 		t.Fatal(err)
 	}
 	feeds, err := s.Feeds.ListAll()
@@ -939,7 +937,8 @@ func TestListAllFeeds(t *testing.T) {
 func TestFeedLastError(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	f, err := s.Feeds.Create(u.ID, 0, "Example", "https://example.com/feed.xml", "", "", 900)
+	a, _ := s.Authors.Create(u.ID, "Example", "", "", "")
+	f, err := s.Feeds.Create(u.ID, a.ID, "Example", "https://example.com/feed.xml", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
 	}

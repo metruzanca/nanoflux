@@ -30,6 +30,7 @@ var migrations = []migration{
 	{17, schemaV17},
 	{18, schemaV18},
 	{19, schemaV19},
+	{20, schemaV20},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -134,6 +135,60 @@ ALTER TABLE users ADD COLUMN signup_banner_dismissed INTEGER NOT NULL DEFAULT 0;
 // a feed is broken. NULL/empty means the last poll succeeded.
 const schemaV18 = `
 ALTER TABLE feeds ADD COLUMN last_error TEXT;
+`
+
+// schemaV20 tightens the author/feed relationship: every feed belongs to an
+// author. Authorless feeds (from before the rule) are first given an author
+// named after the feed (falling back to its home url, then its feed url), then
+// feeds is rebuilt with author_id NOT NULL. Feeds whose title collides with an
+// existing author of the same user may attach to that author — acceptable for
+// a one-time backfill.
+const schemaV20 = `
+INSERT INTO authors (user_id, name, url, avatar_url, description, created_at)
+SELECT f.user_id,
+       COALESCE(NULLIF(f.title, ''), NULLIF(f.home_url, ''), f.feed_url),
+       f.home_url, NULL, NULL, datetime('now')
+FROM feeds f
+WHERE f.author_id IS NULL;
+
+UPDATE feeds
+SET author_id = (
+    SELECT a.id FROM authors a
+    WHERE a.user_id = feeds.user_id
+      AND a.name = COALESCE(NULLIF(feeds.title, ''), NULLIF(feeds.home_url, ''), feeds.feed_url)
+    LIMIT 1
+)
+WHERE author_id IS NULL;
+
+CREATE TABLE feeds_v3 (
+    id                INTEGER PRIMARY KEY,
+    user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id         INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    title             TEXT NOT NULL,
+    feed_url          TEXT NOT NULL,
+    home_url          TEXT,
+    description       TEXT,
+    etag              TEXT,
+    last_modified     TEXT,
+    last_polled_at    TEXT,
+    last_error        TEXT,
+    poll_interval_sec INTEGER NOT NULL DEFAULT 900,
+    enabled           INTEGER NOT NULL DEFAULT 1,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+INSERT INTO feeds_v3 (id, user_id, author_id, title, feed_url, home_url, description,
+                      etag, last_modified, last_polled_at, last_error, poll_interval_sec, enabled, created_at)
+SELECT id, user_id, author_id, title, feed_url, home_url, description,
+       etag, last_modified, last_polled_at, last_error, poll_interval_sec, enabled, created_at
+FROM feeds;
+
+DROP TABLE feeds;
+
+ALTER TABLE feeds_v3 RENAME TO feeds;
+
+CREATE INDEX idx_feeds_user ON feeds(user_id);
+CREATE INDEX idx_feeds_author ON feeds(author_id);
 `
 
 // schemaV19 stores per-user "url pattern -> feed url" mappings used to

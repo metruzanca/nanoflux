@@ -38,7 +38,7 @@ type FeedStore struct{ q *sqlcgen.Queries }
 func (s *FeedStore) Create(userID, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int) (Feed, error) {
 	f, err := s.q.CreateFeed(context.Background(), sqlcgen.CreateFeedParams{
 		UserID:          userID,
-		AuthorID:        ni(authorID),
+		AuthorID:        authorID,
 		Title:           title,
 		FeedUrl:         feedURL,
 		HomeUrl:         ns(homeURL),
@@ -105,7 +105,7 @@ func (s *FeedStore) ByTitle(userID int64, title string) (Feed, error) {
 func (s *FeedStore) ListByAuthor(userID, authorID int64) ([]Feed, error) {
 	rows, err := s.q.ListFeedsByAuthor(context.Background(), sqlcgen.ListFeedsByAuthorParams{
 		UserID:   userID,
-		AuthorID: ni(authorID),
+		AuthorID: authorID,
 	})
 	if err != nil {
 		return nil, err
@@ -135,7 +135,7 @@ func (s *FeedStore) ListWithUnread(userID int64) ([]FeedWithUnread, error) {
 func (s *FeedStore) ListByAuthorWithUnread(userID, authorID int64) ([]FeedWithUnread, error) {
 	rows, err := s.q.ListFeedsByAuthorWithUnread(context.Background(), sqlcgen.ListFeedsByAuthorWithUnreadParams{
 		UserID:   userID,
-		AuthorID: ni(authorID),
+		AuthorID: authorID,
 	})
 	if err != nil {
 		return nil, err
@@ -149,7 +149,7 @@ func (s *FeedStore) ListByAuthorWithUnread(userID, authorID int64) ([]FeedWithUn
 
 func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int, enabled bool) error {
 	res, err := s.q.UpdateFeed(context.Background(), sqlcgen.UpdateFeedParams{
-		AuthorID:        ni(authorID),
+		AuthorID:        authorID,
 		Title:           title,
 		FeedUrl:         feedURL,
 		HomeUrl:         ns(homeURL),

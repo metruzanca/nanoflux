@@ -38,12 +38,6 @@ func TestFeedPreviewErrors(t *testing.T) {
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `role="alert"`) {
 		t.Fatalf("unparseable url: %d %s", rr.Code, rr.Body.String())
 	}
-
-	// Author preview errors too.
-	rr = doForm(h, "POST", "/fragments/author-preview", url.Values{"url": {"://not-a-url"}}, cookie)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "could not inspect") {
-		t.Fatalf("author preview error: %d %s", rr.Code, rr.Body.String())
-	}
 }
 
 func TestFeedPreviewDirect(t *testing.T) {
@@ -164,24 +158,39 @@ func TestFeedPreviewPreselectsAuthor(t *testing.T) {
 	}
 }
 
-func TestAuthorPreview(t *testing.T) {
+// TestFeedPreviewPrefillsNewAuthor asserts the combined add form derives the
+// new-author name and avatar from the discovered page (the author-centric add
+// flow). The old standalone author-preview endpoint was folded into this.
+func TestFeedPreviewPrefillsNewAuthor(t *testing.T) {
 	_, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 
 	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rss" {
+			w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>RSS Feed</title><link>https://home.dev/</link></channel></rss>`))
+			return
+		}
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`<html><head><title>Metru Site</title>
+		  <link rel="alternate" type="application/rss+xml" href="/rss">
 		  <link rel="icon" href="/favicon.png"></head><body>hi</body></html>`))
 	}))
 	defer page.Close()
 
-	rr := doForm(h, "POST", "/fragments/author-preview", url.Values{"url": {page.URL}}, cookie)
+	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{"url": {page.URL}}, cookie)
 	if rr.Code != http.StatusOK {
-		t.Fatalf("author preview: %d", rr.Code)
+		t.Fatalf("feed preview: %d %s", rr.Code, rr.Body.String())
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, "Metru Site") || !strings.Contains(body, page.URL+"/favicon.png") {
-		t.Fatalf("author preview: %s", body)
+	if !strings.Contains(body, `value="Metru Site"`) {
+		t.Fatalf("new-author name should be prefilled from the page title: %s", body)
+	}
+	if !strings.Contains(body, page.URL+"/favicon.png") {
+		t.Fatalf("new-author avatar should be prefilled from the site icon: %s", body)
+	}
+	// The combined form must not offer an authorless option.
+	if strings.Contains(body, "no author") {
+		t.Fatalf("combined add form must not offer an authorless option: %s", body)
 	}
 }
 

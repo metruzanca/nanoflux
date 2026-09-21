@@ -102,8 +102,16 @@ type feedPageData struct {
 type collectionData struct {
 	Collection store.Collection
 	Feeds      []store.Feed
-	AllFeeds   []store.Feed
+	AllFeeds   []collectionFeedGroup
 	Scoped     scopedItemsData
+}
+
+// collectionFeedGroup is one author's feeds for the collection add-feed
+// dropdown. Collections hold feeds (not authors), but the picker presents them
+// grouped by author so feeds are seen from the perspective of authors.
+type collectionFeedGroup struct {
+	AuthorName string
+	Feeds      []store.FeedWithUnread
 }
 
 // scopedItemsData renders the unread/read tabs and an item list scoped to a
@@ -365,14 +373,14 @@ func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := itemViewData{
-		ID:        it.ID,
-		Title:     it.Title,
+		ID:          it.ID,
+		Title:       it.Title,
 		PublishedAt: it.PublishedAt,
-		Summary:   it.Summary,
-		ImageURL:  it.ImageURL,
-		Link:      it.Link,
-		Body:      template.HTML(it.Summary),
-		EmbedURL:  web.YoutubeEmbedURL(it.Link),
+		Summary:     it.Summary,
+		ImageURL:    it.ImageURL,
+		Link:        it.Link,
+		Body:        template.HTML(it.Summary),
+		EmbedURL:    web.YoutubeEmbedURL(it.Link),
 	}
 	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
@@ -433,36 +441,84 @@ func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, ItemRow(row))
 }
 
-func (s *Server) feeds(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	rows, err := s.feedRows(u.ID, u.Timezone)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	authors, _ := s.store.Authors.List(u.ID)
-	collections, _ := s.store.Collections.List(u.ID)
-	web.Render(w, r, basePage("feeds", u, feedsPage(u, feedsData{
-		Rows: rows, Authors: authors, Collections: collections,
-		Form: feedForm{PollIntervalSec: 900},
-	})))
-}
-
-func (s *Server) feedRows(userID int64, tz string) ([]feedRow, error) {
-	rows, err := s.store.Feeds.ListWithUnread(userID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]feedRow, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, feedRow{Feed: r.Feed, AuthorName: r.AuthorName, Unread: r.Unread, Timezone: tz})
-	}
-	return out, nil
-}
-
+// feedCreate is the global add flow: the URL auto-detect result is an author
+// with their first feed attached. The author selection is required — creating
+// one when "new" is chosen — and the response is the author's row, not the
+// feed's: a new author is appended to the authors list, an existing one has
+// its row (and feed count) refreshed via an HX-Retarget.
 func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 
+	if errMsg := validateFeedFields(r); errMsg != "" {
+		writeFormError(w, r, "add-feed-error", errMsg)
+		return
+	}
+	authorID, isNew, errMsg := s.resolveAuthor(r, u.ID)
+	if errMsg != "" {
+		writeFormError(w, r, "add-feed-error", errMsg)
+		return
+	}
+	if _, errMsg = s.createFeed(r, u.ID, authorID); errMsg != "" {
+		writeFormError(w, r, "add-feed-error", errMsg)
+		return
+	}
+	author, _ := s.store.Authors.ByID(u.ID, authorID)
+	feeds, _ := s.store.Feeds.ListByAuthor(u.ID, authorID)
+	row := authorRow{Author: author, FeedCount: len(feeds)}
+	if isNew {
+		w.Header().Set("HX-Retarget", "#authors-list")
+		w.Header().Set("HX-Reswap", "beforeend")
+	} else {
+		w.Header().Set("HX-Retarget", "#author-"+strconv.FormatInt(authorID, 10))
+		w.Header().Set("HX-Reswap", "outerHTML")
+	}
+	web.Render(w, r, AuthorRow(row))
+}
+
+// authorFeedCreate adds a feed to a specific author from the author page. The
+// author is fixed by the route, so the response is the new feed row appended
+// to the author's feeds list.
+func (s *Server) authorFeedCreate(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	authorID, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	author, err := s.store.Authors.ByID(u.ID, authorID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if errMsg := validateFeedFields(r); errMsg != "" {
+		writeFormError(w, r, "add-feed-error", errMsg)
+		return
+	}
+	f, errMsg := s.createFeed(r, u.ID, authorID)
+	if errMsg != "" {
+		writeFormError(w, r, "add-feed-error", errMsg)
+		return
+	}
+	unread, _ := s.store.Items.CountUnread(u.ID, f.ID)
+	web.Render(w, r, FeedRow(feedRow{Feed: f, AuthorName: author.Name, Unread: unread, Timezone: u.Timezone}))
+}
+
+// validateFeedFields checks the required title and feed url fields of the add
+// form, returning a user-facing error message when either is missing.
+func validateFeedFields(r *http.Request) string {
+	title := strings.TrimSpace(r.FormValue("title"))
+	feedURL := normalizeURL(r.FormValue("feed_url"))
+	if title == "" || feedURL == "" {
+		return "title and feed url are required"
+	}
+	return ""
+}
+
+// createFeed validates and persists a new feed under an author, attaching it
+// to any selected collections, its site's auto collection, and caching the
+// site icon. Returns the created feed, or a non-empty user-facing error
+// message on failure.
+func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed, string) {
 	title := strings.TrimSpace(r.FormValue("title"))
 	feedURL := normalizeURL(r.FormValue("feed_url"))
 	homeURL := r.FormValue("home_url")
@@ -471,65 +527,59 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 		interval = 900
 	}
 	if title == "" || feedURL == "" {
-		writeFormError(w, r, "add-feed-error", "title and feed url are required")
-		return
+		return store.Feed{}, "title and feed url are required"
 	}
-
-	authorID, errMsg := s.resolveAuthor(r, u.ID)
-	if errMsg != "" {
-		writeFormError(w, r, "add-feed-error", errMsg)
-		return
-	}
-
-	f, err := s.store.Feeds.Create(u.ID, authorID, title, feedURL, homeURL, "", interval)
+	f, err := s.store.Feeds.Create(userID, authorID, title, feedURL, homeURL, "", interval)
 	if err != nil {
 		log.Error("create feed", "err", err)
-		writeFormError(w, r, "add-feed-error", "could not create feed")
-		return
+		return store.Feed{}, "could not create feed"
 	}
 	for _, cid := range r.Form["collections"] {
 		if n, err := strconv.ParseInt(cid, 10, 64); err == nil {
-			s.store.Collections.AddFeed(u.ID, n, f.ID)
+			s.store.Collections.AddFeed(userID, n, f.ID)
 		}
 	}
-	if err := s.store.Collections.AssignAuto(u.ID, f.ID, homeURL, feedURL); err != nil {
+	if err := s.store.Collections.AssignAuto(userID, f.ID, homeURL, feedURL); err != nil {
 		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
 	}
 	// Auto-cache the site's favicon when the form supplied a home url. Best
 	// effort and bounded so a slow site can't stall the create response.
 	if homeURL != "" {
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
-		s.autoCacheFeedIcon(ctx, u.ID, homeURL)
+		s.autoCacheFeedIcon(ctx, userID, homeURL)
 		cancel()
 	}
-	author, _ := s.store.Authors.ByID(u.ID, authorID)
-	web.Render(w, r, FeedRow(feedRow{Feed: f, AuthorName: author.Name, Timezone: u.Timezone}))
+	return f, ""
 }
 
-// resolveAuthor maps the feed form's author selection to an author id.
-// "" or "0" means no author; "new" creates one, using the provided url as its
-// home page. It returns a non-empty error message when the selection is invalid.
-func (s *Server) resolveAuthor(r *http.Request, userID int64) (int64, string) {
+// resolveAuthor maps the feed form's author selection to an author id, creating
+// a new author when the selection is "new". An author is required on every feed,
+// so an empty selection is an error. It returns a non-empty error message when
+// the selection is invalid.
+func (s *Server) resolveAuthor(r *http.Request, userID int64) (int64, bool, string) {
 	switch r.FormValue("author_id") {
 	case "new":
 		name := strings.TrimSpace(r.FormValue("author_name"))
 		if name == "" {
-			return 0, "new author needs a name"
+			return 0, false, "new author needs a name"
 		}
 		a, err := s.store.Authors.Create(
 			userID, name, r.FormValue("author_url"), r.FormValue("avatar_url"), "",
 		)
 		if err != nil {
 			log.Error("create author", "err", err)
-			return 0, "could not create author"
+			return 0, false, "could not create author"
 		}
-		return a.ID, ""
+		return a.ID, true, ""
 	default:
 		id, err := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
-		if err != nil {
-			return 0, "" // empty or unparseable = no author
+		if err != nil || id == 0 {
+			return 0, false, "a feed needs an author — create one or pick an existing author"
 		}
-		return id, ""
+		if _, err := s.store.Authors.ByID(userID, id); err != nil {
+			return 0, false, "author not found"
+		}
+		return id, false, ""
 	}
 }
 
@@ -638,24 +688,25 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	old, err := s.store.Feeds.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
 	title := r.FormValue("title")
 	feedURL := normalizeURL(r.FormValue("feed_url"))
 	interval, _ := strconv.Atoi(r.FormValue("poll_interval_sec"))
 	if interval <= 0 {
 		interval = 900
 	}
+	back := "/authors/" + strconv.FormatInt(old.AuthorID, 10)
 	if title == "" || feedURL == "" {
-		http.Redirect(w, r, "/feeds", http.StatusFound)
+		http.Redirect(w, r, back, http.StatusFound)
 		return
 	}
-	authorID, errMsg := s.resolveAuthor(r, u.ID)
+	authorID, _, errMsg := s.resolveAuthor(r, u.ID)
 	if errMsg != "" {
-		http.Redirect(w, r, "/feeds", http.StatusFound)
-		return
-	}
-	old, err := s.store.Feeds.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
+		http.Redirect(w, r, back, http.StatusFound)
 		return
 	}
 	if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
@@ -707,7 +758,7 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 			s.store.Collections.RemoveFeed(u.ID, c.ID, id)
 		}
 	}
-	http.Redirect(w, r, "/feeds", http.StatusFound)
+	http.Redirect(w, r, "/authors/"+strconv.FormatInt(authorID, 10), http.StatusFound)
 }
 
 func unique(ids []int64) []int64 {
@@ -900,10 +951,8 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	authorName := ""
-	if feed.AuthorID != 0 {
-		if a, err := s.store.Authors.ByID(u.ID, feed.AuthorID); err == nil {
-			authorName = a.Name
-		}
+	if a, err := s.store.Authors.ByID(u.ID, feed.AuthorID); err == nil {
+		authorName = a.Name
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	scoped := s.feedScopedItems(u.ID, id, itemsView(r), u.Timezone)
@@ -1072,9 +1121,30 @@ func (s *Server) collectionDataFor(userID, id int64, view, tz string) (collectio
 		return collectionData{}, err
 	}
 	feeds, _ := s.store.Collections.Feeds(userID, id)
-	allFeeds, _ := s.store.Feeds.List(userID)
+	allFeeds, _ := s.store.Feeds.ListWithUnread(userID)
 	scoped := s.collectionScopedItems(userID, id, view, tz)
-	return collectionData{Collection: c, Feeds: feeds, AllFeeds: allFeeds, Scoped: scoped}, nil
+	return collectionData{Collection: c, Feeds: feeds, AllFeeds: groupFeedsByAuthor(allFeeds), Scoped: scoped}, nil
+}
+
+// groupFeedsByAuthor groups a user's feeds by author name for the collection
+// add-feed dropdown, ordering feed titles within each author.
+func groupFeedsByAuthor(rows []store.FeedWithUnread) []collectionFeedGroup {
+	var groups []collectionFeedGroup
+	index := map[string]int{}
+	for _, r := range rows {
+		name := r.AuthorName
+		if name == "" {
+			name = "unassigned"
+		}
+		i, ok := index[name]
+		if !ok {
+			index[name] = len(groups)
+			groups = append(groups, collectionFeedGroup{AuthorName: name})
+			i = len(groups) - 1
+		}
+		groups[i].Feeds = append(groups[i].Feeds, r)
+	}
+	return groups
 }
 
 // collectionScopedItems loads one read/unread item list for a collection plus
