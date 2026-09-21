@@ -210,6 +210,15 @@ domain types; never hand-write `row.Scan` calls or `nullStr`/`boolInt`
 boilerplate — add a query to the `.sql` files and regenerate. The generated
 files are committed, so CI/builds need no sqlc step.
 
+**Full-text search is the one exception.** `ItemStore.SearchPage` runs a
+hand-written FTS5 query (`MATCH` against the `items_fts` virtual table) because
+sqlc cannot introspect FTS5 virtual tables — it mirrors the `ListItems` column
+set and reuses the generated `sqlcgen.ListItemsRow` scanner. In `schema.sql`,
+`items_fts` is declared as a plain table matching the virtual table's columns
+so sqlc stays happy; the real DB builds it as an external-content FTS5 table in
+migration `schemaV10`. Do not try to fold the search query back into sqlc, and
+keep the plain-table declaration in sync with the virtual table's columns.
+
 ## Web UI (templ)
 
 The web UI is built with templ, not `html/template`. Page and fragment

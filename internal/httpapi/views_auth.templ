@@ -64,3 +64,11 @@ templ favoritesPage(d favoritesData) {
 	</div>
 	@ItemsListPage(d.Favorites, d.More)
 }
+
+templ searchResultsPage(d searchData) {
+	<h1>search</h1>
+	if d.Query != "" {
+		<p class="muted small">results for “{ d.Query }”</p>
+	}
+	@ItemsListPage(d.Items, d.More)
+}

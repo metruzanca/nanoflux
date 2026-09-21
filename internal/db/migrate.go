@@ -20,7 +20,62 @@ var migrations = []migration{
 	{7, schemaV7},
 	{8, schemaV8},
 	{9, schemaV9},
+	{10, schemaV10},
+	{11, schemaV11},
+	{12, schemaV12},
 }
+
+// schemaV10 adds full-text search over item titles and summaries. items_fts is
+// an external-content FTS5 table kept in sync by triggers; read/favorite
+// toggles do not touch it because the update trigger only fires when the
+// title or summary actually changes.
+const schemaV10 = `
+CREATE VIRTUAL TABLE items_fts USING fts5(title, summary, content='items', content_rowid='id');
+CREATE TRIGGER items_ai AFTER INSERT ON items BEGIN
+  INSERT INTO items_fts(rowid, title, summary) VALUES (new.id, new.title, new.summary);
+END;
+CREATE TRIGGER items_ad AFTER DELETE ON items BEGIN
+  INSERT INTO items_fts(items_fts, rowid, title, summary) VALUES ('delete', old.id, old.title, old.summary);
+END;
+CREATE TRIGGER items_au AFTER UPDATE ON items
+WHEN old.title IS NOT new.title OR old.summary IS NOT new.summary
+BEGIN
+  INSERT INTO items_fts(items_fts, rowid, title, summary) VALUES ('delete', old.id, old.title, old.summary);
+  INSERT INTO items_fts(rowid, title, summary) VALUES (new.id, new.title, new.summary);
+END;
+INSERT INTO items_fts(rowid, title, summary) SELECT id, title, summary FROM items;
+`
+
+// schemaV11 stores feed enclosures (podcasts, media) per item.
+const schemaV11 = `
+CREATE TABLE item_enclosures (
+    id        INTEGER PRIMARY KEY,
+    item_id   INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    url       TEXT NOT NULL,
+    title     TEXT NOT NULL DEFAULT '',
+    mime_type TEXT,
+    size      INTEGER NOT NULL DEFAULT 0,
+    sort      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_enclosures_item ON item_enclosures(item_id);
+`
+
+// schemaV12 adds per-user filtering rules applied at ingest time. feed_id NULL
+// means the rule applies to every feed.
+const schemaV12 = `
+CREATE TABLE filters (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    feed_id    INTEGER REFERENCES feeds(id) ON DELETE CASCADE,
+    action     TEXT NOT NULL,
+    field      TEXT NOT NULL,
+    pattern    TEXT NOT NULL,
+    is_regex   INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_filters_user ON filters(user_id);
+CREATE INDEX idx_filters_feed ON filters(feed_id);
+`
 
 const schemaV9 = `
 ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'dark';

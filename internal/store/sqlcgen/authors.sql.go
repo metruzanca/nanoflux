@@ -85,6 +85,32 @@ func (q *Queries) GetAuthor(ctx context.Context, arg GetAuthorParams) (Author, e
 	return i, err
 }
 
+const getAuthorByName = `-- name: GetAuthorByName :one
+SELECT id, user_id, name, url, avatar_url, description, created_at
+FROM authors
+WHERE user_id = ? AND name = ? COLLATE NOCASE
+`
+
+type GetAuthorByNameParams struct {
+	UserID int64  `json:"user_id"`
+	Name   string `json:"name"`
+}
+
+func (q *Queries) GetAuthorByName(ctx context.Context, arg GetAuthorByNameParams) (Author, error) {
+	row := q.db.QueryRowContext(ctx, getAuthorByName, arg.UserID, arg.Name)
+	var i Author
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.Url,
+		&i.AvatarUrl,
+		&i.Description,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listAuthors = `-- name: ListAuthors :many
 SELECT id, user_id, name, url, avatar_url, description, created_at
 FROM authors

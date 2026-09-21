@@ -85,6 +85,22 @@ func (s *FeedStore) List(userID int64) ([]Feed, error) {
 	return out, nil
 }
 
+// ByTitle returns the user's feed matching title (case-insensitive), or
+// ErrNotFound. Used by search qualifiers.
+func (s *FeedStore) ByTitle(userID int64, title string) (Feed, error) {
+	f, err := s.q.GetFeedByTitle(context.Background(), sqlcgen.GetFeedByTitleParams{
+		UserID: userID,
+		Title:  title,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return Feed{}, ErrNotFound
+	}
+	if err != nil {
+		return Feed{}, err
+	}
+	return toFeed(f), nil
+}
+
 func (s *FeedStore) ListByAuthor(userID, authorID int64) ([]Feed, error) {
 	rows, err := s.q.ListFeedsByAuthor(context.Background(), sqlcgen.ListFeedsByAuthorParams{
 		UserID:   userID,

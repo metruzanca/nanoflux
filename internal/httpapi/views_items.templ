@@ -236,5 +236,25 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 		if d.Body != "" && !v.Image && d.SourceURL == "" && len(d.Gallery) == 0 {
 			<div class="item-body">@templ.Raw(d.Body)</div>
 		}
+		if len(d.Enclosures) > 0 {
+			<div class="enclosures">
+				for _, e := range d.Enclosures {
+					if kind := web.EnclosureKind(e); kind != "" {
+						<figure>
+							if kind == "video" {
+								<video controls preload="none" src={ templ.URL(e.URL) }></video>
+							} else {
+								<audio controls preload="none" src={ templ.URL(e.URL) }></audio>
+							}
+						</figure>
+					}
+				}
+				<ul class="plain small">
+					for _, e := range d.Enclosures {
+						<li>· <a href={ templ.URL(e.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ web.EnclosureLabel(e) }</a></li>
+					}
+				</ul>
+			</div>
+		}
 	</div>
 }

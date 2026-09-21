@@ -105,6 +105,18 @@ document.addEventListener('keydown', function (e) {
   openItem(link);
 });
 
+// "/" focuses the search box.
+document.addEventListener('keydown', function (e) {
+  if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+  var t = e.target;
+  if (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return;
+  var input = document.getElementById('search-input');
+  if (!input) return;
+  e.preventDefault();
+  input.focus();
+  input.select();
+});
+
 // Keyboard shortcuts: j/k move a row cursor, o/Enter open, v opens the
 // original, s toggles favorite, m toggles read, g/G jump to first/last,
 // ? shows the shortcut sheet.

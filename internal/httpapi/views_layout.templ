@@ -19,6 +19,9 @@ templ topbar(u store.User) {
 		<a class="brand" href="/">nanoflux</a>
 		if u.ID != 0 {
 			<nav>
+				<form class="top-search" action="/search" method="get" role="search">
+					<input id="search-input" name="q" type="search" placeholder="search…" autocomplete="off"/>
+				</form>
 				<a href="/">unread</a>
 				<a href="/feeds">feeds</a>
 				<a href="/authors">authors</a>

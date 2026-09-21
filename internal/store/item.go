@@ -46,7 +46,10 @@ type ItemFilter struct {
 	Limit         int
 }
 
-type ItemStore struct{ q *sqlcgen.Queries }
+type ItemStore struct {
+	q  *sqlcgen.Queries
+	db *sql.DB // raw handle for the FTS5 search query sqlc cannot generate
+}
 
 // Upsert inserts an item, ignoring duplicates on (feed_id, guid). It reports
 // whether a new row was actually inserted.
@@ -60,6 +63,8 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 		ImageUrl:    ns(it.ImageURL),
 		PublishedAt: ns(it.PublishedAt),
 		FetchedAt:   it.FetchedAt,
+		Read:        it.Read,
+		ReadAt:      ns(it.ReadAt),
 	})
 	if err != nil {
 		return false, fmt.Errorf("upsert item: %w", err)
@@ -118,6 +123,124 @@ func (s *ItemStore) ByID(userID, id int64) (Item, error) {
 		return Item{}, err
 	}
 	return toItem(it), nil
+}
+
+// ByFeedGUID returns the id of the item stored for (feedID, guid), or 0 when
+// it does not exist.
+func (s *ItemStore) ByFeedGUID(feedID int64, guid string) (int64, error) {
+	id, err := s.q.GetItemByFeedGuid(context.Background(), sqlcgen.GetItemByFeedGuidParams{
+		FeedID: feedID,
+		Guid:   guid,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+// searchPageLimit is the default page size for search results.
+const searchPageLimit = 25
+
+// SearchPage runs an FTS5 query over item titles and summaries, scoped to the
+// user, returning one page plus whether more results exist. query must be a
+// valid FTS5 MATCH expression (see parseSearchQuery in httpapi). This query is
+// hand-written because sqlc cannot introspect FTS5 virtual tables; the column
+// set mirrors ListItems so rows reuse the generated scanner.
+func (s *ItemStore) SearchPage(userID int64, query string, f ItemFilter) ([]ItemWithFeed, bool, error) {
+	limit := f.Limit
+	if limit <= 0 {
+		limit = searchPageLimit
+	}
+	const sql = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+JOIN items_fts fts ON fts.rowid = i.id
+WHERE f.user_id = ?1
+  AND items_fts MATCH ?2
+  AND (CAST(?3 AS INTEGER) = 0 OR f.id = CAST(?3 AS INTEGER))
+  AND (CAST(?4 AS INTEGER) = 0 OR f.author_id = CAST(?4 AS INTEGER))
+  AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
+  AND (CAST(?6 AS INTEGER) = 0 OR
+       (COALESCE(i.published_at, i.fetched_at), i.id) <
+       (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(?6 AS INTEGER)))
+ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
+LIMIT ?7`
+	rows, err := s.db.QueryContext(context.Background(), sql, userID, query,
+		f.FeedID, f.AuthorID, boolInt(f.UnreadOnly), f.BeforeID, limit+1)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	out := make([]ItemWithFeed, 0, limit)
+	for rows.Next() {
+		var r sqlcgen.ListItemsRow
+		if err := rows.Scan(&r.ID, &r.FeedID, &r.Guid, &r.Title, &r.Link, &r.Summary,
+			&r.ImageUrl, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.ReadAt,
+			&r.FeedTitle, &r.FeedUrl, &r.AuthorID, &r.AuthorName); err != nil {
+			return nil, false, err
+		}
+		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
+			r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+			r.FeedTitle, r.FeedUrl, r.AuthorID, r.AuthorName))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	hasMore := len(out) > limit
+	if hasMore {
+		out = out[:limit]
+	}
+	return out, hasMore, nil
+}
+
+// Enclosure is one media attachment (podcast, video) on an item.
+type Enclosure struct {
+	URL      string
+	Title    string
+	MIMEType string
+	Size     int64
+	Sort     int
+}
+
+// Enclosures returns an item's media attachments in order.
+func (s *ItemStore) Enclosures(itemID int64) ([]Enclosure, error) {
+	rows, err := s.q.ListEnclosures(context.Background(), itemID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Enclosure, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Enclosure{URL: r.Url, Title: r.Title, MIMEType: r.MimeType.String, Size: r.Size, Sort: int(r.Sort)})
+	}
+	return out, nil
+}
+
+// ReplaceEnclosures deletes and re-inserts an item's enclosures.
+func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
+	if err := s.q.DeleteEnclosures(context.Background(), itemID); err != nil {
+		return err
+	}
+	for i, e := range encs {
+		if err := s.q.InsertEnclosure(context.Background(), sqlcgen.InsertEnclosureParams{
+			ItemID:   itemID,
+			Url:      e.URL,
+			Title:    e.Title,
+			MimeType: ns(e.MIMEType),
+			Size:     e.Size,
+			Sort:     int64(i),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // OneWithFeed returns a single item joined with its feed and author.

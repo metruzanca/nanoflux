@@ -198,6 +198,106 @@ func TestLoadMoreFlow(t *testing.T) {
 	}
 }
 
+func TestSearchRoute(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Go concurrency", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "Rust ownership", Link: "https://b.dev/2", FetchedAt: db.Now()})
+
+	body := doGet(h, "/search?q=concurrency", cookie).Body.String()
+	if !strings.Contains(body, "Go concurrency") || strings.Contains(body, "Rust ownership") {
+		t.Fatalf("search should return only the match: %s", body)
+	}
+
+	// The qualifier author: scopes to the author's items.
+	body = doGet(h, "/search?q="+url.QueryEscape(`author:Metru Go`), cookie).Body.String()
+	if !strings.Contains(body, "Go concurrency") {
+		t.Fatalf("author-qualified search missing result: %s", body)
+	}
+
+	// Empty query renders the empty results page.
+	rr := doGet(h, "/search", cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "search") {
+		t.Fatalf("empty search: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// The search box lives in the topbar.
+	home := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(home, `name="q"`) || !strings.Contains(home, `/search`) {
+		t.Fatalf("topbar should carry the search form: %s", home)
+	}
+}
+
+func TestItemModalShowsEnclosure(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Podcast", "https://p.dev/rss.xml", "", "", 900)
+	if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Episode", Link: "https://p.dev/1", FetchedAt: db.Now()}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	itemID, _ := s.store.Items.ByFeedGUID(f.ID, "g1")
+	s.store.Items.ReplaceEnclosures(itemID, []store.Enclosure{
+		{URL: "https://p.dev/ep1.mp3", Title: "Episode 1", MIMEType: "audio/mpeg", Size: 100},
+	})
+
+	body := doGet(h, "/items/"+itoa(itemID)+"/view", cookie).Body.String()
+	if !strings.Contains(body, "<audio") || !strings.Contains(body, `src="https://p.dev/ep1.mp3"`) {
+		t.Fatalf("item modal should embed the audio enclosure: %s", body)
+	}
+	if !strings.Contains(body, "class=\"external\"") {
+		t.Fatalf("enclosure download link should be external-marked: %s", body)
+	}
+}
+
+func TestFeedFilterRulesFlow(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+
+	// The edit page shows the filters section.
+	edit := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie).Body.String()
+	if !strings.Contains(edit, `id="feed-rules"`) {
+		t.Fatalf("edit page should include the filters section: %s", edit)
+	}
+
+	// Add a hide rule via the edit form.
+	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters", url.Values{
+		"action": {"hide"}, "field": {"title"}, "pattern": {"sponsored"},
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "sponsored") {
+		t.Fatalf("add rule: %d %s", rr.Code, rr.Body.String())
+	}
+	rules, _ := s.store.Filters.ListByFeed(u.ID, f.ID)
+	if len(rules) != 1 || rules[0].Pattern != "sponsored" || rules[0].Action != "hide" {
+		t.Fatalf("stored rule mismatch: %+v", rules)
+	}
+
+	// Invalid regex -> 400 with a visible error, nothing saved.
+	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters", url.Values{
+		"action": {"hide"}, "field": {"title"}, "pattern": {"("}, "is_regex": {"1"},
+	}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `role="alert"`) {
+		t.Fatalf("invalid regex: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// Delete the rule via the list fragment.
+	rr = doForm(h, "POST", "/filters/"+itoa(rules[0].ID)+"/delete", url.Values{}, cookie)
+	if rr.Code != http.StatusOK || strings.Contains(rr.Body.String(), "sponsored") {
+		t.Fatalf("delete rule: %d %s", rr.Code, rr.Body.String())
+	}
+	rules, _ = s.store.Filters.ListByFeed(u.ID, f.ID)
+	if len(rules) != 0 {
+		t.Fatalf("expected no rules after delete, got %d", len(rules))
+	}
+}
+
 func TestFeedAuthorCollectionFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

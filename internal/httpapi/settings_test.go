@@ -21,6 +21,8 @@ func TestSettingsPage(t *testing.T) {
 		`hx-post="/settings/icons"`,
 		`hx-post="/settings/timezone"`,
 		`hx-post="/settings/theme"`,
+		`hx-post="/settings/opml"`,
+		`/settings/export.opml`,
 		`name="domain"`,
 		"custom source icons",
 		"profile picture",
@@ -245,6 +247,86 @@ func TestFeedCreateAutoFavicon(t *testing.T) {
 	got := doGet(h, "/icons/"+domain, cookie)
 	if got.Code != http.StatusOK || got.Body.String() != string([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}) {
 		t.Fatalf("cached icon: %d %q", got.Code, got.Body.String())
+	}
+}
+
+func TestOpmlExport(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	s.store.Feeds.Create(u.ID, a.ID, "Solo", "https://solo.dev/rss.xml", "https://solo.dev", "", 900)
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Grouped", "https://group.dev/rss.xml", "https://group.dev", "", 900)
+	c, _ := s.store.Collections.Create(u.ID, "tech")
+	s.store.Collections.AddFeed(u.ID, c.ID, f.ID)
+
+	rr := doGet(h, "/settings/export.opml", cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("export: %d %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `xmlUrl="https://solo.dev/rss.xml"`) {
+		t.Fatalf("export missing ungrouped feed: %s", body)
+	}
+	if !strings.Contains(body, `text="tech"`) || !strings.Contains(body, `xmlUrl="https://group.dev/rss.xml"`) {
+		t.Fatalf("export missing collection group: %s", body)
+	}
+	if !strings.Contains(body, `<?xml version="1.0"`) {
+		t.Fatalf("export should be an xml document: %s", body)
+	}
+}
+
+func TestOpmlImport(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// A feed server the import validates against.
+	feedSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>Imported Feed</title><link>https://imp.dev/</link></channel></rss>`))
+	}))
+	defer feedSrv.Close()
+	s.client = feedSrv.Client()
+
+	opml := `<?xml version="1.0"?>
+<opml version="2.0"><head><title>x</title></head><body>
+  <outline type="rss" text="Imported Feed" title="Imported Feed" xmlUrl="` + feedSrv.URL + `/feed" htmlUrl="https://imp.dev/"/>
+  <outline text="tech">
+    <outline type="rss" title="Grouped Feed" xmlUrl="` + feedSrv.URL + `/group"/>
+  </outline>
+</body></opml>`
+
+	rr := uploadForm(h, "/settings/opml", "file", "feeds.opml", []byte(opml), cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("import: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "imported 2") {
+		t.Fatalf("import summary missing: %s", rr.Body.String())
+	}
+	feeds, _ := s.store.Feeds.List(u.ID)
+	if len(feeds) != 2 {
+		t.Fatalf("expected 2 imported feeds, got %d", len(feeds))
+	}
+	// The grouped feed lands in a "tech" collection.
+	cols, _ := s.store.Collections.List(u.ID)
+	if len(cols) != 1 || cols[0].Name != "tech" {
+		t.Fatalf("expected a tech collection: %+v", cols)
+	}
+	in, _ := s.store.Collections.Feeds(u.ID, cols[0].ID)
+	if len(in) != 1 {
+		t.Fatalf("collection should contain the grouped feed: %+v", in)
+	}
+
+	// Re-importing skips the existing feed urls.
+	rr = uploadForm(h, "/settings/opml", "file", "feeds.opml", []byte(opml), cookie)
+	if !strings.Contains(rr.Body.String(), "skipped 2") {
+		t.Fatalf("re-import should skip existing: %s", rr.Body.String())
+	}
+
+	// Invalid xml -> 400 with a visible error.
+	rr = uploadForm(h, "/settings/opml", "file", "bad.opml", []byte("not xml"), cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `role="alert"`) {
+		t.Fatalf("invalid opml: %d %s", rr.Code, rr.Body.String())
 	}
 }
 

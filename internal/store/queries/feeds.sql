@@ -71,3 +71,8 @@ SELECT id, user_id, author_id, title, feed_url, home_url, description,
 FROM feeds
 WHERE enabled = 1
   AND (last_polled_at IS NULL OR last_polled_at <= datetime(CAST(sqlc.arg('now') AS TEXT), '-' || poll_interval_sec || ' seconds'));
+-- name: GetFeedByTitle :one
+SELECT id, user_id, author_id, title, feed_url, home_url, description,
+       etag, last_modified, last_polled_at, poll_interval_sec, enabled, created_at
+FROM feeds
+WHERE user_id = ? AND title = ? COLLATE NOCASE;

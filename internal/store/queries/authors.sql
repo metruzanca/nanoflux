@@ -31,3 +31,7 @@ LEFT JOIN feeds f ON f.author_id = a.id AND f.user_id = a.user_id
 WHERE a.user_id = ?
 GROUP BY a.id
 ORDER BY a.name;
+-- name: GetAuthorByName :one
+SELECT id, user_id, name, url, avatar_url, description, created_at
+FROM authors
+WHERE user_id = ? AND name = ? COLLATE NOCASE;

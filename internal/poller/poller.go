@@ -5,10 +5,13 @@ package poller
 import (
 	"context"
 	"errors"
-	"github.com/charmbracelet/log"
 	"net/http"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/feedparse"
@@ -110,8 +113,19 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 	}
 
 	newItems := 0
+	rules, _ := p.store.Filters.ListByFeed(f.UserID, f.ID)
 	for _, it := range res.Items {
-		inserted, err := p.store.Items.Upsert(f.ID, store.Item{
+		action := ""
+		for _, rule := range rules {
+			if m, err := matchFilter(rule, it); err == nil && m {
+				action = rule.Action
+				break
+			}
+		}
+		if action == "hide" {
+			continue
+		}
+		item := store.Item{
 			GUID:        it.GUID,
 			Title:       it.Title,
 			Link:        it.Link,
@@ -119,16 +133,67 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 			ImageURL:    it.ImageURL,
 			PublishedAt: it.PublishedAt,
 			FetchedAt:   fetched,
-		})
+		}
+		if action == "mark_read" {
+			item.Read = true
+			item.ReadAt = db.Now()
+		}
+		inserted, err := p.store.Items.Upsert(f.ID, item)
 		if err != nil {
 			return newItems, err
 		}
 		if inserted {
 			newItems++
+			if len(it.Enclosures) > 0 {
+				if err := p.storeEnclosures(f.ID, it); err != nil {
+					log.Error("store enclosures", "feed_id", f.ID, "guid", it.GUID, "err", err)
+				}
+			}
 		}
 	}
 	if err := p.store.Feeds.SetPollMeta(f.ID, res.ETag, res.LastModified, fetched); err != nil {
 		return newItems, err
 	}
 	return newItems, nil
+}
+
+// matchFilter reports whether a rule's pattern matches an item's selected
+// field. Summary matching uses the visible text, not the raw HTML.
+func matchFilter(rule store.Filter, it feedparse.Item) (bool, error) {
+	var text string
+	switch rule.Field {
+	case "title":
+		text = it.Title
+	case "link":
+		text = it.Link
+	case "summary":
+		text = feedparse.PlainText(it.Summary)
+	default:
+		return false, nil
+	}
+	if rule.IsRegex {
+		re, err := regexp.Compile(rule.Pattern)
+		if err != nil {
+			return false, err
+		}
+		return re.MatchString(text), nil
+	}
+	return strings.Contains(strings.ToLower(text), strings.ToLower(rule.Pattern)), nil
+}
+
+// storeEnclosures copies a newly inserted item's media attachments into the
+// item_enclosures table.
+func (p *Poller) storeEnclosures(feedID int64, it feedparse.Item) error {
+	itemID, err := p.store.Items.ByFeedGUID(feedID, it.GUID)
+	if err != nil {
+		return err
+	}
+	if itemID == 0 {
+		return nil
+	}
+	encs := make([]store.Enclosure, 0, len(it.Enclosures))
+	for _, e := range it.Enclosures {
+		encs = append(encs, store.Enclosure{URL: e.URL, MIMEType: e.MIMEType, Size: e.Length})
+	}
+	return p.store.Items.ReplaceEnclosures(itemID, encs)
 }

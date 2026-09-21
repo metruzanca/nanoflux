@@ -62,6 +62,7 @@ func (s *Server) Handler() http.Handler {
 	// Items.
 	mux.Handle("GET /{$}", s.auth.Require(http.HandlerFunc(s.home)))
 	mux.Handle("GET /items", s.auth.Require(http.HandlerFunc(s.itemsFragment)))
+	mux.Handle("GET /search", s.auth.Require(http.HandlerFunc(s.searchPage)))
 	mux.Handle("GET /read", s.auth.Require(http.HandlerFunc(s.readPage)))
 	mux.Handle("GET /favorites", s.auth.Require(http.HandlerFunc(s.favoritesPage)))
 	mux.Handle("POST /items/read-all", s.auth.Require(http.HandlerFunc(s.itemsReadAll)))
@@ -79,6 +80,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /feeds/{id}/edit", s.auth.Require(http.HandlerFunc(s.feedUpdate)))
 	mux.Handle("POST /feeds/{id}/delete", s.auth.Require(http.HandlerFunc(s.feedDelete)))
 	mux.Handle("POST /feeds/{id}/refresh", s.auth.Require(http.HandlerFunc(s.feedRefresh)))
+	mux.Handle("POST /feeds/{id}/filters", s.auth.Require(http.HandlerFunc(s.feedRuleCreate)))
+	mux.Handle("POST /filters/{id}/delete", s.auth.Require(http.HandlerFunc(s.filterDelete)))
 
 	// Authors.
 	mux.Handle("GET /authors", s.auth.Require(http.HandlerFunc(s.authors)))
@@ -111,6 +114,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /settings/avatar", s.auth.Require(http.HandlerFunc(s.settingsAvatar)))
 	mux.Handle("POST /settings/timezone", s.auth.Require(http.HandlerFunc(s.settingsTimezone)))
 	mux.Handle("POST /settings/theme", s.auth.Require(http.HandlerFunc(s.settingsTheme)))
+	mux.Handle("GET /settings/export.opml", s.auth.Require(http.HandlerFunc(s.opmlExport)))
+	mux.Handle("POST /settings/opml", s.auth.Require(http.HandlerFunc(s.opmlImport)))
 	mux.Handle("GET /avatar", s.auth.Require(http.HandlerFunc(s.avatarImage)))
 	mux.Handle("POST /settings/icons", s.auth.Require(http.HandlerFunc(s.settingsIconAdd)))
 	mux.Handle("POST /settings/icons/{id}/refresh", s.auth.Require(http.HandlerFunc(s.settingsIconRefresh)))
@@ -121,6 +126,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/login", s.apiLogin)
 	mux.Handle("GET /api/unread-count", s.auth.Require(http.HandlerFunc(s.apiUnreadCount)))
 	mux.Handle("GET /api/items", s.auth.Require(http.HandlerFunc(s.apiItems)))
+	mux.Handle("GET /api/search", s.auth.Require(http.HandlerFunc(s.apiSearch)))
 	mux.Handle("POST /api/items/{id}/read", s.auth.Require(http.HandlerFunc(s.apiItemRead)))
 	mux.Handle("POST /api/discover", s.auth.Require(http.HandlerFunc(s.apiDiscover)))
 	mux.Handle("POST /api/save", s.auth.Require(http.HandlerFunc(s.apiSave)))
