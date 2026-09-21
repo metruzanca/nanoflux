@@ -16,10 +16,10 @@ func (d *Discoverer) hostSpecific(ctx context.Context, pageURL string) []Candida
 		return nil
 	}
 
-	var feeds []string
+	var feeds []hostFeed
 	if isYouTube(u.Hostname()) {
 		if id := d.youtubeChannelID(ctx, pageURL); id != "" {
-			feeds = append(feeds, "https://www.youtube.com/feeds/videos.xml?channel_id="+id)
+			feeds = append(feeds, hostFeed{URL: "https://www.youtube.com/feeds/videos.xml?channel_id=" + id})
 		}
 	} else {
 		feeds = hostSpecificURLs(u)
@@ -27,9 +27,14 @@ func (d *Discoverer) hostSpecific(ctx context.Context, pageURL string) []Candida
 
 	var out []Candidate
 	for _, f := range feeds {
-		if c, ok := d.tryFeed(ctx, f, "host", pageURL); ok {
-			out = append(out, c)
+		c, ok := d.tryFeed(ctx, f.URL, "host", pageURL)
+		if !ok {
+			continue
 		}
+		if f.Title != "" {
+			c.Title = f.Title
+		}
+		out = append(out, c)
 	}
 	return out
 }
@@ -42,9 +47,16 @@ func isYouTube(host string) bool {
 	return false
 }
 
+// hostFeed is one host-specific candidate: its feed URL and an optional display
+// title override ("" uses the feed's own title).
+type hostFeed struct {
+	URL   string
+	Title string
+}
+
 // hostSpecificURLs maps a page URL to candidate feed URLs for known sites.
 // YouTube is excluded: its feed requires the channel_id, scraped separately.
-func hostSpecificURLs(u *url.URL) []string {
+func hostSpecificURLs(u *url.URL) []hostFeed {
 	host := strings.ToLower(u.Hostname())
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 
@@ -52,19 +64,29 @@ func hostSpecificURLs(u *url.URL) []string {
 	case strings.HasSuffix(host, "bsky.app"), strings.HasSuffix(host, "bsk.app"):
 		// bsk.app/profile/{handle} -> the profile's RSS feed.
 		if len(parts) >= 2 && parts[0] == "profile" {
-			return []string{"https://" + u.Host + "/profile/" + parts[1] + "/rss"}
+			return []hostFeed{{URL: "https://" + u.Host + "/profile/" + parts[1] + "/rss"}}
 		}
 
 	case host == "reddit.com" || host == "www.reddit.com" || host == "old.reddit.com":
 		// Subreddits expose /r/{sub}.rss.
 		if len(parts) >= 2 && parts[0] == "r" {
-			return []string{"https://www.reddit.com/r/" + parts[1] + "/.rss"}
+			return []hostFeed{{URL: "https://www.reddit.com/r/" + parts[1] + "/.rss"}}
 		}
 
 	case host == "github.com" || host == "www.github.com":
-		// Repos expose releases.atom.
-		if len(parts) >= 2 {
-			return []string{"https://github.com/" + parts[0] + "/" + parts[1] + "/releases.atom"}
+		// Profile: github.com/USERNAME -> the user's activity feed.
+		if len(parts) == 1 && parts[0] != "" {
+			name := parts[0]
+			return []hostFeed{{URL: "https://github.com/" + name + ".atom", Title: name + "'s Github activity"}}
+		}
+		// Repo: github.com/OWNER/REPO -> releases, commits, or tags to pick from.
+		if len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
+			base := "https://github.com/" + parts[0] + "/" + parts[1]
+			return []hostFeed{
+				{URL: base + "/releases.atom"},
+				{URL: base + "/commits.atom"},
+				{URL: base + "/tags.atom"},
+			}
 		}
 	}
 	return nil

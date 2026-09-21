@@ -81,6 +81,7 @@ type feedRulesData struct {
 type authorRow struct {
 	store.Author
 	FeedCount int
+	Unread    int
 }
 
 type authorForm struct {
@@ -488,7 +489,8 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	author, _ := s.store.Authors.ByID(u.ID, authorID)
 	feeds, _ := s.store.Feeds.ListByAuthor(u.ID, authorID)
-	row := authorRow{Author: author, FeedCount: len(feeds)}
+	unread, _ := s.store.Items.CountUnreadAuthor(u.ID, authorID)
+	row := authorRow{Author: author, FeedCount: len(feeds), Unread: unread}
 	if isNew {
 		w.Header().Set("HX-Retarget", "#authors-list")
 		w.Header().Set("HX-Reswap", "beforeend")
@@ -590,7 +592,21 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 		s.autoCacheFeedIcon(ctx, userID, homeURL)
 		cancel()
 	}
+	// Kick off the first poll right away so the feed's items show up without
+	// waiting for the next poller tick. Fire-and-forget: the poller's http
+	// client bounds the fetch, and a slow feed can't stall the add response.
+	s.pollFeedNow(f)
 	return f, ""
+}
+
+// pollFeedNow triggers an immediate first poll of a newly added feed. It is
+// best-effort and detached from the request: when no poller is attached (e.g.
+// in tests) or the feed is disabled, it does nothing.
+func (s *Server) pollFeedNow(f store.Feed) {
+	if s.poller == nil || !f.Enabled {
+		return
+	}
+	go s.poller.PollOne(context.Background(), f)
 }
 
 // resolveAuthor maps the feed form's author selection to an author id, creating
@@ -999,7 +1015,7 @@ func (s *Server) authorRows(userID int64) []authorRow {
 	rows, _ := s.store.Authors.ListWithFeedCount(userID)
 	out := make([]authorRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, authorRow{Author: r.Author, FeedCount: r.FeedCount})
+		out = append(out, authorRow{Author: r.Author, FeedCount: r.FeedCount, Unread: r.UnreadCount})
 	}
 	return out
 }

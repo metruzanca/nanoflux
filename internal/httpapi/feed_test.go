@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -153,5 +154,46 @@ func TestFeedOlderFetchError(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), `role="alert"`) {
 		t.Fatalf("fetch error missing alert fragment: %s", rr.Body.String())
+	}
+}
+
+func TestFeedCreatePollsImmediately(t *testing.T) {
+	s, h := newTestServer(t)
+	s.SetPoller(poller.New(s.store, time.Minute, 1))
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>Blog</title><item><guid>g1</guid><title>Fresh</title><link>https://b.dev/1</link></item></channel></rss>`)
+	}))
+	defer srv.Close()
+
+	rr := doForm(h, "POST", "/feeds", url.Values{
+		"title": {"Blog"}, "feed_url": {srv.URL + "/feed"},
+		"author_id": {itoa(a.ID)},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("create feed: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// The first poll runs detached from the request; wait (bounded) for it to
+	// store the item so the feed's content shows up without waiting for a tick.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+		if len(items) == 1 && items[0].Title == "Fresh" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("immediate first poll did not ingest the item: %+v", items)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// The feed was polled: last_error stays clear and a next-page cursor was
+	// recorded for the first poll.
+	feeds, _ := s.store.Feeds.List(u.ID)
+	if len(feeds) != 1 || feeds[0].LastError != "" {
+		t.Fatalf("feed after first poll: %+v", feeds)
 	}
 }

@@ -30,9 +30,11 @@ WHERE id = ? AND user_id = ?;
 
 -- name: ListAuthorsWithFeedCount :many
 SELECT a.id, a.user_id, a.name, a.url, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.created_at,
-       COUNT(f.id) AS feed_count
+       COUNT(DISTINCT f.id) AS feed_count,
+       COUNT(DISTINCT i.id) AS unread_count
 FROM authors a
 LEFT JOIN feeds f ON f.author_id = a.id AND f.user_id = a.user_id
+LEFT JOIN items i ON i.feed_id = f.id AND i.read = 0
 WHERE a.user_id = ?
 GROUP BY a.id
 ORDER BY a.name;

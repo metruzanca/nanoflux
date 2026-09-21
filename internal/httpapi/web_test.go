@@ -1225,6 +1225,28 @@ func TestItemModalSkipsImageEnclosureAlreadyInBody(t *testing.T) {
 	}
 }
 
+func TestAuthorsPageShowsUnread(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "One", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "Two", Link: "https://b.dev/2", FetchedAt: db.Now()})
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	if err := s.store.Items.SetRead(u.ID, items[0].ID, true); err != nil {
+		t.Fatalf("SetRead: %v", err)
+	}
+
+	body := doGet(h, "/authors", cookie).Body.String()
+	if !strings.Contains(body, `<strong class="unread-count">1 unread</strong>`) {
+		t.Fatalf("authors page should surface unread count: %s", body)
+	}
+	if !strings.Contains(body, "1 feeds") {
+		t.Fatalf("authors page should still show feed count: %s", body)
+	}
+}
+
 func TestGlobalAddCreatesAuthorWithFeed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

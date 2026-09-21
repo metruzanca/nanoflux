@@ -53,7 +53,11 @@ templ AuthorRow(r authorRow) {
 					}
 					<strong>{ r.Name }</strong>
 				</a>
-				<div class="item-meta">{ r.FeedCount } feeds
+				<div class="item-meta">
+					if r.Unread > 0 {
+						<strong class="unread-count">{ r.Unread } unread</strong> ·
+					}
+					{ r.FeedCount } feeds
 					if r.URL != "" {
 						· <a href={ templ.URL(r.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ r.URL }</a>
 					}

@@ -501,6 +501,41 @@ func TestItemScopedCounts(t *testing.T) {
 	}
 }
 
+func TestListAuthorsWithFeedCountUnread(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	busy, _ := s.Authors.Create(u.ID, "Busy", "", "", "")
+	_, _ = s.Authors.Create(u.ID, "Quiet", "", "", "")
+
+	f, _ := s.Feeds.Create(u.ID, busy.ID, "Blog", "https://busy.dev/rss.xml", "", "", 900)
+	s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "One", Link: "https://busy.dev/1", FetchedAt: db.Now()})
+	s.Items.Upsert(f.ID, Item{GUID: "g2", Title: "Two", Link: "https://busy.dev/2", FetchedAt: db.Now()})
+	items, _ := s.Items.List(u.ID, ItemFilter{})
+	if err := s.Items.SetRead(u.ID, items[0].ID, true); err != nil {
+		t.Fatalf("SetRead: %v", err)
+	}
+
+	rows, err := s.Authors.ListWithFeedCount(u.ID)
+	if err != nil {
+		t.Fatalf("ListWithFeedCount: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	for _, r := range rows {
+		switch r.Name {
+		case "Busy":
+			if r.FeedCount != 1 || r.UnreadCount != 1 {
+				t.Fatalf("busy author: feeds=%d unread=%d, want 1/1", r.FeedCount, r.UnreadCount)
+			}
+		case "Quiet":
+			if r.FeedCount != 0 || r.UnreadCount != 0 {
+				t.Fatalf("quiet author: feeds=%d unread=%d, want 0/0", r.FeedCount, r.UnreadCount)
+			}
+		}
+	}
+}
+
 func TestItemsCarryAuthor(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
