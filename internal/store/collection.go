@@ -17,6 +17,15 @@ type Collection struct {
 	CreatedAt string
 }
 
+// CollectionWithCounts joins a collection with its feed and item counts for
+// the collections index cards.
+type CollectionWithCounts struct {
+	Collection
+	FeedCount int
+	Unread    int
+	Read      int
+}
+
 type CollectionStore struct{ q *sqlcgen.Queries }
 
 func (s *CollectionStore) Create(userID int64, name string) (Collection, error) {
@@ -117,6 +126,27 @@ func (s *CollectionStore) List(userID int64) ([]Collection, error) {
 	out := make([]Collection, 0, len(rows))
 	for _, c := range rows {
 		out = append(out, toCollection(c))
+	}
+	return out, nil
+}
+
+// ListWithCounts returns the user's collections with their feed, unread, and
+// read counts in one query, for the collections index cards.
+func (s *CollectionStore) ListWithCounts(userID int64) ([]CollectionWithCounts, error) {
+	rows, err := s.q.ListCollectionsWithCounts(context.Background(), userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CollectionWithCounts, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, CollectionWithCounts{
+			Collection: toCollection(sqlcgen.Collection{
+				ID: r.ID, UserID: r.UserID, Name: r.Name, IsAuto: r.IsAuto, CreatedAt: r.CreatedAt,
+			}),
+			FeedCount: int(r.FeedCount),
+			Unread:    int(r.UnreadCount),
+			Read:      int(r.ReadCount),
+		})
 	}
 	return out, nil
 }

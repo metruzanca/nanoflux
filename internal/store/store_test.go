@@ -501,6 +501,38 @@ func TestItemScopedCounts(t *testing.T) {
 	}
 }
 
+func TestListWithCounts(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	f1, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+	f2, _ := s.Feeds.Create(u.ID, a.ID, "Other", "https://other.dev/rss.xml", "", "", 900)
+	c, _ := s.Collections.Create(u.ID, "Dev")
+	s.Collections.AddFeed(u.ID, c.ID, f1.ID)
+	s.Collections.AddFeed(u.ID, c.ID, f2.ID)
+
+	s.Items.Upsert(f1.ID, Item{GUID: "a", Title: "a", Link: "https://metru.dev/1", FetchedAt: db.Now()})
+	s.Items.Upsert(f1.ID, Item{GUID: "b", Title: "b", Link: "https://metru.dev/2", FetchedAt: db.Now()})
+	s.Items.Upsert(f2.ID, Item{GUID: "c", Title: "c", Link: "https://other.dev/1", FetchedAt: db.Now()})
+	items, _ := s.Items.List(u.ID, ItemFilter{})
+	// Mark one item read; leave two unread.
+	if err := s.Items.SetRead(u.ID, items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := s.Collections.ListWithCounts(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("collections = %d, want 1", len(rows))
+	}
+	got := rows[0]
+	if got.FeedCount != 2 || got.Unread != 2 || got.Read != 1 {
+		t.Fatalf("collection counts = feeds:%d unread:%d read:%d, want 2/2/1", got.FeedCount, got.Unread, got.Read)
+	}
+}
+
 func TestMarkRangeRead(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

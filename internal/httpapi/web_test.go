@@ -1353,6 +1353,76 @@ func TestMarkRangeReadHTTP(t *testing.T) {
 	}
 }
 
+func TestFeedEditDeleteFlow(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+
+	// The author page's feed rows no longer carry pause/delete buttons.
+	author := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if strings.Contains(author, "/toggle") || strings.Contains(author, "/feeds/"+itoa(f.ID)+"/delete") {
+		t.Fatalf("feed rows should not offer pause/delete outside the edit page: %s", author)
+	}
+
+	// The feed edit page carries the delete form.
+	edit := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie).Body.String()
+	if !strings.Contains(edit, `action="/feeds/`+itoa(f.ID)+`/delete"`) ||
+		!strings.Contains(edit, `class="danger"`) {
+		t.Fatalf("feed edit page should carry a delete form: %s", edit)
+	}
+
+	// Deleting redirects back to the author page and removes the feed.
+	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/delete", url.Values{}, cookie)
+	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/authors/"+itoa(a.ID) {
+		t.Fatalf("feed delete: %d %q", rr.Code, rr.Header().Get("Location"))
+	}
+	if _, err := s.store.Feeds.ByID(u.ID, f.ID); err == nil {
+		t.Fatal("feed should be gone after delete")
+	}
+}
+
+func TestCollectionsIndexShowsStats(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f1, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
+	c, _ := s.store.Collections.Create(u.ID, "Dev")
+	s.store.Collections.AddFeed(u.ID, c.ID, f1.ID)
+	s.store.Collections.AddFeed(u.ID, c.ID, f2.ID)
+	s.store.Items.Upsert(f1.ID, store.Item{GUID: "a", Title: "a", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f1.ID, store.Item{GUID: "b", Title: "b", Link: "https://b.dev/2", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f2.ID, store.Item{GUID: "c", Title: "c", Link: "https://o.dev/1", FetchedAt: db.Now()})
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	if err := s.store.Items.SetRead(u.ID, items[0].ID, true); err != nil {
+		t.Fatalf("SetRead: %v", err)
+	}
+
+	body := doGet(h, "/collections", cookie).Body.String()
+	if !strings.Contains(body, `class="card"`) ||
+		!strings.Contains(body, "2 feeds · 2 unread · 1 read") {
+		t.Fatalf("collections index should render cards with stats: %s", body)
+	}
+}
+
+func TestAuthorEditHasAvatarFields(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit", cookie).Body.String()
+	// The avatar url input lives with the avatar image/heading inside the form.
+	if !strings.Contains(edit, `name="avatar_url"`) ||
+		!strings.Contains(edit, `<h2>avatar</h2>`) ||
+		!strings.Contains(edit, `id="author-avatar-card"`) ||
+		!strings.Contains(edit, `hx-target="#author-avatar-card"`) {
+		t.Fatalf("author edit should group the avatar url with the avatar section: %s", edit)
+	}
+}
+
 func TestGlobalAddCreatesAuthorWithFeed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

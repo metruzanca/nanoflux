@@ -155,7 +155,7 @@ func (s *Server) authorAvatarRefresh(w http.ResponseWriter, r *http.Request) {
 		if flash != "" {
 			w.WriteHeader(http.StatusBadRequest)
 		}
-		web.Render(w, r, authorAvatarCard(s.authorAvatarCardData(a, u.Timezone, flash)))
+		web.Render(w, r, authorAvatarFields(s.authorAvatarCardData(a, u.Timezone, flash)))
 	}
 	if a.AvatarURL == "" {
 		render("set an avatar url first")

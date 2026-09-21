@@ -933,12 +933,17 @@ func (s *Server) feedDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	f, err := s.store.Feeds.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
 	if err := s.store.Feeds.Delete(u.ID, id); err != nil {
 		log.Error("delete feed", "err", err)
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	http.Redirect(w, r, "/authors/"+strconv.FormatInt(f.AuthorID, 10), http.StatusSeeOther)
 }
 
 func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
@@ -1296,7 +1301,7 @@ func (s *Server) authorFormFragment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	rows, _ := s.store.Collections.List(u.ID)
+	rows, _ := s.store.Collections.ListWithCounts(u.ID)
 	web.Render(w, r, basePage("collections", u, collectionsPage(u, rows)))
 }
 
@@ -1313,7 +1318,7 @@ func (s *Server) collectionCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-collection-error", "could not create collection")
 		return
 	}
-	web.Render(w, r, CollectionRow(c))
+	web.Render(w, r, CollectionRow(store.CollectionWithCounts{Collection: c}))
 }
 
 func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
