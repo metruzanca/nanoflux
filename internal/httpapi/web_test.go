@@ -1152,6 +1152,36 @@ func TestItemModalShowsImageEnclosure(t *testing.T) {
 	}
 }
 
+func TestItemModalSkipsImageEnclosureAlreadyInBody(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Photos", "https://p.dev/rss.xml", "", "", 900)
+	inline := "https://p.dev/inline.jpg"
+	if _, err := s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "g1", Title: "Shot", Link: "https://p.dev/1",
+		Summary: `<p>a caption</p><img src="` + inline + `">`, FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	itemID, _ := s.store.Items.ByFeedGUID(f.ID, "g1")
+	enc := "https://p.dev/enclosure.jpg?e=1&t=signed"
+	s.store.Items.ReplaceEnclosures(itemID, []store.Enclosure{
+		{URL: enc, Title: "Photo", MIMEType: "image/jpeg", Size: 100},
+	})
+
+	body := doGet(h, "/items/"+itoa(itemID)+"/view", cookie).Body.String()
+	// The body's own image renders; the enclosure duplicates it, so it must
+	// not be shown inline nor as a bare link.
+	if !strings.Contains(body, `<img src="https://p.dev/inline.jpg"`) {
+		t.Fatalf("item body should render its embedded image: %s", body)
+	}
+	if strings.Contains(body, "enclosure.jpg") {
+		t.Fatalf("image enclosure duplicating the body should not render: %s", body)
+	}
+}
+
 func TestGlobalAddCreatesAuthorWithFeed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

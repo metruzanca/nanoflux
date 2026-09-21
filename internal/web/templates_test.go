@@ -168,6 +168,26 @@ func TestEnclosureKindAndImages(t *testing.T) {
 	}
 }
 
+func TestBodyHasImage(t *testing.T) {
+	cases := []struct {
+		body string
+		want bool
+	}{
+		{"", false},
+		{"plain text only", false},
+		{"<p>a caption</p>", false},
+		{`<img src="https://p.dev/photo.jpg">`, true},
+		{`<p>a caption</p><img src="https://p.dev/photo.jpg">`, true},
+		{`<a href="https://p.dev"><img src="https://p.dev/photo.jpg"></a>`, true},
+		{"<p>a <b>bold</b> caption</p>", false},
+	}
+	for _, c := range cases {
+		if got := BodyHasImage(c.body); got != c.want {
+			t.Errorf("BodyHasImage(%q) = %v, want %v", c.body, got, c.want)
+		}
+	}
+}
+
 func TestFormatBytes(t *testing.T) {
 	for _, tc := range []struct {
 		in   int64

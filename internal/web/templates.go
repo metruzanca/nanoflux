@@ -256,6 +256,37 @@ func EnclosureLabel(e store.Enclosure) string {
 	return name
 }
 
+// BodyHasImage reports whether an item's HTML body contains an <img> element.
+// Image enclosures render inline only when the body does not already show an
+// image, so a description that embeds the same image isn't duplicated.
+func BodyHasImage(htmlBody string) bool {
+	if !strings.Contains(htmlBody, "<") {
+		return false
+	}
+	doc, err := html.Parse(strings.NewReader(htmlBody))
+	if err != nil {
+		return false
+	}
+	var has bool
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if has {
+			return
+		}
+		if n.Type == html.ElementNode && n.Data == "img" {
+			has = true
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	for c := doc.FirstChild; c != nil; c = c.NextSibling {
+		walk(c)
+	}
+	return has
+}
+
 // StripHTML extracts plain text from feed-provided HTML.
 func StripHTML(s string) string {
 	doc, err := html.Parse(strings.NewReader(s))

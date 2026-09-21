@@ -449,7 +449,11 @@ Some feeds deliver an item's image only as an `<enclosure>` with no
   `image/*` or common image extensions, matched on the URL's parsed path so
   signed URLs (`photo.jpg?e=…&t=…`) still hit. `itemContent` renders image
   enclosures inline (single → `.image-lightbox`, several → `.gallery`) and
-  drops them from the bare-link list; `ImageEnclosures` collects them.
+  drops them from the bare-link list; `ImageEnclosures` collects them. The
+  inline render is skipped when the item is already showing an image (`v.Image`
+  lightbox, a reddit gallery) or its body/description embeds an `<img>`
+  (`web.BodyHasImage`) — feeds that populate the description with the image
+  must not render the same enclosure twice.
 - At poll time `normalizeItem` falls back to the first image enclosure's URL
   as `image_url` when the feed supplied none, so image-enclosure items get a
   thumbnail in lists (and the masonry grid). They stay text posts —
