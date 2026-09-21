@@ -77,10 +77,10 @@ func TestDiskStoreRejectsEscapingKeys(t *testing.T) {
 }
 
 func TestConfigFromEnv(t *testing.T) {
-	t.Setenv("S3_ENDPOINT", "")
-	t.Setenv("S3_BUCKET", "")
-	t.Setenv("S3_REGION", "")
-	t.Setenv("RSS_FILE_STORE", "/var/lib/nanoflux/files")
+	t.Setenv("NF_S3_ENDPOINT", "")
+	t.Setenv("NF_S3_BUCKET", "")
+	t.Setenv("NF_S3_REGION", "")
+	t.Setenv("NF_FILE_STORE", "/var/lib/nanoflux/files")
 	cfg := ConfigFromEnv()
 	if !cfg.IsDisk() {
 		t.Fatalf("empty endpoint should select disk: %+v", cfg)
@@ -89,11 +89,11 @@ func TestConfigFromEnv(t *testing.T) {
 		t.Fatalf("disk config: %+v", cfg)
 	}
 
-	t.Setenv("S3_ENDPOINT", "https://s3.us-east-1.amazonaws.com")
-	t.Setenv("S3_BUCKET", "mybucket")
-	t.Setenv("S3_ACCESS_KEY", "ak")
-	t.Setenv("S3_SECRET_KEY", "sk")
-	t.Setenv("S3_REGION", "us-west-2")
+	t.Setenv("NF_S3_ENDPOINT", "https://s3.us-east-1.amazonaws.com")
+	t.Setenv("NF_S3_BUCKET", "mybucket")
+	t.Setenv("NF_S3_ACCESS_KEY", "ak")
+	t.Setenv("NF_S3_SECRET_KEY", "sk")
+	t.Setenv("NF_S3_REGION", "us-west-2")
 	cfg = ConfigFromEnv()
 	if cfg.IsDisk() {
 		t.Fatalf("an explicit endpoint should select S3: %+v", cfg)

@@ -86,8 +86,8 @@ func main() {
 }
 
 // newFileStore builds the blob store for avatars and custom icons. When
-// S3_ENDPOINT is set it uses S3-compatible object storage; otherwise it falls
-// back to a local disk directory (cfg.FileStoreDir). A configured-but-
+// NF_S3_ENDPOINT is set it uses S3-compatible object storage; otherwise it
+// falls back to a local disk directory (cfg.FileStoreDir). A configured-but-
 // unreachable S3 endpoint is a hard error so file features are never silently
 // broken.
 func newFileStore(cfg config.Config) (filestore.Store, error) {
@@ -108,12 +108,12 @@ func newFileStore(cfg config.Config) (filestore.Store, error) {
 	bctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := files.EnsureBucket(bctx); err != nil {
-		return nil, fmt.Errorf("reach %s (set S3_ENDPOINT): %w", fcfg.Endpoint, err)
+		return nil, fmt.Errorf("reach %s (set NF_S3_ENDPOINT): %w", fcfg.Endpoint, err)
 	}
 	return files, nil
 }
 
-// setLogLevel maps the RSS_LOG_LEVEL value onto the logger.
+// setLogLevel maps the NF_LOG_LEVEL value onto the logger.
 func setLogLevel(level string) {
 	switch level {
 	case "debug":

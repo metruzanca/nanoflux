@@ -23,7 +23,7 @@ help:
 start:
 	@if [ ! -f .env ]; then \
 		PW="$$(openssl rand -hex 24 2>/dev/null || od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"; \
-		printf 'RSS_BOOTSTRAP_USER=admin\nRSS_BOOTSTRAP_PASS=%s\n' "$$PW" > .env; \
+		printf 'NF_ADMIN_USER=admin\nNF_ADMIN_PASS=%s\n' "$$PW" > .env; \
 		echo "created .env - log in as admin with password $$PW"; \
 	fi
 	$(COMPOSE) up -d
