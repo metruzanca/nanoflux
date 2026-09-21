@@ -66,17 +66,25 @@ templ topbar(u store.User) {
 			<h2 class="muted">keyboard shortcuts</h2>
 			<button type="button" class="link" onclick="document.getElementById('shortcuts-dialog').close()">✕</button>
 		</div>
-		<table class="shortcuts">
-			<tr><td>j / k</td><td>next / previous item</td></tr>
-			<tr><td>o / Enter</td><td>open item</td></tr>
-			<tr><td>v</td><td>open original in a new tab</td></tr>
-			<tr><td>s</td><td>favorite / unfavorite</td></tr>
-			<tr><td>m</td><td>mark read / unread</td></tr>
-			<tr><td>g / G</td><td>first / last item</td></tr>
-			<tr><td>← / →</td><td>previous / next while reading</td></tr>
-			<tr><td>Esc</td><td>close dialog</td></tr>
-		</table>
+		@shortcutsTable()
 	</dialog>
+}
+
+// shortcutsTable lists every key binding wired up in static/app.js. It's
+// shared by the "?" help sheet and the settings page so the two stay in sync.
+templ shortcutsTable() {
+	<table class="shortcuts">
+		<tr><td>j / k</td><td>next / previous item</td></tr>
+		<tr><td>o / Enter</td><td>open item</td></tr>
+		<tr><td>v</td><td>open original in a new tab</td></tr>
+		<tr><td>s</td><td>favorite / unfavorite</td></tr>
+		<tr><td>m</td><td>mark read / unread</td></tr>
+		<tr><td>g / G</td><td>first / last item</td></tr>
+		<tr><td>← / →</td><td>previous / next while reading</td></tr>
+		<tr><td>/</td><td>focus the search box</td></tr>
+		<tr><td>?</td><td>toggle this list</td></tr>
+		<tr><td>Esc</td><td>close dialog</td></tr>
+	</table>
 }
 
 // basePage renders a full HTML document: head, topbar, and the page content.
