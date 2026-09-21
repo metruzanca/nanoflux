@@ -93,6 +93,20 @@ type ItemsFt struct {
 	Summary string `json:"summary"`
 }
 
+type List struct {
+	ID         int64          `json:"id"`
+	UserID     int64          `json:"user_id"`
+	Name       string         `json:"name"`
+	ShareToken sql.NullString `json:"share_token"`
+	CreatedAt  string         `json:"created_at"`
+}
+
+type ListItem struct {
+	ListID    int64  `json:"list_id"`
+	ItemID    int64  `json:"item_id"`
+	CreatedAt string `json:"created_at"`
+}
+
 type Session struct {
 	ID        int64  `json:"id"`
 	Token     string `json:"token"`
@@ -146,5 +160,6 @@ type User struct {
 	Timezone              sql.NullString `json:"timezone"`
 	Theme                 string         `json:"theme"`
 	AccentColor           string         `json:"accent_color"`
+	FavoritesShareToken   sql.NullString `json:"favorites_share_token"`
 	CreatedAt             string         `json:"created_at"`
 }

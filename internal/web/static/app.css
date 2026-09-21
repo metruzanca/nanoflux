@@ -136,6 +136,45 @@ a.external::after {
   color: var(--fg);
 }
 
+/* Item "⋯" menu on the item modal (add to list). */
+.item-menu {
+  position: relative;
+  display: inline-block;
+}
+.menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.5rem);
+  z-index: 50;
+  min-width: 10rem;
+  padding: 0.25rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.menu-pop:not([hidden]) { display: flex; flex-direction: column; }
+.menu-pop a,
+.menu-pop button {
+  padding: 0.45rem 0.75rem;
+  border-radius: 6px;
+  color: var(--fg);
+  text-align: left;
+  white-space: nowrap;
+}
+.menu-pop a:hover,
+.menu-pop button:hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  text-decoration: none;
+}
+.menu-pop button.link {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0.45rem 0.75rem;
+  color: var(--fg);
+}
+
 main { max-width: 46rem; margin: 1.5rem auto; padding: 0 1.25rem; }
 
 .card {

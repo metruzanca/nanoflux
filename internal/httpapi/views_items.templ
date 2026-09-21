@@ -218,6 +218,7 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 			}
 		</p>
 		@shareControl(d.ID, d.ShareToken)
+		@itemMenu(d.ID, d.Favorite, d.Lists, d.ItemListIDs)
 		@itemContent(d, v)
 	</div>
 }
@@ -280,6 +281,50 @@ templ shareControl(itemID int64, token string) {
 			<button class="link" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/share" } hx-target="#item-share" hx-swap="outerHTML">share</button>
 		}
 	</div>
+}
+
+// itemMenu is the "⋯" action menu on an item. It opens a dropdown whose "add
+// to list" entry shows the item-lists picker dialog. Removing from a list uses
+// the same dialog — unchecking a list and saving drops the item from it.
+templ itemMenu(itemID int64, favorite bool, lists []store.List, itemListIDs []int64) {
+	<div class="item-menu">
+		<button type="button" id="item-menu-btn" class="link" aria-haspopup="true" aria-expanded="false" onclick="toggleItemMenu(event)">⋯</button>
+		<div id="item-menu-pop" class="menu-pop" role="menu" hidden>
+			<button type="button" class="link menu-item" role="menuitem" onclick="showItemListsDialog(event)">add to list</button>
+		</div>
+	</div>
+	@itemListsDialog(itemID, favorite, lists, itemListIDs)
+}
+
+// itemListsDialog is the "add to list" picker. Favorites is the special list
+// (its checkbox mirrors items.favorite); the others are the user's lists. The
+// form is the fragment target of the apply endpoint, so it re-renders with
+// fresh membership state and closes on success.
+templ itemListsDialog(itemID int64, favorite bool, lists []store.List, itemListIDs []int64) {
+	<dialog id="item-lists-dialog" class="modal">
+		<form class="stack" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/lists" } hx-target="#item-lists-dialog" hx-swap="outerHTML" hx-on::after-request="if(event.detail.successful){document.getElementById('item-lists-dialog').close()}">
+			<div class="row">
+				<h2>add to list</h2>
+				<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+			</div>
+			<label>
+				<input type="checkbox" name="lists" value="favorites"
+				if favorite {
+					checked
+				}/> favorites
+			</label>
+			for _, l := range lists {
+				<label>
+					<input type="checkbox" name="lists" value={ strconv.FormatInt(l.ID, 10) }
+					if containsListID(itemListIDs, l.ID) {
+						checked
+					}/> { l.Name }
+				</label>
+			}
+			<div id="item-lists-error" class="error"></div>
+			<button type="submit">save</button>
+		</form>
+	</dialog>
 }
 
 // sharedItemPage is the public, unauthenticated view of a shared item. It

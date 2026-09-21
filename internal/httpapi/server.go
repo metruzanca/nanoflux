@@ -110,6 +110,20 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /collections/{id}/add-feed", s.auth.Require(http.HandlerFunc(s.collectionAddFeed)))
 	mux.Handle("POST /collections/{id}/remove-feed/{feed_id}", s.auth.Require(http.HandlerFunc(s.collectionRemoveFeed)))
 
+	// Lists (user-defined sets of items; favorites is the special list).
+	mux.Handle("GET /lists", s.auth.Require(http.HandlerFunc(s.listsPage)))
+	mux.Handle("POST /lists", s.auth.Require(http.HandlerFunc(s.listCreate)))
+	mux.Handle("GET /lists/{id}", s.auth.Require(http.HandlerFunc(s.listPage)))
+	mux.Handle("GET /lists/{id}/items", s.auth.Require(http.HandlerFunc(s.listItems)))
+	mux.Handle("POST /lists/{id}/delete", s.auth.Require(http.HandlerFunc(s.listDelete)))
+	mux.Handle("POST /lists/{id}/share", s.auth.Require(http.HandlerFunc(s.listShare)))
+	mux.Handle("POST /lists/{id}/revoke", s.auth.Require(http.HandlerFunc(s.listRevoke)))
+	mux.Handle("POST /items/{id}/lists", s.auth.Require(http.HandlerFunc(s.itemListsUpdate)))
+	mux.Handle("POST /favorites/share", s.auth.Require(http.HandlerFunc(s.favoritesShare)))
+	mux.Handle("POST /favorites/revoke", s.auth.Require(http.HandlerFunc(s.favoritesRevoke)))
+	mux.HandleFunc("GET /l/{token}", s.sharedListPage)
+	mux.HandleFunc("GET /f/{token}", s.sharedFavoritesPage)
+
 	// htmx fragments.
 	mux.Handle("GET /fragments/author-form", s.auth.Require(http.HandlerFunc(s.authorFormFragment)))
 	mux.Handle("POST /fragments/feed-preview", s.auth.Require(http.HandlerFunc(s.feedPreview)))

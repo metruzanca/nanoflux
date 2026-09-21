@@ -71,6 +71,9 @@ templ readPage(d readData) {
 templ favoritesPage(d favoritesData) {
 	<div class="row">
 		<h1>favorites ({ d.FavCount })</h1>
+		<div class="row-actions">
+			@favoritesShareControl(d.ShareToken)
+		</div>
 	</div>
 	@ItemsListPage(d.Favorites, d.More)
 }
