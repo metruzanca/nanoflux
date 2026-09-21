@@ -2,6 +2,7 @@
 /nanoflux
 /dist/
 /data/
+/backups/
 *.db
 *.db-wal
 *.db-shm
