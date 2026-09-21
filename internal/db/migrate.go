@@ -29,6 +29,7 @@ var migrations = []migration{
 	{16, schemaV16},
 	{17, schemaV17},
 	{18, schemaV18},
+	{19, schemaV19},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -133,6 +134,22 @@ ALTER TABLE users ADD COLUMN signup_banner_dismissed INTEGER NOT NULL DEFAULT 0;
 // a feed is broken. NULL/empty means the last poll succeeded.
 const schemaV18 = `
 ALTER TABLE feeds ADD COLUMN last_error TEXT;
+`
+
+// schemaV19 stores per-user "url pattern -> feed url" mappings used to
+// pre-fill the add-feed form. Patterns are Go regexes with named groups; the
+// template references captures with {name}. Only consulted when adding feeds;
+// existing feeds keep the feed url they were created with.
+const schemaV19 = `
+CREATE TABLE url_mappings (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    pattern    TEXT NOT NULL,
+    template   TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, pattern)
+);
+CREATE INDEX idx_url_mappings_user ON url_mappings(user_id);
 `
 
 const schemaV8 = `

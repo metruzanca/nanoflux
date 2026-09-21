@@ -122,6 +122,14 @@ type SourceIcon struct {
 	CreatedAt     string         `json:"created_at"`
 }
 
+type UrlMapping struct {
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	Pattern   string `json:"pattern"`
+	Template  string `json:"template"`
+	CreatedAt string `json:"created_at"`
+}
+
 type User struct {
 	ID                    int64          `json:"id"`
 	Username              string         `json:"username"`

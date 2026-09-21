@@ -38,6 +38,11 @@ type authorPreviewForm struct {
 // feedPreview inspects a URL (direct feed or page) and renders the quick-add
 // form. When the URL yields several feeds, it renders a dropdown first; the
 // chosen feed re-posts here with feed_url set and renders a single form.
+//
+// The user's url mappings are applied first: if a pattern matches the entered
+// url, the mapped feed url is inspected instead and the original url becomes
+// the feed's home page. When the mapped url yields nothing, discovery falls
+// back to the original url so a stale mapping never blocks adding a feed.
 func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	pageURL := normalizeURL(r.FormValue("url"))
@@ -48,20 +53,32 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	authors, _ := s.store.Authors.List(u.ID)
 	selectedAuthor, _ := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
 
+	feedURL := pageURL
+	if mapped, ok := s.mappedFeedURL(u.ID, pageURL); ok {
+		feedURL = mapped
+	}
+
 	// The URL itself may already be a feed; if so we can also derive the home page.
-	if res, err := feedparse.Fetch(r.Context(), pageURL, s.client, "", ""); err == nil {
+	if res, err := feedparse.Fetch(r.Context(), feedURL, s.client, "", ""); err == nil {
 		home := res.Feed.HomeURL
-		if home == "" {
+		if home == "" || feedURL != pageURL {
 			home = pageURL
 		}
 		web.Render(w, r, feedPreviewFields(feedPreviewForm{
-			Title: res.Feed.Title, FeedURL: pageURL, HomeURL: home, Authors: authors,
+			Title: res.Feed.Title, FeedURL: feedURL, HomeURL: home, Authors: authors,
 			SelectedAuthorID: selectedAuthor,
 		}))
 		return
 	}
 
-	candidates, err := s.discoverer.Discover(r.Context(), pageURL)
+	candidates, err := s.discoverer.Discover(r.Context(), feedURL)
+	if len(candidates) == 0 && feedURL != pageURL {
+		// A mapping transformed the url but its feed is gone or the page is
+		// not a feed; fall back to the original input.
+		if candidates, err = s.discoverer.Discover(r.Context(), pageURL); err != nil {
+			log.Error("feed preview discover fallback", "err", err)
+		}
+	}
 	if err != nil {
 		log.Error("feed preview discover", "err", err)
 		renderError(w, r, "could not inspect that url")

@@ -643,6 +643,48 @@ func TestSourceIconStore(t *testing.T) {
 	}
 }
 
+func TestUrlMappingStore(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	other := mustUser(t, s, "bob")
+
+	m, err := s.UrlMappings.Create(u.ID, `abc\.com/(?P<user>[^/]+)`, `{user}.abc.com/feed`)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.UrlMappings.ByID(u.ID, m.ID)
+	if err != nil || got.Pattern != `abc\.com/(?P<user>[^/]+)` || got.Template != "{user}.abc.com/feed" {
+		t.Fatalf("ByID: %v %+v", err, got)
+	}
+	// Duplicate pattern -> ErrExists.
+	if _, err := s.UrlMappings.Create(u.ID, `abc\.com/(?P<user>[^/]+)`, `{user}.abc.com/rss`); !errors.Is(err, ErrExists) {
+		t.Fatalf("duplicate: %v", err)
+	}
+	// Scoped to the user.
+	if _, err := s.UrlMappings.ByID(other.ID, m.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("other user should not see the mapping: %v", err)
+	}
+
+	// Update keeps the id and applies to the user only.
+	if err := s.UrlMappings.Update(u.ID, m.ID, `abc\.com/(?P<user>[^/]+)`, `{user}.abc.com/rss`); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	got, _ = s.UrlMappings.ByID(u.ID, m.ID)
+	if got.Template != "{user}.abc.com/rss" {
+		t.Fatalf("updated mapping: %+v", got)
+	}
+	rows, _ := s.UrlMappings.List(u.ID)
+	if len(rows) != 1 {
+		t.Fatalf("List: %d", len(rows))
+	}
+	if err := s.UrlMappings.Delete(u.ID, m.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := s.UrlMappings.ByID(u.ID, m.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
 func TestMigrateLegacyFiles(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

@@ -1,0 +1,89 @@
+package httpapi
+
+import (
+	"strconv"
+)
+
+templ settingsMappings(d settingsData) {
+	<section class="card">
+		<h2>url mappings</h2>
+		<p class="muted small">Turn a profile or page url into a feed url when adding a feed. The pattern is a regular expression with named groups; captured values are used in the feed url. The first matching rule wins.</p>
+		<form class="stack" hx-post="/settings/mappings" hx-target="#settings-mappings-list" hx-swap="beforeend">
+			<div class="row">
+				<label>pattern
+					<input name="pattern" type="text" placeholder="abc\.com/(?P&lt;user&gt;[^/]+)" required/>
+				</label>
+				<label>feed url
+					<input name="template" type="text" placeholder="{user}.abc.com/feed" required/>
+				</label>
+			</div>
+			<div class="row">
+				<label>test url
+					<input name="test_url" type="text" placeholder="https://abc.com/jane"/>
+				</label>
+				<button type="button" hx-post="/fragments/mapping-test" hx-target="#settings-mappings-test" hx-swap="innerHTML" hx-include="closest form">test</button>
+			</div>
+			<div id="settings-mappings-test"></div>
+			<div id="settings-mappings-error" class="error"></div>
+			<button type="submit">add mapping</button>
+		</form>
+		@SettingsMappingsList(d.Mappings)
+	</section>
+}
+
+templ SettingsMappingsList(rows []settingsMappingRow) {
+	<ul class="plain" id="settings-mappings-list">
+		for _, r := range rows {
+			@SettingsMappingRow(r)
+		}
+	</ul>
+}
+
+templ SettingsMappingRow(r settingsMappingRow) {
+	<li id={ "settings-mapping-" + strconv.FormatInt(r.ID, 10) }>
+		<div class="row">
+			<div>
+				<code>{ r.Pattern }</code> → <code>{ r.Template }</code>
+			</div>
+			<div class="row-actions">
+				<button class="link" title="edit" hx-get={ "/fragments/mapping-edit/" + strconv.FormatInt(r.ID, 10) } hx-target={ "#settings-mapping-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">edit</button>
+				<button class="link danger" title="remove" hx-post={ "/settings/mappings/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#settings-mappings-list" hx-swap="innerHTML" hx-confirm="remove this mapping?">✕</button>
+			</div>
+		</div>
+	</li>
+}
+
+templ SettingsMappingEditForm(r settingsMappingRow) {
+	<li id={ "settings-mapping-" + strconv.FormatInt(r.ID, 10) }>
+		<form class="stack" hx-post={ "/settings/mappings/" + strconv.FormatInt(r.ID, 10) } hx-target={ "#settings-mapping-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">
+			<div class="row">
+				<label>pattern
+					<input name="pattern" type="text" value={ r.Pattern } required/>
+				</label>
+				<label>feed url
+					<input name="template" type="text" value={ r.Template } required/>
+				</label>
+			</div>
+			<div class="row">
+				<label>test url
+					<input name="test_url" type="text" placeholder="https://abc.com/jane"/>
+				</label>
+				<button type="button" hx-post="/fragments/mapping-test" hx-target={ "#mapping-test-" + strconv.FormatInt(r.ID, 10) } hx-swap="innerHTML" hx-include="closest form">test</button>
+			</div>
+			<div id={ "mapping-test-" + strconv.FormatInt(r.ID, 10) }></div>
+			<div id={ "settings-mapping-error-" + strconv.FormatInt(r.ID, 10) } class="error"></div>
+			<div class="row">
+				<button type="submit">save</button>
+				<button type="button" class="link" hx-get={ "/fragments/mapping-row/" + strconv.FormatInt(r.ID, 10) } hx-target={ "#settings-mapping-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">cancel</button>
+			</div>
+		</form>
+	</li>
+}
+
+templ MappingTestResult(mapped string, ok bool) {
+	if ok {
+		<p class="muted small">mapped url: <code>{ mapped }</code></p>
+	} else {
+		<p class="muted small">no match for that url</p>
+	}
+}
