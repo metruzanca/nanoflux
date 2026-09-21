@@ -43,7 +43,7 @@ func collectionsPage(u store.User, rows []store.Collection) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<dialog id=\"add-collection-dialog\" class=\"modal\"><form class=\"stack\" hx-post=\"/collections\" hx-target=\"#collections-list\" hx-swap=\"beforeend\" hx-on:after-request=\"if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}\"><div class=\"row\"><h2>add collection</h2><button type=\"button\" class=\"link\" onclick=\"this.closest('dialog').close()\">✕</button></div><label>name <input name=\"name\" autofocus required></label><div id=\"add-collection-error\" class=\"error\"></div><button type=\"submit\">add collection</button></form></dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<dialog id=\"add-collection-dialog\" class=\"modal\"><form class=\"stack\" hx-post=\"/collections\" hx-target=\"#collections-list\" hx-swap=\"beforeend\" hx-on::after-request=\"if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}\"><div class=\"row\"><h2>add collection</h2><button type=\"button\" class=\"link\" onclick=\"this.closest('dialog').close()\">✕</button></div><label>name <input name=\"name\" autofocus required></label><div id=\"add-collection-error\" class=\"error\"></div><button type=\"submit\">add collection</button></form></dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

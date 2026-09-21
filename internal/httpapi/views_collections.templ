@@ -14,7 +14,7 @@ templ collectionsPage(u store.User, rows []store.Collection) {
 	@CollectionsList(rows)
 
 	<dialog id="add-collection-dialog" class="modal">
-		<form class="stack" hx-post="/collections" hx-target="#collections-list" hx-swap="beforeend" hx-on:after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+		<form class="stack" hx-post="/collections" hx-target="#collections-list" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
 			<div class="row">
 				<h2>add collection</h2>
 				<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>

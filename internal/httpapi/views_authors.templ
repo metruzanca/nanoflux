@@ -66,7 +66,7 @@ templ AuthorRow(r authorRow) {
 }
 
 templ authorPreviewFields(d authorPreviewForm) {
-	<form class="stack" hx-post="/authors" hx-target="#authors-list" hx-swap="beforeend" hx-on:after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+	<form class="stack" hx-post="/authors" hx-target="#authors-list" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
 		if d.AvatarURL != "" {
 			<img class="avatar" src={ "/img?u=" + url.QueryEscape(d.AvatarURL) } onerror="this.style.display='none'" alt=""/>
 		}

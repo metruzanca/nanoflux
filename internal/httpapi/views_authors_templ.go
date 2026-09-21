@@ -345,7 +345,7 @@ func authorPreviewFields(d authorPreviewForm) templ.Component {
 			templ_7745c5c3_Var17 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<form class=\"stack\" hx-post=\"/authors\" hx-target=\"#authors-list\" hx-swap=\"beforeend\" hx-on:after-request=\"if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<form class=\"stack\" hx-post=\"/authors\" hx-target=\"#authors-list\" hx-swap=\"beforeend\" hx-on::after-request=\"if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
