@@ -113,6 +113,12 @@ func (s *Server) Handler() http.Handler {
 	// Image proxy for avatars.
 	mux.Handle("GET /img", s.auth.Require(http.HandlerFunc(s.imgProxy)))
 
+	// Admin.
+	mux.Handle("GET /admin", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminPage))))
+	mux.Handle("POST /admin/users/{id}/reset-password", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminResetPassword))))
+	mux.Handle("POST /admin/users/{id}/set-admin", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminSetAdmin))))
+	mux.Handle("POST /admin/users/{id}/delete", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminDeleteUser))))
+
 	// Settings.
 	mux.Handle("GET /settings", s.auth.Require(http.HandlerFunc(s.settingsPage)))
 	mux.Handle("POST /settings/avatar", s.auth.Require(http.HandlerFunc(s.settingsAvatar)))

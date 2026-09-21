@@ -10,6 +10,17 @@ import (
 	"database/sql"
 )
 
+const countAdmins = `-- name: CountAdmins :one
+SELECT COUNT(*) FROM users WHERE is_admin = 1
+`
+
+func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*) FROM users
 `
@@ -24,7 +35,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
-RETURNING id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
+RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
 `
 
 type CreateUserParams struct {
@@ -36,6 +47,7 @@ type CreateUserRow struct {
 	ID           int64          `json:"id"`
 	Username     string         `json:"username"`
 	PasswordHash string         `json:"password_hash"`
+	IsAdmin      bool           `json:"is_admin"`
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
@@ -50,6 +62,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.ID,
 		&i.Username,
 		&i.PasswordHash,
+		&i.IsAdmin,
 		&i.AvatarKey,
 		&i.Timezone,
 		&i.Theme,
@@ -57,6 +70,15 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUser, id)
+	return err
 }
 
 const getUserAvatarKey = `-- name: GetUserAvatarKey :one
@@ -72,7 +94,7 @@ func (q *Queries) GetUserAvatarKey(ctx context.Context, id int64) (sql.NullStrin
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 WHERE id = ?
 `
@@ -81,6 +103,7 @@ type GetUserByIDRow struct {
 	ID           int64          `json:"id"`
 	Username     string         `json:"username"`
 	PasswordHash string         `json:"password_hash"`
+	IsAdmin      bool           `json:"is_admin"`
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
@@ -95,6 +118,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, er
 		&i.ID,
 		&i.Username,
 		&i.PasswordHash,
+		&i.IsAdmin,
 		&i.AvatarKey,
 		&i.Timezone,
 		&i.Theme,
@@ -105,7 +129,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, er
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 WHERE username = ?
 `
@@ -114,6 +138,7 @@ type GetUserByUsernameRow struct {
 	ID           int64          `json:"id"`
 	Username     string         `json:"username"`
 	PasswordHash string         `json:"password_hash"`
+	IsAdmin      bool           `json:"is_admin"`
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
@@ -128,6 +153,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 		&i.ID,
 		&i.Username,
 		&i.PasswordHash,
+		&i.IsAdmin,
 		&i.AvatarKey,
 		&i.Timezone,
 		&i.Theme,
@@ -137,8 +163,35 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 	return i, err
 }
 
+const listUserIconKeys = `-- name: ListUserIconKeys :many
+SELECT icon_key FROM source_icons WHERE user_id = ? AND icon_key IS NOT NULL
+`
+
+func (q *Queries) ListUserIconKeys(ctx context.Context, userID int64) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, listUserIconKeys, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []sql.NullString
+	for rows.Next() {
+		var icon_key sql.NullString
+		if err := rows.Scan(&icon_key); err != nil {
+			return nil, err
+		}
+		items = append(items, icon_key)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 ORDER BY username
 `
@@ -147,6 +200,7 @@ type ListUsersRow struct {
 	ID           int64          `json:"id"`
 	Username     string         `json:"username"`
 	PasswordHash string         `json:"password_hash"`
+	IsAdmin      bool           `json:"is_admin"`
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
@@ -167,6 +221,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.ID,
 			&i.Username,
 			&i.PasswordHash,
+			&i.IsAdmin,
 			&i.AvatarKey,
 			&i.Timezone,
 			&i.Theme,
@@ -201,6 +256,21 @@ func (q *Queries) SetUserAccentColor(ctx context.Context, arg SetUserAccentColor
 	return err
 }
 
+const setUserAdmin = `-- name: SetUserAdmin :exec
+UPDATE users SET is_admin = ?
+WHERE id = ?
+`
+
+type SetUserAdminParams struct {
+	IsAdmin bool  `json:"is_admin"`
+	ID      int64 `json:"id"`
+}
+
+func (q *Queries) SetUserAdmin(ctx context.Context, arg SetUserAdminParams) error {
+	_, err := q.db.ExecContext(ctx, setUserAdmin, arg.IsAdmin, arg.ID)
+	return err
+}
+
 const setUserAvatarKey = `-- name: SetUserAvatarKey :exec
 UPDATE users SET avatar_key = ?
 WHERE id = ?
@@ -213,6 +283,21 @@ type SetUserAvatarKeyParams struct {
 
 func (q *Queries) SetUserAvatarKey(ctx context.Context, arg SetUserAvatarKeyParams) error {
 	_, err := q.db.ExecContext(ctx, setUserAvatarKey, arg.AvatarKey, arg.ID)
+	return err
+}
+
+const setUserPassword = `-- name: SetUserPassword :exec
+UPDATE users SET password_hash = ?
+WHERE id = ?
+`
+
+type SetUserPasswordParams struct {
+	PasswordHash string `json:"password_hash"`
+	ID           int64  `json:"id"`
+}
+
+func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
+	_, err := q.db.ExecContext(ctx, setUserPassword, arg.PasswordHash, arg.ID)
 	return err
 }
 

@@ -16,3 +16,5 @@ sql:
             go_type: "bool"
           - column: "feeds.enabled"
             go_type: "bool"
+          - column: "users.is_admin"
+            go_type: "bool"

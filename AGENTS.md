@@ -272,6 +272,33 @@ their page component directly (e.g. `basePage("unread", u, homePage(...))`).
 - Generated `_templ.go` files are committed; regenerate with `templ generate`
   (wired into `mise dev` and `mise gen`).
 
+## Admin features
+
+Admins manage users through two equivalent surfaces: the `/admin` web page
+(linked from the user menu when `users.is_admin`) and the `nanoflux user` CLI
+run inside the container. Both share the store methods (`UserStore.ResetPassword`,
+`SetAdmin`, `Delete`, `CountAdmins`, `ListObjectKeys`).
+
+- The admin flag is `users.is_admin` (schemaV16). The bootstrap account is
+  always marked admin at creation; older installs get one via
+  `nanoflux user set-admin <username> true` — there is no automatic promotion.
+- `adminOnly` in `internal/httpapi/admin.go` gates every `/admin` route: GET
+  requests get a rendered 403 page, htmx POSTs a `form_error` OOB fragment — no
+  bare statuses. Never bypass it by calling the handlers directly.
+- The last admin can never be deleted or demoted (`CountAdmins <= 1` guard),
+  and the web UI refuses to delete your own account.
+- Deleting a user purges their object-storage blobs (`avatars/<id>`,
+  `icons/<id>/<domain>`, via `UserStore.ListObjectKeys`) best-effort, then
+  deletes the row (FK cascade removes sessions/feeds/items/...). A flaky store
+  must not block deletion — failures are logged warnings. `reset-password`
+  also revokes every session (`SessionStore.DeleteUserSessions`).
+- The CLI lives in `internal/cli` (cobra) and is dispatched from
+  `cmd/server/main.go`: `nanoflux` with no args (or `server`) runs the server;
+  any other first argument routes to the CLI. It opens the same SQLite file via
+  `config.Load`/`db.Open`/`db.Migrate`, so it works against a running instance.
+  `user delete` prompts on a TTY and requires `--yes` otherwise; `--password`
+  skips the prompt on `reset-password`.
+
 ## htmx and client-side JS
 
 The web UI uses **htmx v2.0.4** (vendored at `internal/web/static/htmx.min.js`, loaded

@@ -5,6 +5,7 @@ CREATE TABLE users (
     id            INTEGER PRIMARY KEY,
     username      TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    is_admin      INTEGER NOT NULL DEFAULT 0,
     avatar_key    TEXT,
     avatar_data   BLOB,
     avatar_content_type TEXT,

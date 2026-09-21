@@ -46,8 +46,18 @@ func (q *Queries) DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
+const deleteSessionsByUser = `-- name: DeleteSessionsByUser :exec
+DELETE FROM sessions
+WHERE user_id = ?
+`
+
+func (q *Queries) DeleteSessionsByUser(ctx context.Context, userID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteSessionsByUser, userID)
+	return err
+}
+
 const getUserByToken = `-- name: GetUserByToken :one
-SELECT u.id, u.username, u.password_hash, u.avatar_key, u.timezone, u.theme, u.accent_color, u.created_at
+SELECT u.id, u.username, u.password_hash, u.is_admin, u.avatar_key, u.timezone, u.theme, u.accent_color, u.created_at
 FROM sessions se
 JOIN users u ON u.id = se.user_id
 WHERE se.token = ? AND se.expires_at > datetime('now')
@@ -57,6 +67,7 @@ type GetUserByTokenRow struct {
 	ID           int64          `json:"id"`
 	Username     string         `json:"username"`
 	PasswordHash string         `json:"password_hash"`
+	IsAdmin      bool           `json:"is_admin"`
 	AvatarKey    sql.NullString `json:"avatar_key"`
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
@@ -71,6 +82,7 @@ func (q *Queries) GetUserByToken(ctx context.Context, token string) (GetUserByTo
 		&i.ID,
 		&i.Username,
 		&i.PasswordHash,
+		&i.IsAdmin,
 		&i.AvatarKey,
 		&i.Timezone,
 		&i.Theme,

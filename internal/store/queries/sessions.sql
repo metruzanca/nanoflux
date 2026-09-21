@@ -3,7 +3,7 @@ INSERT INTO sessions (token, user_id, expires_at)
 VALUES (?, ?, ?);
 
 -- name: GetUserByToken :one
-SELECT u.id, u.username, u.password_hash, u.avatar_key, u.timezone, u.theme, u.accent_color, u.created_at
+SELECT u.id, u.username, u.password_hash, u.is_admin, u.avatar_key, u.timezone, u.theme, u.accent_color, u.created_at
 FROM sessions se
 JOIN users u ON u.id = se.user_id
 WHERE se.token = ? AND se.expires_at > datetime('now');
@@ -11,6 +11,10 @@ WHERE se.token = ? AND se.expires_at > datetime('now');
 -- name: DeleteSession :exec
 DELETE FROM sessions
 WHERE token = ?;
+
+-- name: DeleteSessionsByUser :exec
+DELETE FROM sessions
+WHERE user_id = ?;
 
 -- name: TouchSession :exec
 UPDATE sessions SET expires_at = ?

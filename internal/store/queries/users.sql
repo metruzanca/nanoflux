@@ -1,25 +1,28 @@
 -- name: CreateUser :one
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
-RETURNING id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at;
+RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at;
 
 -- name: GetUserByID :one
-SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 WHERE id = ?;
 
 -- name: GetUserByUsername :one
-SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 WHERE username = ?;
 
 -- name: ListUsers :many
-SELECT id, username, password_hash, avatar_key, timezone, theme, accent_color, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
 FROM users
 ORDER BY username;
 
 -- name: CountUsers :one
 SELECT COUNT(*) FROM users;
+
+-- name: CountAdmins :one
+SELECT COUNT(*) FROM users WHERE is_admin = 1;
 
 -- name: GetUserAvatarKey :one
 SELECT avatar_key FROM users
@@ -28,6 +31,20 @@ WHERE id = ?;
 -- name: SetUserAvatarKey :exec
 UPDATE users SET avatar_key = ?
 WHERE id = ?;
+
+-- name: SetUserPassword :exec
+UPDATE users SET password_hash = ?
+WHERE id = ?;
+
+-- name: SetUserAdmin :exec
+UPDATE users SET is_admin = ?
+WHERE id = ?;
+
+-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?;
+
+-- name: ListUserIconKeys :many
+SELECT icon_key FROM source_icons WHERE user_id = ? AND icon_key IS NOT NULL;
 
 -- name: SetUserTimezone :exec
 UPDATE users SET timezone = ?

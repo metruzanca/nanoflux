@@ -1,0 +1,68 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+templ adminPage(u store.User, d adminData) {
+	<h1>admin</h1>
+	<section class="card">
+		<h2>users</h2>
+		<p class="muted small">Manage accounts: reset passwords, grant or revoke the admin flag, or delete users. Deleting a user removes all of their data.</p>
+		@AdminUserList(d.Users)
+	</section>
+}
+
+templ AdminUserList(rows []adminUserRow) {
+	<ul class="plain" id="admin-users-list">
+		for _, r := range rows {
+			@AdminUserRow(r)
+		}
+	</ul>
+}
+
+templ AdminUserRow(r adminUserRow) {
+	<li id={ "admin-user-" + strconv.FormatInt(r.ID, 10) }>
+		<div id={ "admin-user-" + strconv.FormatInt(r.ID, 10) + "-error" } class="error"></div>
+		<div class="row">
+			<div>
+				<strong>{ r.Username }</strong>
+				if r.IsAdmin {
+					<span class="badge">admin</span>
+				}
+				if r.IsSelf {
+					<span class="muted">you</span>
+				}
+				<div class="item-meta muted">joined { web.TimeFmt(r.Timezone, r.CreatedAt) }</div>
+			</div>
+			<div class="row-actions">
+				if !r.IsSelf {
+					<form class="row" hx-post={ "/admin/users/" + strconv.FormatInt(r.ID, 10) + "/reset-password" } hx-target="#admin-users-list" hx-swap="innerHTML">
+						<input name="password" type="password" placeholder="new password" minlength="8" required/>
+						<button type="submit" class="small">reset</button>
+					</form>
+					<button class="link" hx-post={ "/admin/users/" + strconv.FormatInt(r.ID, 10) + "/set-admin" } hx-vals={ "{\"admin\": " + strconv.FormatBool(!r.IsAdmin) + "}" } hx-target="#admin-users-list" hx-swap="innerHTML">
+						if r.IsAdmin {
+							remove admin
+						} else {
+							make admin
+						}
+					</button>
+					<button class="link danger" title="delete" hx-post={ "/admin/users/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#admin-users-list" hx-swap="innerHTML" hx-confirm={ "delete user " + r.Username + "? this removes all of their data" }>✕</button>
+				}
+			</div>
+		</div>
+	</li>
+}
+
+// forbiddenPage is rendered for non-admins hitting an admin route, so the
+// denial is visible rather than a bare status.
+templ forbiddenPage(msg string) {
+	<section class="card">
+		<h1>forbidden</h1>
+		<div class="error" role="alert">{ msg }</div>
+	</section>
+}

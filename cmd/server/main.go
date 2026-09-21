@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,6 +12,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/cli"
 	"github.com/metruzanca/nanoflux/internal/config"
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/filestore"
@@ -24,7 +24,18 @@ import (
 // version is set at build time via ldflags (see .goreleaser.yaml).
 var version = "dev"
 
+// main dispatches between the server and the admin CLI. Running with no
+// arguments (or `nanoflux server`) starts the web server — the docker image's
+// ENTRYPOINT. Any other first argument routes to the CLI (e.g. `nanoflux user
+// list`); unknown commands print usage instead of silently binding a port.
 func main() {
+	if len(os.Args) > 1 && os.Args[1] != "server" {
+		os.Exit(cli.Run(version, os.Args[1:]))
+	}
+	runServer()
+}
+
+func runServer() {
 	cfg := config.Load()
 	setLogLevel(cfg.LogLevel)
 	log.Info("nanoflux starting", "version", version)
@@ -93,24 +104,11 @@ func main() {
 func newFileStore(cfg config.Config) (filestore.Store, error) {
 	fcfg := filestore.ConfigFromEnv()
 	if fcfg.IsDisk() {
-		fcfg.Dir = cfg.FileStoreDir
-		log.Info("file storage", "local", fcfg.Dir)
-		files := filestore.NewDisk(fcfg.Dir)
-		return files, files.EnsureBucket(context.Background())
+		log.Info("file storage", "local", cfg.FileStoreDir)
+	} else {
+		log.Info("file storage", "endpoint", fcfg.Endpoint, "bucket", fcfg.Bucket, "local", false)
 	}
-
-	files, err := filestore.New(fcfg)
-	if err != nil {
-		return nil, err
-	}
-	log.Info("file storage", "endpoint", fcfg.Endpoint, "bucket", fcfg.Bucket, "local", false)
-
-	bctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if err := files.EnsureBucket(bctx); err != nil {
-		return nil, fmt.Errorf("reach %s (set NF_S3_ENDPOINT): %w", fcfg.Endpoint, err)
-	}
-	return files, nil
+	return filestore.NewFromConfig(fcfg, cfg.FileStoreDir)
 }
 
 // setLogLevel maps the NF_LOG_LEVEL value onto the logger.
@@ -128,8 +126,10 @@ func setLogLevel(level string) {
 }
 
 // bootstrapUser creates the first account from env when the database is empty.
-// With no env creds it falls back to a default admin/admin account so a fresh
-// instance is immediately usable; the signup page lets other users register.
+// The first account is always an admin so the instance has someone who can
+// manage users. With no env creds it falls back to a default admin/admin
+// account so a fresh instance is immediately usable; the signup page lets
+// other users register.
 func bootstrapUser(st *store.Store, cfg config.Config) {
 	n, err := st.Users.Count()
 	if err != nil {
@@ -143,18 +143,26 @@ func bootstrapUser(st *store.Store, cfg config.Config) {
 		if err != nil {
 			log.Fatal("hash password", "err", err)
 		}
-		if _, err := st.Users.Create(cfg.BootstrapUser, hash); err != nil {
+		u, err := st.Users.Create(cfg.BootstrapUser, hash)
+		if err != nil {
 			log.Fatal("create bootstrap user", "err", err)
 		}
-		log.Info("created bootstrap user", "username", cfg.BootstrapUser)
+		if err := st.Users.SetAdmin(u.ID, true); err != nil {
+			log.Fatal("grant admin", "err", err)
+		}
+		log.Info("created bootstrap user", "username", cfg.BootstrapUser, "admin", true)
 		return
 	}
 	hash, err := auth.HashPassword("admin")
 	if err != nil {
 		log.Fatal("hash password", "err", err)
 	}
-	if _, err := st.Users.Create("admin", hash); err != nil {
+	u, err := st.Users.Create("admin", hash)
+	if err != nil {
 		log.Fatal("create default admin", "err", err)
+	}
+	if err := st.Users.SetAdmin(u.ID, true); err != nil {
+		log.Fatal("grant admin", "err", err)
 	}
 	log.Warn("no users found: created default account admin/admin — change the password after logging in")
 }

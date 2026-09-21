@@ -34,9 +34,11 @@ templ topbar(u store.User) {
 							<span class="avatar avatar-sm avatar-default">{ web.Initial(u.Username) }</span>
 						}
 					</button>
-					<div id="user-menu" class="user-menu-pop" role="menu" hidden>
+<div id="user-menu" class="user-menu-pop" role="menu" hidden>
 						<a href="/read" role="menuitem">history</a>
-						<a href="/favorites" role="menuitem">favorites</a>
+						if u.IsAdmin {
+							<a href="/admin" role="menuitem">admin</a>
+						}
 						<a href="/settings" role="menuitem">settings</a>
 						<form action="/logout" method="post"><button class="link menu-item" type="submit">log out</button></form>
 					</div>

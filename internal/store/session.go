@@ -28,11 +28,17 @@ func (s *SessionStore) UserByToken(token string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
 }
 
 func (s *SessionStore) Delete(token string) error {
 	return s.q.DeleteSession(context.Background(), token)
+}
+
+// DeleteUserSessions revokes every session belonging to a user (used when a
+// password is reset, logging out all devices).
+func (s *SessionStore) DeleteUserSessions(userID int64) error {
+	return s.q.DeleteSessionsByUser(context.Background(), userID)
 }
 
 // Touch extends a session's expiry (sliding sessions).
