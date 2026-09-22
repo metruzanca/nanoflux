@@ -213,13 +213,12 @@ function syncItemHash(id, wasOpen) {
   else history.pushState({ item: id }, '', target);
 }
 function openItem(el) {
-  return openItemData(el.dataset.itemId, el.dataset.itemLink);
+  return openItemData(el.dataset.itemId);
 }
-function openItemData(id, link) {
+function openItemData(id) {
   if (!itemDialog) return;
   var wasOpen = itemDialog.open;
   currentItemId = id;
-  document.getElementById('item-dialog-live').href = link || '#';
   var body = document.getElementById('item-dialog-body');
   body.innerHTML = '<p class="muted">loading…</p>';
   var slot = document.getElementById('item-dialog-controls');
@@ -228,8 +227,8 @@ function openItemData(id, link) {
     .then(function (r) { return r.text(); })
     .then(function (html) {
       body.innerHTML = html;
-      // The item fragment renders the share + ⋯ controls inside the scrollable
-      // body; relocate them into the dialog header next to "open live" and ✕.
+      // The item fragment renders the ⋯ (and share) controls inside the
+      // scrollable body; relocate them into the dialog header next to ✕.
       var controls = body.querySelector('#item-dialog-controls-src');
       if (controls && slot) slot.replaceChildren(controls);
       // The modal is injected via plain innerHTML, so htmx never processed its
@@ -244,12 +243,12 @@ function openItemData(id, link) {
 }
 // openItemById finds an item's rendered row on the page and opens it; when the
 // item isn't in the current list (a deep link to an item on another page) the
-// modal still opens, just without an "open live" link.
+// modal still opens from the id alone.
 function openItemById(id) {
   var row = document.getElementById('item-' + id);
   var anchor = row && row.querySelector('[data-item-id]');
   if (anchor) { openItem(anchor); return; }
-  openItemData(id, '');
+  openItemData(id);
 }
 
 if (itemDialog) {
@@ -259,15 +258,9 @@ if (itemDialog) {
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     currentItemId = null;
   });
-  // Clicking outside the item dialog closes it — unless the item embeds a video
-  // (a YouTube/other iframe or a <video> enclosure). There, a stray backdrop tap
-  // would stop playback and lose the viewer's place, especially on mobile.
-  itemDialog.addEventListener('click', function (e) {
-    if (e.target !== itemDialog) return;
-    var body = document.getElementById('item-dialog-body');
-    if (body && body.querySelector('.video-embed, video, audio')) return;
-    itemDialog.close();
-  });
+  // The item dialog closes only via Esc (native) or the ✕ button. A click on
+  // the backdrop deliberately does NOT close it: an accidental outside click
+  // shouldn't dismiss the item (and would stop embedded video playback).
 }
 
 // Browser back/forward reconciles the modal with the hash.

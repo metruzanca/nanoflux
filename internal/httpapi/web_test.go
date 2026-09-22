@@ -924,21 +924,23 @@ func TestItemView(t *testing.T) {
 	if !strings.Contains(body, `href="/authors/1">Metru</a>`) {
 		t.Fatalf("modal meta should link the author internally: %s", body)
 	}
-	if !strings.Contains(body, `href="/feeds/1">Blog</a>`) {
-		t.Fatalf("modal meta should link the feed internally: %s", body)
+	if !strings.Contains(body, `href="/feeds/1">feed</a>`) {
+		t.Fatalf("modal meta should link the feed internally as 'feed': %s", body)
 	}
 	if strings.Contains(body, `href="https://b.dev/rss.xml"`) {
 		t.Fatalf("modal meta must not link to the external feed url: %s", body)
 	}
-	// "open live" lives in the dialog header (layout), not the fragment; the
-	// header also carries the empty slot the controls are relocated into.
+	// "open live" sits in the modal meta (next to the timestamp); the dialog
+	// header carries only the relocated controls slot and the close ✕.
 	home := doGet(h, "/", cookie).Body.String()
-	if !strings.Contains(home, `id="item-dialog-live"`) ||
-		!strings.Contains(home, `id="item-dialog-controls"`) {
-		t.Fatalf("dialog header should carry open live + the controls slot: %s", home)
+	if !strings.Contains(home, `id="item-dialog-controls"`) {
+		t.Fatalf("dialog header should carry the controls slot: %s", home)
 	}
-	if strings.Contains(body, `id="item-dialog-live"`) {
-		t.Fatalf("the fragment must not render open live: %s", body)
+	if strings.Contains(home, `id="item-dialog-live"`) {
+		t.Fatalf("the dialog header must not render a separate open-live link: %s", home)
+	}
+	if !strings.Contains(body, `class="external">open live</a>`) {
+		t.Fatalf("modal meta should carry the external open-live link: %s", body)
 	}
 
 	// Another user cannot view it.
@@ -1141,10 +1143,13 @@ func TestExternalLinksCarryMarker(t *testing.T) {
 		t.Fatalf("author page feeds list feed link should be external-marked: %s", body)
 	}
 
-	// "open live" in the dialog header is external and marked.
-	body = doGet(h, "/", cookie).Body.String()
-	if !strings.Contains(body, `class="small external"`) {
-		t.Fatalf("open live should be external-marked: %s", body)
+	// "open live" in the item modal meta is external and marked.
+	olFeed, _ := s.store.Feeds.Create(u.ID, a.ID, "OpenLive", "https://ol.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(olFeed.ID, store.Item{GUID: "ol", Title: "Open live", Link: "https://ol.dev/1", FetchedAt: db.Now()})
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{FeedID: olFeed.ID})
+	view := doGet(h, "/items/"+itoa(items[0].ID)+"/view", cookie).Body.String()
+	if !strings.Contains(view, `href="https://ol.dev/1" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">open live</a>`) {
+		t.Fatalf("open live should be external-marked: %s", view)
 	}
 }
 

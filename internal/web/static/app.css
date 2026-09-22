@@ -144,13 +144,17 @@ a.external::after {
   position: relative;
   display: inline-block;
 }
-/* The modal's share + ⋯ controls, relocated from the scrollable body into the
-   dialog header next to "open live" and ✕. */
+/* The modal's share + ⋯ controls, rendered inside the scrollable body and
+   relocated into the dialog header next to ✕ by openItem. */
 .item-controls {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
 }
+/* The item dialog header: just the relocated controls + the close ✕, right
+   aligned (the redundant "item" title was dropped). */
+.item-dialog-head { justify-content: flex-end; margin-bottom: 0.25rem; }
+#item-dialog-controls { display: inline-flex; align-items: center; gap: 0.5rem; }
 .menu-pop {
   position: absolute;
   right: 0;
@@ -184,6 +188,11 @@ a.external::after {
   padding: 0.45rem 0.75rem;
   color: var(--fg);
 }
+/* A destructive menu entry ("stop sharing") keeps its red text. */
+.menu-pop button.danger,
+.menu-pop a.danger { color: var(--danger); }
+/* The share entries are swapped as a group inside the menu; stack them. */
+.share-menu { display: flex; flex-direction: column; }
 
 main { max-width: 46rem; margin: 1.5rem auto; padding: 0 1.25rem; }
 

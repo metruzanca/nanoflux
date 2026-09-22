@@ -66,13 +66,9 @@ templ topbar(u store.User) {
 	</header>
 
 	<dialog id="item-dialog" class="modal wide">
-		<div class="row">
-			<h2 class="muted">item</h2>
-			<div class="row-actions">
-				<div id="item-dialog-controls"></div>
-				<a id="item-dialog-live" class="small external" href="#" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">open live</a>
-				<button type="button" class="link" onclick="document.getElementById('item-dialog').close()">@web.Lucide("x")</button>
-			</div>
+		<div class="row-actions item-dialog-head">
+			<div id="item-dialog-controls"></div>
+			<button type="button" class="link" onclick="document.getElementById('item-dialog').close()">@web.Lucide("x")</button>
 		</div>
 		<div id="item-dialog-body" class="item-view"></div>
 	</dialog>
