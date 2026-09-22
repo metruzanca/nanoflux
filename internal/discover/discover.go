@@ -150,6 +150,29 @@ func pageTitle(rawurl, title string) string {
 	return title
 }
 
+// stripCDATA unwraps raw CDATA sections from text extracted by the HTML
+// tokenizer. When the fetched URL is itself an XML feed, a `<title>` may be
+// served as `<![CDATA[name]]>`; the tokenizer hands that through verbatim, so
+// author names would otherwise show the markers. Content is kept, markers are
+// dropped, and multiple/embedded sections are handled.
+func stripCDATA(s string) string {
+	const start, end = "<![CDATA[", "]]>"
+	for {
+		i := strings.Index(s, start)
+		if i < 0 {
+			return s
+		}
+		rest := s[i+len(start):]
+		j := strings.Index(rest, end)
+		if j < 0 {
+			// Unterminated section: drop the marker, keep the text.
+			s = s[:i] + rest
+			return s
+		}
+		s = s[:i] + rest[:j] + rest[j+len(end):]
+	}
+}
+
 // PageMeta fetches pageURL and extracts its <title> and site icon (favicon).
 // Falls back to /favicon.ico on the host when no icon link is present.
 func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, error) {
@@ -169,8 +192,10 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 		switch tt {
 		case html.ErrorToken:
 			// YouTube channel pages title themselves "<Channel> - YouTube";
-			// drop the suffix so it can name the author cleanly.
-			meta.Title = pageTitle(pageURL, meta.Title)
+			// drop the suffix so it can name the author cleanly. A feed served
+			// directly may wrap its <title> in CDATA, which the HTML tokenizer
+			// passes through raw.
+			meta.Title = stripCDATA(pageTitle(pageURL, meta.Title))
 			// A YouTube channel page's real avatar is its og:image
 			// (yt3.googleusercontent.com), not the hashed build favicon.
 			if isYT && ogImage != "" {
@@ -288,7 +313,7 @@ func (d *Discoverer) htmlLinks(ctx context.Context, pageURL string) (string, []s
 		tt := z.Next()
 		switch tt {
 		case html.ErrorToken:
-			return title, links
+			return stripCDATA(title), links
 		case html.TextToken:
 			if inTitle && title == "" {
 				title = strings.TrimSpace(z.Token().Data)
