@@ -628,10 +628,59 @@ dialog.modal h2 { margin: 0; }
 
 /* Lock the page behind any open modal so wheel/touch/keyboard scroll can't
    reach elements underneath it. */
-body:has(dialog.modal[open]) {
+body:has(dialog.modal[open]),
+body:has(dialog.palette[open]) {
   overflow: hidden;
   overscroll-behavior: contain;
 }
+
+/* Command palette / entity search: a top-anchored overlay (distinct from the
+   centered .modal dialogs) with an input and a keyboard-navigable list. */
+dialog.palette {
+  width: min(38rem, calc(100vw - 2rem));
+  margin: 12vh auto auto;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--fg);
+  overflow: hidden;
+}
+dialog.palette::backdrop { background: rgba(0, 0, 0, 0.55); }
+dialog.palette input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.85rem 1rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+}
+dialog.palette input:focus { outline: none; }
+.palette-results {
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem;
+  max-height: min(50vh, 24rem);
+  overflow-y: auto;
+}
+.palette-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.palette-item.active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.palette-sigil { font-weight: 700; }
+.sigil-author { color: var(--accent); }
+.sigil-collection { color: var(--warn); }
+.sigil-feed { color: var(--muted); }
+.palette-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-hint { color: var(--muted); font-size: 0.75rem; }
+.palette-empty { padding: 0.6rem 0.7rem; font-size: 0.85rem; }
 
 .avatar {
   width: 2.5rem;

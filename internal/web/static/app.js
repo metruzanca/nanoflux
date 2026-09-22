@@ -370,6 +370,212 @@ document.addEventListener('keydown', function (e) {
   input.select();
 });
 
+// Command palette (ctrl/cmd+p) and unified entity search (ctrl/cmd+shift+p).
+// The palette engine renders a filtered, keyboard-navigable list into a
+// <dialog class="palette">; Enter activates the highlighted row, Escape and
+// backdrop-click close it (Escape natively, backdrop via the handler below).
+var SIGILS = { author: '@', collection: '#', feed: '!' };
+
+function paletteItemEl(row) {
+  var li = document.createElement('li');
+  li.className = 'palette-item';
+  li.setAttribute('role', 'option');
+  if (row.sigil) {
+    var s = document.createElement('span');
+    s.className = 'palette-sigil sigil-' + row.kind;
+    s.textContent = row.sigil;
+    li.appendChild(s);
+  }
+  var name = document.createElement('span');
+  name.className = 'palette-name';
+  name.textContent = row.label;
+  li.appendChild(name);
+  if (row.hint) {
+    var hint = document.createElement('span');
+    hint.className = 'palette-hint';
+    hint.textContent = row.hint;
+    li.appendChild(hint);
+  }
+  return li;
+}
+
+// wirePalette binds an input + result list into a keyboard-navigable dropdown.
+// items() returns the full row set; render() is called on every change and
+// receives the filtered rows. Rows are plain objects; onEnter(row) runs the
+// activation.
+function wirePalette(dialogId, inputId, listId, items, onEnter) {
+  var dialog = document.getElementById(dialogId);
+  var input = document.getElementById(inputId);
+  var list = document.getElementById(listId);
+  if (!dialog || !input || !list) return null;
+  var shown = [];
+  var active = 0;
+
+  function render() {
+    shown = items(input.value);
+    list.innerHTML = '';
+    if (!shown.length) {
+      var empty = document.createElement('li');
+      empty.className = 'palette-empty muted';
+      empty.textContent = 'no matches';
+      list.appendChild(empty);
+      return;
+    }
+    if (active >= shown.length) active = shown.length - 1;
+    shown.forEach(function (row, i) {
+      var el = paletteItemEl(row);
+      if (i === active) el.classList.add('active');
+      el.addEventListener('mousemove', function () { active = i; paint(); });
+      el.addEventListener('click', function () { activate(i); });
+      list.appendChild(el);
+    });
+    paint();
+  }
+  function paint() {
+    Array.prototype.forEach.call(list.children, function (el, i) {
+      el.classList.toggle('active', i === active);
+    });
+  }
+  function activate(i) {
+    var row = shown[i];
+    if (!row) return;
+    close();
+    onEnter(row);
+  }
+  function open() {
+    if (dialog.open) return;
+    active = 0;
+    input.value = '';
+    render();
+    dialog.showModal();
+    input.focus();
+  }
+  function close() {
+    if (dialog.open) dialog.close();
+  }
+
+  input.addEventListener('input', function () { active = 0; render(); });
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (active < shown.length - 1) { active++; paint(); } }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (active > 0) { active--; paint(); } }
+    else if (e.key === 'Enter') { e.preventDefault(); activate(active); }
+  });
+  // Backdrop click closes (the click target is the dialog itself). Escape is
+  // handled natively by <dialog>.
+  dialog.addEventListener('click', function (e) { if (e.target === dialog) close(); });
+  return { open: open, close: close };
+}
+
+// Command palette rows: navigation plus a few common actions. Admin-only rows
+// are gated on body[data-admin].
+function commandRows() {
+  var admin = document.body.dataset.admin === 'true';
+  var run = function (path) { return function () { window.location.href = path; }; };
+  var openDialog = function (path, dialogId) {
+    return function () {
+      try { sessionStorage.setItem('nanoflux.pendingDialog', dialogId); } catch (err) {}
+      window.location.href = path;
+    };
+  };
+  var rows = [
+    { label: 'unread', hint: 'go', run: run('/') },
+    { label: 'history', hint: 'go', run: run('/read') },
+    { label: 'favorites', hint: 'go', run: run('/favorites') },
+    { label: 'authors', hint: 'go', run: run('/authors') },
+    { label: 'collections', hint: 'go', run: run('/collections') },
+    { label: 'lists', hint: 'go', run: run('/lists') },
+    { label: 'settings', hint: 'go', run: run('/settings') },
+    { label: 'add author', hint: 'action', run: openDialog('/authors', 'add-author-dialog') },
+    { label: 'new collection', hint: 'action', run: openDialog('/collections', 'add-collection-dialog') },
+    { label: 'new list', hint: 'action', run: openDialog('/lists', 'add-list-dialog') },
+    { label: 'export opml', hint: 'action', run: function () { window.location.href = '/settings/export.opml'; } },
+    { label: 'mark all read', hint: 'action', run: function () { postAndReload('/items/read-all'); } },
+    { label: 'log out', hint: 'action', run: function () { postForm('/logout'); } },
+  ];
+  if (admin) {
+    rows.push({ label: 'admin', hint: 'go', run: run('/admin') });
+  }
+  return rows;
+}
+function filterCommands(q) {
+  q = q.trim().toLowerCase();
+  return commandRows().filter(function (r) { return !q || r.label.toLowerCase().indexOf(q) !== -1; });
+}
+
+// postAndReload submits an htmx-style POST (the server reads no body) then
+// reloads; used for "mark all read".
+function postAndReload(path) {
+  fetch(path, { method: 'POST', credentials: 'same-origin' }).finally(function () {
+    window.location.reload();
+  });
+}
+function postForm(path) {
+  var f = document.createElement('form');
+  f.method = 'POST';
+  f.action = path;
+  document.body.appendChild(f);
+  f.submit();
+}
+
+var commandPalette = wirePalette('command-palette', 'command-input', 'command-results',
+  filterCommands, function (row) { row.run(); });
+
+// Unified entity search. Entities are fetched when the palette opens (and
+// cached for the session); a leading @/#/! narrows to one kind without the
+// sigil counting as part of the query.
+var ENTITY_CACHE = null;
+function fetchEntities() {
+  return fetch('/api/entities', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : { entities: [] }; })
+    .then(function (d) { ENTITY_CACHE = d.entities || []; return ENTITY_CACHE; })
+    .catch(function () { ENTITY_CACHE = []; return ENTITY_CACHE; });
+}
+function filterEntities(q) {
+  var entities = ENTITY_CACHE || [];
+  q = q.trim();
+  var kind = null;
+  var first = q.charAt(0);
+  if (first === '@') { kind = 'author'; q = q.slice(1).trim(); }
+  else if (first === '#') { kind = 'collection'; q = q.slice(1).trim(); }
+  else if (first === '!') { kind = 'feed'; q = q.slice(1).trim(); }
+  var needle = q.toLowerCase();
+  return entities.filter(function (e) {
+    if (kind && e.kind !== kind) return false;
+    return !needle || e.name.toLowerCase().indexOf(needle) !== -1;
+  }).map(function (e) {
+    return {
+      kind: e.kind, sigil: SIGILS[e.kind], label: e.name,
+      hint: e.kind, url: e.url,
+    };
+  });
+}
+var entityPalette = wirePalette('entity-palette', 'entity-input', 'entity-results',
+  filterEntities, function (row) { window.location.href = row.url; });
+if (entityPalette) {
+  var openEntity = entityPalette.open;
+  entityPalette.open = function () {
+    fetchEntities().then(function () { openEntity(); });
+  };
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.code !== 'KeyP' || !(e.ctrlKey || e.metaKey)) return;
+  e.preventDefault();
+  if (e.shiftKey) { if (entityPalette) entityPalette.open(); }
+  else if (commandPalette) commandPalette.open();
+});
+
+// A command that opens a page dialog ("add author", ...) sets a pendingDialog
+// marker before navigating; open it here once the destination loads.
+document.addEventListener('DOMContentLoaded', function () {
+  var pending;
+  try { pending = sessionStorage.getItem('nanoflux.pendingDialog'); } catch (err) { return; }
+  if (!pending) return;
+  try { sessionStorage.removeItem('nanoflux.pendingDialog'); } catch (err) {}
+  var d = document.getElementById(pending);
+  if (d) d.showModal();
+});
+
 // Keyboard shortcuts: j/k move a row cursor, o/Enter open, v opens the
 // original, s toggles favorite, m toggles read, g/G jump to first/last,
 // ? shows the shortcut sheet.

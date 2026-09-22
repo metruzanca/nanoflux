@@ -775,6 +775,16 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   the original, `s` favorite, `m` read toggle, `g`/`G` first/last, `?` shows the
   shortcut sheet; `/` focuses the search box. `htmx:afterSwap` re-adds
   `.active-row` after a row is swapped.
+- Command palette: `ctrl/⌘+p` opens `#command-palette` (navigation + a few
+  actions: add author / new collection / new list, export OPML, mark all read,
+  log out; `admin` only when `body[data-admin]`), `ctrl/⌘+shift+p` opens
+  `#entity-palette`, a unified name search over authors/collections/feeds from
+  `GET /api/entities`. Rows render with a sigil (`@` author, `#` collection, `!`
+  feed); a leading sigil narrows the search to that kind. `wirePalette` in
+  app.js handles filtering + arrow/Enter navigation; Escape (native) and
+  backdrop-click close. An action that opens a page dialog sets
+  `sessionStorage["nanoflux.pendingDialog"]` then navigates, and app.js opens
+  that dialog on load.
 - Swipe actions (touch only): swiping an item row right toggles favorite, left
   toggles read, by clicking the row's `.fav-btn`/`.read-btn` so the htmx swap
   is reused. Implemented with touch events (`touchmove` is `passive: false` and
