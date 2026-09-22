@@ -864,8 +864,11 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   switches, "mark all read", load-more, and author adds recreate the list. The
   server renders the default state — do not try to read localStorage server-side.
   **Server-side** pickers set `Href` (the sort direction) and are plain links.
-  Grid mode is a two-column CSS masonry (`ul.items.masonry`, one column below
-  720px); it reuses the same item rows, with thumbs going full-width.
+  Grid mode is a two-column CSS grid (`ul.items.masonry`, one column below
+  720px); it reuses the same item rows, with thumbs going full-width. It is a
+  row-major grid (items flow left-to-right, then down) so reading order matches
+  the scroll order — do **not** switch it to CSS multi-column, which fills the
+  whole left column first and forces the reader to scroll back up.
 - Item modal: `openItem(el)` fetches `/items/{id}/view` into
   `#item-dialog-body` and `markRowRead(id)` flips the row to read. `currentItemId`
   tracks the open item. The fragment renders the share + ⋯ controls in a
