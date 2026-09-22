@@ -24,6 +24,7 @@ import (
 type homeData struct {
 	Unread      []store.ItemWithFeed
 	UnreadCount int
+	Dir         string
 	More        *loadMoreData
 }
 
@@ -33,6 +34,7 @@ const pageSize = 25
 type readData struct {
 	Read      []store.ItemWithFeed
 	ReadCount int
+	Dir       string
 	More      *loadMoreData
 }
 
@@ -40,6 +42,7 @@ type favoritesData struct {
 	Favorites  []store.ItemWithFeed
 	FavCount   int
 	ShareToken string // public share token for the favorites list, "" when unshared
+	Dir        string
 	More       *loadMoreData
 }
 
@@ -131,6 +134,7 @@ type scopedItemsData struct {
 	Path        string // full page URL base, e.g. "/feeds/1"
 	ItemsPath   string // fragment URL base, e.g. "/feeds/1/items"
 	View        string // "unread" or "read"
+	Dir         string // "asc" or "desc" (item order)
 	UnreadCount int
 	ReadCount   int
 	Items       []store.ItemWithFeed
@@ -139,29 +143,52 @@ type scopedItemsData struct {
 	HideAuthor  bool          // drop the author link from item meta (author-scoped page)
 }
 
+// itemsAsc reports whether the item list should be ordered oldest-first from
+// the ?dir=asc param (default is newest-first).
+func itemsAsc(r *http.Request) bool {
+	return r.URL.Query().Get("dir") == "asc"
+}
+
+func dirParam(asc bool) string {
+	if asc {
+		return "asc"
+	}
+	return "desc"
+}
+
 // moreURL builds the load-more fragment URL preserving the current filters:
-// base may already carry a query string, in which case before= is appended.
-func moreURL(base string, id int64) string {
+// base may already carry a query string; the keyset cursor is before= (desc) or
+// after= (asc).
+func moreURL(base string, id int64, asc bool) string {
 	sep := "?"
 	if strings.Contains(base, "?") {
 		sep = "&"
 	}
-	return base + sep + "before=" + strconv.FormatInt(id, 10)
+	key := "before"
+	if asc {
+		key = "after"
+	}
+	return base + sep + key + "=" + strconv.FormatInt(id, 10)
 }
 
 // pageCursor returns the load-more cursor for a fetched page, or nil when the
 // list is empty or there is no next page.
-func pageCursor(base string, items []store.ItemWithFeed, hasMore bool) *loadMoreData {
+func pageCursor(base string, items []store.ItemWithFeed, hasMore bool, asc bool) *loadMoreData {
 	if !hasMore || len(items) == 0 {
 		return nil
 	}
-	return &loadMoreData{URL: moreURL(base, items[len(items)-1].ID)}
+	return &loadMoreData{URL: moreURL(base, items[len(items)-1].ID, asc)}
 }
 
 // scopedFilter builds the item filter for a feed/author/collection read/unread
-// list, honoring a keyset cursor.
-func scopedFilter(view string, before int64, feedID, authorID, collectionID int64) store.ItemFilter {
-	f := store.ItemFilter{FeedID: feedID, AuthorID: authorID, CollectionID: collectionID, BeforeID: before, Limit: pageSize}
+// list, honoring a keyset cursor and sort direction.
+func scopedFilter(view string, cursor int64, asc bool, feedID, authorID, collectionID int64) store.ItemFilter {
+	f := store.ItemFilter{FeedID: feedID, AuthorID: authorID, CollectionID: collectionID, Ascending: asc, Limit: pageSize}
+	if asc {
+		f.AfterID = cursor
+	} else {
+		f.BeforeID = cursor
+	}
 	if view == "read" {
 		f.ReadOnly = true
 	} else {
@@ -170,18 +197,25 @@ func scopedFilter(view string, before int64, feedID, authorID, collectionID int6
 	return f
 }
 
-// beforeID reads the ?before= keyset cursor from a load-more request.
-func beforeID(r *http.Request) int64 {
-	n, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
+// cursorID reads the keyset cursor from a load-more request: before= (desc) or
+// after= (asc).
+func cursorID(r *http.Request, asc bool) int64 {
+	key := "before"
+	if asc {
+		key = "after"
+	}
+	n, _ := strconv.ParseInt(r.URL.Query().Get(key), 10, 64)
 	return n
 }
 
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: pageSize})
+	asc := itemsAsc(r)
+	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Ascending: asc, Limit: pageSize})
 	unread, _ := s.store.Items.CountUnread(u.ID, 0)
 	web.Render(w, r, basePage("unread", u, homePage(homeData{
-		Unread: withTZ(u.Timezone, items), UnreadCount: unread, More: pageCursor("/items", items, more),
+		Unread: withTZ(u.Timezone, items), UnreadCount: unread, Dir: dirParam(asc),
+		More: pageCursor("/items?dir="+dirParam(asc), items, more, asc),
 	})))
 }
 
@@ -197,21 +231,24 @@ func (s *Server) itemsReadAll(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{ReadOnly: true, Limit: pageSize})
+	asc := itemsAsc(r)
+	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{ReadOnly: true, Ascending: asc, Limit: pageSize})
 	count, _ := s.store.Items.CountRead(u.ID, 0)
 	web.Render(w, r, basePage("history", u, readPage(readData{
-		Read: withTZ(u.Timezone, items), ReadCount: count, More: pageCursor("/items?read=1", items, more),
+		Read: withTZ(u.Timezone, items), ReadCount: count, Dir: dirParam(asc),
+		More: pageCursor("/items?read=1&dir="+dirParam(asc), items, more, asc),
 	})))
 }
 
 func (s *Server) favoritesPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{FavoritesOnly: true, Limit: pageSize})
+	asc := itemsAsc(r)
+	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{FavoritesOnly: true, Ascending: asc, Limit: pageSize})
 	count, _ := s.store.Items.CountFavorites(u.ID, 0)
 	tok, _ := s.store.Users.FavoritesShareToken(u.ID)
 	web.Render(w, r, basePage("favorites", u, favoritesPage(favoritesData{
-		Favorites: withTZ(u.Timezone, items), FavCount: count, ShareToken: tok,
-		More: pageCursor("/items?fav=1", items, more),
+		Favorites: withTZ(u.Timezone, items), FavCount: count, ShareToken: tok, Dir: dirParam(asc),
+		More: pageCursor("/items?fav=1&dir="+dirParam(asc), items, more, asc),
 	})))
 }
 
@@ -226,21 +263,29 @@ func (s *Server) itemsMarkAllUnread(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderReadItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
-	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{ReadOnly: true, Limit: pageSize})
-	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items?read=1", items, more), false))
+	asc := itemsAsc(r)
+	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{ReadOnly: true, Ascending: asc, Limit: pageSize})
+	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items?read=1&dir="+dirParam(asc), items, more, asc), false))
 }
 
 func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
-	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{UnreadOnly: true, Limit: pageSize})
-	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items", items, more), false))
+	asc := itemsAsc(r)
+	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{UnreadOnly: true, Ascending: asc, Limit: pageSize})
+	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items?dir="+dirParam(asc), items, more, asc), false))
 }
 
 // itemsFragment serves a "load more" page of rows for the home/read/favorites
 // lists. The fragment targets the existing #items-list element.
 func (s *Server) itemsFragment(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
+	asc := itemsAsc(r)
 	base := "/items"
-	filter := store.ItemFilter{Limit: pageSize, BeforeID: beforeID(r)}
+	filter := store.ItemFilter{Limit: pageSize, Ascending: asc}
+	if asc {
+		filter.AfterID = cursorID(r, true)
+	} else {
+		filter.BeforeID = cursorID(r, false)
+	}
 	switch {
 	case r.URL.Query().Get("fav") == "1":
 		filter.FavoritesOnly = true
@@ -251,13 +296,14 @@ func (s *Server) itemsFragment(w http.ResponseWriter, r *http.Request) {
 	default:
 		filter.UnreadOnly = true
 	}
+	base += "&dir=" + dirParam(asc)
 	items, more, err := s.store.Items.ListPage(u.ID, filter)
 	if err != nil {
 		log.Error("items fragment", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more), false))
+	web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more, asc), false))
 }
 
 // withTZ stamps the user's timezone onto each item so templates can render
@@ -508,6 +554,10 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-feed-error", errMsg)
 		return
 	}
+	if s.feedURLExists(u.ID, normalizeURL(r.FormValue("feed_url"))) {
+		writeFormError(w, r, "add-feed-error", "you already have this feed")
+		return
+	}
 	authorID, isNew, errMsg := s.resolveAuthor(r, u.ID)
 	if errMsg != "" {
 		writeFormError(w, r, "add-feed-error", errMsg)
@@ -554,6 +604,10 @@ func (s *Server) authorFeedCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	if errMsg := validateFeedFields(r); errMsg != "" {
 		writeFormError(w, r, "add-feed-error", errMsg)
+		return
+	}
+	if s.feedURLExists(u.ID, normalizeURL(r.FormValue("feed_url"))) {
+		writeFormError(w, r, "add-feed-error", "you already have this feed")
 		return
 	}
 	f, errMsg := s.createFeed(r, u.ID, authorID)
@@ -1022,7 +1076,7 @@ func (s *Server) feedOlder(w http.ResponseWriter, r *http.Request) {
 	}
 	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
 	row := feedRow{Feed: f, AuthorName: author.Name, Timezone: u.Timezone}
-	scoped := s.feedScopedItems(u.ID, id, itemsView(r), u.Timezone)
+	scoped := s.feedScopedItems(u.ID, id, itemsView(r), u.Timezone, itemsAsc(r))
 	scoped.SwapOOB = true
 	web.Render(w, r, templ.Join(feedOlderControl(row), ScopedItems(scoped)))
 }
@@ -1104,7 +1158,7 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	scoped := s.authorScopedItems(u.ID, id, itemsView(r), u.Timezone)
+	scoped := s.authorScopedItems(u.ID, id, itemsView(r), u.Timezone, itemsAsc(r))
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
 		Author: a, Rows: rows, Scoped: scoped,
 	})))
@@ -1112,15 +1166,16 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 
 // authorScopedItems loads one read/unread item list for an author plus the
 // counts that drive the tabs.
-func (s *Server) authorScopedItems(userID, authorID int64, view, tz string) scopedItemsData {
-	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, 0, authorID, 0))
+func (s *Server) authorScopedItems(userID, authorID int64, view, tz string, asc bool) scopedItemsData {
+	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, asc, 0, authorID, 0))
 	unread, _ := s.store.Items.CountUnreadAuthor(userID, authorID)
 	read, _ := s.store.Items.CountReadAuthor(userID, authorID)
 	base := "/authors/" + strconv.FormatInt(authorID, 10)
+	itemsBase := base + "/items?view=" + view + "&dir=" + dirParam(asc)
 	return scopedItemsData{
-		Path: base, ItemsPath: base + "/items", View: view,
+		Path: base, ItemsPath: base + "/items", View: view, Dir: dirParam(asc),
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
-		More: pageCursor(base+"/items?view="+view, items, more), HideAuthor: true,
+		More: pageCursor(itemsBase, items, more, asc), HideAuthor: true,
 	}
 }
 
@@ -1132,17 +1187,18 @@ func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := itemsView(r)
-	if before := beforeID(r); before > 0 {
-		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, before, 0, id, 0))
+	asc := itemsAsc(r)
+	if cursor := cursorID(r, asc); cursor > 0 {
+		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, cursor, asc, 0, id, 0))
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		base := "/authors/" + strconv.FormatInt(id, 10) + "/items?view=" + view
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more), true))
+		base := "/authors/" + strconv.FormatInt(id, 10) + "/items?view=" + view + "&dir=" + dirParam(asc)
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more, asc), true))
 		return
 	}
-	web.Render(w, r, ScopedItems(s.authorScopedItems(u.ID, id, view, u.Timezone)))
+	web.Render(w, r, ScopedItems(s.authorScopedItems(u.ID, id, view, u.Timezone, asc)))
 }
 
 func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
@@ -1162,7 +1218,7 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 		authorName = a.Name
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
-	scoped := s.feedScopedItems(u.ID, id, itemsView(r), u.Timezone)
+	scoped := s.feedScopedItems(u.ID, id, itemsView(r), u.Timezone, itemsAsc(r))
 	web.Render(w, r, basePage(feed.Title, u, feedPage(u, feedPageData{
 		Row: feedRow{Feed: feed, AuthorName: authorName, Unread: unread, Timezone: u.Timezone}, Scoped: scoped,
 	})))
@@ -1170,15 +1226,16 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 
 // feedScopedItems loads one read/unread item list for a feed plus the counts
 // that drive the tabs.
-func (s *Server) feedScopedItems(userID, feedID int64, view, tz string) scopedItemsData {
-	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, feedID, 0, 0))
+func (s *Server) feedScopedItems(userID, feedID int64, view, tz string, asc bool) scopedItemsData {
+	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, asc, feedID, 0, 0))
 	unread, _ := s.store.Items.CountUnread(userID, feedID)
 	read, _ := s.store.Items.CountRead(userID, feedID)
 	base := "/feeds/" + strconv.FormatInt(feedID, 10)
+	itemsBase := base + "/items?view=" + view + "&dir=" + dirParam(asc)
 	return scopedItemsData{
-		Path: base, ItemsPath: base + "/items", View: view,
+		Path: base, ItemsPath: base + "/items", View: view, Dir: dirParam(asc),
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
-		More: pageCursor(base+"/items?view="+view, items, more),
+		More: pageCursor(itemsBase, items, more, asc),
 	}
 }
 
@@ -1190,17 +1247,18 @@ func (s *Server) feedItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := itemsView(r)
-	if before := beforeID(r); before > 0 {
-		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, before, id, 0, 0))
+	asc := itemsAsc(r)
+	if cursor := cursorID(r, asc); cursor > 0 {
+		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, cursor, asc, id, 0, 0))
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		base := "/feeds/" + strconv.FormatInt(id, 10) + "/items?view=" + view
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more), false))
+		base := "/feeds/" + strconv.FormatInt(id, 10) + "/items?view=" + view + "&dir=" + dirParam(asc)
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more, asc), false))
 		return
 	}
-	web.Render(w, r, ScopedItems(s.feedScopedItems(u.ID, id, view, u.Timezone)))
+	web.Render(w, r, ScopedItems(s.feedScopedItems(u.ID, id, view, u.Timezone, asc)))
 }
 
 func (s *Server) feedRowsForAuthor(userID, authorID int64, tz string) ([]feedRow, error) {
@@ -1295,7 +1353,9 @@ func (s *Server) authorDelete(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) authorFormFragment(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("author_id") != "new" {
-		w.WriteHeader(http.StatusNoContent)
+		// An existing author is selected: clear the new-author fields. An empty
+		// 200 (not 204 — htmx doesn't swap on 204) makes htmx empty the target.
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	// When adding a feed, the fragment is asked with the feed's home url so the
@@ -1340,7 +1400,7 @@ func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	d, err := s.collectionDataFor(u.ID, id, itemsView(r), u.Timezone)
+	d, err := s.collectionDataFor(u.ID, id, itemsView(r), u.Timezone, itemsAsc(r))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -1348,14 +1408,14 @@ func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage(d.Collection.Name, u, collectionPage(u, d)))
 }
 
-func (s *Server) collectionDataFor(userID, id int64, view, tz string) (collectionData, error) {
+func (s *Server) collectionDataFor(userID, id int64, view, tz string, asc bool) (collectionData, error) {
 	c, err := s.store.Collections.ByID(userID, id)
 	if err != nil {
 		return collectionData{}, err
 	}
 	feeds, _ := s.store.Collections.Feeds(userID, id)
 	allFeeds, _ := s.store.Feeds.ListWithUnread(userID)
-	scoped := s.collectionScopedItems(userID, id, view, tz)
+	scoped := s.collectionScopedItems(userID, id, view, tz, asc)
 	return collectionData{Collection: c, Feeds: feeds, AllFeeds: groupFeedsByAuthor(allFeeds), Scoped: scoped}, nil
 }
 
@@ -1382,15 +1442,16 @@ func groupFeedsByAuthor(rows []store.FeedWithUnread) []collectionFeedGroup {
 
 // collectionScopedItems loads one read/unread item list for a collection plus
 // the counts that drive the tabs.
-func (s *Server) collectionScopedItems(userID, collectionID int64, view, tz string) scopedItemsData {
-	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, 0, 0, collectionID))
+func (s *Server) collectionScopedItems(userID, collectionID int64, view, tz string, asc bool) scopedItemsData {
+	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, asc, 0, 0, collectionID))
 	unread, _ := s.store.Items.CountUnreadCollection(userID, collectionID)
 	read, _ := s.store.Items.CountReadCollection(userID, collectionID)
 	base := "/collections/" + strconv.FormatInt(collectionID, 10)
+	itemsBase := base + "/items?view=" + view + "&dir=" + dirParam(asc)
 	return scopedItemsData{
-		Path: base, ItemsPath: base + "/items", View: view,
+		Path: base, ItemsPath: base + "/items", View: view, Dir: dirParam(asc),
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
-		More: pageCursor(base+"/items?view="+view, items, more),
+		More: pageCursor(itemsBase, items, more, asc),
 	}
 }
 
@@ -1402,17 +1463,18 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := itemsView(r)
-	if before := beforeID(r); before > 0 {
-		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, before, 0, 0, id))
+	asc := itemsAsc(r)
+	if cursor := cursorID(r, asc); cursor > 0 {
+		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, cursor, asc, 0, 0, id))
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		base := "/collections/" + strconv.FormatInt(id, 10) + "/items?view=" + view
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more), false))
+		base := "/collections/" + strconv.FormatInt(id, 10) + "/items?view=" + view + "&dir=" + dirParam(asc)
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more, asc), false))
 		return
 	}
-	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, view, u.Timezone)))
+	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, view, u.Timezone, asc)))
 }
 
 func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
@@ -1436,7 +1498,58 @@ func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	http.Redirect(w, r, "/collections", http.StatusSeeOther)
+}
+
+// collectionEdit renders the collection's edit form (name + feeds + delete).
+func (s *Server) collectionEdit(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	c, err := s.store.Collections.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if c.IsAuto {
+		http.Redirect(w, r, "/collections/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+		return
+	}
+	feeds, _ := s.store.Collections.Feeds(u.ID, id)
+	web.Render(w, r, basePage("edit "+c.Name, u, collectionEditPage(u, collectionData{Collection: c, Feeds: feeds})))
+}
+
+// collectionUpdate renames a collection.
+func (s *Server) collectionUpdate(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	c, err := s.store.Collections.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if c.IsAuto {
+		renderError(w, r, "auto collections are managed automatically")
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		http.Redirect(w, r, "/collections/"+strconv.FormatInt(id, 10)+"/edit", http.StatusSeeOther)
+		return
+	}
+	if err := s.store.Collections.Rename(u.ID, id, name); err != nil {
+		log.Error("rename collection", "err", err)
+		http.Error(w, "update failed", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/collections/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
 func (s *Server) collectionAddFeed(w http.ResponseWriter, r *http.Request) {
@@ -1457,7 +1570,7 @@ func (s *Server) collectionAddFeed(w http.ResponseWriter, r *http.Request) {
 	if feedID != 0 {
 		s.store.Collections.AddFeed(u.ID, id, feedID)
 	}
-	s.renderCollectionFeeds(w, r, u.ID, id, normalizeItemsView(r.FormValue("view")), u.Timezone)
+	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeItemsView(r.FormValue("view")), u.Timezone, itemsAsc(r))))
 }
 
 func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
@@ -1467,10 +1580,12 @@ func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if c, err := s.store.Collections.ByID(u.ID, id); err != nil {
+	c, err := s.store.Collections.ByID(u.ID, id)
+	if err != nil {
 		http.NotFound(w, r)
 		return
-	} else if c.IsAuto {
+	}
+	if c.IsAuto {
 		renderError(w, r, "auto collections are managed automatically")
 		return
 	}
@@ -1480,17 +1595,8 @@ func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.Collections.RemoveFeed(u.ID, id, feedID)
-	s.renderCollectionFeeds(w, r, u.ID, id, normalizeItemsView(r.FormValue("view")), u.Timezone)
-}
-
-func (s *Server) renderCollectionFeeds(w http.ResponseWriter, r *http.Request, userID, id int64, view, tz string) {
-	d, err := s.collectionDataFor(userID, id, view, tz)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	d.Scoped.SwapOOB = true
-	web.Render(w, r, collectionUpdated(d))
+	feeds, _ := s.store.Collections.Feeds(u.ID, id)
+	web.Render(w, r, collectionFeeds(collectionData{Collection: c, Feeds: feeds}))
 }
 
 // itemsView reads the ?view= query param and normalizes it to "unread" or "read".

@@ -321,6 +321,22 @@ func (q *Queries) RemoveFeedFromCollection(ctx context.Context, arg RemoveFeedFr
 	)
 }
 
+const renameCollection = `-- name: RenameCollection :execresult
+UPDATE collections
+SET name = ?
+WHERE id = ? AND user_id = ?
+`
+
+type RenameCollectionParams struct {
+	Name   string `json:"name"`
+	ID     int64  `json:"id"`
+	UserID int64  `json:"user_id"`
+}
+
+func (q *Queries) RenameCollection(ctx context.Context, arg RenameCollectionParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, renameCollection, arg.Name, arg.ID, arg.UserID)
+}
+
 const verifyCollectionFeed = `-- name: VerifyCollectionFeed :one
 SELECT COUNT(*) FROM collections c
 JOIN feeds f ON f.user_id = c.user_id

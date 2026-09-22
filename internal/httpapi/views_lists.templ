@@ -63,7 +63,6 @@ templ ListRow(l store.ListWithCount) {
 			</div>
 			<div class="row-actions">
 				@listShareControl(l.ID, l.ShareToken)
-				<button class="link danger" title="delete" hx-post={ "/lists/" + strconv.FormatInt(l.ID, 10) + "/delete" } hx-target="#lists-list" hx-swap="outerHTML" hx-confirm="delete this list?">✕</button>
 			</div>
 		</div>
 	</li>
@@ -98,13 +97,29 @@ templ listPage(u store.User, d listPageData) {
 	<div class="row">
 		<h1>{ d.List.Name }</h1>
 		<div class="row-actions">
+			@SortDirControl(d.Dir, "/lists/"+strconv.FormatInt(d.List.ID, 10)+"?dir=desc", "/lists/"+strconv.FormatInt(d.List.ID, 10)+"?dir=asc")
 			@listShareControl(d.List.ID, d.List.ShareToken)
-			<form method="post" action={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/delete" }>
-				<button class="link danger" type="submit">delete</button>
-			</form>
+			<a class="small" href={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/edit" }>edit</a>
 		</div>
 	</div>
 	@ItemsListPage(d.Items, d.More, false)
+}
+
+// listEditPage renames a list and deletes it. Delete lives in the edit form,
+// not on the listing or the list page.
+templ listEditPage(u store.User, d listPageData) {
+	<section class="card">
+		<h1>edit list</h1>
+		<form class="stack" method="post" action={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/edit" }>
+			<label>name
+				<input name="name" value={ d.List.Name } required/>
+			</label>
+			<button type="submit">save</button>
+		</form>
+		<form class="stack delete-form" method="post" action={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/delete" } onsubmit="return confirm('delete this list?')">
+			<button type="submit" class="danger">delete</button>
+		</form>
+	</section>
 }
 
 // sharedListPage is the public, unauthenticated view of a shared list (or the

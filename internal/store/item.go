@@ -51,7 +51,9 @@ type ItemFilter struct {
 	FeedID        int64 // 0 = all
 	AuthorID      int64 // 0 = all
 	CollectionID  int64 // 0 = all
-	BeforeID      int64 // keyset cursor: only items ordered before this id
+	BeforeID      int64 // keyset cursor (descending): only items ordered before this id
+	AfterID       int64 // keyset cursor (ascending): only items ordered after this id
+	Ascending     bool  // oldest first (default false = newest first)
 	Limit         int
 }
 
@@ -104,13 +106,41 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 }
 
 // ListPage returns up to f.Limit items plus whether more exist beyond them,
-// so callers can render a "load more" button. Items are ordered newest first;
-// pass the last returned id as f.BeforeID to page further. The limit is
-// clamped like List, but one extra row is fetched to detect the next page.
+// so callers can render a "load more" button. Items are ordered newest first
+// (oldest first when f.Ascending); pass the last returned id as f.BeforeID (desc)
+// or f.AfterID (asc) to page further. One extra row is fetched to detect the
+// next page.
 func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, error) {
 	limit := f.Limit
 	if limit <= 0 || limit > 500 {
 		limit = 100
+	}
+	if f.Ascending {
+		rows, err := s.q.ListItemsAsc(context.Background(), sqlcgen.ListItemsAscParams{
+			UserID:       userID,
+			FeedID:       f.FeedID,
+			AuthorID:     f.AuthorID,
+			CollectionID: f.CollectionID,
+			Unread:       boolInt(f.UnreadOnly),
+			Read:         boolInt(f.ReadOnly),
+			Favorites:    boolInt(f.FavoritesOnly),
+			AfterID:      f.AfterID,
+			Limit:        int64(limit) + 1,
+		})
+		if err != nil {
+			return nil, false, err
+		}
+		hasMore := len(rows) > limit
+		if hasMore {
+			rows = rows[:limit]
+		}
+		out := make([]ItemWithFeed, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
+				r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+				r.FeedTitle, r.FeedUrl, r.AuthorID, r.AuthorName))
+		}
+		return out, hasMore, nil
 	}
 	rows, err := s.q.ListItems(context.Background(), sqlcgen.ListItemsParams{
 		UserID:       userID,

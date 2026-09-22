@@ -36,6 +36,11 @@ ORDER BY c.name;
 DELETE FROM collections
 WHERE id = ? AND user_id = ?;
 
+-- name: RenameCollection :execresult
+UPDATE collections
+SET name = ?
+WHERE id = ? AND user_id = ?;
+
 -- name: VerifyCollectionFeed :one
 SELECT COUNT(*) FROM collections c
 JOIN feeds f ON f.user_id = c.user_id

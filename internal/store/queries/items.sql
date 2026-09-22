@@ -32,6 +32,28 @@ WHERE f.user_id = sqlc.arg('userID')
 ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
 LIMIT sqlc.arg('limit');
 
+-- name: ListItemsAsc :many
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE f.user_id = sqlc.arg('userID')
+  AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR f.id = CAST(sqlc.arg('feedID') AS INTEGER))
+  AND (CAST(sqlc.arg('authorID') AS INTEGER) = 0 OR f.author_id = CAST(sqlc.arg('authorID') AS INTEGER))
+  AND (CAST(sqlc.arg('collectionID') AS INTEGER) = 0 OR i.feed_id IN (
+        SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(sqlc.arg('collectionID') AS INTEGER)))
+  AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
+  AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
+  AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
+  AND (CAST(sqlc.arg('afterID') AS INTEGER) = 0 OR
+       (COALESCE(i.published_at, i.fetched_at), i.id) >
+       (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(sqlc.arg('afterID') AS INTEGER)))
+ORDER BY COALESCE(i.published_at, i.fetched_at) ASC, i.id ASC
+LIMIT sqlc.arg('limit');
+
 -- name: GetItem :one
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite

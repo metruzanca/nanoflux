@@ -153,6 +153,13 @@ func (sf *savedFeeds) saved(feedURL string) int64 {
 	return sf.feedURLs[normExtKey(feedURL)]
 }
 
+// feedURLExists reports whether the user already has a feed with this exact
+// feed URL (normalized). It is the duplicate check for adding a feed: two feeds
+// may share a title or home URL, but not their feed URL.
+func (s *Server) feedURLExists(userID int64, feedURL string) bool {
+	return s.savedFeedsFor(userID).saved(feedURL) != 0
+}
+
 // normExtKey normalizes a URL for "already saved" matching: lowercase host
 // without a leading www., the path with a trailing slash trimmed, and the query
 // string (feeds like YouTube's differ only by channel_id=…).

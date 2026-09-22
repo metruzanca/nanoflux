@@ -503,6 +503,110 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 	return items, nil
 }
 
+const listItemsAsc = `-- name: ListItemsAsc :many
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE f.user_id = ?1
+  AND (CAST(?2 AS INTEGER) = 0 OR f.id = CAST(?2 AS INTEGER))
+  AND (CAST(?3 AS INTEGER) = 0 OR f.author_id = CAST(?3 AS INTEGER))
+  AND (CAST(?4 AS INTEGER) = 0 OR i.feed_id IN (
+        SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(?4 AS INTEGER)))
+  AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
+  AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
+  AND (CAST(?7 AS INTEGER) = 0 OR i.favorite = 1)
+  AND (CAST(?8 AS INTEGER) = 0 OR
+       (COALESCE(i.published_at, i.fetched_at), i.id) >
+       (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(?8 AS INTEGER)))
+ORDER BY COALESCE(i.published_at, i.fetched_at) ASC, i.id ASC
+LIMIT ?9
+`
+
+type ListItemsAscParams struct {
+	UserID       int64 `json:"userID"`
+	FeedID       int64 `json:"feedID"`
+	AuthorID     int64 `json:"authorID"`
+	CollectionID int64 `json:"collectionID"`
+	Unread       int64 `json:"unread"`
+	Read         int64 `json:"read"`
+	Favorites    int64 `json:"favorites"`
+	AfterID      int64 `json:"afterID"`
+	Limit        int64 `json:"limit"`
+}
+
+type ListItemsAscRow struct {
+	ID          int64          `json:"id"`
+	FeedID      int64          `json:"feed_id"`
+	Guid        string         `json:"guid"`
+	Title       string         `json:"title"`
+	Link        string         `json:"link"`
+	Summary     string         `json:"summary"`
+	ImageUrl    sql.NullString `json:"image_url"`
+	PublishedAt sql.NullString `json:"published_at"`
+	FetchedAt   string         `json:"fetched_at"`
+	Read        bool           `json:"read"`
+	Favorite    bool           `json:"favorite"`
+	ReadAt      sql.NullString `json:"read_at"`
+	FeedTitle   string         `json:"feed_title"`
+	FeedUrl     string         `json:"feed_url"`
+	AuthorID    sql.NullInt64  `json:"author_id"`
+	AuthorName  sql.NullString `json:"author_name"`
+}
+
+func (q *Queries) ListItemsAsc(ctx context.Context, arg ListItemsAscParams) ([]ListItemsAscRow, error) {
+	rows, err := q.db.QueryContext(ctx, listItemsAsc,
+		arg.UserID,
+		arg.FeedID,
+		arg.AuthorID,
+		arg.CollectionID,
+		arg.Unread,
+		arg.Read,
+		arg.Favorites,
+		arg.AfterID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListItemsAscRow
+	for rows.Next() {
+		var i ListItemsAscRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FeedID,
+			&i.Guid,
+			&i.Title,
+			&i.Link,
+			&i.Summary,
+			&i.ImageUrl,
+			&i.PublishedAt,
+			&i.FetchedAt,
+			&i.Read,
+			&i.Favorite,
+			&i.ReadAt,
+			&i.FeedTitle,
+			&i.FeedUrl,
+			&i.AuthorID,
+			&i.AuthorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecentItemTimes = `-- name: ListRecentItemTimes :many
 SELECT COALESCE(published_at, fetched_at) AS t
 FROM items

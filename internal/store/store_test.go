@@ -1268,3 +1268,27 @@ func TestSessionsExceptAndList(t *testing.T) {
 		t.Fatalf("expected only token b to remain, got %v", got)
 	}
 }
+
+func TestListPageAscending(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+	s.Items.Upsert(f.ID, Item{GUID: "a", Title: "oldest", Link: "https://metru.dev/1", PublishedAt: "2026-01-01 00:00:00", FetchedAt: db.Now()})
+	s.Items.Upsert(f.ID, Item{GUID: "b", Title: "middle", Link: "https://metru.dev/2", PublishedAt: "2026-01-02 00:00:00", FetchedAt: db.Now()})
+	s.Items.Upsert(f.ID, Item{GUID: "c", Title: "newest", Link: "https://metru.dev/3", PublishedAt: "2026-01-03 00:00:00", FetchedAt: db.Now()})
+
+	desc, more, _ := s.Items.ListPage(u.ID, ItemFilter{Limit: 2})
+	if !more || len(desc) != 2 || desc[0].Title != "newest" || desc[1].Title != "middle" {
+		t.Fatalf("desc page: more=%v %+v", more, desc)
+	}
+	// Ascending: oldest first; page forward with AfterID.
+	asc, more, _ := s.Items.ListPage(u.ID, ItemFilter{Limit: 2, Ascending: true})
+	if !more || len(asc) != 2 || asc[0].Title != "oldest" || asc[1].Title != "middle" {
+		t.Fatalf("asc page: more=%v %+v", more, asc)
+	}
+	next, _, _ := s.Items.ListPage(u.ID, ItemFilter{Limit: 2, Ascending: true, AfterID: asc[len(asc)-1].ID})
+	if len(next) != 1 || next[0].Title != "newest" {
+		t.Fatalf("asc next page: %+v", next)
+	}
+}

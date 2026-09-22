@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -97,17 +96,19 @@ func TestListsFlow(t *testing.T) {
 		t.Fatal("item should be unfavorited")
 	}
 
-	// Delete the list via an htmx row swap; the index re-renders without it.
-	req := httptest.NewRequest(http.MethodPost, "/lists/"+itoa(listID)+"/delete", strings.NewReader(""))
-	req.Header.Set("HX-Request", "true")
-	req.AddCookie(cookie)
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("delete list: %d %s", rr.Code, rr.Body.String())
+	// The edit page renames the list.
+	rr = doForm(h, "POST", "/lists/"+itoa(listID)+"/edit", url.Values{"name": {"readlater"}}, cookie)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("rename list: %d %s", rr.Code, rr.Body.String())
 	}
-	if strings.Contains(rr.Body.String(), "reading") {
-		t.Fatalf("deleted list should be gone from the index: %s", rr.Body.String())
+	if got, _ := s.store.Lists.ByID(u.ID, listID); got.Name != "readlater" {
+		t.Fatalf("list not renamed: %+v", got)
+	}
+
+	// Deleting (from the edit page) redirects back to the index.
+	rr = doForm(h, "POST", "/lists/"+itoa(listID)+"/delete", url.Values{}, cookie)
+	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/lists" {
+		t.Fatalf("delete list: %d %q", rr.Code, rr.Header().Get("Location"))
 	}
 	if _, err := s.store.Lists.ByID(u.ID, listID); err != store.ErrNotFound {
 		t.Fatalf("list should be deleted, got %v", err)

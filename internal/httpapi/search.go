@@ -126,7 +126,7 @@ type searchData struct {
 func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	before := beforeID(r)
+	before := cursorID(r, false)
 
 	if q == "" {
 		web.Render(w, r, basePage("search", u, searchResultsPage(searchData{})))
@@ -145,11 +145,11 @@ func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
 	}
 	base := "/search?q=" + url.QueryEscape(q)
 	if before > 0 {
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more), false))
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more, false), false))
 		return
 	}
 	web.Render(w, r, basePage("search", u, searchResultsPage(searchData{
-		Query: q, Items: withTZ(u.Timezone, items), More: pageCursor(base, items, more),
+		Query: q, Items: withTZ(u.Timezone, items), More: pageCursor(base, items, more, false),
 	})))
 }
 

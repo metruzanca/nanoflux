@@ -11,23 +11,26 @@ import (
 templ authorsPage(u store.User, d authorsData) {
 	<div class="row">
 		<h1>authors</h1>
-		<button type="button" onclick="document.getElementById('add-author-dialog').showModal()">+ add author</button>
+		<div class="row-actions">
+			@AuthorSortControl()
+			<button type="button" onclick="document.getElementById('add-author-dialog').showModal()">+ add feed</button>
+		</div>
 	</div>
 	@AuthorsList(d.Rows)
 	if len(d.Rows) == 0 {
-		<p class="muted">start by adding an author — paste their site or feed url and nanoflux will create the author and their first feed.</p>
+		<p class="muted">paste a site or feed url and nanoflux will find the feed, creating an author for it when needed.</p>
 	}
 
 	<dialog id="add-author-dialog" class="modal">
 		<div class="row">
-			<h2>add author</h2>
+			<h2>add feed</h2>
 			<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
 		</div>
 		<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-preview" hx-swap="innerHTML">
 			<label>url
 				<input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required/>
 			</label>
-			<button type="submit">find author</button>
+			<button type="submit">find feed</button>
 		</form>
 		<div id="author-preview"></div>
 	</dialog>
@@ -42,27 +45,17 @@ templ AuthorsList(rows []authorRow) {
 }
 
 templ AuthorRow(r authorRow) {
-	<li id={ "author-" + strconv.FormatInt(r.ID, 10) }>
+	<li id={ "author-" + strconv.FormatInt(r.ID, 10) } data-name={ r.Name } data-created={ r.CreatedAt }>
 		<div class="row">
-			<div>
-				<a href={ "/authors/" + strconv.FormatInt(r.ID, 10) }>
-					if r.AvatarKey != "" {
-						<img class="avatar avatar-sm" src={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/avatar?v=" + url.QueryEscape(r.LastFetchedAt) } alt=""/>
-					} else if r.AvatarURL != "" {
-						<img class="avatar avatar-sm" src={ "/img?u=" + url.QueryEscape(r.AvatarURL) } onerror="this.style.display='none'" alt=""/>
-					}
-					<strong>{ r.Name }</strong>
-				</a>
-				<div class="item-meta">
-					if r.Unread > 0 {
-						<strong class="unread-count">{ r.Unread } unread</strong> ·
-					}
-					{ r.FeedCount } feeds
-					if r.URL != "" {
-						· <a href={ templ.URL(r.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ r.URL }</a>
-					}
-				</div>
-			</div>
+			<a href={ "/authors/" + strconv.FormatInt(r.ID, 10) }>
+				if r.AvatarKey != "" {
+					<img class="avatar avatar-sm" src={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/avatar?v=" + url.QueryEscape(r.LastFetchedAt) } alt=""/>
+				} else if r.AvatarURL != "" {
+					<img class="avatar avatar-sm" src={ "/img?u=" + url.QueryEscape(r.AvatarURL) } onerror="this.style.display='none'" alt=""/>
+				}
+				<strong>{ r.Name }</strong>
+			</a>
+			<span class="muted">{ r.FeedCount } feeds</span>
 		</div>
 	</li>
 }

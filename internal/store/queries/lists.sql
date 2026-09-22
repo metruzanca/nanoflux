@@ -26,6 +26,11 @@ ORDER BY l.name;
 DELETE FROM lists
 WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('userID');
 
+-- name: RenameList :execresult
+UPDATE lists
+SET name = sqlc.arg('name')
+WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('userID');
+
 -- name: SetListShareToken :exec
 UPDATE lists
 SET share_token = sqlc.arg('token')
@@ -73,6 +78,21 @@ WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID')
   AND (CAST(sqlc.arg('beforeItemID') AS INTEGER) = 0 OR
        (li.created_at, i.id) < (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = sqlc.arg('listID') AND li2.item_id = CAST(sqlc.arg('beforeItemID') AS INTEGER)))
 ORDER BY li.created_at DESC, i.id DESC
+LIMIT sqlc.arg('limit');
+
+-- name: ListItemsInListAsc :many
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url,
+       a.id AS author_id, a.name AS author_name
+FROM list_items li
+JOIN items i ON i.id = li.item_id
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID')
+  AND (CAST(sqlc.arg('afterItemID') AS INTEGER) = 0 OR
+       (li.created_at, i.id) > (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = sqlc.arg('listID') AND li2.item_id = CAST(sqlc.arg('afterItemID') AS INTEGER)))
+ORDER BY li.created_at ASC, i.id ASC
 LIMIT sqlc.arg('limit');
 
 -- name: ListItemsInListPublic :many
