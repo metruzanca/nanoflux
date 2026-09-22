@@ -1314,6 +1314,48 @@ func TestDisplayModeControlPresent(t *testing.T) {
 	}
 }
 
+func TestAuthorPageFeedShowsCollectionTags(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
+	cats, _ := s.store.Collections.Create(u.ID, "cats")
+	dev, _ := s.store.Collections.Create(u.ID, "dev")
+	s.store.Collections.AddFeed(u.ID, cats.ID, f.ID)
+	s.store.Collections.AddFeed(u.ID, dev.ID, f.ID)
+
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	// Both collections render as clickable "#name" tags linking to the
+	// collection page, next to the feed they belong to.
+	for _, want := range []string{
+		`class="tag" href="/collections/` + itoa(cats.ID) + `"`,
+		`class="tag" href="/collections/` + itoa(dev.ID) + `"`,
+		"#cats", "#dev",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("author page missing collection tag %q: %s", want, body)
+		}
+	}
+	// The feed with no collections renders no tags.
+	body2 := doGet(h, "/feeds/"+itoa(f2.ID), cookie).Body.String()
+	if strings.Contains(body2, `class="tag"`) {
+		t.Fatalf("collection-free feed page should have no tags: %s", body2)
+	}
+
+	// Removing the feed from a collection drops its tag.
+	s.store.Collections.RemoveFeed(u.ID, cats.ID, f.ID)
+	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if strings.Contains(body, "#cats") {
+		t.Fatalf("removed collection tag should be gone: %s", body)
+	}
+	if !strings.Contains(body, "#dev") {
+		t.Fatalf("remaining collection tag should stay: %s", body)
+	}
+}
+
 func TestAuthorsPageSortControl(t *testing.T) {
 	_, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

@@ -415,6 +415,11 @@ The DB stores object **keys** (`users.avatar_key`, `source_icons.icon_key`).
   the feed edit page's "enabled (poll this feed)" checkbox, and **delete** lives
   on the feed edit page (`feedDelete` redirects `303` back to the author page).
   The `/toggle` route remains but has no UI.
+- An author page's feed rows show the **collections** each feed belongs to as
+  clickable `#name` tags (`.tag` → `/collections/{id}`), from
+  `CollectionStore.CollectionsByAuthorFeed` (one query per author, keyed by feed
+  id). `feedRow.Collections` carries them; the add/refresh/toggle row fragments
+  build their row via `Server.feedRowFor` so a swapped row keeps its tags.
 - Adding a feed is **blocked when the user already has a feed with that exact
   `feed_url`** (`Server.feedURLExists`, normalized like the extension's `saved`
   check) — a warning renders into `#add-feed-error`. Duplicate titles/home URLs
