@@ -728,9 +728,13 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	if !strings.Contains(body, `hx-post="/items/4/read"`) {
 		t.Fatalf("link card missing read toggle: %s", body)
 	}
-	// Feed titles in the item meta link to the internal feed page, never the RSS url.
-	if !strings.Contains(body, `href="/feeds/1">bigboxSWE</a>`) {
-		t.Fatalf("item meta should link to /feeds/1 internally: %s", body)
+	// Cards show the author (not the feed name); the feed lives behind the "go
+	// to feed" entry in the item's ⋯ menu, never the external RSS url.
+	if !strings.Contains(body, `href="/authors/1">bigboxSWE</a>`) {
+		t.Fatalf("item meta should link the author internally: %s", body)
+	}
+	if !strings.Contains(body, `href="/feeds/1">go to feed</a>`) {
+		t.Fatalf("item menu should offer 'go to feed': %s", body)
 	}
 	if strings.Contains(body, `href="https://www.youtube.com/feeds/videos.xml`) {
 		t.Fatalf("item meta must not link to the external feed url: %s", body)
@@ -969,11 +973,19 @@ func TestAuthorPageHasAddFeedDialog(t *testing.T) {
 		`id="add-author-feed-dialog"`,
 		`name="author_id" value="` + itoa(a.ID) + `"`,
 		`hx-post="/fragments/feed-preview"`,
-		"+ add feed",
+		`+ add feed`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("author page missing %q: %s", want, body)
 		}
+	}
+	// The add-feed control is a link-styled button that sits after the feed
+	// list, not a primary button above it.
+	if !strings.Contains(body, `<button type="button" class="link" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>`) {
+		t.Fatalf("author page add-feed should be a link-styled button: %s", body)
+	}
+	if strings.Index(body, `id="feeds-list"`) > strings.Index(body, `+ add feed`) {
+		t.Fatalf("add-feed should render below the feed list: %s", body)
 	}
 }
 

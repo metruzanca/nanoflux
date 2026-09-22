@@ -186,11 +186,9 @@ templ authorPage(u store.User, d authorData) {
 			<p>{ d.Author.Description }</p>
 		}
 	</section>
-	<div class="row">
-		<h2>feeds</h2>
-		<button type="button" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>
-	</div>
+	<h2>feeds</h2>
 	@FeedsList(d.Rows)
+	<button type="button" class="link" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>
 	<h2>items</h2>
 	@ScopedItems(d.Scoped)
 

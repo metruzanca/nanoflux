@@ -197,3 +197,49 @@ func TestFeedCreatePollsImmediately(t *testing.T) {
 		t.Fatalf("feed after first poll: %+v", feeds)
 	}
 }
+
+// TestFeedRefreshUpdatesAuthorItems asserts that refreshing a feed from an
+// author page both re-renders its row (the primary swap) and out-of-band
+// refreshes the author's item list, so newly polled items appear immediately.
+func TestFeedRefreshUpdatesAuthorItems(t *testing.T) {
+	s, h := newTestServer(t)
+	s.SetPoller(poller.New(s.store, time.Minute, 1))
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>Blog</title><item><guid>g1</guid><title>Fresh one</title><link>https://b.dev/1</link></item></channel></rss>`)
+	}))
+	defer srv.Close()
+
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
+
+	// Simulate the htmx refresh from the author page's feed row.
+	req := httptest.NewRequest(http.MethodPost, "/feeds/"+itoa(f.ID)+"/refresh", nil)
+	req.Header.Set("HX-Current-URL", "http://example.com/authors/"+itoa(a.ID))
+	req.AddCookie(cookie)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("refresh: %d %s", rr.Code, rr.Body.String())
+	}
+	out := rr.Body.String()
+	if !strings.Contains(out, `hx-swap-oob="outerHTML"`) || !strings.Contains(out, `id="scoped-items"`) {
+		t.Fatalf("author-page refresh should OOB-swap the item list: %s", out)
+	}
+	if !strings.Contains(out, "Fresh one") {
+		t.Fatalf("refreshed item list should include the new item: %s", out)
+	}
+
+	// Refreshing from the feed detail page must not emit an OOB swap (there is
+	// no #scoped-items region on that page to target).
+	req = httptest.NewRequest(http.MethodPost, "/feeds/"+itoa(f.ID)+"/refresh", nil)
+	req.AddCookie(cookie)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if strings.Contains(rr.Body.String(), "hx-swap-oob") {
+		t.Fatalf("feed-detail refresh should not OOB-swap: %s", rr.Body.String())
+	}
+}
