@@ -234,6 +234,9 @@ function openItemData(id) {
       // The modal is injected via plain innerHTML, so htmx never processed its
       // elements (e.g. the share button's hx-post). Initialize them here.
       htmx.process(document.getElementById('item-dialog'));
+      // Focus the scrollable body so the browser's arrow keys scroll the post
+      // (rather than the dialog's first button grabbing focus).
+      body.focus();
       markRowRead(id);
     })
     .catch(function () { body.innerHTML = '<p class="error">could not load item</p>'; });
@@ -708,12 +711,18 @@ document.addEventListener('keydown', function (e) {
 
   switch (e.key) {
     case 'j':
-    case 'ArrowDown':
       move(1);
       break;
     case 'k':
-    case 'ArrowUp':
       move(-1);
+      break;
+    case 'ArrowDown':
+      // While the item modal is open, leave the arrows to the browser so they
+      // scroll the post's body; j/k still move between items.
+      if (!inDialog) move(1);
+      break;
+    case 'ArrowUp':
+      if (!inDialog) move(-1);
       break;
     case 'g':
       if (!inDialog) { e.preventDefault(); setActiveRow(rows[0]); }
