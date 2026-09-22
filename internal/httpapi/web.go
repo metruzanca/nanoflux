@@ -483,7 +483,10 @@ func (s *Server) itemReadAfter(w http.ResponseWriter, r *http.Request) {
 }
 
 // markRangeRead marks items newer (before) or older (after) than the target
-// item in its feed as read. The target item itself is left alone.
+// item as read. The target item itself is left alone. On an author page the
+// range spans every feed owned by the item's author; elsewhere (a feed page)
+// it is limited to the item's own feed. The page is read from htmx's
+// HX-Current-URL so no extra state is threaded through the menu.
 func (s *Server) markRangeRead(w http.ResponseWriter, r *http.Request, before bool) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -495,18 +498,43 @@ func (s *Server) markRangeRead(w http.ResponseWriter, r *http.Request, before bo
 		http.NotFound(w, r)
 		return
 	}
+	authorScoped := isAuthorPageURL(r.Header.Get("HX-Current-URL"))
 	var derr error
-	if before {
+	switch {
+	case authorScoped && before:
+		derr = s.store.Items.MarkAuthorBeforeRead(u.ID, id)
+	case authorScoped:
+		derr = s.store.Items.MarkAuthorAfterRead(u.ID, id)
+	case before:
 		derr = s.store.Items.MarkBeforeRead(u.ID, id)
-	} else {
+	default:
 		derr = s.store.Items.MarkAfterRead(u.ID, id)
 	}
 	if derr != nil {
-		log.Error("mark range read", "item_id", id, "before", before, "err", derr)
+		log.Error("mark range read", "item_id", id, "before", before, "author_scoped", authorScoped, "err", derr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// isAuthorPageURL reports whether a page URL (htmx's HX-Current-URL) is an
+// author page, e.g. "/authors/65". Used to broaden the bulk "mark all
+// before/after as read" action from one feed to every feed of that author.
+func isAuthorPageURL(rawurl string) bool {
+	if rawurl == "" {
+		return false
+	}
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return false
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) != 2 || parts[0] != "authors" {
+		return false
+	}
+	_, err = strconv.ParseInt(parts[1], 10, 64)
+	return err == nil
 }
 
 func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {
@@ -1046,18 +1074,11 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 // current tab and sort order rather than resetting them to the defaults.
 func authorPageScope(r *http.Request) (view string, asc, ok bool) {
 	cur := r.Header.Get("HX-Current-URL")
-	if cur == "" {
+	if !isAuthorPageURL(cur) {
 		return "", false, false
 	}
 	u, err := url.Parse(cur)
 	if err != nil {
-		return "", false, false
-	}
-	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) != 2 || parts[0] != "authors" {
-		return "", false, false
-	}
-	if _, err := strconv.ParseInt(parts[1], 10, 64); err != nil {
 		return "", false, false
 	}
 	q := u.Query()
