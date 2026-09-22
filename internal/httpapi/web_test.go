@@ -1291,16 +1291,25 @@ func TestDisplayModeControlPresent(t *testing.T) {
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Feed Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 	coll, _ := s.store.Collections.Create(u.ID, "Dev")
 	s.store.Collections.AddFeed(u.ID, coll.ID, f.ID)
+	list, _ := s.store.Lists.Create(u.ID, "Reading")
 
-	control := `class="picker" data-picker="display"`
 	option := `role="menuitemradio" data-option="grid"`
-	for _, path := range []string{
-		"/", "/read", "/favorites",
-		"/authors/" + itoa(a.ID), "/feeds/" + itoa(f.ID), "/collections/" + itoa(coll.ID),
-	} {
-		body := doGet(h, path, cookie).Body.String()
-		if !strings.Contains(body, control) || !strings.Contains(body, option) {
-			t.Fatalf("%s missing display-mode control: %s", path, body)
+	// Each page's picker carries the page path in data-scope so the client
+	// remembers the list/grid choice per author/feed/collection/page.
+	cases := []struct{ path, scope string }{
+		{"/", "/"},
+		{"/read", "/read"},
+		{"/favorites", "/favorites"},
+		{"/authors/" + itoa(a.ID), "/authors/" + itoa(a.ID)},
+		{"/feeds/" + itoa(f.ID), "/feeds/" + itoa(f.ID)},
+		{"/collections/" + itoa(coll.ID), "/collections/" + itoa(coll.ID)},
+		{"/lists/" + itoa(list.ID), "/lists/" + itoa(list.ID)},
+	}
+	for _, c := range cases {
+		body := doGet(h, c.path, cookie).Body.String()
+		if !strings.Contains(body, `class="picker" data-picker="display" data-scope="`+c.scope+`"`) ||
+			!strings.Contains(body, option) {
+			t.Fatalf("%s missing scoped display-mode control (scope %q): %s", c.path, c.scope, body)
 		}
 	}
 }

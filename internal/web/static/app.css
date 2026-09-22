@@ -315,6 +315,14 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
   flex: none;
 }
 
+/* Inline Lucide glyphs size to the surrounding text. */
+.ic {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  flex: none;
+}
+
 .row { display: flex; align-items: baseline; gap: 0.75rem; justify-content: space-between; }
 .row h2 { margin: 0; }
 
@@ -333,8 +341,9 @@ ul.items li.active-row { box-shadow: inset 3px 0 0 var(--accent); }
 ul.items li.menu-open { overflow: visible; z-index: 20; }
 
 /* Tinder-style swipe actions (touch only). The row's children translate over
-   a fixed hint (★ = favorite right, ✓ = read left); JS clicks the matching
-   .fav-btn / .read-btn to reuse the existing htmx toggle and row swap. */
+   a fixed hint (star = favorite right, check = read left); JS clicks the
+   matching .fav-btn / .read-btn to reuse the existing htmx toggle and row
+   swap. The hints are Lucide masks so they match the icon set. */
 ul.items li > * { transition: transform 0.2s ease; }
 ul.items li.dragging > * { transition: none; }
 ul.items li.swiping-right > *,
@@ -349,12 +358,28 @@ ul.items li.swiping-left::after {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  font-size: 1.6rem;
-  line-height: 1;
+  width: 1.6rem;
+  height: 1.6rem;
   pointer-events: none;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
 }
-ul.items li.swiping-right::before { content: "★"; right: 1rem; color: #4cbf7c; }
-ul.items li.swiping-left::after { content: "✓"; left: 1rem; color: var(--accent); }
+ul.items li.swiping-right::before {
+  content: "";
+  right: 1rem;
+  background-color: #4cbf7c;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M11.525%202.295a.53.53%200%200%201%20.95%200l2.31%204.679a2.123%202.123%200%200%200%201.595%201.16l5.166.756a.53.53%200%200%201%20.294.904l-3.736%203.638a2.123%202.123%200%200%200-.611%201.878l.882%205.14a.53.53%200%200%201-.771.56l-4.618-2.428a2.122%202.122%200%200%200-1.973%200L6.396%2021.01a.53.53%200%200%201-.77-.56l.881-5.139a2.122%202.122%200%200%200-.611-1.879L2.16%209.795a.53.53%200%200%201%20.294-.906l5.165-.755a2.122%202.122%200%200%200%201.597-1.16z%27%2F%3E%3C%2Fsvg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M11.525%202.295a.53.53%200%200%201%20.95%200l2.31%204.679a2.123%202.123%200%200%200%201.595%201.16l5.166.756a.53.53%200%200%201%20.294.904l-3.736%203.638a2.123%202.123%200%200%200-.611%201.878l.882%205.14a.53.53%200%200%201-.771.56l-4.618-2.428a2.122%202.122%200%200%200-1.973%200L6.396%2021.01a.53.53%200%200%201-.77-.56l.881-5.139a2.122%202.122%200%200%200-.611-1.879L2.16%209.795a.53.53%200%200%201%20.294-.906l5.165-.755a2.122%202.122%200%200%200%201.597-1.16z%27%2F%3E%3C%2Fsvg%3E");
+}
+ul.items li.swiping-left::after {
+  content: "";
+  left: 1rem;
+  background-color: var(--accent);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M20%206%209%2017l-5-5%27%2F%3E%3C%2Fsvg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27black%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%3Cpath%20d%3D%27M20%206%209%2017l-5-5%27%2F%3E%3C%2Fsvg%3E");
+}
 
 table.shortcuts { border-collapse: collapse; margin-top: 0.5rem; }
 table.shortcuts td { padding: 0.3rem 1rem 0.3rem 0; font-size: 0.9rem; }

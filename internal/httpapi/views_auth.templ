@@ -57,7 +57,7 @@ templ homePage(d homeData) {
 		<h1>unread ({ d.UnreadCount })</h1>
 		<div class="row-actions">
 			@SortDirControl(d.Dir, "/?dir=desc", "/?dir=asc")
-			@DisplayModeControl()
+			@DisplayModeControl("/")
 			if d.UnreadCount > 0 {
 				<button hx-post="/items/read-all" hx-target="#items-section" hx-swap="outerHTML">mark all read</button>
 			}
@@ -71,7 +71,7 @@ templ readPage(d readData) {
 		<h1>history ({ d.ReadCount })</h1>
 		<div class="row-actions">
 			@SortDirControl(d.Dir, "/read?dir=desc", "/read?dir=asc")
-			@DisplayModeControl()
+			@DisplayModeControl("/read")
 			if d.ReadCount > 0 {
 				<button hx-post="/items/unread-all" hx-target="#items-section" hx-swap="outerHTML">mark all unread</button>
 			}
@@ -85,7 +85,7 @@ templ favoritesPage(d favoritesData) {
 		<h1>favorites ({ d.FavCount })</h1>
 		<div class="row-actions">
 			@SortDirControl(d.Dir, "/favorites?dir=desc", "/favorites?dir=asc")
-			@DisplayModeControl()
+			@DisplayModeControl("/favorites")
 			@favoritesShareControl(d.ShareToken)
 		</div>
 	</div>

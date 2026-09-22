@@ -408,7 +408,9 @@ The DB stores object **keys** (`users.avatar_key`, `source_icons.icon_key`).
   and an **edit** link. `GET /collections/{id}/edit` edits the name
   (`CollectionStore.Rename`) and holds the delete form plus the feed list (with
   remove); `collectionDelete` redirects `303 → /collections`. Auto collections
-  are read-only (no edit/delete, add-feed rejected).
+  reject rename and add/remove-feed (they track a feed's site), but their page
+  offers a **delete** form: deleting one removes only the grouping (its feeds
+  stay) and `AssignAuto` recreates it if a feed on that site is added again.
 - Feed rows on the author page only offer **edit** and **refresh**; pausing is
   the feed edit page's "enabled (poll this feed)" checkbox, and **delete** lives
   on the feed edit page (`feedDelete` redirects `303` back to the author page).
@@ -517,6 +519,16 @@ handler view structs) and are generated to `_templ.go` files next to them; the
 `Initial`, `PageTitle`) plus the `SourceIcon`/`FavIcon` components and static
 serving. `web.Render(w, r, component)` executes a component; handlers call
 their page component directly (e.g. `basePage("unread", u, homePage(...))`).
+
+**Icons are Lucide.** Do not hand-roll SVG paths or use Unicode glyphs
+(`✓`, `✕`, `↻`, `⋯`) for UI chrome. `internal/web/icons.templ` holds the
+inlined Lucide shapes (`lucideShapes`, ISC-licensed — see README), rendered via
+`web.Lucide(name)` (sizes to text via the `.ic` class) or `web.EditIcon()` (the
+`square-pen` glyph for every "edit" affordance). To add an icon, paste the
+path(s) from https://lucide.dev into `lucideShapes`. The two swipe hints in
+`app.css` are Lucide star/check masks; the built-in source icons in
+`internal/httpapi/settings.go` (globe/x/youtube/instagram brand marks) are the
+one deliberate exception — they are brand logos, not UI chrome.
 
 The app is an installable PWA: `internal/web/static/manifest.webmanifest` and
 `sw.js` are served at the root (`/manifest.webmanifest`, `/sw.js` — the latter
@@ -723,10 +735,14 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   dropdown (`togglePicker`/`closePickers`/`setPickerState` in app.js) behind
   three instances. **Client-side** pickers have no `Href`; a delegated click maps
   the picker's `data-picker` + the option's `data-option` to a setter. The
-  **display mode** (list/grid, `localStorage["nanoflux.items.mode"]`) toggles the
-  `masonry` class on `#items-list`; the **authors sort** (abc/newest/unread,
-  `localStorage["nanoflux.authors.sort"]`) reorders `#authors-list` rows by their
-  `data-name`/`data-created`/`data-unread`. Both re-run on every `htmx:afterSwap` because tab
+  **display mode** (list/grid) toggles the `masonry` class on `#items-list`; it
+  is remembered **per page**, keyed `localStorage["nanoflux.items.mode:<scope>"]`
+  where `data-scope` is the page path (`/`, `/read`, `/favorites`,
+  `/authors/{id}`, `/feeds/{id}`, `/collections/{id}`, `/lists/{id}`), falling
+  back to the legacy global `nanoflux.items.mode` so old choices survive. The
+  **authors sort** (abc/newest/unread, `localStorage["nanoflux.authors.sort"]`)
+  reorders `#authors-list` rows by their `data-name`/`data-created`/`data-unread`.
+  Both re-run on every `htmx:afterSwap` because tab
   switches, "mark all read", load-more, and author adds recreate the list. The
   server renders the default state — do not try to read localStorage server-side.
   **Server-side** pickers set `Href` (the sort direction) and are plain links.

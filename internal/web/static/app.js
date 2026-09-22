@@ -105,12 +105,20 @@ document.addEventListener('click', function (e) {
   else if (name === 'authors') setAuthorSort(value, e);
 });
 
-// Display mode (list / masonry grid). Client-side (localStorage), applied to
-// whatever item list is on the page; htmx swaps re-create the list, so
-// applyDisplayMode re-runs on every afterSwap.
+// Display mode (list / masonry grid). Client-side (localStorage), remembered
+// per scope: the picker carries the page's path in data-scope, so each
+// author/feed/collection (and home/history/favorites) keeps its own choice.
+// Applied to whatever item list is on the page; htmx swaps re-create the list,
+// so applyDisplayMode re-runs on every afterSwap.
 var DISPLAY_MODE_KEY = 'nanoflux.items.mode';
+function displayScope() {
+  var ctl = document.querySelector('.picker[data-picker="display"]');
+  return (ctl && ctl.dataset.scope) || '';
+}
 function displayMode() {
-  var m = localStorage.getItem(DISPLAY_MODE_KEY);
+  var scope = displayScope();
+  var m = scope ? localStorage.getItem(DISPLAY_MODE_KEY + ':' + scope) : null;
+  if (m === null) m = localStorage.getItem(DISPLAY_MODE_KEY); // legacy global
   return m === 'grid' ? 'grid' : 'list';
 }
 function applyDisplayMode() {
@@ -123,7 +131,8 @@ function applyDisplayMode() {
 }
 function setDisplayMode(mode, e) {
   if (e) e.stopPropagation();
-  localStorage.setItem(DISPLAY_MODE_KEY, mode);
+  var scope = displayScope();
+  localStorage.setItem(scope ? DISPLAY_MODE_KEY + ':' + scope : DISPLAY_MODE_KEY, mode);
   applyDisplayMode();
   closePickers();
 }

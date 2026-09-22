@@ -168,12 +168,12 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor bool) {
 						<button class="link read-btn" title="mark unread" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML"
 							if hideAuthor {
 								hx-vals={ `{"hideAuthor":"1"}` }
-							}>↺</button>
+							}>@web.Lucide("rotate-ccw")</button>
 					} else {
 						<button class="link read-btn" title="mark read" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML"
 							if hideAuthor {
 								hx-vals={ `{"hideAuthor":"1"}` }
-							}>✓</button>
+							}>@web.Lucide("check")</button>
 					}
 					@itemMenu(it.ID)
 				</div>
@@ -210,7 +210,7 @@ templ scopedItemsInner(d scopedItemsData) {
 		</nav>
 		<div class="row-actions">
 			@SortDirControl(d.Dir, d.Path+"?view="+d.View+"&dir=desc", d.Path+"?view="+d.View+"&dir=asc")
-			@DisplayModeControl()
+			@DisplayModeControl(d.Path)
 		</div>
 	</div>
 	@ItemsListPage(d.Items, d.More, d.HideAuthor)
@@ -231,9 +231,11 @@ type pickerOption struct {
 // PickerControl is the shared pill + dropdown used for the display mode, the
 // authors sort, and the item sort direction. The button shows the current
 // option's icon/label; the server renders the default and app.js re-syncs it
-// from state after swaps.
-templ PickerControl(name, title, current string, options []pickerOption) {
-	<div class="picker" data-picker={ name }>
+// from state after swaps. scope namespaces a client-side picker's remembered
+// value (the display mode is remembered per page); it is "" for pickers whose
+// state is not scoped.
+templ PickerControl(name, title, current, scope string, options []pickerOption) {
+	<div class="picker" data-picker={ name } data-scope={ scope }>
 		<button type="button" class="mode-btn" aria-haspopup="true" aria-expanded="false" title={ title } onclick="togglePicker(event)">
 			for _, o := range options {
 				if o.Icon != "" {
@@ -269,10 +271,10 @@ templ PickerControl(name, title, current string, options []pickerOption) {
 
 // DisplayModeControl is the list/grid picker shown alongside the unread/read
 // tabs and in the home/history/favorites headers. The choice is client-side
-// (localStorage), so the server always renders the default (list) state and
-// app.js re-syncs it.
-templ DisplayModeControl() {
-	@PickerControl("display", "display mode", "list", []pickerOption{
+// (localStorage), remembered per scope (the page's path), so the server always
+// renders the default (list) state and app.js re-syncs it.
+templ DisplayModeControl(scope string) {
+	@PickerControl("display", "display mode", "list", scope, []pickerOption{
 		{Value: "list", Label: "list", Icon: "list"},
 		{Value: "grid", Label: "grid", Icon: "grid"},
 	})
@@ -282,7 +284,7 @@ templ DisplayModeControl() {
 // first, or by most unread items. Client-side: app.js reorders the rendered
 // rows.
 templ AuthorSortControl() {
-	@PickerControl("authors", "sort", "abc", []pickerOption{
+	@PickerControl("authors", "sort", "abc", "", []pickerOption{
 		{Value: "abc", Label: "abc"},
 		{Value: "newest", Label: "newest"},
 		{Value: "unread", Label: "unread"},
@@ -292,23 +294,23 @@ templ AuthorSortControl() {
 // SortDirControl is the asc/desc picker for item lists. Server-side: each
 // option is a link that reloads the page with ?dir=.
 templ SortDirControl(dir, descHref, ascHref string) {
-	@PickerControl("dir", "sort order", dir, []pickerOption{
+	@PickerControl("dir", "sort order", dir, "", []pickerOption{
 		{Value: "desc", Label: "newest", Icon: "desc", Href: descHref},
 		{Value: "asc", Label: "oldest", Icon: "asc", Href: ascHref},
 	})
 }
 
-// ModeIcon renders the small icon for a picker option.
+// ModeIcon renders the small Lucide icon for a picker option.
 templ ModeIcon(name string) {
 	switch name {
 		case "grid":
-			<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+			@web.Lucide("layout-grid")
 		case "list":
-			<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+			@web.Lucide("list")
 		case "desc":
-			<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+			@web.Lucide("arrow-down")
 		case "asc":
-			<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+			@web.Lucide("arrow-up")
 	}
 }
 
@@ -431,7 +433,7 @@ templ shareControl(itemID int64, token string) {
 // data-item-id so many cards can each have one.
 templ itemMenu(itemID int64) {
 	<div class="item-menu" data-item-id={ strconv.FormatInt(itemID, 10) }>
-		<button type="button" class="link menu-btn" aria-haspopup="true" aria-expanded="false" title="more actions" onclick="toggleItemMenu(event)">⋯</button>
+		<button type="button" class="link menu-btn" aria-haspopup="true" aria-expanded="false" title="more actions" onclick="toggleItemMenu(event)">@web.Lucide("ellipsis")</button>
 		<div class="menu-pop" role="menu" hidden>
 			<button type="button" class="link menu-item" role="menuitem" onclick="itemMenuAction(event, 'lists')">add to list</button>
 			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-before" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">mark all before as read</button>
@@ -449,7 +451,7 @@ templ itemMenu(itemID int64) {
 templ itemListsDialogInner(itemID int64, favorite bool, lists []store.List, itemListIDs []int64) {
 	<div class="row">
 		<h2>add to list</h2>
-		<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+		<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
 	</div>
 	<form class="stack" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/lists" } hx-target="#item-lists-dialog" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){document.getElementById('item-lists-dialog').close()}">
 		<label>
