@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"strconv"
+
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -79,6 +81,18 @@ templ topbar(u store.User) {
 	     this dialog (itemListsDialogInner) before showing it. -->
 	<dialog id="item-lists-dialog" class="modal"></dialog>
 
+	<!-- Command palette (ctrl/cmd+p) and unified entity search
+	     (ctrl/cmd+shift+p). Both are filled client-side by app.js. -->
+	<dialog id="command-palette" class="palette">
+		<input id="command-input" type="text" placeholder="run a command…" autocomplete="off" spellcheck="false"/>
+		<ul id="command-results" class="palette-results" role="listbox"></ul>
+	</dialog>
+
+	<dialog id="entity-palette" class="palette">
+		<input id="entity-input" type="text" placeholder="search… @ authors  # collections  ! feeds" autocomplete="off" spellcheck="false"/>
+		<ul id="entity-results" class="palette-results" role="listbox"></ul>
+	</dialog>
+
 	<dialog id="shortcuts-dialog" class="modal">
 		<div class="row">
 			<h2 class="muted">keyboard shortcuts</h2>
@@ -100,6 +114,8 @@ templ shortcutsTable() {
 		<tr><td>g / G</td><td>first / last item</td></tr>
 		<tr><td>← / →</td><td>previous / next while reading</td></tr>
 		<tr><td>/</td><td>focus the search box</td></tr>
+		<tr><td>ctrl/⌘ + p</td><td>command palette</td></tr>
+		<tr><td>ctrl/⌘ + shift + p</td><td>search authors, collections, feeds</td></tr>
 		<tr><td>?</td><td>toggle this list</td></tr>
 		<tr><td>Esc</td><td>close dialog</td></tr>
 	</table>
@@ -119,7 +135,7 @@ templ basePage(title string, u store.User, content templ.Component) {
 		<head>
 			@head(title, u.AccentColor)
 		</head>
-		<body>
+		<body data-admin={ strconv.FormatBool(u.IsAdmin) }>
 			@topbar(u)
 			<main>
 				@content

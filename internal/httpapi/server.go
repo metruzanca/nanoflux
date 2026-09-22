@@ -195,6 +195,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/unread-count", s.auth.Require(http.HandlerFunc(s.apiUnreadCount)))
 	mux.Handle("GET /api/items", s.auth.Require(http.HandlerFunc(s.apiItems)))
 	mux.Handle("GET /api/search", s.auth.Require(http.HandlerFunc(s.apiSearch)))
+	mux.Handle("GET /api/entities", s.auth.Require(http.HandlerFunc(s.apiEntities)))
 	mux.Handle("POST /api/items/{id}/read", s.auth.Require(http.HandlerFunc(s.apiItemRead)))
 	mux.Handle("POST /api/discover", s.auth.Require(http.HandlerFunc(s.apiDiscover)))
 	mux.Handle("POST /api/save", s.auth.Require(http.HandlerFunc(s.apiSave)))
