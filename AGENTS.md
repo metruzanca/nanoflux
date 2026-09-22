@@ -372,6 +372,11 @@ icons that override the built-in X/YouTube/globe set.
   `GET /icons/{domain}` handler serves the user's **cached** custom icon bytes,
   else a built-in SVG. This is what makes per-user icons work without threading
   the user into every fragment.
+- The icon is looked up from the feed's **home page**, falling back to its feed
+  URL (`feedIconURL`/`itemIconURL` in `internal/httpapi/web.go`): some feed URLs
+  (API endpoints, scrape targets) have no favicon while the home page does.
+  `ItemWithFeed.FeedHomeURL` carries the joined feed's home for item cards, so
+  the item queries select `f.home_url` alongside `f.feed_url`.
 - Custom icons are stored in the `source_icons` table (domain unique per user,
   `icon_data` BLOB holds the cached bytes). Added/refreshed by fetching the
   user's `icon_url` server-side (`fetchAndCacheIcon`, capped at 1MB, must be

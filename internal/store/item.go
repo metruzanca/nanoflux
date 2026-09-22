@@ -28,12 +28,13 @@ type Item struct {
 // ItemWithFeed joins an item with its feed and author for display.
 type ItemWithFeed struct {
 	Item
-	FeedTitle  string
-	FeedURL    string
-	AuthorID   int64
-	AuthorName string
-	Sources    []ItemSource // additional feeds this item appears in (view-time dedup)
-	Timezone   string       // user's IANA timezone, for relative timestamps in templates
+	FeedTitle   string
+	FeedURL     string
+	FeedHomeURL string // the feed's home page, for source-icon lookups
+	AuthorID    int64
+	AuthorName  string
+	Sources     []ItemSource // additional feeds this item appears in (view-time dedup)
+	Timezone    string       // user's IANA timezone, for relative timestamps in templates
 }
 
 // ItemSource is one alternate copy of an item that was merged into the
@@ -138,7 +139,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 		for _, r := range rows {
 			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
 				r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
-				r.FeedTitle, r.FeedUrl, r.AuthorID, r.AuthorName))
+				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.AuthorID, r.AuthorName))
 		}
 		return out, hasMore, nil
 	}
@@ -164,7 +165,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	for _, r := range rows {
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
 			r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
-			r.FeedTitle, r.FeedUrl, r.AuthorID, r.AuthorName))
+			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.AuthorID, r.AuthorName))
 	}
 	return out, hasMore, nil
 }
@@ -211,7 +212,7 @@ func (s *ItemStore) SearchPage(userID int64, query string, f ItemFilter) ([]Item
 	}
 	const sql = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
-       f.title AS feed_title, f.feed_url AS feed_url,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        a.id AS author_id, a.name AS author_name
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -239,12 +240,12 @@ LIMIT ?7`
 		var r sqlcgen.ListItemsRow
 		if err := rows.Scan(&r.ID, &r.FeedID, &r.Guid, &r.Title, &r.Link, &r.Summary,
 			&r.ImageUrl, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.ReadAt,
-			&r.FeedTitle, &r.FeedUrl, &r.AuthorID, &r.AuthorName); err != nil {
+			&r.FeedTitle, &r.FeedUrl, &r.FeedHomeUrl, &r.AuthorID, &r.AuthorName); err != nil {
 			return nil, false, err
 		}
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
 			r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
-			r.FeedTitle, r.FeedUrl, r.AuthorID, r.AuthorName))
+			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.AuthorID, r.AuthorName))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, false, err
@@ -366,7 +367,7 @@ func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 	}
 	return toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary,
 		it.ImageUrl, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
-		it.FeedTitle, it.FeedUrl, it.AuthorID, it.AuthorName), nil
+		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.AuthorID, it.AuthorName), nil
 }
 
 // OneWithFeedAny returns a single item regardless of user. Used by the public
@@ -381,7 +382,7 @@ func (s *ItemStore) OneWithFeedAny(itemID int64) (ItemWithFeed, error) {
 	}
 	return toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary,
 		it.ImageUrl, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
-		it.FeedTitle, it.FeedUrl, it.AuthorID, it.AuthorName), nil
+		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.AuthorID, it.AuthorName), nil
 }
 
 // SetRead marks an item read/unread, verifying it belongs to the user. When an

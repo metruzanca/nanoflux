@@ -129,7 +129,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor bool) {
 						<a class="item-title unread" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">{ it.Title }</a>
 					}
 					<div class="item-meta">
-						@web.SourceIcon(it.FeedURL)
+						@web.SourceIcon(itemIconURL(it))
 						if it.AuthorName != "" && !hideAuthor {
 							<a href={ "/authors/" + strconv.FormatInt(it.AuthorID, 10) }>{ it.AuthorName }</a>
 						} else {

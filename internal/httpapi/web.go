@@ -1383,6 +1383,24 @@ func (s *Server) feedRowFor(userID int64, f store.Feed, authorName, tz string, u
 	}
 }
 
+// feedIconURL is the URL a feed's source icon is looked up from: its home page,
+// falling back to the feed URL. Some feed URLs (API endpoints, scrape targets,
+// ...) have no favicon while the home page does.
+func feedIconURL(f store.Feed) string {
+	if strings.TrimSpace(f.HomeURL) != "" {
+		return f.HomeURL
+	}
+	return f.FeedURL
+}
+
+// itemIconURL is feedIconURL for an item's joined feed.
+func itemIconURL(it store.ItemWithFeed) string {
+	if strings.TrimSpace(it.FeedHomeURL) != "" {
+		return it.FeedHomeURL
+	}
+	return it.FeedURL
+}
+
 func (s *Server) feedRowsForAuthor(userID, authorID int64, tz string) ([]feedRow, error) {
 	rows, err := s.store.Feeds.ListByAuthorWithUnread(userID, authorID)
 	if err != nil {

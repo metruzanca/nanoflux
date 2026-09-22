@@ -675,7 +675,7 @@ func itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor bool) templ.C
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = web.SourceIcon(it.FeedURL).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = web.SourceIcon(itemIconURL(it)).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

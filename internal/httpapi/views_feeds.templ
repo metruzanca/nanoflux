@@ -20,7 +20,7 @@ templ FeedRow(r feedRow) {
 		<div class="row">
 			<div>
 				<a href={ "/feeds/" + strconv.FormatInt(r.ID, 10) }>
-					<strong>@web.SourceIcon(r.FeedURL)
+					<strong>@web.SourceIcon(feedIconURL(r.Feed))
 					{ r.Title }</strong>
 				</a>
 				if !r.Enabled {
@@ -355,7 +355,7 @@ templ feedFields(d feedsData) {
 templ feedPage(u store.User, d feedPageData) {
 	<section class="card">
 		<div class="row">
-			<h1>@web.SourceIcon(d.Row.FeedURL)
+			<h1>@web.SourceIcon(feedIconURL(d.Row.Feed))
 			{ d.Row.Title }</h1>
 			<div class="row-actions">
 				<a class="small" title="edit" href={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/edit" }>@web.EditIcon()</a>
