@@ -122,3 +122,25 @@ func (q *Queries) ListAuthorLinks(ctx context.Context, arg ListAuthorLinksParams
 	}
 	return items, nil
 }
+
+const updateAuthorLink = `-- name: UpdateAuthorLink :execresult
+UPDATE author_links
+SET label = ?, url = ?
+WHERE id = ? AND user_id = ?
+`
+
+type UpdateAuthorLinkParams struct {
+	Label  sql.NullString `json:"label"`
+	Url    string         `json:"url"`
+	ID     int64          `json:"id"`
+	UserID int64          `json:"user_id"`
+}
+
+func (q *Queries) UpdateAuthorLink(ctx context.Context, arg UpdateAuthorLinkParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, updateAuthorLink,
+		arg.Label,
+		arg.Url,
+		arg.ID,
+		arg.UserID,
+	)
+}

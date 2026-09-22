@@ -17,3 +17,8 @@ ORDER BY id;
 -- name: DeleteAuthorLink :execresult
 DELETE FROM author_links
 WHERE id = ? AND user_id = ?;
+
+-- name: UpdateAuthorLink :execresult
+UPDATE author_links
+SET label = ?, url = ?
+WHERE id = ? AND user_id = ?;

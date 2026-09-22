@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -925,7 +926,16 @@ func TestItemView(t *testing.T) {
 	if strings.Contains(body, `href="https://b.dev/rss.xml"`) {
 		t.Fatalf("modal meta must not link to the external feed url: %s", body)
 	}
-	// "open live" lives in the dialog header (layout), not the fragment.
+	// "open live" lives in the dialog header (layout), not the fragment; the
+	// header also carries the empty slot the controls are relocated into.
+	home := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(home, `id="item-dialog-live"`) ||
+		!strings.Contains(home, `id="item-dialog-controls"`) {
+		t.Fatalf("dialog header should carry open live + the controls slot: %s", home)
+	}
+	if strings.Contains(body, `id="item-dialog-live"`) {
+		t.Fatalf("the fragment must not render open live: %s", body)
+	}
 
 	// Another user cannot view it.
 	other, _ := s.store.Users.Create("bob", "h")
@@ -974,74 +984,89 @@ func TestAuthorLinks(t *testing.T) {
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
 
-	// The author page shows the add-link dialog with an empty list.
-	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	// The edit form carries editable link rows and an add-row template; the
+	// author page no longer has a links heading or add-link dialog.
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit", cookie).Body.String()
 	for _, want := range []string{
-		`id="add-author-link-dialog"`,
-		`hx-post="/authors/` + itoa(a.ID) + `/links"`,
-		"+ add link",
-		"no links yet",
+		`id="author-link-fields"`,
+		`id="author-link-row-template"`,
+		`name="link_url"`,
+		`name="link_label"`,
+		"addAuthorLinkRow()",
 	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("author page missing %q: %s", want, body)
+		if !strings.Contains(edit, want) {
+			t.Fatalf("author edit page missing %q: %s", want, edit)
 		}
 	}
+	page := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if strings.Contains(page, `id="add-author-link-dialog"`) || strings.Contains(page, ">links<") {
+		t.Fatalf("author page should not have a links section header or dialog: %s", page)
+	}
 
-	// Add a labeled link: the response re-renders the list with the new row.
-	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/links", url.Values{
-		"label": {"Twitch"}, "url": {"https://twitch.tv/ThePrimeagen"},
+	// Add two links (one labeled, one not) by posting the edit form.
+	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/edit", url.Values{
+		"name":          {"Metru"},
+		"links_present": {"1"},
+		"link_id":       {"", ""},
+		"link_label":    {"Twitch", ""},
+		"link_url":      {"https://twitch.tv/ThePrimeagen", "https://www.example.com/page"},
 	}, cookie)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("create link: %d %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusFound {
+		t.Fatalf("save with links: %d %s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), `href="https://twitch.tv/ThePrimeagen"`) ||
-		!strings.Contains(rr.Body.String(), `class="external"`) ||
-		!strings.Contains(rr.Body.String(), ">Twitch</a>") {
-		t.Fatalf("link list should be external-marked with its label: %s", rr.Body.String())
-	}
-	if strings.Contains(rr.Body.String(), "no links yet") {
-		t.Fatalf("empty-state placeholder should be gone after adding: %s", rr.Body.String())
-	}
-
-	// An unlabeled link renders its URL's hostname as the text.
-	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/links", url.Values{
-		"url": {"https://www.example.com/page"},
-	}, cookie)
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), ">example.com</a>") {
-		t.Fatalf("unlabeled link should fall back to the hostname: %d %s", rr.Code, rr.Body.String())
-	}
-
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
 	if len(links) != 2 {
 		t.Fatalf("links persisted: %d", len(links))
 	}
 
-	// The full page now lists both.
-	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
-	if strings.Contains(body, "no links yet") || !strings.Contains(body, "ThePrimeagen") {
-		t.Fatalf("author page should list the links: %s", body)
+	// The author page renders them inline in the card, external-marked, with the
+	// hostname fallback for the unlabeled one.
+	page = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if !strings.Contains(page, `href="https://twitch.tv/ThePrimeagen"`) ||
+		!strings.Contains(page, `class="external"`) || !strings.Contains(page, ">Twitch</a>") {
+		t.Fatalf("author page should show the labeled link: %s", page)
+	}
+	if !strings.Contains(page, ">example.com</a>") {
+		t.Fatalf("unlabeled link should fall back to the hostname: %s", page)
 	}
 
-	// A missing/invalid url is a visible 400 error.
-	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/links", url.Values{"url": {"nope"}}, cookie)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `role="alert"`) ||
-		!strings.Contains(rr.Body.String(), "add-link-error") {
-		t.Fatalf("invalid url should render a 400 alert: %d %s", rr.Code, rr.Body.String())
+	// Editing an existing link's label/url updates it in place.
+	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/edit", url.Values{
+		"name":          {"Metru"},
+		"links_present": {"1"},
+		"link_id":       {itoa(links[0].ID), itoa(links[1].ID)},
+		"link_label":    {"Twitch", ""},
+		"link_url":      {"https://twitch.tv/SomeoneElse", "https://www.example.com/page"},
+	}, cookie)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("update link: %d", rr.Code)
 	}
-	if links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID); len(links) != 2 {
-		t.Fatalf("invalid url should not create a link: %d", len(links))
+	got, _ := s.store.AuthorLinks.ByID(u.ID, links[0].ID)
+	if got.URL != "https://twitch.tv/SomeoneElse" {
+		t.Fatalf("link not updated in place: %+v", got)
+	}
+	if after, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID); len(after) != 2 {
+		t.Fatalf("update should not add or drop links: %d", len(after))
 	}
 
-	// Delete re-renders the list.
-	rr = doForm(h, "POST", "/links/"+itoa(links[0].ID)+"/delete", url.Values{}, cookie)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("delete link: %d %s", rr.Code, rr.Body.String())
+	// Omitting a link's row (its ✕ removes it) deletes it.
+	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/edit", url.Values{
+		"name":          {"Metru"},
+		"links_present": {"1"},
+		"link_id":       {itoa(links[1].ID)},
+		"link_label":    {""},
+		"link_url":      {"https://www.example.com/page"},
+	}, cookie)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("delete by omission: %d", rr.Code)
 	}
-	if strings.Contains(rr.Body.String(), "ThePrimeagen") {
-		t.Fatalf("deleted link should be gone: %s", rr.Body.String())
+	if after, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID); len(after) != 1 || after[0].ID != links[1].ID {
+		t.Fatalf("removed row should delete its link: %+v", after)
 	}
-	if after, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID); len(after) != 1 {
-		t.Fatalf("link not deleted: %d", len(after))
+
+	// A blank/omitted url on a new row is ignored, not a crash or a bad link.
+	if _, err := s.store.AuthorLinks.ByID(u.ID, links[0].ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("dropped link should be gone: %v", err)
 	}
 }
 
@@ -1053,16 +1078,23 @@ func TestAuthorLinkScopedToOwner(t *testing.T) {
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
 	link, _ := s.store.AuthorLinks.Create(u.ID, a.ID, "", "https://example.com")
 
-	// Unknown link id is a 404 (the user can't reach another user's link).
-	if rr := doForm(h, "POST", "/links/999999/delete", url.Values{}, cookie); rr.Code != http.StatusNotFound {
-		t.Fatalf("unknown link delete should 404, got %d", rr.Code)
-	}
-	// Adding to a nonexistent author is a 404.
-	if rr := doForm(h, "POST", "/authors/999999/links", url.Values{"url": {"https://x.dev"}}, cookie); rr.Code != http.StatusNotFound {
-		t.Fatalf("unknown author add should 404, got %d", rr.Code)
+	// Saving another (nonexistent) author's edit form 404s and leaves the link.
+	if rr := doForm(h, "POST", "/authors/999999/edit", url.Values{
+		"name": {"X"}, "link_id": {itoa(link.ID)}, "link_label": {""}, "link_url": {"https://x.dev"},
+	}, cookie); rr.Code != http.StatusNotFound {
+		t.Fatalf("unknown author edit should 404, got %d", rr.Code)
 	}
 	if _, err := s.store.AuthorLinks.ByID(u.ID, link.ID); err != nil {
 		t.Fatalf("link should remain: %v", err)
+	}
+
+	// A save that doesn't carry the link fields (links_present absent) leaves
+	// the links untouched, so non-form clients can't wipe them by omission.
+	if rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/edit", url.Values{"name": {"Metru"}}, cookie); rr.Code != http.StatusFound {
+		t.Fatalf("bare edit save: %d", rr.Code)
+	}
+	if _, err := s.store.AuthorLinks.ByID(u.ID, link.ID); err != nil {
+		t.Fatalf("link should survive a save without link fields: %v", err)
 	}
 }
 
@@ -1279,6 +1311,7 @@ func TestAuthorsPageSortControl(t *testing.T) {
 	body := doGet(h, "/authors", cookie).Body.String()
 	if !strings.Contains(body, `class="picker" data-picker="authors"`) ||
 		!strings.Contains(body, `data-option="newest"`) ||
+		!strings.Contains(body, `data-option="unread"`) ||
 		!strings.Contains(body, "abc") {
 		t.Fatalf("authors page should carry the sort picker: %s", body)
 	}
@@ -1352,16 +1385,16 @@ func TestAuthorsRowIsCondensed(t *testing.T) {
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "One", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
 	body := doGet(h, "/authors", cookie).Body.String()
-	// The row is the linked name + feed count; the external url and unread
-	// count are gone.
+	// The row is the linked name + unread/feed counts; the external url is gone.
 	if !strings.Contains(body, `<a href="/authors/1"><strong>Metru</strong></a>`) {
 		t.Fatalf("author name should be linked: %s", body)
 	}
-	if !strings.Contains(body, "1 feeds") {
-		t.Fatalf("authors row should show the feed count: %s", body)
+	if !strings.Contains(body, `<span class="unread-count">1 unread</span>`) ||
+		!strings.Contains(body, "1 feeds") {
+		t.Fatalf("authors row should show the unread and feed counts: %s", body)
 	}
-	if strings.Contains(body, "https://metru.dev") || strings.Contains(body, "unread-count") {
-		t.Fatalf("condensed row should drop the external url and unread count: %s", body)
+	if strings.Contains(body, "https://metru.dev") {
+		t.Fatalf("condensed row should drop the external url: %s", body)
 	}
 }
 

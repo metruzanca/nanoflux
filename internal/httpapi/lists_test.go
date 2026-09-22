@@ -48,10 +48,15 @@ func TestListsFlow(t *testing.T) {
 	}
 
 	// The item modal offers the ⋯ menu; the list picker is fetched on demand
-	// into the shared dialog, not rendered inline.
+	// into the shared dialog, not rendered inline. The share + ⋯ controls sit in
+	// an #item-dialog-controls-src wrapper that openItem relocates into the
+	// dialog header.
 	body = doGet(h, "/items/"+itoa(item.ID)+"/view", cookie).Body.String()
 	if !strings.Contains(body, `class="item-menu"`) || !strings.Contains(body, `data-item-id="`+itoa(item.ID)+`"`) {
 		t.Fatalf("item modal should include the ⋯ menu: %s", body)
+	}
+	if !strings.Contains(body, `id="item-dialog-controls-src"`) {
+		t.Fatalf("item modal controls should be wrapped for relocation: %s", body)
 	}
 	if !strings.Contains(body, `itemMenuAction(event, 'lists')`) {
 		t.Fatalf("item menu should offer add to list: %s", body)

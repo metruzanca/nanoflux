@@ -99,6 +99,7 @@ type authorForm struct {
 type authorsData struct {
 	Rows       []authorRow
 	Form       authorForm
+	Links      []store.AuthorLink   // edit page: the author's external links, editable
 	AvatarCard authorAvatarCardData // edit page avatar cache card
 }
 
@@ -1166,54 +1167,66 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 	})))
 }
 
-// authorLinkCreate adds an external bookmark to an author from the author page.
-// The response re-renders the whole link list so the empty-state placeholder
-// is replaced cleanly.
-func (s *Server) authorLinkCreate(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	authorID, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if _, err := s.store.Authors.ByID(u.ID, authorID); err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	linkURL := normalizeURL(r.FormValue("url"))
-	if linkURL == "" || invalidURL(linkURL) != "" {
-		writeFormError(w, r, "add-link-error", "enter a valid url")
-		return
-	}
-	if _, err := s.store.AuthorLinks.Create(u.ID, authorID, strings.TrimSpace(r.FormValue("label")), linkURL); err != nil {
-		log.Error("create author link", "err", err)
-		writeFormError(w, r, "add-link-error", "could not add link")
-		return
-	}
-	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, authorID)
-	web.Render(w, r, AuthorLinksList(links))
+// authorLinks loads an author's external bookmarks for the edit form.
+func (s *Server) authorLinks(userID, authorID int64) []store.AuthorLink {
+	links, _ := s.store.AuthorLinks.ListByAuthor(userID, authorID)
+	return links
 }
 
-// authorLinkDelete removes an author's link and re-renders their link list.
-func (s *Server) authorLinkDelete(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
+// reconcileAuthorLinks applies the edit form's link rows: each row is a
+// link_id plus link_label/link_url. A row with an id updates the existing link;
+// a row with no id creates a new one; a row whose url is blank/invalid deletes
+// its link. Any existing link whose id is not submitted was removed from the
+// form (its ✕ took it out of the DOM), so it is deleted too. A "links_present"
+// marker guards the lot: a post without the link fields (e.g. an API client)
+// leaves the links untouched.
+func (s *Server) reconcileAuthorLinks(userID, authorID int64, r *http.Request) {
+	if r.FormValue("links_present") == "" {
 		return
 	}
-	link, err := s.store.AuthorLinks.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
+	existing, _ := s.store.AuthorLinks.ListByAuthor(userID, authorID)
+	ids := r.Form["link_id"]
+	labels := r.Form["link_label"]
+	urls := r.Form["link_url"]
+	kept := make(map[int64]bool, len(ids))
+	for i := range urls {
+		var id int64
+		if i < len(ids) {
+			id, _ = strconv.ParseInt(ids[i], 10, 64)
+		}
+		var label string
+		if i < len(labels) {
+			label = strings.TrimSpace(labels[i])
+		}
+		linkURL := normalizeURL(urls[i])
+		valid := linkURL != "" && invalidURL(linkURL) == ""
+		if id == 0 {
+			if valid {
+				if _, err := s.store.AuthorLinks.Create(userID, authorID, label, linkURL); err != nil {
+					log.Error("create author link", "err", err)
+				}
+			}
+			continue
+		}
+		kept[id] = true
+		if !valid {
+			if err := s.store.AuthorLinks.Delete(userID, id); err != nil && err != store.ErrNotFound {
+				log.Error("delete author link", "link_id", id, "err", err)
+			}
+			continue
+		}
+		if err := s.store.AuthorLinks.Update(userID, id, label, linkURL); err != nil && err != store.ErrNotFound {
+			log.Error("update author link", "link_id", id, "err", err)
+		}
 	}
-	if err := s.store.AuthorLinks.Delete(u.ID, id); err != nil {
-		log.Error("delete author link", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+	for _, e := range existing {
+		if kept[e.ID] {
+			continue
+		}
+		if err := s.store.AuthorLinks.Delete(userID, e.ID); err != nil && err != store.ErrNotFound {
+			log.Error("delete removed author link", "link_id", e.ID, "err", err)
+		}
 	}
-	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, link.AuthorID)
-	web.Render(w, r, AuthorLinksList(links))
 }
 
 // authorScopedItems loads one read/unread item list for an author plus the
@@ -1337,8 +1350,10 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
 	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
 		Form:       authorForm{ID: a.ID, Name: a.Name, URL: a.URL, AvatarURL: a.AvatarURL, Description: a.Description},
+		Links:      links,
 		AvatarCard: s.authorAvatarCardData(a, u.Timezone, ""),
 	})))
 }
@@ -1371,6 +1386,7 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
 	}
+	s.reconcileAuthorLinks(u.ID, id, r)
 	if avatarURL != "" {
 		a, _ := s.store.Authors.ByID(u.ID, id)
 		if a.ID != 0 {
