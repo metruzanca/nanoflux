@@ -760,6 +760,13 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   `#item-dialog-controls-src` wrapper inside the (scrollable) body; `openItem`
   relocates that wrapper into the header slot `#item-dialog-controls`, next to
   "open live" and ✕, so those controls stay pinned while the body scrolls.
+- The open item is mirrored in the URL hash `#item-<id>`: opening pushes it
+  (subsequent items replace so back/forward move between items rather than
+  stacking every open), closing strips it with `replaceState`, and `popstate`
+  reconciles the modal. A page loaded with `#item-<id>` opens that item's modal
+  on `DOMContentLoaded` (`openItemById`, which falls back to a row-less open when
+  the item isn't in the current list). `openItemData(id, link)` is the shared
+  core.
 - Item "⋯" menu: the per-item `itemMenu` (`views_items.templ`) sits at the right
   of every card's `.row-actions` (list and masonry grid) and in the item modal.
   Menus are scoped by `data-item-id` (`toggleItemMenu`/`itemMenuAction`/`closeItemMenus`
