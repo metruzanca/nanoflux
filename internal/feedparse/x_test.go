@@ -56,15 +56,15 @@ func TestSnowflakeTime(t *testing.T) {
 	}
 }
 
-func TestXPostTitle(t *testing.T) {
-	if got := xPostTitle("hello world"); got != "hello world" {
+func TestPostTitle(t *testing.T) {
+	if got := postTitle("hello world"); got != "hello world" {
 		t.Errorf("got %q", got)
 	}
-	if got := xPostTitle("first line\nsecond line"); got != "first line" {
+	if got := postTitle("first line\nsecond line"); got != "first line" {
 		t.Errorf("got %q", got)
 	}
 	long := strings.Repeat("a", 200)
-	if got := xPostTitle(long); len([]rune(got)) != 100 || !strings.HasSuffix(got, "…") {
+	if got := postTitle(long); len([]rune(got)) != 100 || !strings.HasSuffix(got, "…") {
 		t.Errorf("long title = %q (runes %d)", got, len([]rune(got)))
 	}
 }
