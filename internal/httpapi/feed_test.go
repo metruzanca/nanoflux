@@ -14,6 +14,28 @@ import (
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
+// TestFeedIconUsesHomeURL asserts a feed's source icon is looked up from its
+// home page, not its feed URL (some feed URLs have no favicon), on the author
+// feed row, the feed page header, and the item card meta.
+func TestFeedIconUsesHomeURL(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://feeds.example.org/rss", "https://example.org", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://example.org/1", FetchedAt: db.Now()})
+
+	for _, page := range []string{"/authors/" + itoa(a.ID), "/feeds/" + itoa(f.ID), "/unread"} {
+		body := doGet(h, page, cookie).Body.String()
+		if !strings.Contains(body, `src="/icons/example.org"`) {
+			t.Fatalf("%s: icon should use the home host: %s", page, body)
+		}
+		if strings.Contains(body, `src="/icons/feeds.example.org"`) {
+			t.Fatalf("%s: icon should not use the feed host: %s", page, body)
+		}
+	}
+}
+
 func TestFeedErrorSurface(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

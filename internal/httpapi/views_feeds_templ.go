@@ -105,7 +105,7 @@ func FeedRow(r feedRow) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = web.SourceIcon(r.FeedURL).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = web.SourceIcon(feedIconURL(r.Feed)).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1830,7 +1830,7 @@ func feedPage(u store.User, d feedPageData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = web.SourceIcon(d.Row.FeedURL).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = web.SourceIcon(feedIconURL(d.Row.Feed)).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

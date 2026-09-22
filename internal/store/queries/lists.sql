@@ -68,7 +68,7 @@ WHERE li.item_id = sqlc.arg('itemID') AND l.user_id = sqlc.arg('userID');
 -- name: ListItemsInList :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
-       f.title AS feed_title, f.feed_url AS feed_url,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
 JOIN items i ON i.id = li.item_id
@@ -83,7 +83,7 @@ LIMIT sqlc.arg('limit');
 -- name: ListItemsInListAsc :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
-       f.title AS feed_title, f.feed_url AS feed_url,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
 JOIN items i ON i.id = li.item_id
@@ -98,7 +98,7 @@ LIMIT sqlc.arg('limit');
 -- name: ListItemsInListPublic :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
-       f.title AS feed_title, f.feed_url AS feed_url,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
 JOIN items i ON i.id = li.item_id

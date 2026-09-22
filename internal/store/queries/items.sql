@@ -13,7 +13,7 @@ WHERE feed_id = ? AND guid = ?;
 -- name: ListItems :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
-       f.title AS feed_title, f.feed_url AS feed_url,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        a.id AS author_id, a.name AS author_name
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -35,7 +35,7 @@ LIMIT sqlc.arg('limit');
 -- name: ListItemsAsc :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
-       f.title AS feed_title, f.feed_url AS feed_url,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        a.id AS author_id, a.name AS author_name
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -64,7 +64,7 @@ WHERE i.id = ? AND f.user_id = ?;
 -- name: GetItemWithFeed :one
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
-       f.title AS feed_title, f.feed_url AS feed_url,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        a.id AS author_id, a.name AS author_name
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -74,7 +74,7 @@ WHERE i.id = ? AND f.user_id = ?;
 -- name: GetItemWithFeedAny :one
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
-       f.title AS feed_title, f.feed_url AS feed_url,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        a.id AS author_id, a.name AS author_name
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
