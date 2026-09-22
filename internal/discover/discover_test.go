@@ -341,3 +341,17 @@ func TestPageMetaOgImageNotPreferred(t *testing.T) {
 		t.Fatalf("non-youtube icon = %q, want the favicon", meta.IconURL)
 	}
 }
+
+func TestPageTitleYouTube(t *testing.T) {
+	cases := []struct{ page, title, want string }{
+		{"https://youtube.com/@EddyBurback", "Eddy Burback - YouTube", "Eddy Burback"},
+		{"https://www.youtube.com/channel/UCx", "Some Channel - YouTube", "Some Channel"},
+		{"https://youtube.com/@x", "Just A Name", "Just A Name"},
+		{"https://example.com", "Example - Home", "Example - Home"},
+	}
+	for _, c := range cases {
+		if got := pageTitle(c.page, c.title); got != c.want {
+			t.Errorf("pageTitle(%q, %q) = %q, want %q", c.page, c.title, got, c.want)
+		}
+	}
+}

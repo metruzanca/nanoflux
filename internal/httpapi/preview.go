@@ -130,7 +130,6 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("scoped") == "1" {
 		previewTarget = "#author-feed-preview"
 	}
-	redirect := r.FormValue("redirect") == "1"
 
 	candidates, err := s.discoverCandidates(r.Context(), u.ID, pageURL)
 	if err != nil {
@@ -145,18 +144,18 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	if chosen := strings.TrimSpace(r.FormValue("feed_url")); chosen != "" {
 		for _, c := range candidates {
 			if c.FeedURL == chosen {
-				s.renderFeedPreviewForm(r, w, c, pageURL, previewHome(c, pageURL), authors, selectedAuthor, fixedAuthor, redirect)
+				s.renderFeedPreviewForm(r, w, c, pageURL, previewHome(c, pageURL), authors, selectedAuthor, fixedAuthor)
 				return
 			}
 		}
 	}
 
 	if len(candidates) == 1 {
-		s.renderFeedPreviewForm(r, w, candidates[0], pageURL, previewHome(candidates[0], pageURL), authors, selectedAuthor, fixedAuthor, redirect)
+		s.renderFeedPreviewForm(r, w, candidates[0], pageURL, previewHome(candidates[0], pageURL), authors, selectedAuthor, fixedAuthor)
 		return
 	}
 
-	web.Render(w, r, feedChooser(feedChoose{URL: pageURL, Target: previewTarget, Candidates: candidates, Redirect: redirect}))
+	web.Render(w, r, feedChooser(feedChoose{URL: pageURL, Target: previewTarget, Candidates: candidates, Redirect: fixedAuthor == nil}))
 }
 
 // previewHome returns the home page to pre-fill for a candidate: a direct feed
@@ -209,9 +208,10 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 // renderFeedPreviewForm renders the combined add form for one discovered feed.
 // homeURL is the page the user entered (the feed's home page); the default
 // new-author name is derived from that page's <title>, falling back to the
-// feed title, then the page host; the avatar comes from the site icon. When
-// redirect is set the saved feed sends the client to its author page.
-func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c discover.Candidate, pageURL, homeURL string, authors []store.Author, selectedAuthor int64, fixedAuthor *store.Author, redirect bool) {
+// feed title, then the page host; the avatar comes from the site icon. The
+// global add flow (no fixed author) sends the saved feed to its author page;
+// the author-scoped flow appends the new feed row in place.
+func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c discover.Candidate, pageURL, homeURL string, authors []store.Author, selectedAuthor int64, fixedAuthor *store.Author) {
 	meta, _ := s.discoverer.PageMeta(r.Context(), pageURL)
 	name := meta.Title
 	if name == "" {
@@ -224,7 +224,7 @@ func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c
 	}
 	form := feedPreviewForm{
 		Title: c.Title, FeedURL: stripWWW(c.FeedURL), HomeURL: stripWWW(homeURL), Authors: authors,
-		SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor, Redirect: redirect,
+		SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor, Redirect: fixedAuthor == nil,
 		NewAuthorName: name, NewAuthorAvatar: meta.IconURL,
 	}
 	if fixedAuthor != nil {

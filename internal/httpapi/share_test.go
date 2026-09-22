@@ -72,6 +72,31 @@ func TestSafeNext(t *testing.T) {
 	}
 }
 
+// The global add flow (no fixed author) redirects to the new author page after
+// saving; the author-scoped flow appends the feed row in place.
+func TestFeedPreviewRedirectMode(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	srv := feedServer(t)
+	defer srv.Close()
+
+	// Global: the preview form carries redirect=1.
+	body := doForm(h, "POST", "/fragments/feed-preview", url.Values{"url": {srv.URL}}, cookie).Body.String()
+	if !strings.Contains(body, `name="redirect" value="1"`) {
+		t.Fatalf("global preview form should carry redirect=1: %s", body)
+	}
+
+	// Scoped: the feed row appends in place, no redirect.
+	scoped := doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url": {srv.URL}, "scoped": {"1"}, "author_id": {itoa(a.ID)},
+	}, cookie).Body.String()
+	if strings.Contains(scoped, `name="redirect"`) {
+		t.Fatalf("scoped preview form should not redirect: %s", scoped)
+	}
+}
+
 func TestFeedCreateRedirectHeader(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

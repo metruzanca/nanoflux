@@ -141,6 +141,15 @@ type PageMeta struct {
 	HomeURL string
 }
 
+// pageTitle returns a page's display title with YouTube's " - YouTube" suffix
+// trimmed, so it can name an author cleanly. Other sites are untouched.
+func pageTitle(rawurl, title string) string {
+	if isYouTubePage(rawurl) {
+		return strings.TrimSuffix(title, " - YouTube")
+	}
+	return title
+}
+
 // PageMeta fetches pageURL and extracts its <title> and site icon (favicon).
 // Falls back to /favicon.ico on the host when no icon link is present.
 func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, error) {
@@ -159,6 +168,9 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 		tt := z.Next()
 		switch tt {
 		case html.ErrorToken:
+			// YouTube channel pages title themselves "<Channel> - YouTube";
+			// drop the suffix so it can name the author cleanly.
+			meta.Title = pageTitle(pageURL, meta.Title)
 			// A YouTube channel page's real avatar is its og:image
 			// (yt3.googleusercontent.com), not the hashed build favicon.
 			if isYT && ogImage != "" {

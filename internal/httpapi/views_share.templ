@@ -2,8 +2,8 @@ package httpapi
 
 // shareAddPage is the PWA share-target landing page. It runs the existing
 // feed-preview flow for the shared URL, rendering the add form (or the picker,
-// or the no-feed banner) into #share-preview; redirect=1 makes the save land on
-// the new author's page.
+// or the no-feed banner) into #share-preview; the global add flow lands on the
+// new author's page once saved.
 templ shareAddPage(url string) {
 	<h1>add feed</h1>
 	<p class="muted small">Looking for a feed on { url }…</p>
@@ -12,7 +12,6 @@ templ shareAddPage(url string) {
 		hx-post="/fragments/feed-preview"
 		hx-trigger="load"
 		hx-include="#share-url"
-		hx-vals={ `{"redirect":"1"}` }
 		hx-target="#share-preview"
 		hx-swap="innerHTML">
 		<p class="muted">searching…</p>

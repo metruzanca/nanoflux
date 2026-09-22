@@ -32,6 +32,7 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 	if err != nil {
 		return apiFeed{}, err
 	}
+	pageURL := homeURL // the page the user was on, before the feed-home fallback
 	if homeURL == "" {
 		homeURL = res.Feed.HomeURL
 	}
@@ -49,9 +50,14 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 		}
 		authorName = a.Name
 	} else {
-		a, err := s.store.Authors.Create(u.ID, title, homeURL, "", "")
+		a, err := s.store.Authors.Create(u.ID, title, homeURL, s.pageIconURL(ctx, pageURL), "")
 		if err != nil {
 			return apiFeed{}, err
+		}
+		if a.AvatarURL != "" {
+			cctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+			s.autoCacheAuthorAvatar(cctx, a)
+			cancel()
 		}
 		authorID = a.ID
 	}
@@ -67,6 +73,23 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 		ID: f.ID, Title: f.Title, FeedURL: f.FeedURL, HomeURL: f.HomeURL,
 		AuthorID: f.AuthorID, AuthorName: authorName,
 	}, nil
+}
+
+// pageIconURL derives an author avatar URL from the page the user was on when
+// adding the feed — the site favicon, or the channel's og:image on YouTube. It
+// returns "" when no page URL is known or the fetch fails, so a feed added
+// without a page is still created.
+func (s *Server) pageIconURL(ctx context.Context, pageURL string) string {
+	if pageURL == "" {
+		return ""
+	}
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	meta, err := s.discoverer.PageMeta(cctx, pageURL)
+	if err != nil {
+		return ""
+	}
+	return meta.IconURL
 }
 
 // apiExtFeedForm returns the add-feed form as an HTML fragment for the browser

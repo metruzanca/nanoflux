@@ -417,3 +417,37 @@ func TestSavedFeedsDistinguishesQueryParams(t *testing.T) {
 		t.Fatal("the saved channel should match")
 	}
 }
+
+func TestAPIExtSaveDerivesAuthorAvatar(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/rss":
+			w.Write([]byte(apiFeedXML))
+		case "/icon.png":
+			w.Header().Set("Content-Type", "image/png")
+			w.Write([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(`<html><head><title>Jane - Site</title><link rel="icon" href="/icon.png"></head></html>`))
+		}
+	}))
+	defer srv.Close()
+
+	rr := doForm(h, "POST", "/api/ext/save", url.Values{
+		"feed_url": {srv.URL + "/rss"}, "home_url": {srv.URL}, "title": {"Jane"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("ext save: %d %s", rr.Code, rr.Body.String())
+	}
+	authors, _ := s.store.Authors.List(u.ID)
+	if len(authors) != 1 || authors[0].Name != "Jane" {
+		t.Fatalf("author should be created: %+v", authors)
+	}
+	if authors[0].AvatarURL != srv.URL+"/icon.png" {
+		t.Fatalf("author avatar = %q, want %q", authors[0].AvatarURL, srv.URL+"/icon.png")
+	}
+}

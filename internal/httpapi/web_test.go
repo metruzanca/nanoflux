@@ -100,7 +100,7 @@ func TestFeedPreviewFormStripsWWW(t *testing.T) {
 		FeedURL: "https://www.example.com/feed.xml",
 		Title:   "Example",
 		HomeURL: "https://www.example.com",
-	}, "not-a-url", "https://www.example.com", nil, 0, nil, false)
+	}, "not-a-url", "https://www.example.com", nil, 0, nil)
 	body := w.Body.String()
 	if strings.Contains(body, "www.") {
 		t.Fatalf("preview form should strip www from auto-filled urls: %s", body)
