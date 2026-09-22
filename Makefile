@@ -8,6 +8,11 @@ GHCR_IMAGE := ghcr.io/$(GHCR_REPO)
 # leading "v" from the git tag, so release v0.5.0 -> image 0.5.0) alongside
 # "latest". Pulling the concrete version instead of "latest" busts the local
 # Docker cache, which otherwise keeps serving a stale "latest" manifest.
+#
+# Recreating the container matters as much as the retag: compose (podman-compose
+# included) decides whether to recreate a service by comparing the image
+# reference *string*, not the resolved image id, so retagging "latest" alone
+# leaves the old container running. update therefore forces a recreate.
 latest_image_tag = $(shell \
 	curl -fsSL "https://api.github.com/repos/$(GHCR_REPO)/releases/latest" 2>/dev/null \
 	| sed -n 's/.*"tag_name": *"\(v[0-9][^"]*\)".*/\1/p' \
@@ -51,7 +56,8 @@ restart:
 	$(COMPOSE) restart
 
 update:
-	@TAG="$(latest_image_tag)"; \
+	@OLD="$$($(COMPOSE) exec -T nanoflux nanoflux version 2>/dev/null | tr -d '[:space:]')"; \
+	TAG="$(latest_image_tag)"; \
 	if [ -z "$$TAG" ]; then \
 		echo "could not determine the latest release from GitHub; falling back to 'latest'"; \
 		$(COMPOSE) pull; \
@@ -60,7 +66,9 @@ update:
 		$(RUNTIME) pull $(GHCR_IMAGE):$$TAG; \
 		$(RUNTIME) tag $(GHCR_IMAGE):$$TAG $(GHCR_IMAGE):latest; \
 	fi; \
-	$(COMPOSE) up -d
+	$(COMPOSE) up -d --force-recreate; \
+	NEW="$$($(COMPOSE) exec -T nanoflux nanoflux version 2>/dev/null | tr -d '[:space:]')"; \
+	echo "version: $${OLD:-unknown} -> $${NEW:-unknown}"
 
 status:
 	$(COMPOSE) ps
