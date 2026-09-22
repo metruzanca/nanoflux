@@ -4,6 +4,19 @@ document.addEventListener('htmx:beforeSwap', function (e) {
   if (e.detail.xhr.status >= 400) e.detail.shouldSwap = true;
 });
 
+// Hidden timezone fields (the signup form) are filled from the browser so a new
+// account starts with the right timezone. Server-side validation still applies.
+(function () {
+  var input = document.querySelector('input[type="hidden"][name="timezone"]');
+  if (!input) return;
+  try {
+    var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz) input.value = tz;
+  } catch (err) {
+    // No Intl support: leave it blank and let the server default apply.
+  }
+})();
+
 // Theme. The server renders data-theme="dark|light|system"; "system" resolves
 // against prefers-color-scheme here so the page follows the OS live.
 function applyTheme(theme) {

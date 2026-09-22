@@ -1,9 +1,11 @@
 package httpapi
 
 import (
-	"github.com/charmbracelet/log"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/store"
@@ -138,6 +140,20 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 		log.Error("create user", "err", err)
 		renderErr("that username is taken")
 		return
+	}
+
+	// Seed the new account's timezone from the browser (an IANA name submitted
+	// as a hidden field). An unknown name is ignored rather than rejecting the
+	// signup: the server default is a safe fallback and the user can fix it on
+	// /settings.
+	if tz := strings.TrimSpace(r.FormValue("timezone")); tz != "" {
+		if _, err := time.LoadLocation(tz); err == nil {
+			if err := s.store.Users.SetTimezone(u.ID, tz); err != nil {
+				log.Error("set signup timezone", "err", err)
+			} else {
+				u.Timezone = tz
+			}
+		}
 	}
 
 	token, err := s.auth.CreateSession(u.ID)

@@ -34,6 +34,7 @@ templ signupPage(errMsg string) {
 			<p class="error">{ errMsg }</p>
 		}
 		<form method="post" action="/signup">
+			<input type="hidden" name="timezone" value=""/>
 			<label>username
 				<input name="username" autofocus autocomplete="username" required/>
 			</label>

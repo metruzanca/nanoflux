@@ -61,7 +61,11 @@ setting (`users.timezone`, set on `/settings`). Every template call passes the
 timezone through the view data — `ItemWithFeed.Timezone`, `feedRow.Timezone`,
 `itemViewData.Timezone`, and `settingsIconRow.Timezone` are stamped by the
 handlers via `withTZ`. Do not render a timestamp with a raw format call; always
-go through `timeFmt` so it respects the user's timezone.
+go through `timeFmt` so it respects the user's timezone. A new account is seeded
+from the browser: the signup form has a hidden `timezone` field that `app.js`
+fills from `Intl.DateTimeFormat().resolvedOptions().timeZone`, and `signup`
+validates it with `time.LoadLocation` and calls `SetTimezone` (an unknown name
+is ignored, not a signup failure).
 
 ## Error handling in the web UI
 
