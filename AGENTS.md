@@ -461,6 +461,16 @@ sections, each a compact list of that collection's unread items (capped at
   `feed_url`** (`Server.feedURLExists`, normalized like the extension's `saved`
   check) — a warning renders into `#add-feed-error`. Duplicate titles/home URLs
   are allowed; only the feed URL is the identity.
+- The author card shows **all-feeds stats** (`authorStats` in `views_authors.templ`):
+  total posts, the read/unread split, favorite count, feed count, an approximate
+  posting cadence, and first/newest post times. The numbers come from one
+  aggregate query (`ItemStore.StatsAuthor` → `GetAuthorItemStats`): post counts
+  use the canonical item time `COALESCE(published_at, fetched_at)`, and the
+  30-day window is computed in SQL with `datetime('now', '-30 days')` (stored
+  times are UTC `YYYY-MM-DD HH:MM:SS`, so lexicographic comparison is valid).
+  The cadence averages the newest ~30 item times (`ItemStore.AuthorRecentTimes`)
+  via `web.AverageGapSeconds`/`web.PostFrequency`. The stats strip is skipped
+  for an author with no posts and no feeds.
 
 ## Author links
 

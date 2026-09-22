@@ -267,6 +267,49 @@ func TestFormatBytes(t *testing.T) {
 	}
 }
 
+func TestPostFrequency(t *testing.T) {
+	cases := []struct {
+		gapSec float64
+		want   string
+	}{
+		{0, ""},
+		{-1, ""},
+		{3600, "≈24/day"},        // hourly
+		{86400, "≈1/day"},        // daily
+		{3 * 86400, "≈2.3/week"}, // every 3 days
+		{7 * 86400, "≈1/week"},   // weekly
+		{30 * 86400, "≈1/month"}, // monthly
+		{365 * 86400, "≈1/year"}, // yearly
+	}
+	for _, c := range cases {
+		if got := PostFrequency(c.gapSec); got != c.want {
+			t.Errorf("PostFrequency(%v) = %q, want %q", c.gapSec, got, c.want)
+		}
+	}
+}
+
+func TestAverageGapSeconds(t *testing.T) {
+	// Newest first, as stored; two gaps of 2 days each -> avg 2 days.
+	times := []string{
+		"2026-01-03 00:00:00",
+		"2026-01-01 00:00:00",
+		"2025-12-30 00:00:00",
+	}
+	gap, ok := AverageGapSeconds(times)
+	if !ok {
+		t.Fatal("expected an average")
+	}
+	if want := 2 * 86400.0; gap != want {
+		t.Fatalf("gap = %v, want %v", gap, want)
+	}
+	if _, ok := AverageGapSeconds(times[:1]); ok {
+		t.Fatal("a single time has no gap")
+	}
+	if _, ok := AverageGapSeconds([]string{"garbage"}); ok {
+		t.Fatal("unparseable times have no gap")
+	}
+}
+
 func TestStaleFeedFor(t *testing.T) {
 	now := time.Now()
 	d := func(days int) string {

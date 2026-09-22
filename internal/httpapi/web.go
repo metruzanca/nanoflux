@@ -105,10 +105,13 @@ type authorsData struct {
 }
 
 type authorData struct {
-	Author store.Author
-	Rows   []feedRow
-	Links  []store.AuthorLink
-	Scoped scopedItemsData
+	Author    store.Author
+	Rows      []feedRow
+	Links     []store.AuthorLink
+	Scoped    scopedItemsData
+	Stats     store.AuthorItemStats
+	Frequency string // approximate posting cadence, "" when unknown
+	Timezone  string
 }
 
 type feedPageData struct {
@@ -1198,8 +1201,16 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 	}
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, id)
 	scoped := s.authorScopedItems(u.ID, id, itemsView(r), u.Timezone, itemsAsc(r))
+	stats, _ := s.store.Items.StatsAuthor(u.ID, id)
+	frequency := ""
+	if times, err := s.store.Items.AuthorRecentTimes(u.ID, id, 30); err == nil {
+		if gap, ok := web.AverageGapSeconds(times); ok {
+			frequency = web.PostFrequency(gap)
+		}
+	}
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
 		Author: a, Rows: rows, Links: links, Scoped: scoped,
+		Stats: stats, Frequency: frequency, Timezone: u.Timezone,
 	})))
 }
 

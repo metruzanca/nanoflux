@@ -150,6 +150,16 @@ WHERE feed_id = ?
 ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC
 LIMIT ?;
 
+-- name: ListAuthorRecentItemTimes :many
+-- The newest item times across all of an author's feeds, for estimating a
+-- posting cadence (mirrors ListRecentItemTimes, author-scoped).
+SELECT COALESCE(i.published_at, i.fetched_at) AS t
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+WHERE f.user_id = sqlc.arg('userID') AND f.author_id = sqlc.arg('authorID')
+ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
+LIMIT sqlc.arg('limit');
+
 -- name: CountUnreadItems :one
 SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
 WHERE f.user_id = sqlc.arg('userID') AND i.read = 0
@@ -182,6 +192,24 @@ WHERE f.user_id = ? AND i.read = 0
 SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
 WHERE f.user_id = ? AND i.read = 1
   AND i.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?);
+
+-- name: GetAuthorItemStats :one
+-- Aggregate stats for one author across all of their feeds: all-time post
+-- counts (read/unread split), first/last post times, and posts within the last
+-- 30 days (COALESCE(published_at, fetched_at) is the canonical item time).
+-- COUNT(CASE ...) returns 0 (not NULL) on an empty set; MIN/MAX stay NULL.
+SELECT
+    COUNT(i.id) AS total_posts,
+    COUNT(CASE WHEN i.read = 0 THEN 1 END) AS unread_posts,
+    COUNT(CASE WHEN i.read = 1 THEN 1 END) AS read_posts,
+    COUNT(CASE WHEN i.favorite = 1 THEN 1 END) AS favorite_posts,
+    CAST(COALESCE(MIN(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS first_post_at,
+    CAST(COALESCE(MAX(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS last_post_at,
+    COUNT(CASE WHEN COALESCE(i.published_at, i.fetched_at) >= datetime('now', '-30 days') THEN 1 END) AS recent_posts
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+WHERE f.user_id = sqlc.arg('userID') AND f.author_id = sqlc.arg('authorID');
+
 -- name: CountAllItems :one
 SELECT COUNT(*) FROM items;
 

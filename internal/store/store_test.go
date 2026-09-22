@@ -653,6 +653,62 @@ func TestItemsCarryAuthor(t *testing.T) {
 	}
 }
 
+// TestAuthorItemStats covers the aggregate author stats query: totals, the
+// read/unread split, favorites, first/last post times and the 30-day window.
+func TestAuthorItemStats(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Busy", "", "")
+	f1, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://busy.dev/rss.xml", "", "", 900)
+	f2, _ := s.Feeds.Create(u.ID, a.ID, "Pics", "https://pics.dev/rss.xml", "", "", 900)
+	// A second author's feed must not leak into the stats.
+	other, _ := s.Authors.Create(u.ID, "Other", "", "")
+	of, _ := s.Feeds.Create(u.ID, other.ID, "Other", "https://other.dev/rss.xml", "", "", 900)
+	// A feedless author for the empty case.
+	quiet, _ := s.Authors.Create(u.ID, "Quiet", "", "")
+
+	old := db.FormatTime(time.Now().Add(-100 * 24 * time.Hour))
+	recent := db.FormatTime(time.Now().Add(-24 * time.Hour))
+	s.Items.Upsert(f1.ID, Item{GUID: "g1", Title: "Old", Link: "https://busy.dev/1", PublishedAt: old, FetchedAt: db.Now()})
+	s.Items.Upsert(f1.ID, Item{GUID: "g2", Title: "New", Link: "https://busy.dev/2", PublishedAt: recent, FetchedAt: db.Now()})
+	s.Items.Upsert(f2.ID, Item{GUID: "g3", Title: "Pic", Link: "https://pics.dev/1", PublishedAt: recent, FetchedAt: db.Now()})
+	s.Items.Upsert(of.ID, Item{GUID: "x", Title: "Nope", Link: "https://other.dev/1", FetchedAt: db.Now()})
+
+	items, _ := s.Items.List(u.ID, ItemFilter{FeedID: f1.ID})
+	if err := s.Items.SetRead(u.ID, items[0].ID, true); err != nil {
+		t.Fatalf("SetRead: %v", err)
+	}
+	if err := s.Items.SetFavorite(u.ID, items[0].ID, true); err != nil {
+		t.Fatalf("SetFavorite: %v", err)
+	}
+
+	st, err := s.Items.StatsAuthor(u.ID, a.ID)
+	if err != nil {
+		t.Fatalf("StatsAuthor: %v", err)
+	}
+	if st.Total != 3 || st.Unread != 2 || st.Read != 1 || st.Favorites != 1 || st.Recent != 2 {
+		t.Fatalf("stats = %+v, want total=3 unread=2 read=1 fav=1 recent=2", st)
+	}
+	if st.FirstAt != old || st.LastAt != recent {
+		t.Fatalf("first/last = %q/%q, want %q/%q", st.FirstAt, st.LastAt, old, recent)
+	}
+
+	// An author with no posts returns zeroes and empty times, not NULL errors.
+	empty, err := s.Items.StatsAuthor(u.ID, quiet.ID)
+	if err != nil {
+		t.Fatalf("empty StatsAuthor: %v", err)
+	}
+	if empty.Total != 0 || empty.FirstAt != "" || empty.LastAt != "" {
+		t.Fatalf("empty stats = %+v", empty)
+	}
+
+	// RecentTimes is scoped to the author's feeds only.
+	times, err := s.Items.AuthorRecentTimes(u.ID, a.ID, 10)
+	if err != nil || len(times) != 3 {
+		t.Fatalf("AuthorRecentTimes = %v %v, want 3", times, err)
+	}
+}
+
 func TestUserHomeConfig(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
