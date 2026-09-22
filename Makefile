@@ -15,7 +15,7 @@ latest_image_tag = $(shell \
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop restart update icons extension status logs shell backup down
+.PHONY: help start stop restart update icons extension status logs shell version backup down
 
 help:
 	@echo "nanoflux - manage your instance"
@@ -27,6 +27,7 @@ help:
 	@echo "  status    show container status"
 	@echo "  logs      tail the app logs"
 	@echo "  shell     open a shell in the app container"
+	@echo "  version   print the running app's version"
 	@echo "  backup    snapshot the database and file store into backups/"
 	@echo "  restore   restore from backups/ (usage: make restore ARCHIVE=backups/<file>.tar.gz)"
 	@echo "  down      stop and remove containers (data kept)"
@@ -77,6 +78,10 @@ logs:
 
 shell:
 	$(COMPOSE) exec nanoflux sh
+
+# Print the running container's version (nanoflux version).
+version:
+	$(COMPOSE) exec nanoflux nanoflux version
 
 backup:
 	@mkdir -p backups
