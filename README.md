@@ -201,6 +201,13 @@ make restore ARCHIVE=backups/nanoflux-20260921-120000.tar.gz
 `make restore` stops the app, replaces the data volumes from the archive, and
 leaves the instance stopped for you to start (`make start`) when ready.
 
+`make backup` runs the app's `nanoflux backup` against the data volumes, so the
+database snapshot is taken with `VACUUM INTO` — consistent even while the server
+is running in WAL mode. Both targets first check that the volumes exist and
+refuse to run otherwise, so a misconfigured instance can't silently archive an
+empty, freshly-created volume. The volume names are pinned in
+`docker-compose.yml`, so moving or renaming the repo can't orphan your data.
+
 The same format is available from the CLI for host installs:
 
 ```bash

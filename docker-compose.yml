@@ -1,3 +1,11 @@
+# Pin the project name and the volume names explicitly. Without `name:`, compose
+# derives the project from the checkout directory's basename, so moving or
+# renaming the repo silently points every command at a brand-new, empty set of
+# volumes — the running instance is orphaned while its data looks lost. The
+# explicit volume names also make them stable across checkouts and match the
+# names `make backup`/`make restore` mount.
+name: nanoflux
+
 services:
   nanoflux:
     image: ghcr.io/metruzanca/nanoflux:latest
@@ -24,4 +32,6 @@ services:
 
 volumes:
   nanoflux-db:
+    name: nanoflux-db
   nanoflux-files:
+    name: nanoflux-files

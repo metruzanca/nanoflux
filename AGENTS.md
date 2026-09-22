@@ -680,6 +680,17 @@ run inside the container. Both share the store methods (`UserStore.ResetPassword
   blobs are tarballed; S3 blobs are the provider's job). `nanoflux restore` and
   `make restore` (which stops compose first) restore the same layout. Do not
   change the layout without changing both.
+- `docker-compose.yml` pins the project (`name: nanoflux`) and the volume names
+  (`volumes.<x>.name`) explicitly. Without them, compose derives the project
+  from the checkout directory's basename, so moving/renaming the repo silently
+  points every command at a brand-new empty set of volumes and orphans the
+  running instance. `make backup`/`restore` also guard on `podman volume exists`
+  so a missing volume can't be silently created empty, and restore extracts with
+  alpine (not the app CLI) so it works regardless of the image version.
+- `swapDB` in `internal/cli/backup.go` copies the snapshot to a sibling file
+  before renaming: the extracted copy lives in the container's `/tmp`, which is
+  a different filesystem from the mounted data volume, so a bare `os.Rename`
+  fails with `EXDEV` (`invalid cross-device link`).
 
 ## Auth and session hardening
 

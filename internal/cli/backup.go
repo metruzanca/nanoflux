@@ -167,23 +167,54 @@ func databaseLocked(path string) bool {
 }
 
 // swapDB atomically replaces the database at path (dropping stale -wal/-shm
-// sidecars) with a snapshot at src.
+// sidecars) with a snapshot at src. src commonly lives on a different
+// filesystem than the database (e.g. the container's /tmp vs a mounted data
+// volume), so the snapshot is first copied to a sibling temp file in the
+// database's own directory, then renamed into place — os.Rename alone would
+// fail with EXDEV across devices.
 func swapDB(path, src string) error {
 	os.Remove(path + "-wal")
 	os.Remove(path + "-shm")
+
+	tmp := path + ".new"
+	os.Remove(tmp)
+	if err := copyFile(src, tmp); err != nil {
+		return err
+	}
+
 	backup := path + ".old"
 	os.Remove(backup)
 	if _, err := os.Stat(path); err == nil {
 		if err := os.Rename(path, backup); err != nil {
+			os.Remove(tmp)
 			return err
 		}
 	}
-	if err := os.Rename(src, path); err != nil {
+	if err := os.Rename(tmp, path); err != nil {
 		os.Rename(backup, path)
+		os.Remove(tmp)
 		return err
 	}
 	os.Remove(backup)
 	return nil
+}
+
+// copyFile copies src to dst, creating dst if needed.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // swapDir replaces the contents of dir with the contents of src.
