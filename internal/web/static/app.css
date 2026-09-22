@@ -724,7 +724,11 @@ input[type="color"] {
 
 dialog.modal.wide[open] {
   width: min(60rem, calc(100vw - 2rem));
-  height: min(85vh, 65rem);
+  /* Fill the viewport (minus a small margin) so images get as much room as
+     possible; dvh tracks the mobile URL bar. */
+  height: calc(100vh - 2rem);
+  height: calc(100dvh - 2rem);
+  max-height: none;
   display: flex;
   flex-direction: column;
 }
@@ -741,7 +745,8 @@ dialog.modal.wide[open] {
 }
 .image-lightbox img {
   max-width: 100%;
-  max-height: 65vh;
+  max-height: 80vh;
+  max-height: 80dvh;
   object-fit: contain;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -751,7 +756,8 @@ dialog.modal.wide[open] {
 .gallery { display: flex; flex-direction: column; gap: 0.75rem; margin: 0.75rem 0; }
 .gallery img {
   width: 100%;
-  max-height: 70vh;
+  max-height: 85vh;
+  max-height: 85dvh;
   object-fit: contain;
   border-radius: 8px;
   border: 1px solid var(--border);
