@@ -21,6 +21,7 @@ type listsPageData struct {
 type listPageData struct {
 	List  store.List
 	Items []store.ItemWithFeed
+	Dir   string
 	More  *loadMoreData
 }
 
@@ -74,10 +75,11 @@ func (s *Server) listPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	items, more, _ := s.store.Lists.ItemList(u.ID, id, 0, pageSize)
-	base := "/lists/" + strconv.FormatInt(id, 10) + "/items"
+	asc := itemsAsc(r)
+	items, more, _ := s.store.Lists.ItemList(u.ID, id, 0, pageSize, asc)
+	base := "/lists/" + strconv.FormatInt(id, 10) + "/items?dir=" + dirParam(asc)
 	web.Render(w, r, basePage(l.Name, u, listPage(u, listPageData{
-		List: l, Items: withTZ(u.Timezone, items), More: pageCursor(base, items, more),
+		List: l, Items: withTZ(u.Timezone, items), Dir: dirParam(asc), More: pageCursor(base, items, more, asc),
 	})))
 }
 
@@ -90,18 +92,59 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	items, more, err := s.store.Lists.ItemList(u.ID, id, beforeID(r), pageSize)
+	asc := itemsAsc(r)
+	items, more, err := s.store.Lists.ItemList(u.ID, id, cursorID(r, asc), pageSize, asc)
 	if err != nil {
 		log.Error("list items", "list_id", id, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	base := "/lists/" + strconv.FormatInt(id, 10) + "/items"
-	web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more), false))
+	base := "/lists/" + strconv.FormatInt(id, 10) + "/items?dir=" + dirParam(asc)
+	web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more, asc), false))
 }
 
-// listDelete removes a list. From the index it re-renders the whole list (an
-// htmx request); from the list page it redirects back to /lists.
+// listEdit renders a list's edit form (rename + delete).
+func (s *Server) listEdit(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	l, err := s.store.Lists.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	web.Render(w, r, basePage("edit "+l.Name, u, listEditPage(u, listPageData{List: l})))
+}
+
+// listUpdate renames a list.
+func (s *Server) listUpdate(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.Lists.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		http.Redirect(w, r, "/lists/"+strconv.FormatInt(id, 10)+"/edit", http.StatusSeeOther)
+		return
+	}
+	if err := s.store.Lists.Rename(u.ID, id, name); err != nil {
+		log.Error("rename list", "list_id", id, "err", err)
+		http.Error(w, "update failed", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/lists/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+}
+
+// listDelete removes a list and returns to the lists index.
 func (s *Server) listDelete(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -116,17 +159,6 @@ func (s *Server) listDelete(w http.ResponseWriter, r *http.Request) {
 		}
 		log.Error("delete list", "list_id", id, "err", err)
 		http.Error(w, "delete failed", http.StatusInternalServerError)
-		return
-	}
-	if r.Header.Get("HX-Request") != "" {
-		rows, _ := s.store.Lists.List(u.ID)
-		favCount, _ := s.store.Items.CountFavorites(u.ID, 0)
-		favTok, _ := s.store.Users.FavoritesShareToken(u.ID)
-		web.Render(w, r, ListsList(listsPageData{
-			FavoritesCount:    favCount,
-			FavoritesShareTok: favTok,
-			Lists:             rows,
-		}))
 		return
 	}
 	http.Redirect(w, r, "/lists", http.StatusSeeOther)
@@ -292,7 +324,7 @@ func (s *Server) sharedListPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	items, more, err := s.store.Lists.ItemListPublic(l.ID, beforeID(r), pageSize)
+	items, more, err := s.store.Lists.ItemListPublic(l.ID, cursorID(r, false), pageSize)
 	if err != nil {
 		log.Error("shared list items", "list_id", l.ID, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -314,7 +346,7 @@ func (s *Server) sharedFavoritesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items, more, err := s.store.Items.ListPage(u.ID, store.ItemFilter{
-		FavoritesOnly: true, BeforeID: beforeID(r), Limit: pageSize,
+		FavoritesOnly: true, BeforeID: cursorID(r, false), Limit: pageSize,
 	})
 	if err != nil {
 		log.Error("shared favorites items", "err", err)

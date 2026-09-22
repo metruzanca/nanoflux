@@ -32,6 +32,12 @@ The app's own pages are the primary navigation surface. This is a hard rule.
   handlers get it back via `hx-vals='{"hideAuthor":"1"}'` on the row's buttons
   so a swapped row stays consistent. The item modal meta keeps its author link
   (it's an overlay cross-link).
+- **Authors list.** `/authors` rows are a single condensed line — the linked
+  name + feed count (no external URL or unread count). The "add feed" dialog is
+  the global add flow; its `feedPreviewFields` (and the scrape builder) only
+  render the new-author fields when no existing author is selected, and
+  `authorFormFragment` returns an **empty 200** (not 204 — htmx doesn't swap on
+  204) so picking an existing author clears `#new-author`.
 - This applies to the webapp UI only (`internal/web/templates`); the
   `website/` Hugo marketing site is out of scope.
 
@@ -394,11 +400,21 @@ The DB stores object **keys** (`users.avatar_key`, `source_icons.icon_key`).
 ## Collections and feed editing
 
 - The collections index renders each collection as a `.card` with feed/unread/
-  read counts, from `CollectionStore.ListWithCounts` (one query per user).
+  read counts, from `CollectionStore.ListWithCounts` (one query per user). The
+  delete button lives on the **collection edit page**, not the index row.
+- A collection's page has a "+ add feed" **button → modal** (not an inline form)
+  and an **edit** link. `GET /collections/{id}/edit` edits the name
+  (`CollectionStore.Rename`) and holds the delete form plus the feed list (with
+  remove); `collectionDelete` redirects `303 → /collections`. Auto collections
+  are read-only (no edit/delete, add-feed rejected).
 - Feed rows on the author page only offer **edit** and **refresh**; pausing is
   the feed edit page's "enabled (poll this feed)" checkbox, and **delete** lives
   on the feed edit page (`feedDelete` redirects `303` back to the author page).
   The `/toggle` route remains but has no UI.
+- Adding a feed is **blocked when the user already has a feed with that exact
+  `feed_url`** (`Server.feedURLExists`, normalized like the extension's `saved`
+  check) — a warning renders into `#add-feed-error`. Duplicate titles/home URLs
+  are allowed; only the feed URL is the identity.
 
 ## Environment variables
 
@@ -456,6 +472,13 @@ unread item in the **same feed** as the target that is newer (before) or older
 (after) than it — the list order is `COALESCE(published_at, fetched_at), id`
 DESC. They are deliberately feed-scoped (not whole-list), so the `⋯` menu's
 "mark all before/after as read" is unambiguous on any page.
+
+**Sort direction.** Item lists are newest-first by default; a `?dir=asc` param
+flips them oldest-first (`ItemFilter.Ascending`). `ListPage` picks `ListItems` vs
+`ListItemsAsc` (`ListStore.ItemList` mirrors this with `ListItemsInListAsc`), and
+the keyset cursor flips with it: `before=<id>` (desc) vs `after=<id>` (asc).
+`moreURL`/`pageCursor`/`scopedFilter`/`cursorID` in `internal/httpapi/web.go`
+thread the direction; search and the public shared pages stay newest-first.
 
 ## Web UI (templ)
 
@@ -669,16 +692,19 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   `prefers-color-scheme`, and re-applies theme/accent via `htmx:afterRequest`
   after `/settings/theme` and `/settings/accent` swaps. `applyTheme` /
   `applyAccent` are globals.
-- Display mode: the list/grid picker (`DisplayModeControl` in
-  `views_items.templ`, rendered in the unread/read `.tabs-row` on scoped
-  pages and in the home/history/favorites headers). The choice is client-side
-  (`localStorage["nanoflux.items.mode"]`, default `list`); `applyDisplayMode()`
-  toggles the `masonry` class on `#items-list` and syncs the button/menu state,
-  and re-runs on every `htmx:afterSwap` because tab switches, "mark all read",
-  and load-more all recreate the list. The server renders the default state —
-  do not try to read localStorage server-side. Grid mode is a two-column CSS
-  masonry (`ul.items.masonry`, one column below 720px); it reuses the same item
-  rows, with thumbs going full-width.
+- Picker control: `PickerControl` (`views_items.templ`) is the shared pill +
+  dropdown (`togglePicker`/`closePickers`/`setPickerState` in app.js) behind
+  three instances. **Client-side** pickers have no `Href`; a delegated click maps
+  the picker's `data-picker` + the option's `data-option` to a setter. The
+  **display mode** (list/grid, `localStorage["nanoflux.items.mode"]`) toggles the
+  `masonry` class on `#items-list`; the **authors sort** (abc/newest,
+  `localStorage["nanoflux.authors.sort"]`) reorders `#authors-list` rows by their
+  `data-name`/`data-created`. Both re-run on every `htmx:afterSwap` because tab
+  switches, "mark all read", load-more, and author adds recreate the list. The
+  server renders the default state — do not try to read localStorage server-side.
+  **Server-side** pickers set `Href` (the sort direction) and are plain links.
+  Grid mode is a two-column CSS masonry (`ul.items.masonry`, one column below
+  720px); it reuses the same item rows, with thumbs going full-width.
 - Item modal: `openItem(el)` fetches `/items/{id}/view` into
   `#item-dialog-body` and `markRowRead(id)` flips the row to read. `currentItemId`
   tracks the open item.
@@ -723,10 +749,12 @@ all work unchanged). User-created lists of items live in `lists`/`list_items`
   reconciles `list_items` (and favorites) and re-renders the dialog, so
   unchecking a list in the same dialog is how an item is removed from it.
 - **Index/detail:** `/lists` pins favorites first (`FavoritesListRow`) then the
-  user's lists; `/lists/{id}` lists its items newest-added first, keyed on
-  `list_items.created_at`, paged with the standard `before=` cursor
-  (`ListStore.ItemList`). `ListStore.AddItem`/`RemoveItem` verify both list and
-  item belong to the user (like collection feed membership).
+  user's lists; `/lists/{id}` lists its items newest-added first (or oldest via
+  `?dir=asc`), keyed on `list_items.created_at`, paged with the standard
+  `before=`/`after=` cursor (`ListStore.ItemList`). `ListStore.AddItem`/`RemoveItem`
+  verify both list and item belong to the user (like collection feed membership).
+  Delete lives on `GET /lists/{id}/edit` (rename via `ListStore.Rename` + the
+  delete form); the index rows and the list page have no delete button.
 - **Sharing:** every list has a public link — `lists.share_token` for
   user-created lists, `users.favorites_share_token` (unique index) for the
   favorites list. `SetShare`/`ShareFavorites` reuse an existing token, so

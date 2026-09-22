@@ -198,46 +198,115 @@ templ scopedItemsInner(d scopedItemsData) {
 	<div class="tabs-row">
 		<nav class="tabs">
 			if d.View == "unread" {
-				<a class="active" href={ d.Path + "?view=unread" } hx-get={ d.ItemsPath + "?view=unread" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=unread" }>unread ({ d.UnreadCount })</a>
+				<a class="active" href={ d.Path + "?view=unread&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=unread&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=unread&dir=" + d.Dir }>unread ({ d.UnreadCount })</a>
 			} else {
-				<a href={ d.Path + "?view=unread" } hx-get={ d.ItemsPath + "?view=unread" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=unread" }>unread ({ d.UnreadCount })</a>
+				<a href={ d.Path + "?view=unread&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=unread&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=unread&dir=" + d.Dir }>unread ({ d.UnreadCount })</a>
 			}
 			if d.View == "read" {
-				<a class="active" href={ d.Path + "?view=read" } hx-get={ d.ItemsPath + "?view=read" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read" }>read ({ d.ReadCount })</a>
+				<a class="active" href={ d.Path + "?view=read&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=read&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read&dir=" + d.Dir }>read ({ d.ReadCount })</a>
 			} else {
-				<a href={ d.Path + "?view=read" } hx-get={ d.ItemsPath + "?view=read" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read" }>read ({ d.ReadCount })</a>
+				<a href={ d.Path + "?view=read&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=read&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read&dir=" + d.Dir }>read ({ d.ReadCount })</a>
 			}
 		</nav>
-		@DisplayModeControl()
+		<div class="row-actions">
+			@SortDirControl(d.Dir, d.Path+"?view="+d.View+"&dir=desc", d.Path+"?view="+d.View+"&dir=asc")
+			@DisplayModeControl()
+		</div>
 	</div>
 	@ItemsListPage(d.Items, d.More, d.HideAuthor)
 }
 
-// DisplayModeControl is the list/grid picker shown alongside the unread/read
-// tabs and in the home/history/favorites headers. The server renders the
-// default (list) state; app.js re-syncs it from localStorage on load and after
-// every htmx swap.
-templ DisplayModeControl() {
-	<div class="display-mode" data-mode="list">
-		<button type="button" id="display-mode-btn" class="mode-btn" aria-haspopup="true" aria-expanded="false" title="display mode" onclick="toggleDisplayMode(event)">
-			<span class="mode-ic mode-ic--list">@ModeIcon("list")</span>
-			<span class="mode-ic mode-ic--grid">@ModeIcon("grid")</span>
-			<span class="mode-label mode-label--list">list</span>
-			<span class="mode-label mode-label--grid">grid</span>
+// pickerOption is one choice in a PickerControl. Client-side pickers (no Href)
+// are handled by app.js via data attributes + localStorage; server-side pickers
+// set Href/HxGet so the option reloads the list.
+type pickerOption struct {
+	Value    string
+	Label    string
+	Icon     string // ModeIcon name; "" renders a label only
+	Href     string
+	HxGet    string
+	HxTarget string
+}
+
+// PickerControl is the shared pill + dropdown used for the display mode, the
+// authors sort, and the item sort direction. The button shows the current
+// option's icon/label; the server renders the default and app.js re-syncs it
+// from state after swaps.
+templ PickerControl(name, title, current string, options []pickerOption) {
+	<div class="picker" data-picker={ name }>
+		<button type="button" class="mode-btn" aria-haspopup="true" aria-expanded="false" title={ title } onclick="togglePicker(event)">
+			for _, o := range options {
+				if o.Icon != "" {
+					<span class="pick-ic" data-option={ o.Value } if o.Value != current { hidden }>@ModeIcon(o.Icon)</span>
+				}
+				<span class="pick-label" data-option={ o.Value } if o.Value != current { hidden }>{ o.Label }</span>
+			}
 		</button>
-		<div id="display-mode-menu" class="mode-menu" role="menu" hidden>
-			<button type="button" class="mode-option" role="menuitemradio" data-mode="list" aria-checked="true" onclick="setDisplayMode('list', event)">@ModeIcon("list") list</button>
-			<button type="button" class="mode-option" role="menuitemradio" data-mode="grid" aria-checked="false" onclick="setDisplayMode('grid', event)">@ModeIcon("grid") grid</button>
+		<div class="mode-menu" role="menu" hidden>
+			for _, o := range options {
+				if o.Href != "" {
+					<a class="mode-option" role="menuitemradio" data-option={ o.Value } aria-checked={ strconv.FormatBool(o.Value == current) } href={ templ.URL(o.Href) }
+						if o.HxGet != "" {
+							hx-get={ templ.URL(o.HxGet) } hx-target={ o.HxTarget } hx-swap="outerHTML" hx-push-url={ templ.URL(o.Href) }
+						}>
+						if o.Icon != "" {
+							@ModeIcon(o.Icon)
+						}
+						<span>{ o.Label }</span>
+					</a>
+				} else {
+					<button type="button" class="mode-option" role="menuitemradio" data-option={ o.Value } aria-checked={ strconv.FormatBool(o.Value == current) }>
+						if o.Icon != "" {
+							@ModeIcon(o.Icon)
+						}
+						<span>{ o.Label }</span>
+					</button>
+				}
+			}
 		</div>
 	</div>
 }
 
-// ModeIcon renders the small icon for a display mode ("list" or "grid").
-templ ModeIcon(mode string) {
-	if mode == "grid" {
-		<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-	} else {
-		<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+// DisplayModeControl is the list/grid picker shown alongside the unread/read
+// tabs and in the home/history/favorites headers. The choice is client-side
+// (localStorage), so the server always renders the default (list) state and
+// app.js re-syncs it.
+templ DisplayModeControl() {
+	@PickerControl("display", "display mode", "list", []pickerOption{
+		{Value: "list", Label: "list", Icon: "list"},
+		{Value: "grid", Label: "grid", Icon: "grid"},
+	})
+}
+
+// AuthorSortControl sorts the authors list alphabetically ("abc") or by newest
+// first. Client-side: app.js reorders the rendered rows.
+templ AuthorSortControl() {
+	@PickerControl("authors", "sort", "abc", []pickerOption{
+		{Value: "abc", Label: "abc"},
+		{Value: "newest", Label: "newest"},
+	})
+}
+
+// SortDirControl is the asc/desc picker for item lists. Server-side: each
+// option is a link that reloads the page with ?dir=.
+templ SortDirControl(dir, descHref, ascHref string) {
+	@PickerControl("dir", "sort order", dir, []pickerOption{
+		{Value: "desc", Label: "newest", Icon: "desc", Href: descHref},
+		{Value: "asc", Label: "oldest", Icon: "asc", Href: ascHref},
+	})
+}
+
+// ModeIcon renders the small icon for a picker option.
+templ ModeIcon(name string) {
+	switch name {
+		case "grid":
+			<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+		case "list":
+			<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+		case "desc":
+			<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+		case "asc":
+			<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
 	}
 }
 

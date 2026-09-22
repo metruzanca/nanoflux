@@ -162,6 +162,21 @@ func (s *CollectionStore) Delete(userID, id int64) error {
 	return nil
 }
 
+// Rename updates a collection's name (not auto collections are excluded by the
+// caller; this only verifies ownership).
+func (s *CollectionStore) Rename(userID, id int64, name string) error {
+	res, err := s.q.RenameCollection(context.Background(), sqlcgen.RenameCollectionParams{
+		Name: name, ID: id, UserID: userID,
+	})
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // AddFeed associates a feed with a collection, verifying both belong to the user.
 func (s *CollectionStore) AddFeed(userID, collectionID, feedID int64) error {
 	n, err := s.q.VerifyCollectionFeed(context.Background(), sqlcgen.VerifyCollectionFeedParams{

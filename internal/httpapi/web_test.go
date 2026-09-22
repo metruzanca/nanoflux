@@ -551,12 +551,12 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("add feed to collection: %d", rr.Code)
 	}
-	if !strings.Contains(rr.Body.String(), "hx-swap-oob") || !strings.Contains(rr.Body.String(), "scoped-items") {
-		t.Fatalf("add-feed response should carry the items oob swap: %s", rr.Body.String())
+	if !strings.Contains(rr.Body.String(), `id="scoped-items"`) {
+		t.Fatalf("add-feed response should render the items list: %s", rr.Body.String())
 	}
-	body = doGet(h, "/collections/"+itoa(cols[0].ID), cookie).Body.String()
+	body = doGet(h, "/collections/"+itoa(cols[0].ID)+"/edit", cookie).Body.String()
 	if !strings.Contains(body, "Blog") {
-		t.Fatal("collection page missing feed")
+		t.Fatal("collection edit page missing feed")
 	}
 }
 
@@ -940,8 +940,10 @@ func TestAuthorFormFragment(t *testing.T) {
 	if rr := doGet(h, "/fragments/author-form?author_id=new", cookie); !strings.Contains(rr.Body.String(), "new author name") {
 		t.Fatal("expected author-create fields fragment")
 	}
-	if rr := doGet(h, "/fragments/author-form?author_id=5", cookie); rr.Code != http.StatusNoContent {
-		t.Fatalf("expected empty fragment for existing author, got %d", rr.Code)
+	// An existing author clears the new-author fields via an empty 200 (htmx
+	// doesn't swap on 204).
+	if rr := doGet(h, "/fragments/author-form?author_id=5", cookie); rr.Code != http.StatusOK || rr.Body.Len() != 0 {
+		t.Fatalf("expected an empty 200 for an existing author, got %d %q", rr.Code, rr.Body.String())
 	}
 }
 
@@ -1159,8 +1161,8 @@ func TestDisplayModeControlPresent(t *testing.T) {
 	coll, _ := s.store.Collections.Create(u.ID, "Dev")
 	s.store.Collections.AddFeed(u.ID, coll.ID, f.ID)
 
-	control := `class="display-mode" data-mode="list"`
-	option := `role="menuitemradio" data-mode="grid"`
+	control := `class="picker" data-picker="display"`
+	option := `role="menuitemradio" data-option="grid"`
 	for _, path := range []string{
 		"/", "/read", "/favorites",
 		"/authors/" + itoa(a.ID), "/feeds/" + itoa(f.ID), "/collections/" + itoa(coll.ID),
@@ -1169,6 +1171,17 @@ func TestDisplayModeControlPresent(t *testing.T) {
 		if !strings.Contains(body, control) || !strings.Contains(body, option) {
 			t.Fatalf("%s missing display-mode control: %s", path, body)
 		}
+	}
+}
+
+func TestAuthorsPageSortControl(t *testing.T) {
+	_, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	body := doGet(h, "/authors", cookie).Body.String()
+	if !strings.Contains(body, `class="picker" data-picker="authors"`) ||
+		!strings.Contains(body, `data-option="newest"`) ||
+		!strings.Contains(body, "abc") {
+		t.Fatalf("authors page should carry the sort picker: %s", body)
 	}
 }
 
@@ -1231,25 +1244,25 @@ func TestItemModalSkipsImageEnclosureAlreadyInBody(t *testing.T) {
 	}
 }
 
-func TestAuthorsPageShowsUnread(t *testing.T) {
+func TestAuthorsRowIsCondensed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "https://metru.dev", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "One", Link: "https://b.dev/1", FetchedAt: db.Now()})
-	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "Two", Link: "https://b.dev/2", FetchedAt: db.Now()})
-	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
-	if err := s.store.Items.SetRead(u.ID, items[0].ID, true); err != nil {
-		t.Fatalf("SetRead: %v", err)
-	}
 
 	body := doGet(h, "/authors", cookie).Body.String()
-	if !strings.Contains(body, `<strong class="unread-count">1 unread</strong>`) {
-		t.Fatalf("authors page should surface unread count: %s", body)
+	// The row is the linked name + feed count; the external url and unread
+	// count are gone.
+	if !strings.Contains(body, `<a href="/authors/1"><strong>Metru</strong></a>`) {
+		t.Fatalf("author name should be linked: %s", body)
 	}
 	if !strings.Contains(body, "1 feeds") {
-		t.Fatalf("authors page should still show feed count: %s", body)
+		t.Fatalf("authors row should show the feed count: %s", body)
+	}
+	if strings.Contains(body, "https://metru.dev") || strings.Contains(body, "unread-count") {
+		t.Fatalf("condensed row should drop the external url and unread count: %s", body)
 	}
 }
 
@@ -1602,5 +1615,92 @@ func TestFeedEditAutoInterval(t *testing.T) {
 	after, _ = s.store.Feeds.ByID(u.ID, f.ID)
 	if after.PollIntervalSec != 600 || after.PollIntervalAuto {
 		t.Fatalf("auto off should use the manual interval: %+v", after)
+	}
+}
+
+func TestFeedCreateBlocksDuplicateURL(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+
+	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/feeds", url.Values{
+		"title": {"Blog"}, "feed_url": {"https://b.dev/rss.xml"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("first add: %d %s", rr.Code, rr.Body.String())
+	}
+	// The same feed URL again is blocked with a visible warning.
+	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/feeds", url.Values{
+		"title": {"Blog again"}, "feed_url": {"https://b.dev/rss.xml"},
+	}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "already have this feed") {
+		t.Fatalf("duplicate feed should be blocked: %d %s", rr.Code, rr.Body.String())
+	}
+	if feeds, _ := s.store.Feeds.List(u.ID); len(feeds) != 1 {
+		t.Fatalf("duplicate feed should not be created: %+v", feeds)
+	}
+	// The same title/home with a different feed URL is allowed.
+	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/feeds", url.Values{
+		"title": {"Blog"}, "feed_url": {"https://b.dev/other.xml"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("a different feed url should be allowed: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestItemListSortDirection(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "a", Title: "Old", Link: "https://b.dev/1", PublishedAt: "2026-01-01 00:00:00", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "b", Title: "New", Link: "https://b.dev/2", PublishedAt: "2026-01-02 00:00:00", FetchedAt: db.Now()})
+
+	// Default (desc): newest first, before= cursor.
+	body := doGet(h, "/", cookie).Body.String()
+	if strings.Index(body, "New") > strings.Index(body, "Old") {
+		t.Fatalf("default should list newest first: %s", body)
+	}
+	// Ascending: oldest first with the asc sort control and after= links.
+	body = doGet(h, "/?dir=asc", cookie).Body.String()
+	if strings.Index(body, "Old") > strings.Index(body, "New") {
+		t.Fatalf("ascending should list oldest first: %s", body)
+	}
+	if !strings.Contains(body, `data-picker="dir"`) || !strings.Contains(body, "dir=asc") {
+		t.Fatalf("ascending page should carry the sort-direction picker: %s", body)
+	}
+}
+
+func TestCollectionEditAndDelete(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	c, _ := s.store.Collections.Create(u.ID, "Dev")
+
+	// The index has no delete button; the edit page does.
+	idx := doGet(h, "/collections", cookie).Body.String()
+	if strings.Contains(idx, "/collections/"+itoa(c.ID)+"/delete") {
+		t.Fatalf("collections index should not offer delete: %s", idx)
+	}
+	edit := doGet(h, "/collections/"+itoa(c.ID)+"/edit", cookie).Body.String()
+	if !strings.Contains(edit, `action="/collections/`+itoa(c.ID)+`/edit"`) ||
+		!strings.Contains(edit, `action="/collections/`+itoa(c.ID)+`/delete"`) ||
+		!strings.Contains(edit, ">delete<") {
+		t.Fatalf("collection edit page missing rename/delete: %s", edit)
+	}
+
+	rr := doForm(h, "POST", "/collections/"+itoa(c.ID)+"/edit", url.Values{"name": {"Reading"}}, cookie)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("rename collection: %d", rr.Code)
+	}
+	if got, _ := s.store.Collections.ByID(u.ID, c.ID); got.Name != "Reading" {
+		t.Fatalf("collection not renamed: %+v", got)
+	}
+
+	rr = doForm(h, "POST", "/collections/"+itoa(c.ID)+"/delete", url.Values{}, cookie)
+	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/collections" {
+		t.Fatalf("delete collection: %d %q", rr.Code, rr.Header().Get("Location"))
 	}
 }

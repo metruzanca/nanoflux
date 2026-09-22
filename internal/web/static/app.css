@@ -457,10 +457,11 @@ li.text-card .card-body { flex: 1; min-width: 0; }
 }
 .tabs-row .tabs { margin: 0; }
 
-/* Display-mode picker (list/grid). The server renders the default state; the
-   .display-mode[data-mode=…] attribute drives which icon/label is visible and
-   is set client-side from localStorage (see app.js applyDisplayMode). */
-.display-mode { position: relative; flex: none; }
+/* Picker control (display mode, authors sort, item sort direction): a pill
+   button that opens a dropdown. app.js syncs the button's shown option and the
+   menu's checked state from localStorage (client pickers) or the server does
+   (link pickers). */
+.picker { position: relative; flex: none; }
 .mode-btn {
   display: inline-flex;
   align-items: center;
@@ -476,11 +477,8 @@ li.text-card .card-body { flex: 1; min-width: 0; }
 }
 .mode-btn:hover { border-color: var(--accent); color: var(--fg); }
 .mode-btn svg { width: 1em; height: 1em; }
-.mode-label { color: var(--fg); }
-.display-mode[data-mode="grid"] .mode-ic--list,
-.display-mode[data-mode="list"] .mode-ic--grid,
-.display-mode[data-mode="grid"] .mode-label--list,
-.display-mode[data-mode="list"] .mode-label--grid { display: none; }
+.pick-label { color: var(--fg); }
+.pick-ic[hidden], .pick-label[hidden] { display: none; }
 
 .mode-menu {
   position: absolute;
@@ -514,6 +512,7 @@ li.text-card .card-body { flex: 1; min-width: 0; }
 .mode-option:hover {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--fg);
+  text-decoration: none;
 }
 .mode-option[aria-checked="true"] { color: var(--fg); }
 

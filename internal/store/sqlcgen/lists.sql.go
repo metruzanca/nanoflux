@@ -290,6 +290,93 @@ func (q *Queries) ListItemsInList(ctx context.Context, arg ListItemsInListParams
 	return items, nil
 }
 
+const listItemsInListAsc = `-- name: ListItemsInListAsc :many
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url,
+       a.id AS author_id, a.name AS author_name
+FROM list_items li
+JOIN items i ON i.id = li.item_id
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE li.list_id = ?1 AND f.user_id = ?2
+  AND (CAST(?3 AS INTEGER) = 0 OR
+       (li.created_at, i.id) > (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = ?1 AND li2.item_id = CAST(?3 AS INTEGER)))
+ORDER BY li.created_at ASC, i.id ASC
+LIMIT ?4
+`
+
+type ListItemsInListAscParams struct {
+	ListID      int64 `json:"listID"`
+	UserID      int64 `json:"userID"`
+	AfterItemID int64 `json:"afterItemID"`
+	Limit       int64 `json:"limit"`
+}
+
+type ListItemsInListAscRow struct {
+	ID          int64          `json:"id"`
+	FeedID      int64          `json:"feed_id"`
+	Guid        string         `json:"guid"`
+	Title       string         `json:"title"`
+	Link        string         `json:"link"`
+	Summary     string         `json:"summary"`
+	ImageUrl    sql.NullString `json:"image_url"`
+	PublishedAt sql.NullString `json:"published_at"`
+	FetchedAt   string         `json:"fetched_at"`
+	Read        bool           `json:"read"`
+	Favorite    bool           `json:"favorite"`
+	ReadAt      sql.NullString `json:"read_at"`
+	FeedTitle   string         `json:"feed_title"`
+	FeedUrl     string         `json:"feed_url"`
+	AuthorID    sql.NullInt64  `json:"author_id"`
+	AuthorName  sql.NullString `json:"author_name"`
+}
+
+func (q *Queries) ListItemsInListAsc(ctx context.Context, arg ListItemsInListAscParams) ([]ListItemsInListAscRow, error) {
+	rows, err := q.db.QueryContext(ctx, listItemsInListAsc,
+		arg.ListID,
+		arg.UserID,
+		arg.AfterItemID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListItemsInListAscRow
+	for rows.Next() {
+		var i ListItemsInListAscRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FeedID,
+			&i.Guid,
+			&i.Title,
+			&i.Link,
+			&i.Summary,
+			&i.ImageUrl,
+			&i.PublishedAt,
+			&i.FetchedAt,
+			&i.Read,
+			&i.Favorite,
+			&i.ReadAt,
+			&i.FeedTitle,
+			&i.FeedUrl,
+			&i.AuthorID,
+			&i.AuthorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listItemsInListPublic = `-- name: ListItemsInListPublic :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
@@ -436,6 +523,22 @@ type RemoveItemFromListParams struct {
 
 func (q *Queries) RemoveItemFromList(ctx context.Context, arg RemoveItemFromListParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, removeItemFromList, arg.ListID, arg.ItemID, arg.UserID)
+}
+
+const renameList = `-- name: RenameList :execresult
+UPDATE lists
+SET name = ?1
+WHERE id = ?2 AND user_id = ?3
+`
+
+type RenameListParams struct {
+	Name   string `json:"name"`
+	ID     int64  `json:"id"`
+	UserID int64  `json:"userID"`
+}
+
+func (q *Queries) RenameList(ctx context.Context, arg RenameListParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, renameList, arg.Name, arg.ID, arg.UserID)
 }
 
 const setFavoritesShareToken = `-- name: SetFavoritesShareToken :exec

@@ -49,10 +49,65 @@ document.addEventListener('click', function (e) {
   form.requestSubmit();
 });
 
-// Display mode (list / masonry grid). The choice is client-side (localStorage)
-// and applied to whatever item list is on the page; htmx swaps re-create the
-// list (tab switch, mark all read, load-more), so applyDisplayMode re-runs on
-// every afterSwap just like the active-row highlight below.
+// Picker control (shared by the display mode, authors sort, and item sort
+// direction): a pill button that opens a dropdown. Client-side pickers store
+// their choice locally and are re-applied after swaps; server-side pickers use
+// links that swap the list.
+function pickerMenu(el) {
+  var ctl = el.closest('.picker');
+  return ctl ? ctl.querySelector('.mode-menu') : null;
+}
+function togglePicker(e) {
+  e.stopPropagation();
+  var menu = pickerMenu(e.currentTarget);
+  if (!menu) return;
+  var open = menu.hidden;
+  menu.hidden = !open;
+  e.currentTarget.setAttribute('aria-expanded', String(!open));
+}
+function closePickers() {
+  document.querySelectorAll('.mode-menu:not([hidden])').forEach(function (m) {
+    m.hidden = true;
+    var btn = m.parentElement && m.parentElement.querySelector('.mode-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  });
+}
+document.addEventListener('click', function (e) {
+  document.querySelectorAll('.mode-menu:not([hidden])').forEach(function (m) {
+    if (!m.contains(e.target) && !e.target.closest('.picker')) m.hidden = true;
+  });
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closePickers();
+});
+
+// Set a picker's rendered state (button icon/label + aria-checked options).
+function setPickerState(name, value) {
+  document.querySelectorAll('.picker[data-picker="' + name + '"]').forEach(function (ctl) {
+    ctl.querySelectorAll('[data-option]').forEach(function (el) {
+      var on = el.dataset.option === value;
+      if (el.classList.contains('mode-option')) el.setAttribute('aria-checked', String(on));
+      else el.hidden = !on;
+    });
+  });
+}
+
+// Client-side picker options (display mode, authors sort) carry no inline
+// handler (templ can't express one); a delegated click maps the picker name +
+// option value to the right setter.
+document.addEventListener('click', function (e) {
+  var opt = e.target.closest('.picker .mode-option[data-option]');
+  if (!opt || opt.tagName !== 'BUTTON') return;
+  var ctl = opt.closest('.picker');
+  var name = ctl && ctl.dataset.picker;
+  var value = opt.dataset.option;
+  if (name === 'display') setDisplayMode(value, e);
+  else if (name === 'authors') setAuthorSort(value, e);
+});
+
+// Display mode (list / masonry grid). Client-side (localStorage), applied to
+// whatever item list is on the page; htmx swaps re-create the list, so
+// applyDisplayMode re-runs on every afterSwap.
 var DISPLAY_MODE_KEY = 'nanoflux.items.mode';
 function displayMode() {
   var m = localStorage.getItem(DISPLAY_MODE_KEY);
@@ -64,38 +119,46 @@ function applyDisplayMode() {
   if (list && list.tagName === 'UL') {
     list.classList.toggle('masonry', mode === 'grid');
   }
-  document.querySelectorAll('.display-mode').forEach(function (ctl) {
-    ctl.setAttribute('data-mode', mode);
-    ctl.querySelectorAll('.mode-option').forEach(function (opt) {
-      opt.setAttribute('aria-checked', String(opt.dataset.mode === mode));
-    });
-  });
-}
-function toggleDisplayMode(e) {
-  e.stopPropagation();
-  var ctl = e.currentTarget.closest('.display-mode');
-  var menu = ctl.querySelector('.mode-menu');
-  var open = menu.hidden;
-  menu.hidden = !open;
-  e.currentTarget.setAttribute('aria-expanded', String(!open));
+  setPickerState('display', mode);
 }
 function setDisplayMode(mode, e) {
   if (e) e.stopPropagation();
   localStorage.setItem(DISPLAY_MODE_KEY, mode);
   applyDisplayMode();
-  document.querySelectorAll('.mode-menu:not([hidden])').forEach(function (m) { m.hidden = true; });
+  closePickers();
 }
-document.addEventListener('click', function (e) {
-  var menu = document.querySelectorAll('.mode-menu:not([hidden])');
-  menu.forEach(function (m) {
-    if (!m.contains(e.target) && !e.target.closest('.display-mode')) m.hidden = true;
-  });
-});
-document.addEventListener('keydown', function (e) {
-  if (e.key !== 'Escape') return;
-  document.querySelectorAll('.mode-menu:not([hidden])').forEach(function (m) { m.hidden = true; });
-});
+
+// Authors sort (abc / newest). Client-side (localStorage), reorders the
+// rendered rows.
+var AUTHOR_SORT_KEY = 'nanoflux.authors.sort';
+function authorSort() {
+  var s = localStorage.getItem(AUTHOR_SORT_KEY);
+  return s === 'newest' ? 'newest' : 'abc';
+}
+function applyAuthorSort() {
+  var sort = authorSort();
+  var list = document.getElementById('authors-list');
+  if (list) {
+    var rows = Array.prototype.slice.call(list.children);
+    rows.sort(function (a, b) {
+      if (sort === 'newest') {
+        return (b.dataset.created || '').localeCompare(a.dataset.created || '');
+      }
+      return (a.dataset.name || '').localeCompare(b.dataset.name || '');
+    });
+    rows.forEach(function (r) { list.appendChild(r); });
+  }
+  setPickerState('authors', sort);
+}
+function setAuthorSort(sort, e) {
+  if (e) e.stopPropagation();
+  localStorage.setItem(AUTHOR_SORT_KEY, sort);
+  applyAuthorSort();
+  closePickers();
+}
+
 applyDisplayMode();
+applyAuthorSort();
 
 // Item modal.
 var currentItemId = null;
@@ -388,10 +451,11 @@ document.addEventListener('keydown', function (e) {
 });
 
 // Keep the row cursor highlighted when htmx re-renders the row (favorite/read
-// toggles swap it via outerHTML), and re-apply the display mode after any swap
-// that recreates the item list (tab switch, mark all read, load-more).
+// toggles swap it via outerHTML), and re-apply the client-side pickers after any
+// swap that recreates a list (tab switch, mark all read, load-more, author add).
 document.body.addEventListener('htmx:afterSwap', function () {
   applyDisplayMode();
+  applyAuthorSort();
   if (activeItemId) {
     var r = document.getElementById(activeItemId);
     if (r) r.classList.add('active-row');

@@ -54,7 +54,7 @@ func TestListStore(t *testing.T) {
 		t.Fatalf("add item2: %v", err)
 	}
 
-	items, more, err := s.Lists.ItemList(u.ID, l.ID, 0, 10)
+	items, more, err := s.Lists.ItemList(u.ID, l.ID, 0, 10, false)
 	if err != nil {
 		t.Fatalf("ItemList: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestListStore(t *testing.T) {
 	if err := s.Lists.RemoveItem(u.ID, l.ID, item2.ID); err != nil {
 		t.Fatalf("RemoveItem: %v", err)
 	}
-	items, _, _ = s.Lists.ItemList(u.ID, l.ID, 0, 10)
+	items, _, _ = s.Lists.ItemList(u.ID, l.ID, 0, 10, false)
 	if len(items) != 1 || items[0].ID != item1.ID {
 		t.Fatalf("ItemList after remove: %+v", items)
 	}

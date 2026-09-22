@@ -97,7 +97,11 @@ templ feedPreviewFields(d feedPreviewForm) {
 					}
 				</select>
 			</label>
-			<div id="new-author">@authorCreateFields(d.newAuthor())</div>
+			<div id="new-author">
+				if d.SelectedAuthorID == 0 {
+					@authorCreateFields(d.newAuthor())
+				}
+			</div>
 		}
 		<div id="add-feed-error" class="error"></div>
 		<button type="submit">add</button>
@@ -199,7 +203,11 @@ templ scrapeBuilder(d scrapeBuilderData) {
 					}
 				</select>
 			</label>
-			<div id="new-author">@authorCreateFields(d.newAuthor())</div>
+			<div id="new-author">
+				if d.SelectedAuthorID == 0 {
+					@authorCreateFields(d.newAuthor())
+				}
+			</div>
 		}
 		<div id="add-feed-error" class="error"></div>
 		<button type="submit">add feed</button>

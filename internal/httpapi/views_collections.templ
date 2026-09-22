@@ -46,9 +46,6 @@ templ CollectionRow(c store.CollectionWithCounts) {
 						<span class="badge">auto</span>
 					}
 				</div>
-				if !c.IsAuto {
-					<button class="link danger" title="delete" hx-post={ "/collections/" + strconv.FormatInt(c.ID, 10) + "/delete" } hx-target={ "#collection-" + strconv.FormatInt(c.ID, 10) } hx-swap="outerHTML" hx-confirm="delete this collection?">✕</button>
-				}
 			</div>
 			<div class="item-meta">
 				{ c.FeedCount } feeds · { c.Unread } unread · { c.Read } read
@@ -60,14 +57,24 @@ templ CollectionRow(c store.CollectionWithCounts) {
 templ collectionPage(u store.User, d collectionData) {
 	<div class="row">
 		<h1>{ d.Collection.Name }</h1>
-		if d.Collection.IsAuto {
-			<span class="badge">auto</span>
-		}
+		<div class="row-actions">
+			if d.Collection.IsAuto {
+				<span class="badge">auto</span>
+			} else {
+				<a class="small" href={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>edit</a>
+				<button type="button" onclick="document.getElementById('collection-add-feed-dialog').showModal()">+ add feed</button>
+			}
+		</div>
 	</div>
+	@ScopedItems(d.Scoped)
+
 	if !d.Collection.IsAuto {
-		<section class="card">
-			<h2>add feed</h2>
-			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-feed" } hx-target="#collection-feeds" hx-swap="outerHTML">
+		<dialog id="collection-add-feed-dialog" class="modal">
+			<div class="row">
+				<h2>add feed</h2>
+				<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+			</div>
+			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-feed" } hx-target="#scoped-items" hx-swap="outerHTML" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
 				<input type="hidden" name="view" value={ d.Scoped.View }/>
 				<select name="feed_id">
 					for _, g := range d.AllFeeds {
@@ -80,13 +87,30 @@ templ collectionPage(u store.User, d collectionData) {
 				</select>
 				<button type="submit">add</button>
 			</form>
-		</section>
+		</dialog>
 	}
-	<details class="feeds-section">
-		<summary>feeds</summary>
+}
+
+// collectionEditPage edits a collection's name, removes its feeds, and deletes
+// it — the collection's own management surface, mirroring the author/feed edit
+// pages (delete lives in the form, not on the listing).
+templ collectionEditPage(u store.User, d collectionData) {
+	<section class="card">
+		<h1>edit collection</h1>
+		<form class="stack" method="post" action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>
+			<label>name
+				<input name="name" value={ d.Collection.Name } required/>
+			</label>
+			<button type="submit">save</button>
+		</form>
+		<form class="stack delete-form" method="post" action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/delete" } onsubmit="return confirm('delete this collection?')">
+			<button type="submit" class="danger">delete</button>
+		</form>
+	</section>
+	<section class="card">
+		<h2>feeds</h2>
 		@collectionFeeds(d)
-	</details>
-	@ScopedItems(d.Scoped)
+	</section>
 }
 
 templ collectionFeeds(d collectionData) {
@@ -96,9 +120,7 @@ templ collectionFeeds(d collectionData) {
 				<li>
 					<div class="row">
 						<a href={ "/feeds/" + strconv.FormatInt(f.ID, 10) }>{ f.Title }</a>
-						if !d.Collection.IsAuto {
-							<button class="link danger" title="remove" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/remove-feed/" + strconv.FormatInt(f.ID, 10) } hx-target="#collection-feeds" hx-swap="outerHTML" hx-vals={ `{"view":"` + d.Scoped.View + `"}` }>✕</button>
-						}
+						<button class="link danger" title="remove" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/remove-feed/" + strconv.FormatInt(f.ID, 10) } hx-target="#collection-feeds" hx-swap="outerHTML">✕</button>
 					</div>
 				</li>
 			}
@@ -106,9 +128,4 @@ templ collectionFeeds(d collectionData) {
 			<li class="muted">no feeds in this collection</li>
 		}
 	</ul>
-}
-
-templ collectionUpdated(d collectionData) {
-	@collectionFeeds(d)
-	@ScopedItems(d.Scoped)
 }

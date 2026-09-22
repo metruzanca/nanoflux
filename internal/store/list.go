@@ -98,6 +98,18 @@ func (s *ListStore) Delete(userID, id int64) error {
 	return nil
 }
 
+// Rename updates a list's name.
+func (s *ListStore) Rename(userID, id int64, name string) error {
+	res, err := s.q.RenameList(context.Background(), sqlcgen.RenameListParams{Name: name, ID: id, UserID: userID})
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // SetShareToken stores (or, with an empty token, clears) a list's public share
 // token.
 func (s *ListStore) SetShareToken(userID, id int64, token string) error {
@@ -155,16 +167,38 @@ func (s *ListStore) ItemListIDs(userID, itemID int64) ([]int64, error) {
 	})
 }
 
-// ItemList returns one page of a list's items, newest-added first. Pass the
-// last returned id as before to page further.
-func (s *ListStore) ItemList(userID, listID, before int64, limit int) ([]ItemWithFeed, bool, error) {
+// ItemList returns one page of a list's items, newest-added first (oldest-added
+// first when ascending). Pass the last returned id as cursor to page further.
+func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending bool) ([]ItemWithFeed, bool, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
+	}
+	if ascending {
+		rows, err := s.q.ListItemsInListAsc(context.Background(), sqlcgen.ListItemsInListAscParams{
+			ListID:      listID,
+			UserID:      userID,
+			AfterItemID: cursor,
+			Limit:       int64(limit) + 1,
+		})
+		if err != nil {
+			return nil, false, err
+		}
+		hasMore := len(rows) > limit
+		if hasMore {
+			rows = rows[:limit]
+		}
+		out := make([]ItemWithFeed, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
+				r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+				r.FeedTitle, r.FeedUrl, r.AuthorID, r.AuthorName))
+		}
+		return out, hasMore, nil
 	}
 	rows, err := s.q.ListItemsInList(context.Background(), sqlcgen.ListItemsInListParams{
 		ListID:       listID,
 		UserID:       userID,
-		BeforeItemID: before,
+		BeforeItemID: cursor,
 		Limit:        int64(limit) + 1,
 	})
 	if err != nil {
