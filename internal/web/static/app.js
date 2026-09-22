@@ -415,23 +415,69 @@ document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') closeNav();
 });
 
-// Arrow keys move through the item list while the modal is open.
+// Arrow keys move through the item list while the modal is open. Reaching the
+// end of the loaded rows fetches the next page (the "load more" cursor) and
+// continues into it, so reading never dead-ends. The same mechanism serves
+// every paged list (unread, read, author, feed, collection, favorites, lists).
+var loadMoreBusy = false;
+var continueAfterLoad = false;
+
+function loadMoreButton() {
+  return document.getElementById('load-more');
+}
+// requestMore clicks the htmx "load more" button if a page is still available
+// and no request is already in flight. Returns whether it fired one.
+function requestMore() {
+  var btn = loadMoreButton();
+  if (!btn || loadMoreBusy) return false;
+  loadMoreBusy = true;
+  btn.click();
+  return true;
+}
+// navigateItem opens the row dir steps from the current item (dir 1 = next,
+// -1 = previous). Returns false at the edge of the loaded rows.
+function navigateItem(dir) {
+  var current = document.getElementById('item-' + currentItemId);
+  if (!current) return false;
+  var list = current.closest('ul.items') || current.parentElement;
+  var items = Array.prototype.slice.call(list.querySelectorAll('li[id^="item-"]'));
+  var next = items[items.indexOf(current) + dir];
+  if (!next) return false;
+  var link = next.querySelector('[data-item-id]');
+  if (!link) return false;
+  openItem(link);
+  return true;
+}
+// prefetchNearEnd loads the next page once the current item is one row from the
+// end, so the following press is instant ("1 post before" buffer).
+function prefetchNearEnd() {
+  var current = document.getElementById('item-' + currentItemId);
+  if (!current) return;
+  var list = current.closest('ul.items') || current.parentElement;
+  var items = list.querySelectorAll('li[id^="item-"]');
+  if (Array.prototype.indexOf.call(items, current) >= items.length - 2) requestMore();
+}
+
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   var dialog = document.getElementById('item-dialog');
   if (!dialog || !dialog.open || !currentItemId) return;
   if (e.target.closest && e.target.closest('input, textarea, select')) return;
-  var current = document.getElementById('item-' + currentItemId);
-  if (!current) return;
-  var list = current.closest('ul.items') || current.parentElement;
-  var items = Array.prototype.slice.call(list.querySelectorAll('li[id^="item-"]'));
-  var idx = items.indexOf(current);
-  var next = e.key === 'ArrowRight' ? items[idx + 1] : items[idx - 1];
-  if (!next) return;
-  var link = next.querySelector('[data-item-id]');
-  if (!link) return;
-  e.preventDefault();
-  openItem(link);
+  var dir = e.key === 'ArrowRight' ? 1 : -1;
+
+  if (navigateItem(dir)) {
+    e.preventDefault();
+    if (dir > 0) prefetchNearEnd();
+    return;
+  }
+  // At the end of the loaded rows: if more pages exist, page forward and
+  // continue into the new rows once they arrive (requestMore is a no-op when a
+  // prefetch is already in flight, so the flag just waits for it).
+  if (dir > 0 && loadMoreButton()) {
+    continueAfterLoad = true;
+    requestMore();
+    e.preventDefault();
+  }
 });
 
 // "/" focuses the search box.
@@ -769,13 +815,29 @@ document.addEventListener('keydown', function (e) {
 // Keep the row cursor highlighted when htmx re-renders the row (favorite/read
 // toggles swap it via outerHTML), and re-apply the client-side pickers after any
 // swap that recreates a list (tab switch, mark all read, load-more, author add).
-document.body.addEventListener('htmx:afterSwap', function () {
+document.body.addEventListener('htmx:afterSwap', function (e) {
   applyDisplayMode();
   applyAuthorSort();
   if (activeItemId) {
     var r = document.getElementById(activeItemId);
     if (r) r.classList.add('active-row');
   }
+  // A "load more" page arrived into the list: release the guard and, if the
+  // reader reached the end to fetch it, advance into the newly appended rows.
+  if (loadMoreBusy && e.detail && e.detail.target && e.detail.target.id === 'items-list') {
+    loadMoreBusy = false;
+    if (continueAfterLoad) {
+      continueAfterLoad = false;
+      navigateItem(1);
+      prefetchNearEnd();
+    }
+  }
+});
+// A failed load-more leaves no rows to advance into; release the guard so the
+// reader can retry (the button is still there while a page remains).
+document.body.addEventListener('htmx:responseError', function () {
+  loadMoreBusy = false;
+  continueAfterLoad = false;
 });
 
 // Tinder-style swipe actions on item rows (touch only). Swiping right toggles
