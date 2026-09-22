@@ -94,6 +94,7 @@ survive container restarts and updates.
 | `make status` | show container status |
 | `make logs` | tail the app logs |
 | `make shell` | open a shell in the app container |
+| `make version` | print the running app's version |
 | `make backup` | snapshot the database and file store into `backups/` |
 | `make restore ARCHIVE=backups/<file>.tar.gz` | stop the app and restore from a backup |
 | `make down` | stop and remove containers (data kept) |
