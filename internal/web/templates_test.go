@@ -49,9 +49,11 @@ func TestTimeFmt(t *testing.T) {
 	if got := TimeFmt("", "not a time"); got != "not a time" {
 		t.Fatalf("invalid input: %q", got)
 	}
-	// Empty timezone falls back to server local (UTC here), so the output is
-	// a relative label rather than the raw stamp.
-	if got := TimeFmt("", "2026-09-20 12:00:00"); !strings.Contains(got, "Today at") && !strings.Contains(got, "Yesterday at") {
+	// Empty timezone falls back to server local; a current timestamp therefore
+	// renders a relative label rather than the raw stamp. (A fixed date would
+	// rot: it stops being "today" as wall-clock time moves on.)
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	if got := TimeFmt("", now); !strings.Contains(got, "Today at") && !strings.Contains(got, "Yesterday at") {
 		t.Fatalf("expected a relative label, got %q", got)
 	}
 }
