@@ -183,14 +183,35 @@ function addAuthorLinkRow() {
 
 // Item modal.
 var currentItemId = null;
+var itemDialog = document.getElementById('item-dialog');
+
+// The open item is mirrored in the URL hash (#item-<id>) so the modal deep-links
+// and opens in a new tab, and browser back/forward move between items.
+function hashItemId() {
+  var m = /^#item-(\d+)$/.exec(location.hash);
+  return m ? m[1] : null;
+}
+function syncItemHash(id, wasOpen) {
+  var target = '#item-' + id;
+  if (location.hash === target) return;
+  // A deep link already owns the entry; only push on a fresh open, and replace
+  // when moving between items inside an already-open modal.
+  if (wasOpen) history.replaceState({ item: id }, '', target);
+  else history.pushState({ item: id }, '', target);
+}
 function openItem(el) {
-  currentItemId = el.dataset.itemId;
-  document.getElementById('item-dialog-live').href = el.dataset.itemLink;
+  return openItemData(el.dataset.itemId, el.dataset.itemLink);
+}
+function openItemData(id, link) {
+  if (!itemDialog) return;
+  var wasOpen = itemDialog.open;
+  currentItemId = id;
+  document.getElementById('item-dialog-live').href = link || '#';
   var body = document.getElementById('item-dialog-body');
   body.innerHTML = '<p class="muted">loading…</p>';
   var slot = document.getElementById('item-dialog-controls');
   if (slot) slot.replaceChildren();
-  fetch('/items/' + el.dataset.itemId + '/view')
+  fetch('/items/' + id + '/view')
     .then(function (r) { return r.text(); })
     .then(function (html) {
       body.innerHTML = html;
@@ -201,12 +222,58 @@ function openItem(el) {
       // The modal is injected via plain innerHTML, so htmx never processed its
       // elements (e.g. the share button's hx-post). Initialize them here.
       htmx.process(document.getElementById('item-dialog'));
-      markRowRead(el.dataset.itemId);
+      markRowRead(id);
     })
     .catch(function () { body.innerHTML = '<p class="error">could not load item</p>'; });
-  document.getElementById('item-dialog').showModal();
+  itemDialog.showModal();
+  syncItemHash(id, wasOpen);
   return false;
 }
+// openItemById finds an item's rendered row on the page and opens it; when the
+// item isn't in the current list (a deep link to an item on another page) the
+// modal still opens, just without an "open live" link.
+function openItemById(id) {
+  var row = document.getElementById('item-' + id);
+  var anchor = row && row.querySelector('[data-item-id]');
+  if (anchor) { openItem(anchor); return; }
+  openItemData(id, '');
+}
+
+if (itemDialog) {
+  // Opening the modal pushes #item-<id>; closing strips it again (replaceState,
+  // not a navigation) so the URL doesn't keep a stale hash.
+  itemDialog.addEventListener('close', function () {
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    currentItemId = null;
+  });
+  // Clicking outside the item dialog closes it — unless the item embeds a video
+  // (a YouTube/other iframe or a <video> enclosure). There, a stray backdrop tap
+  // would stop playback and lose the viewer's place, especially on mobile.
+  itemDialog.addEventListener('click', function (e) {
+    if (e.target !== itemDialog) return;
+    var body = document.getElementById('item-dialog-body');
+    if (body && body.querySelector('.video-embed, video, audio')) return;
+    itemDialog.close();
+  });
+}
+
+// Browser back/forward reconciles the modal with the hash.
+window.addEventListener('popstate', function () {
+  if (!itemDialog) return;
+  var id = hashItemId();
+  if (id) {
+    if (!itemDialog.open || String(currentItemId) !== id) openItemById(id);
+  } else if (itemDialog.open) {
+    itemDialog.close();
+  }
+});
+
+// A page loaded with #item-<id> opens that item's modal.
+document.addEventListener('DOMContentLoaded', function () {
+  var id = hashItemId();
+  if (id) openItemById(id);
+});
+
 function markRowRead(id) {
   var row = document.getElementById('item-' + id);
   if (!row) return;
