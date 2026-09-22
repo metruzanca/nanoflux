@@ -139,8 +139,10 @@ func TestItemViewLinkPost(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("item view: %d %s", rr.Code, body)
 	}
-	if !strings.Contains(body, `href="`+oembedSrv.URL+`/watch/abc"`) || !strings.Contains(body, `class="external">source`) {
-		t.Fatalf("modal missing source link: %s", body)
+	// The reddit link post's destination ("source") is an entry in the modal's
+	// ⋯ menu, and "open live" (the reddit permalink) is in the meta line.
+	if !strings.Contains(body, `href="`+oembedSrv.URL+`/watch/abc"`) || !strings.Contains(body, `>source</a>`) {
+		t.Fatalf("modal missing source link in the menu: %s", body)
 	}
 	if !strings.Contains(body, `src="https://embed.example/ifr/abc"`) {
 		t.Fatalf("modal missing oembed embed: %s", body)

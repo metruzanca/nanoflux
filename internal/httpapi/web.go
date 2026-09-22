@@ -315,7 +315,6 @@ type itemViewData struct {
 	Title       string
 	AuthorName  string
 	AuthorID    int64
-	FeedTitle   string
 	FeedID      int64
 	PublishedAt string
 	Summary     string
@@ -355,7 +354,6 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		Title:       it.Title,
 		AuthorName:  it.AuthorName,
 		AuthorID:    it.AuthorID,
-		FeedTitle:   it.FeedTitle,
 		FeedID:      it.FeedID,
 		PublishedAt: it.PublishedAt,
 		Summary:     it.Summary,

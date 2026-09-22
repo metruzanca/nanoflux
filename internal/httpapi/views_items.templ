@@ -333,17 +333,14 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 			if d.AuthorName != "" {
 				<a href={ "/authors/" + strconv.FormatInt(d.AuthorID, 10) }>{ d.AuthorName }</a> ·
 			}
-			<a href={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) }>{ d.FeedTitle }</a>
+			<a href={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) }>feed</a>
 			if d.PublishedAt != "" {
 				· { web.TimeFmt(d.Timezone, d.PublishedAt) }
 			}
-			if d.SourceURL != "" {
-				· <a href={ templ.URL(d.SourceURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">source</a>
-			}
+			· <a href={ templ.URL(d.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">open live</a>
 		</p>
 		<div class="item-controls" id="item-dialog-controls-src">
-			@shareControl(d.ID, d.ShareToken)
-			@itemMenu(d.ID, d.FeedID)
+			@itemMenuFull(d.ID, d.FeedID, d.SourceURL, d.ShareToken, true)
 		</div>
 		@itemContent(d, v)
 	</div>
@@ -414,32 +411,44 @@ templ itemContent(d itemViewData, v itemVisuals) {
 	}
 }
 
-// shareControl toggles the public share link for an item. Rendered inside the
-// item modal; re-swapped in place by the share/revoke endpoints.
+// shareControl toggles the public share link for an item, as entries in the
+// item modal's ⋯ menu; re-swapped in place by the share/revoke endpoints.
 templ shareControl(itemID int64, token string) {
-	<div id="item-share" class="item-meta">
+	<div id="item-share" class="share-menu">
 		if token != "" {
-			<span>shared · <a href={ "/shared/" + token } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">link</a></span>
-			<button class="link danger" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/revoke" } hx-target="#item-share" hx-swap="outerHTML">stop sharing</button>
+			<a class="menu-item external" role="menuitem" href={ "/shared/" + token } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">share link</a>
+			<button class="link menu-item danger" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/revoke" } hx-target="#item-share" hx-swap="outerHTML">stop sharing</button>
 		} else {
-			<button class="link" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/share" } hx-target="#item-share" hx-swap="outerHTML">share</button>
+			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/share" } hx-target="#item-share" hx-swap="outerHTML">share</button>
 		}
 	</div>
 }
 
-// itemMenu is the "⋯" action menu on an item card (list/grid) and in the item
-// modal. It opens a dropdown of extra options: "add to list" (fetches the
-// shared lists picker into the layout's dialog), "go to feed", and bulk
-// "mark all before/after as read" for the item's feed. The dropdown is scoped
-// per item via data-item-id so many cards can each have one.
+// itemMenu is the "⋯" action menu on an item card (list/grid). It opens a
+// dropdown of extra options: "add to list", "go to feed", and bulk "mark all
+// before/after as read" for the item's feed. The item modal uses itemMenuFull,
+// which adds the source link and the share control. The dropdown is scoped per
+// item via data-item-id so many cards can each have one.
 templ itemMenu(itemID, feedID int64) {
+	@itemMenuFull(itemID, feedID, "", "", false)
+}
+
+// itemMenuFull renders the ⋯ menu. In the modal (inModal) it also carries the
+// external "source" link (when the item resolves to one) and the share control.
+templ itemMenuFull(itemID, feedID int64, sourceURL, shareToken string, inModal bool) {
 	<div class="item-menu" data-item-id={ strconv.FormatInt(itemID, 10) }>
 		<button type="button" class="link menu-btn" aria-haspopup="true" aria-expanded="false" title="more actions" onclick="toggleItemMenu(event)">@web.Lucide("ellipsis")</button>
 		<div class="menu-pop" role="menu" hidden>
 			<button type="button" class="link menu-item" role="menuitem" onclick="itemMenuAction(event, 'lists')">add to list</button>
 			<a class="menu-item" role="menuitem" href={ "/feeds/" + strconv.FormatInt(feedID, 10) }>go to feed</a>
+			if inModal && sourceURL != "" {
+				<a class="menu-item external" role="menuitem" href={ templ.URL(sourceURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">source</a>
+			}
 			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-before" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">mark all before as read</button>
 			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-after" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">mark all after as read</button>
+			if inModal {
+				@shareControl(itemID, shareToken)
+			}
 		</div>
 	</div>
 }

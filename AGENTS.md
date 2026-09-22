@@ -871,20 +871,29 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   whole left column first and forces the reader to scroll back up.
 - Item modal: `openItem(el)` fetches `/items/{id}/view` into
   `#item-dialog-body` and `markRowRead(id)` flips the row to read. `currentItemId`
-  tracks the open item. The fragment renders the share + ⋯ controls in a
+  tracks the open item. The modal meta renders the author link + the feed link
+  (text "feed", since the feed is often named the same as the author) +
+  timestamp + an external "open live". The ⋯ menu (and, when the item resolves
+  to one, the "source" link and the share control) render in a
   `#item-dialog-controls-src` wrapper inside the (scrollable) body; `openItem`
   relocates that wrapper into the header slot `#item-dialog-controls`, next to
-  "open live" and ✕, so those controls stay pinned while the body scrolls.
+  ✕, so those controls stay pinned while the body scrolls.
+- The item dialog closes **only** via Esc (native `<dialog>`) or the ✕ button.
+  A backdrop/outside click deliberately does **not** close it — an accidental
+  click shouldn't dismiss the item (and would stop embedded video playback).
+  Do not add a backdrop-click close handler.
 - The open item is mirrored in the URL hash `#item-<id>`: opening pushes it
   (subsequent items replace so back/forward move between items rather than
   stacking every open), closing strips it with `replaceState`, and `popstate`
   reconciles the modal. A page loaded with `#item-<id>` opens that item's modal
   on `DOMContentLoaded` (`openItemById`, which falls back to a row-less open when
-  the item isn't in the current list). `openItemData(id, link)` is the shared
-  core.
+  the item isn't in the current list). `openItemData(id)` is the shared core.
 - Item "⋯" menu: the per-item `itemMenu` (`views_items.templ`) sits at the right
   of every card's `.row-actions` (list and masonry grid) and in the item modal.
-  Menus are scoped by `data-item-id` (`toggleItemMenu`/`itemMenuAction`/`closeItemMenus`
+  `itemMenu` delegates to `itemMenuFull`, whose `inModal` flag adds the external
+  "source" link and the share control (the share/revoke endpoints swap the
+  `#item-share` group inside the menu). Menus are scoped by `data-item-id`
+  (`toggleItemMenu`/`itemMenuAction`/`closeItemMenus`
   in app.js), so many cards can each have one. Opening a menu adds `menu-open` to
   the row `<li>` so its dropdown escapes the swipe container's `overflow:hidden`.
   "add to list" fetches `GET /items/{id}/lists` and injects `itemListsDialogInner`
