@@ -135,6 +135,17 @@ func toCollection(c sqlcgen.Collection) Collection {
 	}
 }
 
+func toAuthorLink(l sqlcgen.AuthorLink) AuthorLink {
+	return AuthorLink{
+		ID:        l.ID,
+		UserID:    l.UserID,
+		AuthorID:  l.AuthorID,
+		Label:     l.Label.String,
+		URL:       l.Url,
+		CreatedAt: l.CreatedAt,
+	}
+}
+
 func toSourceIcon(id, userID int64, domain, iconURL string, iconKey, lastFetchedAt sql.NullString, createdAt string) SourceIcon {
 	return SourceIcon{
 		ID:            id,

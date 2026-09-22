@@ -179,6 +179,18 @@ CREATE TABLE source_icons (
 );
 CREATE INDEX idx_source_icons_user ON source_icons(user_id);
 
+-- Plain external bookmarks attached to an author (e.g. a Twitch or Discord
+-- page). Unlike feeds they are never polled and hold no items.
+CREATE TABLE author_links (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id  INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    label      TEXT,
+    url        TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_author_links_author ON author_links(author_id);
+
 CREATE TABLE url_mappings (
     id         INTEGER PRIMARY KEY,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

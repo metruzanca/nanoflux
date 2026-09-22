@@ -967,6 +967,105 @@ func TestAuthorPageHasAddFeedDialog(t *testing.T) {
 	}
 }
 
+func TestAuthorLinks(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+
+	// The author page shows the add-link dialog with an empty list.
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	for _, want := range []string{
+		`id="add-author-link-dialog"`,
+		`hx-post="/authors/` + itoa(a.ID) + `/links"`,
+		"+ add link",
+		"no links yet",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("author page missing %q: %s", want, body)
+		}
+	}
+
+	// Add a labeled link: the response re-renders the list with the new row.
+	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/links", url.Values{
+		"label": {"Twitch"}, "url": {"https://twitch.tv/ThePrimeagen"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("create link: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `href="https://twitch.tv/ThePrimeagen"`) ||
+		!strings.Contains(rr.Body.String(), `class="external"`) ||
+		!strings.Contains(rr.Body.String(), ">Twitch</a>") {
+		t.Fatalf("link list should be external-marked with its label: %s", rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "no links yet") {
+		t.Fatalf("empty-state placeholder should be gone after adding: %s", rr.Body.String())
+	}
+
+	// An unlabeled link renders its URL's hostname as the text.
+	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/links", url.Values{
+		"url": {"https://www.example.com/page"},
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), ">example.com</a>") {
+		t.Fatalf("unlabeled link should fall back to the hostname: %d %s", rr.Code, rr.Body.String())
+	}
+
+	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
+	if len(links) != 2 {
+		t.Fatalf("links persisted: %d", len(links))
+	}
+
+	// The full page now lists both.
+	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if strings.Contains(body, "no links yet") || !strings.Contains(body, "ThePrimeagen") {
+		t.Fatalf("author page should list the links: %s", body)
+	}
+
+	// A missing/invalid url is a visible 400 error.
+	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/links", url.Values{"url": {"nope"}}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `role="alert"`) ||
+		!strings.Contains(rr.Body.String(), "add-link-error") {
+		t.Fatalf("invalid url should render a 400 alert: %d %s", rr.Code, rr.Body.String())
+	}
+	if links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID); len(links) != 2 {
+		t.Fatalf("invalid url should not create a link: %d", len(links))
+	}
+
+	// Delete re-renders the list.
+	rr = doForm(h, "POST", "/links/"+itoa(links[0].ID)+"/delete", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("delete link: %d %s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "ThePrimeagen") {
+		t.Fatalf("deleted link should be gone: %s", rr.Body.String())
+	}
+	if after, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID); len(after) != 1 {
+		t.Fatalf("link not deleted: %d", len(after))
+	}
+}
+
+func TestAuthorLinkScopedToOwner(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	link, _ := s.store.AuthorLinks.Create(u.ID, a.ID, "", "https://example.com")
+
+	// Unknown link id is a 404 (the user can't reach another user's link).
+	if rr := doForm(h, "POST", "/links/999999/delete", url.Values{}, cookie); rr.Code != http.StatusNotFound {
+		t.Fatalf("unknown link delete should 404, got %d", rr.Code)
+	}
+	// Adding to a nonexistent author is a 404.
+	if rr := doForm(h, "POST", "/authors/999999/links", url.Values{"url": {"https://x.dev"}}, cookie); rr.Code != http.StatusNotFound {
+		t.Fatalf("unknown author add should 404, got %d", rr.Code)
+	}
+	if _, err := s.store.AuthorLinks.ByID(u.ID, link.ID); err != nil {
+		t.Fatalf("link should remain: %v", err)
+	}
+}
+
 func TestExternalLinksCarryMarker(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

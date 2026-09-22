@@ -416,6 +416,25 @@ The DB stores object **keys** (`users.avatar_key`, `source_icons.icon_key`).
   check) — a warning renders into `#add-feed-error`. Duplicate titles/home URLs
   are allowed; only the feed URL is the identity.
 
+## Author links
+
+An author can carry **plain external links** (a Twitch/Discord page, a
+homepage) that are bookmarks, not subscriptions. They live in `author_links`
+(schemaV26) and are never polled and hold no items — keeping "feeds" ==
+"polled subscriptions" so OPML export, collections, unread counts, and feed
+editing stay clean.
+
+- The author page's "links" section (above "feeds") has a "+ add link" button →
+  modal (`label` optional + `url` required) posting to `POST
+  /authors/{id}/links`; the new row appends into `#author-links`. Delete is a
+  `✕` per row posting to `POST /links/{id}/delete`, which re-renders
+  `AuthorLinksList`.
+- The label is optional; `web.LinkLabel` falls back to the URL's hostname
+  (minus `www.`) when it's blank. Links are external links and carry
+  `class="external"` (see the links rule above).
+- `AuthorLinkStore` and the `author_links` table cascade on author/user delete;
+  there is no object-storage to purge. The JSON API and OPML ignore links.
+
 ## Environment variables
 
 All application configuration flows through environment variables with a single
