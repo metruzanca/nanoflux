@@ -586,21 +586,27 @@ li.text-card .card-body { flex: 1; min-width: 0; }
 }
 .mode-option[aria-checked="true"] { color: var(--fg); }
 
-/* Grid display mode: a two-column masonry built on the same item rows. The
-   thumbs go full-width so image-heavy feeds shine; text items keep their
-   summary. One column below 720px keeps cards at a reasonable size. */
-ul.items.masonry { columns: 2; column-gap: 1.25rem; }
+/* Grid display mode: a two-column grid built on the same item rows. It lays
+   items out in reading order — left to right, then down — unlike a CSS
+   multi-column layout, which would fill the whole left column before the right
+   and force the reader to scroll back up. The thumbs go full-width so
+   image-heavy feeds shine; text items keep their summary. One column below
+   720px keeps cards at a reasonable size. */
+ul.items.masonry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+  align-items: start;
+}
 ul.items.masonry li {
   display: block;
-  break-inside: avoid;
-  margin: 0 0 1rem;
+  margin: 0;
   padding: 0;
   border-bottom: 1px solid var(--border);
 }
-/* Show each image at its full natural aspect (no cropping): fill the column
+/* Show each image at its full natural aspect (no cropping): fill the cell
    width and let the image's own ratio drive the card height, so grid mode
-   displays as much of the image as possible and the varying heights create a
-   true masonry stagger. */
+   displays as much of the image as possible. */
 ul.items.masonry .thumb,
 ul.items.masonry .thumb--img {
   width: 100%;
@@ -915,8 +921,8 @@ details.feeds-section summary:hover { color: var(--accent); }
 
   .thumb { width: 9rem; }
 
-  /* Narrow screens get a single masonry column so cards keep a usable size. */
-  ul.items.masonry { columns: 1; }
+  /* Narrow screens get a single grid column so cards keep a usable size. */
+  ul.items.masonry { grid-template-columns: 1fr; }
 
   .row { flex-wrap: wrap; }
 }
