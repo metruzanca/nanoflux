@@ -158,6 +158,41 @@ preview all work unchanged.
   serving a login wall, `fetchXProfile` returns an error and the feed fails
   gracefully.
 
+## Instagram profile feeds
+
+Instagram has no public feed/API. `internal/feedparse/instagram.go` scrapes the
+profile page (`instagram.com/<handle>`) and extracts the recent-post grid
+embedded in the web client's Relay payload (`polaris_timeline_connection`).
+`fetchInstagramProfile` runs as a short-circuit inside `feedparse.Fetch` when
+the URL is an Instagram profile, so discovery, the poller, and preview all work
+unchanged (the profile URL is the stored `feed_url`, like X).
+
+- **Crawler user-agent is required.** Instagram serves a login wall with no
+  posts to browser user-agents; only crawler identities get the post grid.
+  `instagramUserAgent` (a Googlebot-compatible string) is a package var. This
+  is the strongest caveat in the codebase: Instagram's `robots.txt` prohibits
+  automated collection, so the scrape is unofficial and can break without
+  notice. On failure `fetchInstagramProfile` returns an error and the feed
+  fails gracefully.
+- Each node gives `pk`, `caption.text` (may be null), the cover thumbnail,
+  `media_type`, and `product_type` (`clips` = reel) — but **not** the shortcode
+  or `taken_at`. Item GUIDs are `instagram:<pk>`.
+- **Shortcode is derived from `pk`** (base64-url-safe alphabet,
+  `instagramShortcode`), giving `https://www.instagram.com/reel/<code>/` for
+  clips and `/p/<code>/` otherwise.
+- **Publish time is derived from `pk`** (`(pk >> 23) + instagramEpoch` ms,
+  `instagramMediaTime`); it can be up to ~a minute before the real `taken_at`,
+  but the date is exact.
+- Thumbnails are stored as the **stable media endpoint**
+  `https://www.instagram.com/p/<code>/media/?size=l` because the cdn URLs are
+  signed and expire; items are never updated after insert (`UpsertItem` does
+  `DO NOTHING`), so a signed URL would rot.
+- The Relay payload node is extracted by string-aware brace matching (captions
+  contain braces) and deduped by `pk`. Only the first grid page (~12 posts) is
+  available; older posts require login, so there is no "load older items"
+  backfill.
+- `instagramProfileHosts` is a package var so tests can inject a mock host.
+
 ## Scraped-site feeds (CSS selectors)
 
 Some sites have no feed at all. When discovery finds none, the add-feed preview

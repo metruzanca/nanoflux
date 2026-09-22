@@ -174,7 +174,7 @@ func xTweets(body []byte, handle string) []Item {
 	for _, t := range tws {
 		out = append(out, Item{
 			GUID:        "tweet:" + t.id,
-			Title:       xPostTitle(t.text),
+			Title:       postTitle(t.text),
 			Link:        "https://x.com/" + handle + "/status/" + t.id,
 			Summary:     t.text,
 			PublishedAt: db.FormatTime(t.when),
@@ -183,8 +183,8 @@ func xTweets(body []byte, handle string) []Item {
 	return out
 }
 
-// xPostTitle derives a list title from a post: the first line, truncated.
-func xPostTitle(text string) string {
+// postTitle derives a list title from a post: the first line, truncated.
+func postTitle(text string) string {
 	title := text
 	if i := strings.IndexByte(title, '\n'); i >= 0 {
 		title = title[:i]

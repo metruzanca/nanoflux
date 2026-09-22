@@ -68,6 +68,9 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 	if isXProfileFeedURL(feedURL) {
 		return fetchXProfile(ctx, feedURL, client)
 	}
+	if isInstagramProfileFeedURL(feedURL) {
+		return fetchInstagramProfile(ctx, feedURL, client)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
