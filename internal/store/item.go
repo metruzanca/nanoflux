@@ -427,6 +427,27 @@ func (s *ItemStore) MarkAfterRead(userID, itemID int64) error {
 	})
 }
 
+// MarkAuthorBeforeRead marks every unread item newer than itemID across all
+// feeds owned by the item's author as read. Used on an author page, where the
+// bulk action spans the author's whole feed set.
+func (s *ItemStore) MarkAuthorBeforeRead(userID, itemID int64) error {
+	return s.q.MarkAuthorItemsBeforeRead(context.Background(), sqlcgen.MarkAuthorItemsBeforeReadParams{
+		ReadAt: ns(db.Now()),
+		ItemID: itemID,
+		UserID: userID,
+	})
+}
+
+// MarkAuthorAfterRead marks every unread item older than itemID across all
+// feeds owned by the item's author as read.
+func (s *ItemStore) MarkAuthorAfterRead(userID, itemID int64) error {
+	return s.q.MarkAuthorItemsAfterRead(context.Background(), sqlcgen.MarkAuthorItemsAfterReadParams{
+		ReadAt: ns(db.Now()),
+		ItemID: itemID,
+		UserID: userID,
+	})
+}
+
 // SetFavorite marks an item as a favorite or not, verifying it belongs to the user.
 func (s *ItemStore) SetFavorite(userID, itemID int64, fav bool) error {
 	res, err := s.q.SetItemFavorite(context.Background(), sqlcgen.SetItemFavoriteParams{

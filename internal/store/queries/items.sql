@@ -125,6 +125,41 @@ WHERE read = 0
   AND (COALESCE(items.published_at, items.fetched_at), items.id) <
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = sqlc.arg('itemID'));
 
+-- name: MarkAuthorItemsBeforeRead :exec
+-- Mark unread items newer than itemID (listed above it, newest first) across
+-- every feed owned by the item's author as read. Used on an author page, where
+-- the bulk action spans all of the author's feeds.
+UPDATE items
+SET read = 1, read_at = sqlc.arg('readAt')
+WHERE read = 0
+  AND feed_id IN (
+    SELECT f.id FROM feeds f
+    WHERE f.user_id = sqlc.arg('userID')
+      AND f.author_id = (
+        SELECT fa.author_id FROM feeds fa
+        JOIN items ia ON ia.feed_id = fa.id
+        WHERE ia.id = sqlc.arg('itemID') AND fa.user_id = sqlc.arg('userID')
+      ))
+  AND (COALESCE(items.published_at, items.fetched_at), items.id) >
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = sqlc.arg('itemID'));
+
+-- name: MarkAuthorItemsAfterRead :exec
+-- Mark unread items older than itemID (listed below it, newest first) across
+-- every feed owned by the item's author as read.
+UPDATE items
+SET read = 1, read_at = sqlc.arg('readAt')
+WHERE read = 0
+  AND feed_id IN (
+    SELECT f.id FROM feeds f
+    WHERE f.user_id = sqlc.arg('userID')
+      AND f.author_id = (
+        SELECT fa.author_id FROM feeds fa
+        JOIN items ia ON ia.feed_id = fa.id
+        WHERE ia.id = sqlc.arg('itemID') AND fa.user_id = sqlc.arg('userID')
+      ))
+  AND (COALESCE(items.published_at, items.fetched_at), items.id) <
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = sqlc.arg('itemID'));
+
 -- name: GetItemByFeedGuid :one
 SELECT id FROM items
 WHERE feed_id = ? AND guid = ?;

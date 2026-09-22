@@ -1626,6 +1626,95 @@ func TestMarkRangeReadHTTP(t *testing.T) {
 	}
 }
 
+// TestMarkRangeReadAuthorScoped asserts that the same bulk action broadens to
+// every feed of the item's author when the request comes from an author page,
+// while staying feed-scoped elsewhere. The page rides on htmx's HX-Current-URL.
+func TestMarkRangeReadAuthorScoped(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	other, _ := s.store.Authors.Create(u.ID, "Other", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
+	f3, _ := s.store.Feeds.Create(u.ID, other.ID, "Elsewhere", "https://e.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "a1", Title: "newest", Link: "https://b.dev/1", PublishedAt: "2026-01-03 00:00:00", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "a2", Title: "middle", Link: "https://b.dev/2", PublishedAt: "2026-01-02 00:00:00", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f2.ID, store.Item{GUID: "b1", Title: "sibling-newer", Link: "https://o.dev/1", PublishedAt: "2026-01-04 00:00:00", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f3.ID, store.Item{GUID: "c1", Title: "foreign", Link: "https://e.dev/1", PublishedAt: "2026-01-05 00:00:00", FetchedAt: db.Now()})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	var middle int64
+	for _, it := range items {
+		if it.Title == "middle" {
+			middle = it.ID
+		}
+	}
+	readState := func(title string) bool {
+		for _, it := range items {
+			if it.Title == title {
+				got, _ := s.store.Items.ByID(u.ID, it.ID)
+				return got.Read
+			}
+		}
+		t.Fatalf("missing item %q", title)
+		return false
+	}
+
+	// From an author page: "before" reaches the author's other feed, not another
+	// author's feed.
+	req := httptest.NewRequest(http.MethodPost, "/items/"+itoa(middle)+"/read-before", nil)
+	req.Header.Set("HX-Current-URL", "http://example.com/authors/"+itoa(a.ID))
+	req.AddCookie(cookie)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("author read-before: %d %s", rr.Code, rr.Body.String())
+	}
+	for _, c := range []struct {
+		title string
+		want  bool
+	}{
+		{"newest", true}, {"middle", false}, {"sibling-newer", true}, {"foreign", false},
+	} {
+		if got := readState(c.title); got != c.want {
+			t.Fatalf("author-scoped read-before: %s read=%v want %v", c.title, got, c.want)
+		}
+	}
+
+	// From a feed page: the action must not touch the author's other feed.
+	other2, _ := s.store.Authors.Create(u.ID, "Metru2", "", "")
+	g, _ := s.store.Feeds.Create(u.ID, other2.ID, "Solo", "https://s.dev/rss.xml", "", "", 900)
+	g2, _ := s.store.Feeds.Create(u.ID, other2.ID, "Solo2", "https://s2.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(g.ID, store.Item{GUID: "d1", Title: "solo-newest", Link: "https://s.dev/1", PublishedAt: "2026-02-03 00:00:00", FetchedAt: db.Now()})
+	s.store.Items.Upsert(g.ID, store.Item{GUID: "d2", Title: "solo-middle", Link: "https://s.dev/2", PublishedAt: "2026-02-02 00:00:00", FetchedAt: db.Now()})
+	s.store.Items.Upsert(g2.ID, store.Item{GUID: "e1", Title: "solo-sibling", Link: "https://s2.dev/1", PublishedAt: "2026-02-04 00:00:00", FetchedAt: db.Now()})
+	soloItems, _ := s.store.Items.List(u.ID, store.ItemFilter{FeedID: g.ID})
+	var soloMiddle int64
+	for _, it := range soloItems {
+		if it.Title == "solo-middle" {
+			soloMiddle = it.ID
+		}
+	}
+	req = httptest.NewRequest(http.MethodPost, "/items/"+itoa(soloMiddle)+"/read-before", nil)
+	req.Header.Set("HX-Current-URL", "http://example.com/feeds/"+itoa(g.ID))
+	req.AddCookie(cookie)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("feed read-before: %d", rr.Code)
+	}
+	all, _ := s.store.Items.List(u.ID, store.ItemFilter{AuthorID: other2.ID})
+	for _, it := range all {
+		if it.Title == "solo-sibling" && it.Read {
+			t.Fatalf("feed-scoped read-before must not touch the author's other feed")
+		}
+		if it.Title == "solo-newest" && !it.Read {
+			t.Fatalf("feed-scoped read-before should read the newer item in the feed")
+		}
+	}
+}
+
 func TestFeedEditDeleteFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

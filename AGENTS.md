@@ -604,8 +604,12 @@ keep the plain-table declaration in sync with the virtual table's columns.
 **Bulk range-read.** `MarkItemsBeforeRead`/`MarkItemsAfterRead` mark every
 unread item in the **same feed** as the target that is newer (before) or older
 (after) than it — the list order is `COALESCE(published_at, fetched_at), id`
-DESC. They are deliberately feed-scoped (not whole-list), so the `⋯` menu's
-"mark all before/after as read" is unambiguous on any page.
+DESC. On an **author page** the identical action broadens to every feed of the
+item's author (`MarkAuthorItemsBeforeRead`/`MarkAuthorItemsAfterRead`); the
+handler (`markRangeRead`) picks the variant from htmx's `HX-Current-URL` via
+`isAuthorPageURL` (`/authors/{id}`), so a feed page stays feed-scoped while an
+author page is author-wide. Both are range-scoped (not whole-list), so the `⋯`
+menu's "mark all before/after as read" is unambiguous on any page.
 
 **Sort direction.** Item lists are newest-first by default; a `?dir=asc` param
 flips them oldest-first (`ItemFilter.Ascending`). `ListPage` picks `ListItems` vs
@@ -902,7 +906,8 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   "go to feed" is a plain internal link to `/feeds/{feedID}` (the feed name is
   no longer in the card meta, so this is how a card reaches its feed).
   "mark all before/after as read" POSTs `/items/{id}/read-before|after` and reloads
-  on success.
+  on success; the range is feed-scoped on a feed page and author-wide on an
+  author page (see the store-layer bulk range-read note).
 - User dropdown: `toggleUserMenu` + outside-click and Escape handlers.
 - Keyboard: ArrowLeft/Right move through the item list while the modal is open;
   `j`/`k` (or arrows) move an `.active-row` cursor, `o`/Enter open, `v` opens

@@ -774,6 +774,65 @@ func (q *Queries) MarkAllItemsUnread(ctx context.Context, arg MarkAllItemsUnread
 	return err
 }
 
+const markAuthorItemsAfterRead = `-- name: MarkAuthorItemsAfterRead :exec
+UPDATE items
+SET read = 1, read_at = ?1
+WHERE read = 0
+  AND feed_id IN (
+    SELECT f.id FROM feeds f
+    WHERE f.user_id = ?2
+      AND f.author_id = (
+        SELECT fa.author_id FROM feeds fa
+        JOIN items ia ON ia.feed_id = fa.id
+        WHERE ia.id = ?3 AND fa.user_id = ?2
+      ))
+  AND (COALESCE(items.published_at, items.fetched_at), items.id) <
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
+`
+
+type MarkAuthorItemsAfterReadParams struct {
+	ReadAt sql.NullString `json:"readAt"`
+	UserID int64          `json:"userID"`
+	ItemID int64          `json:"itemID"`
+}
+
+// Mark unread items older than itemID (listed below it, newest first) across
+// every feed owned by the item's author as read.
+func (q *Queries) MarkAuthorItemsAfterRead(ctx context.Context, arg MarkAuthorItemsAfterReadParams) error {
+	_, err := q.db.ExecContext(ctx, markAuthorItemsAfterRead, arg.ReadAt, arg.UserID, arg.ItemID)
+	return err
+}
+
+const markAuthorItemsBeforeRead = `-- name: MarkAuthorItemsBeforeRead :exec
+UPDATE items
+SET read = 1, read_at = ?1
+WHERE read = 0
+  AND feed_id IN (
+    SELECT f.id FROM feeds f
+    WHERE f.user_id = ?2
+      AND f.author_id = (
+        SELECT fa.author_id FROM feeds fa
+        JOIN items ia ON ia.feed_id = fa.id
+        WHERE ia.id = ?3 AND fa.user_id = ?2
+      ))
+  AND (COALESCE(items.published_at, items.fetched_at), items.id) >
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
+`
+
+type MarkAuthorItemsBeforeReadParams struct {
+	ReadAt sql.NullString `json:"readAt"`
+	UserID int64          `json:"userID"`
+	ItemID int64          `json:"itemID"`
+}
+
+// Mark unread items newer than itemID (listed above it, newest first) across
+// every feed owned by the item's author as read. Used on an author page, where
+// the bulk action spans all of the author's feeds.
+func (q *Queries) MarkAuthorItemsBeforeRead(ctx context.Context, arg MarkAuthorItemsBeforeReadParams) error {
+	_, err := q.db.ExecContext(ctx, markAuthorItemsBeforeRead, arg.ReadAt, arg.UserID, arg.ItemID)
+	return err
+}
+
 const markItemsAfterRead = `-- name: MarkItemsAfterRead :exec
 UPDATE items
 SET read = 1, read_at = ?1
