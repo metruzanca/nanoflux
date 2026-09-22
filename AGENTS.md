@@ -916,10 +916,12 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   author page (see the store-layer bulk range-read note).
 - User dropdown: `toggleUserMenu` + outside-click and Escape handlers.
 - Keyboard: ArrowLeft/Right move through the item list while the modal is open;
-  `j`/`k` (or arrows) move an `.active-row` cursor, `o`/Enter open, `v` opens
-  the original, `s` favorite, `m` read toggle, `g`/`G` first/last, `?` shows the
-  shortcut sheet; `/` focuses the search box. `htmx:afterSwap` re-adds
-  `.active-row` after a row is swapped.
+  `j`/`k` move an `.active-row` cursor, `o`/Enter open, `v` opens the original,
+  `s` favorite, `m` read toggle, `g`/`G` first/last, `?` shows the shortcut
+  sheet; `/` focuses the search box. ArrowUp/ArrowDown move the cursor only when
+  the modal is closed — while reading a post the browser scrolls the body, so
+  the arrows are deliberately not captured (use `j`/`k` to move between items).
+  `htmx:afterSwap` re-adds `.active-row` after a row is swapped.
 - Command palette: `ctrl/⌘+p` opens `#command-palette` (navigation + a few
   actions: add author / new collection / new list, export OPML, mark all read,
   log out; `admin` only when `body[data-admin]`), `ctrl/⌘+shift+p` opens
