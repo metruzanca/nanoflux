@@ -307,18 +307,19 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
 }
 
 .src-icon {
-  width: 1em;
-  height: 1em;
+  width: 16px;
+  height: 16px;
   vertical-align: -0.125em;
   color: var(--muted);
   margin-right: 0.3em;
   flex: none;
 }
 
-/* Inline Lucide glyphs size to the surrounding text. */
+/* Inline Lucide glyphs are a fixed 16px so icon buttons keep a usable hit
+   target regardless of the surrounding font size (e.g. .small). */
 .ic {
-  width: 1em;
-  height: 1em;
+  width: 16px;
+  height: 16px;
   vertical-align: -0.125em;
   flex: none;
 }
@@ -527,7 +528,7 @@ li.text-card .card-body { flex: 1; min-width: 0; }
   cursor: pointer;
 }
 .mode-btn:hover { border-color: var(--accent); color: var(--fg); }
-.mode-btn svg { width: 1em; height: 1em; }
+.mode-btn svg { width: 16px; height: 16px; }
 .pick-label { color: var(--fg); }
 .pick-ic[hidden], .pick-label[hidden] { display: none; }
 
@@ -559,7 +560,7 @@ li.text-card .card-body { flex: 1; min-width: 0; }
   white-space: nowrap;
   cursor: pointer;
 }
-.mode-option svg { width: 1em; height: 1em; flex: none; }
+.mode-option svg { width: 16px; height: 16px; flex: none; }
 .mode-option:hover {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--fg);
@@ -607,8 +608,8 @@ ul.items.masonry .item-summary { -webkit-line-clamp: 3; line-clamp: 3; }
 #load-more:hover { border-color: var(--accent); }
 
 .star {
-  width: 1em;
-  height: 1em;
+  width: 16px;
+  height: 16px;
   vertical-align: -0.125em;
   color: var(--muted);
 }
