@@ -71,7 +71,7 @@ func TestAuthorRowsShowAvatar(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	s.store.Authors.Create(u.ID, "Metru", "", "https://example.com/favicon.png", "")
+	s.store.Authors.Create(u.ID, "Metru", "https://example.com/favicon.png", "")
 
 	rr := doGet(h, "/authors", cookie)
 	body := rr.Body.String()

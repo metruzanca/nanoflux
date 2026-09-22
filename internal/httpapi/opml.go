@@ -196,7 +196,7 @@ func (s *Server) opmlImport(w http.ResponseWriter, r *http.Request) {
 		}
 		authorID, ok := authorsByName[authorName]
 		if !ok {
-			a, err := s.store.Authors.Create(u.ID, authorName, homeURL, "", "")
+			a, err := s.store.Authors.Create(u.ID, authorName, "", "")
 			if err != nil {
 				log.Error("opml import author", "name", authorName, "err", err)
 				failed++

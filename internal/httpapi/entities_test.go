@@ -12,7 +12,7 @@ func TestAPIEntities(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	coll, _ := s.store.Collections.Create(u.ID, "Dev")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 
@@ -53,7 +53,7 @@ func TestAPIEntitiesScopedToUser(t *testing.T) {
 
 	// A second user's entities must not appear.
 	other, _ := s.store.Users.Create("bob", "hash")
-	oa, _ := s.store.Authors.Create(other.ID, "BobAuthor", "", "", "")
+	oa, _ := s.store.Authors.Create(other.ID, "BobAuthor", "", "")
 	s.store.Collections.Create(other.ID, "BobCollection")
 	s.store.Feeds.Create(other.ID, oa.ID, "BobFeed", "https://bob.dev/rss.xml", "", "", 900)
 

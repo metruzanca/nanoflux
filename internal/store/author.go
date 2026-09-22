@@ -13,7 +13,6 @@ type Author struct {
 	ID            int64
 	UserID        int64
 	Name          string
-	URL           string
 	AvatarURL     string
 	AvatarKey     string
 	LastFetchedAt string
@@ -30,11 +29,10 @@ type AuthorWithCount struct {
 
 type AuthorStore struct{ q *sqlcgen.Queries }
 
-func (s *AuthorStore) Create(userID int64, name, url, avatarURL, description string) (Author, error) {
+func (s *AuthorStore) Create(userID int64, name, avatarURL, description string) (Author, error) {
 	a, err := s.q.CreateAuthor(context.Background(), sqlcgen.CreateAuthorParams{
 		UserID:      userID,
 		Name:        name,
-		Url:         ns(url),
 		AvatarUrl:   ns(avatarURL),
 		Description: ns(description),
 	})
@@ -97,7 +95,6 @@ func (s *AuthorStore) ListWithFeedCount(userID int64) ([]AuthorWithCount, error)
 				ID:            r.ID,
 				UserID:        r.UserID,
 				Name:          r.Name,
-				Url:           r.Url,
 				AvatarUrl:     r.AvatarUrl,
 				AvatarKey:     r.AvatarKey,
 				LastFetchedAt: r.LastFetchedAt,
@@ -117,10 +114,9 @@ func (s *AuthorStore) Count() (int, error) {
 	return int(n), err
 }
 
-func (s *AuthorStore) Update(userID, id int64, name, url, avatarURL, description string) error {
+func (s *AuthorStore) Update(userID, id int64, name, avatarURL, description string) error {
 	res, err := s.q.UpdateAuthor(context.Background(), sqlcgen.UpdateAuthorParams{
 		Name:        name,
-		Url:         ns(url),
 		AvatarUrl:   ns(avatarURL),
 		Description: ns(description),
 		ID:          id,

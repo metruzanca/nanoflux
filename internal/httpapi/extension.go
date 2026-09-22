@@ -50,7 +50,7 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 		}
 		authorName = a.Name
 	} else {
-		a, err := s.store.Authors.Create(u.ID, title, homeURL, s.pageIconURL(ctx, pageURL), "")
+		a, err := s.store.Authors.Create(u.ID, title, s.pageIconURL(ctx, pageURL), "")
 		if err != nil {
 			return apiFeed{}, err
 		}

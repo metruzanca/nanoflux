@@ -123,7 +123,7 @@ func TestItemViewLinkPost(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "t3_1abcde", Title: "Mittens enjoys a sunny nap",
@@ -178,7 +178,7 @@ func TestItemViewLinkPostFromSummary(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "t3_1abcde", Title: "Mittens enjoys a sunny nap",
@@ -272,7 +272,7 @@ func TestItemViewGallery(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "t3_1fghij", Title: "Whiskers at golden hour",
@@ -316,7 +316,7 @@ func TestItemViewGalleryFallback(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "t3_1fghij", Title: "Whiskers at golden hour",
@@ -351,7 +351,7 @@ func TestItemViewLinkPostFallback(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "t3_1abcde", Title: "Mittens enjoys a sunny nap",

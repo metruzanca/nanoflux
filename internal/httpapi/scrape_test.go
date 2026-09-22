@@ -132,7 +132,7 @@ func TestScrapeFeedCreatePersistsConfig(t *testing.T) {
 	s, h, cookie, page := scrapeTestServer(t)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Scraper", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Scraper", "", "")
 
 	rr := doForm(h, "POST", "/feeds", url.Values{
 		"kind": {"scrape"}, "title": {"Scraped"}, "feed_url": {page.URL},
@@ -160,7 +160,7 @@ func TestScrapeFeedCreateRequiresItemSelector(t *testing.T) {
 	s, h, cookie, page := scrapeTestServer(t)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Scraper", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Scraper", "", "")
 
 	rr := doForm(h, "POST", "/feeds", url.Values{
 		"kind": {"scrape"}, "title": {"Scraped"}, "feed_url": {page.URL},
@@ -178,7 +178,7 @@ func TestScrapeFeedEditShowsSelectors(t *testing.T) {
 	s, h, cookie, page := scrapeTestServer(t)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Scraper", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Scraper", "", "")
 	f, _ := s.store.Feeds.CreateScrape(u.ID, a.ID, "Scraped", page.URL, page.URL, "", `{"item":"article","link":"h2 a"}`, 900)
 
 	body := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie).Body.String()
@@ -194,7 +194,7 @@ func TestScrapeFeedUpdatePersistsConfig(t *testing.T) {
 	s, h, cookie, page := scrapeTestServer(t)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Scraper", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Scraper", "", "")
 	f, _ := s.store.Feeds.CreateScrape(u.ID, a.ID, "Scraped", page.URL, page.URL, "", `{"item":"article"}`, 900)
 
 	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/edit", url.Values{

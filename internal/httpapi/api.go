@@ -197,7 +197,6 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		AuthorID int64  `json:"author_id"`
 		Author   *struct {
 			Name string `json:"name"`
-			URL  string `json:"url"`
 		} `json:"author,omitempty"`
 		CollectionID int64 `json:"collection_id"`
 	}
@@ -235,7 +234,7 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "author name required"})
 			return
 		}
-		a, err := s.store.Authors.Create(u.ID, req.Author.Name, req.Author.URL, "", "")
+		a, err := s.store.Authors.Create(u.ID, req.Author.Name, "", "")
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "create author failed"})
 			return
@@ -243,7 +242,7 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		authorID = a.ID
 	}
 	if authorID == 0 {
-		a, err := s.store.Authors.Create(u.ID, title, homeURL, "", "")
+		a, err := s.store.Authors.Create(u.ID, title, "", "")
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "create author failed"})
 			return

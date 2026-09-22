@@ -21,7 +21,7 @@ func TestAuthorAvatarRefresh(t *testing.T) {
 	defer upstream.Close()
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, err := s.store.Authors.Create(u.ID, "Metru", "", upstream.URL+"/avatar.png", "")
+	a, err := s.store.Authors.Create(u.ID, "Metru", upstream.URL+"/avatar.png", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestAuthorAvatarRefreshErrors(t *testing.T) {
 	defer bad.Close()
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", bad.URL, "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", bad.URL, "")
 	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/avatar-refresh", url.Values{}, cookie)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("non-image refresh: %d", rr.Code)
@@ -102,7 +102,7 @@ func TestAuthorAvatarRefreshErrors(t *testing.T) {
 	}
 
 	// No avatar url set -> 400 with a visible message.
-	b, _ := s.store.Authors.Create(u.ID, "NoAvatar", "", "", "")
+	b, _ := s.store.Authors.Create(u.ID, "NoAvatar", "", "")
 	rr = doForm(h, "POST", "/authors/"+itoa(b.ID)+"/avatar-refresh", url.Values{}, cookie)
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "set an avatar url first") {
 		t.Fatalf("missing avatar url: %d %s", rr.Code, rr.Body.String())
@@ -130,7 +130,7 @@ func TestAuthorAvatarPurgedOnDeleteAndURLChange(t *testing.T) {
 	defer upstreamC.Close()
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", upstreamA.URL, "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", upstreamA.URL, "")
 
 	// Deleting an author purges its cached object.
 	doForm(h, "POST", "/authors/"+itoa(a.ID)+"/avatar-refresh", url.Values{}, cookie)
@@ -141,7 +141,7 @@ func TestAuthorAvatarPurgedOnDeleteAndURLChange(t *testing.T) {
 
 	// Changing avatar_url on update replaces the object at the same key: the
 	// stale blob is purged, then the new source is cached in place.
-	a, _ = s.store.Authors.Create(u.ID, "Metru", "", upstreamB.URL, "")
+	a, _ = s.store.Authors.Create(u.ID, "Metru", upstreamB.URL, "")
 	doForm(h, "POST", "/authors/"+itoa(a.ID)+"/avatar-refresh", url.Values{}, cookie)
 	doForm(h, "POST", "/authors/"+itoa(a.ID)+"/edit", url.Values{
 		"name":       {"Metru"},

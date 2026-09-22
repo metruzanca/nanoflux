@@ -15,7 +15,7 @@ import (
 func homeFixture(t *testing.T, s *Server) (u store.User, cats, quiet store.Collection) {
 	t.Helper()
 	u, _ = s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	cats, _ = s.store.Collections.Create(u.ID, "cats")
 	quiet, _ = s.store.Collections.Create(u.ID, "quiet")
@@ -79,7 +79,7 @@ func TestHomeConfigScopedToUser(t *testing.T) {
 	u, _, _ := homeFixture(t, s)
 
 	other, _ := s.store.Users.Create("bob", "hash")
-	oa, _ := s.store.Authors.Create(other.ID, "Bob", "", "", "")
+	oa, _ := s.store.Authors.Create(other.ID, "Bob", "", "")
 	of, _ := s.store.Feeds.Create(other.ID, oa.ID, "BobFeed", "https://bob.dev/rss.xml", "", "", 900)
 	oc, _ := s.store.Collections.Create(other.ID, "bobcol")
 	s.store.Collections.AddFeed(other.ID, oc.ID, of.ID)
