@@ -306,7 +306,7 @@ func TestUserCreateErrors(t *testing.T) {
 func TestFeedList(t *testing.T) {
 	h := newCLI(t)
 	u := createUser(t, h.st, "alice")
-	a, _ := h.st.Authors.Create(u.ID, "Example", "", "", "")
+	a, _ := h.st.Authors.Create(u.ID, "Example", "", "")
 	if _, err := h.st.Feeds.Create(u.ID, a.ID, "Example Blog", "https://example.com/feed.xml", "https://example.com", "nsfw description here", 900); err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +328,7 @@ func TestFeedList(t *testing.T) {
 func TestFeedListMarksErrors(t *testing.T) {
 	h := newCLI(t)
 	u := createUser(t, h.st, "alice")
-	a, _ := h.st.Authors.Create(u.ID, "Broken", "", "", "")
+	a, _ := h.st.Authors.Create(u.ID, "Broken", "", "")
 	f, err := h.st.Feeds.Create(u.ID, a.ID, "Broken", "https://broken.dev/feed.xml", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
@@ -351,7 +351,7 @@ func TestBackupRestoreRoundtrip(t *testing.T) {
 
 	h := newCLIAt(t, dbPath, fsDir)
 	u := createUser(t, h.st, "alice")
-	a, _ := h.st.Authors.Create(u.ID, "Example", "", "", "")
+	a, _ := h.st.Authors.Create(u.ID, "Example", "", "")
 	if _, err := h.st.Feeds.Create(u.ID, a.ID, "Example", "https://example.com/feed.xml", "", "", 900); err != nil {
 		t.Fatal(err)
 	}

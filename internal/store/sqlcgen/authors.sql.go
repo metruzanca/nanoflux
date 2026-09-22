@@ -22,15 +22,14 @@ func (q *Queries) CountAllAuthors(ctx context.Context) (int64, error) {
 }
 
 const createAuthor = `-- name: CreateAuthor :one
-INSERT INTO authors (user_id, name, url, avatar_url, description)
-VALUES (?, ?, ?, ?, ?)
-RETURNING id, user_id, name, url, avatar_url, avatar_key, last_fetched_at, description, created_at
+INSERT INTO authors (user_id, name, avatar_url, description)
+VALUES (?, ?, ?, ?)
+RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, created_at
 `
 
 type CreateAuthorParams struct {
 	UserID      int64          `json:"user_id"`
 	Name        string         `json:"name"`
-	Url         sql.NullString `json:"url"`
 	AvatarUrl   sql.NullString `json:"avatar_url"`
 	Description sql.NullString `json:"description"`
 }
@@ -39,7 +38,6 @@ func (q *Queries) CreateAuthor(ctx context.Context, arg CreateAuthorParams) (Aut
 	row := q.db.QueryRowContext(ctx, createAuthor,
 		arg.UserID,
 		arg.Name,
-		arg.Url,
 		arg.AvatarUrl,
 		arg.Description,
 	)
@@ -48,7 +46,6 @@ func (q *Queries) CreateAuthor(ctx context.Context, arg CreateAuthorParams) (Aut
 		&i.ID,
 		&i.UserID,
 		&i.Name,
-		&i.Url,
 		&i.AvatarUrl,
 		&i.AvatarKey,
 		&i.LastFetchedAt,
@@ -73,7 +70,7 @@ func (q *Queries) DeleteAuthor(ctx context.Context, arg DeleteAuthorParams) (sql
 }
 
 const getAuthor = `-- name: GetAuthor :one
-SELECT id, user_id, name, url, avatar_url, avatar_key, last_fetched_at, description, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, created_at
 FROM authors
 WHERE id = ? AND user_id = ?
 `
@@ -90,7 +87,6 @@ func (q *Queries) GetAuthor(ctx context.Context, arg GetAuthorParams) (Author, e
 		&i.ID,
 		&i.UserID,
 		&i.Name,
-		&i.Url,
 		&i.AvatarUrl,
 		&i.AvatarKey,
 		&i.LastFetchedAt,
@@ -101,7 +97,7 @@ func (q *Queries) GetAuthor(ctx context.Context, arg GetAuthorParams) (Author, e
 }
 
 const getAuthorByName = `-- name: GetAuthorByName :one
-SELECT id, user_id, name, url, avatar_url, avatar_key, last_fetched_at, description, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, created_at
 FROM authors
 WHERE user_id = ? AND name = ? COLLATE NOCASE
 `
@@ -118,7 +114,6 @@ func (q *Queries) GetAuthorByName(ctx context.Context, arg GetAuthorByNameParams
 		&i.ID,
 		&i.UserID,
 		&i.Name,
-		&i.Url,
 		&i.AvatarUrl,
 		&i.AvatarKey,
 		&i.LastFetchedAt,
@@ -129,7 +124,7 @@ func (q *Queries) GetAuthorByName(ctx context.Context, arg GetAuthorByNameParams
 }
 
 const listAuthors = `-- name: ListAuthors :many
-SELECT id, user_id, name, url, avatar_url, avatar_key, last_fetched_at, description, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, created_at
 FROM authors
 WHERE user_id = ?
 ORDER BY name
@@ -148,7 +143,6 @@ func (q *Queries) ListAuthors(ctx context.Context, userID int64) ([]Author, erro
 			&i.ID,
 			&i.UserID,
 			&i.Name,
-			&i.Url,
 			&i.AvatarUrl,
 			&i.AvatarKey,
 			&i.LastFetchedAt,
@@ -197,7 +191,7 @@ func (q *Queries) ListAuthorsAvatarKeys(ctx context.Context, userID int64) ([]sq
 }
 
 const listAuthorsWithFeedCount = `-- name: ListAuthorsWithFeedCount :many
-SELECT a.id, a.user_id, a.name, a.url, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.created_at,
+SELECT a.id, a.user_id, a.name, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.created_at,
        COUNT(DISTINCT f.id) AS feed_count,
        COUNT(DISTINCT i.id) AS unread_count
 FROM authors a
@@ -212,7 +206,6 @@ type ListAuthorsWithFeedCountRow struct {
 	ID            int64          `json:"id"`
 	UserID        int64          `json:"user_id"`
 	Name          string         `json:"name"`
-	Url           sql.NullString `json:"url"`
 	AvatarUrl     sql.NullString `json:"avatar_url"`
 	AvatarKey     sql.NullString `json:"avatar_key"`
 	LastFetchedAt sql.NullString `json:"last_fetched_at"`
@@ -235,7 +228,6 @@ func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([
 			&i.ID,
 			&i.UserID,
 			&i.Name,
-			&i.Url,
 			&i.AvatarUrl,
 			&i.AvatarKey,
 			&i.LastFetchedAt,
@@ -281,13 +273,12 @@ func (q *Queries) SetAuthorAvatarKey(ctx context.Context, arg SetAuthorAvatarKey
 
 const updateAuthor = `-- name: UpdateAuthor :execresult
 UPDATE authors
-SET name = ?, url = ?, avatar_url = ?, description = ?
+SET name = ?, avatar_url = ?, description = ?
 WHERE id = ? AND user_id = ?
 `
 
 type UpdateAuthorParams struct {
 	Name        string         `json:"name"`
-	Url         sql.NullString `json:"url"`
 	AvatarUrl   sql.NullString `json:"avatar_url"`
 	Description sql.NullString `json:"description"`
 	ID          int64          `json:"id"`
@@ -297,7 +288,6 @@ type UpdateAuthorParams struct {
 func (q *Queries) UpdateAuthor(ctx context.Context, arg UpdateAuthorParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, updateAuthor,
 		arg.Name,
-		arg.Url,
 		arg.AvatarUrl,
 		arg.Description,
 		arg.ID,

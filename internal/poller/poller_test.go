@@ -52,7 +52,7 @@ func TestPollOneRecordsNextPageURL(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
 
 	srv := paginatedServer(3)
 	defer srv.Close()
@@ -99,7 +99,7 @@ func TestPollOneAdaptiveInterval(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
 
 	srv := cadenceServer(t, 2*time.Hour, 0)
 	defer srv.Close()
@@ -131,7 +131,7 @@ func TestPollOneStaleBacksOff(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
 
 	srv := cadenceServer(t, 2*time.Hour, 8*24*time.Hour)
 	defer srv.Close()
@@ -161,7 +161,7 @@ func TestPollOneKeepsCursorOnRoutinePoll(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
 
 	srv := paginatedServer(3)
 	defer srv.Close()
@@ -198,7 +198,7 @@ func TestPollOlderImportsAndExhausts(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
 
 	srv := paginatedServer(2)
 	defer srv.Close()
@@ -241,7 +241,7 @@ func TestPollOlderRespectsPageCap(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
 
 	srv := paginatedServer(7)
 	defer srv.Close()
@@ -284,7 +284,7 @@ func TestPollOlderStopsOnEmptyPage(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("page") != "" {
@@ -332,7 +332,7 @@ func TestPollOne(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
 
 	var body = `<?xml version="1.0"?>
 <rss version="2.0">
@@ -425,7 +425,7 @@ func TestPollOneAppliesFilters(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
 
 	var body = `<?xml version="1.0"?>
 <rss version="2.0"><channel>
@@ -491,7 +491,7 @@ func TestPollDue(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
 
 	body := `<?xml version="1.0"?><rss version="2.0"><channel><title>B</title><item><guid>1</guid><title>One</title><link>https://b.dev/1</link></item></channel></rss>`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -547,7 +547,7 @@ func TestPollOneRecordsLastError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a, _ := st.Authors.Create(u.ID, "Broken", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Broken", "", "")
 	f, _ := st.Feeds.Create(u.ID, a.ID, "Broken", srv.URL, "", "", 900)
 	p := New(st, time.Minute, 1)
 
@@ -588,7 +588,7 @@ func TestPollOneScrapesScrapeKindFeed(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Scraper", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Scraper", "", "")
 
 	body := `<!DOCTYPE html><html><head><title>Scrape Blog</title></head><body>
 <article><h2><a href="/p/1">One</a></h2><time datetime="2026-02-01T09:00:00Z"></time></article>
@@ -634,7 +634,7 @@ func TestPollOneScrapeBadConfigFailsGracefully(t *testing.T) {
 	}
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
-	a, _ := st.Authors.Create(u.ID, "Scraper", "", "", "")
+	a, _ := st.Authors.Create(u.ID, "Scraper", "", "")
 
 	f, _ := st.Feeds.CreateScrape(u.ID, a.ID, "Broken", "https://x.dev/page", "https://x.dev", "", "not json", 900)
 	p := New(st, time.Minute, 1)

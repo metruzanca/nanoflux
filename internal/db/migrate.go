@@ -38,6 +38,7 @@ var migrations = []migration{
 	{25, schemaV25},
 	{26, schemaV26},
 	{27, schemaV27},
+	{28, schemaV28},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -455,6 +456,13 @@ CREATE INDEX idx_author_links_author ON author_links(author_id);
 // The column is a raw string; the HTTP layer parses it (like scrape_config).
 const schemaV27 = `
 ALTER TABLE users ADD COLUMN home_config TEXT;
+`
+
+// schemaV28 drops the author's plain url column. An author is now identified by
+// their name and carries only feeds and external links; nothing else referenced
+// the column.
+const schemaV28 = `
+ALTER TABLE authors DROP COLUMN url;
 `
 
 // Migrate applies any pending migrations in order, recording each in

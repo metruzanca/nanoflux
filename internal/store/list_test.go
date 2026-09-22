@@ -9,7 +9,7 @@ import (
 
 func mustFeedWithItem(t *testing.T, s *Store, u User, title, guid string) (Feed, Item) {
 	t.Helper()
-	a, err := s.Authors.Create(u.ID, "Blog", "", "", "")
+	a, err := s.Authors.Create(u.ID, "Blog", "", "")
 	if err != nil {
 		t.Fatalf("create author: %v", err)
 	}

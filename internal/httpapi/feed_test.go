@@ -18,7 +18,7 @@ func TestFeedErrorSurface(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Author", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
 	f, err := s.store.Feeds.Create(u.ID, a.ID, "Broken Feed", "https://broken.dev/feed.xml", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestFeedErrorHiddenAfterSuccess(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Author", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
 	f, err := s.store.Feeds.Create(u.ID, a.ID, "Fine Feed", "https://fine.dev/feed.xml", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
@@ -60,7 +60,7 @@ func TestFeedOlder(t *testing.T) {
 	s.SetPoller(poller.New(s.store, time.Minute, 1))
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Author", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
 
 	// Page 2 carries the older history; any other page (incl. 3) is empty,
 	// like a real feed past its end.
@@ -129,7 +129,7 @@ func TestFeedOlderNoButtonWhenNotPaginated(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Author", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Flat", "https://flat.dev/feed.xml", "", "", 900)
 	body := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
 	if strings.Contains(body, "load older items") {
@@ -142,7 +142,7 @@ func TestFeedOlderFetchError(t *testing.T) {
 	s.SetPoller(poller.New(s.store, time.Minute, 1))
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Author", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Broken", "https://broken.dev/feed.xml", "", "", 900)
 	// Point the cursor at an unreachable page.
 	if err := s.store.Feeds.SetNextPageURL(f.ID, "http://127.0.0.1:1/feed?page=2"); err != nil {
@@ -162,7 +162,7 @@ func TestFeedCreatePollsImmediately(t *testing.T) {
 	s.SetPoller(poller.New(s.store, time.Minute, 1))
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Author", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>Blog</title><item><guid>g1</guid><title>Fresh</title><link>https://b.dev/1</link></item></channel></rss>`)

@@ -63,7 +63,7 @@ func TestAPILoginAndUnread(t *testing.T) {
 	token := apiToken(t, s, h, "alice", "secret")
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "A", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", FetchedAt: db.Now()})
 
@@ -132,7 +132,7 @@ func TestAPISave(t *testing.T) {
 	// Save with a new author.
 	rr := apiJSON(h, "POST", "/api/save", token, map[string]any{
 		"feed_url": feedSrv.URL,
-		"author":   map[string]string{"name": "Metru", "url": "https://metru.dev"},
+		"author":   map[string]string{"name": "Metru"},
 	})
 	if rr.Code != http.StatusOK {
 		t.Fatalf("save: %d %s", rr.Code, rr.Body.String())
@@ -304,7 +304,7 @@ func TestAPIDiscoverSavedFlag(t *testing.T) {
 	s, h := newTestServer(t)
 	token := apiToken(t, s, h, "alice", "secret")
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	feedSrv := feedServer(t)
 	defer feedSrv.Close()
 
@@ -336,7 +336,7 @@ func TestAPIExtFeedForm(t *testing.T) {
 	feedSrv := feedServer(t)
 	defer feedSrv.Close()
 	u, _ := s.store.Users.ByUsername("alice")
-	s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	s.store.Authors.Create(u.ID, "Metru", "", "")
 
 	rr := doForm(h, "POST", "/api/ext/feed-form", url.Values{
 		"url": {feedSrv.URL}, "feed_url": {feedSrv.URL}, "title": {"My Feed"},
@@ -363,7 +363,7 @@ func TestAPIExtSave(t *testing.T) {
 	defer feedSrv.Close()
 
 	// Saving with a selected author assigns the feed to it.
-	metru, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	metru, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	rr := doForm(h, "POST", "/api/ext/save", url.Values{
 		"feed_url": {feedSrv.URL}, "title": {"My Feed"}, "author_id": {itoa(metru.ID)},
 	}, cookie)
@@ -388,7 +388,7 @@ func TestAPIExtSave(t *testing.T) {
 func TestSavedFeedsNoFalsePositive(t *testing.T) {
 	s, _ := newTestServer(t)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	// A saved feed whose home_url is the page, but a different feed_url.
 	s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://example.com/actual-feed", "https://example.com", "", 900)
 
@@ -406,7 +406,7 @@ func TestSavedFeedsNoFalsePositive(t *testing.T) {
 func TestSavedFeedsDistinguishesQueryParams(t *testing.T) {
 	s, _ := newTestServer(t)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	s.store.Feeds.Create(u.ID, a.ID, "Saved", "https://www.youtube.com/feeds/videos.xml?channel_id=AAAA", "", "", 900)
 
 	sf := s.savedFeedsFor(u.ID)

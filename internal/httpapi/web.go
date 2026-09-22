@@ -92,7 +92,6 @@ type authorRow struct {
 type authorForm struct {
 	ID          int64
 	Name        string
-	URL         string
 	AvatarURL   string
 	Description string
 }
@@ -703,7 +702,7 @@ func (s *Server) resolveAuthor(r *http.Request, userID int64) (int64, bool, stri
 			return 0, false, "new author needs a name"
 		}
 		a, err := s.store.Authors.Create(
-			userID, name, r.FormValue("author_url"), r.FormValue("avatar_url"), "",
+			userID, name, r.FormValue("avatar_url"), "",
 		)
 		if err != nil {
 			log.Error("create author", "err", err)
@@ -1119,7 +1118,7 @@ func (s *Server) authorCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-author-error", "name is required")
 		return
 	}
-	a, err := s.store.Authors.Create(u.ID, name, r.FormValue("url"), r.FormValue("avatar_url"), r.FormValue("description"))
+	a, err := s.store.Authors.Create(u.ID, name, r.FormValue("avatar_url"), r.FormValue("description"))
 	if err != nil {
 		log.Error("create author", "err", err)
 		writeFormError(w, r, "add-author-error", "could not create author")
@@ -1356,7 +1355,7 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
 	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
-		Form:       authorForm{ID: a.ID, Name: a.Name, URL: a.URL, AvatarURL: a.AvatarURL, Description: a.Description},
+		Form:       authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
 		Links:      links,
 		AvatarCard: s.authorAvatarCardData(a, u.Timezone, ""),
 	})))
@@ -1385,7 +1384,7 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		// row changes so neither an orphaned object nor a stale key survives.
 		s.clearAuthorAvatar(r.Context(), old)
 	}
-	if err := s.store.Authors.Update(u.ID, id, name, r.FormValue("url"), avatarURL, r.FormValue("description")); err != nil {
+	if err := s.store.Authors.Update(u.ID, id, name, avatarURL, r.FormValue("description")); err != nil {
 		log.Error("update author", "err", err)
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
@@ -1432,14 +1431,14 @@ func (s *Server) authorFormFragment(w http.ResponseWriter, r *http.Request) {
 	}
 	// When adding a feed, the fragment is asked with the feed's home url so the
 	// new author's name/avatar can be derived from it.
-	var name, homeURL, avatar string
+	var name, avatar string
 	if home := strings.TrimSpace(r.FormValue("home_url")); home != "" {
 		if meta, err := s.discoverer.PageMeta(r.Context(), home); err == nil {
-			name, homeURL, avatar = meta.Title, stripWWW(meta.HomeURL), meta.IconURL
+			name, avatar = meta.Title, meta.IconURL
 		}
 	}
 	web.Render(w, r, authorCreateFields(authorPreviewForm{
-		Name: name, URL: homeURL, AvatarURL: avatar,
+		Name: name, AvatarURL: avatar,
 	}))
 }
 

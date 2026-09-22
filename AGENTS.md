@@ -354,10 +354,9 @@ mapping never changes feeds that were already created (they store their resolved
   (oldest first) and applies the first match. Mappings that no longer compile
   are skipped with a server-side log, never fatal.
 - **Auto-filled urls strip a leading `www.` subdomain** (`stripWWW` in
-  `internal/httpapi/web.go`): the find-author preview form's feed/home fields,
-  the scrape builder, and the new-author url prefill are all cleaned so
-  "https://www.example.com" shows up as "https://example.com". Manual edits on
-  save are left alone.
+  `internal/httpapi/web.go`): the find-author preview form's feed/home fields
+  and the scrape builder are cleaned so "https://www.example.com" shows up as
+  "https://example.com". Manual edits on save are left alone.
 - **Fallback:** when a mapped URL yields no feed (direct fetch or discovery), the
   original URL is discovered instead, so a stale mapping never blocks adding a
   feed. The entered URL becomes the feed's `home_url` whenever a mapping applied.
@@ -464,11 +463,12 @@ editing stay clean.
   removed (its ✕), is deleted; a row with no id creates; the rest update in
   place. The `links_present` hidden marker guards the reconcile, so a POST
   without the link fields (an API client) leaves links untouched.
-- The author page renders the links **inline in the author card, under the home
-  url** (`authorPageLinks`), with no "links" heading or dialog. The label is
-  optional; `web.LinkLabel` falls back to the URL's hostname (minus `www.`) when
-  it's blank. Links are external links and carry `class="external"` (see the
-  links rule above).
+- The author page renders the links **inline in the author card, under the
+  author name** (`authorPageLinks`), with no "links" heading or dialog. The label
+  is optional; `web.LinkLabel` falls back to the URL's hostname (minus `www.`)
+  when it's blank. Links are external links and carry `class="external"` (see the
+  links rule above). An author has no other url column — the only per-author
+  urls are these links and its feeds' `home_url`s.
 - `AuthorLinkStore` (`Create`/`Update`/`Delete`/`ListByAuthor`) and the
   `author_links` table cascade on author/user delete; there is no object-storage
   to purge. The JSON API and OPML ignore links.

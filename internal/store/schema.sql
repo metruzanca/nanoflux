@@ -39,7 +39,6 @@ CREATE TABLE authors (
     id          INTEGER PRIMARY KEY,
     user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name        TEXT NOT NULL,
-    url         TEXT,
     avatar_url  TEXT,
     avatar_key  TEXT,
     last_fetched_at TEXT,

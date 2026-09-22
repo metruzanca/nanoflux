@@ -289,7 +289,7 @@ func TestOpmlExportExcludesAutoCollections(t *testing.T) {
 		grouped = f
 	}
 	if grouped.ID == 0 {
-		a, _ := s.store.Authors.Create(u.ID, "Grouped", "https://group.dev", "", "")
+		a, _ := s.store.Authors.Create(u.ID, "Grouped", "", "")
 		grouped, _ = s.store.Feeds.Create(u.ID, a.ID, "Grouped", "https://group.dev/rss.xml", "https://group.dev", "", 900)
 	}
 	s.store.Collections.AddFeed(u.ID, manual.ID, grouped.ID)

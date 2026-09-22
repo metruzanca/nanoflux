@@ -146,7 +146,7 @@ func TestFeedCreateNormalizesURL(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Blog", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Blog", "", "")
 	rr := doForm(h, "POST", "/feeds", url.Values{
 		"title": {"Blog"}, "feed_url": {"example.com/rss.xml"},
 		"author_id": {itoa(a.ID)},
@@ -197,7 +197,7 @@ func TestLoadMoreFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	for i := 1; i <= 105; i++ {
 		guid := "g" + strconv.Itoa(i)
@@ -254,7 +254,7 @@ func TestSearchRoute(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Go concurrency", Link: "https://b.dev/1", FetchedAt: db.Now()})
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "Rust ownership", Link: "https://b.dev/2", FetchedAt: db.Now()})
@@ -291,7 +291,7 @@ func TestItemModalShowsEnclosure(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Podcast", "https://p.dev/rss.xml", "", "", 900)
 	if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Episode", Link: "https://p.dev/1", FetchedAt: db.Now()}); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -314,7 +314,7 @@ func TestFeedFilterRulesFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 
 	// The edit page shows the filters section.
@@ -358,7 +358,7 @@ func TestCollectionPageDedups(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f1, _ := s.store.Feeds.Create(u.ID, a.ID, "r/videos", "https://v.dev/rss.xml", "", "", 900)
 	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Metru's feed", "https://m.dev/rss.xml", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "all")
@@ -387,7 +387,7 @@ func TestFeedToggle(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 
 	// Pause the feed: the row shows the paused badge.
@@ -434,7 +434,7 @@ func TestShareFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Shareable post", Link: "https://b.dev/1", Summary: "body text", FetchedAt: db.Now()})
 	itemID, _ := s.store.Items.ByFeedGUID(f.ID, "g1")
@@ -495,7 +495,7 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 
 	// Create an author through the web UI (returns the row fragment).
 	rr := doForm(h, "POST", "/authors", url.Values{
-		"name": {"Metru"}, "url": {"https://metru.dev"},
+		"name": {"Metru"},
 	}, cookie)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "author-") {
 		t.Fatalf("create author: %d %s", rr.Code, rr.Body.String())
@@ -566,7 +566,7 @@ func TestReadPage(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "A", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
@@ -625,7 +625,7 @@ func TestItemViewYouTubeEmbed(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "bigboxSWE", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "bigboxSWE", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "bigboxSWE", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "yt:video:H0KAi8AWsnM", Title: "Video",
@@ -653,7 +653,7 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "bigboxSWE", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "bigboxSWE", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "bigboxSWE", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "yt:video:H0KAi8AWsnM", Title: "Video",
@@ -742,7 +742,7 @@ func TestItemViewImageLightbox(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Pics", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Pics", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Pics", "https://pics.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "p1", Title: "Image Post", Link: "https://pics.dev/1",
@@ -769,7 +769,7 @@ func TestItemViewMarksRead(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Blog", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Blog", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now(),
@@ -801,7 +801,7 @@ func TestItemReadToggle(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "A", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
@@ -828,7 +828,7 @@ func TestItemFavoriteToggle(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "A", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
@@ -866,7 +866,7 @@ func TestFavoritesPage(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "A", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "Other", Link: "https://b.dev/2", FetchedAt: db.Now()})
@@ -900,7 +900,7 @@ func TestItemView(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "g", Title: "Item", Link: "https://b.dev/1",
@@ -962,7 +962,7 @@ func TestAuthorPageHasAddFeedDialog(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 
 	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
 	for _, want := range []string{
@@ -982,7 +982,7 @@ func TestAuthorLinks(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 
 	// The edit form carries editable link rows and an add-row template; the
 	// author page no longer has a links heading or add-link dialog.
@@ -1075,7 +1075,7 @@ func TestAuthorLinkScopedToOwner(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	link, _ := s.store.AuthorLinks.Create(u.ID, a.ID, "", "https://example.com")
 
 	// Saving another (nonexistent) author's edit form 404s and leaves the link.
@@ -1103,8 +1103,9 @@ func TestExternalLinksCarryMarker(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "https://metru.example", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "https://b.dev", "", 900)
+	s.store.AuthorLinks.Create(u.ID, a.ID, "twitch", "https://twitch.tv/metru")
 
 	// Feed page: "feed" and "home" links are external, carry the ↗ marker
 	// class, and are hardened against referrer leakage.
@@ -1116,10 +1117,10 @@ func TestExternalLinksCarryMarker(t *testing.T) {
 		t.Fatalf("feed page home link should be external-marked: %s", body)
 	}
 
-	// Author page: the homepage URL is external and marked.
+	// Author page: a link bookmark is external and marked.
 	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
-	if !strings.Contains(body, `href="https://metru.example" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">`) {
-		t.Fatalf("author homepage should be external-marked: %s", body)
+	if !strings.Contains(body, `href="https://twitch.tv/metru" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">`) {
+		t.Fatalf("author link should be external-marked: %s", body)
 	}
 
 	// Author page feeds list row: the "feed" link is external and marked.
@@ -1148,7 +1149,7 @@ func TestFeedAndAuthorPagesShowItems(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Feed Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
@@ -1179,7 +1180,7 @@ func TestScopedReadUnreadTabs(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Unread Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "Read Item", Link: "https://b.dev/2", FetchedAt: db.Now()})
@@ -1245,7 +1246,7 @@ func TestAuthorPageDropsSelfLinks(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Feed Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
@@ -1286,7 +1287,7 @@ func TestDisplayModeControlPresent(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Feed Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 	coll, _ := s.store.Collections.Create(u.ID, "Dev")
@@ -1319,7 +1320,7 @@ func TestAuthorPageFeedShowsCollectionTags(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
 	cats, _ := s.store.Collections.Create(u.ID, "cats")
@@ -1379,7 +1380,7 @@ func TestItemModalShowsImageEnclosure(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Photos", "https://p.dev/rss.xml", "", "", 900)
 	if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Shot", Link: "https://p.dev/1", FetchedAt: db.Now()}); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -1408,7 +1409,7 @@ func TestItemModalSkipsImageEnclosureAlreadyInBody(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Photos", "https://p.dev/rss.xml", "", "", 900)
 	inline := "https://p.dev/inline.jpg"
 	if _, err := s.store.Items.Upsert(f.ID, store.Item{
@@ -1438,7 +1439,7 @@ func TestAuthorsRowIsCondensed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "https://metru.dev", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "One", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
@@ -1460,7 +1461,7 @@ func TestAuthorEditDeleteFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	_, _ = s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 
 	// The list row no longer carries a delete button; the edit page does.
@@ -1493,7 +1494,7 @@ func TestItemMenuOnCards(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Post", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
@@ -1512,7 +1513,7 @@ func TestMarkRangeReadHTTP(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "a1", Title: "newest", Link: "https://b.dev/1", PublishedAt: "2026-01-03 00:00:00", FetchedAt: db.Now()})
@@ -1566,7 +1567,7 @@ func TestFeedEditDeleteFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 
 	// The author page's feed rows no longer carry pause/delete buttons.
@@ -1596,7 +1597,7 @@ func TestCollectionsIndexShowsStats(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f1, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
@@ -1621,7 +1622,7 @@ func TestAuthorEditHasAvatarFields(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit", cookie).Body.String()
 	// The avatar url input lives with the avatar image/heading inside the form.
 	if !strings.Contains(edit, `name="avatar_url"`) ||
@@ -1640,7 +1641,7 @@ func TestGlobalAddCreatesAuthorWithFeed(t *testing.T) {
 	// The global add with a new author yields an author with their first feed.
 	rr := doForm(h, "POST", "/feeds", url.Values{
 		"title": {"Blog"}, "feed_url": {"https://example.com/rss.xml"},
-		"author_id": {"new"}, "author_name": {"Metru"}, "author_url": {"https://metru.dev"},
+		"author_id": {"new"}, "author_name": {"Metru"},
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("global add: %d %s", rr.Code, rr.Body.String())
@@ -1675,7 +1676,7 @@ func TestAuthorPageAddFeed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 
 	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/feeds", url.Values{
 		"title": {"Blog"}, "feed_url": {"https://example.com/rss.xml"},
@@ -1718,7 +1719,7 @@ func TestCollectionAddFeedGroupedByAuthor(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
 
@@ -1733,7 +1734,7 @@ func TestStaleFeedBadge(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "https://b.dev", "", 900)
 
 	// No items yet -> no warning.
@@ -1767,7 +1768,7 @@ func TestFeedEditAutoInterval(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 
 	// Edit form shows the auto checkbox (new feeds default to on).
@@ -1812,7 +1813,7 @@ func TestFeedCreateBlocksDuplicateURL(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 
 	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/feeds", url.Values{
 		"title": {"Blog"}, "feed_url": {"https://b.dev/rss.xml"},
@@ -1843,7 +1844,7 @@ func TestItemListSortDirection(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "a", Title: "Old", Link: "https://b.dev/1", PublishedAt: "2026-01-01 00:00:00", FetchedAt: db.Now()})
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "b", Title: "New", Link: "https://b.dev/2", PublishedAt: "2026-01-02 00:00:00", FetchedAt: db.Now()})

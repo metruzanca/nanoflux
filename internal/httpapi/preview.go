@@ -37,7 +37,7 @@ type feedPreviewForm struct {
 // newAuthor returns the authorCreateFields payload for the default "create new
 // author" selection.
 func (f feedPreviewForm) newAuthor() authorPreviewForm {
-	return authorPreviewForm{Name: f.NewAuthorName, URL: f.HomeURL, AvatarURL: f.NewAuthorAvatar}
+	return authorPreviewForm{Name: f.NewAuthorName, AvatarURL: f.NewAuthorAvatar}
 }
 
 // feedChoose is the dropdown shown when a page exposes multiple feeds.
@@ -51,7 +51,6 @@ type feedChoose struct {
 // authorPreviewForm pre-fills the new-author fields from a detected page.
 type authorPreviewForm struct {
 	Name      string
-	URL       string
 	AvatarURL string
 }
 
@@ -92,7 +91,7 @@ type scrapeBuilderData struct {
 // newAuthor returns the authorCreateFields payload for the default "create new
 // author" selection in the scrape builder.
 func (d scrapeBuilderData) newAuthor() authorPreviewForm {
-	return authorPreviewForm{Name: d.NewAuthorName, URL: d.HomeURL, AvatarURL: d.NewAuthorAvatar}
+	return authorPreviewForm{Name: d.NewAuthorName, AvatarURL: d.NewAuthorAvatar}
 }
 
 // feedPreview inspects a URL (direct feed or page) and renders the combined

@@ -142,7 +142,7 @@ func TestFeedPreviewMultipleScoped(t *testing.T) {
 	feedSrv := feedPreviewServer(t)
 	defer feedSrv.Close()
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 
 	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -184,7 +184,7 @@ func TestFeedPreviewPreselectsAuthor(t *testing.T) {
 	defer feedSrv.Close()
 
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 
 	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{
 		"url":       {feedSrv.URL + "/rss"},

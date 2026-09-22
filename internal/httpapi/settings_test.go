@@ -361,7 +361,7 @@ func TestOpmlExport(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	s.store.Feeds.Create(u.ID, a.ID, "Solo", "https://solo.dev/rss.xml", "https://solo.dev", "", 900)
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Grouped", "https://group.dev/rss.xml", "https://group.dev", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "tech")

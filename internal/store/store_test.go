@@ -86,7 +86,7 @@ func TestAuthorFeedFlow(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
 
-	a, err := s.Authors.Create(u.ID, "Metru", "https://metru.dev", "", "author")
+	a, err := s.Authors.Create(u.ID, "Metru", "", "author")
 	if err != nil {
 		t.Fatalf("create author: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestAuthorFeedFlow(t *testing.T) {
 func TestFeedNextPageCursor(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, err := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/feed.xml?page=1", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestFeedNextPageCursor(t *testing.T) {
 func TestItemsFlow(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 
 	base := Item{GUID: "g1", Title: "One", Link: "https://metru.dev/1", FetchedAt: db.Now()}
@@ -249,7 +249,7 @@ func TestItemsFlow(t *testing.T) {
 func TestItemsListPagePagination(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 
 	// 5 items; page size 2 -> 2, 2, 1.
@@ -305,7 +305,7 @@ func TestItemsListPagePagination(t *testing.T) {
 func TestSearchPage(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 
 	base := Item{GUID: "g1", Title: "Go concurrency patterns", Link: "https://metru.dev/1", Summary: "goroutines and channels", FetchedAt: db.Now()}
@@ -343,7 +343,7 @@ func TestSearchPage(t *testing.T) {
 func TestItemEnclosures(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 	if _, err := s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "Podcast", Link: "https://metru.dev/1", FetchedAt: db.Now()}); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -386,7 +386,7 @@ func TestItemEnclosures(t *testing.T) {
 func TestShareStore(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 	if _, err := s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "Post", Link: "https://metru.dev/1", FetchedAt: db.Now()}); err != nil {
 		t.Fatalf("upsert: %v", err)
@@ -425,7 +425,7 @@ func TestShareStore(t *testing.T) {
 func TestItemFavorites(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 
 	s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "One", Link: "https://metru.dev/1", FetchedAt: db.Now()})
@@ -463,7 +463,7 @@ func TestItemFavorites(t *testing.T) {
 func TestItemScopedCounts(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 	coll, _ := s.Collections.Create(u.ID, "Dev")
 	s.Collections.AddFeed(u.ID, coll.ID, f.ID)
@@ -504,7 +504,7 @@ func TestItemScopedCounts(t *testing.T) {
 func TestListWithCounts(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f1, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 	f2, _ := s.Feeds.Create(u.ID, a.ID, "Other", "https://other.dev/rss.xml", "", "", 900)
 	c, _ := s.Collections.Create(u.ID, "Dev")
@@ -536,7 +536,7 @@ func TestListWithCounts(t *testing.T) {
 func TestMarkRangeRead(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 	f2, _ := s.Feeds.Create(u.ID, a.ID, "Other", "https://other.dev/rss.xml", "", "", 900)
 
@@ -597,8 +597,8 @@ func TestMarkRangeRead(t *testing.T) {
 func TestListAuthorsWithFeedCountUnread(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	busy, _ := s.Authors.Create(u.ID, "Busy", "", "", "")
-	_, _ = s.Authors.Create(u.ID, "Quiet", "", "", "")
+	busy, _ := s.Authors.Create(u.ID, "Busy", "", "")
+	_, _ = s.Authors.Create(u.ID, "Quiet", "", "")
 
 	f, _ := s.Feeds.Create(u.ID, busy.ID, "Blog", "https://busy.dev/rss.xml", "", "", 900)
 	s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "One", Link: "https://busy.dev/1", FetchedAt: db.Now()})
@@ -632,7 +632,7 @@ func TestListAuthorsWithFeedCountUnread(t *testing.T) {
 func TestItemsCarryAuthor(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://x.dev/rss.xml", "", "", 900)
 	s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "One", Link: "https://x.dev/1", FetchedAt: db.Now()})
 
@@ -683,7 +683,7 @@ func TestUserHomeConfig(t *testing.T) {
 func TestCollectionFlow(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 
 	c, err := s.Collections.Create(u.ID, "Read later")
@@ -700,7 +700,7 @@ func TestCollectionFlow(t *testing.T) {
 
 	// AddFeed must reject a feed owned by another user.
 	other := mustUser(t, s, "bob")
-	a2, _ := s.Authors.Create(other.ID, "Bob", "", "", "")
+	a2, _ := s.Authors.Create(other.ID, "Bob", "", "")
 	f2, _ := s.Feeds.Create(other.ID, a2.ID, "Bobs", "https://bob.dev/rss.xml", "", "", 900)
 	if err := s.Collections.AddFeed(u.ID, c.ID, f2.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound cross-user AddFeed, got %v", err)
@@ -729,7 +729,7 @@ func TestFeedIsolation(t *testing.T) {
 	s := newTestStore(t)
 	u1 := mustUser(t, s, "alice")
 	u2 := mustUser(t, s, "bob")
-	a1, _ := s.Authors.Create(u1.ID, "A", "", "", "")
+	a1, _ := s.Authors.Create(u1.ID, "A", "", "")
 	f1, _ := s.Feeds.Create(u1.ID, a1.ID, "A's feed", "https://a.dev/rss.xml", "", "", 900)
 	s.Items.Upsert(f1.ID, Item{GUID: "g", Title: "t", FetchedAt: db.Now()})
 
@@ -753,7 +753,7 @@ func TestFeedIsolation(t *testing.T) {
 func TestListDue(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "A", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "A", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "feed", "https://a.dev/rss.xml", "", "", 900)
 
 	// Never polled -> due.
@@ -871,8 +871,8 @@ func TestAuthorLinkStore(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
 	other := mustUser(t, s, "bob")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
-	a2, _ := s.Authors.Create(u.ID, "Other", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
+	a2, _ := s.Authors.Create(u.ID, "Other", "", "")
 
 	l, err := s.AuthorLinks.Create(u.ID, a.ID, "Twitch", "https://twitch.tv/ThePrimeagen")
 	if err != nil {
@@ -914,7 +914,7 @@ func TestAuthorLinkStore(t *testing.T) {
 func TestAuthorLinkCascadesWithAuthor(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	l, _ := s.AuthorLinks.Create(u.ID, a.ID, "", "https://example.com")
 
 	if err := s.Authors.Delete(u.ID, a.ID); err != nil {
@@ -928,7 +928,7 @@ func TestAuthorLinkCascadesWithAuthor(t *testing.T) {
 func TestFeedCadenceMethods(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "A", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "A", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/feed.xml", "", "", 900)
 
 	// New feeds default to adaptive polling on.
@@ -976,7 +976,7 @@ func TestMigrateBackfillsCadence(t *testing.T) {
 	// interval can be turned manual.
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "A", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "A", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/feed.xml", "", "", 900)
 	if !f.PollIntervalAuto {
 		t.Fatalf("new feed should default to auto on")
@@ -1149,7 +1149,7 @@ func TestUserDeleteCascadesAndPurgesKeys(t *testing.T) {
 func TestAuthorAvatarKey(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, err := s.Authors.Create(u.ID, "Metru", "", "https://example.com/favicon.png", "")
+	a, err := s.Authors.Create(u.ID, "Metru", "https://example.com/favicon.png", "")
 	if err != nil {
 		t.Fatalf("create author: %v", err)
 	}
@@ -1183,7 +1183,7 @@ func TestAuthorAvatarKey(t *testing.T) {
 func TestListObjectKeysIncludesAuthorAvatars(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "https://x/av.png", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "https://x/av.png", "")
 	key := "author-avatars/" + strconv.FormatInt(u.ID, 10) + "/" + strconv.FormatInt(a.ID, 10)
 	if err := s.Authors.SetAvatarKey(u.ID, a.ID, key, db.Now()); err != nil {
 		t.Fatalf("SetAvatarKey: %v", err)
@@ -1247,7 +1247,7 @@ func TestGlobalCounts(t *testing.T) {
 	s := newTestStore(t)
 	alice := mustUser(t, s, "alice")
 	mustUser(t, s, "bob")
-	a, err := s.Authors.Create(alice.ID, "blog", "https://example.com", "https://example.com/a.png", "desc")
+	a, err := s.Authors.Create(alice.ID, "blog", "https://example.com/a.png", "desc")
 	if err != nil {
 		t.Fatalf("create author: %v", err)
 	}
@@ -1280,8 +1280,8 @@ func TestListAllFeeds(t *testing.T) {
 	s := newTestStore(t)
 	alice := mustUser(t, s, "alice")
 	bob := mustUser(t, s, "bob")
-	aliceAuthor, _ := s.Authors.Create(alice.ID, "AA", "", "", "")
-	bobAuthor, _ := s.Authors.Create(bob.ID, "BB", "", "", "")
+	aliceAuthor, _ := s.Authors.Create(alice.ID, "AA", "", "")
+	bobAuthor, _ := s.Authors.Create(bob.ID, "BB", "", "")
 	if _, err := s.Feeds.Create(alice.ID, aliceAuthor.ID, "A", "https://a/feed.xml", "", "", 900); err != nil {
 		t.Fatal(err)
 	}
@@ -1304,7 +1304,7 @@ func TestListAllFeeds(t *testing.T) {
 func TestFeedLastError(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Example", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Example", "", "")
 	f, err := s.Feeds.Create(u.ID, a.ID, "Example", "https://example.com/feed.xml", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
@@ -1357,7 +1357,7 @@ func TestSessionsExceptAndList(t *testing.T) {
 func TestListPageAscending(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 	s.Items.Upsert(f.ID, Item{GUID: "a", Title: "oldest", Link: "https://metru.dev/1", PublishedAt: "2026-01-01 00:00:00", FetchedAt: db.Now()})
 	s.Items.Upsert(f.ID, Item{GUID: "b", Title: "middle", Link: "https://metru.dev/2", PublishedAt: "2026-01-02 00:00:00", FetchedAt: db.Now()})

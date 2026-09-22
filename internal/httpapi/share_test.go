@@ -78,7 +78,7 @@ func TestFeedPreviewRedirectMode(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	srv := feedServer(t)
 	defer srv.Close()
 
@@ -101,7 +101,7 @@ func TestFeedCreateRedirectHeader(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 
 	rr := doForm(h, "POST", "/feeds", url.Values{
 		"title": {"Blog"}, "feed_url": {"https://b.dev/rss.xml"},

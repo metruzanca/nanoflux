@@ -116,9 +116,6 @@ templ authorFields(d authorsData) {
 	<label>name
 		<input name="name" value={ d.Form.Name } required/>
 	</label>
-	<label>url
-		<input name="url" type="url" value={ d.Form.URL }/>
-	</label>
 	<label>description
 		<textarea name="description" rows="3">{ d.Form.Description }</textarea>
 	</label>
@@ -157,7 +154,7 @@ templ authorLinkFieldRow(id, label, linkURL string) {
 }
 
 // authorPageLinks renders an author's external bookmarks inline in the author
-// card, under the home url. Each is an external link (marked ↗).
+// card, under the author's name. Each is an external link (marked ↗).
 templ authorPageLinks(links []store.AuthorLink) {
 	if len(links) > 0 {
 		<p class="author-links">
@@ -184,9 +181,6 @@ templ authorPage(u store.User, d authorData) {
 			</div>
 			<a class="small" title="edit" href={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/edit" }>@web.EditIcon()</a>
 		</div>
-		if d.Author.URL != "" {
-			<p><a href={ templ.URL(d.Author.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ d.Author.URL }</a></p>
-		}
 		@authorPageLinks(d.Links)
 		if d.Author.Description != "" {
 			<p>{ d.Author.Description }</p>
@@ -221,9 +215,6 @@ templ authorCreateFields(d authorPreviewForm) {
 	<div class="new-author">
 		<label>new author name
 			<input name="author_name" type="text" value={ d.Name } required/>
-		</label>
-		<label>new author url
-			<input name="author_url" type="url" value={ d.URL }/>
 		</label>
 		<label>avatar url
 			<input name="avatar_url" type="url" value={ d.AvatarURL }/>
