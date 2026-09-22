@@ -20,9 +20,27 @@ const homeSectionLimit = 8
 // homeSection is one pinned section of the home dashboard, stored as JSON in
 // users.home_config. The first cut only renders collections, but the Kind field
 // leaves room for more source kinds (unread, favorites, list, author, feed).
+// Mode selects how the section renders ("list" or "grid"); an empty value is
+// normalized to "list" so older configs keep working.
 type homeSection struct {
 	Kind  string `json:"kind"`
 	RefID int64  `json:"ref_id"`
+	Mode  string `json:"mode,omitempty"`
+}
+
+// homeModeList and homeModeGrid are the two per-section render methods.
+const (
+	homeModeList = "list"
+	homeModeGrid = "grid"
+)
+
+// normalizeHomeMode maps any stored/submitted value onto a known render method,
+// defaulting to the list view.
+func normalizeHomeMode(mode string) string {
+	if strings.TrimSpace(mode) == homeModeGrid {
+		return homeModeGrid
+	}
+	return homeModeList
 }
 
 // parseHomeConfig decodes the user's JSON config, dropping anything malformed
@@ -39,6 +57,7 @@ func parseHomeConfig(raw string) []homeSection {
 	out := sections[:0]
 	for _, s := range sections {
 		if s.Kind == "collection" && s.RefID != 0 {
+			s.Mode = normalizeHomeMode(s.Mode)
 			out = append(out, s)
 		}
 	}
@@ -57,10 +76,12 @@ func marshalHomeConfig(sections []homeSection) string {
 }
 
 // homeSectionData is one rendered dashboard section: the collection plus its
-// unread items (never empty — empty sections are dropped).
+// unread items (never empty — empty sections are dropped). Mode is the
+// collection's chosen render method ("list" or "grid").
 type homeSectionData struct {
 	Collection store.Collection
 	Items      []store.ItemWithFeed
+	Mode       string
 }
 
 type dashboardData struct {
@@ -91,7 +112,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		if len(items) == 0 {
 			continue // hide sections with no unread
 		}
-		rendered = append(rendered, homeSectionData{Collection: c, Items: withTZ(u.Timezone, items)})
+		rendered = append(rendered, homeSectionData{Collection: c, Items: withTZ(u.Timezone, items), Mode: normalizeHomeMode(sec.Mode)})
 	}
 
 	if len(rendered) == 0 {
@@ -121,9 +142,11 @@ func (s *Server) renderUnread(w http.ResponseWriter, r *http.Request) {
 	})))
 }
 
-// settingsHomeRow is one pinned collection in the settings card.
+// settingsHomeRow is one pinned collection in the settings card, with its
+// chosen render method.
 type settingsHomeRow struct {
 	Collection store.Collection
+	Mode       string
 }
 
 // settingsHomeData is the home-screen settings card's data.
@@ -150,7 +173,7 @@ func (s *Server) settingsHomeData(userID int64, errMsg string) settingsHomeData 
 	var rows []settingsHomeRow
 	for _, sec := range parseHomeConfig(u.HomeConfig) {
 		if c, ok := byID[sec.RefID]; ok {
-			rows = append(rows, settingsHomeRow{Collection: c})
+			rows = append(rows, settingsHomeRow{Collection: c, Mode: normalizeHomeMode(sec.Mode)})
 		}
 	}
 	return settingsHomeData{Rows: rows, Collections: selectable, Error: errMsg}
@@ -192,6 +215,14 @@ func (s *Server) settingsHome(w http.ResponseWriter, r *http.Request) {
 		sections = moveSection(sections, id, +1)
 	case "remove":
 		sections = removeSection(sections, id)
+	case "mode":
+		// Set one pinned section's render method (list/grid).
+		mode := normalizeHomeMode(r.FormValue("mode"))
+		for i := range sections {
+			if sections[i].RefID == id {
+				sections[i].Mode = mode
+			}
+		}
 	}
 
 	if err := s.store.Users.SetHomeConfig(u.ID, marshalHomeConfig(sections)); err != nil {

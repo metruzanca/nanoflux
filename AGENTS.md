@@ -467,18 +467,24 @@ sections, each a compact list of that collection's unread items (capped at
 - The config is JSON in `users.home_config` (schemaV27), parsed by
   `parseHomeConfig` (`internal/httpapi/home.go`); the store keeps the raw string
   (set via `UserStore.SetHomeConfig`), like `feeds.scrape_config`. The shape is
-  `[{"kind":"collection","ref_id":<id>}]` — `kind` leaves room for more source
-  types later; the first cut only renders `collection` entries.
+  `[{"kind":"collection","ref_id":<id>,"mode":"list|grid"}]` — `kind` leaves
+  room for more source types later; the first cut only renders `collection`
+  entries. `mode` is the per-section render method, normalized to `list` when
+  absent (`normalizeHomeMode`), so older configs keep working. Unlike the
+  client-side list/grid picker on item pages, home sections render their mode
+  **server-side** (the `masonry` class is emitted directly on the section's
+  `<ul>`), because the dashboard has multiple lists and no `#items-list`.
 - **Empty sections are dropped** and a pinned collection deleted since pinning
   is skipped. With no config, or when every pinned section is empty, `/` falls
   back to the full unread list, so behavior is unchanged until customized.
 - The full unread list moved to **`/unread`** (handler `unread` →
   `renderUnread`); the topbar "unread" link and the command palette point there.
   The display-mode scope for it is `/unread`.
-- `/settings` has a "home screen" card (`settingsHomeCard`) to pin/unpin and
-  reorder collections. Ordering is **server-side** (`POST /settings/home` with
-  `action=add|up|down|remove`, `POST /settings/home/reset`), so no client JS is
-  needed; the card re-renders itself whole.
+- `/settings` has a "home screen" card (`settingsHomeCard`) to pin/unpin,
+  reorder, and set each section's render method. Ordering and mode are
+  **server-side** (`POST /settings/home` with `action=add|up|down|remove|mode`,
+  `POST /settings/home/reset`), so no client JS is needed; the card re-renders
+  itself whole.
 
 ## Collections and feed editing
 
