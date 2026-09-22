@@ -18,6 +18,7 @@ type User struct {
 	Timezone     string
 	Theme        string
 	AccentColor  string
+	HomeConfig   string // raw JSON home-screen config, "" when unset
 	CreatedAt    string
 }
 
@@ -32,7 +33,7 @@ func (s *UserStore) Create(username, passwordHash string) (User, error) {
 	if err != nil {
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.CreatedAt), nil
 }
 
 func (s *UserStore) ByID(id int64) (User, error) {
@@ -43,7 +44,7 @@ func (s *UserStore) ByID(id int64) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.CreatedAt), nil
 }
 
 func (s *UserStore) ByUsername(username string) (User, error) {
@@ -54,7 +55,7 @@ func (s *UserStore) ByUsername(username string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.CreatedAt), nil
 }
 
 func (s *UserStore) List() ([]User, error) {
@@ -64,7 +65,7 @@ func (s *UserStore) List() ([]User, error) {
 	}
 	out := make([]User, 0, len(rows))
 	for _, u := range rows {
-		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt))
+		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.CreatedAt))
 	}
 	return out, nil
 }
@@ -190,6 +191,15 @@ func (s *UserStore) SetAccentColor(userID int64, color string) error {
 	})
 }
 
+// SetHomeConfig stores the user's home-screen configuration as raw JSON. An
+// empty string clears it (the home screen falls back to its default).
+func (s *UserStore) SetHomeConfig(userID int64, config string) error {
+	return s.q.SetUserHomeConfig(context.Background(), sqlcgen.SetUserHomeConfigParams{
+		HomeConfig: ns(config),
+		ID:         userID,
+	})
+}
+
 // FavoritesShareToken returns the user's public favorites share token, or ""
 // when the favorites list is not shared.
 func (s *UserStore) FavoritesShareToken(userID int64) (string, error) {
@@ -238,5 +248,5 @@ func (s *UserStore) ByFavoritesShareToken(token string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.CreatedAt), nil
 }

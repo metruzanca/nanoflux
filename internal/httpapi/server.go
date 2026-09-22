@@ -73,6 +73,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Items.
 	mux.Handle("GET /{$}", s.auth.Require(http.HandlerFunc(s.home)))
+	mux.Handle("GET /unread", s.auth.Require(http.HandlerFunc(s.unread)))
 	mux.Handle("GET /items", s.auth.Require(http.HandlerFunc(s.itemsFragment)))
 	mux.Handle("GET /search", s.auth.Require(http.HandlerFunc(s.searchPage)))
 	mux.Handle("GET /read", s.auth.Require(http.HandlerFunc(s.readPage)))
@@ -172,6 +173,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /settings", s.auth.Require(http.HandlerFunc(s.settingsPage)))
 	mux.Handle("POST /settings/avatar", s.auth.Require(http.HandlerFunc(s.settingsAvatar)))
 	mux.Handle("POST /settings/timezone", s.auth.Require(http.HandlerFunc(s.settingsTimezone)))
+	mux.Handle("POST /settings/home", s.auth.Require(http.HandlerFunc(s.settingsHome)))
+	mux.Handle("POST /settings/home/reset", s.auth.Require(http.HandlerFunc(s.settingsHomeReset)))
 	mux.Handle("POST /settings/theme", s.auth.Require(http.HandlerFunc(s.settingsTheme)))
 	mux.Handle("POST /settings/accent", s.auth.Require(http.HandlerFunc(s.settingsAccent)))
 	mux.Handle("POST /settings/password", s.auth.Require(http.HandlerFunc(s.settingsPassword)))

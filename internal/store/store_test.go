@@ -653,6 +653,33 @@ func TestItemsCarryAuthor(t *testing.T) {
 	}
 }
 
+func TestUserHomeConfig(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+
+	got, err := s.Users.ByID(u.ID)
+	if err != nil || got.HomeConfig != "" {
+		t.Fatalf("default home config: %v %q", err, got.HomeConfig)
+	}
+
+	raw := `[{"kind":"collection","ref_id":7}]`
+	if err := s.Users.SetHomeConfig(u.ID, raw); err != nil {
+		t.Fatalf("SetHomeConfig: %v", err)
+	}
+	got, _ = s.Users.ByID(u.ID)
+	if got.HomeConfig != raw {
+		t.Fatalf("home config = %q, want %q", got.HomeConfig, raw)
+	}
+
+	if err := s.Users.SetHomeConfig(u.ID, ""); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	got, _ = s.Users.ByID(u.ID)
+	if got.HomeConfig != "" {
+		t.Fatalf("home config should be cleared, got %q", got.HomeConfig)
+	}
+}
+
 func TestCollectionFlow(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

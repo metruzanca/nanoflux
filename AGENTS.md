@@ -399,6 +399,28 @@ The DB stores object **keys** (`users.avatar_key`, `source_icons.icon_key`).
   the inner `#author-avatar-card` (image + status), so it never clobbers an
   unsaved avatar url value.
 
+## Home screen
+
+`GET /` is a customizable **home dashboard**: the user's pinned collection
+sections, each a compact list of that collection's unread items (capped at
+`homeSectionLimit` = 8, with a "more →" link).
+
+- The config is JSON in `users.home_config` (schemaV27), parsed by
+  `parseHomeConfig` (`internal/httpapi/home.go`); the store keeps the raw string
+  (set via `UserStore.SetHomeConfig`), like `feeds.scrape_config`. The shape is
+  `[{"kind":"collection","ref_id":<id>}]` — `kind` leaves room for more source
+  types later; the first cut only renders `collection` entries.
+- **Empty sections are dropped** and a pinned collection deleted since pinning
+  is skipped. With no config, or when every pinned section is empty, `/` falls
+  back to the full unread list, so behavior is unchanged until customized.
+- The full unread list moved to **`/unread`** (handler `unread` →
+  `renderUnread`); the topbar "unread" link and the command palette point there.
+  The display-mode scope for it is `/unread`.
+- `/settings` has a "home screen" card (`settingsHomeCard`) to pin/unpin and
+  reorder collections. Ordering is **server-side** (`POST /settings/home` with
+  `action=add|up|down|remove`, `POST /settings/home/reset`), so no client JS is
+  needed; the card re-renders itself whole.
+
 ## Collections and feed editing
 
 - The collections index renders each collection as a `.card` with feed/unread/

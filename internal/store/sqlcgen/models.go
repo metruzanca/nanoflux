@@ -173,6 +173,7 @@ type User struct {
 	Timezone              sql.NullString `json:"timezone"`
 	Theme                 string         `json:"theme"`
 	AccentColor           string         `json:"accent_color"`
+	HomeConfig            sql.NullString `json:"home_config"`
 	FavoritesShareToken   sql.NullString `json:"favorites_share_token"`
 	CreatedAt             string         `json:"created_at"`
 }

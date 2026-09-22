@@ -44,6 +44,7 @@ var accentPresets = []string{
 
 type settingsData struct {
 	settingsAvatarData
+	Home      settingsHomeData
 	Timezone  settingsTimezoneData
 	Theme     settingsThemeData
 	Accent    settingsAccentData
@@ -106,6 +107,7 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	web.Render(w, r, basePage("settings", u, settingsPage(u, settingsData{
 		settingsAvatarData: settingsAvatarData{HasAvatar: u.HasAvatar},
+		Home:               s.settingsHomeData(u.ID, ""),
 		Timezone:           settingsTimezoneData{Timezone: u.Timezone},
 		Theme:              settingsThemeData{Theme: u.Theme},
 		Accent:             settingsAccentData{Accent: u.AccentColor},

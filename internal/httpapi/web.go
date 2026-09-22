@@ -211,17 +211,6 @@ func cursorID(r *http.Request, asc bool) int64 {
 	return n
 }
 
-func (s *Server) home(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	asc := itemsAsc(r)
-	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Ascending: asc, Limit: pageSize})
-	unread, _ := s.store.Items.CountUnread(u.ID, 0)
-	web.Render(w, r, basePage("unread", u, homePage(homeData{
-		Unread: withTZ(u.Timezone, items), UnreadCount: unread, Dir: dirParam(asc),
-		More: pageCursor("/items?dir="+dirParam(asc), items, more, asc),
-	})))
-}
-
 func (s *Server) itemsReadAll(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	if err := s.store.Items.MarkAllRead(u.ID, 0); err != nil {

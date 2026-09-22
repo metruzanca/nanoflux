@@ -1,0 +1,57 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+// settingsHomeCard lets the user pin collections to their home screen. Rows are
+// reordered with server-side up/down actions (no client JS), and empty
+// collections simply don't render on the home page.
+templ settingsHomeCard(d settingsHomeData) {
+	<section class="card" id="settings-home-card">
+		<h2>home screen</h2>
+		<p class="muted small">Pin collections to your home page. Each shows that collection's unread items; a collection with no unread items is hidden. With nothing pinned, home is your unread list.</p>
+		if d.Error != "" {
+			<div class="error" role="alert">{ d.Error }</div>
+		}
+		<ul class="plain" id="settings-home-list">
+			for i, r := range d.Rows {
+				<li id={ "settings-home-" + strconv.FormatInt(r.Collection.ID, 10) }>
+					<div class="row">
+						<a href={ "/collections/" + strconv.FormatInt(r.Collection.ID, 10) }>{ r.Collection.Name }</a>
+						<div class="row-actions">
+							if i > 0 {
+								<button class="link" title="move up" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-vals={ `{"action":"up","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>↑</button>
+							}
+							if i < len(d.Rows)-1 {
+								<button class="link" title="move down" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-vals={ `{"action":"down","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>↓</button>
+							}
+							<button class="link danger" title="remove" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-vals={ `{"action":"remove","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>@web.Lucide("x")</button>
+						</div>
+					</div>
+				</li>
+			}
+			if len(d.Rows) == 0 {
+				<li class="muted small">no pinned collections</li>
+			}
+		</ul>
+		if len(d.Collections) > 0 {
+			<form class="row" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML">
+				<input type="hidden" name="action" value="add"/>
+				<label>pin a collection
+					<select name="add_collection">
+						for _, c := range d.Collections {
+							<option value={ strconv.FormatInt(c.ID, 10) }>{ c.Name }</option>
+						}
+					</select>
+				</label>
+				<button type="submit">pin</button>
+			</form>
+		}
+		if len(d.Rows) > 0 {
+			<button class="link" hx-post="/settings/home/reset" hx-target="#settings-home-card" hx-swap="outerHTML" hx-confirm="reset your home screen to the default unread list?">reset to default</button>
+		}
+	</section>
+}
