@@ -283,9 +283,9 @@ templ DisplayModeControl(scope string) {
 
 // AuthorSortControl sorts the authors list alphabetically ("abc"), by newest
 // first, or by most unread items. Client-side: app.js reorders the rendered
-// rows.
+// rows. The default is "unread".
 templ AuthorSortControl() {
-	@PickerControl("authors", "sort", "abc", "", []pickerOption{
+	@PickerControl("authors", "sort", "unread", "", []pickerOption{
 		{Value: "abc", Label: "abc"},
 		{Value: "newest", Label: "newest"},
 		{Value: "unread", Label: "unread"},
