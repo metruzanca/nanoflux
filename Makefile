@@ -20,7 +20,7 @@ latest_image_tag = $(shell \
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop restart update icons extension status logs shell version backup down
+.PHONY: help start stop restart update icons extension status logs shell version backup restore down
 
 help:
 	@echo "nanoflux - manage your instance"
@@ -67,7 +67,11 @@ update:
 		$(RUNTIME) tag $(GHCR_IMAGE):$$TAG $(GHCR_IMAGE):latest; \
 	fi; \
 	$(COMPOSE) up -d --force-recreate; \
-	NEW="$$($(COMPOSE) exec -T nanoflux nanoflux version 2>/dev/null | tr -d '[:space:]')"; \
+	NEW="$$(for i in $$(seq 1 30); do \
+		V="$$($(COMPOSE) exec -T nanoflux nanoflux version 2>/dev/null | tr -d '[:space:]')"; \
+		if [ -n "$$V" ]; then echo "$$V"; break; fi; \
+		sleep 1; \
+	done)"; \
 	echo "version: $${OLD:-unknown} -> $${NEW:-unknown}"
 
 status:
@@ -91,25 +95,48 @@ shell:
 version:
 	$(COMPOSE) exec nanoflux nanoflux version
 
+# Snapshot the database and file store into backups/. This runs the app's own
+# `nanoflux backup`, which snapshots the SQLite database with VACUUM INTO (a
+# consistent copy even while the server runs in WAL mode) and includes the local
+# file store. A plain tar of the live volume would be inconsistent.
+#
+# Both targets refuse to run unless the volumes exist, so they can never mount a
+# missing name (podman would silently create an empty volume and archive
+# nothing). The volume names are pinned in docker-compose.yml.
+VOLUMES := nanoflux-db nanoflux-files
+
 backup:
 	@mkdir -p backups
+	@for v in $(VOLUMES); do $(RUNTIME) volume exists $$v || { echo "volume $$v does not exist - start the instance first (make start)"; exit 1; }; done
 	$(RUNTIME) run --rm \
-		-v nanoflux-db:/data:ro \
+		-e NF_DB=/data/rss.db \
+		-e NF_FILE_STORE=/filestore \
+		-v nanoflux-db:/data \
 		-v nanoflux-files:/filestore:ro \
 		-v $(CURDIR)/backups:/backup \
-		alpine:3.20 \
-		sh -c 'tar czf /backup/nanoflux-$$(date +%Y%m%d-%H%M%S).tar.gz -C / data filestore'
+		$(GHCR_IMAGE):latest \
+		backup -o /backup
 
 restore:
 	@test -n "$(ARCHIVE)" || (echo "usage: make restore ARCHIVE=backups/nanoflux-<timestamp>.tar.gz"; exit 1)
 	@case "$(ARCHIVE)" in */*) echo "ARCHIVE must be a filename inside backups/"; exit 1;; esac
+	@test -f "backups/$(ARCHIVE)" || (echo "backups/$(ARCHIVE) not found"; exit 1)
+	@for v in $(VOLUMES); do $(RUNTIME) volume exists $$v || { echo "volume $$v does not exist"; exit 1; }; done
 	$(COMPOSE) stop
+	@# Extract straight into the mounted volumes with alpine rather than the app
+	@# CLI: the archive holds data/rss.db + filestore/… (no bare dir entries), so
+	@# extract the whole archive at the root. Stale -wal/-shm are cleared so the
+	@# restored DB opens cleanly.
 	$(RUNTIME) run --rm \
 		-v nanoflux-db:/data \
 		-v nanoflux-files:/filestore \
 		-v $(CURDIR)/backups:/backup:ro \
 		alpine:3.20 \
-		sh -c 'tar xzf "/backup/$(ARCHIVE)" -C / data filestore'
+		sh -c 'set -e; \
+			rm -rf /data/* /data/.[!.]* /filestore/* /filestore/.[!.]* 2>/dev/null || true; \
+			tar xzf "/backup/$(ARCHIVE)" -C /; \
+			rm -f /data/rss.db-wal /data/rss.db-shm; \
+			test -s /data/rss.db'
 	@echo "restore complete - start the instance with: make start"
 
 down:

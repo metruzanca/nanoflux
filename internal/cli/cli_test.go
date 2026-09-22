@@ -413,3 +413,44 @@ func TestBackupRejectsUnreadable(t *testing.T) {
 		t.Fatal("expected error for missing archive")
 	}
 }
+
+// TestSwapDBCrossDevice guards the EXDEV fix: the extracted snapshot lives on a
+// different filesystem than the data volume in a container (its /tmp vs the
+// mounted /data), so swapDB must copy before renaming. If /dev/shm is not a
+// separate device on this host, the test is skipped.
+func TestSwapDBCrossDevice(t *testing.T) {
+	if stat, err := os.Stat("/dev/shm"); err != nil || !stat.IsDir() {
+		t.Skip("/dev/shm unavailable")
+	}
+	srcDir, err := os.MkdirTemp("/dev/shm", "nanoflux-swap-")
+	if err != nil {
+		t.Skipf("cannot use /dev/shm: %v", err)
+	}
+	defer os.RemoveAll(srcDir)
+
+	dstDir := t.TempDir()
+	path := filepath.Join(dstDir, "rss.db")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(srcDir, "rss.db")
+	if err := os.WriteFile(src, []byte("snapshot"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := swapDB(path, src); err != nil {
+		t.Fatalf("swapDB: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != "snapshot" {
+		t.Fatalf("db not swapped: %q err=%v", got, err)
+	}
+	// The source is left behind (it was copied), and no stale temp remains
+	// beside the database.
+	if _, err := os.Stat(path + ".new"); !os.IsNotExist(err) {
+		t.Fatalf("temp .new file left behind: %v", err)
+	}
+	if _, err := os.Stat(path + ".old"); !os.IsNotExist(err) {
+		t.Fatalf("temp .old file left behind: %v", err)
+	}
+}
