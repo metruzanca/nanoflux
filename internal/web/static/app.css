@@ -400,6 +400,12 @@ table.shortcuts td:first-child { color: var(--fg); font-weight: 600; white-space
 
 div.stats { gap: 1.5rem; margin: 0.9rem 0; flex-wrap: wrap; }
 div.stats strong { font-size: 1.1rem; }
+
+/* Author card stats: a compact, left-aligned strip under the author name. */
+.author-stats { border-top: 1px solid var(--border); margin-top: 0.75rem; padding-top: 0.6rem; }
+.author-stats div.stats { justify-content: flex-start; gap: 1.25rem; margin: 0.25rem 0 0; }
+.author-stats div.stats span { color: var(--muted); font-size: 0.85rem; }
+.author-stats div.stats strong { color: var(--fg); }
 .error.banner { padding: 0.7rem 0.9rem; }
 .badge.danger { background: rgba(255, 107, 107, 0.18); color: var(--fg); }
 

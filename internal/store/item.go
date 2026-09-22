@@ -292,6 +292,49 @@ func (s *ItemStore) RecentTimes(feedID int64, limit int) ([]string, error) {
 	return rows, nil
 }
 
+// AuthorRecentTimes returns the newest item times across an author's feeds,
+// newest first, up to limit. Used to estimate the author's posting cadence.
+func (s *ItemStore) AuthorRecentTimes(userID, authorID int64, limit int) ([]string, error) {
+	return s.q.ListAuthorRecentItemTimes(context.Background(), sqlcgen.ListAuthorRecentItemTimesParams{
+		UserID:   userID,
+		AuthorID: authorID,
+		Limit:    int64(limit),
+	})
+}
+
+// AuthorItemStats aggregates one author's posts across all of their feeds.
+type AuthorItemStats struct {
+	Total     int    // all-time posts
+	Unread    int    // unread posts
+	Read      int    // read posts
+	Favorites int    // favorited posts
+	Recent    int    // posts within the recent window
+	FirstAt   string // oldest post time, "" when the author has no posts
+	LastAt    string // newest post time, "" when the author has no posts
+}
+
+// StatsAuthor returns all-time aggregate stats for an author across all of their
+// feeds: total/read/unread/favorite counts, first and last post times, and how
+// many posts fall in the last 30 days.
+func (s *ItemStore) StatsAuthor(userID, authorID int64) (AuthorItemStats, error) {
+	r, err := s.q.GetAuthorItemStats(context.Background(), sqlcgen.GetAuthorItemStatsParams{
+		UserID:   userID,
+		AuthorID: authorID,
+	})
+	if err != nil {
+		return AuthorItemStats{}, err
+	}
+	return AuthorItemStats{
+		Total:     int(r.TotalPosts),
+		Unread:    int(r.UnreadPosts),
+		Read:      int(r.ReadPosts),
+		Favorites: int(r.FavoritePosts),
+		Recent:    int(r.RecentPosts),
+		FirstAt:   r.FirstPostAt,
+		LastAt:    r.LastPostAt,
+	}, nil
+}
+
 // ReplaceEnclosures deletes and re-inserts an item's enclosures.
 func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
 	if err := s.q.DeleteEnclosures(context.Background(), itemID); err != nil {

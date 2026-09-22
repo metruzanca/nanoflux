@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -552,4 +553,69 @@ func plural(n int, unit string) string {
 		u += "s"
 	}
 	return strconv.Itoa(n) + " " + u
+}
+
+// PostFrequency renders an approximate posting cadence from an average gap in
+// seconds (e.g. "≈3/day", "≈2/week", "≈1/month"). It returns "" when the gap
+// is not positive. The reciprocal is expressed in whichever unit reads most
+// naturally: days for sub-weekly, weeks for sub-monthly, months otherwise.
+func PostFrequency(avgGapSec float64) string {
+	if avgGapSec <= 0 {
+		return ""
+	}
+	perDay := 86400 / avgGapSec
+	switch {
+	case perDay >= 1:
+		return "≈" + trimFloat(perDay) + "/day"
+	case perDay*7 >= 1:
+		return "≈" + trimFloat(perDay*7) + "/week"
+	case perDay*30 >= 1:
+		return "≈" + trimFloat(perDay*30) + "/month"
+	default:
+		return "≈" + trimFloat(perDay*365) + "/year"
+	}
+}
+
+// trimFloat renders a frequency with at most one decimal, dropping a trailing
+// ".0" ("3", "1.5").
+func trimFloat(f float64) string {
+	if f >= 10 {
+		return strconv.FormatFloat(f, 'f', 0, 64)
+	}
+	return strings.TrimSuffix(strconv.FormatFloat(f, 'f', 1, 64), ".0")
+}
+
+// AverageGapSeconds estimates the average spacing between stored item times (in
+// seconds). It sorts them, drops duplicates/out-of-order entries, and averages
+// the positive gaps. ok is false when fewer than two valid, distinct times are
+// available.
+func AverageGapSeconds(times []string) (sec float64, ok bool) {
+	var parsed []time.Time
+	for _, s := range times {
+		t, err := db.ParseTime(s)
+		if err != nil {
+			continue
+		}
+		parsed = append(parsed, t)
+	}
+	if len(parsed) < 2 {
+		return 0, false
+	}
+	sort.Slice(parsed, func(i, j int) bool { return parsed[i].Before(parsed[j]) })
+	var sum time.Duration
+	var n int
+	prev := parsed[0]
+	for _, t := range parsed[1:] {
+		d := t.Sub(prev)
+		prev = t
+		if d <= 0 {
+			continue
+		}
+		sum += d
+		n++
+	}
+	if n == 0 {
+		return 0, false
+	}
+	return sum.Seconds() / float64(n), true
 }

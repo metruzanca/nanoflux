@@ -166,6 +166,54 @@ func (q *Queries) DeleteEnclosures(ctx context.Context, itemID int64) error {
 	return err
 }
 
+const getAuthorItemStats = `-- name: GetAuthorItemStats :one
+SELECT
+    COUNT(i.id) AS total_posts,
+    COUNT(CASE WHEN i.read = 0 THEN 1 END) AS unread_posts,
+    COUNT(CASE WHEN i.read = 1 THEN 1 END) AS read_posts,
+    COUNT(CASE WHEN i.favorite = 1 THEN 1 END) AS favorite_posts,
+    CAST(COALESCE(MIN(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS first_post_at,
+    CAST(COALESCE(MAX(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS last_post_at,
+    COUNT(CASE WHEN COALESCE(i.published_at, i.fetched_at) >= datetime('now', '-30 days') THEN 1 END) AS recent_posts
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+WHERE f.user_id = ?1 AND f.author_id = ?2
+`
+
+type GetAuthorItemStatsParams struct {
+	UserID   int64 `json:"userID"`
+	AuthorID int64 `json:"authorID"`
+}
+
+type GetAuthorItemStatsRow struct {
+	TotalPosts    int64  `json:"total_posts"`
+	UnreadPosts   int64  `json:"unread_posts"`
+	ReadPosts     int64  `json:"read_posts"`
+	FavoritePosts int64  `json:"favorite_posts"`
+	FirstPostAt   string `json:"first_post_at"`
+	LastPostAt    string `json:"last_post_at"`
+	RecentPosts   int64  `json:"recent_posts"`
+}
+
+// Aggregate stats for one author across all of their feeds: all-time post
+// counts (read/unread split), first/last post times, and posts within the last
+// 30 days (COALESCE(published_at, fetched_at) is the canonical item time).
+// COUNT(CASE ...) returns 0 (not NULL) on an empty set; MIN/MAX stay NULL.
+func (q *Queries) GetAuthorItemStats(ctx context.Context, arg GetAuthorItemStatsParams) (GetAuthorItemStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, getAuthorItemStats, arg.UserID, arg.AuthorID)
+	var i GetAuthorItemStatsRow
+	err := row.Scan(
+		&i.TotalPosts,
+		&i.UnreadPosts,
+		&i.ReadPosts,
+		&i.FavoritePosts,
+		&i.FirstPostAt,
+		&i.LastPostAt,
+		&i.RecentPosts,
+	)
+	return i, err
+}
+
 const getItem = `-- name: GetItem :one
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
@@ -353,6 +401,46 @@ func (q *Queries) InsertEnclosure(ctx context.Context, arg InsertEnclosureParams
 		arg.Sort,
 	)
 	return err
+}
+
+const listAuthorRecentItemTimes = `-- name: ListAuthorRecentItemTimes :many
+SELECT COALESCE(i.published_at, i.fetched_at) AS t
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+WHERE f.user_id = ?1 AND f.author_id = ?2
+ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
+LIMIT ?3
+`
+
+type ListAuthorRecentItemTimesParams struct {
+	UserID   int64 `json:"userID"`
+	AuthorID int64 `json:"authorID"`
+	Limit    int64 `json:"limit"`
+}
+
+// The newest item times across all of an author's feeds, for estimating a
+// posting cadence (mirrors ListRecentItemTimes, author-scoped).
+func (q *Queries) ListAuthorRecentItemTimes(ctx context.Context, arg ListAuthorRecentItemTimesParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listAuthorRecentItemTimes, arg.UserID, arg.AuthorID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		items = append(items, t)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listEnclosures = `-- name: ListEnclosures :many

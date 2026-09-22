@@ -1294,6 +1294,33 @@ func TestAuthorPageDropsSelfLinks(t *testing.T) {
 	}
 }
 
+func TestAuthorPageStats(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	old := db.FormatTime(time.Now().Add(-100 * 24 * time.Hour))
+	recent := db.FormatTime(time.Now().Add(-1 * time.Hour))
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Old", Link: "https://b.dev/1", PublishedAt: old, FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "New", Link: "https://b.dev/2", PublishedAt: recent, FetchedAt: db.Now()})
+
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	for _, want := range []string{
+		`aria-label="author statistics"`,
+		"<strong>2</strong> posts",
+		"<strong>2</strong> unread",
+		"<strong>1</strong> feeds",
+		"in last 30 days",
+		"first post",
+		"newest post",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("author stats missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestDisplayModeControlPresent(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

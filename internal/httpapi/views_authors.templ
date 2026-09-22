@@ -185,6 +185,7 @@ templ authorPage(u store.User, d authorData) {
 		if d.Author.Description != "" {
 			<p>{ d.Author.Description }</p>
 		}
+		@authorStats(d.Stats, len(d.Rows), d.Frequency, d.Timezone)
 	</section>
 	<h2>feeds</h2>
 	@FeedsList(d.Rows)
@@ -218,4 +219,34 @@ templ authorCreateFields(d authorPreviewForm) {
 			<input name="avatar_url" type="url" value={ d.AvatarURL }/>
 		</label>
 	</div>
+}
+
+// authorStats shows aggregate numbers across all of an author's feeds: posts
+// published, the read/unread split, the posting cadence, and how fresh the
+// newest post is. Rendered inside the author card.
+templ authorStats(s store.AuthorItemStats, feedCount int, frequency, tz string) {
+	if s.Total > 0 || feedCount > 0 {
+		<div class="author-stats">
+			<div class="row stats" aria-label="author statistics">
+				<span><strong>{ s.Total }</strong> posts</span>
+				<span><strong>{ s.Unread }</strong> unread</span>
+				<span><strong>{ s.Read }</strong> read</span>
+				<span><strong>{ feedCount }</strong> feeds</span>
+				if frequency != "" {
+					<span title="approximate posting frequency"><strong>{ frequency }</strong></span>
+				}
+				if s.Recent > 0 {
+					<span><strong>{ s.Recent }</strong> in last 30 days</span>
+				}
+				if s.Favorites > 0 {
+					<span><strong>{ s.Favorites }</strong> favorited</span>
+				}
+			</div>
+			if s.FirstAt != "" {
+				<div class="item-meta">
+					first post { web.TimeFmt(tz, s.FirstAt) } · newest post { web.TimeFmt(tz, s.LastAt) }
+				</div>
+			}
+		</div>
+	}
 }
