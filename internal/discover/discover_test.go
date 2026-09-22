@@ -342,6 +342,41 @@ func TestPageMetaOgImageNotPreferred(t *testing.T) {
 	}
 }
 
+// TestPageMetaCDATA asserts that a URL which is itself an XML feed (so its
+// <title> is served as <![CDATA[name]]>) yields a clean title for author
+// prefill, rather than the raw CDATA markers.
+func TestPageMetaCDATA(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title><![CDATA[username123]]></title><link>https://example.com/</link></channel></rss>`))
+	}))
+	defer srv.Close()
+
+	meta, err := New(srv.Client()).PageMeta(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Title != "username123" {
+		t.Fatalf("title = %q, want username123", meta.Title)
+	}
+}
+
+func TestStripCDATA(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"<![CDATA[username123]]>", "username123"},
+		{"<![CDATA[user]]> name", "user name"},
+		{"<![CDATA[a]]> and <![CDATA[b]]>", "a and b"},
+		{"plain", "plain"},
+		{"<![CDATA[unterminated", "unterminated"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := stripCDATA(c.in); got != c.want {
+			t.Errorf("stripCDATA(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestPageTitleYouTube(t *testing.T) {
 	cases := []struct{ page, title, want string }{
 		{"https://youtube.com/@EddyBurback", "Eddy Burback - YouTube", "Eddy Burback"},
