@@ -111,6 +111,13 @@ discovery rules in `internal/discover/host.go` (`hostSpecificURLs`):
 
 ## YouTube channel feeds
 
+`discover.PageMeta` special-cases YouTube channel pages: it uses the channel's
+`og:image` (`yt3.googleusercontent.com`) as the icon instead of the hashed build
+favicon, and `pageTitle` strips the " - YouTube" suffix YouTube appends to
+`<title>`, so the author-name prefill reads "Eddy Burback" rather than
+"Eddy Burback - YouTube". Both consumers (`renderFeedPreviewForm`,
+`authorPrefill`, the extension's `saveFeed`) get the clean name/avatar.
+
 The **embed** player in the item modal (`itemContent`, the `EmbedURL` iframe)
 carries `referrerpolicy="origin"`. The app sets a global
 `Referrer-Policy: no-referrer` header, which would otherwise strip the Referer
@@ -441,11 +448,14 @@ The manifest also registers a **share target** (`GET /add?url=…`), so sharing 
 link to the installed app on Android opens nanoflux's add-feed flow. `shareAdd`
 (`internal/httpapi/share.go`) extracts the URL (`url`, else the first URL in
 `text`) and renders `shareAddPage`, which triggers the normal
-`/fragments/feed-preview` flow into `#share-preview` with `redirect=1`; the
-saved feed then returns `HX-Redirect` to its author page (`feedCreate`). The
-discovery step is shared between `feedPreview` and the share flow via
-`discoverCandidates` (`internal/httpapi/preview.go`). Share targets are
-Chromium/Android-only (iOS Safari ignores them).
+`/fragments/feed-preview` flow into `#share-preview`. The discovery step is
+shared between `feedPreview` and the share flow via `discoverCandidates`
+(`internal/httpapi/preview.go`). The **global** add flow (no fixed author — the
+`/authors` dialog and the share page) makes the saved feed return `HX-Redirect`
+to its author page (`feedCreate`), while the author-scoped feed flow appends the
+new feed row in place (`renderFeedPreviewForm` sets `Redirect` from
+`fixedAuthor == nil`). Share targets are Chromium/Android-only (iOS Safari
+ignores them).
 
 ## Browser extension distribution
 
@@ -457,10 +467,13 @@ shows the download plus load-unpacked steps. `make extension` writes the same
 zip to `dist/` via `tools/extzip`. The `*_templ`/`extension.go` JSON API it
 talks to is documented under the API surface (`/api/discover` now returns a
 `saved` flag + `saved_feed_id` and the user's `accent`, and `/api/ext/feed-form`
-+ `/api/ext/save` render the add form/save as htmx fragments). Auth that must
-survive a login round trip (e.g. a shared `/add` link opened logged-out) uses a
-safe relative `next` param: `auth.Require` adds `?next=…` to its `/login`
-redirect and `login` returns there.
++ `/api/ext/save` render the add form/save as htmx fragments). `saveFeed`'s
+auto-created author gets its avatar (and home URL) from the page the user was on
+(`pageIconURL` → `discover.PageMeta` → site favicon, or the channel's og:image
+on YouTube), then caches it like the web flow. Auth that must survive a login
+round trip (e.g. a shared `/add` link opened logged-out) uses a safe relative
+`next` param: `auth.Require` adds `?next=…` to its `/login` redirect and `login`
+returns there.
 
 - **templ syntax quirk (v0.3.1020):** use bare `if`/`for`/`switch` statements
   (not `@if`/`@for` — those generate broken Go). A `{ expr }` block must NOT

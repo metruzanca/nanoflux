@@ -10,8 +10,8 @@ import templruntime "github.com/a-h/templ/runtime"
 
 // shareAddPage is the PWA share-target landing page. It runs the existing
 // feed-preview flow for the shared URL, rendering the add form (or the picker,
-// or the no-feed banner) into #share-preview; redirect=1 makes the save land on
-// the new author's page.
+// or the no-feed banner) into #share-preview; the global add flow lands on the
+// new author's page once saved.
 func shareAddPage(url string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -59,20 +59,7 @@ func shareAddPage(url string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div id=\"share-preview\" hx-post=\"/fragments/feed-preview\" hx-trigger=\"load\" hx-include=\"#share-url\" hx-vals=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var4 string
-		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.ResolveAttributeValue(`{"redirect":"1"}`)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_share.templ`, Line: 15, Col: 30}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var4)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" hx-target=\"#share-preview\" hx-swap=\"innerHTML\"><p class=\"muted\">searching…</p></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div id=\"share-preview\" hx-post=\"/fragments/feed-preview\" hx-trigger=\"load\" hx-include=\"#share-url\" hx-target=\"#share-preview\" hx-swap=\"innerHTML\"><p class=\"muted\">searching…</p></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
