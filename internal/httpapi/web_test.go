@@ -1326,6 +1326,9 @@ func TestAuthorPageFeedShowsCollectionTags(t *testing.T) {
 	dev, _ := s.store.Collections.Create(u.ID, "dev")
 	s.store.Collections.AddFeed(u.ID, cats.ID, f.ID)
 	s.store.Collections.AddFeed(u.ID, dev.ID, f.ID)
+	// An auto collection also holds the feed but must not render a tag.
+	yt, _ := s.store.Collections.EnsureAuto(u.ID, "youtube.com")
+	s.store.Collections.AddFeed(u.ID, yt.ID, f.ID)
 
 	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
 	// Both collections render as clickable "#name" tags linking to the
@@ -1338,6 +1341,10 @@ func TestAuthorPageFeedShowsCollectionTags(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("author page missing collection tag %q: %s", want, body)
 		}
+	}
+	// Auto collections don't render a tag (they mirror the feed's own site).
+	if strings.Contains(body, `href="/collections/`+itoa(yt.ID)+`"`) || strings.Contains(body, "#youtube.com") {
+		t.Fatalf("auto collection should not render a tag: %s", body)
 	}
 	// The feed with no collections renders no tags.
 	body2 := doGet(h, "/feeds/"+itoa(f2.ID), cookie).Body.String()

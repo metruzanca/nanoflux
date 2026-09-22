@@ -188,7 +188,7 @@ SELECT cf.feed_id, c.id, c.name, c.is_auto
 FROM collection_feeds cf
 JOIN collections c ON c.id = cf.collection_id
 JOIN feeds f ON f.id = cf.feed_id
-WHERE c.user_id = ? AND f.user_id = ? AND f.author_id = ?
+WHERE c.user_id = ? AND f.user_id = ? AND f.author_id = ? AND c.is_auto = 0
 ORDER BY c.name
 `
 
@@ -205,6 +205,8 @@ type ListCollectionsForAuthorFeedsRow struct {
 	IsAuto int64  `json:"is_auto"`
 }
 
+// Auto collections (is_auto = 1) are excluded: they track a feed's site, not a
+// user grouping, and would duplicate the feed's own site as a tag.
 func (q *Queries) ListCollectionsForAuthorFeeds(ctx context.Context, arg ListCollectionsForAuthorFeedsParams) ([]ListCollectionsForAuthorFeedsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listCollectionsForAuthorFeeds, arg.UserID, arg.UserID_2, arg.AuthorID)
 	if err != nil {

@@ -418,8 +418,9 @@ The DB stores object **keys** (`users.avatar_key`, `source_icons.icon_key`).
 - An author page's feed rows show the **collections** each feed belongs to as
   clickable `#name` tags (`.tag` → `/collections/{id}`), from
   `CollectionStore.CollectionsByAuthorFeed` (one query per author, keyed by feed
-  id). `feedRow.Collections` carries them; the add/refresh/toggle row fragments
-  build their row via `Server.feedRowFor` so a swapped row keeps its tags.
+  id). Auto collections are excluded (they mirror the feed's own site).
+  `feedRow.Collections` carries them; the add/refresh/toggle row fragments build
+  their row via `Server.feedRowFor` so a swapped row keeps its tags.
 - Adding a feed is **blocked when the user already has a feed with that exact
   `feed_url`** (`Server.feedURLExists`, normalized like the extension's `saved`
   check) — a warning renders into `#add-feed-error`. Duplicate titles/home URLs
