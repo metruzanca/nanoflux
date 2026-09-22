@@ -12,7 +12,7 @@ import (
 templ settingsHomeCard(d settingsHomeData) {
 	<section class="card" id="settings-home-card">
 		<h2>home screen</h2>
-		<p class="muted small">Pin collections to your home page. Each shows that collection's unread items; a collection with no unread items is hidden. With nothing pinned, home is your unread list.</p>
+		<p class="muted small">Pin collections to your home page. Each shows that collection's unread items; a collection with no unread items is hidden. Pick list or grid per section. With nothing pinned, home is your unread list.</p>
 		if d.Error != "" {
 			<div class="error" role="alert">{ d.Error }</div>
 		}
@@ -22,6 +22,15 @@ templ settingsHomeCard(d settingsHomeData) {
 					<div class="row">
 						<a href={ "/collections/" + strconv.FormatInt(r.Collection.ID, 10) }>{ r.Collection.Name }</a>
 						<div class="row-actions">
+							<select name="mode" title="how this section renders on your home page" aria-label="render method" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-trigger="change" hx-vals={ `{"action":"mode","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>
+								if r.Mode == "grid" {
+									<option value="list">list</option>
+									<option value="grid" selected>grid</option>
+								} else {
+									<option value="list" selected>list</option>
+									<option value="grid">grid</option>
+								}
+							</select>
 							if i > 0 {
 								<button class="link" title="move up" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-vals={ `{"action":"up","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>↑</button>
 							}

@@ -137,6 +137,54 @@ func TestSettingsHomeCard(t *testing.T) {
 	}
 }
 
+func TestHomeSectionRenderMode(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, cats, _ := homeFixture(t, s)
+
+	// A config without a mode defaults to the list view.
+	s.store.Users.SetHomeConfig(u.ID, `[{"kind":"collection","ref_id":`+itoa(cats.ID)+`}]`)
+	body := doGet(h, "/", cookie).Body.String()
+	if strings.Contains(body, `class="items masonry"`) {
+		t.Fatalf("list-mode section should not carry the masonry class: %s", body)
+	}
+
+	// Grid mode puts the masonry class on that section's item list.
+	s.store.Users.SetHomeConfig(u.ID, `[{"kind":"collection","ref_id":`+itoa(cats.ID)+`,"mode":"grid"}]`)
+	body = doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `class="items masonry"`) {
+		t.Fatalf("grid-mode section should carry the masonry class: %s", body)
+	}
+}
+
+func TestSettingsHomeRenderMode(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, cats, _ := homeFixture(t, s)
+	s.store.Users.SetHomeConfig(u.ID, `[{"kind":"collection","ref_id":`+itoa(cats.ID)+`}]`)
+
+	// The settings card offers a per-section render-method select.
+	body := doGet(h, "/settings", cookie).Body.String()
+	if !strings.Contains(body, `name="mode"`) || !strings.Contains(body, `>grid</option>`) {
+		t.Fatalf("settings home card should offer a render-method select: %s", body)
+	}
+
+	rr := doForm(h, "POST", "/settings/home", url.Values{
+		"action": {"mode"}, "collection_id": {itoa(cats.ID)}, "mode": {"grid"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set mode: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ := s.store.Users.ByID(u.ID)
+	if !strings.Contains(after.HomeConfig, `"mode":"grid"`) {
+		t.Fatalf("home config should record the grid mode: %q", after.HomeConfig)
+	}
+	// And the home page now renders the section as a grid.
+	if home := doGet(h, "/", cookie).Body.String(); !strings.Contains(home, `class="items masonry"`) {
+		t.Fatalf("home should render the section as a grid: %s", home)
+	}
+}
+
 func TestHomeRequiresAuth(t *testing.T) {
 	_, h := newTestServer(t)
 	if rr := doGet(h, "/", nil); rr.Code != http.StatusFound {

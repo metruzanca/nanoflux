@@ -57,7 +57,8 @@ templ signupDisabledPage() {
 
 // dashboardPage is the customizable home: the user's pinned collection
 // sections, each a compact list of that collection's unread items. Empty
-// sections are dropped before render.
+// sections are dropped before render. Each section renders as a list or a grid
+// depending on its configured mode.
 templ dashboardPage(d dashboardData) {
 	<h1>home</h1>
 	<div id="home-sections">
@@ -67,7 +68,7 @@ templ dashboardPage(d dashboardData) {
 					<h2><a href={ "/collections/" + strconv.FormatInt(sec.Collection.ID, 10) }>{ sec.Collection.Name }</a></h2>
 					<a class="small" href={ "/collections/" + strconv.FormatInt(sec.Collection.ID, 10) }>more →</a>
 				</div>
-				<ul class="items">
+				<ul class={ "items", templ.KV("masonry", sec.Mode == "grid") }>
 					for _, it := range sec.Items {
 						@ItemRow(it, false)
 					}
