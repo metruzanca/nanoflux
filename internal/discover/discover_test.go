@@ -296,6 +296,57 @@ func mustURL(s string) *url.URL {
 	return u
 }
 
+// TestPageMetaPatreon asserts that a Patreon creator page yields a clean author
+// name (the "— creating … | Patreon" suffix stripped) and the creator avatar
+// from the page's structured-data JSON-LD rather than the generic favicon.
+func TestPageMetaPatreon(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><head>
+		  <title>Chris &amp; Jack — creating Sketch Comedy Videos | Patreon</title>
+		  <link rel="shortcut icon" href="https://www.patreon.com/favicon.ico">
+		  <script type="application/ld+json">{"@type":"ProfilePage","mainEntity":{"name":"Chris & Jack","image":{"contentUrl":"https://c10.patreonusercontent.com/avatar.jpg"}}}</script>
+		</head><body>hi</body></html>`))
+	}))
+	defer srv.Close()
+
+	meta, err := New(clientTo(srv)).PageMeta(context.Background(), "https://www.patreon.com/cw/chrisandjack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.Title != "Chris & Jack" {
+		t.Fatalf("title = %q, want Chris & Jack", meta.Title)
+	}
+	if meta.IconURL != "https://c10.patreonusercontent.com/avatar.jpg" {
+		t.Fatalf("icon = %q, want the creator avatar", meta.IconURL)
+	}
+}
+
+func TestPatreonPageName(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Chris & Jack — creating Sketch Comedy Videos | Patreon", "Chris & Jack"},
+		{"Smarter Every Day | Creating Science Videos | Patreon", "Smarter Every Day"},
+		{"Just A Name", "Just A Name"},
+	}
+	for _, c := range cases {
+		if got := patreonPageName(c.in); got != c.want {
+			t.Errorf("patreonPageName(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestPatreonStructuredAvatar(t *testing.T) {
+	if got := patreonStructuredAvatar(`{"mainEntity":{"image":{"contentUrl":"https://c.test/a.jpg"}}}`); got != "https://c.test/a.jpg" {
+		t.Errorf("contentUrl = %q", got)
+	}
+	if got := patreonStructuredAvatar(`{"mainEntity":{"image":{"thumbnailUrl":"https://c.test/t.jpg"}}}`); got != "https://c.test/t.jpg" {
+		t.Errorf("thumbnailUrl = %q", got)
+	}
+	if got := patreonStructuredAvatar("not json"); got != "" {
+		t.Errorf("non-json = %q", got)
+	}
+}
+
 // TestPageMetaYouTubeAvatar asserts that for a YouTube channel page the real
 // channel avatar (og:image, yt3.googleusercontent.com) wins over the generic,
 // hash-addressed favicon.

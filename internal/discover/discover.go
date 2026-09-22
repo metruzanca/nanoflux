@@ -6,6 +6,7 @@ package discover
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -141,13 +142,32 @@ type PageMeta struct {
 	HomeURL string
 }
 
-// pageTitle returns a page's display title with YouTube's " - YouTube" suffix
-// trimmed, so it can name an author cleanly. Other sites are untouched.
+// pageTitle returns a page's display title with YouTube's " - YouTube" and
+// Patreon's " — creating … | Patreon" suffixes trimmed, so it can name an
+// author cleanly. Other sites are untouched.
 func pageTitle(rawurl, title string) string {
 	if isYouTubePage(rawurl) {
 		return strings.TrimSuffix(title, " - YouTube")
 	}
+	if isPatreonPage(rawurl) {
+		return patreonPageName(title)
+	}
 	return title
+}
+
+// patreonPageName strips the suffix Patreon appends to a creator page's
+// <title> so the author prefill reads cleanly. Two shapes appear:
+// "Chris & Jack — creating Sketch Comedy Videos | Patreon" and
+// "Smarter Every Day | Creating Science Videos | Patreon"; the creator name is
+// everything before the first " | " (then before any " — ").
+func patreonPageName(title string) string {
+	if i := strings.Index(title, " | "); i >= 0 {
+		title = title[:i]
+	}
+	if i := strings.Index(title, " — "); i >= 0 {
+		title = title[:i]
+	}
+	return strings.TrimSpace(title)
 }
 
 // stripCDATA unwraps raw CDATA sections from text extracted by the HTML
@@ -184,9 +204,11 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 
 	meta := PageMeta{HomeURL: pageURL}
 	isYT := isYouTubePage(pageURL)
+	isPatreon := isPatreonPage(pageURL)
 	z := html.NewTokenizer(io.LimitReader(body, maxBody))
 	inTitle := false
-	var ogImage string
+	inStructured := false
+	var ogImage, structured string
 	for {
 		tt := z.Next()
 		switch tt {
@@ -201,6 +223,13 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 			if isYT && ogImage != "" {
 				meta.IconURL = ogImage
 			}
+			// A Patreon creator page exposes its avatar only in its
+			// structured-data JSON-LD; the generic favicon would otherwise win.
+			if isPatreon {
+				if avatar := patreonStructuredAvatar(structured); avatar != "" {
+					meta.IconURL = avatar
+				}
+			}
 			if meta.IconURL == "" {
 				meta.IconURL = fallbackIcon(pageURL)
 			}
@@ -209,11 +238,22 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 			if inTitle && meta.Title == "" {
 				meta.Title = strings.TrimSpace(z.Token().Data)
 			}
+			if inStructured && structured == "" {
+				structured = z.Token().Data
+			}
 		case html.StartTagToken, html.SelfClosingTagToken:
 			t := z.Token()
 			switch t.Data {
 			case "title":
 				inTitle = true
+			case "script":
+				if isPatreon {
+					for _, a := range t.Attr {
+						if a.Key == "type" && strings.Contains(strings.ToLower(a.Val), "ld+json") {
+							inStructured = true
+						}
+					}
+				}
 			case "link":
 				var rel, href string
 				for _, a := range t.Attr {
@@ -242,11 +282,63 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 				}
 			}
 		case html.EndTagToken:
-			if z.Token().Data == "title" {
+			switch z.Token().Data {
+			case "title":
 				inTitle = false
+			case "script":
+				inStructured = false
 			}
 		}
 	}
+}
+
+// isPatreonPage reports whether a URL points at a Patreon creator page.
+func isPatreonPage(rawurl string) bool {
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host != "patreon.com" && host != "www.patreon.com" {
+		return false
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) == 2 && parts[0] == "cw" && parts[1] != "" {
+		return true
+	}
+	if len(parts) == 1 && parts[0] != "" {
+		switch parts[0] {
+		case "api", "user", "posts", "login", "signup", "join", "home",
+			"explore", "search", "settings", "notifications", "messages":
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// patreonStructuredAvatar extracts the creator avatar from a Patreon page's
+// structured-data JSON-LD mainEntity image. It returns "" when absent.
+func patreonStructuredAvatar(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var doc struct {
+		MainEntity struct {
+			Image struct {
+				ContentURL   string `json:"contentUrl"`
+				ThumbnailURL string `json:"thumbnailUrl"`
+			} `json:"image"`
+		} `json:"mainEntity"`
+	}
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return ""
+	}
+	if doc.MainEntity.Image.ContentURL != "" {
+		return doc.MainEntity.Image.ContentURL
+	}
+	return doc.MainEntity.Image.ThumbnailURL
 }
 
 // openPage fetches pageURL and returns its body, the resolved base URL, and an

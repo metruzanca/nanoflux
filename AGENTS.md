@@ -209,6 +209,49 @@ unchanged (the profile URL is the stored `feed_url`, like X).
   backfill.
 - `instagramProfileHosts` is a package var so tests can inject a mock host.
 
+## Patreon campaign feeds
+
+Patreon offers no RSS, but its public web API is credential-free, so
+`internal/feedparse/patreon.go` reads a creator's posts from it.
+`fetchPatreon` runs as a short-circuit inside `feedparse.Fetch` when the URL is
+a Patreon creator page (or its derived posts-API URL), so discovery, the poller,
+and preview all work unchanged — the creator page URL is the stored `feed_url`,
+like X and Instagram.
+
+- **Campaign resolution.** A page URL (`patreon.com/cw/<vanity>` or
+  `patreon.com/<vanity>`) is resolved with
+  `GET /api/campaigns?filter[vanity]=<vanity>`; the API returns `data[0]` with
+  the campaign id, name (`name`), canonical url, summary, and `avatar_photo_url`.
+  `filter[user_id]` returns nothing, so vanity is the only key; `/user?u=<id>`
+  is unsupported. `fetchPatreon` then fetches
+  `GET /api/campaigns/<id>/posts?page[count]=20`.
+- **Recognition is URL-shaped** (host + path), matching X/Instagram — no
+  `feeds.kind`, no schema change. `isPatreonProfileURL` accepts the two page
+  forms and rejects `api`/`user`/`posts`/etc.; `isPatreonPostsURL` accepts the
+  posts-API URL. `patreonProfileHosts` and `patreonAPIBase` are package vars so
+  tests can inject mock hosts.
+- **Pagination is free.** The posts response carries `links.next`, a cursor URL
+  (`.../posts?page[count]=20&page[cursor]=<published_at>`), returned as
+  `Result.NextPageURL`. That cursor is a posts-API URL, which `Fetch` recognizes,
+  so the existing "load older items" walk (`PollOlder`, up to 5 pages/click)
+  works without changes.
+- **Items.** GUID `patreon:<post id>`; link from `attributes.url` (falling back
+  to a `.../posts/<id>` URL); title from `attributes.title`, else derived from
+  the body's first line. The body is extracted from `content_json_string` (a
+  ProseMirror doc walked into plain text, paragraph/list breaks preserved),
+  falling back to `content`. A member-locked post (no body) falls back to
+  `teaser_text`/`teaser_text_json_string` and is kept rather than dropped.
+  Thumbnails come from the first available of `image`/`post_file`/`thumbnail`
+  (`patreonImageURL` handles both the string and object shapes; `large_url` is
+  preferred). Publish time is RFC3339 (`published_at`, else `created_at`) into
+  the stored UTC format.
+- **Discovery polish.** `discover.PageMeta` special-cases Patreon:
+  `pageTitle`/`patreonPageName` strip the "— creating … | Patreon" /
+  "| Creating … | Patreon" suffix so the author prefill reads "Chris & Jack"
+  rather than the whole page title, and the creator avatar is read from the
+  page's `structured-data` JSON-LD `mainEntity.image` (the generic favicon would
+  otherwise win), mirroring the YouTube og:image case.
+
 ## Scraped-site feeds (CSS selectors)
 
 Some sites have no feed at all. When discovery finds none, the add-feed preview
