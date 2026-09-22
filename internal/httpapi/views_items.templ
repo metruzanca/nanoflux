@@ -129,15 +129,16 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor bool) {
 						<a class="item-title unread" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">{ it.Title }</a>
 					}
 					<div class="item-meta">
+						@web.SourceIcon(it.FeedURL)
 						if it.AuthorName != "" && !hideAuthor {
-							<a href={ "/authors/" + strconv.FormatInt(it.AuthorID, 10) }>{ it.AuthorName }</a> ·
+							<a href={ "/authors/" + strconv.FormatInt(it.AuthorID, 10) }>{ it.AuthorName }</a>
+						} else {
+							<a href={ "/feeds/" + strconv.FormatInt(it.FeedID, 10) }>{ it.FeedTitle }</a>
 						}
-@web.SourceIcon(it.FeedURL)
-					<a href={ "/feeds/" + strconv.FormatInt(it.FeedID, 10) }>{ it.FeedTitle }</a>
-					for _, src := range it.Sources {
-						· also in <a href={ "/feeds/" + strconv.FormatInt(src.FeedID, 10) }>{ src.FeedTitle }</a><a href={ templ.URL(src.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external"></a>
-					}
-					if it.PublishedAt != "" {
+						for _, src := range it.Sources {
+							· also in <a href={ "/feeds/" + strconv.FormatInt(src.FeedID, 10) }>{ src.FeedTitle }</a><a href={ templ.URL(src.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external"></a>
+						}
+						if it.PublishedAt != "" {
 							· { web.TimeFmt(it.Timezone, it.PublishedAt) }
 						}
 						if it.Read && it.ReadAt != "" {
@@ -175,7 +176,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor bool) {
 								hx-vals={ `{"hideAuthor":"1"}` }
 							}>@web.Lucide("check")</button>
 					}
-					@itemMenu(it.ID)
+					@itemMenu(it.ID, it.FeedID)
 				</div>
 			</div>
 		</div>
@@ -342,7 +343,7 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 		</p>
 		<div class="item-controls" id="item-dialog-controls-src">
 			@shareControl(d.ID, d.ShareToken)
-			@itemMenu(d.ID)
+			@itemMenu(d.ID, d.FeedID)
 		</div>
 		@itemContent(d, v)
 	</div>
@@ -428,14 +429,15 @@ templ shareControl(itemID int64, token string) {
 
 // itemMenu is the "⋯" action menu on an item card (list/grid) and in the item
 // modal. It opens a dropdown of extra options: "add to list" (fetches the
-// shared lists picker into the layout's dialog) and bulk "mark all before/after
-// as read" for the item's feed. The dropdown is scoped per item via
-// data-item-id so many cards can each have one.
-templ itemMenu(itemID int64) {
+// shared lists picker into the layout's dialog), "go to feed", and bulk
+// "mark all before/after as read" for the item's feed. The dropdown is scoped
+// per item via data-item-id so many cards can each have one.
+templ itemMenu(itemID, feedID int64) {
 	<div class="item-menu" data-item-id={ strconv.FormatInt(itemID, 10) }>
 		<button type="button" class="link menu-btn" aria-haspopup="true" aria-expanded="false" title="more actions" onclick="toggleItemMenu(event)">@web.Lucide("ellipsis")</button>
 		<div class="menu-pop" role="menu" hidden>
 			<button type="button" class="link menu-item" role="menuitem" onclick="itemMenuAction(event, 'lists')">add to list</button>
+			<a class="menu-item" role="menuitem" href={ "/feeds/" + strconv.FormatInt(feedID, 10) }>go to feed</a>
 			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-before" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">mark all before as read</button>
 			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-after" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">mark all after as read</button>
 		</div>

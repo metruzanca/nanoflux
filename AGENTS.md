@@ -16,7 +16,13 @@ The app's own pages are the primary navigation surface. This is a hard rule.
   to `/authors/{id}` and `/feeds/{id}` respectively. Never link them to an
   external URL (e.g. the feed's RSS URL or the author's homepage) — the item
   listing meta, the item modal meta, and any feed/author listing follow this.
-  See `item_row` in `items.html` and `item_view.html`.
+  See `itemRowInner` in `views_items.templ`.
+- **Cards show the author, not the feed.** The list/grid item meta renders the
+  source icon plus the author name (`/authors/{id}`); the feed name is *not*
+  shown, and the feed lives behind the item's ⋯ menu as a "go to feed" link
+  (`/feeds/{id}`). Where the author is suppressed (author-scoped pages, see
+  below) the feed title is the fallback so a card is never nameless. The item
+  modal meta keeps both author and feed links (it is an overlay cross-link).
 - **Every link that leaves the app** (href points at an external `http(s)://`
   origin) MUST carry `class="external"`. `app.css` renders the `↗` marker via
   `a.external::after`, so external links are always visibly marked — e.g.
@@ -435,7 +441,14 @@ sections, each a compact list of that collection's unread items (capped at
 - Feed rows on the author page only offer **edit** and **refresh**; pausing is
   the feed edit page's "enabled (poll this feed)" checkbox, and **delete** lives
   on the feed edit page (`feedDelete` redirects `303` back to the author page).
-  The `/toggle` route remains but has no UI.
+  The `/toggle` route remains but has no UI. The author page's **add feed** is a
+  link-styled button *below* the feed list (it opens the add-feed dialog).
+- Refreshing a feed (`POST /feeds/{id}/refresh`) polls it and re-renders its
+  `FeedRow`; when the request comes from an author page (`authorPageScope` reads
+  htmx's `HX-Current-URL`), the author's `#scoped-items` list is **also
+  OOB-swapped** so newly polled items appear immediately, preserving the current
+  tab/sort. The feed-detail page's refresh button instead discards the fragment
+  (`hx-swap="none"`) and reloads.
 - An author page's feed rows show the **collections** each feed belongs to as
   clickable `#name` tags (`.tag` → `/collections/{id}`), from
   `CollectionStore.CollectionsByAuthorFeed` (one query per author, keyed by feed
@@ -797,6 +810,8 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   "add to list" fetches `GET /items/{id}/lists` and injects `itemListsDialogInner`
   into the single shared `<dialog id="item-lists-dialog">` (in `views_layout.templ`);
   `itemListsUpdate` re-renders that inner content with an `innerHTML` swap.
+  "go to feed" is a plain internal link to `/feeds/{feedID}` (the feed name is
+  no longer in the card meta, so this is how a card reaches its feed).
   "mark all before/after as read" POSTs `/items/{id}/read-before|after` and reloads
   on success.
 - User dropdown: `toggleUserMenu` + outside-click and Escape handlers.

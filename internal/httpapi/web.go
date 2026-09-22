@@ -1022,7 +1022,44 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
-	web.Render(w, r, FeedRow(s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread)))
+	row := s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread)
+
+	// When refreshed from an author page, the author's item list sits on the
+	// same page, so refresh it out-of-band too: a poll that brought new items
+	// should surface them immediately, not just bump the feed's unread count.
+	// The feed detail page discards the response and reloads instead.
+	if view, asc, ok := authorPageScope(r); ok {
+		scoped := s.authorScopedItems(u.ID, f.AuthorID, view, u.Timezone, asc)
+		scoped.SwapOOB = true
+		web.Render(w, r, templ.Join(FeedRow(row), ScopedItems(scoped)))
+		return
+	}
+	web.Render(w, r, FeedRow(row))
+}
+
+// authorPageScope reports the read/unread view and sort direction of the page
+// the request was issued from, but only when it is an author page's feed row
+// (the only refresh surface that also renders an author-scoped item list). The
+// scope rides on htmx's HX-Current-URL so a refresh preserves the user's
+// current tab and sort order rather than resetting them to the defaults.
+func authorPageScope(r *http.Request) (view string, asc, ok bool) {
+	cur := r.Header.Get("HX-Current-URL")
+	if cur == "" {
+		return "", false, false
+	}
+	u, err := url.Parse(cur)
+	if err != nil {
+		return "", false, false
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) != 2 || parts[0] != "authors" {
+		return "", false, false
+	}
+	if _, err := strconv.ParseInt(parts[1], 10, 64); err != nil {
+		return "", false, false
+	}
+	q := u.Query()
+	return normalizeItemsView(q.Get("view")), q.Get("dir") == "asc", true
 }
 
 // feedOlder fetches the next page of a paginated feed ("load older items"),
