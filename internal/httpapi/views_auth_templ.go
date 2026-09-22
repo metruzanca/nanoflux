@@ -143,7 +143,7 @@ func signupPage(errMsg string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<form method=\"post\" action=\"/signup\"><label>username <input name=\"username\" autofocus autocomplete=\"username\" required></label> <label>password <input name=\"password\" type=\"password\" autocomplete=\"new-password\" minlength=\"8\" required></label> <button type=\"submit\">create account</button></form><p class=\"small muted\">already have an account? <a href=\"/login\">log in</a></p></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<form method=\"post\" action=\"/signup\"><input type=\"hidden\" name=\"timezone\" value=\"\"> <label>username <input name=\"username\" autofocus autocomplete=\"username\" required></label> <label>password <input name=\"password\" type=\"password\" autocomplete=\"new-password\" minlength=\"8\" required></label> <button type=\"submit\">create account</button></form><p class=\"small muted\">already have an account? <a href=\"/login\">log in</a></p></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -216,7 +216,7 @@ func dashboardPage(d dashboardData) templ.Component {
 			var templ_7745c5c3_Var8 templ.SafeURL
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs("/collections/" + strconv.FormatInt(sec.Collection.ID, 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 66, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 67, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -229,7 +229,7 @@ func dashboardPage(d dashboardData) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(sec.Collection.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 66, Col: 101}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 67, Col: 101}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -242,7 +242,7 @@ func dashboardPage(d dashboardData) templ.Component {
 			var templ_7745c5c3_Var10 templ.SafeURL
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinURLErrs("/collections/" + strconv.FormatInt(sec.Collection.ID, 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 67, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 68, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -299,7 +299,7 @@ func homePage(d homeData) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(d.UnreadCount)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 81, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 82, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -363,7 +363,7 @@ func readPage(d readData) templ.Component {
 		var templ_7745c5c3_Var14 string
 		templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(d.ReadCount)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 95, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 96, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 		if templ_7745c5c3_Err != nil {
@@ -427,7 +427,7 @@ func favoritesPage(d favoritesData) templ.Component {
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(d.FavCount)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 109, Col: 29}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 110, Col: 29}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -494,7 +494,7 @@ func searchResultsPage(d searchData) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(d.Query)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 122, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_auth.templ`, Line: 123, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
