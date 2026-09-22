@@ -20,6 +20,15 @@ type Author struct {
 	CreatedAt     string         `json:"created_at"`
 }
 
+type AuthorLink struct {
+	ID        int64          `json:"id"`
+	UserID    int64          `json:"user_id"`
+	AuthorID  int64          `json:"author_id"`
+	Label     sql.NullString `json:"label"`
+	Url       string         `json:"url"`
+	CreatedAt string         `json:"created_at"`
+}
+
 type Collection struct {
 	ID        int64  `json:"id"`
 	UserID    int64  `json:"user_id"`

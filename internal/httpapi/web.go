@@ -105,6 +105,7 @@ type authorsData struct {
 type authorData struct {
 	Author store.Author
 	Rows   []feedRow
+	Links  []store.AuthorLink
 	Scoped scopedItemsData
 }
 
@@ -1158,10 +1159,61 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, id)
 	scoped := s.authorScopedItems(u.ID, id, itemsView(r), u.Timezone, itemsAsc(r))
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
-		Author: a, Rows: rows, Scoped: scoped,
+		Author: a, Rows: rows, Links: links, Scoped: scoped,
 	})))
+}
+
+// authorLinkCreate adds an external bookmark to an author from the author page.
+// The response re-renders the whole link list so the empty-state placeholder
+// is replaced cleanly.
+func (s *Server) authorLinkCreate(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	authorID, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.Authors.ByID(u.ID, authorID); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	linkURL := normalizeURL(r.FormValue("url"))
+	if linkURL == "" || invalidURL(linkURL) != "" {
+		writeFormError(w, r, "add-link-error", "enter a valid url")
+		return
+	}
+	if _, err := s.store.AuthorLinks.Create(u.ID, authorID, strings.TrimSpace(r.FormValue("label")), linkURL); err != nil {
+		log.Error("create author link", "err", err)
+		writeFormError(w, r, "add-link-error", "could not add link")
+		return
+	}
+	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, authorID)
+	web.Render(w, r, AuthorLinksList(links))
+}
+
+// authorLinkDelete removes an author's link and re-renders their link list.
+func (s *Server) authorLinkDelete(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	link, err := s.store.AuthorLinks.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.AuthorLinks.Delete(u.ID, id); err != nil {
+		log.Error("delete author link", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, link.AuthorID)
+	web.Render(w, r, AuthorLinksList(links))
 }
 
 // authorScopedItems loads one read/unread item list for an author plus the

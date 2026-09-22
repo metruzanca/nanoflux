@@ -840,6 +840,64 @@ func TestUrlMappingStore(t *testing.T) {
 	}
 }
 
+func TestAuthorLinkStore(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	other := mustUser(t, s, "bob")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	a2, _ := s.Authors.Create(u.ID, "Other", "", "", "")
+
+	l, err := s.AuthorLinks.Create(u.ID, a.ID, "Twitch", "https://twitch.tv/ThePrimeagen")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	got, err := s.AuthorLinks.ByID(u.ID, l.ID)
+	if err != nil || got.Label != "Twitch" || got.URL != "https://twitch.tv/ThePrimeagen" {
+		t.Fatalf("ByID: %v %+v", err, got)
+	}
+
+	// Unlabeled links read back with an empty label.
+	if _, err := s.AuthorLinks.Create(u.ID, a.ID, "", "https://example.com"); err != nil {
+		t.Fatalf("create unlabeled: %v", err)
+	}
+	rows, _ := s.AuthorLinks.ListByAuthor(u.ID, a.ID)
+	if len(rows) != 2 {
+		t.Fatalf("ListByAuthor: %d", len(rows))
+	}
+	// Scoped to the author.
+	if otherRows, _ := s.AuthorLinks.ListByAuthor(u.ID, a2.ID); len(otherRows) != 0 {
+		t.Fatalf("link should not appear under another author: %+v", otherRows)
+	}
+	// Scoped to the user.
+	if _, err := s.AuthorLinks.ByID(other.ID, l.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("other user should not see the link: %v", err)
+	}
+	if err := s.AuthorLinks.Delete(other.ID, l.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("delete cross-user should be ErrNotFound: %v", err)
+	}
+
+	if err := s.AuthorLinks.Delete(u.ID, l.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := s.AuthorLinks.ByID(u.ID, l.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
+func TestAuthorLinkCascadesWithAuthor(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "", "")
+	l, _ := s.AuthorLinks.Create(u.ID, a.ID, "", "https://example.com")
+
+	if err := s.Authors.Delete(u.ID, a.ID); err != nil {
+		t.Fatalf("delete author: %v", err)
+	}
+	if _, err := s.AuthorLinks.ByID(u.ID, l.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("link should cascade with its author, got %v", err)
+	}
+}
+
 func TestFeedCadenceMethods(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

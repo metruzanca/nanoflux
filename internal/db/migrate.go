@@ -36,6 +36,7 @@ var migrations = []migration{
 	{23, schemaV23},
 	{24, schemaV24},
 	{25, schemaV25},
+	{26, schemaV26},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -432,6 +433,20 @@ WHERE image_url IS NULL OR image_url = '';
 const schemaV24 = `
 ALTER TABLE feeds ADD COLUMN kind TEXT NOT NULL DEFAULT 'feed';
 ALTER TABLE feeds ADD COLUMN scrape_config TEXT;
+`
+
+// schemaV26 adds plain external bookmarks attached to an author (e.g. a Twitch
+// or Discord page). Unlike feeds they are never polled and hold no items.
+const schemaV26 = `
+CREATE TABLE author_links (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id  INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    label      TEXT,
+    url        TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_author_links_author ON author_links(author_id);
 `
 
 // Migrate applies any pending migrations in order, recording each in
