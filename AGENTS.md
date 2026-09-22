@@ -39,9 +39,11 @@ The app's own pages are the primary navigation surface. This is a hard rule.
   so a swapped row stays consistent. The item modal meta keeps its author link
   (it's an overlay cross-link).
 - **Authors list.** `/authors` rows are a single condensed line — the linked
-  name + unread count (accent, left of the feed count) + feed count (no external
-  URL). The sort picker orders by abc, newest, or most unread (client-side, see
-  the htmx section). The "add feed" dialog is
+  name + unread count (muted, same color as the feed count, left of it) + feed
+  count (no external URL). The sort picker orders by abc, newest, or most unread
+  (client-side, see the htmx section); the **default is most unread**, and the
+  server pre-sorts `authors` rows the same way (ties by name) so the no-JS
+  render matches. The "add feed" dialog is
   the global add flow; its `feedPreviewFields` (and the scrape builder) only
   render the new-author fields when no existing author is selected, and
   `authorFormFragment` returns an **empty 200** (not 204 — htmx doesn't swap on

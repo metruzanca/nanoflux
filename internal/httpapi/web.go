@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1136,6 +1137,15 @@ func (s *Server) feedToggle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) authors(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	rows := s.authorRows(u.ID)
+	// Default sort is most unread first (the sort picker's default); app.js
+	// reorders client-side once the user picks another mode. Ties break by name
+	// so the order is stable.
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Unread != rows[j].Unread {
+			return rows[i].Unread > rows[j].Unread
+		}
+		return rows[i].Name < rows[j].Name
+	})
 	web.Render(w, r, basePage("authors", u, authorsPage(u, authorsData{Rows: rows})))
 }
 

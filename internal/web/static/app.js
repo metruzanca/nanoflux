@@ -138,12 +138,12 @@ function setDisplayMode(mode, e) {
 }
 
 // Authors sort (abc / newest / unread). Client-side (localStorage), reorders
-// the rendered rows.
+// the rendered rows. The default is "unread".
 var AUTHOR_SORT_KEY = 'nanoflux.authors.sort';
 function authorSort() {
   var s = localStorage.getItem(AUTHOR_SORT_KEY);
-  if (s === 'newest' || s === 'unread') return s;
-  return 'abc';
+  if (s === 'abc' || s === 'newest') return s;
+  return 'unread';
 }
 function applyAuthorSort() {
   var sort = authorSort();

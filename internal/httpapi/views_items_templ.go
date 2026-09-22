@@ -1829,7 +1829,7 @@ func DisplayModeControl(scope string) templ.Component {
 
 // AuthorSortControl sorts the authors list alphabetically ("abc"), by newest
 // first, or by most unread items. Client-side: app.js reorders the rendered
-// rows.
+// rows. The default is "unread".
 func AuthorSortControl() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -1851,7 +1851,7 @@ func AuthorSortControl() templ.Component {
 			templ_7745c5c3_Var91 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = PickerControl("authors", "sort", "abc", "", []pickerOption{
+		templ_7745c5c3_Err = PickerControl("authors", "sort", "unread", "", []pickerOption{
 			{Value: "abc", Label: "abc"},
 			{Value: "newest", Label: "newest"},
 			{Value: "unread", Label: "unread"},

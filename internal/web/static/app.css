@@ -798,9 +798,9 @@ dialog.modal.wide[open] {
 .choose select { width: 100%; }
 .new-author { border-top: 1px solid var(--border); padding-top: 0.75rem; }
 
-/* Authors list: roomier rows so the entries are easier to scan. */
+/* Authors list: roomier rows so the entries are easier to scan. The unread
+   count shares the muted color of the feed count (no accent override). */
 #authors-list li { padding: 0.9rem 0; }
-#authors-list .unread-count { color: var(--accent); font-weight: 700; }
 
 /* Editable author link rows on the edit form: label/url side by side with a
    remove ✕. */

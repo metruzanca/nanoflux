@@ -1377,14 +1377,33 @@ func TestAuthorPageFeedShowsCollectionTags(t *testing.T) {
 }
 
 func TestAuthorsPageSortControl(t *testing.T) {
-	_, h := newTestServer(t)
+	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// Two authors whose unread counts and names order differently: default sort
+	// must be most-unread-first, not alphabetical.
+	z, _ := s.store.Authors.Create(u.ID, "Zed", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Abe", "", "")
+	zf, _ := s.store.Feeds.Create(u.ID, z.ID, "Zed feed", "https://z.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(zf.ID, store.Item{GUID: "z1", Title: "Z", Link: "https://z.dev/1", FetchedAt: db.Now()})
+	s.store.Items.Upsert(zf.ID, store.Item{GUID: "z2", Title: "Z2", Link: "https://z.dev/2", FetchedAt: db.Now()})
+	_ = a
+
 	body := doGet(h, "/authors", cookie).Body.String()
 	if !strings.Contains(body, `class="picker" data-picker="authors"`) ||
 		!strings.Contains(body, `data-option="newest"`) ||
 		!strings.Contains(body, `data-option="unread"`) ||
 		!strings.Contains(body, "abc") {
 		t.Fatalf("authors page should carry the sort picker: %s", body)
+	}
+	// The picker's rendered (default) state is "unread", not "abc".
+	if !strings.Contains(body, `data-option="unread" aria-checked="true"`) {
+		t.Fatalf("authors sort should default to unread: %s", body)
+	}
+	// Server render is already most-unread-first: Zed (2 unread) before Abe (0).
+	if strings.Index(body, ">Zed<") > strings.Index(body, ">Abe<") {
+		t.Fatalf("authors should be server-rendered most-unread-first: %s", body)
 	}
 }
 
