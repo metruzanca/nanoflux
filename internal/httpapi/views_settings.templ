@@ -10,6 +10,7 @@ import (
 templ settingsPage(u store.User, d settingsData) {
 	<h1>settings</h1>
 	@settingsAvatar(d.settingsAvatarData)
+	@settingsHomeCard(d.Home)
 	@settingsTimezone(d.Timezone)
 	@settingsTheme(d.Theme)
 	@settingsAccent(d.Accent)

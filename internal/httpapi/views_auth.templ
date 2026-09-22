@@ -1,5 +1,7 @@
 package httpapi
 
+import "strconv"
+
 templ loginPage(errMsg string, allowSignup bool, next string) {
 	<section class="card login">
 		<h1>log in</h1>
@@ -52,12 +54,34 @@ templ signupDisabledPage() {
 	</section>
 }
 
+// dashboardPage is the customizable home: the user's pinned collection
+// sections, each a compact list of that collection's unread items. Empty
+// sections are dropped before render.
+templ dashboardPage(d dashboardData) {
+	<h1>home</h1>
+	<div id="home-sections">
+		for _, sec := range d.Sections {
+			<section class="home-section">
+				<div class="row">
+					<h2><a href={ "/collections/" + strconv.FormatInt(sec.Collection.ID, 10) }>{ sec.Collection.Name }</a></h2>
+					<a class="small" href={ "/collections/" + strconv.FormatInt(sec.Collection.ID, 10) }>more →</a>
+				</div>
+				<ul class="items">
+					for _, it := range sec.Items {
+						@ItemRow(it, false)
+					}
+				</ul>
+			</section>
+		}
+	</div>
+}
+
 templ homePage(d homeData) {
 	<div class="row">
 		<h1>unread ({ d.UnreadCount })</h1>
 		<div class="row-actions">
-			@SortDirControl(d.Dir, "/?dir=desc", "/?dir=asc")
-			@DisplayModeControl("/")
+			@SortDirControl(d.Dir, "/unread?dir=desc", "/unread?dir=asc")
+			@DisplayModeControl("/unread")
 			if d.UnreadCount > 0 {
 				<button hx-post="/items/read-all" hx-target="#items-section" hx-swap="outerHTML">mark all read</button>
 			}

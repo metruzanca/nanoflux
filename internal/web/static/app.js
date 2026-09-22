@@ -545,7 +545,8 @@ function commandRows() {
     };
   };
   var rows = [
-    { label: 'unread', hint: 'go', run: run('/') },
+    { label: 'home', hint: 'go', run: run('/') },
+    { label: 'unread', hint: 'go', run: run('/unread') },
     { label: 'history', hint: 'go', run: run('/read') },
     { label: 'favorites', hint: 'go', run: run('/favorites') },
     { label: 'authors', hint: 'go', run: run('/authors') },

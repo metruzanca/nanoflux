@@ -1297,7 +1297,7 @@ func TestDisplayModeControlPresent(t *testing.T) {
 	// Each page's picker carries the page path in data-scope so the client
 	// remembers the list/grid choice per author/feed/collection/page.
 	cases := []struct{ path, scope string }{
-		{"/", "/"},
+		{"/unread", "/unread"},
 		{"/read", "/read"},
 		{"/favorites", "/favorites"},
 		{"/authors/" + itoa(a.ID), "/authors/" + itoa(a.ID)},

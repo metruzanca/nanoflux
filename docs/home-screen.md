@@ -1,7 +1,8 @@
 # Home screen customization — design plan
 
-Status: **proposed / not implemented**. This document captures the design so it
-can be picked up later. Nothing here is committed to code yet.
+Status: **partially implemented**. The first cut (option 2: a dashboard of
+pinned collection sections) is live — see "Implemented (first cut)" below. The
+remaining options and open questions describe where it can grow.
 
 ## Problem
 

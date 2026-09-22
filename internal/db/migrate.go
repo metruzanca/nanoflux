@@ -37,6 +37,7 @@ var migrations = []migration{
 	{24, schemaV24},
 	{25, schemaV25},
 	{26, schemaV26},
+	{27, schemaV27},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -447,6 +448,13 @@ CREATE TABLE author_links (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_author_links_author ON author_links(author_id);
+`
+
+// schemaV27 stores the user's home-screen configuration as JSON: an ordered
+// list of pinned sections (currently collections), each with an item limit.
+// The column is a raw string; the HTTP layer parses it (like scrape_config).
+const schemaV27 = `
+ALTER TABLE users ADD COLUMN home_config TEXT;
 `
 
 // Migrate applies any pending migrations in order, recording each in

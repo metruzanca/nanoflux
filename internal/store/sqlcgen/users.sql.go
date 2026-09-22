@@ -35,7 +35,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
-RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
+RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, created_at
 `
 
 type CreateUserParams struct {
@@ -52,6 +52,7 @@ type CreateUserRow struct {
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
 	AccentColor  string         `json:"accent_color"`
+	HomeConfig   sql.NullString `json:"home_config"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -67,6 +68,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.Timezone,
 		&i.Theme,
 		&i.AccentColor,
+		&i.HomeConfig,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -94,7 +96,7 @@ func (q *Queries) GetUserAvatarKey(ctx context.Context, id int64) (sql.NullStrin
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, created_at
 FROM users
 WHERE id = ?
 `
@@ -108,6 +110,7 @@ type GetUserByIDRow struct {
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
 	AccentColor  string         `json:"accent_color"`
+	HomeConfig   sql.NullString `json:"home_config"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -123,13 +126,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, er
 		&i.Timezone,
 		&i.Theme,
 		&i.AccentColor,
+		&i.HomeConfig,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, created_at
 FROM users
 WHERE username = ?
 `
@@ -143,6 +147,7 @@ type GetUserByUsernameRow struct {
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
 	AccentColor  string         `json:"accent_color"`
+	HomeConfig   sql.NullString `json:"home_config"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -158,6 +163,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 		&i.Timezone,
 		&i.Theme,
 		&i.AccentColor,
+		&i.HomeConfig,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -202,7 +208,7 @@ func (q *Queries) ListUserIconKeys(ctx context.Context, userID int64) ([]sql.Nul
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, created_at
 FROM users
 ORDER BY username
 `
@@ -216,6 +222,7 @@ type ListUsersRow struct {
 	Timezone     sql.NullString `json:"timezone"`
 	Theme        string         `json:"theme"`
 	AccentColor  string         `json:"accent_color"`
+	HomeConfig   sql.NullString `json:"home_config"`
 	CreatedAt    string         `json:"created_at"`
 }
 
@@ -237,6 +244,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.Timezone,
 			&i.Theme,
 			&i.AccentColor,
+			&i.HomeConfig,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -294,6 +302,21 @@ type SetUserAvatarKeyParams struct {
 
 func (q *Queries) SetUserAvatarKey(ctx context.Context, arg SetUserAvatarKeyParams) error {
 	_, err := q.db.ExecContext(ctx, setUserAvatarKey, arg.AvatarKey, arg.ID)
+	return err
+}
+
+const setUserHomeConfig = `-- name: SetUserHomeConfig :exec
+UPDATE users SET home_config = ?
+WHERE id = ?
+`
+
+type SetUserHomeConfigParams struct {
+	HomeConfig sql.NullString `json:"home_config"`
+	ID         int64          `json:"id"`
+}
+
+func (q *Queries) SetUserHomeConfig(ctx context.Context, arg SetUserHomeConfigParams) error {
+	_, err := q.db.ExecContext(ctx, setUserHomeConfig, arg.HomeConfig, arg.ID)
 	return err
 }
 
