@@ -29,6 +29,7 @@ templ FeedRow(r feedRow) {
 				if r.LastError != "" {
 					<span class="badge danger" title={ r.LastError }>last poll failed</span>
 				}
+				@staleBadge(r.Feed, r.Timezone)
 				<div class="item-meta">
 					<a href={ templ.URL(r.FeedURL) } class="external" referrerpolicy="no-referrer">feed</a> · { r.Unread } unread · last polled 
 					if r.LastPolledAt != "" {
@@ -44,6 +45,22 @@ templ FeedRow(r feedRow) {
 			</div>
 		</div>
 	</li>
+}
+
+// staleBadge is the amber "no new posts in a while" marker on a feed row. It
+// is intentionally distinct from the red "last poll failed" error: there is no
+// failure, just no recent updates. Appears on the author page, /feeds,
+// collections, and feed rows after refresh (FeedRow is shared).
+templ staleBadge(f store.Feed, tz string) {
+	if sf, ok := web.StaleFeedFor(f.LastItemAt); ok {
+		<span class="badge warn" title={ "newest post " + web.TimeFmt(tz, f.LastItemAt) }>
+			if sf.Abandoned {
+				quiet { sf.Days }d · may be abandoned
+			} else {
+				no new posts in { sf.Days }d
+			}
+		</span>
+	}
 }
 
 // feedPreviewFields is the combined add form: an author and their first feed
@@ -299,7 +316,8 @@ templ feedFields(d feedsData) {
 		</select>
 	</label>
 	<div id="new-author"></div>
-	<label>poll interval (seconds)
+	<label class="check"><input type="checkbox" name="poll_interval_auto" value="1" checked={ d.Form.PollIntervalAuto }/> auto-adjust poll interval</label>
+	<label>poll interval (seconds) — used when auto-adjust is off
 		<input name="poll_interval_sec" type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min="60"/>
 	</label>
 	<label class="check"><input type="checkbox" name="enabled" value="1" checked={ d.Form.Enabled }/> enabled (poll this feed)</label>
@@ -349,6 +367,15 @@ templ feedPage(u store.User, d feedPageData) {
 	</p>
 		if d.Row.LastError != "" {
 			<div class="error" role="alert">last poll failed: { d.Row.LastError }</div>
+		}
+		if sf, ok := web.StaleFeedFor(d.Row.LastItemAt); ok {
+			<div class="notice">
+				if sf.Abandoned {
+					no new posts in { sf.Days } days · this account may be abandoned
+				} else {
+					no new posts in { sf.Days } days
+				}
+			</div>
 		}
 		if d.Row.NextPageURL != "" {
 			@feedOlderControl(d.Row)

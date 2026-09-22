@@ -576,6 +576,28 @@ The error is surfaced only to the feed's owner: a "last poll failed" badge on
 the feed row, the full (truncated) text on the feed page, and `feed list` marks
 the state `error`. Never render it cross-user (NSFW).
 
+## Adaptive polling and stale feeds
+
+Each feed's `poll_interval_sec` can be derived from its posting cadence
+(`feeds.poll_interval_auto`, schemaV25). When auto is on, `PollOne` recomputes
+the interval on a poll that ingested new items as the average gap between the
+feed's most recent posts (`adaptiveInterval` in `internal/poller/interval.go`),
+clamped to `[adaptiveFloor=900, adaptiveCeil=86400]` seconds. New feeds default
+to auto; the migration kept feeds that had a custom interval on manual
+(`poll_interval_auto = 0 WHERE poll_interval_sec <> 900`). The feed edit form's
+checkbox turns auto on/off; with auto on the posted interval is ignored.
+
+`feeds.last_item_at` records the feed's newest item time (published, falling
+back to fetched) and only ever moves forward — it is distinct from
+`last_polled_at`. On every successful poll the poller refreshes it. A feed
+whose newest item is at least `staleAfter` (7 days) old is backed off to a
+1-day poll interval regardless of the auto toggle, so a quiet feed isn't polled
+often. This is not an error: the UI shows an amber `badge warn` / `.notice`
+("no new posts in N days", escalating to "may be abandoned" at
+`abandonedAfter` = 30 days) via `web.StaleFeedFor` — see `staleBadge` in
+`views_feeds.templ`. The poller ticker (`NF_POLL_INTERVAL`, default 15 min)
+still bounds the effective minimum cadence.
+
 ## htmx and client-side JS
 
 The web UI uses **htmx v2.0.4** (vendored at `internal/web/static/htmx.min.js`, loaded

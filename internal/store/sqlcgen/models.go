@@ -34,23 +34,25 @@ type CollectionFeed struct {
 }
 
 type Feed struct {
-	ID              int64          `json:"id"`
-	UserID          int64          `json:"user_id"`
-	AuthorID        int64          `json:"author_id"`
-	Title           string         `json:"title"`
-	FeedUrl         string         `json:"feed_url"`
-	HomeUrl         sql.NullString `json:"home_url"`
-	Description     sql.NullString `json:"description"`
-	Etag            sql.NullString `json:"etag"`
-	LastModified    sql.NullString `json:"last_modified"`
-	LastPolledAt    sql.NullString `json:"last_polled_at"`
-	LastError       sql.NullString `json:"last_error"`
-	NextPageUrl     string         `json:"next_page_url"`
-	Kind            string         `json:"kind"`
-	ScrapeConfig    sql.NullString `json:"scrape_config"`
-	PollIntervalSec int64          `json:"poll_interval_sec"`
-	Enabled         bool           `json:"enabled"`
-	CreatedAt       string         `json:"created_at"`
+	ID               int64          `json:"id"`
+	UserID           int64          `json:"user_id"`
+	AuthorID         int64          `json:"author_id"`
+	Title            string         `json:"title"`
+	FeedUrl          string         `json:"feed_url"`
+	HomeUrl          sql.NullString `json:"home_url"`
+	Description      sql.NullString `json:"description"`
+	Etag             sql.NullString `json:"etag"`
+	LastModified     sql.NullString `json:"last_modified"`
+	LastPolledAt     sql.NullString `json:"last_polled_at"`
+	LastError        sql.NullString `json:"last_error"`
+	NextPageUrl      string         `json:"next_page_url"`
+	Kind             string         `json:"kind"`
+	ScrapeConfig     sql.NullString `json:"scrape_config"`
+	PollIntervalSec  int64          `json:"poll_interval_sec"`
+	PollIntervalAuto int64          `json:"poll_interval_auto"`
+	LastItemAt       sql.NullString `json:"last_item_at"`
+	Enabled          bool           `json:"enabled"`
+	CreatedAt        string         `json:"created_at"`
 }
 
 type Filter struct {

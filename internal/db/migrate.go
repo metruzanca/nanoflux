@@ -35,6 +35,7 @@ var migrations = []migration{
 	{22, schemaV22},
 	{23, schemaV23},
 	{24, schemaV24},
+	{25, schemaV25},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -246,6 +247,20 @@ CREATE TABLE url_mappings (
     UNIQUE(user_id, pattern)
 );
 CREATE INDEX idx_url_mappings_user ON url_mappings(user_id);
+`
+
+// schemaV25 adds adaptive polling and stale-feed detection. poll_interval_auto
+// lets a feed's interval be derived from its posting cadence (default on for
+// new feeds; feeds with a custom interval keep manual control). last_item_at
+// records the feed's newest item time so the UI can warn when a feed has gone
+// quiet and the poller can back a stale feed off to once a day.
+const schemaV25 = `
+ALTER TABLE feeds ADD COLUMN poll_interval_auto INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE feeds ADD COLUMN last_item_at TEXT;
+UPDATE feeds SET last_item_at = (
+    SELECT MAX(COALESCE(published_at, fetched_at)) FROM items WHERE items.feed_id = feeds.id
+);
+UPDATE feeds SET poll_interval_auto = 0 WHERE poll_interval_sec <> 900;
 `
 
 const schemaV8 = `

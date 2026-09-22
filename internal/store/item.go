@@ -248,6 +248,20 @@ func (s *ItemStore) Enclosures(itemID int64) ([]Enclosure, error) {
 	return out, nil
 }
 
+// RecentTimes returns a feed's most recent item timestamps
+// (published_at, falling back to fetched_at), newest first, up to limit.
+// Used by the poller to derive a feed's posting cadence and newest item.
+func (s *ItemStore) RecentTimes(feedID int64, limit int) ([]string, error) {
+	rows, err := s.q.ListRecentItemTimes(context.Background(), sqlcgen.ListRecentItemTimesParams{
+		FeedID: feedID,
+		Limit:  int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 // ReplaceEnclosures deletes and re-inserts an item's enclosures.
 func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
 	if err := s.q.DeleteEnclosures(context.Background(), itemID); err != nil {
