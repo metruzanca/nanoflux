@@ -69,6 +69,87 @@ func TestPollOneRecordsNextPageURL(t *testing.T) {
 	}
 }
 
+// cadenceServer serves an RSS feed whose items carry published times spaced by
+// gap; when timeSinceLatest is non-zero the newest item is older than now.
+func cadenceServer(t *testing.T, gap time.Duration, timeSinceLatest time.Duration) *httptest.Server {
+	t.Helper()
+	now := time.Now().UTC()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var items strings.Builder
+		for i := 0; i < 4; i++ {
+			pub := now.Add(-timeSinceLatest - gap*time.Duration(i))
+			items.WriteString(fmt.Sprintf(
+				`<item><guid>%d</guid><title>t%d</title><link>https://b.dev/%d</link><pubDate>%s</pubDate></item>`,
+				i, i, i, pub.Format(time.RFC1123Z)))
+		}
+		fmt.Fprintf(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>B</title>%s</channel></rss>`, items.String())
+	}))
+}
+
+// A feed with recent, evenly spaced posts gets its poll interval set to the
+// average gap between them (adaptive on by default).
+func TestPollOneAdaptiveInterval(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+
+	srv := cadenceServer(t, 2*time.Hour, 0)
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
+	p := New(st, time.Minute, 1)
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.PollIntervalSec != 7200 {
+		t.Fatalf("interval = %d, want the 2h average (7200)", got.PollIntervalSec)
+	}
+	if got.LastItemAt == "" {
+		t.Fatalf("last_item_at should be recorded after a poll")
+	}
+}
+
+// A feed whose newest post is 8 days old is backed off to a 1-day poll
+// interval regardless of the adaptive toggle.
+func TestPollOneStaleBacksOff(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "", "")
+
+	srv := cadenceServer(t, 2*time.Hour, 8*24*time.Hour)
+	defer srv.Close()
+
+	// auto is off, but the stale rule still forces 1 day.
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
+	st.Feeds.Update(u.ID, f.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 3600, false, true)
+	fresh, _ := st.Feeds.ByID(u.ID, f.ID)
+	p := New(st, time.Minute, 1)
+	if _, err := p.PollOne(context.Background(), fresh); err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.PollIntervalSec != adaptiveCeil {
+		t.Fatalf("interval = %d, want 1 day (%d) for a stale feed", got.PollIntervalSec, adaptiveCeil)
+	}
+}
+
 func TestPollOneKeepsCursorOnRoutinePoll(t *testing.T) {
 	sqldb, err := db.Open(":memory:")
 	if err != nil {
@@ -483,7 +564,7 @@ func TestPollOneRecordsLastError(t *testing.T) {
 		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title><item><guid>1</guid><title>One</title></item></channel></rss>`))
 	}))
 	defer ok.Close()
-	if err := st.Feeds.Update(u.ID, f.ID, a.ID, "Broken", ok.URL, "", "", 900, true); err != nil {
+	if err := st.Feeds.Update(u.ID, f.ID, a.ID, "Broken", ok.URL, "", "", 900, false, true); err != nil {
 		t.Fatal(err)
 	}
 	fresh, _ := st.Feeds.ByID(u.ID, f.ID)

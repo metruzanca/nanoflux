@@ -242,3 +242,32 @@ func TestFormatBytes(t *testing.T) {
 		}
 	}
 }
+
+func TestStaleFeedFor(t *testing.T) {
+	now := time.Now()
+	d := func(days int) string {
+		return time.Now().Add(-time.Duration(days) * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	}
+	cases := []struct {
+		last        string
+		wantDays    int
+		wantAbandon bool
+		wantOK      bool
+	}{
+		{"", 0, false, false},
+		{d(1), 0, false, false}, // active
+		{d(6), 0, false, false},
+		{d(8), 8, false, true},
+		{d(14), 14, false, true},
+		{d(30), 30, true, true},
+		{d(45), 45, true, true},
+		{"garbage", 0, false, false},
+	}
+	_ = now
+	for _, c := range cases {
+		sf, ok := staleFeedFor(c.last, time.Now().Format("2006-01-02 15:04:05"))
+		if ok != c.wantOK || (ok && (sf.Days != c.wantDays || sf.Abandoned != c.wantAbandon)) {
+			t.Errorf("staleFeedFor(%q) = %+v, %v; want days=%d aband=%v ok=%v", c.last, sf, ok, c.wantDays, c.wantAbandon, c.wantOK)
+		}
+	}
+}

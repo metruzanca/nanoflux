@@ -63,6 +63,8 @@ CREATE TABLE feeds (
     kind              TEXT NOT NULL DEFAULT 'feed',
     scrape_config     TEXT,
     poll_interval_sec INTEGER NOT NULL DEFAULT 900,
+    poll_interval_auto INTEGER NOT NULL DEFAULT 1,
+    last_item_at      TEXT,
     enabled           INTEGER NOT NULL DEFAULT 1,
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );

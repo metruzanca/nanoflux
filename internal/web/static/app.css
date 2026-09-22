@@ -6,6 +6,7 @@
   --muted: #9aa3b2;
   --accent: #5b8cff;
   --danger: #ff6b6b;
+  --warn: #e0a72e;
 }
 
 /* Light theme: selected via data-theme on <html> (user setting, "system"
@@ -18,6 +19,7 @@
   --muted: #5b6472;
   --accent: #3b6ee8;
   --danger: #d64545;
+  --warn: #b8860b;
 }
 
 * { box-sizing: border-box; }
@@ -276,6 +278,25 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
   font-size: 0.7rem;
   color: var(--muted);
   vertical-align: middle;
+}
+
+/* Stale-feed warning: distinct from the red error badge — no failure, just no
+   recent posts. */
+.badge.warn {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+}
+
+/* Inline notice banner on the feed detail page for a quiet feed. */
+.notice {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--warn);
+  font-size: 0.9rem;
 }
 
 .src-icon {

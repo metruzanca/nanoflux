@@ -45,23 +45,25 @@ func toUser(id int64, username, passwordHash string, isAdmin bool, avatarKey, ti
 
 func toFeed(f sqlcgen.Feed) Feed {
 	return Feed{
-		ID:              f.ID,
-		UserID:          f.UserID,
-		AuthorID:        f.AuthorID,
-		Title:           f.Title,
-		FeedURL:         f.FeedUrl,
-		HomeURL:         f.HomeUrl.String,
-		Description:     f.Description.String,
-		ETag:            f.Etag.String,
-		LastModified:    f.LastModified.String,
-		LastPolledAt:    f.LastPolledAt.String,
-		LastError:       f.LastError.String,
-		NextPageURL:     f.NextPageUrl,
-		Kind:            f.Kind,
-		ScrapeConfig:    f.ScrapeConfig.String,
-		PollIntervalSec: int(f.PollIntervalSec),
-		Enabled:         f.Enabled,
-		CreatedAt:       f.CreatedAt,
+		ID:               f.ID,
+		UserID:           f.UserID,
+		AuthorID:         f.AuthorID,
+		Title:            f.Title,
+		FeedURL:          f.FeedUrl,
+		HomeURL:          f.HomeUrl.String,
+		Description:      f.Description.String,
+		ETag:             f.Etag.String,
+		LastModified:     f.LastModified.String,
+		LastPolledAt:     f.LastPolledAt.String,
+		LastError:        f.LastError.String,
+		NextPageURL:      f.NextPageUrl,
+		Kind:             f.Kind,
+		ScrapeConfig:     f.ScrapeConfig.String,
+		PollIntervalSec:  int(f.PollIntervalSec),
+		PollIntervalAuto: f.PollIntervalAuto != 0,
+		LastItemAt:       f.LastItemAt.String,
+		Enabled:          f.Enabled,
+		CreatedAt:        f.CreatedAt,
 	}
 }
 
@@ -157,32 +159,34 @@ func toUrlMapping(id, userID int64, pattern, template, createdAt string) UrlMapp
 
 func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 	homeURL, description, etag, lastModified, lastPolledAt, lastError sql.NullString,
-	nextPageURL, kind string, scrapeConfig sql.NullString, pollIntervalSec int64, enabled bool, createdAt string,
+	nextPageURL, kind string, scrapeConfig sql.NullString, pollIntervalSec int64, pollIntervalAuto int64, lastItemAt sql.NullString, enabled bool, createdAt string,
 ) sqlcgen.Feed {
 	return sqlcgen.Feed{
-		ID:              id,
-		UserID:          userID,
-		AuthorID:        authorID,
-		Title:           title,
-		FeedUrl:         feedURL,
-		HomeUrl:         homeURL,
-		Description:     description,
-		Etag:            etag,
-		LastModified:    lastModified,
-		LastPolledAt:    lastPolledAt,
-		LastError:       lastError,
-		NextPageUrl:     nextPageURL,
-		Kind:            kind,
-		ScrapeConfig:    scrapeConfig,
-		PollIntervalSec: pollIntervalSec,
-		Enabled:         enabled,
-		CreatedAt:       createdAt,
+		ID:               id,
+		UserID:           userID,
+		AuthorID:         authorID,
+		Title:            title,
+		FeedUrl:          feedURL,
+		HomeUrl:          homeURL,
+		Description:      description,
+		Etag:             etag,
+		LastModified:     lastModified,
+		LastPolledAt:     lastPolledAt,
+		LastError:        lastError,
+		NextPageUrl:      nextPageURL,
+		Kind:             kind,
+		ScrapeConfig:     scrapeConfig,
+		PollIntervalSec:  pollIntervalSec,
+		PollIntervalAuto: pollIntervalAuto,
+		LastItemAt:       lastItemAt,
+		Enabled:          enabled,
+		CreatedAt:        createdAt,
 	}
 }
 
 func toFeedWithUnread(f sqlcgen.ListFeedsWithUnreadRow) FeedWithUnread {
 	return FeedWithUnread{
-		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.Kind, f.ScrapeConfig, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.Kind, f.ScrapeConfig, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.Enabled, f.CreatedAt)),
 		AuthorName: f.AuthorName.String,
 		Unread:     int(f.Unread),
 	}
@@ -190,7 +194,7 @@ func toFeedWithUnread(f sqlcgen.ListFeedsWithUnreadRow) FeedWithUnread {
 
 func toFeedByAuthorWithUnread(f sqlcgen.ListFeedsByAuthorWithUnreadRow) FeedWithUnread {
 	return FeedWithUnread{
-		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.Kind, f.ScrapeConfig, f.PollIntervalSec, f.Enabled, f.CreatedAt)),
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.Kind, f.ScrapeConfig, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.Enabled, f.CreatedAt)),
 		AuthorName: f.AuthorName.String,
 		Unread:     int(f.Unread),
 	}

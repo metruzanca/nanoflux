@@ -51,17 +51,18 @@ type feedRow struct {
 }
 
 type feedForm struct {
-	ID              int64
-	Title           string
-	FeedURL         string
-	HomeURL         string
-	Description     string
-	AuthorID        int64
-	PollIntervalSec int
-	CollectionIDs   []int64
-	Enabled         bool
-	Kind            string                 // "feed" or "scrape"
-	ScrapeConfig    feedparse.ScrapeConfig // selector config for scrape feeds
+	ID               int64
+	Title            string
+	FeedURL          string
+	HomeURL          string
+	Description      string
+	AuthorID         int64
+	PollIntervalSec  int
+	PollIntervalAuto bool
+	CollectionIDs    []int64
+	Enabled          bool
+	Kind             string                 // "feed" or "scrape"
+	ScrapeConfig     feedparse.ScrapeConfig // selector config for scrape feeds
 }
 
 type feedsData struct {
@@ -695,7 +696,7 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 	form := feedForm{
 		ID: f.ID, Title: f.Title, FeedURL: f.FeedURL, HomeURL: f.HomeURL,
 		Description: f.Description, AuthorID: f.AuthorID,
-		PollIntervalSec: f.PollIntervalSec, Enabled: f.Enabled,
+		PollIntervalSec: f.PollIntervalSec, PollIntervalAuto: f.PollIntervalAuto, Enabled: f.Enabled,
 		Kind: f.Kind,
 	}
 	if f.Kind == store.ScrapeKind {
@@ -802,6 +803,11 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 	if interval <= 0 {
 		interval = 900
 	}
+	auto := r.FormValue("poll_interval_auto") == "1"
+	if auto {
+		// Adaptive polling owns the interval; keep the stored value.
+		interval = old.PollIntervalSec
+	}
 	back := "/authors/" + strconv.FormatInt(old.AuthorID, 10)
 	if title == "" || feedURL == "" {
 		http.Redirect(w, r, back, http.StatusFound)
@@ -825,13 +831,13 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.store.Feeds.UpdateScrape(u.ID, id, authorID, title, feedURL,
-			r.FormValue("home_url"), "", string(raw), interval, r.FormValue("enabled") == "1"); err != nil {
+			r.FormValue("home_url"), "", string(raw), interval, auto, r.FormValue("enabled") == "1"); err != nil {
 			log.Error("update scrape feed", "err", err)
 			http.Error(w, "update failed", http.StatusInternalServerError)
 			return
 		}
 	} else if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
-		r.FormValue("home_url"), "", interval, r.FormValue("enabled") == "1"); err != nil {
+		r.FormValue("home_url"), "", interval, auto, r.FormValue("enabled") == "1"); err != nil {
 		log.Error("update feed", "err", err)
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return

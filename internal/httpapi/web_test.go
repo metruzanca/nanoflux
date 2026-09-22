@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/discover"
@@ -1521,5 +1522,85 @@ func TestCollectionAddFeedGroupedByAuthor(t *testing.T) {
 	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
 	if !strings.Contains(body, `<optgroup label="Metru">`) {
 		t.Fatalf("collection add-feed dropdown should group feeds by author: %s", body)
+	}
+}
+
+func TestStaleFeedBadge(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "https://b.dev", "", 900)
+
+	// No items yet -> no warning.
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if strings.Contains(body, "no new posts") || strings.Contains(body, "may be abandoned") {
+		t.Fatalf("no stale warning expected with no items: %s", body)
+	}
+
+	// A feed quiet for 10 days -> amber badge on the author page.
+	old := time.Now().Add(-10 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	if err := s.store.Feeds.SetLastItemAt(f.ID, old); err != nil {
+		t.Fatal(err)
+	}
+	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if !strings.Contains(body, "badge warn") || !strings.Contains(body, "no new posts in 10d") {
+		t.Fatalf("expected stale badge on author page: %s", body)
+	}
+
+	// Quiet for 35 days -> "may be abandoned" on the feed page.
+	abandoned := time.Now().Add(-35 * 24 * time.Hour).Format("2006-01-02 15:04:05")
+	if err := s.store.Feeds.SetLastItemAt(f.ID, abandoned); err != nil {
+		t.Fatal(err)
+	}
+	body = doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
+	if !strings.Contains(body, "notice") || !strings.Contains(body, "may be abandoned") {
+		t.Fatalf("expected abandoned notice on feed page: %s", body)
+	}
+}
+
+func TestFeedEditAutoInterval(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+
+	// Edit form shows the auto checkbox (new feeds default to on).
+	edit := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie).Body.String()
+	if !strings.Contains(edit, `name="poll_interval_auto"`) {
+		t.Fatalf("edit form should render the auto-adjust checkbox: %s", edit)
+	}
+
+	// With auto on, the posted interval is ignored and the stored one kept.
+	if err := s.store.Feeds.SetPollInterval(f.ID, 7200); err != nil {
+		t.Fatal(err)
+	}
+	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/edit", url.Values{
+		"title": {"Blog"}, "feed_url": {"https://b.dev/rss.xml"},
+		"poll_interval_sec": {"9999"}, "poll_interval_auto": {"1"},
+		"author_id": {itoa(a.ID)}, "enabled": {"1"},
+	}, cookie)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("edit: %d", rr.Code)
+	}
+	after, _ := s.store.Feeds.ByID(u.ID, f.ID)
+	if after.PollIntervalSec != 7200 || !after.PollIntervalAuto {
+		t.Fatalf("auto on should preserve stored interval: %+v", after)
+	}
+
+	// Without the checkbox, the manual interval is used and auto turns off.
+	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/edit", url.Values{
+		"title": {"Blog"}, "feed_url": {"https://b.dev/rss.xml"},
+		"poll_interval_sec": {"600"},
+		"author_id":         {itoa(a.ID)}, "enabled": {"1"},
+	}, cookie)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("edit manual: %d", rr.Code)
+	}
+	after, _ = s.store.Feeds.ByID(u.ID, f.ID)
+	if after.PollIntervalSec != 600 || after.PollIntervalAuto {
+		t.Fatalf("auto off should use the manual interval: %+v", after)
 	}
 }

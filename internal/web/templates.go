@@ -443,6 +443,39 @@ func StripHTML(s string) string {
 	return strings.TrimSpace(b.String())
 }
 
+// StaleFeed describes a feed that has stopped posting for a while.
+type StaleFeed struct {
+	Days      int  // days since the feed's newest item
+	Abandoned bool // >= 30 days: the account may be abandoned
+}
+
+// StaleFeedFor reports whether a feed is quiet (its newest item is at least 7
+// days old) and how long it has been. ok is false when the feed has no items
+// yet or is still active. Distinct from a feed error: there is no failure,
+// just no new posts.
+func StaleFeedFor(lastItemAt string) (StaleFeed, bool) {
+	return staleFeedFor(lastItemAt, db.FormatTime(time.Now()))
+}
+
+func staleFeedFor(lastItemAt, now string) (StaleFeed, bool) {
+	if lastItemAt == "" {
+		return StaleFeed{}, false
+	}
+	t, err := db.ParseTime(lastItemAt)
+	if err != nil {
+		return StaleFeed{}, false
+	}
+	n, err := db.ParseTime(now)
+	if err != nil {
+		return StaleFeed{}, false
+	}
+	d := n.Sub(t)
+	if d < 7*24*time.Hour {
+		return StaleFeed{}, false
+	}
+	return StaleFeed{Days: int(d / (24 * time.Hour)), Abandoned: d >= 30*24*time.Hour}, true
+}
+
 // TimeFmt renders a stored UTC timestamp relative to the user's timezone.
 // tz is an IANA timezone name; empty means the server's local time. Labels:
 // "Today at 3:04pm", "Yesterday at 3:04pm", "3 days ago", "2 weeks ago",

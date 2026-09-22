@@ -132,6 +132,11 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 	if err := p.store.Feeds.SetPollMeta(f.ID, res.ETag, res.LastModified, fetched, ""); err != nil {
 		return newItems, err
 	}
+	// Record the feed's newest item time and adjust its poll interval (adaptive
+	// cadence, or back a quiet feed off to once a day). Both run on every
+	// successful poll so a feed that goes silent is caught even though no new
+	// items arrive.
+	p.updateCadence(f, fetched, newItems)
 	// Record whether the feed advertises a next page so the feed page can offer
 	// "load older items". Detection is cheap (parsing only) — no extra fetches.
 	// This only happens on the first poll (a newly added feed): routine polls
@@ -143,6 +148,53 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 		}
 	}
 	return newItems, nil
+}
+
+// updateCadence records the feed's newest item time and, based on it, adjusts
+// the feed's poll interval:
+//
+//   - if the feed's newest item is at least staleAfter old, force the interval
+//     to adaptiveCeil (1 day) so a quiet feed isn't polled often — regardless of
+//     whether adaptive polling is enabled;
+//   - otherwise, if adaptive polling is enabled and the poll brought new items,
+//     derive the interval from the average gap between the feed's recent posts.
+//
+// last_item_at only moves forward; it is separate from the poll time, so "no
+// new posts in a while" is distinct from a feed error.
+func (p *Poller) updateCadence(f store.Feed, now string, newItems int) {
+	times, err := p.store.Items.RecentTimes(f.ID, 20)
+	if err != nil || len(times) == 0 {
+		return
+	}
+	// last_item_at only moves forward and is separate from the poll time, so
+	// "no new posts in a while" stays distinct from a feed error.
+	if newest := times[0]; newest > f.LastItemAt {
+		if err := p.store.Feeds.SetLastItemAt(f.ID, newest); err != nil {
+			log.Error("set last item at", "feed_id", f.ID, "err", err)
+			return
+		}
+		f.LastItemAt = newest
+	}
+
+	var want int
+	switch {
+	case isStale(f.LastItemAt, now, staleAfter):
+		// A quiet feed is polled at most once a day, regardless of whether
+		// adaptive polling is enabled.
+		want = adaptiveCeil
+	case f.PollIntervalAuto && newItems > 0:
+		if sec, ok := adaptiveInterval(times, adaptiveFloor, adaptiveCeil); ok {
+			want = sec
+		}
+	}
+	if want == 0 || want == f.PollIntervalSec {
+		return // nothing to change, or no cadence computable yet
+	}
+	if err := p.store.Feeds.SetPollInterval(f.ID, want); err != nil {
+		log.Error("set poll interval", "feed_id", f.ID, "err", err)
+		return
+	}
+	log.Info("adjusted poll interval", "feed_id", f.ID, "from", f.PollIntervalSec, "to", want)
 }
 
 // maxBackfillPages caps how many pages a single "load older items" click

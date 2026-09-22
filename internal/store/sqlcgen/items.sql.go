@@ -503,6 +503,42 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 	return items, nil
 }
 
+const listRecentItemTimes = `-- name: ListRecentItemTimes :many
+SELECT COALESCE(published_at, fetched_at) AS t
+FROM items
+WHERE feed_id = ?
+ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC
+LIMIT ?
+`
+
+type ListRecentItemTimesParams struct {
+	FeedID int64 `json:"feed_id"`
+	Limit  int64 `json:"limit"`
+}
+
+func (q *Queries) ListRecentItemTimes(ctx context.Context, arg ListRecentItemTimesParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listRecentItemTimes, arg.FeedID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		items = append(items, t)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markAllItemsRead = `-- name: MarkAllItemsRead :exec
 UPDATE items
 SET read = 1, read_at = ?1

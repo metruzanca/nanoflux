@@ -121,6 +121,13 @@ WHERE item_id = ?;
 INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort)
 VALUES (?, ?, ?, ?, ?, ?);
 
+-- name: ListRecentItemTimes :many
+SELECT COALESCE(published_at, fetched_at) AS t
+FROM items
+WHERE feed_id = ?
+ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC
+LIMIT ?;
+
 -- name: CountUnreadItems :one
 SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
 WHERE f.user_id = sqlc.arg('userID') AND i.read = 0

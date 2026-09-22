@@ -745,7 +745,7 @@ func TestListDue(t *testing.T) {
 	}
 
 	// Disabled feeds are never due.
-	s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://a.dev/rss.xml", "", "", 900, false)
+	s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://a.dev/rss.xml", "", "", 900, true, false)
 	if err := s.Feeds.SetPollMeta(f.ID, "", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -837,6 +837,72 @@ func TestUrlMappingStore(t *testing.T) {
 	}
 	if _, err := s.UrlMappings.ByID(u.ID, m.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
+func TestFeedCadenceMethods(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "A", "", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/feed.xml", "", "", 900)
+
+	// New feeds default to adaptive polling on.
+	got, _ := s.Feeds.ByID(u.ID, f.ID)
+	if !got.PollIntervalAuto {
+		t.Fatalf("new feed should default to poll_interval_auto on: %+v", got)
+	}
+
+	// SetPollInterval is unscoped and updates the stored interval.
+	if err := s.Feeds.SetPollInterval(f.ID, 3600); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Feeds.ByID(u.ID, f.ID)
+	if got.PollIntervalSec != 3600 {
+		t.Fatalf("SetPollInterval = %d, want 3600", got.PollIntervalSec)
+	}
+
+	// RecentTimes returns newest-first item timestamps (published, else fetched).
+	base := time.Now().UTC().Add(-time.Hour)
+	s.Items.Upsert(f.ID, Item{GUID: "a", Title: "a", PublishedAt: db.FormatTime(base.Add(-2 * time.Hour)), FetchedAt: db.Now()})
+	s.Items.Upsert(f.ID, Item{GUID: "b", Title: "b", PublishedAt: db.FormatTime(base.Add(-1 * time.Hour)), FetchedAt: db.Now()})
+	// An item with no published time falls back to fetched_at.
+	s.Items.Upsert(f.ID, Item{GUID: "c", Title: "c", FetchedAt: db.FormatTime(base)})
+	times, err := s.Items.RecentTimes(f.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(times) != 3 || times[0] != db.FormatTime(base) {
+		t.Fatalf("RecentTimes = %v, want newest-first with fetched fallback", times)
+	}
+
+	// SetLastItemAt persists it.
+	if err := s.Feeds.SetLastItemAt(f.ID, times[0]); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Feeds.ByID(u.ID, f.ID)
+	if got.LastItemAt != times[0] {
+		t.Fatalf("LastItemAt = %q, want %q", got.LastItemAt, times[0])
+	}
+}
+
+func TestMigrateBackfillsCadence(t *testing.T) {
+	// A fresh store applies all migrations; the schemaV25 backfill only affects
+	// pre-existing feeds. Verify the column defaults and that a customized
+	// interval can be turned manual.
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "A", "", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/feed.xml", "", "", 900)
+	if !f.PollIntervalAuto {
+		t.Fatalf("new feed should default to auto on")
+	}
+	// Turning it off via Update sticks.
+	if err := s.Feeds.Update(u.ID, f.ID, a.ID, "Blog", "https://b.dev/feed.xml", "", "", 900, false, true); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Feeds.ByID(u.ID, f.ID)
+	if got.PollIntervalAuto {
+		t.Fatalf("Update should be able to turn auto off: %+v", got)
 	}
 }
 
