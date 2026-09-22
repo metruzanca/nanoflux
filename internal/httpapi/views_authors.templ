@@ -45,7 +45,7 @@ templ AuthorsList(rows []authorRow) {
 }
 
 templ AuthorRow(r authorRow) {
-	<li id={ "author-" + strconv.FormatInt(r.ID, 10) } data-name={ r.Name } data-created={ r.CreatedAt }>
+	<li id={ "author-" + strconv.FormatInt(r.ID, 10) } data-name={ r.Name } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Unread) }>
 		<div class="row">
 			<a href={ "/authors/" + strconv.FormatInt(r.ID, 10) }>
 				if r.AvatarKey != "" {
@@ -55,7 +55,7 @@ templ AuthorRow(r authorRow) {
 				}
 				<strong>{ r.Name }</strong>
 			</a>
-			<span class="muted">{ r.FeedCount } feeds</span>
+			<span class="muted"><span class="unread-count">{ r.Unread } unread</span> · { r.FeedCount } feeds</span>
 		</div>
 	</li>
 }
@@ -65,6 +65,7 @@ templ authorEditPage(u store.User, d authorsData) {
 		<h1>edit author</h1>
 		<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
 			@authorFields(d)
+			@authorLinkFields(d)
 			@authorAvatarFields(d.AvatarCard)
 			<button type="submit">save</button>
 		</form>
@@ -123,6 +124,53 @@ templ authorFields(d authorsData) {
 	</label>
 }
 
+// authorLinkFields renders an author's external bookmarks as editable form
+// rows. Each row is a hidden link id plus label/url; a row with no id creates a
+// new link, an existing id updates in place, and a link whose row was removed
+// from the form (its ✕) is deleted on save. The blank row is a <template>
+// cloned client-side by addAuthorLinkRow.
+templ authorLinkFields(d authorsData) {
+	<h2>links</h2>
+	<input type="hidden" name="links_present" value="1"/>
+	<div id="author-link-fields" class="stack">
+		for _, l := range d.Links {
+			@authorLinkFieldRow(strconv.FormatInt(l.ID, 10), l.Label, l.URL)
+		}
+	</div>
+	<button type="button" class="link" onclick="addAuthorLinkRow()">+ add link</button>
+	<template id="author-link-row-template">
+		@authorLinkFieldRow("", "", "")
+	</template>
+}
+
+templ authorLinkFieldRow(id, label, linkURL string) {
+	<div class="author-link-row">
+		<input type="hidden" name="link_id" value={ id }/>
+		<label>label
+			<input name="link_label" type="text" value={ label } placeholder="optional"/>
+		</label>
+		<label>url
+			<input name="link_url" type="text" value={ linkURL } placeholder="https://..."/>
+		</label>
+		<button type="button" class="link danger" title="remove link" onclick="this.closest('.author-link-row').remove()">✕</button>
+	</div>
+}
+
+// authorPageLinks renders an author's external bookmarks inline in the author
+// card, under the home url. Each is an external link (marked ↗).
+templ authorPageLinks(links []store.AuthorLink) {
+	if len(links) > 0 {
+		<p class="author-links">
+			for i, l := range links {
+				if i > 0 {
+					· 
+				}
+				<a href={ templ.URL(l.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ web.LinkLabel(l.Label, l.URL) }</a>
+			}
+		</p>
+	}
+}
+
 templ authorPage(u store.User, d authorData) {
 	<section class="card">
 		<div class="row">
@@ -139,15 +187,11 @@ templ authorPage(u store.User, d authorData) {
 		if d.Author.URL != "" {
 			<p><a href={ templ.URL(d.Author.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ d.Author.URL }</a></p>
 		}
+		@authorPageLinks(d.Links)
 		if d.Author.Description != "" {
 			<p>{ d.Author.Description }</p>
 		}
 	</section>
-	<div class="row">
-		<h2>links</h2>
-		<button type="button" onclick="document.getElementById('add-author-link-dialog').showModal()">+ add link</button>
-	</div>
-	@AuthorLinksList(d.Links)
 	<div class="row">
 		<h2>feeds</h2>
 		<button type="button" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>
@@ -155,23 +199,6 @@ templ authorPage(u store.User, d authorData) {
 	@FeedsList(d.Rows)
 	<h2>items</h2>
 	@ScopedItems(d.Scoped)
-
-	<dialog id="add-author-link-dialog" class="modal">
-		<div class="row">
-			<h2>add link for { d.Author.Name }</h2>
-			<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
-		</div>
-		<form class="stack" hx-post={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/links" } hx-target="#author-links" hx-swap="outerHTML" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
-			<label>label (optional)
-				<input name="label" type="text" placeholder="e.g. Twitch"/>
-			</label>
-			<label>url
-				<input name="url" type="text" placeholder="https://twitch.tv/ThePrimeagen" autofocus required/>
-			</label>
-			<div id="add-link-error" class="error"></div>
-			<button type="submit">add</button>
-		</form>
-	</dialog>
 
 	<dialog id="add-author-feed-dialog" class="modal">
 		<div class="row">
@@ -188,28 +215,6 @@ templ authorPage(u store.User, d authorData) {
 		</form>
 		<div id="author-feed-preview"></div>
 	</dialog>
-}
-
-// AuthorLinksList is an author's external bookmarks. It is the target of the
-// add-link form (appended to) and is re-rendered whole after a delete.
-templ AuthorLinksList(links []store.AuthorLink) {
-	<ul class="plain" id="author-links">
-		for _, l := range links {
-			@AuthorLinkRow(l)
-		}
-		if len(links) == 0 {
-			<li class="muted small">no links yet</li>
-		}
-	</ul>
-}
-
-templ AuthorLinkRow(l store.AuthorLink) {
-	<li id={ "author-link-" + strconv.FormatInt(l.ID, 10) }>
-		<div class="row">
-			<a href={ templ.URL(l.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ web.LinkLabel(l.Label, l.URL) }</a>
-			<button class="link danger" title="delete link" hx-post={ "/links/" + strconv.FormatInt(l.ID, 10) + "/delete" } hx-target="#author-links" hx-swap="outerHTML" hx-confirm="delete this link?">✕</button>
-		</div>
-	</li>
 }
 
 templ authorCreateFields(d authorPreviewForm) {

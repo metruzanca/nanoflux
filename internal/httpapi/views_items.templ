@@ -278,12 +278,14 @@ templ DisplayModeControl() {
 	})
 }
 
-// AuthorSortControl sorts the authors list alphabetically ("abc") or by newest
-// first. Client-side: app.js reorders the rendered rows.
+// AuthorSortControl sorts the authors list alphabetically ("abc"), by newest
+// first, or by most unread items. Client-side: app.js reorders the rendered
+// rows.
 templ AuthorSortControl() {
 	@PickerControl("authors", "sort", "abc", []pickerOption{
 		{Value: "abc", Label: "abc"},
 		{Value: "newest", Label: "newest"},
+		{Value: "unread", Label: "unread"},
 	})
 }
 
@@ -336,8 +338,10 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 				· <a href={ templ.URL(d.SourceURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">source</a>
 			}
 		</p>
-		@shareControl(d.ID, d.ShareToken)
-		@itemMenu(d.ID)
+		<div class="item-controls" id="item-dialog-controls-src">
+			@shareControl(d.ID, d.ShareToken)
+			@itemMenu(d.ID)
+		</div>
 		@itemContent(d, v)
 	</div>
 }

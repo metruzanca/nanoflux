@@ -61,6 +61,23 @@ func (s *AuthorLinkStore) ListByAuthor(userID, authorID int64) ([]AuthorLink, er
 	return out, nil
 }
 
+// Update changes an existing link's label and url (the author is unchanged).
+func (s *AuthorLinkStore) Update(userID, id int64, label, url string) error {
+	res, err := s.q.UpdateAuthorLink(context.Background(), sqlcgen.UpdateAuthorLinkParams{
+		Label:  ns(label),
+		Url:    url,
+		ID:     id,
+		UserID: userID,
+	})
+	if err != nil {
+		return fmt.Errorf("update author link: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *AuthorLinkStore) Delete(userID, id int64) error {
 	res, err := s.q.DeleteAuthorLink(context.Background(), sqlcgen.DeleteAuthorLinkParams{
 		ID:     id,

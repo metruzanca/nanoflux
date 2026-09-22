@@ -128,12 +128,13 @@ function setDisplayMode(mode, e) {
   closePickers();
 }
 
-// Authors sort (abc / newest). Client-side (localStorage), reorders the
-// rendered rows.
+// Authors sort (abc / newest / unread). Client-side (localStorage), reorders
+// the rendered rows.
 var AUTHOR_SORT_KEY = 'nanoflux.authors.sort';
 function authorSort() {
   var s = localStorage.getItem(AUTHOR_SORT_KEY);
-  return s === 'newest' ? 'newest' : 'abc';
+  if (s === 'newest' || s === 'unread') return s;
+  return 'abc';
 }
 function applyAuthorSort() {
   var sort = authorSort();
@@ -143,6 +144,9 @@ function applyAuthorSort() {
     rows.sort(function (a, b) {
       if (sort === 'newest') {
         return (b.dataset.created || '').localeCompare(a.dataset.created || '');
+      }
+      if (sort === 'unread') {
+        return (parseInt(b.dataset.unread, 10) || 0) - (parseInt(a.dataset.unread, 10) || 0);
       }
       return (a.dataset.name || '').localeCompare(b.dataset.name || '');
     });
@@ -160,6 +164,14 @@ function setAuthorSort(sort, e) {
 applyDisplayMode();
 applyAuthorSort();
 
+// Author edit form: clone the blank link row <template> to add another.
+function addAuthorLinkRow() {
+  var tpl = document.getElementById('author-link-row-template');
+  var list = document.getElementById('author-link-fields');
+  if (!tpl || !list) return;
+  list.appendChild(tpl.content.firstElementChild.cloneNode(true));
+}
+
 // Item modal.
 var currentItemId = null;
 function openItem(el) {
@@ -167,13 +179,19 @@ function openItem(el) {
   document.getElementById('item-dialog-live').href = el.dataset.itemLink;
   var body = document.getElementById('item-dialog-body');
   body.innerHTML = '<p class="muted">loading…</p>';
+  var slot = document.getElementById('item-dialog-controls');
+  if (slot) slot.replaceChildren();
   fetch('/items/' + el.dataset.itemId + '/view')
     .then(function (r) { return r.text(); })
     .then(function (html) {
       body.innerHTML = html;
+      // The item fragment renders the share + ⋯ controls inside the scrollable
+      // body; relocate them into the dialog header next to "open live" and ✕.
+      var controls = body.querySelector('#item-dialog-controls-src');
+      if (controls && slot) slot.replaceChildren(controls);
       // The modal is injected via plain innerHTML, so htmx never processed its
       // elements (e.g. the share button's hx-post). Initialize them here.
-      htmx.process(body);
+      htmx.process(document.getElementById('item-dialog'));
       markRowRead(el.dataset.itemId);
     })
     .catch(function () { body.innerHTML = '<p class="error">could not load item</p>'; });

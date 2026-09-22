@@ -144,6 +144,13 @@ a.external::after {
   position: relative;
   display: inline-block;
 }
+/* The modal's share + ⋯ controls, relocated from the scrollable body into the
+   dialog header next to "open live" and ✕. */
+.item-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 .menu-pop {
   position: absolute;
   right: 0;
@@ -681,6 +688,21 @@ dialog.modal.wide[open] {
 
 /* Authors list: roomier rows so the entries are easier to scan. */
 #authors-list li { padding: 0.9rem 0; }
+#authors-list .unread-count { color: var(--accent); font-weight: 700; }
+
+/* Editable author link rows on the edit form: label/url side by side with a
+   remove ✕. */
+.author-link-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+.author-link-row label { flex: 1; }
+.author-link-row label:first-of-type { flex: 0 1 10rem; }
+.author-link-row .danger { padding-bottom: 0.6rem; }
+
+/* Author page: external bookmark links rendered inline under the home url. */
+.author-links { margin: 0.35rem 0 0; }
 
 /* A destructive action separated from the edit form above it. */
 form.delete-form {
