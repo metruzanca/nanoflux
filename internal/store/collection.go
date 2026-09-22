@@ -236,3 +236,27 @@ func (s *CollectionStore) FeedCollectionIDs(userID, feedID int64) ([]int64, erro
 		UserID: userID,
 	})
 }
+
+// CollectionsByAuthorFeed returns, in one query, the collections each of an
+// author's feeds belongs to, keyed by feed id. Feeds with no collections are
+// absent from the map. Used to render collection tags on the author page.
+func (s *CollectionStore) CollectionsByAuthorFeed(userID, authorID int64) (map[int64][]Collection, error) {
+	rows, err := s.q.ListCollectionsForAuthorFeeds(context.Background(), sqlcgen.ListCollectionsForAuthorFeedsParams{
+		UserID:   userID,
+		UserID_2: userID,
+		AuthorID: authorID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64][]Collection, len(rows))
+	for _, r := range rows {
+		out[r.FeedID] = append(out[r.FeedID], Collection{
+			ID:     r.ID,
+			UserID: userID,
+			Name:   r.Name,
+			IsAuto: r.IsAuto != 0,
+		})
+	}
+	return out, nil
+}

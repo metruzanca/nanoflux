@@ -183,6 +183,56 @@ func (q *Queries) ListCollections(ctx context.Context, userID int64) ([]Collecti
 	return items, nil
 }
 
+const listCollectionsForAuthorFeeds = `-- name: ListCollectionsForAuthorFeeds :many
+SELECT cf.feed_id, c.id, c.name, c.is_auto
+FROM collection_feeds cf
+JOIN collections c ON c.id = cf.collection_id
+JOIN feeds f ON f.id = cf.feed_id
+WHERE c.user_id = ? AND f.user_id = ? AND f.author_id = ?
+ORDER BY c.name
+`
+
+type ListCollectionsForAuthorFeedsParams struct {
+	UserID   int64 `json:"user_id"`
+	UserID_2 int64 `json:"user_id_2"`
+	AuthorID int64 `json:"author_id"`
+}
+
+type ListCollectionsForAuthorFeedsRow struct {
+	FeedID int64  `json:"feed_id"`
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	IsAuto int64  `json:"is_auto"`
+}
+
+func (q *Queries) ListCollectionsForAuthorFeeds(ctx context.Context, arg ListCollectionsForAuthorFeedsParams) ([]ListCollectionsForAuthorFeedsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCollectionsForAuthorFeeds, arg.UserID, arg.UserID_2, arg.AuthorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCollectionsForAuthorFeedsRow
+	for rows.Next() {
+		var i ListCollectionsForAuthorFeedsRow
+		if err := rows.Scan(
+			&i.FeedID,
+			&i.ID,
+			&i.Name,
+			&i.IsAuto,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCollectionsWithCounts = `-- name: ListCollectionsWithCounts :many
 SELECT c.id, c.user_id, c.name, c.is_auto, c.created_at,
        COUNT(DISTINCT cf.feed_id) AS feed_count,

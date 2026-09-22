@@ -71,3 +71,11 @@ SELECT cf.collection_id
 FROM collection_feeds cf
 JOIN collections c ON c.id = cf.collection_id
 WHERE cf.feed_id = ? AND c.user_id = ?;
+
+-- name: ListCollectionsForAuthorFeeds :many
+SELECT cf.feed_id, c.id, c.name, c.is_auto
+FROM collection_feeds cf
+JOIN collections c ON c.id = cf.collection_id
+JOIN feeds f ON f.id = cf.feed_id
+WHERE c.user_id = ? AND f.user_id = ? AND f.author_id = ?
+ORDER BY c.name;

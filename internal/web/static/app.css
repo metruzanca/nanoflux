@@ -446,6 +446,25 @@ li.text-card .card-body { flex: 1; min-width: 0; }
 .item-meta { color: var(--muted); font-size: 0.8rem; margin-top: 0.15rem; }
 .item-meta .unread-count { color: var(--accent); font-weight: 700; }
 
+/* Collection tags on a feed row (author page): "#name" pills linking to the
+   collection. */
+.feed-collections { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.3rem; }
+.tag {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-size: 0.75rem;
+  text-decoration: none;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag:hover { border-color: var(--accent); }
+
 .item-summary {
   color: var(--muted);
   font-size: 0.9rem;

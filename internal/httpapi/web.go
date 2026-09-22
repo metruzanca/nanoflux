@@ -48,9 +48,10 @@ type favoritesData struct {
 
 type feedRow struct {
 	store.Feed
-	AuthorName string
-	Unread     int
-	Timezone   string // user's IANA timezone, for relative timestamps in templates
+	AuthorName  string
+	Unread      int
+	Timezone    string             // user's IANA timezone, for relative timestamps in templates
+	Collections []store.Collection // the collections this feed belongs to (author page)
 }
 
 type feedForm struct {
@@ -618,7 +619,7 @@ func (s *Server) authorFeedCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, f.ID)
-	web.Render(w, r, FeedRow(feedRow{Feed: f, AuthorName: author.Name, Unread: unread, Timezone: u.Timezone}))
+	web.Render(w, r, FeedRow(s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread)))
 }
 
 // validateFeedFields checks the required title and feed url fields of the add
@@ -1033,7 +1034,7 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
-	web.Render(w, r, FeedRow(feedRow{Feed: f, AuthorName: author.Name, Unread: unread, Timezone: u.Timezone}))
+	web.Render(w, r, FeedRow(s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread)))
 }
 
 // feedOlder fetches the next page of a paginated feed ("load older items"),
@@ -1104,7 +1105,7 @@ func (s *Server) feedToggle(w http.ResponseWriter, r *http.Request) {
 	f.Enabled = !f.Enabled
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
-	web.Render(w, r, FeedRow(feedRow{Feed: f, AuthorName: author.Name, Unread: unread, Timezone: u.Timezone}))
+	web.Render(w, r, FeedRow(s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread)))
 }
 
 func (s *Server) authors(w http.ResponseWriter, r *http.Request) {
@@ -1326,14 +1327,28 @@ func (s *Server) feedItems(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, ScopedItems(s.feedScopedItems(u.ID, id, view, u.Timezone, asc)))
 }
 
+// feedRowFor builds a single feed row with its collection tags, for the feed
+// row fragments the add/refresh/toggle handlers swap in on the author page.
+func (s *Server) feedRowFor(userID int64, f store.Feed, authorName, tz string, unread int) feedRow {
+	byFeed, _ := s.store.Collections.CollectionsByAuthorFeed(userID, f.AuthorID)
+	return feedRow{
+		Feed: f, AuthorName: authorName, Unread: unread, Timezone: tz,
+		Collections: byFeed[f.ID],
+	}
+}
+
 func (s *Server) feedRowsForAuthor(userID, authorID int64, tz string) ([]feedRow, error) {
 	rows, err := s.store.Feeds.ListByAuthorWithUnread(userID, authorID)
 	if err != nil {
 		return nil, err
 	}
+	byFeed, _ := s.store.Collections.CollectionsByAuthorFeed(userID, authorID)
 	out := make([]feedRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, feedRow{Feed: r.Feed, AuthorName: r.AuthorName, Unread: r.Unread, Timezone: tz})
+		out = append(out, feedRow{
+			Feed: r.Feed, AuthorName: r.AuthorName, Unread: r.Unread, Timezone: tz,
+			Collections: byFeed[r.Feed.ID],
+		})
 	}
 	return out, nil
 }

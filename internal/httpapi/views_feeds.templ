@@ -38,6 +38,13 @@ templ FeedRow(r feedRow) {
 						never
 					}
 				</div>
+				if len(r.Collections) > 0 {
+					<div class="feed-collections">
+						for _, c := range r.Collections {
+							<a class="tag" href={ "/collections/" + strconv.FormatInt(c.ID, 10) } title={ c.Name }>#{ c.Name }</a>
+						}
+					</div>
+				}
 			</div>
 			<div class="row-actions">
 				<a class="small" title="edit" href={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit" }>@web.EditIcon()</a>
