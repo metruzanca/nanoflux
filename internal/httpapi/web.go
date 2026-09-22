@@ -1552,13 +1552,8 @@ func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	c, err := s.store.Collections.ByID(u.ID, id)
-	if err != nil {
+	if _, err := s.store.Collections.ByID(u.ID, id); err != nil {
 		http.NotFound(w, r)
-		return
-	}
-	if c.IsAuto {
-		renderError(w, r, "auto collections cannot be deleted")
 		return
 	}
 	if err := s.store.Collections.Delete(u.ID, id); err != nil {

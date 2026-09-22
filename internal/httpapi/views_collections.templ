@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 templ collectionsPage(u store.User, rows []store.CollectionWithCounts) {
@@ -17,7 +18,7 @@ templ collectionsPage(u store.User, rows []store.CollectionWithCounts) {
 		<form class="stack" hx-post="/collections" hx-target="#collections-list" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
 			<div class="row">
 				<h2>add collection</h2>
-				<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+				<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
 			</div>
 			<label>name
 				<input name="name" autofocus required/>
@@ -61,18 +62,24 @@ templ collectionPage(u store.User, d collectionData) {
 			if d.Collection.IsAuto {
 				<span class="badge">auto</span>
 			} else {
-				<a class="small" href={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>edit</a>
+				<a class="small" title="edit" href={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>@web.EditIcon()</a>
 				<button type="button" onclick="document.getElementById('collection-add-feed-dialog').showModal()">+ add feed</button>
 			}
 		</div>
 	</div>
+	if d.Collection.IsAuto {
+		<p class="muted small">auto collections are created from a feed's site. You can delete this one; adding a feed on that site again will recreate it.</p>
+		<form class="delete-form" method="post" action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/delete" } onsubmit="return confirm('delete this auto collection? feeds stay; only the grouping is removed.')">
+			<button type="submit" class="danger">delete</button>
+		</form>
+	}
 	@ScopedItems(d.Scoped)
 
 	if !d.Collection.IsAuto {
 		<dialog id="collection-add-feed-dialog" class="modal">
 			<div class="row">
 				<h2>add feed</h2>
-				<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+				<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
 			</div>
 			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-feed" } hx-target="#scoped-items" hx-swap="outerHTML" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
 				<input type="hidden" name="view" value={ d.Scoped.View }/>
@@ -120,7 +127,7 @@ templ collectionFeeds(d collectionData) {
 				<li>
 					<div class="row">
 						<a href={ "/feeds/" + strconv.FormatInt(f.ID, 10) }>{ f.Title }</a>
-						<button class="link danger" title="remove" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/remove-feed/" + strconv.FormatInt(f.ID, 10) } hx-target="#collection-feeds" hx-swap="outerHTML">✕</button>
+						<button class="link danger" title="remove" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/remove-feed/" + strconv.FormatInt(f.ID, 10) } hx-target="#collection-feeds" hx-swap="outerHTML">@web.Lucide("x")</button>
 					</div>
 				</li>
 			}

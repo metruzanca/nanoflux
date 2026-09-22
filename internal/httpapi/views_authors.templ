@@ -24,7 +24,7 @@ templ authorsPage(u store.User, d authorsData) {
 	<dialog id="add-author-dialog" class="modal">
 		<div class="row">
 			<h2>add feed</h2>
-			<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+			<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
 		</div>
 		<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-preview" hx-swap="innerHTML">
 			<label>url
@@ -152,7 +152,7 @@ templ authorLinkFieldRow(id, label, linkURL string) {
 		<label>url
 			<input name="link_url" type="text" value={ linkURL } placeholder="https://..."/>
 		</label>
-		<button type="button" class="link danger" title="remove link" onclick="this.closest('.author-link-row').remove()">✕</button>
+		<button type="button" class="link danger" title="remove link" onclick="this.closest('.author-link-row').remove()">@web.Lucide("x")</button>
 	</div>
 }
 
@@ -182,7 +182,7 @@ templ authorPage(u store.User, d authorData) {
 				}
 				<h1>{ d.Author.Name }</h1>
 			</div>
-			<a class="small" href={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/edit" }>edit</a>
+			<a class="small" title="edit" href={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/edit" }>@web.EditIcon()</a>
 		</div>
 		if d.Author.URL != "" {
 			<p><a href={ templ.URL(d.Author.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ d.Author.URL }</a></p>
@@ -203,7 +203,7 @@ templ authorPage(u store.User, d authorData) {
 	<dialog id="add-author-feed-dialog" class="modal">
 		<div class="row">
 			<h2>add feed for { d.Author.Name }</h2>
-			<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+			<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
 		</div>
 		<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-feed-preview" hx-swap="innerHTML">
 			<input type="hidden" id="feed-author-id" name="author_id" value={ strconv.FormatInt(d.Author.ID, 10) }/>

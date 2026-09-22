@@ -295,3 +295,6 @@ Source-available. Free to self-host. Commercial hosted offerings require permiss
 
 - Website: https://nanoflux.app
 - Source: https://github.com/metruzanca/nanoflux
+
+UI icons are from [Lucide](https://lucide.dev), used under the ISC License
+(Copyright © Lucide Contributors).

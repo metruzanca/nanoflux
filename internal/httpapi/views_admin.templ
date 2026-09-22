@@ -94,7 +94,7 @@ templ AdminUserRow(r adminUserRow) {
 							make admin
 						}
 					</button>
-					<button class="link danger" title="delete" hx-post={ "/admin/users/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#admin-users-list" hx-swap="innerHTML" hx-confirm={ "delete user " + r.Username + "? this removes all of their data" }>✕</button>
+					<button class="link danger" title="delete" hx-post={ "/admin/users/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#admin-users-list" hx-swap="innerHTML" hx-confirm={ "delete user " + r.Username + "? this removes all of their data" }>@web.Lucide("x")</button>
 				}
 			</div>
 		</div>

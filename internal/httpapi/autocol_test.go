@@ -101,7 +101,7 @@ func TestFeedUpdateMovesAutoCollection(t *testing.T) {
 	}
 }
 
-func TestAutoCollectionDeleteBlocked(t *testing.T) {
+func TestAutoCollectionDelete(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
@@ -116,14 +116,35 @@ func TestAutoCollectionDeleteBlocked(t *testing.T) {
 	}
 	c := autoCollection(t, s, u.ID, "youtube.com")
 
+	// The auto collection page offers a delete form.
+	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
+	if !strings.Contains(body, `action="/collections/`+itoa(c.ID)+`/delete"`) {
+		t.Fatalf("auto collection page should offer delete: %s", body)
+	}
+
+	// Deleting removes the collection but keeps the feed and its author.
 	rr = doForm(h, "POST", "/collections/"+itoa(c.ID)+"/delete", url.Values{}, cookie)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("auto delete should be 400, got %d %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/collections" {
+		t.Fatalf("auto delete should redirect to /collections, got %d %s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), "cannot be deleted") {
-		t.Fatalf("delete error should explain: %s", rr.Body.String())
+	if _, err := s.store.Collections.ByID(u.ID, c.ID); err == nil {
+		t.Fatalf("auto collection should be deleted")
 	}
-	// Still there.
+	feeds, _ := s.store.Feeds.List(u.ID)
+	if len(feeds) != 1 {
+		t.Fatalf("deleting an auto collection must not delete its feeds: %+v", feeds)
+	}
+
+	// It is gone from the index, and a later feed on that site recreates it.
+	body = doGet(h, "/collections", cookie).Body.String()
+	if strings.Contains(body, ">youtube.com<") {
+		t.Fatalf("deleted auto collection should not be listed: %s", body)
+	}
+	doForm(h, "POST", "/feeds", url.Values{
+		"title":     {"Channel 2"},
+		"feed_url":  {"https://www.youtube.com/feeds/videos.xml?channel_id=UCy"},
+		"author_id": {"new"}, "author_name": {"Channel 2"},
+	}, cookie)
 	autoCollection(t, s, u.ID, "youtube.com")
 }
 
@@ -227,12 +248,17 @@ func TestCollectionsPageHidesDeleteForAuto(t *testing.T) {
 		t.Fatalf("auto collection should carry an auto badge: %s", body)
 	}
 	c := autoCollection(t, s, u.ID, "youtube.com")
+	// The index row has no inline delete (delete lives on the collection page),
+	// but the auto collection page does offer one.
 	if strings.Contains(body, "/collections/"+itoa(c.ID)+"/delete") {
-		t.Fatalf("auto collection should not offer a delete button: %s", body)
+		t.Fatalf("collections index should not offer an inline delete: %s", body)
+	}
+	cbody := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
+	if !strings.Contains(cbody, "/collections/"+itoa(c.ID)+"/delete") {
+		t.Fatalf("auto collection page should offer delete: %s", cbody)
 	}
 
 	// The auto collection page hides the manual add-feed/remove controls.
-	cbody := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
 	if strings.Contains(cbody, "add feed") {
 		t.Fatalf("auto collection page should not offer add feed: %s", cbody)
 	}

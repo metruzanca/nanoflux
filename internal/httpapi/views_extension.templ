@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 // extFeedForm is the add-feed form the browser extension loads into its popup.
@@ -32,7 +33,7 @@ templ extFeedForm(feedURL, homeURL, title string, authors []store.Author) {
 
 // extSaved is the success fragment shown after saving a feed from the extension.
 templ extSaved(title string) {
-	<div class="ext-ok" role="status">saved <strong>{ title }</strong> ✓</div>
+	<div class="ext-ok" role="status">saved <strong>{ title }</strong> @web.Lucide("check")</div>
 }
 
 // extError is the error banner for the extension popup.

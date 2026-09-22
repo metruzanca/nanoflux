@@ -246,7 +246,7 @@ templ SettingsIconRow(r settingsIconRow) {
 			</div>
 			<div class="row-actions">
 				<button class="link" title="re-fetch the icon" hx-post={ "/settings/icons/" + strconv.FormatInt(r.ID, 10) + "/refresh" } hx-target={ "#settings-icon-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">refresh</button>
-				<button class="link danger" title="remove" hx-post={ "/settings/icons/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#settings-icons-list" hx-swap="innerHTML" hx-confirm="remove this icon?">✕</button>
+				<button class="link danger" title="remove" hx-post={ "/settings/icons/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#settings-icons-list" hx-swap="innerHTML" hx-confirm="remove this icon?">@web.Lucide("x")</button>
 			</div>
 		</div>
 	</li>

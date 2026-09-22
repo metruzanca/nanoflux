@@ -66,6 +66,30 @@ func renderComponent(t *testing.T, c templ.Component) string {
 	return buf.String()
 }
 
+func TestLucide(t *testing.T) {
+	// A known glyph renders its path inside a 24x24 stroked svg.
+	got := renderComponent(t, Lucide("check"))
+	if !strings.Contains(got, `<path d="M20 6 9 17l-5-5"/>`) ||
+		!strings.Contains(got, `viewBox="0 0 24 24"`) ||
+		!strings.Contains(got, `stroke="currentColor"`) {
+		t.Fatalf("Lucide(check) = %q", got)
+	}
+	// An unknown name renders nothing rather than a broken svg.
+	if got := renderComponent(t, Lucide("definitely-not-an-icon")); strings.Contains(got, "<svg") {
+		t.Fatalf("unknown icon should render nothing, got %q", got)
+	}
+	// The edit glyph and the favorite star are wired to the same set.
+	if got := renderComponent(t, EditIcon()); !strings.Contains(got, `class="ic"`) || !strings.Contains(got, "<path") {
+		t.Fatalf("EditIcon = %q", got)
+	}
+	if got := renderComponent(t, FavIcon(true)); !strings.Contains(got, `class="star on"`) {
+		t.Fatalf("favored FavIcon = %q", got)
+	}
+	if got := renderComponent(t, FavIcon(false)); strings.Contains(got, "star on") {
+		t.Fatalf("unfavored FavIcon should not be filled: %q", got)
+	}
+}
+
 func TestSourceIcon(t *testing.T) {
 	cases := []struct {
 		url  string

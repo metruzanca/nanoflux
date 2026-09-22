@@ -220,7 +220,7 @@ func homePage(d homeData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = DisplayModeControl().Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = DisplayModeControl("/").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -284,7 +284,7 @@ func readPage(d readData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = DisplayModeControl().Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = DisplayModeControl("/read").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -348,7 +348,7 @@ func favoritesPage(d favoritesData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = DisplayModeControl().Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = DisplayModeControl("/favorites").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 templ settingsMappings(d settingsData) {
@@ -46,8 +48,8 @@ templ SettingsMappingRow(r settingsMappingRow) {
 				<code>{ r.Pattern }</code> → <code>{ r.Template }</code>
 			</div>
 			<div class="row-actions">
-				<button class="link" title="edit" hx-get={ "/fragments/mapping-edit/" + strconv.FormatInt(r.ID, 10) } hx-target={ "#settings-mapping-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">edit</button>
-				<button class="link danger" title="remove" hx-post={ "/settings/mappings/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#settings-mappings-list" hx-swap="innerHTML" hx-confirm="remove this mapping?">✕</button>
+				<button class="link" title="edit" hx-get={ "/fragments/mapping-edit/" + strconv.FormatInt(r.ID, 10) } hx-target={ "#settings-mapping-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">@web.EditIcon()</button>
+				<button class="link danger" title="remove" hx-post={ "/settings/mappings/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#settings-mappings-list" hx-swap="innerHTML" hx-confirm="remove this mapping?">@web.Lucide("x")</button>
 			</div>
 		</div>
 	</li>

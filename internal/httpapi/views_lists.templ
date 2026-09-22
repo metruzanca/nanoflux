@@ -18,7 +18,7 @@ templ listsPage(u store.User, d listsPageData) {
 		<form class="stack" hx-post="/lists" hx-target="#lists-list" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
 			<div class="row">
 				<h2>add list</h2>
-				<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button>
+				<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
 			</div>
 			<label>name
 				<input name="name" autofocus required/>
@@ -98,8 +98,9 @@ templ listPage(u store.User, d listPageData) {
 		<h1>{ d.List.Name }</h1>
 		<div class="row-actions">
 			@SortDirControl(d.Dir, "/lists/"+strconv.FormatInt(d.List.ID, 10)+"?dir=desc", "/lists/"+strconv.FormatInt(d.List.ID, 10)+"?dir=asc")
+			@DisplayModeControl("/lists/" + strconv.FormatInt(d.List.ID, 10))
 			@listShareControl(d.List.ID, d.List.ShareToken)
-			<a class="small" href={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/edit" }>edit</a>
+			<a class="small" title="edit" href={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/edit" }>@web.EditIcon()</a>
 		</div>
 	</div>
 	@ItemsListPage(d.Items, d.More, false)
