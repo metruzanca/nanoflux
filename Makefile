@@ -37,7 +37,7 @@ help:
 	@echo "  restore   restore from backups/ (usage: make restore ARCHIVE=backups/<file>.tar.gz)"
 	@echo "  down      stop and remove containers (data kept)"
 	@echo "  extension package the browser extension into dist/"
-	@echo "  icons     regenerate the pwa icons"
+	@echo "  icons     regenerate the pwa + extension icons"
 	@echo ""
 	@echo "Run with podman: make <cmd> RUNTIME=podman"
 
