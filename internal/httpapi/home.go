@@ -152,7 +152,7 @@ type settingsHomeRow struct {
 // settingsHomeData is the home-screen settings card's data.
 type settingsHomeData struct {
 	Rows        []settingsHomeRow
-	Collections []store.Collection // the user's non-auto collections, for the add picker
+	Collections []store.Collection // the user's collections (auto included), for the add picker
 	Error       string
 }
 
@@ -163,12 +163,10 @@ func (s *Server) settingsHomeData(userID int64, errMsg string) settingsHomeData 
 	}
 	all, _ := s.store.Collections.List(userID)
 	byID := make(map[int64]store.Collection, len(all))
-	var selectable []store.Collection
+	selectable := make([]store.Collection, 0, len(all))
 	for _, c := range all {
 		byID[c.ID] = c
-		if !c.IsAuto {
-			selectable = append(selectable, c)
-		}
+		selectable = append(selectable, c)
 	}
 	var rows []settingsHomeRow
 	for _, sec := range parseHomeConfig(u.HomeConfig) {

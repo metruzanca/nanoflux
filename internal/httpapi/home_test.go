@@ -137,6 +137,34 @@ func TestSettingsHomeCard(t *testing.T) {
 	}
 }
 
+// TestSettingsHomePickerIncludesAuto asserts the pin-collection picker offers
+// auto collections too, not just user-created ones, and that pinning one
+// renders it on the home dashboard.
+func TestSettingsHomePickerIncludesAuto(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _, _ := homeFixture(t, s)
+	auto, err := s.store.Collections.EnsureAuto(u.ID, "b.dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body := doGet(h, "/settings", cookie).Body.String()
+	if !strings.Contains(body, `value="`+itoa(auto.ID)+`"`) {
+		t.Fatalf("pin picker should offer the auto collection: %s", body)
+	}
+
+	rr := doForm(h, "POST", "/settings/home", url.Values{
+		"action": {"add"}, "add_collection": {itoa(auto.ID)},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("pin auto collection: %d %s", rr.Code, rr.Body.String())
+	}
+	if after, _ := s.store.Users.ByID(u.ID); !strings.Contains(after.HomeConfig, itoa(auto.ID)) {
+		t.Fatalf("home config should record the pinned auto collection: %q", after.HomeConfig)
+	}
+}
+
 func TestHomeSectionRenderMode(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
