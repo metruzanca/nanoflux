@@ -1192,6 +1192,11 @@ The plugin system loads feed integrations without rebuilding nanoflux. See
   channel avatar; `Fetch` reads the RSS and falls back to `youtubei/v1/browse`
   on a bad response. It proves the API carries discover + fetch + preview
   metadata + a non-RSS endpoint.
+- **Native and external are one implementation.** The plugin code lives once at
+  `internal/plugin/native/youtube`; `examples/plugin-youtube` is a `main` that
+  imports and serves that very package over gRPC, so the two forms cannot drift.
+  `examples/plugin-hello` is a from-scratch external plugin. Tests in
+  `internal/plugin` build both examples and load them over the broker.
 - **v0.1 limits:** plugins route by URL shape (no `feeds.kind='plugin'` or
   per-feed config column yet), only YouTube is ported (x/instagram/patreon/scrape
   remain built-in fallbacks), and there is no hot reload. Do not start a schema
