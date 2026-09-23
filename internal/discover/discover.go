@@ -25,6 +25,7 @@ const maxBody = 4 << 20
 type Candidate struct {
 	FeedURL  string `json:"feed_url"`
 	Title    string `json:"title,omitempty"`
+	IconURL  string `json:"icon_url,omitempty"` // author avatar / site icon (plugin-supplied)
 	HomeURL  string `json:"home_url,omitempty"`
 	Strategy string `json:"strategy"`
 }

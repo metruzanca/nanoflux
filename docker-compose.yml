@@ -27,12 +27,18 @@ services:
       NF_BACKUP_DIR: "${NF_BACKUP_DIR:-/backups}"
       NF_BACKUP_INTERVAL: "${NF_BACKUP_INTERVAL:-24h}"
       NF_BACKUP_KEEP: "${NF_BACKUP_KEEP:-7}"
+      # External feed plugins are executables in this directory; drop them in
+      # ./plugins on the host and restart. Native plugins (YouTube, etc.) are
+      # always available.
+      NF_PLUGINS_DIR: "${NF_PLUGINS_DIR:-/plugins}"
     volumes:
       - nanoflux-db:/data
       - nanoflux-files:/filestore
       # Same host directory `make backup` writes to and `make restore` reads
       # from, so a snapshot the server takes can be restored with `make restore`.
       - ./backups:/backups
+      # External feed plugins (see docs/writing-plugins.md).
+      - ./plugins:/plugins
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]

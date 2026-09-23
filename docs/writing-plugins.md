@@ -128,7 +128,13 @@ type Host interface {
 	Logf(format string, args ...any)
 }
 type HTTPRequest  struct{ Method, URL string; Headers map[string]string; Body []byte }
-type HTTPResponse struct{ Status int; Headers map[string]string; Body []byte }
+type HTTPResponse struct {
+	Status      int
+	Headers     map[string]string
+	Body        []byte
+	RateLimited bool
+	RetryAfter  time.Duration
+}
 ```
 
 This is what keeps nanoflux the source of truth for:
@@ -141,8 +147,18 @@ This is what keeps nanoflux the source of truth for:
 
 `h.Do` returns the raw status, headers, and body so the plugin still owns its
 logic: it can inspect a 404 and try another endpoint, or serve from its own
-cache. The host never overrides a plugin that recovered from a cache; it only
-refuses future requests to a cooling host.
+cache. When the host rate-limits a request it cools the host **and** returns the
+response normally with `RateLimited: true` (not as an error) — this inline
+signal is deliberate so a native and an external plugin behave identically. A
+plugin that cannot avoid the limit returns a `RateLimit` so nanoflux parks the
+feed; a plugin that recovered from its cache returns its result as usual.
+
+```go
+resp, _ := h.Do(ctx, pluginapi.HTTPRequest{Method: "GET", URL: url})
+if resp.RateLimited {
+	return pluginapi.Result{}, &pluginapi.RateLimit{URL: url, Status: resp.Status, RetryAfter: resp.RetryAfter}
+}
+```
 
 A plugin that sets `RawNetwork: true` in `Meta` uses its own HTTP client
 instead, and must surface rate limits itself (return a `RateLimit`). Reserve

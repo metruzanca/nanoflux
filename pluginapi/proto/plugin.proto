@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package nanoflux.plugin.v1;
+
+option go_package = "github.com/metruzanca/nanoflux/pluginapi/gen;pluginpb";
+
+// ---- Host service: served by nanoflux, called by the plugin ----
+
+service Host {
+  rpc Do(HTTPRequest) returns (HTTPResponse);
+  rpc Now(NowRequest) returns (NowResponse);
+  rpc Log(LogRequest) returns (LogResponse);
+}
+
+message HTTPRequest {
+  string method = 1;
+  string url = 2;
+  map<string, string> headers = 3;
+  bytes body = 4;
+}
+
+message HTTPResponse {
+  int32 status = 1;
+  map<string, string> headers = 2;
+  bytes body = 3;
+  bool rate_limited = 4;
+  int64 retry_after_millis = 5;
+}
+
+message NowRequest {}
+message NowResponse { int64 unix_millis = 1; }
+
+message LogRequest { string message = 1; }
+message LogResponse {}
+
+// ---- Fetcher service: served by the plugin, called by nanoflux ----
+
+service Fetcher {
+  rpc Meta(MetaRequest) returns (MetaResponse);
+  rpc Match(MatchRequest) returns (MatchResponse);
+  rpc Discover(DiscoverRequest) returns (DiscoverResponse);
+  rpc Fetch(FetchRequest) returns (FetchResponse);
+}
+
+message MetaRequest {}
+message MetaResponse {
+  string name = 1;
+  string api_version = 2;
+  bool raw_network = 3;
+}
+
+message MatchRequest {
+  string url = 1;
+  // 0 = discover, 1 = fetch
+  int32 capability = 2;
+}
+message MatchResponse { bool match = 1; }
+
+message Candidate {
+  string feed_url = 1;
+  string title = 2;
+  string icon_url = 3;
+  string home_url = 4;
+}
+
+message DiscoverRequest {
+  uint32 host_server = 1;
+  string page_url = 2;
+}
+message DiscoverResponse {
+  repeated Candidate candidates = 1;
+  PluginError error = 2;
+}
+
+message Enclosure {
+  string url = 1;
+  string mime_type = 2;
+  int64 length = 3;
+}
+
+message Item {
+  string guid = 1;
+  string title = 2;
+  string link = 3;
+  string summary = 4;
+  string image_url = 5;
+  string published_at = 6;
+  repeated Enclosure enclosures = 7;
+}
+
+message Feed {
+  string title = 1;
+  string home_url = 2;
+  string description = 3;
+  string image_url = 4;
+}
+
+message FetchRequest {
+  uint32 host_server = 1;
+  string url = 2;
+  string etag = 3;
+  string last_modified = 4;
+  bytes config = 5;
+}
+message FetchResponse {
+  Feed feed = 1;
+  repeated Item items = 2;
+  string etag = 3;
+  string last_modified = 4;
+  string next_page_url = 5;
+  PluginError error = 6;
+}
+
+// PluginError carries a structured failure back to the host so it can map it
+// (e.g. an HTTP status to a user-facing reason, or a rate limit to a backoff).
+message PluginError {
+  int32 status_code = 1;
+  int64 retry_after_millis = 2;
+  bool rate_limited = 3;
+  bool unsupported = 4;
+  string message = 5;
+}

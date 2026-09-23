@@ -1160,15 +1160,39 @@ is purely a convenience wrapper for the docker-compose deployment** — `start`,
 `restore`, each a thin `podman`/`compose` command (no app logic, no Go tooling).
 Do not add build/dev tasks to the Makefile or compose/deploy tasks to mise.
 
-## Plugins (planned)
+## Plugins
 
-A plugin system is **designed but not implemented** — see
-`docs/plugin-architecture.md` for the full design, decisions, phases, and open
-questions, and `docs/writing-plugins.md` for the plugin-author walkthrough. In
-short: external feed integrations load as out-of-process executables via
-`hashicorp/go-plugin` (gRPC, no cgo, so the static build is unchanged), the
-current native integrations (YouTube, X, Instagram, Patreon, CSS-scrape) become
-native plugins, and HTTP stays host-mediated so the app remains responsible for
-User-Agent, timeouts, and per-host rate limiting. Do not start implementing it
-without reading that document; its "Decisions locked" and "Open questions"
-sections are the current source of truth.
+The plugin system loads feed integrations without rebuilding nanoflux. See
+`docs/plugin-architecture.md` (design/status) and `docs/writing-plugins.md`
+(author guide).
+
+- **Mechanism:** `hashicorp/go-plugin` over gRPC, out-of-process, **no cgo** —
+  the static `CGO_ENABLED=0` build is unchanged. The API lives in the nested
+  module `pluginapi/` (own `go.mod`, `github.com/metruzanca/nanoflux/pluginapi`),
+  required by the main module via a `replace` to `./pluginapi`. It is generated
+  from `pluginapi/proto/plugin.proto` with **buf** (`buf generate` in
+  `pluginapi/`; needs `protoc-gen-go`/`protoc-gen-go-grpc` on PATH). Generated
+  code is committed.
+- **Two kinds, one interface:** native plugins are in-process Go values
+  (`internal/plugin/native/…`, registered in `plugin.registerNative`); external
+  plugins are executables in `NF_PLUGINS_DIR` loaded over gRPC. `Registry`
+  holds both; `Match` prefers native then external.
+- **Host-mediated HTTP (load-bearing):** a plugin's `Host.Do` runs through the
+  host, which applies `NF_USER_AGENT`/timeouts and inspects every response for
+  rate limits (`feedparse.IsRateLimited`/`RateLimitBackoff`), cooling the request
+  host via `plugin.Cooldown`. The poller and host share the client and cooldown.
+  A plugin opts out with `Meta.RawNetwork`.
+- **Dispatch:** `plugin.Setup` installs a `feedparse.Plugin` hook (`SetPlugin`)
+  so `feedparse.Fetch` routes matching URLs to plugins before the built-in
+  x/instagram/patreon/gofeed paths; `discoverCandidates` merges plugin
+  `Discover` candidates (their `Title`/`IconURL` win the add-form preview when
+  `Strategy == "plugin"`).
+- **YouTube is the reference native plugin** (`internal/plugin/native/youtube`):
+  `Discover` resolves the channel id and returns the RSS candidate with the
+  channel avatar; `Fetch` reads the RSS and falls back to `youtubei/v1/browse`
+  on a bad response. It proves the API carries discover + fetch + preview
+  metadata + a non-RSS endpoint.
+- **v0.1 limits:** plugins route by URL shape (no `feeds.kind='plugin'` or
+  per-feed config column yet), only YouTube is ported (x/instagram/patreon/scrape
+  remain built-in fallbacks), and there is no hot reload. Do not start a schema
+  change for plugin config without revisiting the design doc.

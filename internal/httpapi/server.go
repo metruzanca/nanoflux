@@ -10,6 +10,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/filestore"
 	"github.com/metruzanca/nanoflux/internal/oembed"
+	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/internal/poller"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
@@ -23,6 +24,8 @@ type Server struct {
 	cfg          config.Config
 	poller       *poller.Poller
 	backups      *backup.Runner
+	plugins      *plugin.Registry
+	pluginHosts  *plugin.Hosts
 	discoverer   *discover.Discoverer
 	client       *http.Client
 	files        filestore.Store
@@ -52,6 +55,13 @@ func (s *Server) SetPoller(p *poller.Poller) { s.poller = p }
 // SetBackupRunner attaches the automatic-backup runner (nil when disabled), so
 // the admin page can show status and trigger a run on demand.
 func (s *Server) SetBackupRunner(r *backup.Runner) { s.backups = r }
+
+// SetPlugins attaches the plugin registry and host factory, enabling plugin
+// discovery in the add-feed flow. Either may be nil (no plugins).
+func (s *Server) SetPlugins(reg *plugin.Registry, hosts *plugin.Hosts) {
+	s.plugins = reg
+	s.pluginHosts = hosts
+}
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()

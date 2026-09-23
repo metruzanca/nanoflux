@@ -51,6 +51,10 @@ func New(st *store.Store, interval time.Duration, workers int) *Poller {
 	}
 }
 
+// Client returns the HTTP client the poller uses, so the plugin host can share
+// the same transport and timeout policy.
+func (p *Poller) Client() *http.Client { return p.client }
+
 // Run polls due feeds immediately, then every interval until ctx is done.
 func (p *Poller) Run(ctx context.Context) {
 	log.Info("poller starting", "interval", p.interval)

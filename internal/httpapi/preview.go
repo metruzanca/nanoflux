@@ -15,6 +15,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
+	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
 // feedPreviewForm is the combined add form shown once a feed is identified: an
@@ -172,6 +173,50 @@ func previewHome(c discover.Candidate, pageURL string) string {
 	return pageURL
 }
 
+// toDiscoverCandidates converts plugin candidates into discover candidates,
+// tagged with the "plugin" strategy so the preview form prefers their metadata.
+func toDiscoverCandidates(cs []pluginapi.Candidate) []discover.Candidate {
+	out := make([]discover.Candidate, 0, len(cs))
+	seen := map[string]bool{}
+	for _, c := range cs {
+		if c.FeedURL == "" || seen[c.FeedURL] {
+			continue
+		}
+		seen[c.FeedURL] = true
+		out = append(out, discover.Candidate{
+			FeedURL:  c.FeedURL,
+			Title:    c.Title,
+			IconURL:  c.IconURL,
+			HomeURL:  c.HomeURL,
+			Strategy: "plugin",
+		})
+	}
+	return out
+}
+
+// mergeCandidates prepends the plugin-supplied candidates (which carry their own
+// preview metadata) to the generic ones, de-duplicating by FeedURL so a plugin's
+// richer entry wins.
+func mergeCandidates(plugin, generic []discover.Candidate) []discover.Candidate {
+	seen := map[string]bool{}
+	out := make([]discover.Candidate, 0, len(plugin)+len(generic))
+	for _, c := range plugin {
+		if c.FeedURL == "" || seen[c.FeedURL] {
+			continue
+		}
+		seen[c.FeedURL] = true
+		out = append(out, c)
+	}
+	for _, c := range generic {
+		if seen[c.FeedURL] {
+			continue
+		}
+		seen[c.FeedURL] = true
+		out = append(out, c)
+	}
+	return out
+}
+
 // discoverCandidates resolves the feeds for a page URL: the user's url mappings
 // are applied first (the original url becomes the home page), the direct URL is
 // tried as a feed, then discovery runs, falling back to the original url when a
@@ -195,13 +240,25 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 		directErr = err
 	}
 
+	// Plugin discovery (native + external) runs first and contributes candidates
+	// with their own preview metadata. It is independent of the generic page
+	// crawl, so a page that cannot be fetched (or a host the plugin knows
+	// without a live page) still yields the plugin's feeds.
+	var pluginCandidates []discover.Candidate
+	if s.plugins != nil && !s.plugins.Empty() {
+		if pcs := s.plugins.Discover(ctx, feedURL, s.pluginHosts.For); len(pcs) > 0 {
+			pluginCandidates = toDiscoverCandidates(pcs)
+		}
+	}
+
 	candidates, err := s.discoverer.Discover(ctx, feedURL)
 	if err != nil {
 		log.Error("feed preview discover", "err", err)
-		if feedURL == pageURL {
+		if feedURL == pageURL && len(pluginCandidates) == 0 {
 			return nil, err
 		}
 	}
+	candidates = mergeCandidates(pluginCandidates, candidates)
 	if len(candidates) == 0 && feedURL != pageURL {
 		// A mapping transformed the url but its feed is gone or the page is
 		// not a feed; fall back to the original input.
@@ -267,7 +324,19 @@ func feedPreviewError(err error) string {
 // the author-scoped flow appends the new feed row in place.
 func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c discover.Candidate, pageURL, homeURL string, authors []store.Author, selectedAuthor int64, fixedAuthor *store.Author) {
 	meta, _ := s.discoverer.PageMeta(r.Context(), pageURL)
+	// A plugin-discovered candidate carries its own preview metadata, which wins
+	// over the generic page metadata. A generic candidate's Title is the feed
+	// title, so only use it as a fallback (below), never over the page title.
 	name := meta.Title
+	avatar := meta.IconURL
+	if c.Strategy == "plugin" {
+		if c.Title != "" {
+			name = c.Title
+		}
+		if c.IconURL != "" {
+			avatar = c.IconURL
+		}
+	}
 	if name == "" {
 		name = c.Title
 	}
@@ -279,7 +348,7 @@ func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c
 	form := feedPreviewForm{
 		Title: c.Title, FeedURL: stripWWW(c.FeedURL), HomeURL: stripWWW(homeURL), Authors: authors,
 		SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor, Redirect: fixedAuthor == nil,
-		NewAuthorName: name, NewAuthorAvatar: meta.IconURL,
+		NewAuthorName: name, NewAuthorAvatar: avatar,
 	}
 	if fixedAuthor != nil {
 		form.Action = "/authors/" + strconv.FormatInt(fixedAuthor.ID, 10) + "/feeds"

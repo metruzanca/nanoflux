@@ -2,6 +2,10 @@
 description = "Regenerate templ components and sqlc queries"
 run = "templ generate && sqlc generate"
 
+[tasks."pluginapi:gen"]
+description = "Regenerate pluginapi gRPC code (buf; needs buf + protoc-gen-go{,-grpc})"
+run = "cd pluginapi && buf generate"
+
 [tasks.icons]
 description = "Regenerate the pwa + extension icons"
 run = "go run ./tools/iconsgen"
