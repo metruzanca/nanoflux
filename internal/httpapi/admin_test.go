@@ -4,11 +4,14 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/backup"
+	"github.com/metruzanca/nanoflux/internal/config"
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
@@ -72,6 +75,48 @@ func TestAdminPage(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("admin page missing %q", want)
 		}
+	}
+}
+
+func TestAdminBackupCard(t *testing.T) {
+	s, h := newTestServer(t)
+	root := createUser(t, s, "root")
+	if err := s.store.Users.SetAdmin(root.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	cookie := adminSession(t, s, "root")
+
+	// Disabled by default: the card explains how to turn backups on and offers
+	// no button.
+	body := doGet(h, "/admin", cookie).Body.String()
+	if !strings.Contains(body, "automatic backups are off") {
+		t.Fatalf("admin page should show backups are off: %s", body)
+	}
+	if strings.Contains(body, `hx-post="/admin/backup"`) {
+		t.Fatal("no back-up-now button when backups are disabled")
+	}
+
+	// Enabled with a local destination: the card shows the destination and a
+	// button, and a manual run writes an archive.
+	dir := t.TempDir()
+	s.cfg.Backup = config.BackupConfig{Interval: 24 * time.Hour, Keep: 7, Dir: dir}
+	s.SetBackupRunner(backup.NewRunner(s.store.DB(), backup.Config{Interval: 24 * time.Hour, Keep: 7}, &backup.LocalDestination{Dir: dir}))
+
+	body = doGet(h, "/admin", cookie).Body.String()
+	if !strings.Contains(body, "local: "+dir) || !strings.Contains(body, `hx-post="/admin/backup"`) {
+		t.Fatalf("enabled backup card malformed: %s", body)
+	}
+
+	rr := doForm(h, "POST", "/admin/backup", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("back up now: %d %s", rr.Code, rr.Body.String())
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Fatalf("expected one archive written, got %d", len(entries))
+	}
+	if !strings.Contains(rr.Body.String(), "nanoflux-") {
+		t.Fatalf("card should show the last archive: %s", rr.Body.String())
 	}
 }
 

@@ -47,6 +47,7 @@ start:
 		printf 'NF_ADMIN_USER=admin\nNF_ADMIN_PASS=%s\n' "$$PW" > .env; \
 		echo "created .env - log in as admin with password $$PW"; \
 	fi
+	@mkdir -p backups
 	$(COMPOSE) up -d
 
 stop:

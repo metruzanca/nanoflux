@@ -11,10 +11,50 @@ templ adminPage(u store.User, d adminData) {
 	<h1>admin</h1>
 	@AdminInstanceCard(d)
 	@AdminStats(d.Stats)
+	@AdminBackupCard(d.Backup)
 	<section class="card">
 		<h2>users</h2>
 		<p class="muted small">Manage accounts: reset passwords, grant or revoke the admin flag, or delete users. Deleting a user removes all of their data.</p>
 		@AdminUserList(d.Users)
+	</section>
+}
+
+// AdminBackupCard shows automatic-backup configuration and the last run, with a
+// "back up now" button. Rendered only for admins; the button re-renders the
+// card itself after a manual snapshot.
+templ AdminBackupCard(b adminBackup) {
+	<section class="card" id="admin-backup-card">
+		<h2>backups</h2>
+		if !b.Enabled {
+			<p class="muted small">automatic backups are off. Set <code>NF_BACKUP_INTERVAL</code> and a destination (<code>NF_BACKUP_DIR</code> or <code>NF_BACKUP_S3_*</code>) to enable them. See the backups docs.</p>
+		} else {
+			<p class="muted small">
+				snapshotting the whole instance to <strong>{ b.Destination }</strong> every { b.Interval }
+				if b.Keep > 0 {
+					, keeping the newest { strconv.Itoa(b.Keep) }
+				}
+				.
+			</p>
+		}
+		if b.LastError != "" {
+			<div class="error" role="alert">last backup failed: { b.LastError }</div>
+		} else if b.LastRun != "" {
+			<div class="muted small">
+				last backup { web.TimeFmt(b.Timezone, b.LastRun) }
+				if b.LastArchive != "" {
+					· { b.LastArchive }
+				}
+				if b.LastSize != "" {
+					· { b.LastSize }
+				}
+			</div>
+		} else if b.Enabled {
+			<div class="muted small">no backup has run yet.</div>
+		}
+		<div id="admin-backup-error" class="error"></div>
+		if b.Enabled {
+			<button type="button" hx-post="/admin/backup" hx-target="#admin-backup-card" hx-swap="outerHTML" hx-disabled-elt="this">back up now</button>
+		}
 	</section>
 }
 

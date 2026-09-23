@@ -19,9 +19,20 @@ services:
       # otherwise the default admin/admin account is created.
       NF_ADMIN_USER: "${NF_ADMIN_USER:-}"
       NF_ADMIN_PASS: "${NF_ADMIN_PASS:-}"
+      # Automatic filesystem backups, on by default. The server snapshots the
+      # database and file store into ./backups on the host once a day, keeping
+      # the newest seven. Set NF_BACKUP_INTERVAL=0 in .env to turn them off, or
+      # point NF_BACKUP_DIR at another path to move them (it must be a mount to
+      # survive container recreation).
+      NF_BACKUP_DIR: "${NF_BACKUP_DIR:-/backups}"
+      NF_BACKUP_INTERVAL: "${NF_BACKUP_INTERVAL:-24h}"
+      NF_BACKUP_KEEP: "${NF_BACKUP_KEEP:-7}"
     volumes:
       - nanoflux-db:/data
       - nanoflux-files:/filestore
+      # Same host directory `make backup` writes to and `make restore` reads
+      # from, so a snapshot the server takes can be restored with `make restore`.
+      - ./backups:/backups
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]

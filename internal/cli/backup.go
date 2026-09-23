@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/metruzanca/nanoflux/internal/backup"
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/filestore"
 	"github.com/metruzanca/nanoflux/internal/store"
@@ -37,46 +38,19 @@ func backupCmd(st *store.Store, env Env, out, errOut io.Writer) *cobra.Command {
 			ts := time.Now().UTC().Format("20060102-150405")
 			archive := filepath.Join(dir, "nanoflux-"+ts+".tar.gz")
 
-			tmp, err := os.MkdirTemp("", "nanoflux-backup-")
-			if err != nil {
-				return err
-			}
-			defer os.RemoveAll(tmp)
-			dataDir := filepath.Join(tmp, "data")
-			if err := os.MkdirAll(dataDir, 0o755); err != nil {
-				return err
-			}
-			dbOut := filepath.Join(dataDir, "rss.db")
-			if _, err := st.DB().Exec("VACUUM INTO '" + strings.ReplaceAll(dbOut, "'", "''") + "'"); err != nil {
-				return fmt.Errorf("snapshot database: %w", err)
-			}
-
 			f, err := os.Create(archive)
 			if err != nil {
 				return err
 			}
 			defer f.Close()
-			zw := gzip.NewWriter(f)
-			tw := tar.NewWriter(zw)
-			if err := tarAddFile(tw, "data/rss.db", dbOut); err != nil {
-				return err
-			}
 
 			fcfg := filestore.ConfigFromEnv()
-			if fcfg.IsDisk() && env.FileStoreDir != "" {
-				if _, err := os.Stat(env.FileStoreDir); err == nil {
-					if err := tarAddDir(tw, "filestore", env.FileStoreDir); err != nil {
-						return err
-					}
-				}
-			} else {
+			includeFiles := fcfg.IsDisk() && env.FileStoreDir != ""
+			if err := backup.WriteArchive(cmd.Context(), st.DB(), env.FileStoreDir, includeFiles, f); err != nil {
+				return err
+			}
+			if !includeFiles {
 				fmt.Fprintln(errOut, "note: blob storage is S3-backed; the database was backed up, but S3 objects must be backed up by your provider")
-			}
-			if err := tw.Close(); err != nil {
-				return err
-			}
-			if err := zw.Close(); err != nil {
-				return err
 			}
 			fmt.Fprintf(out, "backup written to %s\n", archive)
 			return nil
@@ -312,45 +286,4 @@ func extractArchive(archive, dir string) (hasDB, hasFilestore bool, err error) {
 		w.Close()
 	}
 	return hasDB, hasFilestore, nil
-}
-
-func tarAddFile(tw *tar.Writer, name, path string) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	hdr, err := tar.FileInfoHeader(info, "")
-	if err != nil {
-		return err
-	}
-	hdr.Name = name
-	if err := tw.WriteHeader(hdr); err != nil {
-		return err
-	}
-	if info.IsDir() {
-		return nil
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = io.Copy(tw, f)
-	return err
-}
-
-func tarAddDir(tw *tar.Writer, prefix, root string) error {
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if path == root {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		return tarAddFile(tw, filepath.Join(prefix, filepath.ToSlash(rel)), path)
-	})
 }

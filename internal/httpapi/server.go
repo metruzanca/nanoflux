@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/backup"
 	"github.com/metruzanca/nanoflux/internal/config"
 	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/filestore"
@@ -21,6 +22,7 @@ type Server struct {
 	auth         *auth.Authenticator
 	cfg          config.Config
 	poller       *poller.Poller
+	backups      *backup.Runner
 	discoverer   *discover.Discoverer
 	client       *http.Client
 	files        filestore.Store
@@ -46,6 +48,10 @@ func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore
 
 // SetPoller attaches the feed poller (needed for manual refresh).
 func (s *Server) SetPoller(p *poller.Poller) { s.poller = p }
+
+// SetBackupRunner attaches the automatic-backup runner (nil when disabled), so
+// the admin page can show status and trigger a run on demand.
+func (s *Server) SetBackupRunner(r *backup.Runner) { s.backups = r }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -168,6 +174,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/users/{id}/delete", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminDeleteUser))))
 	mux.Handle("POST /admin/settings/signup", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminSetSignup))))
 	mux.Handle("POST /admin/settings/signup-banner-dismiss", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminDismissSignupBanner))))
+	mux.Handle("POST /admin/backup", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminBackupNow))))
 
 	// Settings.
 	mux.Handle("GET /settings", s.auth.Require(http.HandlerFunc(s.settingsPage)))
