@@ -1160,10 +1160,11 @@ Do not add build/dev tasks to the Makefile or compose/deploy tasks to mise.
 
 A plugin system is **designed but not implemented** — see
 `docs/plugin-architecture.md` for the full design, decisions, phases, and open
-questions. In short: external feed integrations load as out-of-process
-executables via `hashicorp/go-plugin` (gRPC, no cgo, so the static build is
-unchanged), the current native integrations (YouTube, X, Instagram, Patreon,
-CSS-scrape) become native plugins, and HTTP stays host-mediated so the app
-remains responsible for User-Agent, timeouts, and per-host rate limiting. Do not
-start implementing it without reading that document; its "Decisions locked" and
-"Open questions" sections are the current source of truth.
+questions, and `docs/writing-plugins.md` for the plugin-author walkthrough. In
+short: external feed integrations load as out-of-process executables via
+`hashicorp/go-plugin` (gRPC, no cgo, so the static build is unchanged), the
+current native integrations (YouTube, X, Instagram, Patreon, CSS-scrape) become
+native plugins, and HTTP stays host-mediated so the app remains responsible for
+User-Agent, timeouts, and per-host rate limiting. Do not start implementing it
+without reading that document; its "Decisions locked" and "Open questions"
+sections are the current source of truth.
