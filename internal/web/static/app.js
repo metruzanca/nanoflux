@@ -632,6 +632,13 @@ function postAndReload(path) {
     window.location.reload();
   });
 }
+
+// markUnreadReload strips the item hash before reloading, so the reopened page
+// doesn't auto-open the modal (which would immediately re-mark the item read).
+function markUnreadReload() {
+  history.replaceState(null, '', location.pathname + location.search);
+  window.location.reload();
+}
 function postForm(path) {
   var f = document.createElement('form');
   f.method = 'POST';

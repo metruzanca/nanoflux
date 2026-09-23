@@ -1039,7 +1039,10 @@ templ cannot parse `{}` in raw `<script>` blocks). It installs:
   no longer in the card meta, so this is how a card reaches its feed).
   "mark all before/after as read" POSTs `/items/{id}/read-before|after` and reloads
   on success; the range is feed-scoped on a feed page and author-wide on an
-  author page (see the store-layer bulk range-read note).
+  author page (see the store-layer bulk range-read note). In the modal only,
+  "mark as not read" POSTs `/items/{id}/unread` (idempotent) and reloads after
+  stripping the `#item-<id>` hash (`markUnreadReload`) so the reopened page
+  doesn't auto-open the modal and immediately re-mark the item read.
 - User dropdown: `toggleUserMenu` + outside-click and Escape handlers.
 - Keyboard: ArrowLeft/Right move through the item list while the modal is open;
   reaching the end of the loaded rows fetches the next page (the shared

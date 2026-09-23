@@ -84,9 +84,6 @@ templ homePage(d homeData) {
 		<div class="row-actions">
 			@SortDirControl(d.Dir, "/unread?dir=desc", "/unread?dir=asc")
 			@DisplayModeControl("/unread")
-			if d.UnreadCount > 0 {
-				<button hx-post="/items/read-all" hx-target="#items-section" hx-swap="outerHTML">mark all read</button>
-			}
 		</div>
 	</div>
 	@ItemsSection(d.Unread, d.More, false)
