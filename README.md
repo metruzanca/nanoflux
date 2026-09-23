@@ -44,6 +44,7 @@ Configuration (env vars):
 | `NF_POLL_WORKERS` | `4` | concurrent feed fetches (distinct hosts run in parallel; a host's feeds are fetched one at a time) |
 | `NF_USER_AGENT` | `nanoflux (<repo URL>)` | outbound User-Agent for feed fetching and discovery (leave the built-in crawler/browser agents alone) |
 | `NF_ADMIN_USER` / `NF_ADMIN_PASS` | — | create the first account at startup (takes precedence over admin/admin) |
+| `NF_PLUGINS_DIR` | `/plugins` | directory scanned for external feed plugins (executables); native plugins are always available |
 
 ### Object storage
 

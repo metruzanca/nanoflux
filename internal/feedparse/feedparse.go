@@ -74,9 +74,28 @@ type Result struct {
 	NextPageURL string
 }
 
+// Plugin is a feed integration installed by the plugin host. When set, Fetch
+// defers to it for URLs it matches (before the built-in x/instagram/patreon
+// short-circuits and the generic feed parser).
+type Plugin interface {
+	// MatchFetch reports whether the plugin handles feedURL for fetching.
+	MatchFetch(feedURL string) bool
+	// FetchPlugin fetches feedURL via the plugin.
+	FetchPlugin(ctx context.Context, feedURL, etag, lastModified string) (Result, error)
+}
+
+var installedPlugin Plugin
+
+// SetPlugin installs the plugin dispatcher (called once at startup by the
+// plugin package). A nil plugin disables plugin routing.
+func SetPlugin(p Plugin) { installedPlugin = p }
+
 // Fetch retrieves and parses feedURL. When etag or lastModified are non-empty
 // they are sent as conditional-GET headers; a 304 returns ErrNotModified.
 func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastModified string) (Result, error) {
+	if installedPlugin != nil && installedPlugin.MatchFetch(feedURL) {
+		return installedPlugin.FetchPlugin(ctx, feedURL, etag, lastModified)
+	}
 	if isXProfileFeedURL(feedURL) {
 		return fetchXProfile(ctx, feedURL, client)
 	}

@@ -6,7 +6,7 @@ private repos. The current native integrations — YouTube, X, Instagram, Patreo
 and the CSS-selector scraper — become "native plugins" that double as the
 example implementations.
 
-Status: **design — not yet implemented.** Breaking changes are expected until
+Status: **v0.1 implemented.** The API is small and expected to change before
 v1.0.0. See "Phases & status" and "Fast follow-ups" to track progress. For the
 author-facing walkthrough (where a plugin lives, how it is written and loaded),
 see [`writing-plugins.md`](writing-plugins.md).
@@ -35,7 +35,7 @@ see [`writing-plugins.md`](writing-plugins.md).
 | D1 | Plugin mechanism | **hashicorp/go-plugin** (out-of-process, RPC). Verified to build with `CGO_ENABLED=0`, so the goreleaser build and Alpine image are unchanged — unlike Go's `plugin` package, which needs cgo and `-buildmode=plugin`. |
 | D2 | RPC protocol | **gRPC**, for context propagation (timeouts/cancellation) and the broker used for plugin→host calls. |
 | D3 | HTTP | **Host-mediated HTTP, with plugin-owned HTTP as an opt-in** (`RawNetwork`). |
-| D4 | Rate limits | The host detects/parses limits on **every** mediated response and cools the **request host**. The **feed** is parked only when the plugin signals a rate limit (e.g. it did not recover from cache). |
+| D4 | Rate limits | The host detects/parses limits on **every** mediated response and cools the **request host**. A limit is surfaced to the plugin **inline on the response** (`RateLimited`/`RetryAfter`, not as an error) so it behaves identically for native and external plugins; the **feed** is parked only when the plugin signals a rate limit (e.g. it did not recover from cache). |
 | D5 | Caching | Plugin-internal for v0.1. A host KV/cache capability is a fast follow. |
 | D6 | Native plugins | In-process Go implementations registered as built-ins (no subprocess), sharing the host HTTP path. |
 | D7 | Versioning | An explicit `APIVersion` plus the go-plugin protocol version; a mismatch hard-fails with a clear message. |
@@ -303,13 +303,23 @@ re-pointed at the `Fetcher` interface.
 | Phase | Deliverable | Status |
 | --- | --- | --- |
 | 0 | This design doc | done |
-| 1 | `pluginapi` module: types (incl. `Candidate.IconURL`), `Fetcher`, `Host`, `APIVersion`, errors | not started |
-| 2 | `internal/plugin`: registry, built-ins, `NF_PLUGINS_DIR` loader, gRPC broker, in-process host | not started |
-| 3 | Port natives, **YouTube first** (reference), then instagram, patreon, x, scrape | not started |
-| 4 | Unify dispatch (`feedparse.Fetch`), migrate `kind`/config (schemaV30) | not started |
-| 5 | Discovery capability | not started |
-| 6 | Authoring story: skeleton repo, `docs/writing-plugins.md`, env/compose docs | guide drafted |
-| 7 | Tests: registry, fake in-process plugin, end-to-end build + load a plugin | not started |
+| 1 | `pluginapi` module: types (incl. `Candidate.IconURL`), `Fetcher`, `Host`, `APIVersion`, proto + generated gRPC | done |
+| 2 | `internal/plugin`: registry, native host (rate-limit aware), `NF_PLUGINS_DIR` loader, gRPC broker | done |
+| 3 | Port natives: **YouTube** (reference native plugin) done; instagram, patreon, x, scrape pending | partial |
+| 4 | Unify dispatch (`feedparse.Fetch` + `discoverCandidates` hooks), preview metadata precedence | done |
+| 5 | Discovery capability (plugin `Discover` runs in the add flow) | done |
+| 6 | Authoring story: `docs/writing-plugins.md`, example plugin, `NF_PLUGINS_DIR`, compose mount | done |
+| 7 | Tests: registry, native YouTube, end-to-end external plugin load | done |
+
+**v0.1 scope note.** The plugin system is live: plugins load from
+`NF_PLUGINS_DIR`, the YouTube integration is a native plugin, and the example
+plugin proves the external path end to end. Two deliberate simplifications in
+v0.1: plugins route by URL shape (no `feeds.kind='plugin'` / per-feed config
+column yet — that schema change is deferred until a plugin needs configuration),
+and the other natives (instagram, patreon, x, scrape) still run as built-in code,
+not yet ported. The built-in x/instagram/patreon short-circuits in
+`feedparse.Fetch` and the YouTube discovery rule in `discover/host.go` remain as
+fallbacks; a matching plugin takes precedence.
 
 ## Open questions
 

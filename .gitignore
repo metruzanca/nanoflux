@@ -3,6 +3,7 @@
 /dist/
 /data/
 /backups/
+/plugins/
 *.db
 *.db-wal
 *.db-shm

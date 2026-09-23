@@ -40,6 +40,14 @@ func isRateLimited(resp *http.Response) bool {
 	return resp.StatusCode == http.StatusServiceUnavailable && retryHint(resp) > 0
 }
 
+// IsRateLimited reports whether a response is a rate-limit signal. Exported for
+// the plugin host, which inspects every mediated response.
+func IsRateLimited(resp *http.Response) bool { return isRateLimited(resp) }
+
+// RateLimitBackoff returns the retry delay for a rate-limited response.
+// Exported for the plugin host.
+func RateLimitBackoff(resp *http.Response) time.Duration { return rateLimitBackoff(resp) }
+
 // rateLimitBackoff returns how long to wait before retrying, from Retry-After
 // (seconds or HTTP-date) or x-ratelimit-reset (seconds), clamped to the bounds.
 func rateLimitBackoff(resp *http.Response) time.Duration {

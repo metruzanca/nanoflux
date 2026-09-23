@@ -19,6 +19,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/filestore"
 	"github.com/metruzanca/nanoflux/internal/httpapi"
+	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/internal/poller"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
@@ -72,6 +73,10 @@ func runServer() {
 	p := poller.New(st, cfg.PollInterval, cfg.PollWorkers)
 	go p.Run(ctx)
 
+	// Load feed plugins (native + external) and route fetches through them.
+	plugins := plugin.Setup(ctx, p.Client(), cfg.PluginsDir)
+	defer plugins.Close()
+
 	backupRunner := newBackupRunner(ctx, cfg, sqldb)
 	if backupRunner != nil {
 		go backupRunner.Run(ctx)
@@ -83,6 +88,7 @@ func runServer() {
 			h := httpapi.New(st, a, cfg, files)
 			h.SetPoller(p)
 			h.SetBackupRunner(backupRunner)
+			h.SetPlugins(plugins.Registry, plugins.Hosts)
 			return h.Handler()
 		}(),
 		ReadHeaderTimeout: 10 * time.Second,
