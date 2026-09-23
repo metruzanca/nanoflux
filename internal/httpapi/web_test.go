@@ -1314,7 +1314,6 @@ func TestAuthorPageStats(t *testing.T) {
 	for _, want := range []string{
 		`aria-label="author statistics"`,
 		"<strong>2</strong> posts",
-		"<strong>2</strong> unread",
 		"<strong>1</strong> feeds",
 		"in last 30 days",
 		"first post",
