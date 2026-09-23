@@ -267,6 +267,56 @@ func TestCollectionsPageHidesDeleteForAuto(t *testing.T) {
 	}
 }
 
+func TestAutoCollectionEditShowsFeedsReadOnly(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	doForm(h, "POST", "/feeds", url.Values{
+		"title":     {"Channel"},
+		"feed_url":  {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		"author_id": {"new"}, "author_name": {"Channel"},
+	}, cookie)
+	c := autoCollection(t, s, u.ID, "youtube.com")
+
+	// The auto collection now offers an edit link on its page.
+	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
+	if !strings.Contains(body, `href="/collections/`+itoa(c.ID)+`/edit"`) {
+		t.Fatalf("auto collection page should offer the edit link: %s", body)
+	}
+
+	// The edit screen renders (no redirect) and lists every feed read-only:
+	// the name is read-only and there is no way to remove a feed.
+	rr := doGet(h, "/collections/"+itoa(c.ID)+"/edit", cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("auto edit should render 200, got %d %s", rr.Code, rr.Body.String())
+	}
+	ebody := rr.Body.String()
+	if !strings.Contains(ebody, `value="youtube.com" readonly`) {
+		t.Fatalf("auto edit should render the name read-only: %s", ebody)
+	}
+	if strings.Contains(ebody, `method="post" action="/collections/`+itoa(c.ID)+`/edit"`) {
+		t.Fatalf("auto edit should not offer a rename form: %s", ebody)
+	}
+	feeds, _ := s.store.Collections.Feeds(u.ID, c.ID)
+	if len(feeds) != 1 || !strings.Contains(ebody, "Channel") {
+		t.Fatalf("auto edit should list the collection's feeds: %s", ebody)
+	}
+	if strings.Contains(ebody, "/remove-feed/") {
+		t.Fatalf("auto edit should not offer feed removal: %s", ebody)
+	}
+	// The delete form is still available (deleting keeps the feeds).
+	if !strings.Contains(ebody, `action="/collections/`+itoa(c.ID)+`/delete"`) {
+		t.Fatalf("auto edit should still offer delete: %s", ebody)
+	}
+
+	// A forged remove-feed POST is still refused.
+	rr = doForm(h, "POST", "/collections/"+itoa(c.ID)+"/remove-feed/"+itoa(feeds[0].ID), url.Values{}, cookie)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("remove-feed on auto should stay blocked, got %d", rr.Code)
+	}
+}
+
 func TestOpmlExportExcludesAutoCollections(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

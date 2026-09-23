@@ -539,10 +539,16 @@ sections, each a compact list of that collection's unread items (capped at
 - A collection's page has a "+ add feed" **button → modal** (not an inline form)
   and an **edit** link. `GET /collections/{id}/edit` edits the name
   (`CollectionStore.Rename`) and holds the delete form plus the feed list (with
-  remove); `collectionDelete` redirects `303 → /collections`. Auto collections
-  reject rename and add/remove-feed (they track a feed's site), but their page
-  offers a **delete** form: deleting one removes only the grouping (its feeds
-  stay) and `AssignAuto` recreates it if a feed on that site is added again.
+  remove); `collectionDelete` redirects `303 → /collections`.
+- **Auto collections share the edit screen** (`collectionEditPage` /
+  `collectionFeeds`), which is where you see every feed in the collection. For an
+  auto collection the name field renders `readonly` with no rename form, and the
+  per-feed remove buttons are omitted (a forged `POST .../remove-feed/...` is
+  still refused with `renderError`). `collectionEdit` no longer redirects autos
+  away. Auto collections reject rename and add/remove-feed (they track a feed's
+  site), but their page offers a **delete** form: deleting one removes only the
+  grouping (its feeds stay) and `AssignAuto` recreates it if a feed on that site
+  is added again.
 - Feed rows on the author page only offer **edit** and **refresh**; pausing is
   the feed edit page's "enabled (poll this feed)" checkbox, and **delete** lives
   on the feed edit page (`feedDelete` redirects `303` back to the author page).
