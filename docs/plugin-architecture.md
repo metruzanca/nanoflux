@@ -7,7 +7,9 @@ and the CSS-selector scraper — become "native plugins" that double as the
 example implementations.
 
 Status: **design — not yet implemented.** Breaking changes are expected until
-v1.0.0. See "Phases & status" and "Fast follow-ups" to track progress.
+v1.0.0. See "Phases & status" and "Fast follow-ups" to track progress. For the
+author-facing walkthrough (where a plugin lives, how it is written and loaded),
+see [`writing-plugins.md`](writing-plugins.md).
 
 ## Goals
 
@@ -306,7 +308,7 @@ re-pointed at the `Fetcher` interface.
 | 3 | Port natives, **YouTube first** (reference), then instagram, patreon, x, scrape | not started |
 | 4 | Unify dispatch (`feedparse.Fetch`), migrate `kind`/config (schemaV30) | not started |
 | 5 | Discovery capability | not started |
-| 6 | Authoring story: skeleton repo, `docs/plugins.md`, env/compose docs | not started |
+| 6 | Authoring story: skeleton repo, `docs/writing-plugins.md`, env/compose docs | guide drafted |
 | 7 | Tests: registry, fake in-process plugin, end-to-end build + load a plugin | not started |
 
 ## Open questions
