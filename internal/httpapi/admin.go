@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -17,6 +18,21 @@ type adminData struct {
 	AllowSignup bool
 	BannerShown bool
 	Users       []adminUserRow
+	Backup      adminBackup
+}
+
+// adminBackup is the backup status shown on /admin. Enabled is false when
+// automatic backups are not configured.
+type adminBackup struct {
+	Enabled     bool
+	Destination string // "local: /path" or "s3: bucket/prefix"
+	Interval    string // humanized, e.g. "24h0m0s"
+	Keep        int
+	LastRun     string // stored UTC time, "" when never run
+	LastArchive string
+	LastSize    string
+	LastError   string
+	Timezone    string
 }
 
 type adminStats struct {
@@ -61,8 +77,9 @@ func (s *Server) adminOnly(next http.Handler) http.Handler {
 func (s *Server) adminPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	d := adminData{
-		Stats: s.adminStats(r.Context()),
-		Users: s.adminUserRows(u.ID, u.Timezone),
+		Stats:  s.adminStats(r.Context()),
+		Users:  s.adminUserRows(u.ID, u.Timezone),
+		Backup: s.adminBackupData(u.Timezone),
 	}
 	d.AllowSignup = s.allowSignup()
 	if d.AllowSignup {
@@ -73,6 +90,54 @@ func (s *Server) adminPage(w http.ResponseWriter, r *http.Request) {
 		d.BannerShown = !dismissed
 	}
 	web.Render(w, r, basePage("admin", u, adminPage(u, d)))
+}
+
+// adminBackupData summarizes the automatic-backup configuration and the most
+// recent run.
+func (s *Server) adminBackupData(tz string) adminBackup {
+	bc := s.cfg.Backup
+	d := adminBackup{
+		Enabled:  bc.Enabled(),
+		Interval: bc.Interval.String(),
+		Keep:     bc.Keep,
+		Timezone: tz,
+	}
+	switch {
+	case bc.UsesS3():
+		d.Destination = "s3: " + bc.S3.Bucket
+		if bc.S3.Prefix != "" {
+			d.Destination += "/" + bc.S3.Prefix
+		}
+	case bc.Dir != "":
+		d.Destination = "local: " + bc.Dir
+	}
+	if s.backups != nil {
+		st := s.backups.Status()
+		if !st.LastRun.IsZero() {
+			d.LastRun = db.FormatTime(st.LastRun)
+		}
+		d.LastArchive = st.LastArchive
+		d.LastError = st.LastError
+		if st.LastBytes > 0 {
+			d.LastSize = web.FormatBytes(st.LastBytes)
+		}
+	}
+	return d
+}
+
+// adminBackupNow triggers an immediate snapshot and re-renders the backup card.
+func (s *Server) adminBackupNow(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	if s.backups == nil {
+		writeFormError(w, r, "admin-backup-error", "automatic backups are not configured")
+		return
+	}
+	if _, err := s.backups.Snapshot(r.Context()); err != nil {
+		log.Error("admin: manual backup", "err", err)
+		writeFormError(w, r, "admin-backup-error", "backup failed — see server logs")
+		return
+	}
+	web.Render(w, r, AdminBackupCard(s.adminBackupData(u.Timezone)))
 }
 
 func (s *Server) adminStats(ctx context.Context) adminStats {

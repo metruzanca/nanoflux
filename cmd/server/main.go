@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/backup"
 	"github.com/metruzanca/nanoflux/internal/cli"
 	"github.com/metruzanca/nanoflux/internal/config"
 	"github.com/metruzanca/nanoflux/internal/db"
@@ -70,11 +72,17 @@ func runServer() {
 	p := poller.New(st, cfg.PollInterval, cfg.PollWorkers)
 	go p.Run(ctx)
 
+	backupRunner := newBackupRunner(ctx, cfg, sqldb)
+	if backupRunner != nil {
+		go backupRunner.Run(ctx)
+	}
+
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: func() http.Handler {
 			h := httpapi.New(st, a, cfg, files)
 			h.SetPoller(p)
+			h.SetBackupRunner(backupRunner)
 			return h.Handler()
 		}(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -109,6 +117,45 @@ func newFileStore(cfg config.Config) (filestore.Store, error) {
 		log.Info("file storage", "endpoint", fcfg.Endpoint, "bucket", fcfg.Bucket, "local", false)
 	}
 	return filestore.NewFromConfig(fcfg, cfg.FileStoreDir)
+}
+
+// newBackupRunner builds the automatic-backup runner from config, or returns
+// nil when automatic backups are disabled. It selects the destination (local
+// directory or S3) and includes the local file store only when blobs are not in
+// object storage (S3 objects are the provider's job).
+func newBackupRunner(ctx context.Context, cfg config.Config, sqldb *sql.DB) *backup.Runner {
+	bc := cfg.Backup
+	if !bc.Enabled() {
+		return nil
+	}
+	var dest backup.Destination
+	if bc.UsesS3() {
+		d, err := backup.NewS3(ctx, backup.S3Options{
+			Endpoint:  bc.S3.Endpoint,
+			Bucket:    bc.S3.Bucket,
+			AccessKey: bc.S3.AccessKey,
+			SecretKey: bc.S3.SecretKey,
+			Region:    bc.S3.Region,
+			Prefix:    bc.S3.Prefix,
+		})
+		if err != nil {
+			log.Fatal("backup destination", "err", err)
+		}
+		dest = d
+		log.Info("automatic backups", "destination", "s3", "bucket", bc.S3.Bucket, "prefix", bc.S3.Prefix)
+	} else {
+		dest = &backup.LocalDestination{Dir: bc.Dir}
+		log.Info("automatic backups", "destination", "local", "dir", bc.Dir)
+	}
+	// Only include the file store when blobs live on local disk; with S3 blobs
+	// the provider backs them up.
+	includeFiles := filestore.ConfigFromEnv().IsDisk()
+	return backup.NewRunner(sqldb, backup.Config{
+		Interval:     bc.Interval,
+		Keep:         bc.Keep,
+		FileStore:    cfg.FileStoreDir,
+		IncludeFiles: includeFiles,
+	}, dest)
 }
 
 // setLogLevel maps the NF_LOG_LEVEL value onto the logger.

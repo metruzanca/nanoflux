@@ -59,6 +59,31 @@ prefixes enable TLS).
 | `NF_S3_SECRET_KEY` | — | secret key |
 | `NF_S3_REGION` | `us-east-1` | bucket region |
 
+### Automatic backups
+
+The server can snapshot the whole instance (database plus, on local-disk
+storage, the file store) on a schedule and ship each snapshot to a local
+directory or S3-compatible bucket. It is off unless `NF_BACKUP_INTERVAL` and a
+destination are both set (the bundled `docker-compose.yml` sets both, so compose
+instances back up by default — see below). Admins see the last result and a
+"back up now" button on `/admin`.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `NF_BACKUP_INTERVAL` | unset → off | how often to snapshot (Go duration, e.g. `24h`) |
+| `NF_BACKUP_KEEP` | `7` | snapshots to retain, newest first; `0` keeps all |
+| `NF_BACKUP_DIR` | unset | local destination directory |
+| `NF_BACKUP_S3_ENDPOINT` | unset | S3-compatible destination endpoint |
+| `NF_BACKUP_S3_BUCKET` | `nanoflux-backups` | destination bucket |
+| `NF_BACKUP_S3_ACCESS_KEY` | — | access key |
+| `NF_BACKUP_S3_SECRET_KEY` | — | secret key |
+| `NF_BACKUP_S3_REGION` | `us-east-1` | bucket region |
+| `NF_BACKUP_S3_PREFIX` | unset | key prefix within the bucket |
+
+With an S3 destination the file store is **not** included — back up those
+objects with the provider. Snapshots use the same `.tar.gz` format as
+`make backup` / `nanoflux backup`, so any of them can be restored the same way.
+
 ## Run with containers (docker / podman)
 
 The release pipeline builds a multi-arch image (linux/amd64 + linux/arm64) and
@@ -83,6 +108,12 @@ no bootstrap credentials exist. All variables are documented in `.env.example`.
 This mounts two named volumes: `nanoflux-db` at `/data` (the sqlite database)
 and `nanoflux-files` at `/filestore` (avatars and custom icons), so both
 survive container restarts and updates.
+
+Compose instances also back up automatically to the host's `./backups`
+directory once a day (keeping the newest seven). Set `NF_BACKUP_INTERVAL=0` in
+`.env` to turn that off, or override `NF_BACKUP_DIR` / `NF_BACKUP_KEEP`. Because
+it is the same directory `make backup` uses, a server snapshot restores
+directly with `make restore`.
 
 ### Daily use
 
@@ -218,6 +249,10 @@ nanoflux restore backups/nanoflux-20260921-120000.tar.gz   # refuses while the s
 The database is always backed up. Blobs on local disk are included; if you
 point `NF_S3_ENDPOINT` at S3-compatible storage, back up those objects with
 your provider.
+
+For scheduled, off-site backups, set `NF_BACKUP_INTERVAL` and a destination
+(see [Automatic backups](#automatic-backups)); the server then snapshots and
+uploads on its own. See [`docs/backups.md`](docs/backups.md) for restore steps.
 
 ## Release
 
