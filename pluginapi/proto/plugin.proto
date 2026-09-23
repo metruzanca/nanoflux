@@ -47,6 +47,7 @@ message MetaResponse {
   string name = 1;
   string api_version = 2;
   bool raw_network = 3;
+  string user_agent = 4;
 }
 
 message MatchRequest {

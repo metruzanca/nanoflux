@@ -40,7 +40,7 @@ type grpcFetcherServer struct {
 
 func (s *grpcFetcherServer) Meta(context.Context, *pb.MetaRequest) (*pb.MetaResponse, error) {
 	m := s.impl.Meta()
-	return &pb.MetaResponse{Name: m.Name, ApiVersion: m.APIVersion, RawNetwork: m.RawNetwork}, nil
+	return &pb.MetaResponse{Name: m.Name, ApiVersion: m.APIVersion, RawNetwork: m.RawNetwork, UserAgent: m.UserAgent}, nil
 }
 
 func (s *grpcFetcherServer) Match(_ context.Context, req *pb.MatchRequest) (*pb.MatchResponse, error) {
@@ -108,7 +108,7 @@ func (c *grpcFetcherClient) Meta() Meta {
 	if err != nil {
 		return Meta{}
 	}
-	return Meta{Name: resp.Name, APIVersion: resp.ApiVersion, RawNetwork: resp.RawNetwork}
+	return Meta{Name: resp.Name, APIVersion: resp.ApiVersion, RawNetwork: resp.RawNetwork, UserAgent: resp.UserAgent}
 }
 
 func (c *grpcFetcherClient) Match(u *url.URL, cap Capability) bool {

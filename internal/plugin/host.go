@@ -25,11 +25,13 @@ type Host struct {
 	client *http.Client
 	cool   *Cooldown
 	name   string
+	ua     string // User-Agent for mediated requests; "" uses the app default
 }
 
-// NewHost builds a Host. name prefixes log lines (the plugin name).
-func NewHost(client *http.Client, cool *Cooldown, name string) *Host {
-	return &Host{client: client, cool: cool, name: name}
+// NewHost builds a Host. name prefixes log lines (the plugin name); ua overrides
+// the User-Agent when non-empty.
+func NewHost(client *http.Client, cool *Cooldown, name, ua string) *Host {
+	return &Host{client: client, cool: cool, name: name, ua: ua}
 }
 
 func (h *Host) Do(ctx context.Context, req pluginapi.HTTPRequest) (pluginapi.HTTPResponse, error) {
@@ -41,9 +43,13 @@ func (h *Host) Do(ctx context.Context, req pluginapi.HTTPRequest) (pluginapi.HTT
 	if err != nil {
 		return pluginapi.HTTPResponse{}, err
 	}
-	// The host owns the User-Agent; a plugin cannot override it for mediated
-	// requests.
-	httpReq.Header.Set("User-Agent", feedparse.UserAgent())
+	// The host owns the User-Agent: the plugin's declared override, else the app
+	// default. A plugin cannot set it per-request.
+	ua := h.ua
+	if ua == "" {
+		ua = feedparse.UserAgent()
+	}
+	httpReq.Header.Set("User-Agent", ua)
 	for k, v := range req.Headers {
 		if strings.EqualFold(k, "User-Agent") {
 			continue

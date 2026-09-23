@@ -289,8 +289,10 @@ implementation and keeps importing only `pluginapi`.
 
 Order, self-contained to shared, with **YouTube first** as the reference plugin
 (it exercises discover + fetch + preview metadata + a non-RSS endpoint): **youtube
-→ instagram → patreon → x → scrape**. Each keeps its existing unit tests,
-re-pointed at the `Fetcher` interface.
+→ instagram → patreon → x**. Each keeps its existing unit tests, re-pointed at
+the `Fetcher` interface. All four are migrated; the scraped-site feed (CSS
+selectors) is **not** yet a plugin — it needs per-feed config (`feeds.scrape_config`
++ `kind='scrape'`) plumbed through the plugin API, which is deferred (see below).
 
 - **YouTube is the gate.** If the API carries YouTube — including plugin-supplied
   preview metadata and the RSS→browse fallback — it can carry arbitrary
@@ -313,21 +315,21 @@ re-pointed at the `Fetcher` interface.
 | 0 | This design doc | done |
 | 1 | `pluginapi` module: types (incl. `Candidate.IconURL`), `Fetcher`, `Host`, `APIVersion`, proto + generated gRPC | done |
 | 2 | `internal/plugin`: registry, native host (rate-limit aware), `NF_PLUGINS_DIR` loader, gRPC broker | done |
-| 3 | Port natives: **YouTube** (reference native plugin) done; instagram, patreon, x, scrape pending | partial |
+| 3 | Port natives: **youtube, instagram, patreon, x** all migrated; scrape pending (needs per-feed config plumbing) | done (scrape pending) |
 | 4 | Unify dispatch (`feedparse.Fetch` + `discoverCandidates` hooks), preview metadata precedence | done |
 | 5 | Discovery capability (plugin `Discover` runs in the add flow) | done |
 | 6 | Authoring story: `docs/writing-plugins.md`, example plugins (`plugin-hello` from scratch, `plugin-youtube` mirroring the native one), `NF_PLUGINS_DIR`, compose mount | done |
 | 7 | Tests: registry, native YouTube, end-to-end external plugin load | done |
 
 **v0.1 scope note.** The plugin system is live: plugins load from
-`NF_PLUGINS_DIR`, the YouTube integration is a native plugin, and the example
-plugin proves the external path end to end. Two deliberate simplifications in
-v0.1: plugins route by URL shape (no `feeds.kind='plugin'` / per-feed config
-column yet — that schema change is deferred until a plugin needs configuration),
-and the other natives (instagram, patreon, x, scrape) still run as built-in code,
-not yet ported. The built-in x/instagram/patreon short-circuits in
-`feedparse.Fetch` and the YouTube discovery rule in `discover/host.go` remain as
-fallbacks; a matching plugin takes precedence.
+`NF_PLUGINS_DIR`, the four site integrations (YouTube, Instagram, Patreon, X)
+are native plugins, and the examples prove the external path end to end.
+Deliberate simplifications in v0.1: plugins route by **URL shape** — there is no
+`feeds.kind='plugin'` or per-feed config column yet — which is why the
+CSS-selector scraper still runs as built-in code (it needs per-feed selector
+config). The remaining `discover/host.go` rules (reddit, GitHub, Bluesky) and
+YouTube's `PageMeta` special case also stay in core for now. A matching plugin
+takes precedence over the generic parser.
 
 ## Open questions
 

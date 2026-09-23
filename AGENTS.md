@@ -1178,26 +1178,35 @@ The plugin system loads feed integrations without rebuilding nanoflux. See
   plugins are executables in `NF_PLUGINS_DIR` loaded over gRPC. `Registry`
   holds both; `Match` prefers native then external.
 - **Host-mediated HTTP (load-bearing):** a plugin's `Host.Do` runs through the
-  host, which applies `NF_USER_AGENT`/timeouts and inspects every response for
-  rate limits (`feedparse.IsRateLimited`/`RateLimitBackoff`), cooling the request
-  host via `plugin.Cooldown`. The poller and host share the client and cooldown.
-  A plugin opts out with `Meta.RawNetwork`.
+  host, which applies the plugin's `Meta.UserAgent` (else `NF_USER_AGENT`) and
+  timeouts and inspects every response for rate limits
+  (`feedparse.IsRateLimited`/`RateLimitBackoff`), cooling the request host via
+  `plugin.Cooldown`. A limit is returned **inline** on the response
+  (`RateLimited`/`RetryAfter`), not as an error, so it survives the gRPC
+  boundary and behaves identically for native and external plugins. The poller
+  and host share the client and cooldown. A plugin opts out with
+  `Meta.RawNetwork`.
 - **Dispatch:** `plugin.Setup` installs a `feedparse.Plugin` hook (`SetPlugin`)
-  so `feedparse.Fetch` routes matching URLs to plugins before the built-in
-  x/instagram/patreon/gofeed paths; `discoverCandidates` merges plugin
-  `Discover` candidates (their `Title`/`IconURL` win the add-form preview when
+  so `feedparse.Fetch`/`FetchFeed` routes matching requests to plugins before
+  the generic gofeed parser; `discoverCandidates` merges plugin `Discover`
+  candidates (their `Title`/`IconURL` win the add-form preview when
   `Strategy == "plugin"`).
-- **YouTube is the reference native plugin** (`internal/plugin/native/youtube`):
-  `Discover` resolves the channel id and returns the RSS candidate with the
-  channel avatar; `Fetch` reads the RSS and falls back to `youtubei/v1/browse`
-  on a bad response. It proves the API carries discover + fetch + preview
-  metadata + a non-RSS endpoint.
-- **Native and external are one implementation.** The plugin code lives once at
-  `internal/plugin/native/youtube`; `examples/plugin-youtube` is a `main` that
-  imports and serves that very package over gRPC, so the two forms cannot drift.
-  `examples/plugin-hello` is a from-scratch external plugin. Tests in
-  `internal/plugin` build both examples and load them over the broker.
+- **Native plugins** (`internal/plugin/native/…`, registered in
+  `registerNative`): `youtube`, `instagram` (declares a Googlebot
+  `Meta.UserAgent` — Instagram serves the logged-out grid only to crawlers),
+  `patreon` (resolves the campaign via the public API), and `x`. Each has unit
+  tests using a fake `pluginapi.Host`.
+- **YouTube is the reference plugin:** `Discover` resolves the channel id and
+  returns the RSS candidate with the channel avatar; `Fetch` reads the RSS and
+  falls back to `youtubei/v1/browse` on a bad response. It proves the API
+  carries discover + fetch + preview metadata + a non-RSS endpoint.
+- **Native and external are one implementation.** `examples/plugin-youtube` is a
+  `main` that imports and serves the native `youtube` package over gRPC, so the
+  two forms cannot drift. `examples/plugin-hello` is a from-scratch external
+  plugin. Tests in `internal/plugin` build both examples and load them over the
+  broker.
 - **v0.1 limits:** plugins route by URL shape (no `feeds.kind='plugin'` or
-  per-feed config column yet), only YouTube is ported (x/instagram/patreon/scrape
-  remain built-in fallbacks), and there is no hot reload. Do not start a schema
-  change for plugin config without revisiting the design doc.
+  per-feed config column yet), so the CSS-selector **scraper still runs built-in**
+  (it needs per-feed selector config); the reddit/GitHub/Bluesky discovery rules
+  and YouTube's `PageMeta` avatar case also stay in core. No hot reload. Do not
+  start a schema change for plugin config without revisiting the design doc.

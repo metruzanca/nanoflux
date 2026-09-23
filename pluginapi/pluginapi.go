@@ -40,6 +40,11 @@ type Meta struct {
 	// client, and must surface rate limits itself. Default false is strongly
 	// preferred so the host can pace and inspect every request.
 	RawNetwork bool
+	// UserAgent overrides the User-Agent the host sends for this plugin's
+	// mediated requests. Empty uses the app default. Some sites require a
+	// specific identity (e.g. Instagram serves the logged-out post grid only to
+	// crawler agents), so a plugin that needs one sets it here.
+	UserAgent string
 }
 
 // Candidate is one feed a plugin discovered on a page. Title/IconURL/HomeURL are
