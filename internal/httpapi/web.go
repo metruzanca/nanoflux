@@ -482,6 +482,36 @@ func (s *Server) itemReadAfter(w http.ResponseWriter, r *http.Request) {
 	s.markRangeRead(w, r, false)
 }
 
+// itemUnread marks a single item unread and re-renders its row so the list
+// reflects the change, keeping the modal open. Used by the item modal's "mark
+// as not read". The author link is suppressed when the request came from an
+// author page, mirroring the read toggle.
+func (s *Server) itemUnread(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.Items.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.Items.SetRead(u.ID, id, false); err != nil {
+		log.Error("set unread", "item_id", id, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	row, err := s.store.Items.OneWithFeed(u.ID, id)
+	if err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	row.Timezone = u.Timezone
+	hideAuthor := r.FormValue("hideAuthor") == "1" || isAuthorPageURL(r.Header.Get("HX-Current-URL"))
+	web.Render(w, r, ItemRow(row, hideAuthor))
+}
+
 // markRangeRead marks items newer (before) or older (after) than the target
 // item as read. The target item itself is left alone. On an author page the
 // range spans every feed owned by the item's author; elsewhere (a feed page)

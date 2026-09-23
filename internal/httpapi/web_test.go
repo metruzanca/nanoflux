@@ -598,6 +598,57 @@ func TestReadPage(t *testing.T) {
 	}
 }
 
+// The unread page no longer carries a "mark all read" button.
+func TestUnreadPageHasNoMarkAllRead(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
+
+	for _, path := range []string{"/", "/unread"} {
+		body := doGet(h, path, cookie).Body.String()
+		if strings.Contains(body, `hx-post="/items/read-all"`) {
+			t.Fatalf("%s should not offer mark all read: %s", path, body)
+		}
+	}
+}
+
+// The item modal's "mark as not read" entry points at /items/{id}/unread, and
+// the handler flips a read item back to unread.
+func TestItemUnreadEndpoint(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	id := items[0].ID
+	if err := s.store.Items.SetRead(u.ID, id, true); err != nil {
+		t.Fatal(err)
+	}
+
+	// The modal menu offers the option.
+	body := doGet(h, "/items/"+itoa(id)+"/view", cookie).Body.String()
+	if !strings.Contains(body, `hx-post="/items/`+itoa(id)+`/unread"`) {
+		t.Fatalf("item modal should offer mark as not read: %s", body)
+	}
+
+	// The handler flips it back to unread and re-renders the row.
+	rr := doForm(h, "POST", "/items/"+itoa(id)+"/unread", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("mark unread: %d %s", rr.Code, rr.Body.String())
+	}
+	if it, _ := s.store.Items.ByID(u.ID, id); it.Read {
+		t.Fatal("item should be unread after POST /unread")
+	}
+	if !strings.Contains(rr.Body.String(), "item-title unread") {
+		t.Fatalf("swapped row should render as unread: %s", rr.Body.String())
+	}
+}
+
 func TestYouTubeEmbedURL(t *testing.T) {
 	cases := []struct {
 		link string

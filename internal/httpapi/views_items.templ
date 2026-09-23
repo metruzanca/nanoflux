@@ -447,6 +447,7 @@ templ itemMenuFull(itemID, feedID int64, sourceURL, shareToken string, inModal b
 			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-before" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">mark all before as read</button>
 			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-after" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">mark all after as read</button>
 			if inModal {
+				<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/unread" } hx-swap="none" hx-on::after-request="if(event.detail.successful) markUnreadReload()">mark as not read</button>
 				@shareControl(itemID, shareToken)
 			}
 		</div>
