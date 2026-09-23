@@ -71,7 +71,7 @@ make start
 ```
 
 `make restore` stops the app, replaces the data volumes from the archive, and
-leaves the instance stopped for you to `make start` when ready.
+brings the instance back up.
 
 For a backup the server uploaded to S3, download the object first, drop it in
 `backups/`, and restore it the same way.

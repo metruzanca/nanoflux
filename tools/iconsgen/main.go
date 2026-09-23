@@ -1,7 +1,7 @@
 // Command iconsgen renders the nanoflux brand icons: a dark tile with the "η"
 // mark in the app accent color. It writes the PWA icons into the embedded
 // static dir and the browser-extension icons into extension/icons.
-// Regenerate with `make icons` (or `go run ./tools/iconsgen`).
+// Regenerate with `mise run icons` (or `go run ./tools/iconsgen`).
 package main
 
 import (
