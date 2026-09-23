@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -66,7 +65,7 @@ func (d *Discoverer) Discover(ctx context.Context, pageURL string) ([]Candidate,
 	}
 
 	// 3. Scan the page HTML for feed <link>s.
-	title, links := d.htmlLinks(ctx, pageURL)
+	title, links, pageErr := d.htmlLinks(ctx, pageURL)
 	if cs := d.validateAll(ctx, links, "html", pageURL, title); len(cs) > 0 {
 		return dedup(cs), nil
 	}
@@ -77,6 +76,11 @@ func (d *Discoverer) Discover(ctx context.Context, pageURL string) ([]Candidate,
 		probes = append(probes, base.ResolveReference(&url.URL{Path: p}).String())
 	}
 	cs := d.validateAll(ctx, probes, "paths", pageURL, "")
+	if len(cs) == 0 && pageErr != nil {
+		// Nothing found and the page itself could not be read: surface why
+		// (e.g. a 429 rate limit) instead of a bare "no feed found".
+		return nil, pageErr
+	}
 	return dedup(cs), nil
 }
 
@@ -355,7 +359,7 @@ func (d *Discoverer) openPage(ctx context.Context, pageURL string) (io.ReadClose
 	}
 	if resp.StatusCode >= 400 {
 		resp.Body.Close()
-		return nil, nil, fmt.Errorf("status %d", resp.StatusCode)
+		return nil, nil, &feedparse.StatusError{Code: resp.StatusCode, URL: pageURL}
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" && !strings.Contains(ct, "html") && !strings.Contains(ct, "xml") {
 		resp.Body.Close()
@@ -388,12 +392,13 @@ func fallbackIcon(pageURL string) string {
 	return u.String()
 }
 
-// htmlLinks fetches pageURL and returns its <title> and any feed <link> hrefs,
-// resolved against the page URL.
-func (d *Discoverer) htmlLinks(ctx context.Context, pageURL string) (string, []string) {
+// htmlLinks fetches pageURL and returns its <title>, any feed <link> hrefs
+// (resolved against the page URL), and the page-fetch error when the page could
+// not be read (so a rate limit or server error can be surfaced to the user).
+func (d *Discoverer) htmlLinks(ctx context.Context, pageURL string) (string, []string, error) {
 	body, base, err := d.openPage(ctx, pageURL)
 	if err != nil {
-		return "", nil
+		return "", nil, err
 	}
 	defer body.Close()
 
@@ -405,7 +410,7 @@ func (d *Discoverer) htmlLinks(ctx context.Context, pageURL string) (string, []s
 		tt := z.Next()
 		switch tt {
 		case html.ErrorToken:
-			return stripCDATA(title), links
+			return stripCDATA(title), links, nil
 		case html.TextToken:
 			if inTitle && title == "" {
 				title = strings.TrimSpace(z.Token().Data)

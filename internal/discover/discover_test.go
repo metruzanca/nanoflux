@@ -2,10 +2,13 @@ package discover
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"github.com/metruzanca/nanoflux/internal/feedparse"
 )
 
 const sampleRSS = `<?xml version="1.0"?>
@@ -110,6 +113,28 @@ func TestDiscoverNone(t *testing.T) {
 	}
 	if len(cs) != 0 {
 		t.Fatalf("expected no candidates, got %+v", cs)
+	}
+}
+
+// TestDiscoverSurfacesPageError asserts that when the page cannot be read and
+// nothing is found, the fetch error is returned (so a 429 can be explained to
+// the user) rather than a bare empty result.
+func TestDiscoverSurfacesPageError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	cs, err := New(srv.Client()).Discover(context.Background(), srv.URL+"/")
+	if len(cs) != 0 {
+		t.Fatalf("expected no candidates, got %+v", cs)
+	}
+	if err == nil {
+		t.Fatal("expected the page fetch error to surface")
+	}
+	var se *feedparse.StatusError
+	if !errors.As(err, &se) || se.Code != http.StatusTooManyRequests {
+		t.Fatalf("error should be a 429 StatusError, got %v", err)
 	}
 }
 

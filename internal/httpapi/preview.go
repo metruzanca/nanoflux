@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -54,11 +55,13 @@ type authorPreviewForm struct {
 	AvatarURL string
 }
 
-// noFeedFoundData carries the URL that yielded no feed and the htmx container
-// the scrape builder should swap into.
+// noFeedFoundData carries the URL that yielded no feed, the htmx container the
+// scrape builder / manual form should swap into, and a user-facing reason when
+// discovery failed for a detectable cause (e.g. an HTTP 429 rate limit).
 type noFeedFoundData struct {
 	URL    string
 	Target string
+	Reason string
 }
 
 // scrapeSampleItem is one extracted item in the scrape builder's live preview.
@@ -131,12 +134,14 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	candidates, err := s.discoverCandidates(r.Context(), u.ID, pageURL)
-	if err != nil {
-		renderError(w, r, "could not inspect that url")
+	if len(candidates) == 0 {
+		// Surface the underlying failure when there is one (e.g. a rate limit)
+		// so the user can tell "no feed here" from "couldn't check right now".
+		web.Render(w, r, noFeedFound(noFeedFoundData{URL: pageURL, Target: previewTarget, Reason: feedPreviewError(err)}))
 		return
 	}
-	if len(candidates) == 0 {
-		web.Render(w, r, noFeedFound(noFeedFoundData{URL: pageURL, Target: previewTarget}))
+	if err != nil {
+		renderError(w, r, "could not inspect that url")
 		return
 	}
 
@@ -176,13 +181,18 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 	if mapped, ok := s.mappedFeedURL(userID, pageURL); ok {
 		feedURL = mapped
 	}
+	var directErr error
 	// The URL itself may already be a feed; if so we can also derive the home page.
+	// Remember the fetch error so a rate limit / server error can be surfaced
+	// when discovery ultimately finds nothing.
 	if res, err := feedparse.Fetch(ctx, feedURL, s.client, "", ""); err == nil {
 		home := res.Feed.HomeURL
 		if home == "" || feedURL != pageURL {
 			home = pageURL
 		}
 		return []discover.Candidate{{FeedURL: feedURL, Title: res.Feed.Title, HomeURL: home, Strategy: "direct"}}, nil
+	} else {
+		directErr = err
 	}
 
 	candidates, err := s.discoverer.Discover(ctx, feedURL)
@@ -201,7 +211,47 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 			return nil, err
 		}
 	}
+	if len(candidates) == 0 {
+		// Nothing found: prefer Discover's error, else the direct-fetch one.
+		// Only a real fetch error (an HTTP status) is worth surfacing — a plain
+		// "not a feed" parse error just means the page has no feed, so we keep
+		// the bare banner.
+		if err != nil {
+			return nil, err
+		}
+		var se *feedparse.StatusError
+		if errors.As(directErr, &se) {
+			return nil, directErr
+		}
+		return nil, nil
+	}
 	return candidates, nil
+}
+
+// feedPreviewError maps a discovery/fetch error to a short, user-facing reason
+// (or "" for an unknown cause). It never includes the URL, since errors carry
+// the raw fetch URL and the client must not see internals.
+func feedPreviewError(err error) string {
+	if err == nil {
+		return ""
+	}
+	var se *feedparse.StatusError
+	if errors.As(err, &se) {
+		switch se.Code {
+		case http.StatusTooManyRequests:
+			return "the site is rate-limiting requests (HTTP 429) — wait a bit and try again"
+		case http.StatusForbidden:
+			return "the site refused the request (HTTP 403) — it may block automated access"
+		case http.StatusNotFound:
+			return "the page could not be found (HTTP 404) — check the url"
+		default:
+			if se.Code >= 500 {
+				return "the site had a server error (HTTP " + strconv.Itoa(se.Code) + ") — try again later"
+			}
+			return "the site returned an error (HTTP " + strconv.Itoa(se.Code) + ")"
+		}
+	}
+	return "could not inspect that url"
 }
 
 // renderFeedPreviewForm renders the combined add form for one discovered feed.
@@ -253,6 +303,43 @@ func invalidURL(raw string) string {
 		return "enter a valid url"
 	}
 	return ""
+}
+
+// manualFeedForm renders the combined add form pre-filled with the entered url
+// as the feed url, for when discovery finds nothing. It is the "insert
+// manually" escape hatch next to the scrape builder: the user pastes a real
+// feed url (or any url) and fills in the rest themselves.
+func (s *Server) manualFeedForm(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	pageURL := normalizeURL(scrapeURLFromForm(r))
+	if pageURL == "" {
+		renderError(w, r, "enter a url")
+		return
+	}
+	authors, _ := s.store.Authors.List(u.ID)
+	selectedAuthor, _ := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
+	var fixedAuthor *store.Author
+	if r.FormValue("scoped") == "1" {
+		if a, err := s.store.Authors.ByID(u.ID, selectedAuthor); err == nil {
+			fixedAuthor = &a
+		}
+	}
+	name, avatar := s.authorPrefill(r.Context(), pageURL, pageURL)
+	form := feedPreviewForm{
+		FeedURL: stripWWW(pageURL), HomeURL: stripWWW(pageURL), Authors: authors,
+		SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor, Redirect: fixedAuthor == nil,
+		NewAuthorName: name, NewAuthorAvatar: avatar,
+	}
+	if fixedAuthor != nil {
+		form.Action = "/authors/" + strconv.FormatInt(fixedAuthor.ID, 10) + "/feeds"
+		form.Target = "#feeds-list"
+		form.Swap = "beforeend"
+	} else {
+		form.Action = "/feeds"
+		form.Target = "#authors-list"
+		form.Swap = "beforeend"
+	}
+	web.Render(w, r, feedPreviewFields(form))
 }
 
 // scrapeBuilder renders the CSS-selector feed builder for a URL that has no

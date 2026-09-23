@@ -280,15 +280,27 @@ items from the page on every poll, just like the X/YouTube scrapers.
   stable dedup. `AutoDetect` tries common containers (`article`, `.post`,
   `.entry`, ...) and returns the first that yields ≥2 linked items — best
   effort, user-editable.
-- **Web flow:** `feedPreview` renders `noFeedFound` (a `role="alert"` banner
-  with an opt-in button) instead of a bare "no feed found" error; the button
-  posts to `POST /fragments/scrape-builder`, which renders the builder
-  (`scrapeBuilder` in `views_feeds.templ`) with the live sample. Selector
-  changes re-preview via `POST /fragments/scrape-preview`. Save posts the normal
-  `/feeds` form with `kind=scrape`; errors use the standard
+- **Web flow:** `feedPreview` renders `noFeedFound` (a `role="alert"` banner)
+  instead of a bare "no feed found" error, offering two escape hatches side by
+  side: "build a feed by scraping this page" (`POST /fragments/scrape-builder`,
+  which renders the builder `scrapeBuilder` in `views_feeds.templ` with the live
+  sample) and "insert manually" (`POST /fragments/manual-feed`, which renders the
+  normal `feedPreviewFields` form pre-filled with the entered url as the feed
+  url). Selector changes re-preview via `POST /fragments/scrape-preview`. Save
+  posts the normal `/feeds` form with `kind=scrape`; errors use the standard
   `writeFormError`/`renderError` shapes. The builder and the edit page
   (`feedFields` renders the selector fields when `kind='scrape'`) share the
   `scrape_*` form field names — keep them in sync.
+- **Surfacing fetch failures:** when discovery finds nothing *and* the page
+  could not be read, the user gets a reason (e.g. "the site is rate-limiting
+  requests (HTTP 429)") instead of an ambiguous "no feed found". `discover`
+  returns the page-fetch error only when it found no candidates
+  (`htmlLinks` returns the `openPage` error; `Discover` surfaces it at the end),
+  and `feedparse.Fetch`/`discover.openPage` return a typed
+  `*feedparse.StatusError{Code,URL}`. `feedPreviewError` maps it to a short
+  message that never includes the raw URL (the JSON API uses the same mapper, so
+  it also can't leak internals). A plain "not a feed" parse error on the direct
+  attempt is *not* surfaced — it just means there is no feed.
 - **Web-only:** the JSON API (`/api/save`) still rejects non-feeds; scrape feeds
   are created from the web UI only. Do not route a scrape feed through
   `feedparse.Fetch`.

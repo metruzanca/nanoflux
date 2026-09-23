@@ -155,6 +155,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /fragments/author-form", s.auth.Require(http.HandlerFunc(s.authorFormFragment)))
 	mux.Handle("POST /fragments/feed-preview", s.auth.Require(http.HandlerFunc(s.feedPreview)))
 	mux.Handle("POST /fragments/scrape-builder", s.auth.Require(http.HandlerFunc(s.scrapeBuilder)))
+	mux.Handle("POST /fragments/manual-feed", s.auth.Require(http.HandlerFunc(s.manualFeedForm)))
 	mux.Handle("POST /fragments/scrape-preview", s.auth.Require(http.HandlerFunc(s.scrapePreview)))
 	mux.Handle("POST /fragments/mapping-test", s.auth.Require(http.HandlerFunc(s.settingsMappingTest)))
 

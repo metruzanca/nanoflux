@@ -102,6 +102,77 @@ func TestFeedPreviewSingleAndNone(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), `hx-post="/fragments/scrape-builder"`) {
 		t.Fatalf("no-feed preview should offer the scrape builder: %s", rr.Body.String())
 	}
+	if !strings.Contains(rr.Body.String(), `hx-post="/fragments/manual-feed"`) {
+		t.Fatalf("no-feed preview should offer manual entry: %s", rr.Body.String())
+	}
+}
+
+// TestFeedPreviewRateLimitReason asserts that when discovery fails with an HTTP
+// status the user sees a specific reason (a 429 is a rate limit, not a missing
+// feed), and that no raw URL leaks.
+func TestFeedPreviewRateLimitReason(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	// Every request (direct fetch, page scan, probes) answers 429.
+	limited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer limited.Close()
+	s.client = limited.Client()
+
+	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{"url": {limited.URL}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "no feed found at that url") || !strings.Contains(body, `role="alert"`) {
+		t.Fatalf("should still render the no-feed banner: %s", body)
+	}
+	if !strings.Contains(body, "rate-limiting") || !strings.Contains(body, "429") {
+		t.Fatalf("should explain the rate limit: %s", body)
+	}
+	// The raw fetch url must not be echoed back.
+	if strings.Contains(body, limited.URL) {
+		t.Fatalf("the underlying url must not leak: %s", body)
+	}
+	// Both escape hatches remain available.
+	if !strings.Contains(body, `hx-post="/fragments/manual-feed"`) || !strings.Contains(body, `hx-post="/fragments/scrape-builder"`) {
+		t.Fatalf("both fallback actions should remain: %s", body)
+	}
+}
+
+// TestManualFeedForm asserts the "insert manually" fragment renders the add
+// form pre-filled with the entered url, submitting to the normal feed endpoint.
+func TestManualFeedForm(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+
+	rr := doForm(h, "POST", "/fragments/manual-feed", url.Values{"url": {"https://www.example.com/feed"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("manual-feed: %d %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `name="feed_url"`) || !strings.Contains(body, `value="https://example.com/feed"`) {
+		t.Fatalf("manual form should prefill the feed url (www stripped): %s", body)
+	}
+	if !strings.Contains(body, `hx-post="/feeds"`) {
+		t.Fatalf("global manual form should submit to /feeds: %s", body)
+	}
+
+	// Scoped: the author is fixed and the form submits to the author endpoint.
+	rr = doForm(h, "POST", "/fragments/manual-feed", url.Values{
+		"url": {"https://example.com/feed"}, "author_id": {itoa(a.ID)}, "scoped": {"1"},
+	}, cookie)
+	body = rr.Body.String()
+	if !strings.Contains(body, `hx-post="/authors/`+itoa(a.ID)+`/feeds"`) {
+		t.Fatalf("scoped manual form should submit to the author endpoint: %s", body)
+	}
+	if !strings.Contains(body, `name="author_id" value="`+itoa(a.ID)+`"`) {
+		t.Fatalf("scoped manual form should fix the author: %s", body)
+	}
 }
 
 func TestFeedPreviewMultiple(t *testing.T) {
