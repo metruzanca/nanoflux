@@ -116,10 +116,11 @@ func TestAutoCollectionDelete(t *testing.T) {
 	}
 	c := autoCollection(t, s, u.ID, "youtube.com")
 
-	// The auto collection page offers a delete form.
+	// The auto collection page no longer offers a delete form (delete lives on
+	// the edit page); it points the user there instead.
 	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
-	if !strings.Contains(body, `action="/collections/`+itoa(c.ID)+`/delete"`) {
-		t.Fatalf("auto collection page should offer delete: %s", body)
+	if strings.Contains(body, `action="/collections/`+itoa(c.ID)+`/delete"`) {
+		t.Fatalf("auto collection page should not offer delete: %s", body)
 	}
 
 	// Deleting removes the collection but keeps the feed and its author.
@@ -248,14 +249,14 @@ func TestCollectionsPageHidesDeleteForAuto(t *testing.T) {
 		t.Fatalf("auto collection should carry an auto badge: %s", body)
 	}
 	c := autoCollection(t, s, u.ID, "youtube.com")
-	// The index row has no inline delete (delete lives on the collection page),
-	// but the auto collection page does offer one.
+	// Neither the index nor the collection page offers an inline delete (delete
+	// lives on the collection's edit page).
 	if strings.Contains(body, "/collections/"+itoa(c.ID)+"/delete") {
 		t.Fatalf("collections index should not offer an inline delete: %s", body)
 	}
 	cbody := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
-	if !strings.Contains(cbody, "/collections/"+itoa(c.ID)+"/delete") {
-		t.Fatalf("auto collection page should offer delete: %s", cbody)
+	if strings.Contains(cbody, "/collections/"+itoa(c.ID)+"/delete") {
+		t.Fatalf("collection page should not offer delete: %s", cbody)
 	}
 
 	// The auto collection page hides the manual add-feed/remove controls.

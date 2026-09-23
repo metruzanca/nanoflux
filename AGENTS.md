@@ -558,9 +558,10 @@ sections, each a compact list of that collection's unread items (capped at
   per-feed remove buttons are omitted (a forged `POST .../remove-feed/...` is
   still refused with `renderError`). `collectionEdit` no longer redirects autos
   away. Auto collections reject rename and add/remove-feed (they track a feed's
-  site), but their page offers a **delete** form: deleting one removes only the
-  grouping (its feeds stay) and `AssignAuto` recreates it if a feed on that site
-  is added again.
+  site). Every collection's **delete** lives on the edit page (not the
+  collection page or the index): deleting an auto one removes only the grouping
+  (its feeds stay) and `AssignAuto` recreates it if a feed on that site is added
+  again.
 - Feed rows on the author page only offer **edit** and **refresh**; pausing is
   the feed edit page's "enabled (poll this feed)" checkbox, and **delete** lives
   on the feed edit page (`feedDelete` redirects `303` back to the author page).
