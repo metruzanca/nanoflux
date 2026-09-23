@@ -36,23 +36,21 @@ func NewDispatcher(reg *Registry, hosts func(pluginapi.Fetcher) pluginapi.Host) 
 // Install registers the dispatcher as feedparse's plugin hook.
 func (d *Dispatcher) Install() { feedparse.SetPlugin(d) }
 
-// MatchFetch reports whether any plugin handles feedURL for fetching.
-func (d *Dispatcher) MatchFetch(feedURL string) bool {
+// MatchFetch reports whether any plugin handles the request's feed URL.
+func (d *Dispatcher) MatchFetch(req feedparse.FetchRequest) bool {
 	if d.reg.Empty() {
 		return false
 	}
-	u := mustParse(feedURL)
-	return d.reg.Match(u, pluginapi.CapFetch) != nil
+	return d.reg.Match(mustParse(req.URL), pluginapi.CapFetch) != nil
 }
 
 // FetchPlugin runs the matching plugin and converts its result.
-func (d *Dispatcher) FetchPlugin(ctx context.Context, feedURL, etag, lastModified string) (feedparse.Result, error) {
-	u := mustParse(feedURL)
-	f := d.reg.Match(u, pluginapi.CapFetch)
+func (d *Dispatcher) FetchPlugin(ctx context.Context, req feedparse.FetchRequest) (feedparse.Result, error) {
+	f := d.reg.Match(mustParse(req.URL), pluginapi.CapFetch)
 	if f == nil {
-		return feedparse.Result{}, &feedparse.StatusError{Code: 404, URL: feedURL}
+		return feedparse.Result{}, &feedparse.StatusError{Code: 404, URL: req.URL}
 	}
-	res, err := f.Fetch(ctx, pluginapi.FetchRequest{URL: feedURL, ETag: etag, LastModified: lastModified}, d.hosts(f))
+	res, err := f.Fetch(ctx, pluginapi.FetchRequest{URL: req.URL, ETag: req.ETag, LastModified: req.LastModified}, d.hosts(f))
 	if err != nil {
 		return feedparse.Result{}, convertError(err)
 	}

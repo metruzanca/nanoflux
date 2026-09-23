@@ -75,13 +75,19 @@ type Result struct {
 }
 
 // Plugin is a feed integration installed by the plugin host. When set, Fetch
-// defers to it for URLs it matches (before the built-in x/instagram/patreon
-// short-circuits and the generic feed parser).
+// defers to it for feeds it matches, before the generic parser.
 type Plugin interface {
-	// MatchFetch reports whether the plugin handles feedURL for fetching.
-	MatchFetch(feedURL string) bool
-	// FetchPlugin fetches feedURL via the plugin.
-	FetchPlugin(ctx context.Context, feedURL, etag, lastModified string) (Result, error)
+	// MatchFetch reports whether the plugin handles the request's feed.
+	MatchFetch(req FetchRequest) bool
+	// FetchPlugin fetches the feed via the plugin.
+	FetchPlugin(ctx context.Context, req FetchRequest) (Result, error)
+}
+
+// FetchRequest is one feed fetch: the URL and conditional-GET validators.
+type FetchRequest struct {
+	URL          string
+	ETag         string
+	LastModified string
 }
 
 var installedPlugin Plugin
@@ -92,38 +98,34 @@ func SetPlugin(p Plugin) { installedPlugin = p }
 
 // Fetch retrieves and parses feedURL. When etag or lastModified are non-empty
 // they are sent as conditional-GET headers; a 304 returns ErrNotModified.
+//
+// Site-specific integrations (X, Instagram, Patreon, …) are handled by plugins,
+// installed via SetPlugin; this generic path covers standard RSS/Atom/JSON feeds.
 func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastModified string) (Result, error) {
-	if installedPlugin != nil && installedPlugin.MatchFetch(feedURL) {
-		return installedPlugin.FetchPlugin(ctx, feedURL, etag, lastModified)
-	}
-	if isXProfileFeedURL(feedURL) {
-		return fetchXProfile(ctx, feedURL, client)
-	}
-	if isInstagramProfileFeedURL(feedURL) {
-		return fetchInstagramProfile(ctx, feedURL, client)
-	}
-	if isPatreonFeedURL(feedURL) {
-		return fetchPatreon(ctx, feedURL, client)
-	}
+	return FetchFeed(ctx, FetchRequest{URL: feedURL, ETag: etag, LastModified: lastModified}, client)
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
+// FetchFeed fetches a feed described by req, routing to a matching plugin first.
+func FetchFeed(ctx context.Context, req FetchRequest, client *http.Client) (Result, error) {
+	if installedPlugin != nil && installedPlugin.MatchFetch(req) {
+		return installedPlugin.FetchPlugin(ctx, req)
+	}
+	feedURL, etag, lastModified := req.URL, req.ETag, req.LastModified
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
 		return Result{}, err
 	}
-	req.Header.Set("User-Agent", UserAgent())
-	req.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/feed+json, application/xml, text/xml, */*")
+	httpReq.Header.Set("User-Agent", UserAgent())
+	httpReq.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/feed+json, application/xml, text/xml, */*")
 	if etag != "" {
-		req.Header.Set("If-None-Match", etag)
+		httpReq.Header.Set("If-None-Match", etag)
 	}
 	if lastModified != "" {
-		req.Header.Set("If-Modified-Since", lastModified)
+		httpReq.Header.Set("If-Modified-Since", lastModified)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(httpReq)
 	if err != nil {
-		if isYouTubeChannelFeed(feedURL) {
-			return fetchYouTubeChannelViaBrowse(ctx, feedURL, client)
-		}
 		return Result{}, fmt.Errorf("get %s: %w", feedURL, err)
 	}
 	defer resp.Body.Close()
@@ -135,9 +137,6 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 		return Result{}, &RateLimitError{URL: feedURL, Status: resp.StatusCode, RetryAfter: rateLimitBackoff(resp)}
 	}
 	if resp.StatusCode >= 400 {
-		if isYouTubeChannelFeed(feedURL) {
-			return fetchYouTubeChannelViaBrowse(ctx, feedURL, client)
-		}
 		return Result{}, &StatusError{Code: resp.StatusCode, URL: feedURL}
 	}
 
@@ -148,9 +147,6 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 
 	parsed, err := gofeed.NewParser().Parse(bytes.NewReader(body))
 	if err != nil {
-		if isYouTubeChannelFeed(feedURL) {
-			return fetchYouTubeChannelViaBrowse(ctx, feedURL, client)
-		}
 		return Result{}, fmt.Errorf("parse %s: %w", feedURL, err)
 	}
 	if parsed == nil {

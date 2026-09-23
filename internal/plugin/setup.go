@@ -6,6 +6,9 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/metruzanca/nanoflux/internal/plugin/native/instagram"
+	"github.com/metruzanca/nanoflux/internal/plugin/native/patreon"
+	"github.com/metruzanca/nanoflux/internal/plugin/native/x"
 	"github.com/metruzanca/nanoflux/internal/plugin/native/youtube"
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
@@ -22,9 +25,10 @@ func NewHosts(client *http.Client, cool *Cooldown) *Hosts {
 	return &Hosts{client: client, cool: cool}
 }
 
-// For returns the Host for one plugin.
+// For returns the Host for one plugin, carrying the plugin's declared
+// User-Agent (if any).
 func (h *Hosts) For(f pluginapi.Fetcher) pluginapi.Host {
-	return NewHost(h.client, h.cool, f.Meta().Name)
+	return NewHost(h.client, h.cool, f.Meta().Name, f.Meta().UserAgent)
 }
 
 // Runtime is the wired plugin system: the registry, the host factory, and the
@@ -67,4 +71,7 @@ func (r *Runtime) Close() {
 // over an external one when both match the same URL.
 func registerNative(reg *Registry) {
 	reg.RegisterNative(youtube.Plugin{})
+	reg.RegisterNative(instagram.Plugin{})
+	reg.RegisterNative(patreon.Plugin{})
+	reg.RegisterNative(x.Plugin{})
 }

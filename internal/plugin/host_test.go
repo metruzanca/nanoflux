@@ -20,7 +20,7 @@ func TestHostDoRateLimitedNative(t *testing.T) {
 	defer srv.Close()
 
 	cool := NewCooldown()
-	h := NewHost(srv.Client(), cool, "test")
+	h := NewHost(srv.Client(), cool, "test", "")
 	resp, err := h.Do(context.Background(), pluginapi.HTTPRequest{Method: "GET", URL: srv.URL})
 	if err != nil {
 		t.Fatalf("Do returned an error instead of an inline limit: %v", err)
