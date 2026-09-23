@@ -27,6 +27,7 @@ type Feed struct {
 	PollIntervalSec  int
 	PollIntervalAuto bool   // derive poll_interval_sec from the posting cadence
 	LastItemAt       string // newest item time (published or fetched); "" when none
+	NextPollAt       string // "do not poll before" deadline after a rate limit; "" when unset
 	Enabled          bool
 	CreatedAt        string
 }
@@ -289,6 +290,15 @@ func (s *FeedStore) SetLastItemAt(id int64, t string) error {
 	})
 }
 
+// SetNextPollAt sets a "do not poll before" deadline on a feed, used to back off
+// when a host rate-limits it. An empty t clears the deadline (poll normally).
+func (s *FeedStore) SetNextPollAt(id int64, t string) error {
+	return s.q.SetFeedNextPollAt(context.Background(), sqlcgen.SetFeedNextPollAtParams{
+		NextPollAt: ns(t),
+		ID:         id,
+	})
+}
+
 // ListDue returns enabled feeds that have not been polled within their own
 // poll_interval_sec of now.
 func (s *FeedStore) ListDue(now string) ([]Feed, error) {
@@ -320,7 +330,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.Kind, f.ScrapeConfig, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.Enabled, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.Kind, f.ScrapeConfig, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.Enabled, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

@@ -39,6 +39,7 @@ var migrations = []migration{
 	{26, schemaV26},
 	{27, schemaV27},
 	{28, schemaV28},
+	{29, schemaV29},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -463,6 +464,14 @@ ALTER TABLE users ADD COLUMN home_config TEXT;
 // the column.
 const schemaV28 = `
 ALTER TABLE authors DROP COLUMN url;
+`
+
+// schemaV29 adds feeds.next_poll_at: a "do not poll before this time" deadline
+// set when a host rate-limits a feed, so the poller backs off for the duration
+// the host asked for instead of hammering it on the normal interval. NULL means
+// no backoff is in effect.
+const schemaV29 = `
+ALTER TABLE feeds ADD COLUMN next_poll_at TEXT;
 `
 
 // Migrate applies any pending migrations in order, recording each in

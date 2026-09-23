@@ -118,8 +118,11 @@ func fetchInstagramProfile(ctx context.Context, profileURL string, client *http.
 		return Result{}, fmt.Errorf("get %s: %w", profileURL, err)
 	}
 	defer resp.Body.Close()
+	if isRateLimited(resp) {
+		return Result{}, &RateLimitError{URL: profileURL, Status: resp.StatusCode, RetryAfter: rateLimitBackoff(resp)}
+	}
 	if resp.StatusCode >= 400 {
-		return Result{}, fmt.Errorf("get %s: status %d", profileURL, resp.StatusCode)
+		return Result{}, &StatusError{Code: resp.StatusCode, URL: profileURL}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, instagramProfileBodyCap))
 	if err != nil {

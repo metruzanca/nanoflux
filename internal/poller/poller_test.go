@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -645,5 +646,164 @@ func TestPollOneScrapeBadConfigFailsGracefully(t *testing.T) {
 	got, _ := st.Feeds.ByID(u.ID, f.ID)
 	if got.LastError == "" {
 		t.Fatal("last_error should be recorded for a bad scrape config")
+	}
+}
+
+// rateLimitedServer serves a 429 (with a retry hint) for requests to /limited
+// and a valid feed for /feed. Both live on the same httptest host.
+func rateLimitedServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "limited") {
+			w.Header().Set("Retry-After", "600")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title><item><guid>g</guid><title>t</title><link>https://b.dev/1</link></item></channel></rss>`))
+	}))
+}
+
+// Polling a feed that is rate limited records the backoff deadline and a clear
+// error, and the feed is not due again until the deadline passes.
+func TestPollOneRateLimitBacksOff(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	srv := rateLimitedServer(t)
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "R", srv.URL+"/limited.rss", "", "", 900)
+	p := New(st, time.Minute, 1)
+	if _, err := p.PollOne(context.Background(), f); err == nil {
+		t.Fatal("expected a rate-limit error")
+	}
+
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.NextPollAt == "" {
+		t.Fatal("NextPollAt should be set after a rate limit")
+	}
+	if got.LastError == "" {
+		t.Fatal("LastError should mention the rate limit")
+	}
+	until, err := db.ParseTime(got.NextPollAt)
+	if err != nil || time.Until(until) < 9*time.Minute {
+		t.Fatalf("NextPollAt = %q, want ~600s in the future", got.NextPollAt)
+	}
+	// Not due while the backoff is in effect.
+	if due, _ := st.Feeds.ListDue(db.Now()); len(due) != 0 {
+		t.Fatalf("rate-limited feed should not be due, got %d", len(due))
+	}
+}
+
+// A successful poll clears a previously recorded rate-limit backoff.
+func TestPollOneSuccessClearsBackoff(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	srv := rateLimitedServer(t)
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "B", srv.URL+"/feed.rss", "", "", 900)
+	st.Feeds.SetNextPollAt(f.ID, db.FormatTime(time.Now().Add(time.Hour)))
+
+	p := New(st, time.Minute, 1)
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.NextPollAt != "" {
+		t.Fatalf("successful poll should clear NextPollAt, got %q", got.NextPollAt)
+	}
+}
+
+// PollDue serializes fetches per host: requests to the same host never overlap,
+// while the whole cycle still completes.
+func TestPollDueSerializesPerHost(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	var mu sync.Mutex
+	var inflight, maxInflight int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		inflight++
+		if inflight > maxInflight {
+			maxInflight = inflight
+		}
+		mu.Unlock()
+		time.Sleep(20 * time.Millisecond)
+		mu.Lock()
+		inflight--
+		mu.Unlock()
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title></channel></rss>`))
+	}))
+	defer srv.Close()
+
+	// Four feeds on the same host, all due.
+	for i := 0; i < 4; i++ {
+		st.Feeds.Create(u.ID, a.ID, "f", fmt.Sprintf("%s/feed%d", srv.URL, i), "", "", 900)
+	}
+
+	// A generous worker pool means any cross-host parallelism is available; the
+	// same-host feeds must still run one at a time.
+	p := New(st, time.Minute, 8)
+	if _, err := p.PollDue(context.Background()); err != nil {
+		t.Fatalf("PollDue: %v", err)
+	}
+	if maxInflight > 1 {
+		t.Fatalf("same-host fetches overlapped: maxInflight = %d", maxInflight)
+	}
+}
+
+// groupByHost buckets feeds by registrable domain and keeps distinct hosts
+// separate, including a distinct subdomain collapse.
+func TestGroupByHost(t *testing.T) {
+	feeds := []store.Feed{
+		{FeedURL: "https://www.reddit.com/r/a/.rss"},
+		{FeedURL: "https://old.reddit.com/r/b/.rss"},
+		{FeedURL: "https://example.com/feed"},
+	}
+	groups := groupByHost(feeds)
+	if len(groups) != 2 {
+		t.Fatalf("groups = %d, want 2", len(groups))
+	}
+	var reddit, example int
+	for _, g := range groups {
+		switch store.RegistrableDomain(g[0].FeedURL) {
+		case "reddit.com":
+			reddit = len(g)
+		case "example.com":
+			example = len(g)
+		}
+	}
+	if reddit != 2 || example != 1 {
+		t.Fatalf("group sizes reddit=%d example=%d, want 2/1", reddit, example)
 	}
 }

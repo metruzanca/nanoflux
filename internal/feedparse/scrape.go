@@ -67,7 +67,7 @@ func Scrape(ctx context.Context, pageURL string, client *http.Client, cfg Scrape
 	if err != nil {
 		return Result{}, err
 	}
-	req.Header.Set("User-Agent", "nanoflux/0.1")
+	req.Header.Set("User-Agent", UserAgent())
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
 	}
@@ -83,8 +83,11 @@ func Scrape(ctx context.Context, pageURL string, client *http.Client, cfg Scrape
 	if resp.StatusCode == http.StatusNotModified {
 		return Result{}, ErrNotModified
 	}
+	if isRateLimited(resp) {
+		return Result{}, &RateLimitError{URL: pageURL, Status: resp.StatusCode, RetryAfter: rateLimitBackoff(resp)}
+	}
 	if resp.StatusCode >= 400 {
-		return Result{}, fmt.Errorf("get %s: status %d", pageURL, resp.StatusCode)
+		return Result{}, &StatusError{Code: resp.StatusCode, URL: pageURL}
 	}
 
 	doc, err := html.Parse(io.LimitReader(resp.Body, scrapePageCap))
@@ -349,14 +352,17 @@ func AutoDetect(ctx context.Context, pageURL string, client *http.Client) (Scrap
 	if err != nil {
 		return ScrapeConfig{}, err
 	}
-	req.Header.Set("User-Agent", "nanoflux/0.1")
+	req.Header.Set("User-Agent", UserAgent())
 	resp, err := client.Do(req)
 	if err != nil {
 		return ScrapeConfig{}, fmt.Errorf("get %s: %w", pageURL, err)
 	}
 	defer resp.Body.Close()
+	if isRateLimited(resp) {
+		return ScrapeConfig{}, &RateLimitError{URL: pageURL, Status: resp.StatusCode, RetryAfter: rateLimitBackoff(resp)}
+	}
 	if resp.StatusCode >= 400 {
-		return ScrapeConfig{}, fmt.Errorf("get %s: status %d", pageURL, resp.StatusCode)
+		return ScrapeConfig{}, &StatusError{Code: resp.StatusCode, URL: pageURL}
 	}
 	doc, err := html.Parse(io.LimitReader(resp.Body, scrapePageCap))
 	if err != nil {

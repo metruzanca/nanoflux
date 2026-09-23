@@ -246,7 +246,7 @@ func patreonGet(ctx context.Context, endpoint string, client *http.Client) ([]by
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "nanoflux/0.1")
+	req.Header.Set("User-Agent", UserAgent())
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
@@ -254,8 +254,11 @@ func patreonGet(ctx context.Context, endpoint string, client *http.Client) ([]by
 		return nil, fmt.Errorf("get %s: %w", endpoint, err)
 	}
 	defer resp.Body.Close()
+	if isRateLimited(resp) {
+		return nil, &RateLimitError{URL: endpoint, Status: resp.StatusCode, RetryAfter: rateLimitBackoff(resp)}
+	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("get %s: status %d", endpoint, resp.StatusCode)
+		return nil, &StatusError{Code: resp.StatusCode, URL: endpoint}
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, patreonBodyCap))
 }
