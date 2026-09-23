@@ -48,20 +48,20 @@ The app's own pages are the primary navigation surface. This is a hard rule.
   render the new-author fields when no existing author is selected, and
   `authorFormFragment` returns an **empty 200** (not 204 — htmx doesn't swap on
   204) so picking an existing author clears `#new-author`.
-- This applies to the webapp UI only (`internal/web/templates`); the
+- This applies to the webapp UI only (`internal/httpapi/views_*.templ`); the
   `website/` Hugo marketing site is out of scope.
 
 ## Relative timestamps
 
 Timestamps render server-side, relative to the user's configured timezone.
-`timeFmt` in `templates.go` takes the user's IANA timezone name (empty =
+`TimeFmt` in `templates.go` takes the user's IANA timezone name (empty =
 server local time) and renders "Today at 3:04pm", "Yesterday at 3:04pm",
 "N days/weeks/months ago", or an absolute fallback. The timezone is a per-user
 setting (`users.timezone`, set on `/settings`). Every template call passes the
 timezone through the view data — `ItemWithFeed.Timezone`, `feedRow.Timezone`,
 `itemViewData.Timezone`, and `settingsIconRow.Timezone` are stamped by the
 handlers via `withTZ`. Do not render a timestamp with a raw format call; always
-go through `timeFmt` so it respects the user's timezone. A new account is seeded
+go through `TimeFmt` so it respects the user's timezone. A new account is seeded
 from the browser: the signup form has a hidden `timezone` field that `app.js`
 fills from `Intl.DateTimeFormat().resolvedOptions().timeZone`, and `signup`
 validates it with `time.LoadLocation` and calls `SetTimezone` (an unknown name
@@ -74,10 +74,11 @@ visible error into the page. Never return a bare status or fail silently.
 
 ### htmx swap rules (load-bearing)
 
-htmx 2.x does not swap `4xx`/`5xx` response bodies by default. `layout.html`
-installs a global `htmx:beforeSwap` listener that sets `shouldSwap = true` for
-any `status >= 400`, so error fragments actually render. Do not remove or narrow
-that listener; every form/fragment handler below relies on it.
+htmx 2.x does not swap `4xx`/`5xx` response bodies by default. `app.js`
+(loaded by `views_layout.templ`) installs a global `htmx:beforeSwap` listener
+that sets `shouldSwap = true` for any `status >= 400`, so error fragments
+actually render. Do not remove or narrow that listener; every form/fragment
+handler below relies on it.
 
 `event.detail.successful` remains `false` on `4xx`/`5xx`, so `hx-on::after-request`
 handlers that close dialogs on success (`if (event.detail.successful) ...`)
@@ -104,8 +105,9 @@ the global swap override; prefer returning a fragment there too.
 
 ### Error template
 
-`form_error` lives in `internal/web/templates/fragments.html` and renders a
-`role="alert"` banner. Keep the `role="alert"` so screen readers announce it.
+`FormError`/`FormErrorOOB` live in `internal/httpapi/views_layout.templ` and
+render a `role="alert"` banner. Keep the `role="alert"` so screen readers
+announce it.
 
 ### Tests
 
@@ -311,16 +313,16 @@ lazily and generically — no destination site is hardcoded:
   are cached; the whole resolution is timeboxed in `itemView` and degrades to
   today's behavior on any failure.
 - `redditRSSBaseURL` is a package var so tests can inject a mock host.
-- Link-post thumbnails are not treated as image posts (`isImagePost` in
+- Link-post thumbnails are not treated as image posts (`IsImagePost` in
   `internal/web/templates.go` rejects `external-preview.redd.it`).
 
 ### Reddit galleries
 
 Gallery posts are identified in the listing by their stored thumbnail alone:
 reddit's RSS gives galleries a small square cover (`preview.redd.it` +
-`crop=1:1,smart`) instead of a natural-aspect image-post crop (`isGallery` in
+`crop=1:1,smart`) instead of a natural-aspect image-post crop (`IsGallery` in
 `internal/web/templates.go`), and the card thumb is upgraded to the full-res
-`i.redd.it/{id}.{ext}` original (`galleryThumb`), which needs no signed params.
+`i.redd.it/{id}.{ext}` original (`GalleryThumb`), which needs no signed params.
 
 In the modal, a gallery's `[link]` anchor points at `reddit.com/gallery/{id}`
 (recognized by `redditGalleryID`), and the images are enumerated from the
@@ -361,6 +363,49 @@ that history (it can be extremely long); instead the feed's page offers a
 - The feed page renders the control via `feedOlderControl` (only when the
   cursor is set); the endpoint swaps `#feed-older` (button → "full history
   loaded") and OOB-swaps `#scoped-items` so the imported items appear.
+
+## Full-text search
+
+`GET /search?q=` (and `GET /api/search`) runs an FTS5 query over item titles and
+summaries (`items_fts`, migration `schemaV10`). The topbar box and the `/`
+shortcut focus `#search-input`; results paginate via the same `before=` cursor,
+staying newest-first.
+
+- Query parsing is `parseSearchQuery` (`internal/httpapi/search.go`), Miniflux
+  style: general terms and `title:` values are phrase-quoted (`ftsPhrase`) so
+  raw input can't alter FTS grammar; `author:`, `feed:`, and `unread:` become
+  **filters applied outside FTS** (`searchFilter` resolves them to an
+  `ItemFilter`, looking authors up by name and feeds by title). `unread:1` /
+  `unread:true` set `UnreadOnly`.
+- The FTS query itself is hand-written, not sqlc-generated (see the store-layer
+  note); results reuse the `sqlcgen.ListItemsRow` scanner.
+
+## Feed filter rules (ingest-time)
+
+`filters` (schemaV12) holds per-user rules applied when a feed is polled: a rule
+matches an item's `title`, `summary` (visible text, via `feedparse.PlainText`),
+or `link`, and either **hides** the item or stores it **already read**. Managed
+from the feed edit page (`feedRulesSection`/`FilterList` in `views_feeds.templ`);
+`POST /feeds/{id}/filters` adds (error via `writeFormError` into
+`#feed-rules-error`), `POST /filters/{id}/delete` removes. `feed_id NULL` means
+the rule is feed-wide — `FilterStore.ListByFeed` returns a feed's own rules plus
+feed-wide ones.
+
+- Matching is `matchFilter` in `internal/poller/poller.go`, called from `ingest`:
+  substring by default (case-insensitive), or `regexp` when `is_regex` is set
+  (validated at creation so a bad pattern never reaches the poller).
+
+## Cross-feed dedup (view-time)
+
+`dedupItems` (`internal/httpapi/dedup.go`) collapses same-titled posts from
+**different feeds** into one row, listing the others as "also in" sources
+(`ItemWithFeed.Sources`, rendered in `itemRowInner`). It is a **view-time
+transformation only** — nothing is written back — and runs on author and
+collection scoped lists (`authorScopedItems`/`collectionScopedItems`, including
+their paginated fragments). Titles are normalized (`normalizeTitle`: lowercase
+alphanumerics) then compared with a bounded fuzzy match (`fuzzyTitles`:
+Levenshtein ≤ 2, or ≤ 10% for titles ≥ 10 chars). Two distinct posts in the
+**same feed** are never merged.
 
 ## Settings and custom source icons
 
@@ -590,12 +635,6 @@ package (`internal/store/sqlcgen`, `//go:generate sqlc generate`). The public
 `*Store` types wrap the generated `Queries` and convert `sql.Null*` to plain
 domain types; never hand-write `row.Scan` calls or `nullStr`/`boolInt`
 boilerplate — add a query to the `.sql` files and regenerate. The generated
-with the migrations in `internal/db/migrate.go`), queries live in
-`internal/store/queries/*.sql`, and code is generated into the `sqlcgen`
-package (`internal/store/sqlcgen`, `//go:generate sqlc generate`). The public
-`*Store` types wrap the generated `Queries` and convert `sql.Null*` to plain
-domain types; never hand-write `row.Scan` calls or `nullStr`/`boolInt`
-boilerplate — add a query to the `.sql` files and regenerate. The generated
 files are committed, so CI/builds need no sqlc step.
 
 **Full-text search is the one exception.** `ItemStore.SearchPage` runs a
@@ -772,20 +811,24 @@ run inside the container. Both share the store methods (`UserStore.ResetPassword
   (`ListUserSessions`, `POST /settings/sessions/{token}/revoke`); revoking the
   current session logs the user out.
 
-## Image enclosures
+## Media enclosures
 
-Some feeds deliver an item's image only as an `<enclosure>` with no
-`media:thumbnail`; those items used to render as a bare external link.
+Feeds deliver item media as `<enclosure>` entries; the poller stores them in
+`item_enclosures` (schemaV11) and `itemContent` renders them in the modal.
+`EnclosureKind` (`internal/web/templates.go`) classifies each by MIME
+(`audio/*`, `video/*`, `image/*`) or, failing that, by the URL's parsed path
+extension — so signed URLs (`photo.jpg?e=…&t=…`) still hit. Non-image
+enclosures (podcasts, video files) render as `<audio>`/`<video>` players plus a
+download link (`EnclosureLabel`: stored title, else the URL's basename).
 
-- `EnclosureKind` (`internal/web/templates.go`) returns `"image"` for MIME
-  `image/*` or common image extensions, matched on the URL's parsed path so
-  signed URLs (`photo.jpg?e=…&t=…`) still hit. `itemContent` renders image
-  enclosures inline (single → `.image-lightbox`, several → `.gallery`) and
-  drops them from the bare-link list; `ImageEnclosures` collects them. The
-  inline render is skipped when the item is already showing an image (`v.Image`
-  lightbox, a reddit gallery) or its body/description embeds an `<img>`
-  (`web.BodyHasImage`) — feeds that populate the description with the image
-  must not render the same enclosure twice.
+- **Images:** some feeds deliver an item's image only as an enclosure with no
+  `media:thumbnail`; those items used to render as a bare external link.
+  `itemContent` renders image enclosures inline (single → `.image-lightbox`,
+  several → `.gallery`) and drops them from the bare-link list;
+  `ImageEnclosures` collects them. The inline render is skipped when the item is
+  already showing an image (`v.Image` lightbox, a reddit gallery) or its
+  body/description embeds an `<img>` (`web.BodyHasImage`) — feeds that populate
+  the description with the image must not render the same enclosure twice.
 - At poll time `normalizeItem` falls back to the first image enclosure's URL
   as `image_url` when the feed supplied none, so image-enclosure items get a
   thumbnail in lists (and the masonry grid). They stay text posts —
@@ -982,6 +1025,36 @@ all work unchanged). User-created lists of items live in `lists`/`list_items`
   `htmx.process` call after the innerHTML assignment (it processes the whole
   `#item-dialog`, so relocated controls are covered). Do not remove it;
   a newly added modal control that "does nothing" is usually missing this.
+
+## Public item shares
+
+A single item can be shared publicly via `shared_items` (schemaV13). The item
+modal's `⋯` menu has a share control that swaps the `#item-share` group in place
+(`shareControl`); `POST /items/{id}/share` creates the link and
+`POST /items/{id}/revoke` removes it. Tokens are random 16-byte hex and
+unguessable — no endpoint lists them (`ShareStore.Create` is idempotent; every
+lookup is by item or by token).
+
+- `GET /shared/{token}` is unauthenticated and renders `sharedItemPage`, which
+  is read-only and **never marks the item read**. Like `/l/{token}` and
+  `/f/{token}` it links only to external content with `class="external"`.
+- `resolveItemSource` (reddit/oembed/gallery resolution) is shared with the
+  authed `itemView`, so a shared reddit link-post or gallery still resolves.
+
+## OPML import/export
+
+`/settings` has an OPML card: `GET /settings/export.opml` downloads the user's
+subscriptions grouped into outlines per collection (auto collections are not
+exported; a feed whose only memberships are auto is exported ungrouped), and
+`POST /settings/opml` imports a document.
+
+- The importer (`opmlImport` in `internal/httpapi/opml.go`) walks nested
+  outlines, skips feeds whose normalized URL already exists, fetches each new
+  feed to validate it, creates one author per outline name (feeds sharing an
+  outline name share an author), creates missing collections, and assigns the
+  feed's auto collection. The result is a summary line ("imported N · skipped N
+  · failed N") rendered into the OPML card; errors use `writeFormError` into
+  `#opml-error`.
 
 ## Running the dev server
 
