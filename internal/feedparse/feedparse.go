@@ -25,6 +25,18 @@ import (
 // ErrNotModified is returned when the server answers 304 for a conditional GET.
 var ErrNotModified = errors.New("not modified")
 
+// StatusError is an HTTP response status >= 400 from a feed or page fetch. It
+// carries the code separately so callers can turn it into a user-facing message
+// (e.g. a 429 is a rate limit, not a missing feed) without parsing the string.
+type StatusError struct {
+	Code int
+	URL  string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("get %s: status %d", e.URL, e.Code)
+}
+
 // Feed carries normalized feed-level metadata.
 type Feed struct {
 	Title       string
@@ -104,7 +116,7 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 		if isYouTubeChannelFeed(feedURL) {
 			return fetchYouTubeChannelViaBrowse(ctx, feedURL, client)
 		}
-		return Result{}, fmt.Errorf("get %s: status %d", feedURL, resp.StatusCode)
+		return Result{}, &StatusError{Code: resp.StatusCode, URL: feedURL}
 	}
 
 	body, err := io.ReadAll(resp.Body)

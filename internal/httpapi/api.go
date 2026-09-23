@@ -164,12 +164,12 @@ func (s *Server) apiDiscover(w http.ResponseWriter, r *http.Request) {
 	}
 	candidates, err := s.discoverer.Discover(r.Context(), feedURL)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": feedPreviewError(err)})
 		return
 	}
 	if len(candidates) == 0 && feedURL != req.URL {
 		if candidates, err = s.discoverer.Discover(r.Context(), req.URL); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": feedPreviewError(err)})
 			return
 		}
 	}

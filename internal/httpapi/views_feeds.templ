@@ -130,12 +130,20 @@ templ feedChooser(d feedChoose) {
 }
 
 // noFeedFound is the "no feed at that url" banner with an opt-in scrape
-// builder. The button re-posts the entered url to the scrape builder, which
-// swaps into the same preview container.
+// builder and a manual-entry escape hatch. Each button re-posts the entered url
+// to its fragment handler, which swaps into the same preview container. Reason
+// carries a user-facing explanation when discovery failed for a detectable
+// cause (e.g. an HTTP 429 rate limit).
 templ noFeedFound(d noFeedFoundData) {
 	<div class="error" role="alert">
 		<p>no feed found at that url</p>
-		<button type="button" hx-post="/fragments/scrape-builder" hx-target={ d.Target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped">build a feed by scraping this page</button>
+		if d.Reason != "" {
+			<p class="small">{ d.Reason }</p>
+		}
+		<div class="row">
+			<button type="button" hx-post="/fragments/scrape-builder" hx-target={ d.Target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped, #share-url">build a feed by scraping this page</button>
+			<button type="button" hx-post="/fragments/manual-feed" hx-target={ d.Target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped, #share-url">insert manually</button>
+		</div>
 	</div>
 }
 
