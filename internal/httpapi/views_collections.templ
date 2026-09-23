@@ -61,14 +61,15 @@ templ collectionPage(u store.User, d collectionData) {
 		<div class="row-actions">
 			if d.Collection.IsAuto {
 				<span class="badge">auto</span>
-			} else {
-				<a class="small" title="edit" href={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>@web.EditIcon()</a>
+			}
+			<a class="small" title="edit" href={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>@web.EditIcon()</a>
+			if !d.Collection.IsAuto {
 				<button type="button" onclick="document.getElementById('collection-add-feed-dialog').showModal()">+ add feed</button>
 			}
 		</div>
 	</div>
 	if d.Collection.IsAuto {
-		<p class="muted small">auto collections are created from a feed's site. You can delete this one; adding a feed on that site again will recreate it.</p>
+		<p class="muted small">auto collections are created from a feed's site and update automatically. Use edit to see every feed in this collection. You can delete this one; adding a feed on that site again will recreate it.</p>
 		<form class="delete-form" method="post" action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/delete" } onsubmit="return confirm('delete this auto collection? feeds stay; only the grouping is removed.')">
 			<button type="submit" class="danger">delete</button>
 		</form>
@@ -100,16 +101,32 @@ templ collectionPage(u store.User, d collectionData) {
 
 // collectionEditPage edits a collection's name, removes its feeds, and deletes
 // it — the collection's own management surface, mirroring the author/feed edit
-// pages (delete lives in the form, not on the listing).
+// pages (delete lives in the form, not on the listing). Auto collections use the
+// same screen to inspect their feeds, but the name is read-only and feeds can't
+// be removed: they are managed from each feed's site.
 templ collectionEditPage(u store.User, d collectionData) {
 	<section class="card">
-		<h1>edit collection</h1>
-		<form class="stack" method="post" action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>
-			<label>name
-				<input name="name" value={ d.Collection.Name } required/>
-			</label>
-			<button type="submit">save</button>
-		</form>
+		<div class="row">
+			<h1>edit collection</h1>
+			if d.Collection.IsAuto {
+				<span class="badge">auto</span>
+			}
+		</div>
+		if d.Collection.IsAuto {
+			<p class="muted small">auto collections follow a feed's site and can't be renamed or have feeds removed. Add or remove the feed itself to change this collection.</p>
+			<form class="stack">
+				<label>name
+					<input name="name" value={ d.Collection.Name } readonly/>
+				</label>
+			</form>
+		} else {
+			<form class="stack" method="post" action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>
+				<label>name
+					<input name="name" value={ d.Collection.Name } required/>
+				</label>
+				<button type="submit">save</button>
+			</form>
+		}
 		<form class="stack delete-form" method="post" action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/delete" } onsubmit="return confirm('delete this collection?')">
 			<button type="submit" class="danger">delete</button>
 		</form>
@@ -127,7 +144,9 @@ templ collectionFeeds(d collectionData) {
 				<li>
 					<div class="row">
 						<a href={ "/feeds/" + strconv.FormatInt(f.ID, 10) }>{ f.Title }</a>
-						<button class="link danger" title="remove" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/remove-feed/" + strconv.FormatInt(f.ID, 10) } hx-target="#collection-feeds" hx-swap="outerHTML">@web.Lucide("x")</button>
+						if !d.Collection.IsAuto {
+							<button class="link danger" title="remove" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/remove-feed/" + strconv.FormatInt(f.ID, 10) } hx-target="#collection-feeds" hx-swap="outerHTML">@web.Lucide("x")</button>
+						}
 					</div>
 				</li>
 			}

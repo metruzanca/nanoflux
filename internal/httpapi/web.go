@@ -1663,6 +1663,9 @@ func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // collectionEdit renders the collection's edit form (name + feeds + delete).
+// Auto collections render the same screen but read-only: their name can't be
+// changed and their feeds can't be removed, so it doubles as the place to see
+// every feed in the collection.
 func (s *Server) collectionEdit(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -1673,10 +1676,6 @@ func (s *Server) collectionEdit(w http.ResponseWriter, r *http.Request) {
 	c, err := s.store.Collections.ByID(u.ID, id)
 	if err != nil {
 		http.NotFound(w, r)
-		return
-	}
-	if c.IsAuto {
-		http.Redirect(w, r, "/collections/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 		return
 	}
 	feeds, _ := s.store.Collections.Feeds(u.ID, id)
