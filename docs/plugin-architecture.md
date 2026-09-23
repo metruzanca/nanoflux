@@ -2,9 +2,9 @@
 
 The plugin system lets feed integrations that don't belong in this repository
 (site-specific scrapers, private API-backed feeds) live in separate, possibly
-private repos. The current native integrations — YouTube, X, Instagram, Patreon,
-and the CSS-selector scraper — become "native plugins" that double as the
-example implementations.
+private repos. The native integrations — YouTube, X, Instagram, Patreon — are
+"native plugins" that double as the example implementations. The CSS-selector
+scraper was removed: any site is a plugin now.
 
 Status: **v0.1 implemented.** The API is small and expected to change before
 v1.0.0. See "Phases & status" and "Fast follow-ups" to track progress. For the
@@ -256,14 +256,13 @@ implementation and keeps importing only `pluginapi`.
 
 ## Storage
 
-- `feeds.kind`: `'feed' | 'scrape'` → add `'plugin'`.
-- New `feeds.plugin_name TEXT` (which plugin handles the feed).
-- `feeds.scrape_config` generalizes to `feeds.plugin_config TEXT` (JSON; the
-  CSS-scrape plugin's config is the existing `ScrapeConfig`).
-- Migration **schemaV30**: backfill `kind='scrape'`, `plugin_name='scrape'` from
-  existing scrape feeds; keep `schema.sql` in sync.
-- The feed create/edit UI grows a plugin selector for `kind='plugin'`. The
-  scrape builder remains, as the config UI for the scrape plugin.
+Plugins currently route by **URL shape** — no per-feed plugin column exists yet.
+The scraper was removed rather than migrated, so `feeds.kind` and
+`feeds.scrape_config` are **dropped** (schemaV30) and there is no per-feed config
+surface. If a future plugin needs per-feed config (API key, subreddit, selector),
+revisit this section: the plan was a `feeds.plugin_name` column plus a
+generalized `plugin_config TEXT`. **Not implemented** — do not add it without
+revisiting the design doc.
 
 ## Configuration & distribution
 
@@ -290,9 +289,9 @@ implementation and keeps importing only `pluginapi`.
 Order, self-contained to shared, with **YouTube first** as the reference plugin
 (it exercises discover + fetch + preview metadata + a non-RSS endpoint): **youtube
 → instagram → patreon → x**. Each keeps its existing unit tests, re-pointed at
-the `Fetcher` interface. All four are migrated; the scraped-site feed (CSS
-selectors) is **not** yet a plugin — it needs per-feed config (`feeds.scrape_config`
-+ `kind='scrape'`) plumbed through the plugin API, which is deferred (see below).
+the `Fetcher` interface. All four are migrated. The CSS-selector scraper was
+**removed** (schemaV30) rather than migrated: with plugins, any site is a plugin,
+so a generic per-feed selector feature is no longer wanted.
 
 - **YouTube is the gate.** If the API carries YouTube — including plugin-supplied
   preview metadata and the RSS→browse fallback — it can carry arbitrary
@@ -315,21 +314,22 @@ selectors) is **not** yet a plugin — it needs per-feed config (`feeds.scrape_c
 | 0 | This design doc | done |
 | 1 | `pluginapi` module: types (incl. `Candidate.IconURL`), `Fetcher`, `Host`, `APIVersion`, proto + generated gRPC | done |
 | 2 | `internal/plugin`: registry, native host (rate-limit aware), `NF_PLUGINS_DIR` loader, gRPC broker | done |
-| 3 | Port natives: **youtube, instagram, patreon, x** all migrated; scrape pending (needs per-feed config plumbing) | done (scrape pending) |
+| 3 | Port natives: **youtube, instagram, patreon, x** all migrated | done |
 | 4 | Unify dispatch (`feedparse.Fetch` + `discoverCandidates` hooks), preview metadata precedence | done |
 | 5 | Discovery capability (plugin `Discover` runs in the add flow) | done |
 | 6 | Authoring story: `docs/writing-plugins.md`, example plugins (`plugin-hello` from scratch, `plugin-youtube` mirroring the native one), `NF_PLUGINS_DIR`, compose mount | done |
-| 7 | Tests: registry, native YouTube, end-to-end external plugin load | done |
+| 7 | Tests: registry, native plugins, end-to-end external plugin load | done |
+| 8 | Drop the CSS-selector scraper (schemaV30: `feeds.kind`, `feeds.scrape_config`) | done |
 
 **v0.1 scope note.** The plugin system is live: plugins load from
 `NF_PLUGINS_DIR`, the four site integrations (YouTube, Instagram, Patreon, X)
-are native plugins, and the examples prove the external path end to end.
-Deliberate simplifications in v0.1: plugins route by **URL shape** — there is no
-`feeds.kind='plugin'` or per-feed config column yet — which is why the
-CSS-selector scraper still runs as built-in code (it needs per-feed selector
-config). The remaining `discover/host.go` rules (reddit, GitHub, Bluesky) and
-YouTube's `PageMeta` special case also stay in core for now. A matching plugin
-takes precedence over the generic parser.
+are native plugins, and the examples prove the external path end to end. The
+CSS-selector scraper is gone — site integrations are plugins. Deliberate
+simplification in v0.1: plugins route by **URL shape** — there is no
+`feeds.kind='plugin'` or per-feed config column yet. The remaining
+`discover/host.go` rules (reddit, GitHub, Bluesky) and YouTube's `PageMeta`
+special case stay in core for now. A matching plugin takes precedence over the
+generic parser.
 
 ## Open questions
 
@@ -341,9 +341,7 @@ takes precedence over the generic parser.
    only about moving the *other* host rules.
 3. **Reddit** — discovery rule + core view-time resolution (proposed), or a full
    plugin?
-4. **CSS scraper** — one generic native `scrape` plugin preserving current
-   behavior (proposed), or drop it for per-site plugins?
-5. **Per-plugin credentials** — per-feed JSON only for v0.1, plugin-level env
+4. **Per-plugin credentials** — per-feed JSON only for v0.1, plugin-level env
    vars, or a config file in the plugins directory?
 
 ## Fast follow-ups

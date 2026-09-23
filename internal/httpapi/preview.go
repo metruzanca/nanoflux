@@ -57,45 +57,12 @@ type authorPreviewForm struct {
 }
 
 // noFeedFoundData carries the URL that yielded no feed, the htmx container the
-// scrape builder / manual form should swap into, and a user-facing reason when
-// discovery failed for a detectable cause (e.g. an HTTP 429 rate limit).
+// manual form should swap into, and a user-facing reason when discovery failed
+// for a detectable cause (e.g. an HTTP 429 rate limit).
 type noFeedFoundData struct {
 	URL    string
 	Target string
 	Reason string
-}
-
-// scrapeSampleItem is one extracted item in the scrape builder's live preview.
-type scrapeSampleItem struct {
-	Title string
-	Link  string
-	Date  string
-}
-
-// scrapeBuilderData drives the scrape feed builder form: the scraped URL, the
-// selector config, the live preview sample, and the standard add-feed form
-// fields (author selection, htmx Action/Target/Swap).
-type scrapeBuilderData struct {
-	URL              string
-	Title            string
-	HomeURL          string
-	Config           feedparse.ScrapeConfig
-	Sample           []scrapeSampleItem
-	Action           string
-	Target           string
-	Swap             string
-	Authors          []store.Author
-	SelectedAuthorID int64
-	FixedAuthor      *store.Author
-	NewAuthorName    string
-	NewAuthorAvatar  string
-	Timezone         string // user's IANA timezone for sample timestamps
-}
-
-// newAuthor returns the authorCreateFields payload for the default "create new
-// author" selection in the scrape builder.
-func (d scrapeBuilderData) newAuthor() authorPreviewForm {
-	return authorPreviewForm{Name: d.NewAuthorName, AvatarURL: d.NewAuthorAvatar}
 }
 
 // feedPreview inspects a URL (direct feed or page) and renders the combined
@@ -128,7 +95,7 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	// The preview container that rendered the fragment. The author-scoped
 	// dialog uses a different id than the global one, so every fragment that
-	// swaps into it (chooser, scrape builder opt-in) must target it.
+	// swaps into it (chooser, manual form) must target it.
 	previewTarget := "#feed-preview"
 	if r.FormValue("scoped") == "1" {
 		previewTarget = "#author-feed-preview"
@@ -380,12 +347,11 @@ func invalidURL(raw string) string {
 }
 
 // manualFeedForm renders the combined add form pre-filled with the entered url
-// as the feed url, for when discovery finds nothing. It is the "insert
-// manually" escape hatch next to the scrape builder: the user pastes a real
+// as the feed url, for when discovery finds nothing. The user pastes a real
 // feed url (or any url) and fills in the rest themselves.
 func (s *Server) manualFeedForm(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	pageURL := normalizeURL(scrapeURLFromForm(r))
+	pageURL := normalizeURL(pageURLFromForm(r))
 	if pageURL == "" {
 		renderError(w, r, "enter a url")
 		return
@@ -416,122 +382,9 @@ func (s *Server) manualFeedForm(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, feedPreviewFields(form))
 }
 
-// scrapeBuilder renders the CSS-selector feed builder for a URL that has no
-// feed. On first open it auto-detects an item selector (best effort); when the
-// auto-detect button re-posts, the submitted selectors are preserved and the
-// builder is re-rendered with a fresh sample.
-func (s *Server) scrapeBuilder(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	pageURL := normalizeURL(scrapeURLFromForm(r))
-	if pageURL == "" {
-		renderError(w, r, "enter a url")
-		return
-	}
-	authors, _ := s.store.Authors.List(u.ID)
-	selectedAuthor, _ := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
-	var fixedAuthor *store.Author
-	if r.FormValue("scoped") == "1" {
-		if a, err := s.store.Authors.ByID(u.ID, selectedAuthor); err == nil {
-			fixedAuthor = &a
-		}
-	}
-
-	cfg := scrapeConfigFromForm(r)
-	if r.FormValue("detect") == "1" || strings.TrimSpace(cfg.Item) == "" {
-		if auto, err := feedparse.AutoDetect(r.Context(), pageURL, s.client); err == nil {
-			cfg = auto
-		}
-	}
-
-	sample := s.scrapeSample(r.Context(), pageURL, cfg, u.Timezone)
-
-	// Preserve what the user typed on a re-post (auto-detect); derive from the
-	// page only on first open.
-	title := strings.TrimSpace(r.FormValue("title"))
-	homeURL := strings.TrimSpace(r.FormValue("home_url"))
-	name, avatar := s.authorPrefill(r.Context(), pageURL, pageURL)
-	if title == "" {
-		title = name
-	}
-	if homeURL == "" {
-		homeURL = pageURL
-	}
-	form := scrapeBuilderData{
-		URL: stripWWW(pageURL), Title: title, HomeURL: stripWWW(homeURL), Config: cfg, Sample: sample,
-		Authors: authors, SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor,
-		NewAuthorName: name, NewAuthorAvatar: avatar, Timezone: u.Timezone,
-	}
-	if fixedAuthor != nil {
-		form.Action = "/authors/" + strconv.FormatInt(fixedAuthor.ID, 10) + "/feeds"
-		form.Target = "#feeds-list"
-		form.Swap = "beforeend"
-	} else {
-		form.Action = "/feeds"
-		form.Target = "#authors-list"
-		form.Swap = "beforeend"
-	}
-	web.Render(w, r, scrapeBuilder(form))
-}
-
-// scrapePreview runs the submitted selector config against the url and renders
-// the extracted sample. It returns the standard form_error on any failure so
-// the user sees why nothing matched.
-func (s *Server) scrapePreview(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	pageURL := normalizeURL(scrapeURLFromForm(r))
-	if pageURL == "" {
-		renderError(w, r, "enter a url")
-		return
-	}
-	cfg := scrapeConfigFromForm(r)
-	if strings.TrimSpace(cfg.Item) == "" {
-		renderError(w, r, "an item selector is required")
-		return
-	}
-	sample := s.scrapeSample(r.Context(), pageURL, cfg, u.Timezone)
-	if sample == nil {
-		renderError(w, r, "no items matched those selectors")
-		return
-	}
-	web.Render(w, r, scrapeSample(sample))
-}
-
-// scrapeSample extracts up to 5 items from pageURL using cfg, returning nil
-// when the scrape fails or yields nothing.
-func (s *Server) scrapeSample(ctx context.Context, pageURL string, cfg feedparse.ScrapeConfig, tz string) []scrapeSampleItem {
-	res, err := feedparse.Scrape(ctx, pageURL, s.client, cfg, "", "")
-	if err != nil || len(res.Items) == 0 {
-		return nil
-	}
-	n := min(len(res.Items), 5)
-	out := make([]scrapeSampleItem, 0, n)
-	for _, it := range res.Items[:n] {
-		date := ""
-		if it.PublishedAt != "" {
-			date = web.TimeFmt(tz, it.PublishedAt)
-		}
-		out = append(out, scrapeSampleItem{Title: it.Title, Link: it.Link, Date: date})
-	}
-	return out
-}
-
-// scrapeConfigFromForm reads the six selector fields from a scrape builder
-// form submission.
-func scrapeConfigFromForm(r *http.Request) feedparse.ScrapeConfig {
-	return feedparse.ScrapeConfig{
-		Item:    strings.TrimSpace(r.FormValue("scrape_item")),
-		Title:   strings.TrimSpace(r.FormValue("scrape_title")),
-		Link:    strings.TrimSpace(r.FormValue("scrape_link")),
-		Summary: strings.TrimSpace(r.FormValue("scrape_summary")),
-		Date:    strings.TrimSpace(r.FormValue("scrape_date")),
-		Image:   strings.TrimSpace(r.FormValue("scrape_image")),
-	}
-}
-
-// scrapeURLFromForm returns the page to scrape from the builder form: the
-// initial open posts `url`, while re-posts (auto-detect, preview) include the
-// form's hidden `feed_url` field.
-func scrapeURLFromForm(r *http.Request) string {
+// pageURLFromForm returns the page URL from a form: the url field, else the
+// hidden feed_url field.
+func pageURLFromForm(r *http.Request) string {
 	if u := r.FormValue("url"); u != "" {
 		return u
 	}

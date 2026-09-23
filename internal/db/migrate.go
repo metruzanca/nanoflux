@@ -40,6 +40,7 @@ var migrations = []migration{
 	{27, schemaV27},
 	{28, schemaV28},
 	{29, schemaV29},
+	{30, schemaV30},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -472,6 +473,15 @@ ALTER TABLE authors DROP COLUMN url;
 // no backoff is in effect.
 const schemaV29 = `
 ALTER TABLE feeds ADD COLUMN next_poll_at TEXT;
+`
+
+// schemaV30 drops the CSS-selector scraper's columns from feeds. Scrape feeds
+// are gone: site-specific integrations are plugins now (see internal/plugin), and
+// routing is by URL shape, so a feed no longer needs a kind or a selector config.
+const schemaV30 = `
+DELETE FROM feeds WHERE kind = 'scrape';
+ALTER TABLE feeds DROP COLUMN kind;
+ALTER TABLE feeds DROP COLUMN scrape_config;
 `
 
 // Migrate applies any pending migrations in order, recording each in
