@@ -69,10 +69,7 @@ templ collectionPage(u store.User, d collectionData) {
 		</div>
 	</div>
 	if d.Collection.IsAuto {
-		<p class="muted small">auto collections are created from a feed's site and update automatically. Use edit to see every feed in this collection. You can delete this one; adding a feed on that site again will recreate it.</p>
-		<form class="delete-form" method="post" action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/delete" } onsubmit="return confirm('delete this auto collection? feeds stay; only the grouping is removed.')">
-			<button type="submit" class="danger">delete</button>
-		</form>
+		<p class="muted small">auto collections are created from a feed's site and update automatically. Use edit to see every feed in this collection.</p>
 	}
 	@ScopedItems(d.Scoped)
 
