@@ -28,6 +28,14 @@ type Poller struct {
 	client   *http.Client
 	interval time.Duration
 	workers  int
+
+	// hostCool tracks, per registrable host, a time before which the host must
+	// not be hit again — set when a fetch is rate limited. It is in-memory
+	// (reset on restart) and complements feeds.next_poll_at, which persists the
+	// per-feed backoff. A cool host causes its remaining due feeds to be skipped
+	// for the rest of the cycle.
+	hostMu   sync.Mutex
+	hostCool map[string]time.Time
 }
 
 func New(st *store.Store, interval time.Duration, workers int) *Poller {
@@ -39,6 +47,7 @@ func New(st *store.Store, interval time.Duration, workers int) *Poller {
 		client:   &http.Client{Timeout: fetchTimeout},
 		interval: interval,
 		workers:  workers,
+		hostCool: map[string]time.Time{},
 	}
 }
 
@@ -61,6 +70,11 @@ func (p *Poller) Run(ctx context.Context) {
 
 // PollDue fetches every enabled feed that is due and returns the number of
 // new items stored.
+//
+// Feeds are grouped by host (registrable domain) and each host's feeds are
+// fetched sequentially, while different hosts run in parallel up to the worker
+// limit. Serializing per host keeps us from bursting a single site — which is
+// what triggers rate limits — without slowing down distinct sites.
 func (p *Poller) PollDue(ctx context.Context) (int, error) {
 	feeds, err := p.store.Feeds.ListDue(db.Now())
 	if err != nil {
@@ -70,32 +84,102 @@ func (p *Poller) PollDue(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
+	groups := groupByHost(feeds)
+
 	var (
 		wg    sync.WaitGroup
 		sem   = make(chan struct{}, p.workers)
 		mu    sync.Mutex
 		total int
 	)
-	for _, f := range feeds {
+	for _, group := range groups {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(f store.Feed) {
+		go func(group []store.Feed) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			n, err := p.PollOne(ctx, f)
+			n := 0
+			for _, f := range group {
+				if ctx.Err() != nil {
+					return
+				}
+				// Another feed from this host already hit a rate limit this
+				// cycle: skip the rest rather than adding to the burst.
+				if p.hostCooling(f.FeedURL) {
+					continue
+				}
+				got, err := p.PollOne(ctx, f)
+				n += got
+				if err != nil {
+					log.Error("poll feed", "feed_id", f.ID, "url", f.FeedURL, "err", err)
+				}
+			}
 			mu.Lock()
 			total += n
 			mu.Unlock()
-			if err != nil {
-				log.Error("poll feed", "feed_id", f.ID, "url", f.FeedURL, "err", err)
-			}
-		}(f)
+		}(group)
 	}
 	wg.Wait()
 	if total > 0 {
-		log.Info("poller finished", "new_items", total, "feeds", len(feeds))
+		log.Info("poller finished", "new_items", total, "feeds", len(feeds), "hosts", len(groups))
 	}
 	return total, nil
+}
+
+// groupByHost buckets feeds by their registrable domain, preserving the input
+// order within and across buckets. A feed whose host cannot be derived gets its
+// own singleton bucket (keyed by URL) so it never blocks another feed.
+func groupByHost(feeds []store.Feed) [][]store.Feed {
+	byHost := map[string][]store.Feed{}
+	var order []string
+	for _, f := range feeds {
+		host := store.RegistrableDomain(f.FeedURL)
+		if host == "" {
+			host = "\x00" + f.FeedURL // unique bucket for an unparseable host
+		}
+		if _, ok := byHost[host]; !ok {
+			order = append(order, host)
+		}
+		byHost[host] = append(byHost[host], f)
+	}
+	out := make([][]store.Feed, 0, len(order))
+	for _, h := range order {
+		out = append(out, byHost[h])
+	}
+	return out
+}
+
+// hostCooling reports whether a host is currently backed off from an earlier
+// rate limit in this cycle.
+func (p *Poller) hostCooling(feedURL string) bool {
+	host := store.RegistrableDomain(feedURL)
+	if host == "" {
+		return false
+	}
+	p.hostMu.Lock()
+	defer p.hostMu.Unlock()
+	until, ok := p.hostCool[host]
+	if !ok {
+		return false
+	}
+	if time.Now().After(until) {
+		delete(p.hostCool, host)
+		return false
+	}
+	return true
+}
+
+// coolHost records that a host must not be polled again until t.
+func (p *Poller) coolHost(feedURL string, t time.Time) {
+	host := store.RegistrableDomain(feedURL)
+	if host == "" {
+		return
+	}
+	p.hostMu.Lock()
+	if existing, ok := p.hostCool[host]; !ok || t.After(existing) {
+		p.hostCool[host] = t
+	}
+	p.hostMu.Unlock()
 }
 
 // PollOne fetches a single feed, stores new items, and records poll metadata.
@@ -114,12 +198,23 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 	}
 	if errors.Is(err, feedparse.ErrNotModified) {
 		p.store.Feeds.SetPollMeta(f.ID, f.ETag, f.LastModified, db.Now(), "")
+		p.store.Feeds.SetNextPollAt(f.ID, "")
 		return 0, nil
 	}
 	fetched := db.Now()
 	if err != nil {
-		// Record the attempt and the failure so the owner can see the feed is
-		// broken; a broken feed isn't retried every tick.
+		// A rate limit is not a broken feed: back off until the host is ready
+		// again (persisted per feed) and cool the whole host for this cycle so
+		// its other due feeds don't add to the burst. Any other failure is
+		// recorded as the feed's error and retried on its normal interval.
+		var rl *feedparse.RateLimitError
+		if errors.As(err, &rl) {
+			until := time.Now().Add(rl.RetryAfter)
+			p.store.Feeds.SetNextPollAt(f.ID, db.FormatTime(until))
+			p.coolHost(f.FeedURL, until)
+			p.store.Feeds.SetPollMeta(f.ID, "", "", fetched, truncateError(err.Error()))
+			return 0, err
+		}
 		p.store.Feeds.SetPollMeta(f.ID, "", "", fetched, truncateError(err.Error()))
 		return 0, err
 	}
@@ -132,6 +227,8 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 	if err := p.store.Feeds.SetPollMeta(f.ID, res.ETag, res.LastModified, fetched, ""); err != nil {
 		return newItems, err
 	}
+	// A successful poll clears any rate-limit backoff.
+	p.store.Feeds.SetNextPollAt(f.ID, "")
 	// Record the feed's newest item time and adjust its poll interval (adaptive
 	// cadence, or back a quiet feed off to once a day). Both run on every
 	// successful poll so a feed that goes silent is caught even though no new

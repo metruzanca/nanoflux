@@ -78,15 +78,18 @@ func fetchYouTubeChannelViaBrowse(ctx context.Context, feedURL string, client *h
 		return Result{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "nanoflux/0.1")
+	req.Header.Set("User-Agent", UserAgent())
 
 	resp, err := client.Do(req)
 	if err != nil {
 		return Result{}, fmt.Errorf("youtube browse: %w", err)
 	}
 	defer resp.Body.Close()
+	if isRateLimited(resp) {
+		return Result{}, &RateLimitError{URL: youtubeBrowseBaseURL, Status: resp.StatusCode, RetryAfter: rateLimitBackoff(resp)}
+	}
 	if resp.StatusCode >= 400 {
-		return Result{}, fmt.Errorf("youtube browse: status %d", resp.StatusCode)
+		return Result{}, &StatusError{Code: resp.StatusCode, URL: youtubeBrowseBaseURL}
 	}
 
 	var root any

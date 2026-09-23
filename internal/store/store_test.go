@@ -907,6 +907,47 @@ func TestListDue(t *testing.T) {
 	}
 }
 
+// TestListDueHonorsNextPollAt covers the rate-limit backoff deadline: a feed is
+// not due while next_poll_at is in the future, and is due once it passes.
+func TestListDueHonorsNextPollAt(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "A", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "feed", "https://a.dev/rss.xml", "", "", 900)
+
+	// A future deadline suppresses the feed even though it was never polled.
+	future := db.FormatTime(time.Now().Add(time.Hour))
+	if err := s.Feeds.SetNextPollAt(f.ID, future); err != nil {
+		t.Fatal(err)
+	}
+	due, _ := s.Feeds.ListDue(db.Now())
+	if len(due) != 0 {
+		t.Fatalf("feed with a future next_poll_at should not be due")
+	}
+	if got, _ := s.Feeds.ByID(u.ID, f.ID); got.NextPollAt != future {
+		t.Fatalf("NextPollAt = %q, want %q", got.NextPollAt, future)
+	}
+
+	// A past deadline lets it become due again.
+	if err := s.Feeds.SetNextPollAt(f.ID, db.FormatTime(time.Now().Add(-time.Minute))); err != nil {
+		t.Fatal(err)
+	}
+	due, _ = s.Feeds.ListDue(db.Now())
+	if len(due) != 1 {
+		t.Fatalf("feed past its next_poll_at should be due, got %d", len(due))
+	}
+
+	// Clearing it also lets the feed be due.
+	s.Feeds.SetNextPollAt(f.ID, future)
+	if err := s.Feeds.SetNextPollAt(f.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	due, _ = s.Feeds.ListDue(db.Now())
+	if len(due) != 1 {
+		t.Fatalf("cleared next_poll_at should make the feed due, got %d", len(due))
+	}
+}
+
 func TestSourceIconStore(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

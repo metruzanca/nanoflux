@@ -25,7 +25,7 @@ const createFeed = `-- name: CreateFeed :one
 INSERT INTO feeds (user_id, author_id, title, feed_url, home_url, description, poll_interval_sec)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING id, user_id, author_id, title, feed_url, home_url, description,
-         etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, enabled, created_at
+         etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
 `
 
 type CreateFeedParams struct {
@@ -67,6 +67,7 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		&i.PollIntervalSec,
 		&i.PollIntervalAuto,
 		&i.LastItemAt,
+		&i.NextPollAt,
 		&i.Enabled,
 		&i.CreatedAt,
 	)
@@ -77,7 +78,7 @@ const createScrapeFeed = `-- name: CreateScrapeFeed :one
 INSERT INTO feeds (user_id, author_id, title, feed_url, home_url, description, kind, scrape_config, poll_interval_sec)
 VALUES (?, ?, ?, ?, ?, ?, 'scrape', ?, ?)
 RETURNING id, user_id, author_id, title, feed_url, home_url, description,
-         etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, enabled, created_at
+         etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
 `
 
 type CreateScrapeFeedParams struct {
@@ -121,6 +122,7 @@ func (q *Queries) CreateScrapeFeed(ctx context.Context, arg CreateScrapeFeedPara
 		&i.PollIntervalSec,
 		&i.PollIntervalAuto,
 		&i.LastItemAt,
+		&i.NextPollAt,
 		&i.Enabled,
 		&i.CreatedAt,
 	)
@@ -143,7 +145,7 @@ func (q *Queries) DeleteFeed(ctx context.Context, arg DeleteFeedParams) (sql.Res
 
 const getFeed = `-- name: GetFeed :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
 FROM feeds
 WHERE id = ? AND user_id = ?
 `
@@ -174,6 +176,7 @@ func (q *Queries) GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error) 
 		&i.PollIntervalSec,
 		&i.PollIntervalAuto,
 		&i.LastItemAt,
+		&i.NextPollAt,
 		&i.Enabled,
 		&i.CreatedAt,
 	)
@@ -182,7 +185,7 @@ func (q *Queries) GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error) 
 
 const getFeedAny = `-- name: GetFeedAny :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
 FROM feeds
 WHERE id = ?
 `
@@ -208,6 +211,7 @@ func (q *Queries) GetFeedAny(ctx context.Context, id int64) (Feed, error) {
 		&i.PollIntervalSec,
 		&i.PollIntervalAuto,
 		&i.LastItemAt,
+		&i.NextPollAt,
 		&i.Enabled,
 		&i.CreatedAt,
 	)
@@ -216,7 +220,7 @@ func (q *Queries) GetFeedAny(ctx context.Context, id int64) (Feed, error) {
 
 const getFeedByTitle = `-- name: GetFeedByTitle :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
 FROM feeds
 WHERE user_id = ? AND title = ? COLLATE NOCASE
 `
@@ -247,6 +251,7 @@ func (q *Queries) GetFeedByTitle(ctx context.Context, arg GetFeedByTitleParams) 
 		&i.PollIntervalSec,
 		&i.PollIntervalAuto,
 		&i.LastItemAt,
+		&i.NextPollAt,
 		&i.Enabled,
 		&i.CreatedAt,
 	)
@@ -255,7 +260,7 @@ func (q *Queries) GetFeedByTitle(ctx context.Context, arg GetFeedByTitleParams) 
 
 const listAllFeeds = `-- name: ListAllFeeds :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.kind, f.scrape_config, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.enabled, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.kind, f.scrape_config, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.enabled, f.created_at,
        u.username AS owner
 FROM feeds f
 JOIN users u ON u.id = f.user_id
@@ -280,6 +285,7 @@ type ListAllFeedsRow struct {
 	PollIntervalSec  int64          `json:"poll_interval_sec"`
 	PollIntervalAuto int64          `json:"poll_interval_auto"`
 	LastItemAt       sql.NullString `json:"last_item_at"`
+	NextPollAt       sql.NullString `json:"next_poll_at"`
 	Enabled          bool           `json:"enabled"`
 	CreatedAt        string         `json:"created_at"`
 	Owner            string         `json:"owner"`
@@ -312,6 +318,7 @@ func (q *Queries) ListAllFeeds(ctx context.Context) ([]ListAllFeedsRow, error) {
 			&i.PollIntervalSec,
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
+			&i.NextPollAt,
 			&i.Enabled,
 			&i.CreatedAt,
 			&i.Owner,
@@ -331,7 +338,7 @@ func (q *Queries) ListAllFeeds(ctx context.Context) ([]ListAllFeedsRow, error) {
 
 const listFeeds = `-- name: ListFeeds :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
 FROM feeds
 WHERE user_id = ?
 ORDER BY title
@@ -364,6 +371,7 @@ func (q *Queries) ListFeeds(ctx context.Context, userID int64) ([]Feed, error) {
 			&i.PollIntervalSec,
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
+			&i.NextPollAt,
 			&i.Enabled,
 			&i.CreatedAt,
 		); err != nil {
@@ -382,7 +390,7 @@ func (q *Queries) ListFeeds(ctx context.Context, userID int64) ([]Feed, error) {
 
 const listFeedsByAuthor = `-- name: ListFeedsByAuthor :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
 FROM feeds
 WHERE user_id = ? AND author_id = ?
 ORDER BY title
@@ -420,6 +428,7 @@ func (q *Queries) ListFeedsByAuthor(ctx context.Context, arg ListFeedsByAuthorPa
 			&i.PollIntervalSec,
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
+			&i.NextPollAt,
 			&i.Enabled,
 			&i.CreatedAt,
 		); err != nil {
@@ -438,7 +447,7 @@ func (q *Queries) ListFeedsByAuthor(ctx context.Context, arg ListFeedsByAuthorPa
 
 const listFeedsByAuthorWithUnread = `-- name: ListFeedsByAuthorWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.kind, f.scrape_config, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.enabled, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.kind, f.scrape_config, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.enabled, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.read = 0) AS unread
 FROM feeds f
@@ -470,6 +479,7 @@ type ListFeedsByAuthorWithUnreadRow struct {
 	PollIntervalSec  int64          `json:"poll_interval_sec"`
 	PollIntervalAuto int64          `json:"poll_interval_auto"`
 	LastItemAt       sql.NullString `json:"last_item_at"`
+	NextPollAt       sql.NullString `json:"next_poll_at"`
 	Enabled          bool           `json:"enabled"`
 	CreatedAt        string         `json:"created_at"`
 	AuthorName       sql.NullString `json:"author_name"`
@@ -503,6 +513,7 @@ func (q *Queries) ListFeedsByAuthorWithUnread(ctx context.Context, arg ListFeeds
 			&i.PollIntervalSec,
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
+			&i.NextPollAt,
 			&i.Enabled,
 			&i.CreatedAt,
 			&i.AuthorName,
@@ -523,9 +534,10 @@ func (q *Queries) ListFeedsByAuthorWithUnread(ctx context.Context, arg ListFeeds
 
 const listFeedsDue = `-- name: ListFeedsDue :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, kind, scrape_config, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
 FROM feeds
 WHERE enabled = 1
+  AND (next_poll_at IS NULL OR next_poll_at <= CAST(?1 AS TEXT))
   AND (last_polled_at IS NULL OR last_polled_at <= datetime(CAST(?1 AS TEXT), '-' || poll_interval_sec || ' seconds'))
 `
 
@@ -556,6 +568,7 @@ func (q *Queries) ListFeedsDue(ctx context.Context, now string) ([]Feed, error) 
 			&i.PollIntervalSec,
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
+			&i.NextPollAt,
 			&i.Enabled,
 			&i.CreatedAt,
 		); err != nil {
@@ -574,7 +587,7 @@ func (q *Queries) ListFeedsDue(ctx context.Context, now string) ([]Feed, error) 
 
 const listFeedsWithUnread = `-- name: ListFeedsWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.kind, f.scrape_config, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.enabled, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.kind, f.scrape_config, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.enabled, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.read = 0) AS unread
 FROM feeds f
@@ -601,6 +614,7 @@ type ListFeedsWithUnreadRow struct {
 	PollIntervalSec  int64          `json:"poll_interval_sec"`
 	PollIntervalAuto int64          `json:"poll_interval_auto"`
 	LastItemAt       sql.NullString `json:"last_item_at"`
+	NextPollAt       sql.NullString `json:"next_poll_at"`
 	Enabled          bool           `json:"enabled"`
 	CreatedAt        string         `json:"created_at"`
 	AuthorName       sql.NullString `json:"author_name"`
@@ -634,6 +648,7 @@ func (q *Queries) ListFeedsWithUnread(ctx context.Context, userID int64) ([]List
 			&i.PollIntervalSec,
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
+			&i.NextPollAt,
 			&i.Enabled,
 			&i.CreatedAt,
 			&i.AuthorName,
@@ -698,6 +713,22 @@ type SetFeedNextPageURLParams struct {
 
 func (q *Queries) SetFeedNextPageURL(ctx context.Context, arg SetFeedNextPageURLParams) error {
 	_, err := q.db.ExecContext(ctx, setFeedNextPageURL, arg.NextPageUrl, arg.ID)
+	return err
+}
+
+const setFeedNextPollAt = `-- name: SetFeedNextPollAt :exec
+UPDATE feeds
+SET next_poll_at = ?
+WHERE id = ?
+`
+
+type SetFeedNextPollAtParams struct {
+	NextPollAt sql.NullString `json:"next_poll_at"`
+	ID         int64          `json:"id"`
+}
+
+func (q *Queries) SetFeedNextPollAt(ctx context.Context, arg SetFeedNextPollAtParams) error {
+	_, err := q.db.ExecContext(ctx, setFeedNextPollAt, arg.NextPollAt, arg.ID)
 	return err
 }
 

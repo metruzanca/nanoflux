@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 )
 
 const rssBody = `<?xml version="1.0"?>
@@ -184,6 +185,84 @@ func TestFetchRejectsNonFeed(t *testing.T) {
 	_, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
 	if err == nil {
 		t.Fatal("expected error for non-feed body")
+	}
+}
+
+func TestFetchRateLimited(t *testing.T) {
+	cases := []struct {
+		name    string
+		status  int
+		headers map[string]string
+		want    time.Duration
+	}{
+		{"retry-after seconds", 429, map[string]string{"Retry-After": "12"}, 12 * time.Second},
+		{"ratelimit-reset float", 429, map[string]string{"x-ratelimit-reset": "18.0"}, 18 * time.Second},
+		{"retry-after http-date", 429, map[string]string{"Retry-After": time.Now().Add(90 * time.Second).UTC().Format(http.TimeFormat)}, 0},
+		{"no hint uses fallback", 429, nil, defaultRateLimitBackoff},
+		{"503 with hint", 503, map[string]string{"Retry-After": "7"}, 7 * time.Second},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				for k, v := range tc.headers {
+					w.Header().Set(k, v)
+				}
+				w.WriteHeader(tc.status)
+			}))
+			defer srv.Close()
+
+			_, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+			var rl *RateLimitError
+			if !errors.As(err, &rl) {
+				t.Fatalf("error = %v, want *RateLimitError", err)
+			}
+			if rl.Status != tc.status {
+				t.Errorf("status = %d, want %d", rl.Status, tc.status)
+			}
+			if tc.name == "retry-after http-date" {
+				// Date-based hints vary with the clock; just require a positive
+				// duration within range.
+				if rl.RetryAfter <= 0 || rl.RetryAfter > 2*time.Minute {
+					t.Errorf("date hint = %v, want a positive delay", rl.RetryAfter)
+				}
+				return
+			}
+			if rl.RetryAfter != tc.want {
+				t.Errorf("RetryAfter = %v, want %v", rl.RetryAfter, tc.want)
+			}
+		})
+	}
+}
+
+func TestFetchRateLimitClamped(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "999999")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	_, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	var rl *RateLimitError
+	if !errors.As(err, &rl) {
+		t.Fatalf("error = %v, want *RateLimitError", err)
+	}
+	if rl.RetryAfter != maxRateLimitBackoff {
+		t.Errorf("RetryAfter = %v, want clamp to %v", rl.RetryAfter, maxRateLimitBackoff)
+	}
+}
+
+func TestFetchUnadorned429(t *testing.T) {
+	// A 503 without a retry hint is not treated as a rate limit (it's an
+	// ordinary server error), so it stays a StatusError.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	_, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	var se *StatusError
+	if !errors.As(err, &se) {
+		t.Fatalf("error = %v, want *StatusError", err)
 	}
 }
 

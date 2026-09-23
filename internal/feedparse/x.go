@@ -87,15 +87,18 @@ func fetchXProfile(ctx context.Context, profileURL string, client *http.Client) 
 	if err != nil {
 		return Result{}, err
 	}
-	req.Header.Set("User-Agent", "nanoflux/0.1")
+	req.Header.Set("User-Agent", UserAgent())
 
 	resp, err := client.Do(req)
 	if err != nil {
 		return Result{}, fmt.Errorf("get %s: %w", profileURL, err)
 	}
 	defer resp.Body.Close()
+	if isRateLimited(resp) {
+		return Result{}, &RateLimitError{URL: profileURL, Status: resp.StatusCode, RetryAfter: rateLimitBackoff(resp)}
+	}
 	if resp.StatusCode >= 400 {
-		return Result{}, fmt.Errorf("get %s: status %d", profileURL, resp.StatusCode)
+		return Result{}, &StatusError{Code: resp.StatusCode, URL: profileURL}
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, xProfileBodyCap))
 	if err != nil {

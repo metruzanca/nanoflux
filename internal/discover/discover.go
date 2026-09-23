@@ -352,7 +352,7 @@ func (d *Discoverer) openPage(ctx context.Context, pageURL string) (io.ReadClose
 	if err != nil {
 		return nil, nil, err
 	}
-	req.Header.Set("User-Agent", "nanoflux/0.1")
+	req.Header.Set("User-Agent", feedparse.UserAgent())
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return nil, nil, err

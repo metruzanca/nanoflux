@@ -41,7 +41,8 @@ Configuration (env vars):
 | `NF_FILE_STORE` | `<db dir>/filestore` | local directory for avatars and custom icons when no S3 endpoint is configured |
 | `NF_LOG_LEVEL` | `info` | log level: `debug`, `info`, `warn`, `error` |
 | `NF_POLL_INTERVAL` | `15m` | poller wake interval |
-| `NF_POLL_WORKERS` | `4` | concurrent feed fetches |
+| `NF_POLL_WORKERS` | `4` | concurrent feed fetches (distinct hosts run in parallel; a host's feeds are fetched one at a time) |
+| `NF_USER_AGENT` | `nanoflux (<repo URL>)` | outbound User-Agent for feed fetching and discovery (leave the built-in crawler/browser agents alone) |
 | `NF_ADMIN_USER` / `NF_ADMIN_PASS` | — | create the first account at startup (takes precedence over admin/admin) |
 
 ### Object storage

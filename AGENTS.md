@@ -900,6 +900,32 @@ The error is surfaced only to the feed's owner: a "last poll failed" badge on
 the feed row, the full (truncated) text on the feed page, and `feed list` marks
 the state `error`. Never render it cross-user (NSFW).
 
+## Rate limiting and per-host pacing
+
+Fetches can be refused with a rate limit. `feedparse.Fetch` returns a typed
+`*feedparse.RateLimitError{Status, RetryAfter}` for HTTP `429`, and for `503`
+that carries a retry hint. The backoff is derived (in `internal/feedparse/ratelimit.go`)
+from `Retry-After` (seconds or HTTP-date) first, then `x-ratelimit-reset`
+(seconds; reddit sends a float), falling back to 5 min and clamping at 1 h.
+Do not treat an unadorned `503`/`4xx` as a rate limit — that stays a
+`*StatusError`.
+
+On a rate limit `PollOne` persists the deadline in `feeds.next_poll_at`
+(schemaV29) and records the error; `ListFeedsDue` honors it, so the feed is not
+retried until the host says it may be. A successful poll (or 304) clears it.
+
+`PollDue` groups due feeds by registrable domain (`store.RegistrableDomain`) and
+fetches each host's feeds **sequentially**, while distinct hosts run in parallel
+up to `NF_POLL_WORKERS`. This per-host serialization is what avoids bursting a
+single site. When one feed reports a rate limit, an in-memory host cooldown
+(`Poller.hostCool`, reset on restart) skips that host's remaining due feeds for
+the rest of the cycle; `next_poll_at` covers the longer cross-restart backoff.
+
+`NF_USER_AGENT` overrides the outbound User-Agent (default
+`nanoflux (<repo URL>)`, from `feedparse.UserAgent()`), used by feed fetching and
+discovery. Leave the deliberate browser/Googlebot agents alone — Instagram
+requires a crawler UA and the oEmbed/reddit resolvers need a browser UA.
+
 ## Adaptive polling and stale feeds
 
 Each feed's `poll_interval_sec` can be derived from its posting cadence

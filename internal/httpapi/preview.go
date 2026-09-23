@@ -220,7 +220,8 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 			return nil, err
 		}
 		var se *feedparse.StatusError
-		if errors.As(directErr, &se) {
+		var rl *feedparse.RateLimitError
+		if errors.As(directErr, &se) || errors.As(directErr, &rl) {
 			return nil, directErr
 		}
 		return nil, nil
@@ -234,6 +235,10 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 func feedPreviewError(err error) string {
 	if err == nil {
 		return ""
+	}
+	var rl *feedparse.RateLimitError
+	if errors.As(err, &rl) {
+		return "the site is rate-limiting requests (HTTP " + strconv.Itoa(rl.Status) + ") — wait a bit and try again"
 	}
 	var se *feedparse.StatusError
 	if errors.As(err, &se) {

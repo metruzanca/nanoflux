@@ -91,7 +91,7 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 	if err != nil {
 		return Result{}, err
 	}
-	req.Header.Set("User-Agent", "nanoflux/0.1")
+	req.Header.Set("User-Agent", UserAgent())
 	req.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/feed+json, application/xml, text/xml, */*")
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
@@ -111,6 +111,9 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 
 	if resp.StatusCode == http.StatusNotModified {
 		return Result{}, ErrNotModified
+	}
+	if isRateLimited(resp) {
+		return Result{}, &RateLimitError{URL: feedURL, Status: resp.StatusCode, RetryAfter: rateLimitBackoff(resp)}
 	}
 	if resp.StatusCode >= 400 {
 		if isYouTubeChannelFeed(feedURL) {

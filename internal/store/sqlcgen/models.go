@@ -59,6 +59,7 @@ type Feed struct {
 	PollIntervalSec  int64          `json:"poll_interval_sec"`
 	PollIntervalAuto int64          `json:"poll_interval_auto"`
 	LastItemAt       sql.NullString `json:"last_item_at"`
+	NextPollAt       sql.NullString `json:"next_poll_at"`
 	Enabled          bool           `json:"enabled"`
 	CreatedAt        string         `json:"created_at"`
 }
