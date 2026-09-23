@@ -87,6 +87,20 @@ func TestCooldown(t *testing.T) {
 	}
 }
 
+// buildExamplePlugin builds one of the example plugin modules into a temp dir
+// and returns the binary path.
+func buildExamplePlugin(t *testing.T, dir, name string) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), name)
+	cmd := exec.Command("go", "build", "-o", bin, ".")
+	cmd.Dir = filepath.Join("..", "..", "examples", dir)
+	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build example plugin %s: %v\n%s", dir, err, out)
+	}
+	return bin
+}
+
 // TestLoadExternalEndToEnd builds the example plugin and loads it over gRPC,
 // exercising handshake, version check, dispense, Discover, Fetch, and the
 // host-mediated HTTP path (including rate-limit propagation) through the broker.
@@ -100,14 +114,7 @@ func TestLoadExternalEndToEnd(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	// Build the example plugin into a temp dir.
-	bin := filepath.Join(t.TempDir(), "nanoflux-plugin-hello")
-	cmd := exec.Command("go", "build", "-o", bin, ".")
-	cmd.Dir = filepath.Join("..", "..", "examples", "plugin-hello")
-	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build example plugin: %v\n%s", err, out)
-	}
+	bin := buildExamplePlugin(t, "plugin-hello", "nanoflux-plugin-hello")
 
 	reg := NewRegistry()
 	hosts := NewHosts(upstream.Client(), NewCooldown())
@@ -138,6 +145,47 @@ func TestLoadExternalEndToEnd(t *testing.T) {
 	}
 }
 
+// TestLoadExternalYouTubeExample loads the example that serves the native
+// YouTube plugin over gRPC, proving the two forms are the same behaviour: the
+// external plugin matches the same URLs as the native one.
+func TestLoadExternalYouTubeExample(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a plugin binary")
+	}
+	bin := buildExamplePlugin(t, "plugin-youtube", "nanoflux-plugin-youtube")
+
+	reg := NewRegistry()
+	hosts := NewHosts(http.DefaultClient, NewCooldown())
+	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
+	defer cleanup()
+
+	if len(reg.Names()) != 1 || reg.Names()[0] != "youtube" {
+		t.Fatalf("loaded plugins = %v, want [youtube]", reg.Names())
+	}
+	// The external YouTube plugin must match discover on a channel page and
+	// fetch on the channel RSS URL, exactly like the native plugin.
+	discoverURL, _ := url.Parse("https://www.youtube.com/@SomeChannel")
+	if f := reg.Match(discoverURL, pluginapi.CapDiscover); f == nil {
+		t.Fatal("external youtube plugin should match discover on a channel page")
+	}
+	feedURL, _ := url.Parse("https://www.youtube.com/feeds/videos.xml?channel_id=UC5--wS0Ljbin1TjWQX6eafA")
+	if f := reg.Match(feedURL, pluginapi.CapFetch); f == nil {
+		t.Fatal("external youtube plugin should match the channel feed URL")
+	}
+}
+
+// TestLoadExternalVersionMismatch is covered by the in-process pluginapi tests;
+// here we assert a non-executable file in the dir is ignored.
+func TestLoadExternalIgnoresNonExecutable(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hi"), 0o644)
+	reg := NewRegistry()
+	LoadExternal(context.Background(), dir, reg, NewHosts(http.DefaultClient, NewCooldown()).For)
+	if !reg.Empty() {
+		t.Fatalf("expected no plugins, got %v", reg.Names())
+	}
+}
+
 // TestExternalRateLimitParity proves an external plugin sees a rate limit the
 // same way a native one does: the host returns it inline (not as a gRPC error),
 // so the plugin can turn it into a RateLimit that the poller understands.
@@ -151,13 +199,7 @@ func TestExternalRateLimitParity(t *testing.T) {
 	}))
 	defer limited.Close()
 
-	bin := filepath.Join(t.TempDir(), "nanoflux-plugin-hello")
-	cmd := exec.Command("go", "build", "-o", bin, ".")
-	cmd.Dir = filepath.Join("..", "..", "examples", "plugin-hello")
-	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build example plugin: %v\n%s", err, out)
-	}
+	bin := buildExamplePlugin(t, "plugin-hello", "nanoflux-plugin-hello")
 
 	reg := NewRegistry()
 	hosts := NewHosts(limited.Client(), NewCooldown())
@@ -176,17 +218,5 @@ func TestExternalRateLimitParity(t *testing.T) {
 	}
 	if rl.RetryAfter <= 0 {
 		t.Fatalf("retry-after should be positive: %+v", rl)
-	}
-}
-
-// TestLoadExternalVersionMismatch is covered by the in-process pluginapi tests;
-// here we assert a non-executable file in the dir is ignored.
-func TestLoadExternalIgnoresNonExecutable(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hi"), 0o644)
-	reg := NewRegistry()
-	LoadExternal(context.Background(), dir, reg, NewHosts(http.DefaultClient, NewCooldown()).For)
-	if !reg.Empty() {
-		t.Fatalf("expected no plugins, got %v", reg.Names())
 	}
 }

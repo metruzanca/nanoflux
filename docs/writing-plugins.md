@@ -5,11 +5,17 @@ nanoflux runs and talks to over gRPC. Plugins let you add a site-specific
 integration (a private API-backed feed, a bespoke scraper) without touching the
 nanoflux repo.
 
-Status: **planned — the plugin system is not implemented yet.** This is the
-authoring guide for the design in
-[`plugin-architecture.md`](plugin-architecture.md); the API below is the v0.1
-target and will change before v1.0.0. Read that document for the rationale
+Status: **v0.1 implemented.** The API is small and will change before v1.0.0.
+This is the authoring guide for the system described in
+[`plugin-architecture.md`](plugin-architecture.md); read that for the rationale
 (host-mediated HTTP, host-owned rate limiting, why go-plugin).
+
+Two worked examples ship in `examples/`: `plugin-hello` is a from-scratch
+external plugin; `plugin-youtube` serves nanoflux's native YouTube integration
+over gRPC. The latter is deliberately **identical** to the native plugin
+(`internal/plugin/native/youtube`) — it imports that very package rather than
+copying it, so the native and external forms cannot drift. At the time of
+writing they are the same code; only the packaging differs.
 
 ## Where plugins live
 
@@ -18,7 +24,7 @@ executables. In the container that directory is bind-mounted from the host, so
 you drop a compiled binary into `./plugins/` next to the repo:
 
 ```yaml
-# docker-compose.yml (planned)
+# docker-compose.yml
 volumes:
   - ./plugins:/plugins
 ```

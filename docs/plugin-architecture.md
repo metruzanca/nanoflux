@@ -246,6 +246,14 @@ response normalizers, the relative-time parser, and the fallback decision — al
 of which already exist in `internal/feedparse/youtube.go` and
 `internal/discover/host.go`, moved behind the interface.
 
+**Native and external are the same code.** The implementation lives once at
+`internal/plugin/native/youtube`; the native form is registered in-process and
+the external form is served over gRPC by `examples/plugin-youtube` (a `main`
+that imports the very same package). At the time of writing the two are
+identical and cannot drift, since there is only one implementation. A plugin in
+a *separate* repo cannot import `internal/...`, so it vendors or moves the
+implementation and keeps importing only `pluginapi`.
+
 ## Storage
 
 - `feeds.kind`: `'feed' | 'scrape'` → add `'plugin'`.
@@ -308,7 +316,7 @@ re-pointed at the `Fetcher` interface.
 | 3 | Port natives: **YouTube** (reference native plugin) done; instagram, patreon, x, scrape pending | partial |
 | 4 | Unify dispatch (`feedparse.Fetch` + `discoverCandidates` hooks), preview metadata precedence | done |
 | 5 | Discovery capability (plugin `Discover` runs in the add flow) | done |
-| 6 | Authoring story: `docs/writing-plugins.md`, example plugin, `NF_PLUGINS_DIR`, compose mount | done |
+| 6 | Authoring story: `docs/writing-plugins.md`, example plugins (`plugin-hello` from scratch, `plugin-youtube` mirroring the native one), `NF_PLUGINS_DIR`, compose mount | done |
 | 7 | Tests: registry, native YouTube, end-to-end external plugin load | done |
 
 **v0.1 scope note.** The plugin system is live: plugins load from
