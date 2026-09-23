@@ -294,7 +294,7 @@ func (q *Queries) ListCollectionsWithCounts(ctx context.Context, userID int64) (
 
 const listFeedsInCollection = `-- name: ListFeedsInCollection :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.kind, f.scrape_config, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.enabled, f.created_at
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.enabled, f.created_at
 FROM feeds f
 JOIN collection_feeds cf ON cf.feed_id = f.id
 WHERE cf.collection_id = ? AND f.user_id = ?
@@ -328,8 +328,6 @@ func (q *Queries) ListFeedsInCollection(ctx context.Context, arg ListFeedsInColl
 			&i.LastPolledAt,
 			&i.LastError,
 			&i.NextPageUrl,
-			&i.Kind,
-			&i.ScrapeConfig,
 			&i.PollIntervalSec,
 			&i.PollIntervalAuto,
 			&i.LastItemAt,

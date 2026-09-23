@@ -86,7 +86,7 @@ func TestFeedPreviewSingleAndNone(t *testing.T) {
 		t.Fatalf("page preview: %s", body)
 	}
 
-	// No feed anywhere: the preview offers the scrape builder.
+	// No feed anywhere: the preview offers the manual-entry escape hatch.
 	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte("<html><head><title>Nothing</title></head></html>"))
@@ -98,9 +98,6 @@ func TestFeedPreviewSingleAndNone(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), `role="alert"`) {
 		t.Fatalf("no-feed preview should render the error fragment: %s", rr.Body.String())
-	}
-	if !strings.Contains(rr.Body.String(), `hx-post="/fragments/scrape-builder"`) {
-		t.Fatalf("no-feed preview should offer the scrape builder: %s", rr.Body.String())
 	}
 	if !strings.Contains(rr.Body.String(), `hx-post="/fragments/manual-feed"`) {
 		t.Fatalf("no-feed preview should offer manual entry: %s", rr.Body.String())
@@ -136,9 +133,9 @@ func TestFeedPreviewRateLimitReason(t *testing.T) {
 	if strings.Contains(body, limited.URL) {
 		t.Fatalf("the underlying url must not leak: %s", body)
 	}
-	// Both escape hatches remain available.
-	if !strings.Contains(body, `hx-post="/fragments/manual-feed"`) || !strings.Contains(body, `hx-post="/fragments/scrape-builder"`) {
-		t.Fatalf("both fallback actions should remain: %s", body)
+	// The manual-entry escape hatch remains available.
+	if !strings.Contains(body, `hx-post="/fragments/manual-feed"`) {
+		t.Fatalf("manual entry should remain available: %s", body)
 	}
 }
 

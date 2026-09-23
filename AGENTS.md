@@ -44,7 +44,7 @@ The app's own pages are the primary navigation surface. This is a hard rule.
   (client-side, see the htmx section); the **default is most unread**, and the
   server pre-sorts `authors` rows the same way (ties by name) so the no-JS
   render matches. The "add feed" dialog is
-  the global add flow; its `feedPreviewFields` (and the scrape builder) only
+  the global add flow; its `feedPreviewFields` only
   render the new-author fields when no existing author is selected, and
   `authorFormFragment` returns an **empty 200** (not 204 — htmx doesn't swap on
   204) so picking an existing author clears `#new-author`.
@@ -147,54 +147,54 @@ the YouTube player requires to authorize playback (error 153); sending the
 embedding origin satisfies it. Keep that per-element override in place.
 
 YouTube's public `feeds/videos.xml?channel_id=` endpoint intermittently serves
-404 for active channels (a known upstream issue). `internal/feedparse/youtube.go`
-falls back to the site's internal `youtubei/v1/browse` API whenever a YouTube
-channel feed URL fails to fetch — the two live tests in the git history
+404 for active channels (a known upstream issue). The `internal/plugin/native/youtube`
+plugin falls back to the site's internal `youtubei/v1/browse` API whenever the
+RSS fetch is not usable — the two live tests in the git history
 (`TestLiveYouTubeFetch`, `TestLiveYouTubeHandleDiscover`) prove the flow, but
 they are network-dependent and intentionally not committed.
 
 - Feed URLs stay `https://www.youtube.com/feeds/videos.xml?channel_id=<id>`; the
-  fallback is transparent inside `feedparse.Fetch`, so discovery, the poller,
-  and preview all work unchanged.
+  fallback happens inside the plugin's `Fetch`, so discovery, the poller, and
+  preview all work unchanged.
 - Synthesized item GUIDs use the `yt:video:` prefix so they dedup against the
   native feed when the endpoint recovers. Do not change that.
-- Published times come from relative text ("1 month ago") parsed by
-  `parseRelativeTime`; they are approximate.
-- `youtubeBrowseBaseURL` is a package var so tests can point it at a mock.
+- Published times come from relative text ("1 month ago") parsed by the plugin;
+  they are approximate.
+- `browseBaseURL` is a package var so tests can point it at a mock.
 
 ## X (Twitter) profile feeds
 
 X removed RSS in 2013 and offers no public guest API in 2026; Nitter is
-DMCA'd. `internal/feedparse/x.go` therefore scrapes the profile page
+DMCA'd. The `internal/plugin/native/x` plugin scrapes the profile page
 (`x.com/<handle>`, `twitter.com/<handle>`) and extracts the posts embedded in
-the web client's Relay payload. `fetchXProfile` runs as a short-circuit inside
-`feedparse.Fetch` when the URL is an X profile, so discovery, the poller, and
-preview all work unchanged.
+the web client's Relay payload. Its `Match` accepts X profile URLs for both
+discover and fetch, so the poller, discovery, and preview all route to it.
 
 - The Relay payload is minified, unofficial, and split across `$R[n]` refs;
-  parsing is best-effort. `isXProfileURL` only accepts single-segment profile
+  parsing is best-effort. The plugin only accepts single-segment profile
   paths (rejects `/home`, `/search`, status URLs, etc.).
 - Item GUIDs are `tweet:<id>`; publish times come from the tweet's snowflake
   ID (`(id >> 22) + 1288834974657` ms), not the page's scattered timestamp refs.
-- `xProfileHosts` is a package var so tests can inject a mock host. If X starts
-  serving a login wall, `fetchXProfile` returns an error and the feed fails
+- `hosts` is a package var so tests can inject a mock host. If X starts
+  serving a login wall, the plugin returns an error and the feed fails
   gracefully.
 
 ## Instagram profile feeds
 
-Instagram has no public feed/API. `internal/feedparse/instagram.go` scrapes the
-profile page (`instagram.com/<handle>`) and extracts the recent-post grid
-embedded in the web client's Relay payload (`polaris_timeline_connection`).
-`fetchInstagramProfile` runs as a short-circuit inside `feedparse.Fetch` when
-the URL is an Instagram profile, so discovery, the poller, and preview all work
-unchanged (the profile URL is the stored `feed_url`, like X).
+Instagram has no public feed/API. The `internal/plugin/native/instagram` plugin
+scrapes the profile page (`instagram.com/<handle>`) and extracts the recent-post
+grid embedded in the web client's Relay payload (`polaris_timeline_connection`).
+Its `Match` accepts Instagram profile URLs for both discover and fetch, so
+discovery, the poller, and preview all route to it (the profile URL is the
+stored `feed_url`, like X).
 
 - **Crawler user-agent is required.** Instagram serves a login wall with no
   posts to browser user-agents; only crawler identities get the post grid.
-  `instagramUserAgent` (a Googlebot-compatible string) is a package var. This
+  The plugin declares it via `Meta.UserAgent` (a Googlebot-compatible string),
+  which the host applies to that plugin's mediated requests. This
   is the strongest caveat in the codebase: Instagram's `robots.txt` prohibits
   automated collection, so the scrape is unofficial and can break without
-  notice. On failure `fetchInstagramProfile` returns an error and the feed
+  notice. On failure the plugin returns an error and the feed
   fails gracefully.
 - Each node gives `pk`, `caption.text` (may be null), the cover thumbnail,
   `media_type`, and `product_type` (`clips` = reel) — but **not** the shortcode
@@ -213,32 +213,32 @@ unchanged (the profile URL is the stored `feed_url`, like X).
   contain braces) and deduped by `pk`. Only the first grid page (~12 posts) is
   available; older posts require login, so there is no "load older items"
   backfill.
-- `instagramProfileHosts` is a package var so tests can inject a mock host.
+- `hosts` is a package var so tests can inject a mock host.
 
 ## Patreon campaign feeds
 
-Patreon offers no RSS, but its public web API is credential-free, so
-`internal/feedparse/patreon.go` reads a creator's posts from it.
-`fetchPatreon` runs as a short-circuit inside `feedparse.Fetch` when the URL is
-a Patreon creator page (or its derived posts-API URL), so discovery, the poller,
-and preview all work unchanged — the creator page URL is the stored `feed_url`,
-like X and Instagram.
+Patreon offers no RSS, but its public web API is credential-free, so the
+`internal/plugin/native/patreon` plugin reads a creator's posts from it. Its
+`Match` accepts a creator page (or its derived posts-API URL) for discover and
+fetch, so discovery, the poller, and preview all route to it — the creator page
+URL is the stored `feed_url`, like X and Instagram. The campaign is fetched via
+`Host.Do`.
 
 - **Campaign resolution.** A page URL (`patreon.com/cw/<vanity>` or
   `patreon.com/<vanity>`) is resolved with
   `GET /api/campaigns?filter[vanity]=<vanity>`; the API returns `data[0]` with
   the campaign id, name (`name`), canonical url, summary, and `avatar_photo_url`.
   `filter[user_id]` returns nothing, so vanity is the only key; `/user?u=<id>`
-  is unsupported. `fetchPatreon` then fetches
+  is unsupported. The plugin then fetches
   `GET /api/campaigns/<id>/posts?page[count]=20`.
 - **Recognition is URL-shaped** (host + path), matching X/Instagram — no
-  `feeds.kind`, no schema change. `isPatreonProfileURL` accepts the two page
-  forms and rejects `api`/`user`/`posts`/etc.; `isPatreonPostsURL` accepts the
-  posts-API URL. `patreonProfileHosts` and `patreonAPIBase` are package vars so
+  `feeds.kind`, no schema change. The plugin accepts the two page
+  forms and rejects `api`/`user`/`posts`/etc.; it also accepts the
+  posts-API URL. `apiBase` and `hosts` are package vars so
   tests can inject mock hosts.
 - **Pagination is free.** The posts response carries `links.next`, a cursor URL
   (`.../posts?page[count]=20&page[cursor]=<published_at>`), returned as
-  `Result.NextPageURL`. That cursor is a posts-API URL, which `Fetch` recognizes,
+  `Result.NextPageURL`. That cursor is a posts-API URL, which the plugin recognizes,
   so the existing "load older items" walk (`PollOlder`, up to 5 pages/click)
   works without changes.
 - **Items.** GUID `patreon:<post id>`; link from `attributes.url` (falling back
@@ -258,39 +258,15 @@ like X and Instagram.
   page's `structured-data` JSON-LD `mainEntity.image` (the generic favicon would
   otherwise win), mirroring the YouTube og:image case.
 
-## Scraped-site feeds (CSS selectors)
+## Unsupported sites
 
 Some sites have no feed at all. When discovery finds none, the add-feed preview
-offers "build a feed by scraping this page": the user picks CSS selectors (with
-a best-effort auto-detect) and sees a live sample before saving. The saved feed
-is a normal row — `feeds.kind='scrape'` (schemaV24) — and the poller extracts
-items from the page on every poll, just like the X/YouTube scrapers.
+(`feedPreview`) renders `noFeedFound` — a `role="alert"` banner with an "insert
+manually" escape hatch (`POST /fragments/manual-feed`, which renders the normal
+`feedPreviewFields` form pre-filled with the entered url as the feed url). The
+CSS-selector scraper was removed: site-specific integrations are **plugins** now
+(see the Plugins section), so there is no per-feed selector feature.
 
-- **Recognition is stored, not URL-shaped.** `feeds.kind` (`store.ScrapeKind`)
-  tells the poller to call `feedparse.Scrape` instead of `feedparse.Fetch`
-  (`PollOne` in `internal/poller/poller.go`). Scrape feeds are created/updated
-  via `FeedStore.CreateScrape`/`UpdateScrape`; the six selectors live in
-  `feeds.scrape_config` as JSON (`ScrapeConfig{Item,Title,Link,Summary,Date,Image}`).
-- **The engine is `internal/feedparse/scrape.go`** using `github.com/andybalholm/cascadia`
-  (CSS selector matching over `x/net/html`, no goquery). Item link/title fall
-  back to the first in-item `<a href>` when their selectors are blank; dates
-  prefer the `datetime` attribute, then text, parsed from a small layout set
-  (approximate, like X); relative URLs resolve against the page base and links
-  run through `StripTracking`. Item GUIDs are `scrape:<sha1(link+title)>` for
-  stable dedup. `AutoDetect` tries common containers (`article`, `.post`,
-  `.entry`, ...) and returns the first that yields ≥2 linked items — best
-  effort, user-editable.
-- **Web flow:** `feedPreview` renders `noFeedFound` (a `role="alert"` banner)
-  instead of a bare "no feed found" error, offering two escape hatches side by
-  side: "build a feed by scraping this page" (`POST /fragments/scrape-builder`,
-  which renders the builder `scrapeBuilder` in `views_feeds.templ` with the live
-  sample) and "insert manually" (`POST /fragments/manual-feed`, which renders the
-  normal `feedPreviewFields` form pre-filled with the entered url as the feed
-  url). Selector changes re-preview via `POST /fragments/scrape-preview`. Save
-  posts the normal `/feeds` form with `kind=scrape`; errors use the standard
-  `writeFormError`/`renderError` shapes. The builder and the edit page
-  (`feedFields` renders the selector fields when `kind='scrape'`) share the
-  `scrape_*` form field names — keep them in sync.
 - **Surfacing fetch failures:** when discovery finds nothing *and* the page
   could not be read, the user gets a reason (e.g. "the site is rate-limiting
   requests (HTTP 429)") instead of an ambiguous "no feed found". `discover`
@@ -301,9 +277,9 @@ items from the page on every poll, just like the X/YouTube scrapers.
   message that never includes the raw URL (the JSON API uses the same mapper, so
   it also can't leak internals). A plain "not a feed" parse error on the direct
   attempt is *not* surfaced — it just means there is no feed.
-- **Web-only:** the JSON API (`/api/save`) still rejects non-feeds; scrape feeds
-  are created from the web UI only. Do not route a scrape feed through
-  `feedparse.Fetch`.
+- **Manual entry** saves a URL as typed; the web `createFeed` does not fetch or
+  validate it (unlike `apiSave`). The first poll surfaces any failure via
+  `feeds.last_error`.
 
 ## Reddit link posts
 
@@ -431,7 +407,7 @@ icons that override the built-in X/YouTube/globe set.
   the user into every fragment.
 - The icon is looked up from the feed's **home page**, falling back to its feed
   URL (`feedIconURL`/`itemIconURL` in `internal/httpapi/web.go`): some feed URLs
-  (API endpoints, scrape targets) have no favicon while the home page does.
+  (API endpoints, plugin targets) have no favicon while the home page does.
   `ItemWithFeed.FeedHomeURL` carries the joined feed's home for item cards, so
   the item queries select `f.home_url` alongside `f.feed_url`.
 - Custom icons are stored in the `source_icons` table (domain unique per user,
@@ -472,7 +448,7 @@ mapping never changes feeds that were already created (they store their resolved
   are skipped with a server-side log, never fatal.
 - **Auto-filled urls strip a leading `www.` subdomain** (`stripWWW` in
   `internal/httpapi/web.go`): the find-author preview form's feed/home fields
-  and the scrape builder are cleaned so "https://www.example.com" shows up as
+  are cleaned so "https://www.example.com" shows up as
   "https://example.com". Manual edits on save are left alone.
 - **Fallback:** when a mapped URL yields no feed (direct fetch or discovery), the
   original URL is discovered instead, so a stale mapping never blocks adding a
@@ -523,7 +499,7 @@ sections, each a compact list of that collection's unread items (capped at
 
 - The config is JSON in `users.home_config` (schemaV27), parsed by
   `parseHomeConfig` (`internal/httpapi/home.go`); the store keeps the raw string
-  (set via `UserStore.SetHomeConfig`), like `feeds.scrape_config`. The shape is
+  (set via `UserStore.SetHomeConfig`). The shape is
   `[{"kind":"collection","ref_id":<id>,"mode":"list|grid"}]` — `kind` leaves
   room for more source types later; the first cut only renders `collection`
   entries. `mode` is the per-section render method, normalized to `list` when
@@ -1206,7 +1182,6 @@ The plugin system loads feed integrations without rebuilding nanoflux. See
   plugin. Tests in `internal/plugin` build both examples and load them over the
   broker.
 - **v0.1 limits:** plugins route by URL shape (no `feeds.kind='plugin'` or
-  per-feed config column yet), so the CSS-selector **scraper still runs built-in**
-  (it needs per-feed selector config); the reddit/GitHub/Bluesky discovery rules
-  and YouTube's `PageMeta` avatar case also stay in core. No hot reload. Do not
-  start a schema change for plugin config without revisiting the design doc.
+  per-feed config column yet); the reddit/GitHub/Bluesky discovery rules and
+  YouTube's `PageMeta` avatar case stay in core. No hot reload. Do not start a
+  schema change for plugin config without revisiting the design doc.

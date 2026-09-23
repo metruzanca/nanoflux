@@ -4,7 +4,6 @@ go 1.26.6
 
 require (
 	github.com/a-h/templ v0.3.1020
-	github.com/andybalholm/cascadia v1.3.5
 	github.com/charmbracelet/log v1.0.0
 	github.com/hashicorp/go-plugin v1.6.3
 	github.com/minio/minio-go/v7 v7.2.1

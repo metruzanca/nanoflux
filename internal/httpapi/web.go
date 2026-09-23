@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"html/template"
 	"net"
 	"net/http"
@@ -17,7 +16,6 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
-	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -66,8 +64,6 @@ type feedForm struct {
 	PollIntervalAuto bool
 	CollectionIDs    []int64
 	Enabled          bool
-	Kind             string                 // "feed" or "scrape"
-	ScrapeConfig     feedparse.ScrapeConfig // selector config for scrape feeds
 }
 
 type feedsData struct {
@@ -696,24 +692,7 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 	if title == "" || feedURL == "" {
 		return store.Feed{}, "title and feed url are required"
 	}
-	var (
-		f   store.Feed
-		err error
-	)
-	if r.FormValue("kind") == store.ScrapeKind {
-		cfg := scrapeConfigFromForm(r)
-		if strings.TrimSpace(cfg.Item) == "" {
-			return store.Feed{}, "an item selector is required"
-		}
-		raw, err := json.Marshal(cfg)
-		if err != nil {
-			log.Error("marshal scrape config", "err", err)
-			return store.Feed{}, "could not create feed"
-		}
-		f, err = s.store.Feeds.CreateScrape(userID, authorID, title, feedURL, homeURL, "", string(raw), interval)
-	} else {
-		f, err = s.store.Feeds.Create(userID, authorID, title, feedURL, homeURL, "", interval)
-	}
+	f, err := s.store.Feeds.Create(userID, authorID, title, feedURL, homeURL, "", interval)
 	if err != nil {
 		log.Error("create feed", "err", err)
 		return store.Feed{}, "could not create feed"
@@ -802,12 +781,6 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 		ID: f.ID, Title: f.Title, FeedURL: f.FeedURL, HomeURL: f.HomeURL,
 		Description: f.Description, AuthorID: f.AuthorID,
 		PollIntervalSec: f.PollIntervalSec, PollIntervalAuto: f.PollIntervalAuto, Enabled: f.Enabled,
-		Kind: f.Kind,
-	}
-	if f.Kind == store.ScrapeKind {
-		if cfg, err := feedparse.ParseScrapeConfig(f.ScrapeConfig); err == nil {
-			form.ScrapeConfig = cfg
-		}
 	}
 	collections, _ := s.store.Collections.List(u.ID)
 	form.CollectionIDs = s.collectionIDsForFeed(u.ID, f.ID)
@@ -923,25 +896,7 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, back, http.StatusFound)
 		return
 	}
-	if old.Kind == store.ScrapeKind {
-		cfg := scrapeConfigFromForm(r)
-		if strings.TrimSpace(cfg.Item) == "" {
-			http.Redirect(w, r, back, http.StatusFound)
-			return
-		}
-		raw, err := json.Marshal(cfg)
-		if err != nil {
-			log.Error("marshal scrape config", "err", err)
-			http.Error(w, "update failed", http.StatusInternalServerError)
-			return
-		}
-		if err := s.store.Feeds.UpdateScrape(u.ID, id, authorID, title, feedURL,
-			r.FormValue("home_url"), "", string(raw), interval, auto, r.FormValue("enabled") == "1"); err != nil {
-			log.Error("update scrape feed", "err", err)
-			http.Error(w, "update failed", http.StatusInternalServerError)
-			return
-		}
-	} else if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
+	if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
 		r.FormValue("home_url"), "", interval, auto, r.FormValue("enabled") == "1"); err != nil {
 		log.Error("update feed", "err", err)
 		http.Error(w, "update failed", http.StatusInternalServerError)
@@ -1022,7 +977,7 @@ func normalizeURL(s string) string {
 
 // stripWWW removes a leading "www." subdomain from a URL's host, preserving the
 // rest of the host's case and any port. Auto-filled urls (the find-author
-// preview form's feed/home fields, the scrape builder, new-author prefill) are
+// preview form's feed/home fields, new-author prefill) are
 // cleaned through this so "https://www.example.com" shows up as
 // "https://example.com". Returns s unchanged when it can't be parsed.
 func stripWWW(s string) string {

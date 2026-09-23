@@ -22,8 +22,6 @@ type Feed struct {
 	LastPolledAt     string
 	LastError        string
 	NextPageURL      string
-	Kind             string // "feed" (RSS/Atom) or "scrape" (CSS-selector scraper)
-	ScrapeConfig     string // JSON selector config for kind == "scrape", "" otherwise
 	PollIntervalSec  int
 	PollIntervalAuto bool   // derive poll_interval_sec from the posting cadence
 	LastItemAt       string // newest item time (published or fetched); "" when none
@@ -31,9 +29,6 @@ type Feed struct {
 	Enabled          bool
 	CreatedAt        string
 }
-
-// ScrapeKind marks feeds built by scraping a page rather than parsing a feed.
-const ScrapeKind = "scrape"
 
 // FeedWithUnread joins a feed with its author's name and unread item count.
 type FeedWithUnread struct {
@@ -69,50 +64,6 @@ func (s *FeedStore) ByID(userID, id int64) (Feed, error) {
 		return Feed{}, err
 	}
 	return toFeed(f), nil
-}
-
-// CreateScrape creates a feed whose items come from CSS-selector scraping of
-// scrapeURL instead of a parsed feed. scrapeConfig holds the selector JSON.
-func (s *FeedStore) CreateScrape(userID, authorID int64, title, scrapeURL, homeURL, description, scrapeConfig string, pollIntervalSec int) (Feed, error) {
-	f, err := s.q.CreateScrapeFeed(context.Background(), sqlcgen.CreateScrapeFeedParams{
-		UserID:          userID,
-		AuthorID:        authorID,
-		Title:           title,
-		FeedUrl:         scrapeURL,
-		HomeUrl:         ns(homeURL),
-		Description:     ns(description),
-		ScrapeConfig:    ns(scrapeConfig),
-		PollIntervalSec: int64(pollIntervalSec),
-	})
-	if err != nil {
-		return Feed{}, fmt.Errorf("create scrape feed: %w", err)
-	}
-	return toFeed(f), nil
-}
-
-// UpdateScrape updates a scrape-kind feed's fields, keeping kind set to
-// 'scrape' and refreshing its selector config.
-func (s *FeedStore) UpdateScrape(userID, id int64, authorID int64, title, scrapeURL, homeURL, description, scrapeConfig string, pollIntervalSec int, pollIntervalAuto bool, enabled bool) error {
-	res, err := s.q.UpdateScrapeFeed(context.Background(), sqlcgen.UpdateScrapeFeedParams{
-		AuthorID:         authorID,
-		Title:            title,
-		FeedUrl:          scrapeURL,
-		HomeUrl:          ns(homeURL),
-		Description:      ns(description),
-		ScrapeConfig:     ns(scrapeConfig),
-		PollIntervalSec:  int64(pollIntervalSec),
-		PollIntervalAuto: boolInt(pollIntervalAuto),
-		Enabled:          enabled,
-		ID:               id,
-		UserID:           userID,
-	})
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
 }
 
 // ByIDAny returns a feed by id regardless of user. Used by the poller and CLI.
@@ -330,7 +281,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.Kind, f.ScrapeConfig, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.Enabled, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.Enabled, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

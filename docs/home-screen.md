@@ -60,8 +60,7 @@ per-section limit from the start.
 
 ### Data model
 
-Store the ordered section list as JSON on the user, mirroring how
-`feeds.scrape_config` is stored:
+Store the ordered section list as JSON on the user:
 
 - `users.home_config` TEXT NULL — JSON array of
   `{"kind":"unread|favorites|collection|list|author|feed","ref_id":<int>,
@@ -69,7 +68,7 @@ Store the ordered section list as JSON on the user, mirroring how
 - `schemaV27`: `ALTER TABLE users ADD COLUMN home_config TEXT;`
 - `User.HomeConfig string`; `UserStore.SetHomeConfig(userID, json)`.
 - Parse/serialize in `internal/httpapi` (a small `homeConfig` type), not in the
-  store — the store keeps the raw string, like `scrape_config`.
+  store — the store keeps the raw string.
 
 Alternative considered: a relational `home_sections` table. More code and more
 queries for an inherently small, per-user, ordered blob; JSON wins here.
