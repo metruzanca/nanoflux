@@ -2,6 +2,14 @@
 description = "Regenerate templ components and sqlc queries"
 run = "templ generate && sqlc generate"
 
+[tasks.icons]
+description = "Regenerate the pwa + extension icons"
+run = "go run ./tools/iconsgen"
+
+[tasks.extension]
+description = "Package the browser extension into dist/"
+run = "go run ./tools/extzip"
+
 [tasks.dev]
 description = "Watch Go sources and rerun the server on change"
 run = "mise watch -r dev-serve"

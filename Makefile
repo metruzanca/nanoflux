@@ -20,7 +20,7 @@ latest_image_tag = $(shell \
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop restart update icons extension status logs shell version backup restore down
+.PHONY: help start stop restart update status logs shell version backup restore
 
 help:
 	@echo "nanoflux - manage your instance"
@@ -34,12 +34,10 @@ help:
 	@echo "  shell     open a shell in the app container"
 	@echo "  version   print the running app's version"
 	@echo "  backup    snapshot the database and file store into backups/"
-	@echo "  restore   restore from backups/ (usage: make restore ARCHIVE=backups/<file>.tar.gz)"
-	@echo "  down      stop and remove containers (data kept)"
-	@echo "  extension package the browser extension into dist/"
-	@echo "  icons     regenerate the pwa + extension icons"
+	@echo "  restore   restore from backups/ and restart (usage: make restore ARCHIVE=backups/<file>.tar.gz)"
 	@echo ""
 	@echo "Run with podman: make <cmd> RUNTIME=podman"
+	@echo "Development tasks (icons, extension, dev, gen) live in mise: mise tasks"
 
 start:
 	@if [ ! -f .env ]; then \
@@ -78,14 +76,6 @@ update:
 status:
 	$(COMPOSE) ps
 
-icons:
-	go run ./tools/iconsgen
-
-# Package the browser extension for load-unpacked. The app also serves these
-# files as a zip from /settings/extension.zip, built from the embedded copy.
-extension:
-	go run ./tools/extzip
-
 logs:
 	$(COMPOSE) logs -f
 
@@ -96,49 +86,23 @@ shell:
 version:
 	$(COMPOSE) exec nanoflux nanoflux version
 
-# Snapshot the database and file store into backups/. This runs the app's own
-# `nanoflux backup`, which snapshots the SQLite database with VACUUM INTO (a
-# consistent copy even while the server runs in WAL mode) and includes the local
-# file store. A plain tar of the live volume would be inconsistent.
-#
-# Both targets refuse to run unless the volumes exist, so they can never mount a
-# missing name (podman would silently create an empty volume and archive
-# nothing). The volume names are pinned in docker-compose.yml.
-VOLUMES := nanoflux-db nanoflux-files
-
+# Snapshot the database and file store into backups/. The volumes, mounts, and
+# env come from docker-compose.yml; the app's own `nanoflux backup` does the work
+# (VACUUM INTO, so the snapshot is consistent even with the server running in WAL
+# mode). `compose run` works whether or not the server is up.
 backup:
 	@mkdir -p backups
-	@for v in $(VOLUMES); do $(RUNTIME) volume exists $$v || { echo "volume $$v does not exist - start the instance first (make start)"; exit 1; }; done
-	$(RUNTIME) run --rm \
-		-e NF_DB=/data/rss.db \
-		-e NF_FILE_STORE=/filestore \
-		-v nanoflux-db:/data \
-		-v nanoflux-files:/filestore:ro \
-		-v $(CURDIR)/backups:/backup \
-		$(GHCR_IMAGE):latest \
-		backup -o /backup
+	$(COMPOSE) run --rm -T nanoflux backup -o /backups
 
+# Restore from an archive in backups/, then bring the instance back up. The app
+# CLI validates the archive and swaps the database/file store in place; stopping
+# first means a restore works whether the instance was running or already
+# stopped.
 restore:
 	@test -n "$(ARCHIVE)" || (echo "usage: make restore ARCHIVE=backups/nanoflux-<timestamp>.tar.gz"; exit 1)
 	@case "$(ARCHIVE)" in */*) echo "ARCHIVE must be a filename inside backups/"; exit 1;; esac
 	@test -f "backups/$(ARCHIVE)" || (echo "backups/$(ARCHIVE) not found"; exit 1)
-	@for v in $(VOLUMES); do $(RUNTIME) volume exists $$v || { echo "volume $$v does not exist"; exit 1; }; done
 	$(COMPOSE) stop
-	@# Extract straight into the mounted volumes with alpine rather than the app
-	@# CLI: the archive holds data/rss.db + filestore/… (no bare dir entries), so
-	@# extract the whole archive at the root. Stale -wal/-shm are cleared so the
-	@# restored DB opens cleanly.
-	$(RUNTIME) run --rm \
-		-v nanoflux-db:/data \
-		-v nanoflux-files:/filestore \
-		-v $(CURDIR)/backups:/backup:ro \
-		alpine:3.20 \
-		sh -c 'set -e; \
-			rm -rf /data/* /data/.[!.]* /filestore/* /filestore/.[!.]* 2>/dev/null || true; \
-			tar xzf "/backup/$(ARCHIVE)" -C /; \
-			rm -f /data/rss.db-wal /data/rss.db-shm; \
-			test -s /data/rss.db'
-	@echo "restore complete - start the instance with: make start"
-
-down:
-	$(COMPOSE) down
+	$(COMPOSE) run --rm -T nanoflux restore /backups/$(ARCHIVE)
+	$(COMPOSE) up -d
+	@echo "restore complete - instance is back up"
