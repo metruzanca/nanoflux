@@ -116,7 +116,7 @@ templ feedPreviewFields(d feedPreviewForm) {
 }
 
 templ feedChooser(d feedChoose) {
-	<div class="choose">
+	<form class="choose stack" hx-post="/fragments/feed-preview" hx-target={ d.Target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped, #feed-redirect">
 		<p class="muted">found { len(d.Candidates) } feeds on that page — pick one</p>
 		if d.Redirect {
 			<input type="hidden" id="feed-redirect" name="redirect" value="1"/>
@@ -126,7 +126,8 @@ templ feedChooser(d feedChoose) {
 				<option value={ c.FeedURL }>{ c.Title }</option>
 			}
 		</select>
-	</div>
+		<button type="submit">use this feed</button>
+	</form>
 }
 
 // noFeedFound is the "no feed at that url" banner with an opt-in scrape

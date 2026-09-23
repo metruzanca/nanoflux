@@ -194,6 +194,10 @@ func TestFeedPreviewMultiple(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "pick one") || !strings.Contains(rr.Body.String(), feedSrv.URL+"/atom") {
 		t.Fatalf("choose fragment: %s", rr.Body.String())
 	}
+	// The chooser must offer an explicit submit, not just auto-advance on change.
+	if !strings.Contains(rr.Body.String(), "use this feed") {
+		t.Fatalf("choose fragment should have a submit button: %s", rr.Body.String())
+	}
 
 	// Step 2: chosen candidate -> single form.
 	rr = doForm(h, "POST", "/fragments/feed-preview", url.Values{

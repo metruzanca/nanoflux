@@ -410,11 +410,32 @@ table.shortcuts td:first-child { color: var(--fg); font-weight: 600; white-space
 div.stats { gap: 1.5rem; margin: 0.9rem 0; flex-wrap: wrap; }
 div.stats strong { font-size: 1.1rem; }
 
+/* Author page header: the name sits at the top of the avatar, and the edit
+   affordance tucks into the top-right corner of the card (inside its padding). */
+.author-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.author-head-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.author-head-identity h1 { margin: 0; }
+
 /* Author card stats: a compact, left-aligned strip under the author name. */
 .author-stats { border-top: 1px solid var(--border); margin-top: 0.75rem; padding-top: 0.6rem; }
 .author-stats div.stats { justify-content: flex-start; gap: 1.25rem; margin: 0.25rem 0 0; }
 .author-stats div.stats span { color: var(--muted); font-size: 0.85rem; }
 .author-stats div.stats strong { color: var(--fg); }
+
+/* The author page's feeds and scoped items have no section headings, so give
+   them the breathing room a heading used to provide. */
+.author-feeds { margin-top: 1.5rem; }
+.author-items { margin-top: 1.5rem; }
 .error.banner { padding: 0.7rem 0.9rem; }
 .badge.danger { background: rgba(255, 107, 107, 0.18); color: var(--fg); }
 
@@ -725,7 +746,7 @@ dialog.palette input:focus { outline: none; }
   vertical-align: middle;
 }
 .avatar-sm { width: 2rem; height: 2rem; }
-.avatar-lg { width: 6rem; height: 6rem; }
+.avatar-lg { width: 4rem; height: 4rem; }
 .avatar-default {
   display: inline-flex;
   align-items: center;

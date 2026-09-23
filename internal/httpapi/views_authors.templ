@@ -160,7 +160,7 @@ templ authorPageLinks(links []store.AuthorLink) {
 		<p class="author-links">
 			for i, l := range links {
 				if i > 0 {
-					· 
+					·
 				}
 				<a href={ templ.URL(l.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ web.LinkLabel(l.Label, l.URL) }</a>
 			}
@@ -170,8 +170,8 @@ templ authorPageLinks(links []store.AuthorLink) {
 
 templ authorPage(u store.User, d authorData) {
 	<section class="card">
-		<div class="row">
-			<div class="row">
+		<div class="author-head">
+			<div class="author-head-identity">
 				if d.Author.AvatarKey != "" {
 					<img class="avatar avatar-lg" src={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/avatar?v=" + url.QueryEscape(d.Author.LastFetchedAt) } alt=""/>
 				} else if d.Author.AvatarURL != "" {
@@ -187,11 +187,13 @@ templ authorPage(u store.User, d authorData) {
 		}
 		@authorStats(d.Stats, len(d.Rows), d.Frequency, d.Timezone)
 	</section>
-	<h2>feeds</h2>
-	@FeedsList(d.Rows)
-	<button type="button" class="link" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>
-	<h2>items</h2>
-	@ScopedItems(d.Scoped)
+	<div class="author-feeds">
+		@FeedsList(d.Rows)
+		<button type="button" class="link" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>
+	</div>
+	<div class="author-items">
+		@ScopedItems(d.Scoped)
+	</div>
 
 	<dialog id="add-author-feed-dialog" class="modal">
 		<div class="row">
