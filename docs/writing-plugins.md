@@ -18,9 +18,10 @@ writing they are the same code; only the packaging differs.
 
 ## Where plugins live
 
-nanoflux scans a single directory, `NF_PLUGINS_DIR` (default `/plugins`), for
-executables. In the container that directory is bind-mounted from the host, so
-you drop a compiled binary into `./plugins/` next to the repo:
+nanoflux scans a single directory, `NF_PLUGINS_DIR` (default `./plugins`, or
+`/plugins` in the container), for executables. In the container that directory
+is bind-mounted from the host, so you drop a compiled binary into `./plugins/`
+next to the repo:
 
 ```yaml
 # docker-compose.yml
