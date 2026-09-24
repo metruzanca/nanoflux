@@ -185,6 +185,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/settings/signup", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminSetSignup))))
 	mux.Handle("POST /admin/settings/signup-banner-dismiss", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminDismissSignupBanner))))
 	mux.Handle("POST /admin/backup", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminBackupNow))))
+	mux.Handle("POST /admin/plugins/reset", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminResetPluginDomain))))
 
 	// Settings.
 	mux.Handle("GET /settings", s.auth.Require(http.HandlerFunc(s.settingsPage)))

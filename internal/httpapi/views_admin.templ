@@ -11,7 +11,7 @@ templ adminPage(u store.User, d adminData) {
 	<h1>admin</h1>
 	@AdminInstanceCard(d)
 	@AdminStats(d.Stats)
-	@AdminPluginsCard(d.Plugins)
+	@AdminPluginsCard(d.Plugins, d.PluginOwners)
 	@AdminBackupCard(d.Backup)
 	<section class="card">
 		<h2>users</h2>
@@ -21,9 +21,11 @@ templ adminPage(u store.User, d adminData) {
 }
 
 // AdminPluginsCard lists the feed plugins the host loaded at startup, with the
-// kind (native vs external) and API version each reported. A plugin is a
-// compile-time or on-disk concern, so this card is read-only.
-templ AdminPluginsCard(rows []adminPluginRow) {
+// kind (native vs external) and API version each reported. Below them it lists
+// the domains currently owned by a plugin, each with a "reset" action: clearing
+// a domain's owner and re-reconciling lets the loaded registry re-derive it, the
+// escape hatch when a plugin is removed, renamed, or swapped.
+templ AdminPluginsCard(rows []adminPluginRow, domains []adminPluginDomain) {
 	<section class="card" id="admin-plugins-card">
 		<h2>plugins</h2>
 		<p class="muted small">Feed plugins loaded at startup. Native plugins are compiled into nanoflux and take precedence over external ones when both match a URL.</p>
@@ -48,6 +50,33 @@ templ AdminPluginsCard(rows []adminPluginRow) {
 										· user-agent: app default
 									}
 								</div>
+							</div>
+						</div>
+					</li>
+				}
+			</ul>
+		}
+		<div id="admin-plugins-error" class="error"></div>
+		if len(domains) > 0 {
+			<h3>plugin-owned domains</h3>
+			<p class="muted small">Reset a domain to clear its plugin owner and re-derive it from the loaded plugins. Use this after removing, renaming, or swapping a plugin: feeds on the domain are re-owned automatically, or fall back to the generic parser when no plugin matches.</p>
+			<ul class="plain" id="admin-plugin-domains">
+				for _, d := range domains {
+					<li>
+						<div class="row">
+							<div>
+								<strong>{ d.Domain }</strong>
+								<span class="badge">{ d.Plugin }</span>
+								<span class="muted small">
+									if d.Feeds == 1 {
+										1 feed
+									} else {
+										{ strconv.Itoa(d.Feeds) } feeds
+									}
+								</span>
+							</div>
+							<div class="row-actions">
+								<button class="link" hx-post="/admin/plugins/reset" hx-vals={ "{\"domain\": " + strconv.Quote(d.Domain) + "}" } hx-target="#admin-plugins-card" hx-swap="outerHTML" hx-confirm={ "reset the plugin for " + d.Domain + "? its feeds will be re-owned by the loaded plugins" }>reset</button>
 							</div>
 						</div>
 					</li>

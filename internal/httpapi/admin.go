@@ -3,23 +3,26 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 type adminData struct {
-	Stats       adminStats
-	AllowSignup bool
-	BannerShown bool
-	Users       []adminUserRow
-	Backup      adminBackup
-	Plugins     []adminPluginRow
+	Stats        adminStats
+	AllowSignup  bool
+	BannerShown  bool
+	Users        []adminUserRow
+	Backup       adminBackup
+	Plugins      []adminPluginRow
+	PluginOwners []adminPluginDomain
 }
 
 // adminPluginRow is one loaded plugin shown in the plugins card. Kind is
@@ -30,6 +33,15 @@ type adminPluginRow struct {
 	Version   string
 	RawNet    bool
 	UserAgent string
+}
+
+// adminPluginDomain is one registrable domain owned by a plugin, with the number
+// of feeds on it. It is the unit of the "reset plugin" escape hatch: clearing the
+// domain's owner lets the loaded registry re-derive it.
+type adminPluginDomain struct {
+	Domain string
+	Plugin string
+	Feeds  int
 }
 
 // adminBackup is the backup status shown on /admin. Enabled is false when
@@ -88,10 +100,11 @@ func (s *Server) adminOnly(next http.Handler) http.Handler {
 func (s *Server) adminPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	d := adminData{
-		Stats:   s.adminStats(r.Context()),
-		Users:   s.adminUserRows(u.ID, u.Timezone),
-		Backup:  s.adminBackupData(u.Timezone),
-		Plugins: s.adminPluginRows(),
+		Stats:        s.adminStats(r.Context()),
+		Users:        s.adminUserRows(u.ID, u.Timezone),
+		Backup:       s.adminBackupData(u.Timezone),
+		Plugins:      s.adminPluginRows(),
+		PluginOwners: s.adminPluginDomains(),
 	}
 	d.AllowSignup = s.allowSignup()
 	if d.AllowSignup {
@@ -208,6 +221,65 @@ func (s *Server) adminPluginRows() []adminPluginRow {
 		})
 	}
 	return rows
+}
+
+// adminPluginDomains groups plugin-owned feeds by registrable domain, so the
+// plugins card can offer a per-domain "reset to generic parser" action. It reads
+// only feeds that already recorded an owner (plugin_name), sorted by domain then
+// plugin.
+func (s *Server) adminPluginDomains() []adminPluginDomain {
+	feeds, err := s.store.Feeds.ListAll()
+	if err != nil {
+		log.Error("admin: list feeds for plugin domains", "err", err)
+		return nil
+	}
+	type key struct{ domain, plugin string }
+	counts := map[key]int{}
+	for _, f := range feeds {
+		if f.PluginName == "" {
+			continue
+		}
+		domain := store.RegistrableDomain(f.FeedURL)
+		if domain == "" {
+			continue
+		}
+		counts[key{domain, f.PluginName}]++
+	}
+	rows := make([]adminPluginDomain, 0, len(counts))
+	for k, n := range counts {
+		rows = append(rows, adminPluginDomain{Domain: k.domain, Plugin: k.plugin, Feeds: n})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Domain != rows[j].Domain {
+			return rows[i].Domain < rows[j].Domain
+		}
+		return rows[i].Plugin < rows[j].Plugin
+	})
+	return rows
+}
+
+// adminResetPluginDomain clears the owning plugin for every feed on a domain and
+// re-runs the reconciler, so the domain is re-owned by whichever plugin the
+// loaded registry currently matches (or falls back to the generic parser when
+// none does). It is the escape hatch for a plugin that was removed, renamed, or
+// swapped for another. The card re-renders with the result.
+func (s *Server) adminResetPluginDomain(w http.ResponseWriter, r *http.Request) {
+	domain := store.RegistrableDomain(r.FormValue("domain"))
+	if domain == "" {
+		writeFormError(w, r, "admin-plugins-error", "invalid domain")
+		return
+	}
+	n, err := s.store.Feeds.ResetPluginForDomain(domain)
+	if err != nil {
+		log.Error("admin: reset plugin domain", "domain", domain, "err", err)
+		writeFormError(w, r, "admin-plugins-error", "could not reset the domain")
+		return
+	}
+	if s.plugins != nil {
+		plugin.ReconcileFeeds(s.store, s.plugins)
+	}
+	log.Info("admin: reset plugin domain", "domain", domain, "feeds", n)
+	web.Render(w, r, AdminPluginsCard(s.adminPluginRows(), s.adminPluginDomains()))
 }
 
 // adminInstanceData rebuilds the data the instance settings card needs, for

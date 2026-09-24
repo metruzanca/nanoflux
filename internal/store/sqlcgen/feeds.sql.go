@@ -622,23 +622,40 @@ func (q *Queries) ListFeedsWithUnread(ctx context.Context, userID int64) ([]List
 	return items, nil
 }
 
-const reenableFeedsForPlugin = `-- name: ReenableFeedsForPlugin :execrows
+const reenableAutoDisabledFeed = `-- name: ReenableAutoDisabledFeed :execrows
 UPDATE feeds
 SET enabled = 1, disabled_reason = NULL
-WHERE plugin_name = ?1
+WHERE id = ?
   AND enabled = 0
-  AND disabled_reason = 'plugin not loaded: ' || ?1
+  AND disabled_reason LIKE 'plugin not loaded:%'
 `
 
-// Auto-re-enable feeds that were disabled specifically because the named plugin
-// was missing. Only feeds carrying that exact disabled_reason are touched, so a
-// user-paused feed is never silently resumed.
-func (q *Queries) ReenableFeedsForPlugin(ctx context.Context, pluginname string) (int64, error) {
-	result, err := q.db.ExecContext(ctx, reenableFeedsForPlugin, pluginname)
+// Auto-re-enable one feed that was disabled because its owning plugin was
+// missing. Keyed to the automatic reason so a user-paused feed (no reason) is
+// never silently resumed. The reconciler calls this for feeds it just adopted,
+// so a plugin that was renamed/replaced still resumes its feeds.
+func (q *Queries) ReenableAutoDisabledFeed(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, reenableAutoDisabledFeed, id)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const resetFeedPlugin = `-- name: ResetFeedPlugin :exec
+UPDATE feeds
+SET plugin_name = '',
+    disabled_reason = CASE WHEN disabled_reason LIKE 'plugin not loaded:%' THEN NULL ELSE disabled_reason END,
+    enabled = CASE WHEN disabled_reason LIKE 'plugin not loaded:%' THEN 1 ELSE enabled END
+WHERE id = ?
+`
+
+// Clear a feed's plugin owner (back to the generic parser). If the feed was
+// auto-disabled because its plugin was missing, un-park it too; a user pause
+// (enabled = 0 with no automatic reason) is preserved.
+func (q *Queries) ResetFeedPlugin(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, resetFeedPlugin, id)
+	return err
 }
 
 const setFeedEnabled = `-- name: SetFeedEnabled :exec

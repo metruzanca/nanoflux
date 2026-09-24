@@ -1063,8 +1063,8 @@ func TestCanonicalizeFeedURLs(t *testing.T) {
 }
 
 // TestPluginDisableReenable covers the plugin reconciler's storage: a feed
-// auto-disabled for a missing plugin is re-enabled only for that exact reason,
-// never when the user paused it by hand.
+// auto-disabled for a missing plugin is re-enabled by id, never when the user
+// paused it by hand.
 func TestPluginDisableReenable(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
@@ -1083,33 +1083,83 @@ func TestPluginDisableReenable(t *testing.T) {
 	if got.Enabled || got.DisabledReason == "" {
 		t.Fatalf("feed should be disabled with a reason: %+v", got)
 	}
-
-	// Re-enabling an unrelated plugin does nothing.
-	if n, _ := s.Feeds.ReenableForPlugin("other"); n != 0 {
-		t.Fatalf("unrelated plugin should not re-enable: %d", n)
+	if !IsPluginMissingReason(got.DisabledReason) {
+		t.Fatalf("reason should be recognized as a missing-plugin reason: %q", got.DisabledReason)
 	}
-	// The owning plugin returning re-enables it and clears the reason.
-	if n, _ := s.Feeds.ReenableForPlugin("zorg"); n != 1 {
-		t.Fatalf("owning plugin should re-enable: %d", n)
+
+	// Re-enabling an unrelated id does nothing.
+	if n, _ := s.Feeds.ReenableAutoDisabled(owned.ID + 999); n != 0 {
+		t.Fatalf("an unknown feed should not re-enable: %d", n)
+	}
+	// The owning feed is re-enabled by id and its reason cleared.
+	if n, _ := s.Feeds.ReenableAutoDisabled(owned.ID); n != 1 {
+		t.Fatalf("the auto-disabled feed should re-enable: %d", n)
 	}
 	got, _ = s.Feeds.ByID(u.ID, owned.ID)
 	if !got.Enabled || got.DisabledReason != "" {
 		t.Fatalf("feed should be re-enabled: %+v", got)
 	}
 
-	// A user pause (no reason) is never resumed by reconcile.
+	// A user pause (no reason) is never resumed.
 	paused, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "u", "https://example.org/u", "", "", "zorg", 900)
-	s.Feeds.SetEnabled(u.ID, paused.ID, false)
-	s.Feeds.DisableForMissingPlugin(paused.ID, "zorg")
-	// Simulate the user re-enabling then pausing again, which clears the reason
-	// via UpdateFeed.
 	s.Feeds.Update(u.ID, paused.ID, a.ID, "u", "https://example.org/u", "", "", 900, true, false)
 	gotPaused, _ := s.Feeds.ByID(u.ID, paused.ID)
 	if gotPaused.DisabledReason != "" {
 		t.Fatalf("a user save should clear the disabled reason: %q", gotPaused.DisabledReason)
 	}
-	if n, _ := s.Feeds.ReenableForPlugin("zorg"); n != 0 {
+	if n, _ := s.Feeds.ReenableAutoDisabled(paused.ID); n != 0 {
 		t.Fatalf("a user-paused feed must not be auto-resumed: %d", n)
+	}
+}
+
+// TestResetPluginForDomain covers the admin escape hatch: clearing a domain's
+// plugin owner returns its feeds to the generic parser, re-enables the ones
+// parked for a missing plugin, and leaves user-paused feeds and other domains
+// untouched.
+func TestResetPluginForDomain(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "A", "", "")
+
+	parked, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "p", "https://example.org/p", "", "", "zorg", 900)
+	s.Feeds.DisableForMissingPlugin(parked.ID, "parked")
+
+	active, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "a", "https://example.org/a", "", "", "zorg", 900)
+
+	paused, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "q", "https://example.org/q", "", "", "zorg", 900)
+	s.Feeds.Update(u.ID, paused.ID, a.ID, "q", "https://example.org/q", "", "", 900, true, false)
+
+	other, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "o", "https://other.com/o", "", "", "zorg", 900)
+
+	if n, err := s.Feeds.ResetPluginForDomain("example.org"); err != nil || n != 3 {
+		t.Fatalf("ResetPluginForDomain = %d, %v", n, err)
+	}
+
+	for _, id := range []int64{parked.ID, active.ID, paused.ID} {
+		got, _ := s.Feeds.ByID(u.ID, id)
+		if got.PluginName != "" {
+			t.Fatalf("feed %d should be back on the generic parser: %q", id, got.PluginName)
+		}
+	}
+	parkedGot, _ := s.Feeds.ByID(u.ID, parked.ID)
+	if !parkedGot.Enabled || parkedGot.DisabledReason != "" {
+		t.Fatalf("parked feed should be un-parked: %+v", parkedGot)
+	}
+	pausedGot, _ := s.Feeds.ByID(u.ID, paused.ID)
+	if pausedGot.Enabled || pausedGot.DisabledReason != "" {
+		t.Fatalf("user-paused feed should stay paused: %+v", pausedGot)
+	}
+	otherGot, _ := s.Feeds.ByID(u.ID, other.ID)
+	if otherGot.PluginName != "zorg" {
+		t.Fatalf("another domain must be untouched: %q", otherGot.PluginName)
+	}
+
+	// Resetting an unknown/empty domain is a no-op.
+	if n, _ := s.Feeds.ResetPluginForDomain(""); n != 0 {
+		t.Fatalf("empty domain should be a no-op: %d", n)
+	}
+	if n, _ := s.Feeds.ResetPluginForDomain("nope.com"); n != 0 {
+		t.Fatalf("unknown domain should be a no-op: %d", n)
 	}
 }
 
