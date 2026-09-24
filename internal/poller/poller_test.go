@@ -736,3 +736,117 @@ func TestGroupByHost(t *testing.T) {
 		t.Fatalf("group sizes reddit=%d example=%d, want 2/1", reddit, example)
 	}
 }
+
+// newPollerStore builds an in-memory store with one user/author.
+func newPollerStore(t *testing.T) *store.Store {
+	t.Helper()
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sqldb.Close() })
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	if _, err := st.Users.Create("alice", "h"); err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
+// TestPollDueRateLimitPacesHostAndRotates covers the rate-limited-host behavior:
+// on a 429 the poller learns a window, spaces the host, and does not attempt the
+// host's other feeds in the same cycle; it reports when to wake.
+func TestPollDueRateLimitPacesHostAndRotates(t *testing.T) {
+	st := newPollerStore(t)
+	u, _ := st.Users.ByUsername("alice")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Retry-After", "90")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	// Three feeds on the same host.
+	for i := 0; i < 3; i++ {
+		st.Feeds.Create(u.ID, a.ID, "f", fmt.Sprintf("%s/feed%d", srv.URL, i), "", "", 900)
+	}
+
+	p := New(st, time.Minute, 4)
+	if _, err := p.PollDue(context.Background()); err != nil {
+		t.Fatalf("PollDue: %v", err)
+	}
+	// Only the first feed is attempted; the host is then paced for its window.
+	if hits != 1 {
+		t.Fatalf("hits = %d, want 1 (rest of host paced)", hits)
+	}
+	if _, ok := p.hostWindowFor(store.RegistrableDomain(srv.URL + "/x")); !ok {
+		t.Fatal("host window should be learned from Retry-After")
+	}
+
+	// A second immediate cycle must not hit the cooling host again.
+	if _, err := p.PollDue(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if hits != 1 {
+		t.Fatalf("cooling host was hit again: hits = %d", hits)
+	}
+
+	// Only the attempted feed got its per-feed backoff set; the host's other
+	// feeds were never touched, so they stay due to be picked up when the
+	// window clears (that is what makes the rotation fair).
+	due, _ := st.Feeds.ListDue(db.Now())
+	if len(due) != 2 {
+		t.Fatalf("paced host's remaining feeds should stay due, got %d", len(due))
+	}
+}
+
+// TestPollDueRotatesLeastRecentlyPolledFirst asserts the fair-rotation order: a
+// host's feeds are attempted oldest-polled-first.
+func TestPollDueRotatesLeastRecentlyPolledFirst(t *testing.T) {
+	st := newPollerStore(t)
+	u, _ := st.Users.ByUsername("alice")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	var order []string
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		order = append(order, r.URL.Path)
+		mu.Unlock()
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title></channel></rss>`))
+	}))
+	defer srv.Close()
+
+	// Same host, three feeds. Make their poll ages differ: older = polled long
+	// ago (but past the interval so all are due), newest = polled less ago.
+	urls := []string{srv.URL + "/a", srv.URL + "/b", srv.URL + "/c"}
+	ids := make([]int64, 0, 3)
+	for _, url := range urls {
+		f, _ := st.Feeds.Create(u.ID, a.ID, "f", url, "", "", 900)
+		ids = append(ids, f.ID)
+	}
+	// b was polled most recently (but still due), c in the middle, a oldest.
+	st.Feeds.SetPollMeta(ids[1], "", "", db.FormatTime(time.Now().Add(-20*time.Minute)), "")
+	st.Feeds.SetPollMeta(ids[2], "", "", db.FormatTime(time.Now().Add(-30*time.Minute)), "")
+	st.Feeds.SetPollMeta(ids[0], "", "", db.FormatTime(time.Now().Add(-40*time.Minute)), "")
+
+	p := New(st, time.Minute, 4)
+	if _, err := p.PollDue(context.Background()); err != nil {
+		t.Fatalf("PollDue: %v", err)
+	}
+	if len(order) != 3 {
+		t.Fatalf("expected 3 hits, got %v", order)
+	}
+	// Oldest (40m ago -> /a) first, then /c (30m), then /b (20m).
+	want := []string{"/a", "/c", "/b"}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("rotation order = %v, want %v", order, want)
+		}
+	}
+}

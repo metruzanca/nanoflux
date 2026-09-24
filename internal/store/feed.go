@@ -40,6 +40,7 @@ type FeedWithUnread struct {
 type FeedStore struct{ q *sqlcgen.Queries }
 
 func (s *FeedStore) Create(userID, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int) (Feed, error) {
+	feedURL = CanonicalFeedURL(feedURL)
 	f, err := s.q.CreateFeed(context.Background(), sqlcgen.CreateFeedParams{
 		UserID:          userID,
 		AuthorID:        authorID,
@@ -239,6 +240,31 @@ func (s *FeedStore) SetLastItemAt(id int64, t string) error {
 		LastItemAt: ns(t),
 		ID:         id,
 	})
+}
+
+// CanonicalizeFeedURLs rewrites stored feed URLs to their canonical form where
+// known (see CanonicalFeedURL). It is idempotent and runs once at startup so
+// feeds added before canonicalization start working.
+func (s *FeedStore) CanonicalizeFeedURLs() (int, error) {
+	feeds, err := s.ListAll()
+	if err != nil {
+		return 0, err
+	}
+	changed := 0
+	for _, f := range feeds {
+		canonical := CanonicalFeedURL(f.FeedURL)
+		if canonical == f.FeedURL {
+			continue
+		}
+		if err := s.q.SetFeedFeedURL(context.Background(), sqlcgen.SetFeedFeedURLParams{
+			FeedUrl: canonical,
+			ID:      f.ID,
+		}); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+	return changed, nil
 }
 
 // SetNextPollAt sets a "do not poll before" deadline on a feed, used to back off

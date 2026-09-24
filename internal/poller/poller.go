@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +20,19 @@ import (
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
-const fetchTimeout = 30 * time.Second
+const (
+	fetchTimeout = 30 * time.Second
+
+	// rateLimitFloor is the minimum spacing the poller enforces between two
+	// requests to a host that has rate-limited it. Hosts report their own window
+	// (Retry-After / x-ratelimit-reset); this floor covers a missing or tiny
+	// hint. Reddit's anonymous .rss limit is ~1 request per minute.
+	rateLimitFloor = 60 * time.Second
+
+	// minWake is the smallest next-wake delay, so a just-cleared backoff can't
+	// make the loop spin.
+	minWake = 30 * time.Second
+)
 
 // Poller fetches due feeds on an interval. Per-feed schedules come from each
 // feed's poll_interval_sec; the ticker just wakes the loop.
@@ -29,13 +42,15 @@ type Poller struct {
 	interval time.Duration
 	workers  int
 
-	// hostCool tracks, per registrable host, a time before which the host must
-	// not be hit again — set when a fetch is rate limited. It is in-memory
-	// (reset on restart) and complements feeds.next_poll_at, which persists the
-	// per-feed backoff. A cool host causes its remaining due feeds to be skipped
-	// for the rest of the cycle.
-	hostMu   sync.Mutex
-	hostCool map[string]time.Time
+	// hostWindow records, per registrable host, the minimum spacing the host
+	// has asked for after a rate limit (learned from Retry-After /
+	// x-ratelimit-reset). hostNextHit is the earliest time the host may be hit
+	// again. Both are in-memory (reset on restart): a host that never
+	// rate-limits is never paced. This replaces a coarse "cool the host for the
+	// whole cycle", which starved the host's other feeds.
+	hostMu      sync.Mutex
+	hostWindow  map[string]time.Duration
+	hostNextHit map[string]time.Time
 }
 
 func New(st *store.Store, interval time.Duration, workers int) *Poller {
@@ -43,11 +58,12 @@ func New(st *store.Store, interval time.Duration, workers int) *Poller {
 		workers = 4
 	}
 	return &Poller{
-		store:    st,
-		client:   &http.Client{Timeout: fetchTimeout},
-		interval: interval,
-		workers:  workers,
-		hostCool: map[string]time.Time{},
+		store:       st,
+		client:      &http.Client{Timeout: fetchTimeout},
+		interval:    interval,
+		workers:     workers,
+		hostWindow:  map[string]time.Duration{},
+		hostNextHit: map[string]time.Time{},
 	}
 }
 
@@ -55,37 +71,58 @@ func New(st *store.Store, interval time.Duration, workers int) *Poller {
 // the same transport and timeout policy.
 func (p *Poller) Client() *http.Client { return p.client }
 
-// Run polls due feeds immediately, then every interval until ctx is done.
+// Run polls due feeds, then wakes at the earliest of the base interval or the
+// next moment a paced host becomes hittable, whichever is sooner (floored at
+// minWake). The dynamic wake is what lets a rate-limited host's feeds rotate:
+// after a 429 the poller returns when the host's window clears, for the next
+// feed in line, rather than waiting out the whole base interval.
 func (p *Poller) Run(ctx context.Context) {
 	log.Info("poller starting", "interval", p.interval)
-	p.PollDue(ctx)
-	t := time.NewTicker(p.interval)
-	defer t.Stop()
 	for {
+		_, wake, err := p.pollDue(ctx)
+		if err != nil {
+			log.Error("poll due", "err", err)
+		}
+		delay := wake.Sub(time.Now())
+		if delay <= 0 || delay > p.interval {
+			delay = p.interval
+		}
+		if delay < minWake {
+			delay = minWake
+		}
+		t := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			log.Info("poller stopped")
 			return
 		case <-t.C:
-			p.PollDue(ctx)
 		}
 	}
 }
 
-// PollDue fetches every enabled feed that is due and returns the number of
-// new items stored.
-//
-// Feeds are grouped by host (registrable domain) and each host's feeds are
-// fetched sequentially, while different hosts run in parallel up to the worker
-// limit. Serializing per host keeps us from bursting a single site — which is
-// what triggers rate limits — without slowing down distinct sites.
+// PollDue fetches every enabled feed that is due and returns the number of new
+// items stored. It is the exported entry point for tests and manual cycles.
 func (p *Poller) PollDue(ctx context.Context) (int, error) {
+	n, _, err := p.pollDue(ctx)
+	return n, err
+}
+
+// pollDue fetches due feeds and returns how many new items were stored plus the
+// earliest time a skipped (paced) host may next be hit (zero when none).
+//
+// Feeds are grouped by registrable host and each host's feeds are processed
+// oldest-poll-first (a fair rotation), while different hosts run in parallel up
+// to the worker limit. A host that has rate-limited the poller is spaced by its
+// window; its remaining feeds stay due and are picked up when the window
+// clears.
+func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
 	feeds, err := p.store.Feeds.ListDue(db.Now())
 	if err != nil {
-		return 0, err
+		return 0, time.Time{}, err
 	}
 	if len(feeds) == 0 {
-		return 0, nil
+		return 0, time.Time{}, nil
 	}
 
 	groups := groupByHost(feeds)
@@ -95,6 +132,7 @@ func (p *Poller) PollDue(ctx context.Context) (int, error) {
 		sem   = make(chan struct{}, p.workers)
 		mu    sync.Mutex
 		total int
+		wake  time.Time // earliest paced-host next-hit across groups
 	)
 	for _, group := range groups {
 		wg.Add(1)
@@ -102,24 +140,12 @@ func (p *Poller) PollDue(ctx context.Context) (int, error) {
 		go func(group []store.Feed) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			n := 0
-			for _, f := range group {
-				if ctx.Err() != nil {
-					return
-				}
-				// Another feed from this host already hit a rate limit this
-				// cycle: skip the rest rather than adding to the burst.
-				if p.hostCooling(f.FeedURL) {
-					continue
-				}
-				got, err := p.PollOne(ctx, f)
-				n += got
-				if err != nil {
-					log.Error("poll feed", "feed_id", f.ID, "url", f.FeedURL, "err", err)
-				}
-			}
+			n, gWake := p.pollGroup(ctx, group)
 			mu.Lock()
 			total += n
+			if !gWake.IsZero() && (wake.IsZero() || gWake.Before(wake)) {
+				wake = gWake
+			}
 			mu.Unlock()
 		}(group)
 	}
@@ -127,7 +153,42 @@ func (p *Poller) PollDue(ctx context.Context) (int, error) {
 	if total > 0 {
 		log.Info("poller finished", "new_items", total, "feeds", len(feeds), "hosts", len(groups))
 	}
-	return total, nil
+	return total, wake, nil
+}
+
+// pollGroup processes one host's due feeds, oldest-polled first, pacing the host
+// when it has a learned rate-limit window. It returns the new-item count and the
+// earliest time this host may next be hit (zero when it was not paced).
+func (p *Poller) pollGroup(ctx context.Context, group []store.Feed) (int, time.Time) {
+	// Fair rotation: least-recently-polled first, so every feed takes a turn.
+	sort.SliceStable(group, func(i, j int) bool {
+		return group[i].LastPolledAt < group[j].LastPolledAt
+	})
+
+	host := store.RegistrableDomain(group[0].FeedURL)
+	n := 0
+	for _, f := range group {
+		if ctx.Err() != nil {
+			return n, time.Time{}
+		}
+		if host != "" && !p.hostReady(host, time.Now()) {
+			// The host is inside its rate-limit window: leave the remaining
+			// feeds due and wake when it clears.
+			return n, p.hostNextHitTime(host)
+		}
+		got, err := p.PollOne(ctx, f)
+		n += got
+		if err != nil {
+			log.Error("poll feed", "feed_id", f.ID, "url", f.FeedURL, "err", err)
+		}
+		// If this host has a learned window, space the next request to it.
+		if host != "" {
+			if w, ok := p.hostWindowFor(host); ok {
+				p.setHostNextHit(host, time.Now().Add(w))
+			}
+		}
+	}
+	return n, time.Time{}
 }
 
 // groupByHost buckets feeds by their registrable domain, preserving the input
@@ -153,35 +214,49 @@ func groupByHost(feeds []store.Feed) [][]store.Feed {
 	return out
 }
 
-// hostCooling reports whether a host is currently backed off from an earlier
-// rate limit in this cycle.
-func (p *Poller) hostCooling(feedURL string) bool {
-	host := store.RegistrableDomain(feedURL)
-	if host == "" {
-		return false
-	}
+// hostReady reports whether a host may be hit at t (it has no learned window, or
+// its window has cleared).
+func (p *Poller) hostReady(host string, t time.Time) bool {
 	p.hostMu.Lock()
 	defer p.hostMu.Unlock()
-	until, ok := p.hostCool[host]
-	if !ok {
-		return false
-	}
-	if time.Now().After(until) {
-		delete(p.hostCool, host)
-		return false
-	}
-	return true
+	next, ok := p.hostNextHit[host]
+	return !ok || !t.Before(next)
 }
 
-// coolHost records that a host must not be polled again until t.
-func (p *Poller) coolHost(feedURL string, t time.Time) {
-	host := store.RegistrableDomain(feedURL)
-	if host == "" {
-		return
+// hostNextHitTime returns the host's next allowed hit time, or the zero time.
+func (p *Poller) hostNextHitTime(host string) time.Time {
+	p.hostMu.Lock()
+	defer p.hostMu.Unlock()
+	return p.hostNextHit[host]
+}
+
+// hostWindowFor returns the host's learned spacing and whether it has one.
+func (p *Poller) hostWindowFor(host string) (time.Duration, bool) {
+	p.hostMu.Lock()
+	defer p.hostMu.Unlock()
+	w, ok := p.hostWindow[host]
+	return w, ok
+}
+
+// setHostNextHit records the earliest time a host may next be hit, keeping the
+// later of the existing value and t.
+func (p *Poller) setHostNextHit(host string, t time.Time) {
+	p.hostMu.Lock()
+	if existing, ok := p.hostNextHit[host]; !ok || t.After(existing) {
+		p.hostNextHit[host] = t
+	}
+	p.hostMu.Unlock()
+}
+
+// learnWindow records how long a host asked to be left alone after a rate limit,
+// floored at rateLimitFloor.
+func (p *Poller) learnWindow(host string, retryAfter time.Duration) {
+	if retryAfter < rateLimitFloor {
+		retryAfter = rateLimitFloor
 	}
 	p.hostMu.Lock()
-	if existing, ok := p.hostCool[host]; !ok || t.After(existing) {
-		p.hostCool[host] = t
+	if existing, ok := p.hostWindow[host]; !ok || retryAfter > existing {
+		p.hostWindow[host] = retryAfter
 	}
 	p.hostMu.Unlock()
 }
@@ -198,14 +273,17 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 	fetched := db.Now()
 	if err != nil {
 		// A rate limit is not a broken feed: back off until the host is ready
-		// again (persisted per feed) and cool the whole host for this cycle so
-		// its other due feeds don't add to the burst. Any other failure is
-		// recorded as the feed's error and retried on its normal interval.
+		// again (persisted per feed) and teach the poller the host's window so
+		// its other feeds are spaced rather than skipped for a whole cycle. Any
+		// other failure is recorded as the feed's error and retried on its
+		// normal interval.
 		var rl *feedparse.RateLimitError
 		if errors.As(err, &rl) {
 			until := time.Now().Add(rl.RetryAfter)
 			p.store.Feeds.SetNextPollAt(f.ID, db.FormatTime(until))
-			p.coolHost(f.FeedURL, until)
+			if host := store.RegistrableDomain(f.FeedURL); host != "" {
+				p.learnWindow(host, rl.RetryAfter)
+			}
 			p.store.Feeds.SetPollMeta(f.ID, "", "", fetched, truncateError(err.Error()))
 			return 0, err
 		}

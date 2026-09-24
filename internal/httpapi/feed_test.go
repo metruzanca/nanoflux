@@ -265,3 +265,42 @@ func TestFeedRefreshUpdatesAuthorItems(t *testing.T) {
 		t.Fatalf("feed-detail refresh should not OOB-swap: %s", rr.Body.String())
 	}
 }
+
+// TestFeedRefreshRespectsBackoff asserts that a manual refresh during a
+// rate-limit backoff does not fetch (so it can't hammer the host) and the row
+// shows the retry deadline with the refresh button disabled.
+func TestFeedRefreshRespectsBackoff(t *testing.T) {
+	s, h := newTestServer(t)
+	s.SetPoller(poller.New(s.store, time.Minute, 1))
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
+
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		fmt.Fprint(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>Blog</title></channel></rss>`)
+	}))
+	defer srv.Close()
+
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
+	// Put the feed into a rate-limit backoff.
+	if err := s.store.Feeds.SetNextPollAt(f.ID, db.FormatTime(time.Now().Add(45*time.Second))); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/refresh", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("refresh: %d %s", rr.Code, rr.Body.String())
+	}
+	if hits != 0 {
+		t.Fatalf("refresh during backoff must not fetch, got %d hits", hits)
+	}
+	out := rr.Body.String()
+	if !strings.Contains(out, "rate limited") {
+		t.Fatalf("row should show the rate-limit retry badge: %s", out)
+	}
+	if !strings.Contains(out, "disabled") {
+		t.Fatalf("refresh button should be disabled while cooling: %s", out)
+	}
+}

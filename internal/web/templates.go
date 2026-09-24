@@ -555,6 +555,28 @@ func plural(n int, unit string) string {
 	return strconv.Itoa(n) + " " + u
 }
 
+// Until renders how long from now until a stored UTC timestamp, for near-future
+// deadlines (e.g. a rate-limit retry): "in 45s", "in 3m", "in 2h". It returns
+// "" when s is unparseable or already past.
+func Until(s string) string {
+	t, err := db.ParseTime(s)
+	if err != nil {
+		return ""
+	}
+	d := time.Until(t)
+	if d <= 0 {
+		return ""
+	}
+	switch {
+	case d < time.Minute:
+		return "in " + plural(int(d.Seconds()+0.5), "s")
+	case d < time.Hour:
+		return "in " + plural(int(d.Minutes()+0.5), "m")
+	default:
+		return "in " + plural(int(d.Hours()+0.5), "h")
+	}
+}
+
 // PostFrequency renders an approximate posting cadence from an average gap in
 // seconds (e.g. "≈3/day", "≈2/week", "≈1/month"). It returns "" when the gap
 // is not positive. The reciprocal is expressed in whichever unit reads most

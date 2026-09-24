@@ -90,13 +90,26 @@ UPDATE feeds
 SET next_poll_at = ?
 WHERE id = ?;
 
+-- name: SetFeedFeedURL :exec
+UPDATE feeds
+SET feed_url = ?
+WHERE id = ?;
+
 -- name: ListFeedsDue :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
        etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
 FROM feeds
 WHERE enabled = 1
-  AND (next_poll_at IS NULL OR next_poll_at <= CAST(sqlc.arg('now') AS TEXT))
-  AND (last_polled_at IS NULL OR last_polled_at <= datetime(CAST(sqlc.arg('now') AS TEXT), '-' || poll_interval_sec || ' seconds'));
+  AND (
+    -- A rate-limit (or other) backoff deadline gates due-ness on its own, so
+    -- the host's own retry window is honored instead of being masked by the
+    -- (possibly long) poll interval.
+    (next_poll_at IS NOT NULL AND next_poll_at <= CAST(sqlc.arg('now') AS TEXT))
+    OR (
+      next_poll_at IS NULL
+      AND (last_polled_at IS NULL OR last_polled_at <= datetime(CAST(sqlc.arg('now') AS TEXT), '-' || poll_interval_sec || ' seconds'))
+    )
+  );
 
 -- name: GetFeedByTitle :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,

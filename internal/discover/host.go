@@ -9,11 +9,13 @@ import (
 )
 
 // hostSpecific applies per-site rules for pages that do not expose feed links
-// in their HTML.
-func (d *Discoverer) hostSpecific(ctx context.Context, pageURL string) []Candidate {
+// in their HTML. It returns the candidates it validated, plus the last fetch
+// error when a known rule's feed could not be fetched (so a caller can explain
+// why — e.g. a rate limit — instead of reporting "no feed").
+func (d *Discoverer) hostSpecific(ctx context.Context, pageURL string) ([]Candidate, error) {
 	u, err := url.Parse(pageURL)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 
 	var feeds []hostFeed
@@ -26,9 +28,11 @@ func (d *Discoverer) hostSpecific(ctx context.Context, pageURL string) []Candida
 	}
 
 	var out []Candidate
+	var lastErr error
 	for _, f := range feeds {
-		c, ok := d.tryFeed(ctx, f.URL, "host", pageURL)
-		if !ok {
+		c, err := d.tryFeed(ctx, f.URL, "host", pageURL)
+		if err != nil {
+			lastErr = err
 			continue
 		}
 		if f.Title != "" {
@@ -36,7 +40,10 @@ func (d *Discoverer) hostSpecific(ctx context.Context, pageURL string) []Candida
 		}
 		out = append(out, c)
 	}
-	return out
+	if len(out) == 0 {
+		return nil, lastErr
+	}
+	return out, nil
 }
 
 func isYouTube(host string) bool {

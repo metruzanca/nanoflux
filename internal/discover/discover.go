@@ -53,7 +53,7 @@ func (d *Discoverer) Discover(ctx context.Context, pageURL string) ([]Candidate,
 	}
 
 	// 1. The URL itself might already be a feed.
-	if c, ok := d.tryFeed(ctx, pageURL, "direct", pageURL); ok {
+	if c, err := d.tryFeed(ctx, pageURL, "direct", pageURL); err == nil {
 		return []Candidate{c}, nil
 	}
 
@@ -61,7 +61,8 @@ func (d *Discoverer) Discover(ctx context.Context, pageURL string) ([]Candidate,
 	// site's canonical feeds (e.g. a GitHub profile's activity atom, a repo's
 	// releases/commits/tags), so they take precedence over whatever the page's
 	// HTML advertises — and may carry a fixed display title.
-	if cs := d.hostSpecific(ctx, pageURL); len(cs) > 0 {
+	cs, hostErr := d.hostSpecific(ctx, pageURL)
+	if len(cs) > 0 {
 		return dedup(cs), nil
 	}
 
@@ -76,11 +77,17 @@ func (d *Discoverer) Discover(ctx context.Context, pageURL string) ([]Candidate,
 	for _, p := range commonPaths {
 		probes = append(probes, base.ResolveReference(&url.URL{Path: p}).String())
 	}
-	cs := d.validateAll(ctx, probes, "paths", pageURL, "")
-	if len(cs) == 0 && pageErr != nil {
-		// Nothing found and the page itself could not be read: surface why
-		// (e.g. a 429 rate limit) instead of a bare "no feed found".
-		return nil, pageErr
+	cs = d.validateAll(ctx, probes, "paths", pageURL, "")
+	if len(cs) == 0 {
+		// Nothing found: surface why when we can, instead of a bare "no feed
+		// found". A known host rule that failed (e.g. reddit rate-limiting its
+		// .rss probe) takes precedence, then a page-fetch failure (e.g. 429).
+		if hostErr != nil {
+			return nil, hostErr
+		}
+		if pageErr != nil {
+			return nil, pageErr
+		}
 	}
 	return dedup(cs), nil
 }
@@ -96,27 +103,30 @@ var commonPaths = []string{
 	"/?feed=rss",
 }
 
-func (d *Discoverer) tryFeed(ctx context.Context, feedURL, strategy, homeURL string) (Candidate, bool) {
+func (d *Discoverer) tryFeed(ctx context.Context, feedURL, strategy, homeURL string) (Candidate, error) {
 	res, err := feedparse.Fetch(ctx, feedURL, d.client, "", "")
 	if err != nil {
-		return Candidate{}, false
+		return Candidate{}, err
 	}
 	return Candidate{
 		FeedURL:  feedURL,
 		Title:    res.Feed.Title,
 		HomeURL:  homeURL,
 		Strategy: strategy,
-	}, true
+	}, nil
 }
 
+// validateAll fetches each candidate and returns the ones that parse as feeds,
+// along with the last non-fatal fetch error (so a caller can explain why a
+// probe failed — e.g. a rate limit — rather than reporting "no feed").
 func (d *Discoverer) validateAll(ctx context.Context, urls []string, strategy, homeURL, fallbackTitle string) []Candidate {
 	var out []Candidate
 	for _, u := range urls {
 		if len(out) >= 5 {
 			break
 		}
-		c, ok := d.tryFeed(ctx, u, strategy, homeURL)
-		if !ok {
+		c, err := d.tryFeed(ctx, u, strategy, homeURL)
+		if err != nil {
 			continue
 		}
 		if c.Title == "" {

@@ -16,3 +16,30 @@ handler below relies on it.
 `event.detail.successful` remains `false` on `4xx`/`5xx`, so `hx-on::after-request`
 handlers that close dialogs on success (`if (event.detail.successful) ...`)
 leave the dialog open on error — which is what lets the user read the message.
+
+## Rate limiting
+
+Some hosts (notably reddit's anonymous `.rss`, ~1 request/IP/minute) reject
+polling with 429. The app treats this as pacing, not failure:
+
+- `feedparse` returns a typed `RateLimitError` for 429 / 503-with-hint,
+  deriving the window from `Retry-After` / `x-ratelimit-reset`.
+- `feeds.next_poll_at` (schemaV29) stores that deadline. `ListFeedsDue` gates on
+  it **independently of `poll_interval_sec`** — a passed backoff makes a feed due
+  even inside a 1-day interval, so the host's real window is honored instead of
+  being masked. Do not recombine those conditions with `AND`.
+- `poller.pollDue` groups feeds by registrable host and processes each group
+  least-recently-polled-first (fair rotation). A host that 429s is paced by its
+  learned window (`hostWindow`/`hostNextHit`); its remaining feeds stay **due**
+  and are picked up when the window clears, rather than skipped for the cycle.
+  `Run` wakes at the earliest of the base interval or a host's next-hit time, so
+  rotating hosts are revisited promptly (floored at `minWake`).
+- The manual refresh button and `feedRefresh` respect `next_poll_at`: a cooling
+  feed shows a "rate limited · retry in …" badge with the button disabled, and a
+  click during the window is a no-op.
+- `discover` surfaces the host's fetch error when a rule's probe fails, so
+  adding a reddit feed at limit says "rate-limiting requests (HTTP 429)" rather
+  than a bare "no feed found".
+- `store.CanonicalFeedURL` rewrites reddit URLs (`old.`/`np.` → `www.`,
+  `/u/` → `/user/`) on create and via a startup pass, since the old hosts now
+  redirect to a login wall.

@@ -70,6 +70,15 @@ func runServer() {
 		log.Fatal("migrate legacy files", "err", err)
 	}
 
+	// Rewrite stored feed URLs to their canonical form (e.g. old.reddit.com ->
+	// www.reddit.com, /u/ -> /user/). Idempotent; fixes feeds added before
+	// canonicalization.
+	if n, err := st.Feeds.CanonicalizeFeedURLs(); err != nil {
+		log.Error("canonicalize feed urls", "err", err)
+	} else if n > 0 {
+		log.Info("canonicalized feed urls", "changed", n)
+	}
+
 	p := poller.New(st, cfg.PollInterval, cfg.PollWorkers)
 	go p.Run(ctx)
 
