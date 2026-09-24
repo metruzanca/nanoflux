@@ -1,0 +1,8 @@
+- [ ] bug: when adding a feed the author name and feed name usually have their content backwards. We should fix this and it might be a good idea to default name the feed as $USERNAME's $DOMAIN.
+- [ ] bug: Patreon plugin not working still yet.
+- [ ] bug: "mark all after" and "mark all before" are inverted. before = content released before the date of this item. after = content released after the date of this item.
+- [ ] enhancement: "Add to feed"'s UI is ugly, it should be a custom multi-select combobox. bug: once you click "save" the form doesn't close.
+- [ ] enhancement: /collections page should have two separate sections, one for user created (without a heading saying this) and for auto created (with a header explaining what this section is). Within each section the collections should be sorted by unread count.
+- [ ] enhancement: grid/list should be remembered by feed page, author page, collection page and list page. Not by session. We should have a dedicated table or column for this.
+- [ ] enhancement: make ui better ui components for forms. Possibly using some library of web-components.
+- [ ] enhancement: add swipe gestures to the item view (#item-<number>) to allow mobile users to easily swap between items in a feed.
