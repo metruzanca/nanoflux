@@ -253,7 +253,7 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	f, err := s.store.Feeds.Create(u.ID, authorID, title, req.FeedURL, homeURL, "", 900)
+	f, err := s.store.Feeds.CreateWithPlugin(u.ID, authorID, title, req.FeedURL, homeURL, "", s.pluginNameFor(req.FeedURL), 900)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "create feed failed"})
 		return

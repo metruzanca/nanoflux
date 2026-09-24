@@ -82,8 +82,9 @@ func runServer() {
 	p := poller.New(st, cfg.PollInterval, cfg.PollWorkers)
 	go p.Run(ctx)
 
-	// Load feed plugins (native + external) and route fetches through them.
-	plugins := plugin.Setup(ctx, p.Client(), cfg.PluginsDir)
+	// Load feed plugins (native + external), route fetches through them, and
+	// reconcile stored feeds against the loaded set.
+	plugins := plugin.Setup(ctx, st, p.Client(), cfg.PluginsDir)
 	defer plugins.Close()
 
 	backupRunner := newBackupRunner(ctx, cfg, sqldb)

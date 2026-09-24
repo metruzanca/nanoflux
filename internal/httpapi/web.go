@@ -19,6 +19,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
+	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
 type homeData struct {
@@ -697,7 +698,8 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 	if title == "" || feedURL == "" {
 		return store.Feed{}, "title and feed url are required"
 	}
-	f, err := s.store.Feeds.Create(userID, authorID, title, feedURL, homeURL, "", interval)
+	f, err := s.store.Feeds.CreateWithPlugin(userID, authorID, title, feedURL, homeURL, "",
+		s.pluginNameFor(feedURL), interval)
 	if err != nil {
 		log.Error("create feed", "err", err)
 		return store.Feed{}, "could not create feed"
@@ -722,6 +724,23 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 	// client bounds the fetch, and a slow feed can't stall the add response.
 	s.pollFeedNow(f)
 	return f, ""
+}
+
+// pluginNameFor reports the name of the plugin that owns feedURL for fetching,
+// or "" when the generic parser does. It is recorded on the feed so the startup
+// reconciler can detect a missing plugin later.
+func (s *Server) pluginNameFor(feedURL string) string {
+	if s.plugins == nil || s.plugins.Empty() {
+		return ""
+	}
+	u, err := url.Parse(feedURL)
+	if err != nil {
+		return ""
+	}
+	if f := s.plugins.Match(u, pluginapi.CapFetch); f != nil {
+		return f.Meta().Name
+	}
+	return ""
 }
 
 // pollFeedNow triggers an immediate first poll of a newly added feed. It is

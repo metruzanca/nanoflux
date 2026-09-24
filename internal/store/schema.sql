@@ -64,6 +64,8 @@ CREATE TABLE feeds (
     poll_interval_auto INTEGER NOT NULL DEFAULT 1,
     last_item_at      TEXT,
     next_poll_at      TEXT,
+    plugin_name       TEXT NOT NULL DEFAULT '',
+    disabled_reason   TEXT,
     enabled           INTEGER NOT NULL DEFAULT 1,
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -43,3 +43,17 @@ polling with 429. The app treats this as pacing, not failure:
 - `store.CanonicalFeedURL` rewrites reddit URLs (`old.`/`np.` → `www.`,
   `/u/` → `/user/`) on create and via a startup pass, since the old hosts now
   redirect to a login wall.
+
+## Plugins
+
+- `feeds.plugin_name` (schemaV31) records which plugin owns a feed; empty means
+  the generic parser. Set on create via `FeedStore.CreateWithPlugin` (callers
+  use `Server.pluginNameFor`) and adopted by `plugin.ReconcileFeeds` at startup.
+- `plugin.ReconcileFeeds` runs after plugins load: it adopts feeds whose plugin
+  is present, auto-disables feeds whose plugin is missing
+  (`feeds.disabled_reason = 'plugin not loaded: <name>'`), and auto-re-enables
+  those exact feeds when the plugin returns. Re-enable is keyed to that reason,
+  so a **user-paused** feed (no reason) is never resumed. `UpdateFeed` clears
+  `disabled_reason`, so a user save takes ownership back.
+- See `docs/fetching.md` (how fetching works) and
+  `docs/writing-plugins.md` (author guide).

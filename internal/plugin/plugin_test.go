@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
@@ -70,6 +72,83 @@ func TestRegistryDiscoverDedup(t *testing.T) {
 	if cs[0].FeedURL != "https://x/feed" || cs[0].Title != "From A" {
 		t.Fatalf("first plugin's candidate should win: %+v", cs[0])
 	}
+}
+
+// TestReconcileFeeds covers auto-disable/re-enable when a feed's plugin comes
+// and goes. A plugin that matches example.org owns its feeds; when absent those
+// feeds are auto-disabled with a reason, and re-enabled when it returns.
+func TestReconcileFeeds(t *testing.T) {
+	st, u, a := newPluginStore(t)
+
+	// A feed owned by the "zorg" plugin, and a user-paused feed under it.
+	zorgFeed, _ := st.Feeds.CreateWithPlugin(u.ID, a.ID, "z", "https://example.org/z", "", "", "zorg", 900)
+	paused, _ := st.Feeds.CreateWithPlugin(u.ID, a.ID, "u", "https://example.org/u", "", "", "zorg", 900)
+	st.Feeds.SetEnabled(u.ID, paused.ID, false)
+
+	// Plugin absent: the enabled feed is auto-disabled with a reason; the
+	// user-paused one keeps no reason.
+	ReconcileFeeds(st, NewRegistry())
+	got, _ := st.Feeds.ByID(u.ID, zorgFeed.ID)
+	if got.Enabled || got.DisabledReason == "" {
+		t.Fatalf("feed should be auto-disabled with a reason: %+v", got)
+	}
+	if got.PluginName != "zorg" {
+		t.Fatalf("plugin name should be preserved: %q", got.PluginName)
+	}
+	gotPaused, _ := st.Feeds.ByID(u.ID, paused.ID)
+	if gotPaused.DisabledReason != "" {
+		t.Fatalf("user-paused feed should not gain a reason: %q", gotPaused.DisabledReason)
+	}
+
+	// Plugin returns: the auto-disabled feed is re-enabled; the user-paused one
+	// stays disabled.
+	reg := NewRegistry()
+	reg.RegisterNative(fakeFetcher{name: "zorg", match: func(u *url.URL, _ pluginapi.Capability) bool {
+		return u != nil && u.Hostname() == "example.org"
+	}})
+	ReconcileFeeds(st, reg)
+
+	got, _ = st.Feeds.ByID(u.ID, zorgFeed.ID)
+	if !got.Enabled || got.DisabledReason != "" {
+		t.Fatalf("feed should be auto-re-enabled: %+v", got)
+	}
+	gotPaused, _ = st.Feeds.ByID(u.ID, paused.ID)
+	if gotPaused.Enabled {
+		t.Fatal("user-paused feed must stay disabled after reconcile")
+	}
+}
+
+// TestReconcileAdoptsFeed asserts a feed present before its plugin loaded is
+// adopted (plugin_name recorded) when the plugin appears.
+func TestReconcileAdoptsFeed(t *testing.T) {
+	st, u, a := newPluginStore(t)
+	f, _ := st.Feeds.Create(u.ID, a.ID, "z", "https://example.org/z", "", "", 900)
+	reg := NewRegistry()
+	reg.RegisterNative(fakeFetcher{name: "zorg", match: func(u *url.URL, _ pluginapi.Capability) bool {
+		return u != nil && u.Hostname() == "example.org"
+	}})
+	ReconcileFeeds(st, reg)
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.PluginName != "zorg" {
+		t.Fatalf("feed should be adopted by the plugin: %q", got.PluginName)
+	}
+}
+
+// newPluginStore builds an in-memory store with one user/author.
+func newPluginStore(t *testing.T) (*store.Store, store.User, store.Author) {
+	t.Helper()
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sqldb.Close() })
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+	return st, u, a
 }
 
 func TestCooldown(t *testing.T) {

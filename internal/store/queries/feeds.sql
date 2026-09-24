@@ -1,38 +1,38 @@
 -- name: CreateFeed :one
-INSERT INTO feeds (user_id, author_id, title, feed_url, home_url, description, poll_interval_sec)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO feeds (user_id, author_id, title, feed_url, home_url, description, poll_interval_sec, plugin_name)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, user_id, author_id, title, feed_url, home_url, description,
-         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at;
+         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, created_at;
 
 -- name: GetFeed :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, created_at
 FROM feeds
 WHERE id = ? AND user_id = ?;
 
 -- name: GetFeedAny :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, created_at
 FROM feeds
 WHERE id = ?;
 
 -- name: ListFeeds :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, created_at
 FROM feeds
 WHERE user_id = ?
 ORDER BY title;
 
 -- name: ListFeedsByAuthor :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, created_at
 FROM feeds
 WHERE user_id = ? AND author_id = ?
 ORDER BY title;
 
 -- name: ListFeedsWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.enabled, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.read = 0) AS unread
 FROM feeds f
@@ -42,7 +42,7 @@ ORDER BY f.title;
 
 -- name: ListFeedsByAuthorWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.enabled, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.read = 0) AS unread
 FROM feeds f
@@ -51,10 +51,16 @@ WHERE f.user_id = ? AND f.author_id = ?
 ORDER BY f.title;
 
 -- name: UpdateFeed :execresult
+-- A user save clears any automatic disabled reason: the user took over the
+-- feed's state, so it must not later be resumed by the plugin reconciler.
 UPDATE feeds
-SET author_id = ?, title = ?, feed_url = ?, home_url = ?, description = ?,
-    poll_interval_sec = ?, poll_interval_auto = ?, enabled = ?
-WHERE id = ? AND user_id = ?;
+SET author_id = sqlc.arg('authorID'), title = sqlc.arg('title'),
+    feed_url = sqlc.arg('feedURL'), home_url = sqlc.arg('homeURL'),
+    description = sqlc.arg('description'),
+    poll_interval_sec = sqlc.arg('pollIntervalSec'),
+    poll_interval_auto = sqlc.arg('pollIntervalAuto'),
+    enabled = sqlc.arg('enabled'), disabled_reason = NULL
+WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('userID');
 
 -- name: DeleteFeed :execresult
 DELETE FROM feeds
@@ -95,9 +101,31 @@ UPDATE feeds
 SET feed_url = ?
 WHERE id = ?;
 
+-- name: SetFeedPluginName :exec
+UPDATE feeds
+SET plugin_name = ?
+WHERE id = ?;
+
+-- name: SetFeedEnabledForPlugin :exec
+-- Admin/poller-internal: disable or enable a feed and record why. Not
+-- user-scoped because the plugin reconciler owns it.
+UPDATE feeds
+SET enabled = ?, disabled_reason = ?
+WHERE id = ?;
+
+-- name: ReenableFeedsForPlugin :execrows
+-- Auto-re-enable feeds that were disabled specifically because the named plugin
+-- was missing. Only feeds carrying that exact disabled_reason are touched, so a
+-- user-paused feed is never silently resumed.
+UPDATE feeds
+SET enabled = 1, disabled_reason = NULL
+WHERE plugin_name = sqlc.arg('pluginName')
+  AND enabled = 0
+  AND disabled_reason = 'plugin not loaded: ' || sqlc.arg('pluginName');
+
 -- name: ListFeedsDue :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, created_at
 FROM feeds
 WHERE enabled = 1
   AND (
@@ -113,13 +141,13 @@ WHERE enabled = 1
 
 -- name: GetFeedByTitle :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, enabled, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, created_at
 FROM feeds
 WHERE user_id = ? AND title = ? COLLATE NOCASE;
 
 -- name: ListAllFeeds :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.enabled, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.created_at,
        u.username AS owner
 FROM feeds f
 JOIN users u ON u.id = f.user_id
