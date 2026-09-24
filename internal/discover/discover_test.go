@@ -138,6 +138,33 @@ func TestDiscoverSurfacesPageError(t *testing.T) {
 	}
 }
 
+// TestDiscoverSurfacesHostRuleRateLimit asserts that when a known host rule's
+// feed probe is rate-limited (e.g. reddit's .rss), the rate-limit error is
+// returned rather than a bare "no feed found", so the add flow can explain it.
+func TestDiscoverSurfacesHostRuleRateLimit(t *testing.T) {
+	// All paths 429, including /r/x/.rss which the reddit host rule probes.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "60")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	// Serve the test server under a reddit hostname so the host rule applies.
+	d := New(clientTo(srv))
+	cs, err := d.Discover(context.Background(), "https://www.reddit.com/r/golang/")
+	if len(cs) != 0 {
+		t.Fatalf("expected no candidates, got %+v", cs)
+	}
+	if err == nil {
+		t.Fatal("a rate-limited host rule should surface the error")
+	}
+	var rl *feedparse.RateLimitError
+	var se *feedparse.StatusError
+	if !errors.As(err, &rl) && !errors.As(err, &se) {
+		t.Fatalf("error should be a rate-limit/status error, got %T %v", err, err)
+	}
+}
+
 func TestHostSpecificURLs(t *testing.T) {
 	u := func(s string) *url.URL {
 		parsed, err := url.Parse(s)

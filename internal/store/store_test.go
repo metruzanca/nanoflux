@@ -9,6 +9,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/filestore"
+	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -993,6 +994,71 @@ func TestListDueHonorsNextPollAt(t *testing.T) {
 	due, _ = s.Feeds.ListDue(db.Now())
 	if len(due) != 1 {
 		t.Fatalf("cleared next_poll_at should make the feed due, got %d", len(due))
+	}
+}
+
+// TestListDueNextPollAtOverridesInterval is the core fix for rate-limited hosts:
+// a rate-limit deadline that has passed makes the feed due even though it was
+// polled within its (possibly 1-day) poll interval, so the host's own short
+// window is honored rather than masked by the interval.
+func TestListDueNextPollAtOverridesInterval(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "A", "", "")
+	// A 1-day interval, as quiet/stale feeds get.
+	f, _ := s.Feeds.Create(u.ID, a.ID, "feed", "https://reddit.com/r/x/.rss", "", "", 86400)
+
+	// Polled just now (so the interval says "not due") with a rate-limit
+	// deadline that has already passed: it must be due.
+	if err := s.Feeds.SetPollMeta(f.ID, "", "", db.Now(), "rate limited"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Feeds.SetNextPollAt(f.ID, db.FormatTime(time.Now().Add(-time.Second))); err != nil {
+		t.Fatal(err)
+	}
+	due, _ := s.Feeds.ListDue(db.Now())
+	if len(due) != 1 {
+		t.Fatalf("a passed backoff should make the feed due despite a long interval, got %d", len(due))
+	}
+}
+
+func TestCanonicalFeedURL(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://old.reddit.com/u/Dominan-t.rss", "https://www.reddit.com/user/Dominan-t.rss"},
+		{"https://reddit.com/u/foo.rss", "https://www.reddit.com/user/foo.rss"},
+		{"https://www.reddit.com/r/golang/.rss", "https://www.reddit.com/r/golang/.rss"},
+		{"https://np.reddit.com/user/foo.rss", "https://www.reddit.com/user/foo.rss"},
+		{"https://example.com/feed.xml", "https://example.com/feed.xml"},
+		{"not a url", "not a url"},
+	}
+	for _, c := range cases {
+		if got := CanonicalFeedURL(c.in); got != c.want {
+			t.Errorf("CanonicalFeedURL(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestCanonicalizeFeedURLs rewrites stored reddit feeds in place.
+func TestCanonicalizeFeedURLs(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "A", "", "")
+	// CanonicalFeedURL runs on Create, so insert the non-canonical form directly
+	// to model a feed added before canonicalization.
+	f, _ := s.Feeds.Create(u.ID, a.ID, "feed", "https://example.com/x", "", "", 900)
+	if err := s.q.SetFeedFeedURL(context.Background(), sqlcgen.SetFeedFeedURLParams{
+		FeedUrl: "https://old.reddit.com/u/foo.rss",
+		ID:      f.ID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.Feeds.CanonicalizeFeedURLs()
+	if err != nil || n != 1 {
+		t.Fatalf("CanonicalizeFeedURLs = %d, %v", n, err)
+	}
+	got, _ := s.Feeds.ByID(u.ID, f.ID)
+	if got.FeedURL != "https://www.reddit.com/user/foo.rss" {
+		t.Fatalf("FeedURL = %q", got.FeedURL)
 	}
 }
 

@@ -29,6 +29,9 @@ templ FeedRow(r feedRow) {
 				if r.LastError != "" {
 					<span class="badge danger" title={ r.LastError }>last poll failed</span>
 				}
+				if r.Cooling() {
+					<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited · retry { web.Until(r.NextPollAt) }</span>
+				}
 				@staleBadge(r.Feed, r.Timezone)
 				<div class="item-meta">
 					<a href={ templ.URL(r.FeedURL) } class="external" referrerpolicy="no-referrer">feed</a> · { r.Unread } unread · last polled 
@@ -48,7 +51,10 @@ templ FeedRow(r feedRow) {
 			</div>
 			<div class="row-actions">
 				<a class="small" title="edit" href={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit" }>@web.EditIcon()</a>
-				<button class="link" title="refresh" hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/refresh" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML">@web.Lucide("refresh-cw")</button>
+				<button class="link" title="refresh" hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/refresh" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML"
+					if r.Cooling() {
+						disabled
+					}>@web.Lucide("refresh-cw")</button>
 			</div>
 		</div>
 	</li>

@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -52,6 +53,10 @@ type feedRow struct {
 	Timezone    string             // user's IANA timezone, for relative timestamps in templates
 	Collections []store.Collection // the collections this feed belongs to (author page)
 }
+
+// Cooling reports whether the feed is currently inside a rate-limit backoff, so
+// the row can show a retry badge and disable its refresh button.
+func (r feedRow) Cooling() bool { return cooling(r.NextPollAt) }
 
 type feedForm struct {
 	ID               int64
@@ -1030,10 +1035,14 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if s.poller != nil {
+	// Respect a rate-limit backoff: don't re-hit a host that asked us to wait.
+	// The row already shows the retry deadline, so a click during the window is
+	// a no-op rather than another 429.
+	if !cooling(f.NextPollAt) && s.poller != nil {
 		if _, err := s.poller.PollOne(r.Context(), f); err != nil {
 			log.Error("refresh feed", "feed_id", id, "err", err)
 		}
+		f, _ = s.store.Feeds.ByID(u.ID, id)
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
@@ -1050,6 +1059,20 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	web.Render(w, r, FeedRow(row))
+}
+
+// cooling reports whether a feed's stored NextPollAt is in the future, i.e. the
+// host asked us to wait after a rate limit. An empty or unparseable value means
+// not cooling.
+func cooling(nextPollAt string) bool {
+	if nextPollAt == "" {
+		return false
+	}
+	t, err := db.ParseTime(nextPollAt)
+	if err != nil {
+		return false
+	}
+	return time.Now().Before(t)
 }
 
 // authorPageScope reports the read/unread view and sort direction of the page
