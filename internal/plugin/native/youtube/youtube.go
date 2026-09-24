@@ -149,12 +149,41 @@ func parseRSS(body []byte) (pluginapi.Result, bool) {
 		if it.Image != nil {
 			out.ImageURL = it.Image.URL
 		}
+		// gofeed does not map media:thumbnail onto Item.Image, and YouTube
+		// advertises every video thumbnail only through it (inside a
+		// media:group), so without this fallback RSS items render blank.
+		if out.ImageURL == "" {
+			out.ImageURL = mediaThumbnailURL(it)
+		}
 		res.Items = append(res.Items, out)
 	}
 	if len(res.Items) == 0 {
 		return pluginapi.Result{}, false
 	}
 	return res, true
+}
+
+// mediaThumbnailURL returns the first media:thumbnail URL on an item, either a
+// direct <media:thumbnail> child or one nested in <media:group> (the shape
+// YouTube's channel feed uses). gofeed's Item.Image ignores media:thumbnail.
+func mediaThumbnailURL(it *gofeed.Item) string {
+	media, ok := it.Extensions["media"]
+	if !ok {
+		return ""
+	}
+	for _, g := range media["group"] {
+		for _, th := range g.Children["thumbnail"] {
+			if u := th.Attrs["url"]; u != "" {
+				return u
+			}
+		}
+	}
+	for _, th := range media["thumbnail"] {
+		if u := th.Attrs["url"]; u != "" {
+			return u
+		}
+	}
+	return ""
 }
 
 // fetchViaBrowse pulls a channel's recent videos through youtubei/v1/browse.

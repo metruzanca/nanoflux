@@ -64,6 +64,26 @@ func TestFetchRSS(t *testing.T) {
 	}
 }
 
+func TestFetchRSSCarriesMediaThumbnail(t *testing.T) {
+	h := hostFunc{do: func(_ context.Context, req pluginapi.HTTPRequest) (pluginapi.HTTPResponse, error) {
+		return pluginapi.HTTPResponse{Status: 200, Body: []byte(`<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+<title>Channel</title><link href="https://www.youtube.com/channel/UCx"/>
+<entry><id>yt:video:abc</id><title>Video One</title><link href="https://www.youtube.com/watch?v=abc"/>
+<media:group><media:thumbnail url="https://i.ytimg.com/vi/abc/hqdefault.jpg" width="480" height="360"/></media:group>
+<published>2026-01-01T00:00:00Z</published></entry></feed>`)}, nil
+	}}
+	res, err := Plugin{}.Fetch(context.Background(), pluginapi.FetchRequest{
+		URL: "https://www.youtube.com/feeds/videos.xml?channel_id=UCx",
+	}, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.Items[0].ImageURL; got != "https://i.ytimg.com/vi/abc/hqdefault.jpg" {
+		t.Fatalf("image = %q, want media:thumbnail inside media:group", got)
+	}
+}
+
 func TestFetchFallsBackToBrowse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/youtubei/v1/browse") {
