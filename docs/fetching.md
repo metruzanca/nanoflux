@@ -158,6 +158,24 @@ inspects every response for limits, cooling the request host. A plugin that
 cannot avoid a limit returns a `RateLimit`, and the poller applies exactly the
 backoff described above.
 
+### When a plugin goes missing
+
+A feed served by a plugin records the owning plugin's name (`feeds.plugin_name`).
+At startup the plugin system reconciles stored feeds against the plugins that
+actually loaded:
+
+- A feed whose plugin is **loaded** is adopted (or kept), and if it had been
+  parked for a missing plugin it is **auto-re-enabled**.
+- A feed whose plugin is **not loaded** is **auto-disabled** with a reason
+  (`plugin not loaded: <name>`), so it stops retrying a URL nothing can fetch.
+  The row shows a `disabled · plugin not loaded: …` badge.
+- Re-enabling is keyed to that exact reason, so a feed the user **paused by
+  hand** is never silently resumed. A user save on the feed edit form also
+  clears any automatic reason.
+
+This means removing a plugin parks its feeds instead of leaving them failing
+forever, and restoring the plugin brings them back automatically.
+
 ## Failures and their effects
 
 | Outcome | What nanoflux does |

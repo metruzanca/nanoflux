@@ -26,6 +26,8 @@ type Feed struct {
 	PollIntervalAuto bool   // derive poll_interval_sec from the posting cadence
 	LastItemAt       string // newest item time (published or fetched); "" when none
 	NextPollAt       string // "do not poll before" deadline after a rate limit; "" when unset
+	PluginName       string // plugin that owns this feed, "" for the generic parser
+	DisabledReason   string // why the feed is disabled (e.g. its plugin is missing); "" when enabled or user-paused
 	Enabled          bool
 	CreatedAt        string
 }
@@ -40,6 +42,12 @@ type FeedWithUnread struct {
 type FeedStore struct{ q *sqlcgen.Queries }
 
 func (s *FeedStore) Create(userID, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int) (Feed, error) {
+	return s.CreateWithPlugin(userID, authorID, title, feedURL, homeURL, description, "", pollIntervalSec)
+}
+
+// CreateWithPlugin is Create with the owning plugin name recorded. An empty
+// pluginName means the generic feed parser owns it.
+func (s *FeedStore) CreateWithPlugin(userID, authorID int64, title, feedURL, homeURL, description, pluginName string, pollIntervalSec int) (Feed, error) {
 	feedURL = CanonicalFeedURL(feedURL)
 	f, err := s.q.CreateFeed(context.Background(), sqlcgen.CreateFeedParams{
 		UserID:          userID,
@@ -49,6 +57,7 @@ func (s *FeedStore) Create(userID, authorID int64, title, feedURL, homeURL, desc
 		HomeUrl:         ns(homeURL),
 		Description:     ns(description),
 		PollIntervalSec: int64(pollIntervalSec),
+		PluginName:      pluginName,
 	})
 	if err != nil {
 		return Feed{}, fmt.Errorf("create feed: %w", err)
@@ -156,8 +165,8 @@ func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, hom
 	res, err := s.q.UpdateFeed(context.Background(), sqlcgen.UpdateFeedParams{
 		AuthorID:         authorID,
 		Title:            title,
-		FeedUrl:          feedURL,
-		HomeUrl:          ns(homeURL),
+		FeedURL:          feedURL,
+		HomeURL:          ns(homeURL),
 		Description:      ns(description),
 		PollIntervalSec:  int64(pollIntervalSec),
 		PollIntervalAuto: boolInt(pollIntervalAuto),
@@ -276,6 +285,38 @@ func (s *FeedStore) SetNextPollAt(id int64, t string) error {
 	})
 }
 
+// SetPluginName records which plugin owns a feed ("" = the generic parser).
+func (s *FeedStore) SetPluginName(id int64, name string) error {
+	return s.q.SetFeedPluginName(context.Background(), sqlcgen.SetFeedPluginNameParams{
+		PluginName: name,
+		ID:         id,
+	})
+}
+
+// disableReasonPluginMissing marks a feed disabled because its plugin was not
+// loaded at startup. The exact string is what ReenableFeedsForPlugin matches, so
+// it identifies an automatic disable and never a user pause.
+func disableReasonPluginMissing(pluginName string) string {
+	return "plugin not loaded: " + pluginName
+}
+
+// DisableForMissingPlugin disables a feed whose owning plugin is not loaded.
+func (s *FeedStore) DisableForMissingPlugin(id int64, pluginName string) error {
+	return s.q.SetFeedEnabledForPlugin(context.Background(), sqlcgen.SetFeedEnabledForPluginParams{
+		Enabled:        false,
+		DisabledReason: ns(disableReasonPluginMissing(pluginName)),
+		ID:             id,
+	})
+}
+
+// ReenableForPlugin re-enables feeds that were auto-disabled because pluginName
+// was missing. It returns how many feeds were re-enabled. A user-paused feed
+// (which has no such disabled_reason) is never touched.
+func (s *FeedStore) ReenableForPlugin(pluginName string) (int, error) {
+	n, err := s.q.ReenableFeedsForPlugin(context.Background(), pluginName)
+	return int(n), err
+}
+
 // ListDue returns enabled feeds that have not been polled within their own
 // poll_interval_sec of now.
 func (s *FeedStore) ListDue(now string) ([]Feed, error) {
@@ -307,7 +348,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.Enabled, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

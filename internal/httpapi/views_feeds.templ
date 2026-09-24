@@ -24,7 +24,11 @@ templ FeedRow(r feedRow) {
 					{ r.Title }</strong>
 				</a>
 				if !r.Enabled {
-					<span class="badge">paused</span>
+					if r.DisabledReason != "" {
+						<span class="badge danger" title={ r.DisabledReason }>disabled · { r.DisabledReason }</span>
+					} else {
+						<span class="badge">paused</span>
+					}
 				}
 				if r.LastError != "" {
 					<span class="badge danger" title={ r.LastError }>last poll failed</span>

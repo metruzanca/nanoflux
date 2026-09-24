@@ -1062,6 +1062,57 @@ func TestCanonicalizeFeedURLs(t *testing.T) {
 	}
 }
 
+// TestPluginDisableReenable covers the plugin reconciler's storage: a feed
+// auto-disabled for a missing plugin is re-enabled only for that exact reason,
+// never when the user paused it by hand.
+func TestPluginDisableReenable(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "A", "", "")
+
+	owned, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "z", "https://example.org/z", "", "", "zorg", 900)
+	if owned.PluginName != "zorg" {
+		t.Fatalf("PluginName = %q", owned.PluginName)
+	}
+
+	// Auto-disable (as the reconciler does).
+	if err := s.Feeds.DisableForMissingPlugin(owned.ID, "zorg"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Feeds.ByID(u.ID, owned.ID)
+	if got.Enabled || got.DisabledReason == "" {
+		t.Fatalf("feed should be disabled with a reason: %+v", got)
+	}
+
+	// Re-enabling an unrelated plugin does nothing.
+	if n, _ := s.Feeds.ReenableForPlugin("other"); n != 0 {
+		t.Fatalf("unrelated plugin should not re-enable: %d", n)
+	}
+	// The owning plugin returning re-enables it and clears the reason.
+	if n, _ := s.Feeds.ReenableForPlugin("zorg"); n != 1 {
+		t.Fatalf("owning plugin should re-enable: %d", n)
+	}
+	got, _ = s.Feeds.ByID(u.ID, owned.ID)
+	if !got.Enabled || got.DisabledReason != "" {
+		t.Fatalf("feed should be re-enabled: %+v", got)
+	}
+
+	// A user pause (no reason) is never resumed by reconcile.
+	paused, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "u", "https://example.org/u", "", "", "zorg", 900)
+	s.Feeds.SetEnabled(u.ID, paused.ID, false)
+	s.Feeds.DisableForMissingPlugin(paused.ID, "zorg")
+	// Simulate the user re-enabling then pausing again, which clears the reason
+	// via UpdateFeed.
+	s.Feeds.Update(u.ID, paused.ID, a.ID, "u", "https://example.org/u", "", "", 900, true, false)
+	gotPaused, _ := s.Feeds.ByID(u.ID, paused.ID)
+	if gotPaused.DisabledReason != "" {
+		t.Fatalf("a user save should clear the disabled reason: %q", gotPaused.DisabledReason)
+	}
+	if n, _ := s.Feeds.ReenableForPlugin("zorg"); n != 0 {
+		t.Fatalf("a user-paused feed must not be auto-resumed: %d", n)
+	}
+}
+
 func TestSourceIconStore(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

@@ -41,6 +41,7 @@ var migrations = []migration{
 	{28, schemaV28},
 	{29, schemaV29},
 	{30, schemaV30},
+	{31, schemaV31},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -482,6 +483,16 @@ const schemaV30 = `
 DELETE FROM feeds WHERE kind = 'scrape';
 ALTER TABLE feeds DROP COLUMN kind;
 ALTER TABLE feeds DROP COLUMN scrape_config;
+`
+
+// schemaV31 records which plugin owns a feed (plugin_name) and why a feed was
+// disabled (disabled_reason). When a feed's plugin is not loaded at startup the
+// feed is auto-disabled with a reason, and auto-re-enabled when the plugin
+// returns, so an uninstalled integration parks its feeds instead of retrying a
+// URL nothing can fetch.
+const schemaV31 = `
+ALTER TABLE feeds ADD COLUMN plugin_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE feeds ADD COLUMN disabled_reason TEXT;
 `
 
 // Migrate applies any pending migrations in order, recording each in
