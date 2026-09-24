@@ -184,6 +184,35 @@ func mergeCandidates(plugin, generic []discover.Candidate) []discover.Candidate 
 	return out
 }
 
+// candidateForURL returns the candidate whose feed URL matches url (ignoring a
+// leading www. and a trailing slash), or nil. It is how the direct-fetch path
+// finds the plugin candidate that describes the very URL it just fetched.
+func candidateForURL(cs []discover.Candidate, url string) *discover.Candidate {
+	key := normExtKey(url)
+	if key == "" {
+		return nil
+	}
+	for i := range cs {
+		if cs[i].FeedURL != "" && normExtKey(cs[i].FeedURL) == key {
+			return &cs[i]
+		}
+	}
+	return nil
+}
+
+// fillCandidate fills a plugin candidate's blank preview fields from the feed
+// the direct fetch just confirmed, so the add form always has a title and home
+// page even when a plugin omits them.
+func fillCandidate(c discover.Candidate, feedTitle, pageURL string) discover.Candidate {
+	if c.Title == "" {
+		c.Title = feedTitle
+	}
+	if c.HomeURL == "" {
+		c.HomeURL = pageURL
+	}
+	return c
+}
+
 // discoverCandidates resolves the feeds for a page URL: the user's url mappings
 // are applied first (the original url becomes the home page), the direct URL is
 // tried as a feed, then discovery runs, falling back to the original url when a
@@ -193,11 +222,32 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 	if mapped, ok := s.mappedFeedURL(userID, pageURL); ok {
 		feedURL = mapped
 	}
+	// Plugin discovery (native + external) runs first and contributes candidates
+	// with their own preview metadata. It is independent of the generic page
+	// crawl, so a page that cannot be fetched (or a host the plugin knows
+	// without a live page) still yields the plugin's feeds. It runs before the
+	// direct-fetch shortcut because a site-specific plugin's feed URL is often
+	// the page URL itself (an X profile): the direct fetch would
+	// otherwise return a bare candidate and discard the plugin's real author
+	// name/avatar in favour of the page's generic SEO metadata.
+	var pluginCandidates []discover.Candidate
+	if s.plugins != nil && !s.plugins.Empty() {
+		if pcs := s.plugins.Discover(ctx, feedURL, s.pluginHosts.For); len(pcs) > 0 {
+			pluginCandidates = toDiscoverCandidates(pcs)
+		}
+	}
+
 	var directErr error
 	// The URL itself may already be a feed; if so we can also derive the home page.
 	// Remember the fetch error so a rate limit / server error can be surfaced
 	// when discovery ultimately finds nothing.
 	if res, err := feedparse.Fetch(ctx, feedURL, s.client, "", ""); err == nil {
+		// When a plugin both serves the URL as a feed and describes it, its
+		// preview metadata wins over the generic page metadata the direct
+		// branch would otherwise fall back to.
+		if pc := candidateForURL(pluginCandidates, feedURL); pc != nil {
+			return []discover.Candidate{fillCandidate(*pc, res.Feed.Title, pageURL)}, nil
+		}
 		home := res.Feed.HomeURL
 		if home == "" || feedURL != pageURL {
 			home = pageURL
@@ -205,17 +255,6 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 		return []discover.Candidate{{FeedURL: feedURL, Title: res.Feed.Title, HomeURL: home, Strategy: "direct"}}, nil
 	} else {
 		directErr = err
-	}
-
-	// Plugin discovery (native + external) runs first and contributes candidates
-	// with their own preview metadata. It is independent of the generic page
-	// crawl, so a page that cannot be fetched (or a host the plugin knows
-	// without a live page) still yields the plugin's feeds.
-	var pluginCandidates []discover.Candidate
-	if s.plugins != nil && !s.plugins.Empty() {
-		if pcs := s.plugins.Discover(ctx, feedURL, s.pluginHosts.For); len(pcs) > 0 {
-			pluginCandidates = toDiscoverCandidates(pcs)
-		}
 	}
 
 	candidates, err := s.discoverer.Discover(ctx, feedURL)
