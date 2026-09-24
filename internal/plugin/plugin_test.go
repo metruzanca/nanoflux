@@ -134,6 +134,64 @@ func TestReconcileAdoptsFeed(t *testing.T) {
 	}
 }
 
+// TestReconcileAdoptsRenamedPlugin asserts that a feed parked because its
+// plugin was missing is resumed when a plugin that matches its URL returns under
+// a different name. Re-enable is keyed to the adopted owner, not the stale stored
+// plugin name, so a rename or swap brings the feed back.
+func TestReconcileAdoptsRenamedPlugin(t *testing.T) {
+	st, u, a := newPluginStore(t)
+	f, _ := st.Feeds.CreateWithPlugin(u.ID, a.ID, "z", "https://example.org/z", "", "", "oldname", 900)
+	st.Feeds.DisableForMissingPlugin(f.ID, "oldname")
+
+	reg := NewRegistry()
+	reg.RegisterNative(fakeFetcher{name: "newname", match: func(u *url.URL, _ pluginapi.Capability) bool {
+		return u != nil && u.Hostname() == "example.org"
+	}})
+	ReconcileFeeds(st, reg)
+
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.PluginName != "newname" {
+		t.Fatalf("feed should be re-owned by the new plugin: %q", got.PluginName)
+	}
+	if !got.Enabled || got.DisabledReason != "" {
+		t.Fatalf("feed should be re-enabled after the rename: %+v", got)
+	}
+}
+
+// TestReconcileAfterDomainReset asserts the admin escape hatch works end to end:
+// clearing a feed's owner and re-running reconcile re-owns it from the loaded
+// registry, and parks it again when no plugin matches.
+func TestReconcileAfterDomainReset(t *testing.T) {
+	st, u, a := newPluginStore(t)
+	f, _ := st.Feeds.CreateWithPlugin(u.ID, a.ID, "z", "https://example.org/z", "", "", "zorg", 900)
+
+	if n, err := st.Feeds.ResetPluginForDomain("example.org"); err != nil || n != 1 {
+		t.Fatalf("reset = %d, %v", n, err)
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.PluginName != "" {
+		t.Fatalf("feed should be ownerless after reset: %q", got.PluginName)
+	}
+
+	// No matching plugin: the feed stays on the generic parser, enabled.
+	ReconcileFeeds(st, NewRegistry())
+	got, _ = st.Feeds.ByID(u.ID, f.ID)
+	if got.PluginName != "" || !got.Enabled {
+		t.Fatalf("ownerless feed should stay generic and enabled: %+v", got)
+	}
+
+	// A matching plugin adopts it again.
+	reg := NewRegistry()
+	reg.RegisterNative(fakeFetcher{name: "zorg", match: func(u *url.URL, _ pluginapi.Capability) bool {
+		return u != nil && u.Hostname() == "example.org"
+	}})
+	ReconcileFeeds(st, reg)
+	got, _ = st.Feeds.ByID(u.ID, f.ID)
+	if got.PluginName != "zorg" {
+		t.Fatalf("feed should be re-owned after reconcile: %q", got.PluginName)
+	}
+}
+
 // newPluginStore builds an in-memory store with one user/author.
 func newPluginStore(t *testing.T) (*store.Store, store.User, store.Author) {
 	t.Helper()

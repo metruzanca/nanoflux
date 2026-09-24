@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 )
@@ -293,11 +294,22 @@ func (s *FeedStore) SetPluginName(id int64, name string) error {
 	})
 }
 
+// pluginMissingReasonPrefix tags a feed disabled because its plugin was not
+// loaded at startup. The prefix (not just the name) identifies an automatic
+// disable, so a feed can be un-parked when its plugin returns or is reset, while
+// a user pause (no reason) is never touched.
+const pluginMissingReasonPrefix = "plugin not loaded:"
+
 // disableReasonPluginMissing marks a feed disabled because its plugin was not
-// loaded at startup. The exact string is what ReenableFeedsForPlugin matches, so
-// it identifies an automatic disable and never a user pause.
+// loaded at startup.
 func disableReasonPluginMissing(pluginName string) string {
-	return "plugin not loaded: " + pluginName
+	return pluginMissingReasonPrefix + " " + pluginName
+}
+
+// IsPluginMissingReason reports whether reason is the automatic "plugin not
+// loaded: <name>" reason (as opposed to a user pause, which has no reason).
+func IsPluginMissingReason(reason string) bool {
+	return strings.HasPrefix(reason, pluginMissingReasonPrefix)
 }
 
 // DisableForMissingPlugin disables a feed whose owning plugin is not loaded.
@@ -309,12 +321,38 @@ func (s *FeedStore) DisableForMissingPlugin(id int64, pluginName string) error {
 	})
 }
 
-// ReenableForPlugin re-enables feeds that were auto-disabled because pluginName
-// was missing. It returns how many feeds were re-enabled. A user-paused feed
-// (which has no such disabled_reason) is never touched.
-func (s *FeedStore) ReenableForPlugin(pluginName string) (int, error) {
-	n, err := s.q.ReenableFeedsForPlugin(context.Background(), pluginName)
+// ReenableAutoDisabled re-enables one feed that was auto-disabled because its
+// plugin was missing, clearing the reason. It returns how many rows changed (0
+// when the feed was not auto-disabled). A user-paused feed is never touched.
+func (s *FeedStore) ReenableAutoDisabled(id int64) (int, error) {
+	n, err := s.q.ReenableAutoDisabledFeed(context.Background(), id)
 	return int(n), err
+}
+
+// ResetPluginForDomain clears the owning plugin for every feed whose URL is in
+// domain (a registrable domain, as matched by RegistrableDomain). Feeds parked
+// because their plugin was missing are re-enabled; a user pause is preserved.
+// It returns how many feeds were reset. Callers re-run the plugin reconciler
+// afterwards so the domain is re-owned by whichever plugin currently matches.
+func (s *FeedStore) ResetPluginForDomain(domain string) (int, error) {
+	if domain == "" {
+		return 0, nil
+	}
+	feeds, err := s.ListAll()
+	if err != nil {
+		return 0, err
+	}
+	reset := 0
+	for _, f := range feeds {
+		if f.PluginName == "" || RegistrableDomain(f.FeedURL) != domain {
+			continue
+		}
+		if err := s.q.ResetFeedPlugin(context.Background(), f.ID); err != nil {
+			return reset, err
+		}
+		reset++
+	}
+	return reset, nil
 }
 
 // ListDue returns enabled feeds that have not been polled within their own

@@ -172,9 +172,26 @@ actually loaded:
 - Re-enabling is keyed to that exact reason, so a feed the user **paused by
   hand** is never silently resumed. A user save on the feed edit form also
   clears any automatic reason.
+- Re-enable is keyed to the plugin the feed is **adopted by** on that boot, not
+  the stale stored name. A plugin that was renamed or replaced (its name changed
+  but it still matches the same URLs) therefore resumes its parked feeds too.
 
 This means removing a plugin parks its feeds instead of leaving them failing
 forever, and restoring the plugin brings them back automatically.
+
+### Resetting a domain (escape hatch)
+
+The admin page's **plugins** card lists the domains a plugin currently owns,
+each with a **reset** button. Reset clears `plugin_name` for every feed on that
+registrable domain and re-runs the reconcile pass, so the domain is re-owned by
+whichever loaded plugin matches it now — the way to detach a domain after a
+plugin is removed, renamed, or swapped for another. Feeds parked for a missing
+plugin are re-enabled; a feed the user paused stays paused.
+
+> Routing at fetch time is by URL shape, not by `feeds.plugin_name`. If the
+> plugin is still loaded and matches the domain, a reset re-adopts it. The reset
+> truly frees a domain to the generic parser only when no loaded plugin matches
+> it (the plugin was removed, renamed, or another plugin now wins precedence).
 
 ## Failures and their effects
 

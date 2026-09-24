@@ -52,8 +52,15 @@ polling with 429. The app treats this as pacing, not failure:
 - `plugin.ReconcileFeeds` runs after plugins load: it adopts feeds whose plugin
   is present, auto-disables feeds whose plugin is missing
   (`feeds.disabled_reason = 'plugin not loaded: <name>'`), and auto-re-enables
-  those exact feeds when the plugin returns. Re-enable is keyed to that reason,
-  so a **user-paused** feed (no reason) is never resumed. `UpdateFeed` clears
-  `disabled_reason`, so a user save takes ownership back.
+  those exact feeds when the plugin returns. Re-enable is keyed to the reason
+  (`store.IsPluginMissingReason`), so a **user-paused** feed (no reason) is never
+  resumed, and to the owner adopted *this boot*, so a renamed/swapped plugin
+  resumes its feeds. `UpdateFeed` clears `disabled_reason`, so a user save takes
+  ownership back.
+- Escape hatch: `POST /admin/plugins/reset` (admin only) takes a `domain`,
+  clears `plugin_name` for that registrable domain's feeds
+  (`FeedStore.ResetPluginForDomain`, un-parking auto-disabled ones), then
+  re-runs `ReconcileFeeds` so the loaded registry re-derives the owner. The
+  plugins card lists owned domains with a reset button.
 - See `docs/fetching.md` (how fetching works) and
   `docs/writing-plugins.md` (author guide).
