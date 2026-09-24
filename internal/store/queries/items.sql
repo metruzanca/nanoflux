@@ -109,6 +109,16 @@ SET read = 1, read_at = sqlc.arg('readAt')
 WHERE items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = sqlc.arg('userID'))
   AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR items.feed_id = CAST(sqlc.arg('feedID') AS INTEGER));
 
+-- name: MarkItemsOlderThanRead :execresult
+-- Mark unread items older than a cutoff read for a user, regardless of favorite
+-- state. Used by the auto-read sweep. COALESCE(published_at, fetched_at) is the
+-- canonical item time.
+UPDATE items
+SET read = 1, read_at = sqlc.arg('readAt')
+WHERE read = 0
+  AND COALESCE(items.published_at, items.fetched_at) < sqlc.arg('cutoff')
+  AND items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = sqlc.arg('userID'));
+
 -- name: MarkAllItemsUnread :exec
 UPDATE items
 SET read = 0, read_at = NULL

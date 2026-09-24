@@ -119,6 +119,6 @@ SET favorites_share_token = sqlc.arg('token')
 WHERE id = sqlc.arg('userID');
 
 -- name: GetUserByFavoritesShareToken :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, created_at
 FROM users
 WHERE favorites_share_token = sqlc.arg('token');

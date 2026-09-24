@@ -19,6 +19,7 @@ storage.
 - **Optional S3 support** — Nanoflux uses local file storage by default, but supports S3.
 - **Backups** — Configurable Automatic backup every 1 day, keeping the 7 most recent or trigger them manually.
 - **Polite fetching** — per-feed adaptive intervals, conditional GET, and per-host rate-limit backoff, so a throttled site never starves the rest of your feeds. See [`docs/fetching.md`](docs/fetching.md).
+- **Auto-read** — old unread items are marked read automatically (3, 7, 30, or 60 days; off), so a backlog you never cared about fades away. Reversible with "mark all unread".
 
 ## Usage
 

@@ -15,6 +15,7 @@ CREATE TABLE users (
     theme         TEXT NOT NULL DEFAULT 'dark',
     accent_color  TEXT NOT NULL DEFAULT '#5b8cff',
     home_config   TEXT,
+    auto_read_after_days INTEGER NOT NULL DEFAULT 30,
     favorites_share_token TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );

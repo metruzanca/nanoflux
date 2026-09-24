@@ -19,6 +19,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/filestore"
 	"github.com/metruzanca/nanoflux/internal/httpapi"
+	"github.com/metruzanca/nanoflux/internal/maintenance"
 	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/internal/poller"
 	"github.com/metruzanca/nanoflux/internal/store"
@@ -91,6 +92,9 @@ func runServer() {
 	if backupRunner != nil {
 		go backupRunner.Run(ctx)
 	}
+
+	// Mark stale unread items read for users who opted in to auto-read.
+	go maintenance.New(st, maintenance.DefaultInterval).Run(ctx)
 
 	srv := &http.Server{
 		Addr: cfg.Addr,
