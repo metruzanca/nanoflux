@@ -172,6 +172,38 @@ func TestManualFeedForm(t *testing.T) {
 	}
 }
 
+// TestAddFeedOffersManualButton asserts every "find feed" entry point also shows
+// an "add manually" action, so a user who already knows the feed url is not
+// forced through discovery.
+func TestAddFeedOffersManualButton(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+
+	// The authors index dialog.
+	body := doGet(h, "/authors", cookie).Body.String()
+	if !strings.Contains(body, "find feed") || !strings.Contains(body, `hx-post="/fragments/manual-feed"`) {
+		t.Fatalf("authors dialog should offer both find and manual: %s", body)
+	}
+	if !strings.Contains(body, `hx-target="#author-preview"`) {
+		t.Fatalf("authors manual button should target the author preview: %s", body)
+	}
+
+	// The author-scoped dialog.
+	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if !strings.Contains(body, "find feed") || !strings.Contains(body, `hx-target="#author-feed-preview"`) {
+		t.Fatalf("author dialog should offer both find and manual: %s", body)
+	}
+
+	// The PWA share landing page (it searches on load, so it only needs the
+	// manual action, not the "find feed" button).
+	body = doGet(h, "/add?url=https://example.com/feed", cookie).Body.String()
+	if !strings.Contains(body, `hx-post="/fragments/manual-feed"`) || !strings.Contains(body, `hx-target="#share-preview"`) {
+		t.Fatalf("share page should offer manual entry: %s", body)
+	}
+}
+
 func TestFeedPreviewMultiple(t *testing.T) {
 	_, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

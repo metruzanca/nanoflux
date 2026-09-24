@@ -16,4 +16,6 @@ templ shareAddPage(url string) {
 		hx-swap="innerHTML">
 		<p class="muted">searching…</p>
 	</div>
+	<p class="muted small">or add it manually:</p>
+	@manualFeedButton("#share-preview")
 }

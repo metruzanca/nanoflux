@@ -30,7 +30,10 @@ templ authorsPage(u store.User, d authorsData) {
 			<label>url
 				<input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required/>
 			</label>
-			<button type="submit">find feed</button>
+			<div class="row">
+				<button type="submit">find feed</button>
+				@manualFeedButton("#author-preview")
+			</div>
 		</form>
 		<div id="author-preview"></div>
 	</dialog>
@@ -206,7 +209,10 @@ templ authorPage(u store.User, d authorData) {
 			<label>url
 				<input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required/>
 			</label>
-			<button type="submit">find feed</button>
+			<div class="row">
+				<button type="submit">find feed</button>
+				@manualFeedButton("#author-feed-preview")
+			</div>
 		</form>
 		<div id="author-feed-preview"></div>
 	</dialog>
