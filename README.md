@@ -6,92 +6,34 @@ storage.
 
 ## Features
 
-- **Automagical adds** — paste a URL (a feed or a page); nanoflux discovers the
+- **Author-centric** — every feed belongs to an author; feeds are always
+  viewed through the author who publishes them.
+- **Automagical adds** — paste a URL and nanoflux discovers the
   feed, derives the title/home url, and creates an **author** with their first
   feed attached.
-- **Author-centric** — every feed belongs to an author; feeds are always
-  viewed through the author who publishes them (see
-  [docs/authors-and-feeds.md](docs/authors-and-feeds.md)). Lots of one-feed
-  authors is fine.
 - **Collections** — group feeds into folders.
-- **Read/unread** — mark items read, mark-all-read; items per feed and author.
-- **Item preview** — click an item to preview it in a modal, or open the live
-  version in a new tab.
-- **Multi-user** — username/password accounts, per-user data, signup page.
-- **JSON API** — `/api/...` endpoints for the browser extension (auth via the
-  session token as `Authorization: Bearer`).
+- **Item preview** — view items without leaving the app.
+- **Multi-user** — username/password accounts, per-user data, simple signup page. (no emails)
+- **Multi-user** — Admin panel and admin cli.
+- **Browser Extension** — for quick adding a new feed.
+- **Optional S3 support** — Nanoflux uses local file storage by default, but supports S3.
+- **Backups** — Configurable Automatic backup every 1 day, keeping the 7 most recent or trigger them manually.
 
-## Run from source
+## Usage
 
-Requires Go 1.26+.
+The recommended approach is to use the docker container.
 
 ```bash
-go run ./cmd/server
+docker run -d --name nanoflux -p 8080:8080 \
+  -v nanoflux-db:/data \
+  -v nanoflux-files:/filestore \
+  -e NF_FILE_STORE=/filestore \
+  -e NF_ADMIN_USER=admin -e NF_ADMIN_PASS=changeme \
+  ghcr.io/metruzanca/nanoflux:latest
 ```
 
-On first start with no users, a default **admin/admin** account is created.
-Point your browser at http://localhost:8080.
-
-Configuration (env vars):
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `NF_ADDR` | `:8080` | listen address |
-| `NF_DB` | `./data/rss.db` | sqlite database path |
-| `NF_FILE_STORE` | `<db dir>/filestore` | local directory for avatars and custom icons when no S3 endpoint is configured |
-| `NF_LOG_LEVEL` | `info` | log level: `debug`, `info`, `warn`, `error` |
-| `NF_POLL_INTERVAL` | `15m` | poller wake interval |
-| `NF_POLL_WORKERS` | `4` | concurrent feed fetches (distinct hosts run in parallel; a host's feeds are fetched one at a time) |
-| `NF_USER_AGENT` | `nanoflux (<repo URL>)` | outbound User-Agent for feed fetching and discovery (leave the built-in crawler/browser agents alone) |
-| `NF_ADMIN_USER` / `NF_ADMIN_PASS` | — | create the first account at startup (takes precedence over admin/admin) |
-| `NF_PLUGINS_DIR` | `/plugins` | directory scanned for external feed plugins (executables); native plugins are always available |
-
-### Object storage
-
-Avatars and custom source icons live in S3-compatible object storage. With no
-S3 endpoint configured they fall back to the local disk directory
-`NF_FILE_STORE`; set `NF_S3_ENDPOINT` to switch to S3 (note that `https://`
-prefixes enable TLS).
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `NF_S3_ENDPOINT` | unset → local disk | S3-compatible object-storage endpoint |
-| `NF_S3_BUCKET` | `nanoflux` | bucket name |
-| `NF_S3_ACCESS_KEY` | — | access key |
-| `NF_S3_SECRET_KEY` | — | secret key |
-| `NF_S3_REGION` | `us-east-1` | bucket region |
-
-### Automatic backups
-
-The server can snapshot the whole instance (database plus, on local-disk
-storage, the file store) on a schedule and ship each snapshot to a local
-directory or S3-compatible bucket. It is off unless `NF_BACKUP_INTERVAL` and a
-destination are both set (the bundled `docker-compose.yml` sets both, so compose
-instances back up by default — see below). Admins see the last result and a
-"back up now" button on `/admin`.
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `NF_BACKUP_INTERVAL` | unset → off | how often to snapshot (Go duration, e.g. `24h`) |
-| `NF_BACKUP_KEEP` | `7` | snapshots to retain, newest first; `0` keeps all |
-| `NF_BACKUP_DIR` | unset | local destination directory |
-| `NF_BACKUP_S3_ENDPOINT` | unset | S3-compatible destination endpoint |
-| `NF_BACKUP_S3_BUCKET` | `nanoflux-backups` | destination bucket |
-| `NF_BACKUP_S3_ACCESS_KEY` | — | access key |
-| `NF_BACKUP_S3_SECRET_KEY` | — | secret key |
-| `NF_BACKUP_S3_REGION` | `us-east-1` | bucket region |
-| `NF_BACKUP_S3_PREFIX` | unset | key prefix within the bucket |
-
-With an S3 destination the file store is **not** included — back up those
-objects with the provider. Snapshots use the same `.tar.gz` format as
-`make backup` / `nanoflux backup`, so any of them can be restored the same way.
-
-## Run with containers (docker / podman)
-
-The release pipeline builds a multi-arch image (linux/amd64 + linux/arm64) and
-publishes it to the GitHub Container Registry as
-`ghcr.io/metruzanca/nanoflux:latest`. Clone the repo and drive the included
-`docker-compose.yml` with `make` (docker or podman, auto-detected):
+We also include a docker-compose.yml and have setup a `Makefile` with admin/maintenance commands.
+Making the easiest way to run nanoflux, clone the repository and run `make start`
 
 ```bash
 git clone https://github.com/metruzanca/nanoflux
@@ -99,25 +41,15 @@ cd nanoflux
 make start
 ```
 
-Point your browser at http://localhost:8080. On first start, `make start`
-generates a `.env` file with `NF_ADMIN_USER=admin` and a random
-`NF_ADMIN_PASS` (printed to the console and recoverable from `.env`). The
-file is only created when missing, so a restart won't change your password.
-Set the variables yourself in `.env` before the first run to pick your own
-credentials; otherwise the default `admin/admin` account is created only when
-no bootstrap credentials exist. All variables are documented in `.env.example`.
+Updating nanoflux is also made easy with the Makefile, just run `make update`.
 
-This mounts two named volumes: `nanoflux-db` at `/data` (the sqlite database)
-and `nanoflux-files` at `/filestore` (avatars and custom icons), so both
-survive container restarts and updates.
+NOTE: Signups are **open by default** so a fresh instance is usable. You may disable them on `/admin`.
+You can create new accounts from the CLI inside the container or re-enable signups briefly.
 
-Compose instances also back up automatically to the host's `./backups`
-directory once a day (keeping the newest seven). Set `NF_BACKUP_INTERVAL=0` in
-`.env` to turn that off, or override `NF_BACKUP_DIR` / `NF_BACKUP_KEEP`. Because
-it is the same directory `make backup` uses, a server snapshot restores
-directly with `make restore`.
 
-### Daily use
+### CLI
+
+For selfhosting convenience, I've setup a `Makefile` with the most likely commands you'll need, most are wrappers of docker exec. It also supports podman.
 
 | Command | What it does |
 | --- | --- |
@@ -131,84 +63,13 @@ directly with `make restore`.
 | `make backup` | snapshot the database and file store into `backups/` |
 | `make restore ARCHIVE=backups/<file>.tar.gz` | stop, restore from a backup, and restart |
 
-`make help` lists these, and `make <cmd> RUNTIME=podman` forces podman.
+Some admin operations are more easily done via a CLI app.
+Nanoflux ships with one, you can access it easily by running
+`make shell` to get shell access into your container.
 
-Development tasks (icons, extension packaging, the dev server, codegen) live in
-`mise` — run `mise tasks` to list them.
-
-### Updating
-
-```bash
-make update
-```
-
-Pulls the latest `latest` image and redeploys the container; your data is
-preserved.
-
-### HTTPS
-
-nanoflux detects whether a request arrived over HTTPS and only then marks the
-session cookie `Secure` — so plain-HTTP LAN and dev installs keep working. It
-checks TLS directly and the `X-Forwarded-Proto`/`X-Forwarded-Ssl` headers from
-a reverse proxy, so serving through Caddy, Traefik or Tailscale-serve hardens
-the cookie automatically. If you use Nginx, forward the scheme explicitly:
-
-```nginx
-location / {
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_pass http://127.0.0.1:8080;
-}
-```
-
-A simple Caddy setup:
-
-```caddy
-nanoflux.example.com {
-    reverse_proxy 127.0.0.1:8080
-}
-```
-
-To run a published image directly, without the Makefile:
+Then you can run `nanoflux` as a cli tool:
 
 ```bash
-docker run -d --name nanoflux -p 8080:8080 \
-  -v nanoflux-db:/data \
-  -v nanoflux-files:/filestore \
-  -e NF_FILE_STORE=/filestore \
-  -e NF_ADMIN_USER=admin -e NF_ADMIN_PASS=changeme \
-  ghcr.io/metruzanca/nanoflux:latest
-```
-
-Substitute `podman` for `docker` as needed. If the image is private,
-`podman login ghcr.io -u <user>` first.
-
-## Admin
-
-nanoflux has two admin surfaces with the same capabilities: list users, create
-users, reset passwords, grant/revoke the admin flag, and delete users. Deleting
-a user removes all of their data (feeds, items, avatars, icons). The first
-account created at startup (the bootstrap account) is always an admin.
-
-### Web
-
-Log in as an admin and open **admin** from the user menu (top-right). The page
-shows instance stats (users, feeds, authors, items, unread), a **signups**
-toggle, and a banner suggesting you disable open signup (dismissible per
-admin). Each user row has a password-reset form, a make/remove-admin toggle,
-and a delete button with confirmation. You cannot delete your own account, and
-the last admin can never be removed.
-
-Signups are **open by default** so a fresh instance is usable; once you have
-your account, disable them on `/admin` so strangers can't register. With
-signup off, the signup page shows a notice and the login page stops linking to
-it — new accounts come from the CLI's `user create`.
-
-### CLI
-
-The same operations run inside the container:
-
-```bash
-make shell
 nanoflux user list
 nanoflux user create <username>              # prompts for the password; --admin grants admin
 nanoflux user set-admin <username> true
@@ -216,12 +77,51 @@ nanoflux user reset-password <username>     # prompts for the new password
 nanoflux user delete <username>             # prompts to confirm; use --yes to skip
 nanoflux feed list                          # every feed across users (no item content)
 nanoflux user --help
+nanoflux backup                # writes backups/nanoflux-<timestamp>.tar.gz
+nanoflux restore backups/nanoflux-20260921-120000.tar.gz   # refuses while the server is running
 ```
 
-`nanoflux` with no arguments (or `nanoflux server`) starts the web server, so
-the docker image and compose file are unchanged; any other first argument
-routes to the CLI. Instances created before the admin flag existed grant one
-with `nanoflux user set-admin <your-username> true`.
+<summary>
+<details>Configuration</details>
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `NF_ADDR` | `:8080` | listen address |
+| `NF_DB` | `./data/rss.db` | sqlite database path |
+| `NF_FILE_STORE` | `<db dir>/filestore` | local directory for avatars and custom icons when no S3 endpoint is configured |
+| `NF_LOG_LEVEL` | `info` | log level: `debug`, `info`, `warn`, `error` |
+| `NF_POLL_INTERVAL` | `15m` | poller wake interval |
+| `NF_POLL_WORKERS` | `4` | concurrent feed fetches (distinct hosts run in parallel; a host's feeds are fetched one at a time) |
+| `NF_USER_AGENT` | `nanoflux (<repo URL>)` | outbound User-Agent for feed fetching and discovery (leave the built-in crawler/browser agents alone) |
+| `NF_ADMIN_USER` / `NF_ADMIN_PASS` | — | create the first account at startup (takes precedence over admin/admin) |
+| `NF_PLUGINS_DIR` | `/plugins` | directory scanned for external feed plugins (executables); native plugins are always available |
+
+### Configuration for Backups
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `NF_BACKUP_INTERVAL` | unset → off | how often to snapshot (Go duration, e.g. `24h`) |
+| `NF_BACKUP_KEEP` | `7` | snapshots to retain, newest first; `0` keeps all |
+| `NF_BACKUP_DIR` | unset | local destination directory |
+
+### (Optional) Environment Variables for Object storage
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `NF_S3_ENDPOINT` | unset → local disk | S3-compatible object-storage endpoint |
+| `NF_S3_BUCKET` | `nanoflux` | bucket name |
+| `NF_S3_ACCESS_KEY` | — | access key |
+| `NF_S3_SECRET_KEY` | — | secret key |
+| `NF_S3_REGION` | `us-east-1` | bucket region |
+| `NF_BACKUP_S3_ENDPOINT` | unset | S3-compatible destination endpoint |
+| `NF_BACKUP_S3_BUCKET` | `nanoflux-backups` | destination bucket |
+| `NF_BACKUP_S3_ACCESS_KEY` | — | access key |
+| `NF_BACKUP_S3_SECRET_KEY` | — | secret key |
+| `NF_BACKUP_S3_REGION` | `us-east-1` | bucket region |
+| `NF_BACKUP_S3_PREFIX` | unset | key prefix within the bucket |
+
+</summary>
+
 
 ### Backup and restore
 
@@ -233,94 +133,16 @@ ls backups/
 make restore ARCHIVE=backups/nanoflux-20260921-120000.tar.gz
 ```
 
-`make restore` stops the app, replaces the data volumes from the archive, and
-brings the instance back up.
+## Browser extension
 
-`make backup` and `make restore` are thin wrappers around `podman compose run`,
-which delegates to the app's own `nanoflux backup`/`restore`. The volumes, mount
-paths, and env all come from `docker-compose.yml`, so there is one place to keep
-them; the volume names are pinned there, so moving or renaming the repo can't
-orphan your data. The database snapshot is taken with `VACUUM INTO` — consistent
-even while the server is running in WAL mode.
-
-The same format is available from the CLI for host installs:
-
-```bash
-nanoflux backup                # writes backups/nanoflux-<timestamp>.tar.gz
-nanoflux restore backups/nanoflux-20260921-120000.tar.gz   # refuses while the server is running
-```
-
-The database is always backed up. Blobs on local disk are included; if you
-point `NF_S3_ENDPOINT` at S3-compatible storage, back up those objects with
-your provider.
-
-For scheduled, off-site backups, set `NF_BACKUP_INTERVAL` and a destination
-(see [Automatic backups](#automatic-backups)); the server then snapshots and
-uploads on its own. See [`docs/backups.md`](docs/backups.md) for restore steps.
-
-## Release
-
-Tags push `v*` trigger GitHub Actions to build the multi-arch
-`ghcr.io/metruzanca/nanoflux` images and draft a GitHub release with the
-changelog. Releases carry no binary artifacts — the app ships as containers
-only, and the release notes link to the package registry:
-
-```bash
-git tag v0.1.0 && git push origin v0.1.0
-```
+Nanoflux has a browser extension for adding feeds quickly and easily.
+You can install it by loading the `extension` directory as an "unpacked extension"
+OR by downloading the unpacked extension from the user settings page.
 
 ## Installable PWA
 
-nanoflux is a progressive web app: every page links a web manifest, an
-`apple-touch-icon`, and a minimal (non-caching) service worker, so you can
-install it on a phone — Chrome/Android shows **Install app / Add to Home
-screen**, and Safari's **Add to Home Screen** launches it full-screen with the
-branded icon. The worker does not cache content (the reader is authenticated
-and live), so installing it just adds a convenient icon.
-
-Installation requires a **secure context (HTTPS)** — service workers and the
-install prompt only work over `https://` (or `localhost`). The bundled
-`docker compose` setup listens on plain HTTP (`20310`), so for mobile install
-the instance must sit behind a TLS reverse proxy (Caddy, nginx, Traefik, …).
-
-The PWA icons are generated by `tools/iconsgen`; regenerate after an accent or
-brand change with `mise run icons`.
-
-## Browser extension
-
-The `extension/` directory is a Manifest V3 browser extension (Chrome/Edge). Click
-its toolbar icon to find feeds on the current page and save them to nanoflux: the
-popup loads a server-rendered add-feed form for the discovered feed.
-
-**Install it from your own instance:** on `/settings` the **browser extension**
-card downloads the extension as a zip (served by the app itself — no browser
-store needed). Unzip it, open `chrome://extensions` (or `brave://extensions`),
-enable **Developer mode**, click **Load unpacked**, and pick the unzipped folder.
-Then open the extension's settings and enter your server URL + username/password
-— it logs in via `POST /api/login` and stores the session token in
-`chrome.storage.local`.
-
-The extension uses the same discovery (`POST /api/discover`) and add-feed
-(`POST /api/ext/save`, an htmx HTML fragment wrapping the app's save logic) as
-the web UI, so app-side improvements carry over automatically. `mise run
-extension` writes `dist/nanoflux-extension.zip` from the same embedded file set.
-
-### PWA share target (Android)
-
-Installing nanoflux as a PWA also registers it as a **share target**: sharing a
-link from any Android app opens `GET /add?url=…` in nanoflux, which runs the
-normal discovery + add-feed flow for that page. This is Chromium/Android-only —
-iOS Safari does not implement `share_target` — and requires the app to be
-installed (HTTPS).
-
-## Development
-
-```bash
-go test ./...
-go vet ./...
-goreleaser check
-goreleaser release --snapshot --skip=docker   # build binaries locally
-```
+Nanoflux is a progressive web app, you can install it for convenience on Android/IOS.
+Installing nanoflux as a PWA also registers it as a **share target** allowing you to quickly add a feed.
 
 ## Contributing
 
@@ -328,7 +150,7 @@ I'm not accepting contributions at this time — but issues are very welcome for
 feature requests and bug reports.
 
 This is an AI coding project: if your agent can write a feature, mine probably
-can too. The difference is that I have a better understanding of the project, so
+can too. The difference is that I have a better understanding of the project goals, so
 I'd rather build it myself. A clear issue describing the feature or the bug is
 the most useful thing you can send — though coffee is a close second:
 
