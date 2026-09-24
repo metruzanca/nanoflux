@@ -174,6 +174,7 @@ type User struct {
 	Theme                 string         `json:"theme"`
 	AccentColor           string         `json:"accent_color"`
 	HomeConfig            sql.NullString `json:"home_config"`
+	AutoReadAfterDays     int64          `json:"auto_read_after_days"`
 	FavoritesShareToken   sql.NullString `json:"favorites_share_token"`
 	CreatedAt             string         `json:"created_at"`
 }

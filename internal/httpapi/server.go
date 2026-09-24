@@ -194,6 +194,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /settings/home", s.auth.Require(http.HandlerFunc(s.settingsHome)))
 	mux.Handle("POST /settings/home/reset", s.auth.Require(http.HandlerFunc(s.settingsHomeReset)))
 	mux.Handle("POST /settings/theme", s.auth.Require(http.HandlerFunc(s.settingsTheme)))
+	mux.Handle("POST /settings/auto-read", s.auth.Require(http.HandlerFunc(s.settingsAutoRead)))
 	mux.Handle("POST /settings/accent", s.auth.Require(http.HandlerFunc(s.settingsAccent)))
 	mux.Handle("POST /settings/password", s.auth.Require(http.HandlerFunc(s.settingsPassword)))
 	mux.Handle("POST /settings/sessions/{token}/revoke", s.auth.Require(http.HandlerFunc(s.settingsSessionsRevoke)))

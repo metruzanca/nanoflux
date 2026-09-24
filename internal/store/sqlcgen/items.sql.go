@@ -904,6 +904,27 @@ func (q *Queries) MarkItemsBeforeRead(ctx context.Context, arg MarkItemsBeforeRe
 	return err
 }
 
+const markItemsOlderThanRead = `-- name: MarkItemsOlderThanRead :execresult
+UPDATE items
+SET read = 1, read_at = ?1
+WHERE read = 0
+  AND COALESCE(items.published_at, items.fetched_at) < ?2
+  AND items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?3)
+`
+
+type MarkItemsOlderThanReadParams struct {
+	ReadAt sql.NullString `json:"readAt"`
+	Cutoff sql.NullString `json:"cutoff"`
+	UserID int64          `json:"userID"`
+}
+
+// Mark unread items older than a cutoff read for a user, regardless of favorite
+// state. Used by the auto-read sweep. COALESCE(published_at, fetched_at) is the
+// canonical item time.
+func (q *Queries) MarkItemsOlderThanRead(ctx context.Context, arg MarkItemsOlderThanReadParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, markItemsOlderThanRead, arg.ReadAt, arg.Cutoff, arg.UserID)
+}
+
 const setItemFavorite = `-- name: SetItemFavorite :execresult
 UPDATE items
 SET favorite = ?

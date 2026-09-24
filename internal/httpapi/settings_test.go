@@ -28,6 +28,7 @@ func TestSettingsPage(t *testing.T) {
 		`hx-post="/settings/icons"`,
 		`hx-post="/settings/timezone"`,
 		`hx-post="/settings/theme"`,
+		`hx-post="/settings/auto-read"`,
 		`hx-post="/settings/accent"`,
 		`hx-post="/settings/opml"`,
 		`hx-post="/settings/mappings"`,
@@ -257,6 +258,57 @@ func TestSettingsTheme(t *testing.T) {
 	after, _ = s.store.Users.ByID(u.ID)
 	if after.Theme != "system" {
 		t.Fatalf("theme not persisted: %q", after.Theme)
+	}
+}
+
+func TestSettingsAutoRead(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// Default is 30 days.
+	after, _ := s.store.Users.ByID(u.ID)
+	if after.AutoReadAfterDays != 30 {
+		t.Fatalf("default auto_read_after_days = %d; want 30", after.AutoReadAfterDays)
+	}
+
+	// Set 7 days, with an old unread item that should be swept immediately.
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Feed", "https://x.dev/rss.xml", "", "", 900)
+	old := db.FormatTime(time.Now().AddDate(0, 0, -10))
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "old", Title: "old", PublishedAt: old, FetchedAt: db.Now()})
+
+	rr := doForm(h, "POST", "/settings/auto-read", url.Values{"auto_read_after_days": {"7"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set auto-read: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.AutoReadAfterDays != 7 {
+		t.Fatalf("auto-read not persisted: %d", after.AutoReadAfterDays)
+	}
+	unread, _ := s.store.Items.CountUnread(u.ID, 0)
+	if unread != 0 {
+		t.Fatalf("saving should sweep immediately: unread = %d; want 0", unread)
+	}
+
+	// Off disables it (0).
+	rr = doForm(h, "POST", "/settings/auto-read", url.Values{"auto_read_after_days": {"off"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set off: %d", rr.Code)
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.AutoReadAfterDays != 0 {
+		t.Fatalf("off should store 0, got %d", after.AutoReadAfterDays)
+	}
+
+	// Invalid value -> 400, nothing saved.
+	rr = doForm(h, "POST", "/settings/auto-read", url.Values{"auto_read_after_days": {"99"}}, cookie)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid auto-read: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.AutoReadAfterDays != 0 {
+		t.Fatalf("invalid value should not overwrite: %d", after.AutoReadAfterDays)
 	}
 }
 

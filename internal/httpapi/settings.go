@@ -47,6 +47,7 @@ type settingsData struct {
 	Home      settingsHomeData
 	Timezone  settingsTimezoneData
 	Theme     settingsThemeData
+	AutoRead  settingsAutoReadData
 	Accent    settingsAccentData
 	Password  settingsPasswordData
 	Sessions  settingsSessionsData
@@ -54,6 +55,35 @@ type settingsData struct {
 	Extension settingsExtensionData
 	Icons     []settingsIconRow
 	Mappings  []settingsMappingRow
+}
+
+// autoReadOption is one radio choice in the auto-read card. Value is the form
+// value ("3", "7", "30", "60", or "off"); off maps to 0 days (disabled).
+type autoReadOption struct {
+	Value string
+	Label string
+}
+
+// autoReadOptions are the supported auto-read windows. 30 is the schema default.
+var autoReadOptions = []autoReadOption{
+	{"3", "3 days"},
+	{"7", "7 days"},
+	{"30", "30 days"},
+	{"60", "60 days"},
+	{"off", "off"},
+}
+
+type settingsAutoReadData struct {
+	Value string // selected option value, matching autoReadOptions
+	Error string
+}
+
+// autoReadValue maps a stored day count to its option value; 0 is "off".
+func autoReadValue(days int) string {
+	if days <= 0 {
+		return "off"
+	}
+	return strconv.Itoa(days)
 }
 
 // settingsExtensionData drives the browser-extension download card.
@@ -110,6 +140,7 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		Home:               s.settingsHomeData(u.ID, ""),
 		Timezone:           settingsTimezoneData{Timezone: u.Timezone},
 		Theme:              settingsThemeData{Theme: u.Theme},
+		AutoRead:           settingsAutoReadData{Value: autoReadValue(u.AutoReadAfterDays)},
 		Accent:             settingsAccentData{Accent: u.AccentColor},
 		Sessions:           s.settingsSessionsData(u, auth.Token(r)),
 		Extension:          settingsExtensionData{ServerURL: requestBaseURL(r)},
@@ -229,6 +260,46 @@ func (s *Server) settingsTheme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	web.Render(w, r, settingsTheme(settingsThemeData{Theme: theme}))
+}
+
+// settingsAutoRead stores the user's auto-read window and, when enabled,
+// sweeps immediately so the change is visible without waiting for the daily
+// background pass.
+func (s *Server) settingsAutoRead(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	value := strings.TrimSpace(r.FormValue("auto_read_after_days"))
+	render := func(v string, errMsg string) {
+		if errMsg != "" {
+			w.WriteHeader(http.StatusBadRequest)
+		}
+		web.Render(w, r, settingsAutoRead(settingsAutoReadData{Value: v, Error: errMsg}))
+	}
+	days := 0
+	switch value {
+	case "off":
+		days = 0
+	case "3", "7", "30", "60":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			render(autoReadValue(u.AutoReadAfterDays), "choose an option")
+			return
+		}
+		days = n
+	default:
+		render(autoReadValue(u.AutoReadAfterDays), "choose an option")
+		return
+	}
+	if err := s.store.Users.SetAutoReadAfterDays(u.ID, days); err != nil {
+		log.Error("set auto-read", "err", err)
+		render(autoReadValue(u.AutoReadAfterDays), "could not save")
+		return
+	}
+	if days > 0 {
+		if _, err := s.store.Items.MarkOlderThanRead(u.ID, days); err != nil {
+			log.Error("auto-read sweep on save", "err", err)
+		}
+	}
+	render(autoReadValue(days), "")
 }
 
 // settingsAccent stores the user's accent color as a "#rrggbb" hex value.

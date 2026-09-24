@@ -13,6 +13,7 @@ templ settingsPage(u store.User, d settingsData) {
 	@settingsHomeCard(d.Home)
 	@settingsTimezone(d.Timezone)
 	@settingsTheme(d.Theme)
+	@settingsAutoRead(d.AutoRead)
 	@settingsAccent(d.Accent)
 	@settingsPassword(d.Password)
 	@settingsSessions(d.Sessions)
@@ -123,6 +124,26 @@ templ settingsTheme(d settingsThemeData) {
 					<input type="radio" name="theme" value="system" checked={ d.Theme == "system" }/> system
 				</label>
 			</div>
+			<button type="submit">save</button>
+		</form>
+	</section>
+}
+
+templ settingsAutoRead(d settingsAutoReadData) {
+	<section class="card" id="settings-auto-read-card">
+		<h2>auto-read old items</h2>
+		<p class="muted small">Unread items older than this are marked read automatically, including favorites. Off leaves everything as is. Marking read is reversible with "mark all unread".</p>
+		<form class="stack" hx-post="/settings/auto-read" hx-target="#settings-auto-read-card" hx-swap="outerHTML">
+			<div class="row">
+				for _, opt := range autoReadOptions {
+					<label class="check">
+						<input type="radio" name="auto_read_after_days" value={ opt.Value } checked={ d.Value == opt.Value }/> { opt.Label }
+					</label>
+				}
+			</div>
+			if d.Error != "" {
+				<div class="error" role="alert">{ d.Error }</div>
+			}
 			<button type="submit">save</button>
 		</form>
 	</section>

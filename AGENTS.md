@@ -1,7 +1,7 @@
 ## Project Rules
 
 - Commit messages must follow the Conventional Commits spec.
-- Document all environment variables in the readme.
+- Document all environment variables in `.env.example`.
 - App links are internal by default, ↗ on every external link.
 - mise is for development, make is for selfhosting an instance
 
@@ -43,6 +43,20 @@ polling with 429. The app treats this as pacing, not failure:
 - `store.CanonicalFeedURL` rewrites reddit URLs (`old.`/`np.` → `www.`,
   `/u/` → `/user/`) on create and via a startup pass, since the old hosts now
   redirect to a login wall.
+
+## Auto-read
+
+- `users.auto_read_after_days` (schemaV32) is a per-user retention window:
+  unread items older than it (by `COALESCE(published_at, fetched_at)`) are
+  marked read. `0` = off; default 30. Set via the settings auto-read card
+  (`POST /settings/auto-read`, options 3/7/30/60/off).
+- `ItemStore.MarkOlderThanRead(userID, days)` is the sweep. It ignores favorites
+  and is user-scoped through `feeds.user_id`. `days <= 0` is a no-op.
+- `maintenance.Sweeper` runs it at startup and every 24h
+  (`maintenance.DefaultInterval`), started in `cmd/server/main.go`; the settings
+  handler also sweeps that user immediately on save so the change is visible.
+- The sweep only flips `read`/`read_at` — nothing is deleted, so it is
+  reversible with "mark all unread".
 
 ## Plugins
 

@@ -10,16 +10,17 @@ import (
 )
 
 type User struct {
-	ID           int64
-	Username     string
-	PasswordHash string
-	IsAdmin      bool
-	HasAvatar    bool
-	Timezone     string
-	Theme        string
-	AccentColor  string
-	HomeConfig   string // raw JSON home-screen config, "" when unset
-	CreatedAt    string
+	ID                int64
+	Username          string
+	PasswordHash      string
+	IsAdmin           bool
+	HasAvatar         bool
+	Timezone          string
+	Theme             string
+	AccentColor       string
+	HomeConfig        string // raw JSON home-screen config, "" when unset
+	AutoReadAfterDays int    // days after which unread items are auto-marked read; 0 = off
+	CreatedAt         string
 }
 
 type UserStore struct{ q *sqlcgen.Queries }
@@ -33,7 +34,7 @@ func (s *UserStore) Create(username, passwordHash string) (User, error) {
 	if err != nil {
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.CreatedAt), nil
 }
 
 func (s *UserStore) ByID(id int64) (User, error) {
@@ -44,7 +45,7 @@ func (s *UserStore) ByID(id int64) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.CreatedAt), nil
 }
 
 func (s *UserStore) ByUsername(username string) (User, error) {
@@ -55,7 +56,7 @@ func (s *UserStore) ByUsername(username string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.CreatedAt), nil
 }
 
 func (s *UserStore) List() ([]User, error) {
@@ -65,7 +66,7 @@ func (s *UserStore) List() ([]User, error) {
 	}
 	out := make([]User, 0, len(rows))
 	for _, u := range rows {
-		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.CreatedAt))
+		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.CreatedAt))
 	}
 	return out, nil
 }
@@ -200,6 +201,18 @@ func (s *UserStore) SetHomeConfig(userID int64, config string) error {
 	})
 }
 
+// SetAutoReadAfterDays stores the user's auto-read retention window in days.
+// A value of 0 disables the sweep; negative values are clamped to 0.
+func (s *UserStore) SetAutoReadAfterDays(userID int64, days int) error {
+	if days < 0 {
+		days = 0
+	}
+	return s.q.SetUserAutoReadAfterDays(context.Background(), sqlcgen.SetUserAutoReadAfterDaysParams{
+		AutoReadAfterDays: int64(days),
+		ID:                userID,
+	})
+}
+
 // FavoritesShareToken returns the user's public favorites share token, or ""
 // when the favorites list is not shared.
 func (s *UserStore) FavoritesShareToken(userID int64) (string, error) {
@@ -248,5 +261,5 @@ func (s *UserStore) ByFavoritesShareToken(token string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.AutoReadAfterDays, u.CreatedAt), nil
 }

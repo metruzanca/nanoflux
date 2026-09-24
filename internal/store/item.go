@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
@@ -494,6 +495,27 @@ func (s *ItemStore) MarkAllRead(userID, feedID int64) error {
 		UserID: userID,
 		FeedID: feedID,
 	})
+}
+
+// MarkOlderThanRead marks every unread item older than days (by
+// COALESCE(published_at, fetched_at)) as read for a user, regardless of
+// favorite state. It returns how many items were marked. days must be > 0;
+// callers pass 0 to mean "disabled" and skip the call.
+func (s *ItemStore) MarkOlderThanRead(userID int64, days int) (int64, error) {
+	if days <= 0 {
+		return 0, nil
+	}
+	cutoff := db.FormatTime(time.Now().AddDate(0, 0, -days))
+	res, err := s.q.MarkItemsOlderThanRead(context.Background(), sqlcgen.MarkItemsOlderThanReadParams{
+		ReadAt: ns(db.Now()),
+		Cutoff: ns(cutoff),
+		UserID: userID,
+	})
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 // MarkAllUnread marks every item unread for a user; pass feedID 0 for all feeds.

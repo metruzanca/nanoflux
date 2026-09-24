@@ -1624,6 +1624,90 @@ func TestBannerDismissed(t *testing.T) {
 	}
 }
 
+func TestAutoReadAfterDays(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+
+	// Migration default is 30 days.
+	got, err := s.Users.ByID(u.ID)
+	if err != nil {
+		t.Fatalf("ByID: %v", err)
+	}
+	if got.AutoReadAfterDays != 30 {
+		t.Fatalf("default auto_read_after_days = %d; want 30", got.AutoReadAfterDays)
+	}
+	if err := s.Users.SetAutoReadAfterDays(u.ID, 7); err != nil {
+		t.Fatalf("SetAutoReadAfterDays: %v", err)
+	}
+	got, _ = s.Users.ByID(u.ID)
+	if got.AutoReadAfterDays != 7 {
+		t.Fatalf("after set = %d; want 7", got.AutoReadAfterDays)
+	}
+	// Negative values clamp to 0 (off).
+	if err := s.Users.SetAutoReadAfterDays(u.ID, -5); err != nil {
+		t.Fatalf("SetAutoReadAfterDays(-5): %v", err)
+	}
+	got, _ = s.Users.ByID(u.ID)
+	if got.AutoReadAfterDays != 0 {
+		t.Fatalf("negative should clamp to 0, got %d", got.AutoReadAfterDays)
+	}
+}
+
+func TestMarkOlderThanRead(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	bob := mustUser(t, s, "bob")
+	a, _ := s.Authors.Create(alice.ID, "A", "", "")
+	f, err := s.Feeds.Create(alice.ID, a.ID, "Feed", "https://x.dev/rss.xml", "", "", 900)
+	if err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	b, _ := s.Authors.Create(bob.ID, "B", "", "")
+	bf, err := s.Feeds.Create(bob.ID, b.ID, "Bob feed", "https://y.dev/rss.xml", "", "", 900)
+	if err != nil {
+		t.Fatalf("create feed: %v", err)
+	}
+	old := db.FormatTime(time.Now().AddDate(0, 0, -40))
+	recent := db.FormatTime(time.Now().AddDate(0, 0, -5))
+
+	// Alice: one old unread, one old favorited, one recent unread.
+	s.Items.Upsert(f.ID, Item{GUID: "old", Title: "old", PublishedAt: old, FetchedAt: db.Now()})
+	s.Items.Upsert(f.ID, Item{GUID: "oldfav", Title: "oldfav", PublishedAt: old, FetchedAt: db.Now()})
+	s.Items.Upsert(f.ID, Item{GUID: "recent", Title: "recent", PublishedAt: recent, FetchedAt: db.Now()})
+	// Bob: an old unread item that must not be touched by alice's sweep.
+	s.Items.Upsert(bf.ID, Item{GUID: "bobold", Title: "bobold", PublishedAt: old, FetchedAt: db.Now()})
+
+	// Favorite one of the old items: favorites are included in the sweep.
+	favID, err := s.Items.ByFeedGUID(f.ID, "oldfav")
+	if err != nil {
+		t.Fatalf("ByFeedGUID: %v", err)
+	}
+	if err := s.Items.SetFavorite(alice.ID, favID, true); err != nil {
+		t.Fatalf("SetFavorite: %v", err)
+	}
+
+	n, err := s.Items.MarkOlderThanRead(alice.ID, 30)
+	if err != nil {
+		t.Fatalf("MarkOlderThanRead: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("marked %d; want 2 (old + old favorite)", n)
+	}
+	unread, _ := s.Items.CountUnread(alice.ID, 0)
+	if unread != 1 {
+		t.Fatalf("alice unread = %d; want 1 (the recent item)", unread)
+	}
+	// Bob is unaffected.
+	bobUnread, _ := s.Items.CountUnread(bob.ID, 0)
+	if bobUnread != 1 {
+		t.Fatalf("bob unread = %d; want 1 (sweep is user-scoped)", bobUnread)
+	}
+	// Off (0) is a no-op.
+	if n, err := s.Items.MarkOlderThanRead(alice.ID, 0); err != nil || n != 0 {
+		t.Fatalf("MarkOlderThanRead(0) = %d, %v; want 0, nil", n, err)
+	}
+}
+
 func TestGlobalCounts(t *testing.T) {
 	s := newTestStore(t)
 	alice := mustUser(t, s, "alice")

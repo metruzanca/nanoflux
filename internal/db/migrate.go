@@ -42,6 +42,7 @@ var migrations = []migration{
 	{29, schemaV29},
 	{30, schemaV30},
 	{31, schemaV31},
+	{32, schemaV32},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -493,6 +494,14 @@ ALTER TABLE feeds DROP COLUMN scrape_config;
 const schemaV31 = `
 ALTER TABLE feeds ADD COLUMN plugin_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE feeds ADD COLUMN disabled_reason TEXT;
+`
+
+// schemaV32 adds users.auto_read_after_days: a per-user retention preference.
+// Unread items older than this many days (by COALESCE(published_at,
+// fetched_at)) are automatically marked read on a daily sweep. 0 disables it;
+// the default keeps existing users opted in at 30 days.
+const schemaV32 = `
+ALTER TABLE users ADD COLUMN auto_read_after_days INTEGER NOT NULL DEFAULT 30;
 `
 
 // Migrate applies any pending migrations in order, recording each in
