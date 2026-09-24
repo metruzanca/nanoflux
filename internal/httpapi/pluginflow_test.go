@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
@@ -31,6 +32,71 @@ func (stubPlugin) Discover(context.Context, string, pluginapi.Host) ([]pluginapi
 }
 func (stubPlugin) Fetch(context.Context, pluginapi.FetchRequest, pluginapi.Host) (pluginapi.Result, error) {
 	return pluginapi.Result{}, nil
+}
+
+// sameURLPlugin serves its feed from the very URL it matches (an X
+// profile), so the feed URL equals the page URL. It is used to prove the plugin
+// candidate's preview metadata survives the direct-fetch shortcut.
+type sameURLPlugin struct{}
+
+func (sameURLPlugin) Meta() pluginapi.Meta {
+	return pluginapi.Meta{Name: "sameurl", APIVersion: pluginapi.APIVersion}
+}
+func (sameURLPlugin) Match(u *url.URL, _ pluginapi.Capability) bool {
+	return u != nil && u.Hostname() == "sameurl.example"
+}
+func (sameURLPlugin) Discover(context.Context, string, pluginapi.Host) ([]pluginapi.Candidate, error) {
+	return []pluginapi.Candidate{{
+		FeedURL: "https://sameurl.example/profile/jane",
+		Title:   "jane",
+		IconURL: "https://sameurl.example/avatar.png",
+		HomeURL: "https://sameurl.example/profile/jane",
+	}}, nil
+}
+func (sameURLPlugin) Fetch(context.Context, pluginapi.FetchRequest, pluginapi.Host) (pluginapi.Result, error) {
+	return pluginapi.Result{
+		Feed:  pluginapi.Feed{Title: "page SEO title", HomeURL: "https://sameurl.example/profile/jane"},
+		Items: []pluginapi.Item{{GUID: "sameurl:1", Title: "post"}},
+	}, nil
+}
+
+// TestPluginMetadataWinsOverDirectFetch proves that when a plugin both serves a
+// URL as a feed and describes it (its feed URL is the page URL), the plugin's
+// author name/avatar win over the page's generic SEO metadata — not the
+// direct-fetch fallback.
+func TestPluginMetadataWinsOverDirectFetch(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	reg := plugin.NewRegistry()
+	reg.RegisterNative(sameURLPlugin{})
+	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
+
+	// Install the plugin dispatcher process-wide for this test so the direct
+	// fetch of the URL actually succeeds through the plugin, exercising the
+	// shortcut the bug lived in. Restore it afterwards.
+	plugin.NewDispatcher(reg, plugin.NewHosts(s.client, plugin.NewCooldown()).For).Install()
+	defer feedparse.SetPlugin(nil)
+
+	// The URL is both the plugin's feed and the page. The plugin's Discover
+	// metadata must win over the generic <title> the direct fetch would fall
+	// back to.
+	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url": {"https://sameurl.example/profile/jane"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `value="jane"`) {
+		t.Fatalf("author name should be the plugin title, not the page SEO title: %s", body)
+	}
+	if strings.Contains(body, "page SEO title") {
+		t.Fatalf("page SEO title leaked into the add form: %s", body)
+	}
+	if !strings.Contains(body, `value="https://sameurl.example/avatar.png"`) {
+		t.Fatalf("avatar should come from the plugin candidate: %s", body)
+	}
 }
 
 func TestPluginDiscoveryInAddFlow(t *testing.T) {
