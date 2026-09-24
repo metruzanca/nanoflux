@@ -82,47 +82,11 @@ nanoflux backup                # writes backups/nanoflux-<timestamp>.tar.gz
 nanoflux restore backups/nanoflux-20260921-120000.tar.gz   # refuses while the server is running
 ```
 
-<summary>
-<details>Configuration</details>
+### Configuration
 
-| Variable | Default | Description |
-| --- | --- | --- |
-| `NF_ADDR` | `:8080` | listen address |
-| `NF_DB` | `./data/rss.db` | sqlite database path |
-| `NF_FILE_STORE` | `<db dir>/filestore` | local directory for avatars and custom icons when no S3 endpoint is configured |
-| `NF_LOG_LEVEL` | `info` | log level: `debug`, `info`, `warn`, `error` |
-| `NF_POLL_INTERVAL` | `15m` | poller wake interval |
-| `NF_POLL_WORKERS` | `4` | concurrent feed fetches (distinct hosts run in parallel; a host's feeds are fetched one at a time) |
-| `NF_USER_AGENT` | `nanoflux (<repo URL>)` | outbound User-Agent for feed fetching and discovery (leave the built-in crawler/browser agents alone) |
-| `NF_ADMIN_USER` / `NF_ADMIN_PASS` | — | create the first account at startup (takes precedence over admin/admin) |
-| `NF_PLUGINS_DIR` | `./plugins` | directory scanned for external feed plugins (executables); native plugins are always available. The container sets this to `/plugins`, bind-mounted from `./plugins` |
-
-### Configuration for Backups
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `NF_BACKUP_INTERVAL` | unset → off | how often to snapshot (Go duration, e.g. `24h`) |
-| `NF_BACKUP_KEEP` | `7` | snapshots to retain, newest first; `0` keeps all |
-| `NF_BACKUP_DIR` | unset | local destination directory |
-
-### (Optional) Environment Variables for Object storage
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `NF_S3_ENDPOINT` | unset → local disk | S3-compatible object-storage endpoint |
-| `NF_S3_BUCKET` | `nanoflux` | bucket name |
-| `NF_S3_ACCESS_KEY` | — | access key |
-| `NF_S3_SECRET_KEY` | — | secret key |
-| `NF_S3_REGION` | `us-east-1` | bucket region |
-| `NF_BACKUP_S3_ENDPOINT` | unset | S3-compatible destination endpoint |
-| `NF_BACKUP_S3_BUCKET` | `nanoflux-backups` | destination bucket |
-| `NF_BACKUP_S3_ACCESS_KEY` | — | access key |
-| `NF_BACKUP_S3_SECRET_KEY` | — | secret key |
-| `NF_BACKUP_S3_REGION` | `us-east-1` | bucket region |
-| `NF_BACKUP_S3_PREFIX` | unset | key prefix within the bucket |
-
-</summary>
-
+Configuration is done with environment variables. See
+[`.env.example`](./.env.example) for the full list, including defaults and
+descriptions. Copy it to `.env` and edit as needed.
 
 ### Backup and restore
 
