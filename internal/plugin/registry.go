@@ -108,3 +108,36 @@ func (r *Registry) Names() []string {
 	sort.Strings(names)
 	return names
 }
+
+// Info describes one loaded plugin for display (admin page, debug output).
+type Info struct {
+	Name      string
+	Kind      string // "native" or "external"
+	Version   string // plugin API version the plugin reported
+	RawNet    bool   // plugin opted out of host-mediated HTTP
+	UserAgent string // per-plugin User-Agent override, "" for the app default
+}
+
+// Infos returns a description of every loaded plugin: native first, then
+// external, each group in registration order (native wins matches).
+func (r *Registry) Infos() []Info {
+	out := make([]Info, 0, len(r.native)+len(r.external))
+	for _, f := range r.native {
+		out = append(out, info(f, "native"))
+	}
+	for _, f := range r.external {
+		out = append(out, info(f, "external"))
+	}
+	return out
+}
+
+func info(f pluginapi.Fetcher, kind string) Info {
+	m := f.Meta()
+	return Info{
+		Name:      m.Name,
+		Kind:      kind,
+		Version:   m.APIVersion,
+		RawNet:    m.RawNetwork,
+		UserAgent: m.UserAgent,
+	}
+}
