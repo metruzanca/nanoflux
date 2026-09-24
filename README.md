@@ -76,6 +76,7 @@ nanoflux user set-admin <username> true
 nanoflux user reset-password <username>     # prompts for the new password
 nanoflux user delete <username>             # prompts to confirm; use --yes to skip
 nanoflux feed list                          # every feed across users (no item content)
+nanoflux item backfill-thumbs               # fill missing YouTube thumbnails (no network)
 nanoflux user --help
 nanoflux backup                # writes backups/nanoflux-<timestamp>.tar.gz
 nanoflux restore backups/nanoflux-20260921-120000.tar.gz   # refuses while the server is running
