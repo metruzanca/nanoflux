@@ -125,6 +125,14 @@ templ feedPreviewFields(d feedPreviewForm) {
 	</form>
 }
 
+// manualFeedButton is the "add manually" action shown next to "find feed". It
+// posts the entered url to the manual-feed fragment, which swaps the combined
+// add form into target pre-filled with that url as the feed url. Use it when the
+// user already knows the feed url and discovery would just be an extra step.
+templ manualFeedButton(target string) {
+	<button type="button" hx-post="/fragments/manual-feed" hx-target={ target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped, #share-url">add manually</button>
+}
+
 templ feedChooser(d feedChoose) {
 	<form class="choose stack" hx-post="/fragments/feed-preview" hx-target={ d.Target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped, #feed-redirect">
 		<p class="muted">found { len(d.Candidates) } feeds on that page — pick one</p>
@@ -152,7 +160,7 @@ templ noFeedFound(d noFeedFoundData) {
 			<p class="small">{ d.Reason }</p>
 		}
 		<div class="row">
-			<button type="button" hx-post="/fragments/manual-feed" hx-target={ d.Target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped, #share-url">insert manually</button>
+			@manualFeedButton(d.Target)
 		</div>
 	</div>
 }
