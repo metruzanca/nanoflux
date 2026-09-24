@@ -102,46 +102,53 @@ func buildExamplePlugin(t *testing.T, dir, name string) string {
 }
 
 // TestLoadExternalEndToEnd builds the example plugin and loads it over gRPC,
-// exercising handshake, version check, dispense, Discover, Fetch, and the
-// host-mediated HTTP path (including rate-limit propagation) through the broker.
+// exercising handshake, version check, dispense, Match, and Fetch through the
+// broker, including the host-mediated HTTP path and the item image the feed
+// carries (media:thumbnail) surviving the gRPC boundary.
 func TestLoadExternalEndToEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a plugin binary")
 	}
-	// A local upstream the plugin fetches through Host.Do.
+	// A local upstream serving a YouTube channel feed the plugin fetches
+	// through Host.Do.
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("<html><body>ok</body></html>"))
+		w.Write([]byte(`<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+<title>External Channel</title><link href="https://www.youtube.com/channel/UCx"/>
+<entry><id>yt:video:abc</id><title>Video One</title><link href="https://www.youtube.com/watch?v=abc"/>
+<media:group><media:thumbnail url="https://i.ytimg.com/vi/abc/hqdefault.jpg"/></media:group>
+<published>2026-01-01T00:00:00Z</published></entry></feed>`))
 	}))
 	defer upstream.Close()
 
-	bin := buildExamplePlugin(t, "plugin-hello", "nanoflux-plugin-hello")
+	bin := buildExamplePlugin(t, "plugin-youtube", "nanoflux-plugin-youtube")
 
 	reg := NewRegistry()
 	hosts := NewHosts(upstream.Client(), NewCooldown())
 	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
 	defer cleanup()
 
-	if len(reg.Names()) != 1 || reg.Names()[0] != "hello" {
-		t.Fatalf("loaded plugins = %v, want [hello]", reg.Names())
+	if len(reg.Names()) != 1 || reg.Names()[0] != "youtube" {
+		t.Fatalf("loaded plugins = %v, want [youtube]", reg.Names())
 	}
 
-	u, _ := url.Parse("https://example.com/profile")
+	u, _ := url.Parse("https://www.youtube.com/feeds/videos.xml?channel_id=UCx")
 	f := reg.Match(u, pluginapi.CapFetch)
 	if f == nil {
-		t.Fatal("hello plugin should match example.com")
+		t.Fatal("youtube plugin should match the channel feed URL")
 	}
 	// Fetch goes: plugin -> gRPC -> host.Do -> upstream -> back to the plugin.
-	res, err := f.Fetch(context.Background(), pluginapi.FetchRequest{URL: upstream.URL}, hosts.For(f))
+	res, err := f.Fetch(context.Background(), pluginapi.FetchRequest{
+		URL: upstream.URL + "/feeds/videos.xml?channel_id=UCx",
+	}, hosts.For(f))
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
-	if len(res.Items) != 1 || res.Items[0].GUID != "hello:1" {
+	if res.Feed.Title != "External Channel" || len(res.Items) != 1 || res.Items[0].GUID != "yt:video:abc" {
 		t.Fatalf("fetch result = %+v", res)
 	}
-
-	cs, err := f.Discover(context.Background(), u.String(), hosts.For(f))
-	if err != nil || len(cs) != 1 || cs[0].FeedURL != "https://example.com/feed.xml" {
-		t.Fatalf("discover = %+v, err=%v", cs, err)
+	if got := res.Items[0].ImageURL; got != "https://i.ytimg.com/vi/abc/hqdefault.jpg" {
+		t.Fatalf("image = %q, want media:thumbnail to survive gRPC", got)
 	}
 }
 
@@ -199,19 +206,21 @@ func TestExternalRateLimitParity(t *testing.T) {
 	}))
 	defer limited.Close()
 
-	bin := buildExamplePlugin(t, "plugin-hello", "nanoflux-plugin-hello")
+	bin := buildExamplePlugin(t, "plugin-youtube", "nanoflux-plugin-youtube")
 
 	reg := NewRegistry()
 	hosts := NewHosts(limited.Client(), NewCooldown())
 	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
 	defer cleanup()
 
-	u, _ := url.Parse("https://example.com/profile")
+	u, _ := url.Parse("https://www.youtube.com/feeds/videos.xml?channel_id=UCx")
 	f := reg.Match(u, pluginapi.CapFetch)
 	if f == nil {
 		t.Fatal("plugin not matched")
 	}
-	_, err := f.Fetch(context.Background(), pluginapi.FetchRequest{URL: limited.URL}, hosts.For(f))
+	_, err := f.Fetch(context.Background(), pluginapi.FetchRequest{
+		URL: limited.URL + "/feeds/videos.xml?channel_id=UCx",
+	}, hosts.For(f))
 	var rl *pluginapi.RateLimit
 	if !errors.As(err, &rl) {
 		t.Fatalf("external plugin should surface a typed RateLimit, got %v", err)
