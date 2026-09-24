@@ -61,3 +61,32 @@ func TestPluginDiscoveryInAddFlow(t *testing.T) {
 		t.Fatalf("feed url should be the plugin candidate: %s", body)
 	}
 }
+
+// TestAdminPluginsCard proves the admin page lists the loaded plugins with
+// their kind and API version, and explains the empty state when none load.
+func TestAdminPluginsCard(t *testing.T) {
+	s, h := newTestServer(t)
+	root := createUser(t, s, "root")
+	if err := s.store.Users.SetAdmin(root.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	cookie := adminSession(t, s, "root")
+
+	// No plugin system attached: the card explains the empty state.
+	body := doGet(h, "/admin", cookie).Body.String()
+	if !strings.Contains(body, "no plugins loaded") {
+		t.Fatalf("admin page should show the empty plugin state: %s", body)
+	}
+
+	reg := plugin.NewRegistry()
+	reg.RegisterNative(stubPlugin{})
+	reg.RegisterExternal(stubPlugin{})
+	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
+
+	body = doGet(h, "/admin", cookie).Body.String()
+	for _, want := range []string{"plugins", "stub", "native", "external", pluginapi.APIVersion} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("plugins card missing %q", want)
+		}
+	}
+}

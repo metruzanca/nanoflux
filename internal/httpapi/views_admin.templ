@@ -11,11 +11,49 @@ templ adminPage(u store.User, d adminData) {
 	<h1>admin</h1>
 	@AdminInstanceCard(d)
 	@AdminStats(d.Stats)
+	@AdminPluginsCard(d.Plugins)
 	@AdminBackupCard(d.Backup)
 	<section class="card">
 		<h2>users</h2>
 		<p class="muted small">Manage accounts: reset passwords, grant or revoke the admin flag, or delete users. Deleting a user removes all of their data.</p>
 		@AdminUserList(d.Users)
+	</section>
+}
+
+// AdminPluginsCard lists the feed plugins the host loaded at startup, with the
+// kind (native vs external) and API version each reported. A plugin is a
+// compile-time or on-disk concern, so this card is read-only.
+templ AdminPluginsCard(rows []adminPluginRow) {
+	<section class="card" id="admin-plugins-card">
+		<h2>plugins</h2>
+		<p class="muted small">Feed plugins loaded at startup. Native plugins are compiled into nanoflux and take precedence over external ones when both match a URL.</p>
+		if len(rows) == 0 {
+			<p class="muted small">no plugins loaded.</p>
+		} else {
+			<ul class="plain" id="admin-plugins-list">
+				for _, r := range rows {
+					<li>
+						<div class="row">
+							<div>
+								<strong>{ r.Name }</strong>
+								<span class="badge">{ r.Kind }</span>
+								if r.RawNet {
+									<span class="badge warn" title="plugin uses its own HTTP client and surfaces rate limits itself">raw network</span>
+								}
+								<div class="item-meta muted">
+									api { r.Version }
+									if r.UserAgent != "" {
+										· user-agent: { r.UserAgent }
+									} else {
+										· user-agent: app default
+									}
+								</div>
+							</div>
+						</div>
+					</li>
+				}
+			</ul>
+		}
 	</section>
 }
 

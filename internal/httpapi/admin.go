@@ -19,6 +19,17 @@ type adminData struct {
 	BannerShown bool
 	Users       []adminUserRow
 	Backup      adminBackup
+	Plugins     []adminPluginRow
+}
+
+// adminPluginRow is one loaded plugin shown in the plugins card. Kind is
+// "native" (compiled in) or "external" (loaded over gRPC).
+type adminPluginRow struct {
+	Name      string
+	Kind      string
+	Version   string
+	RawNet    bool
+	UserAgent string
 }
 
 // adminBackup is the backup status shown on /admin. Enabled is false when
@@ -77,9 +88,10 @@ func (s *Server) adminOnly(next http.Handler) http.Handler {
 func (s *Server) adminPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	d := adminData{
-		Stats:  s.adminStats(r.Context()),
-		Users:  s.adminUserRows(u.ID, u.Timezone),
-		Backup: s.adminBackupData(u.Timezone),
+		Stats:   s.adminStats(r.Context()),
+		Users:   s.adminUserRows(u.ID, u.Timezone),
+		Backup:  s.adminBackupData(u.Timezone),
+		Plugins: s.adminPluginRows(),
 	}
 	d.AllowSignup = s.allowSignup()
 	if d.AllowSignup {
@@ -173,6 +185,26 @@ func (s *Server) adminUserRows(selfID int64, tz string) []adminUserRow {
 			IsSelf:    u.ID == selfID,
 			CreatedAt: u.CreatedAt,
 			Timezone:  tz,
+		})
+	}
+	return rows
+}
+
+// adminPluginRows describes the plugins currently loaded by the registry. It
+// returns nil when no plugin system is attached.
+func (s *Server) adminPluginRows() []adminPluginRow {
+	if s.plugins == nil {
+		return nil
+	}
+	infos := s.plugins.Infos()
+	rows := make([]adminPluginRow, 0, len(infos))
+	for _, in := range infos {
+		rows = append(rows, adminPluginRow{
+			Name:      in.Name,
+			Kind:      in.Kind,
+			Version:   in.Version,
+			RawNet:    in.RawNet,
+			UserAgent: in.UserAgent,
 		})
 	}
 	return rows
