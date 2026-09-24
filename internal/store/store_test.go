@@ -159,6 +159,54 @@ func TestFeedNextPageCursor(t *testing.T) {
 	}
 }
 
+func TestBackfillYouTubeThumbnails(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "SomeDunkVODs", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "SomeDunkVODs", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
+
+	items := []Item{
+		{GUID: "yt:video:H0KAi8AWsnM", Title: "No thumb", FetchedAt: db.Now()},
+		{GUID: "yt:video:pHfG0oxgshA", Title: "Has thumb", ImageURL: "https://i.ytimg.com/vi/pHfG0oxgshA/hq720.jpg", FetchedAt: db.Now()},
+		{GUID: "blog:1", Title: "Not youtube", FetchedAt: db.Now()},
+	}
+	for _, it := range items {
+		if _, err := s.Items.Upsert(f.ID, it); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	missing, err := s.Items.CountItemsMissingYouTubeThumbnail()
+	if err != nil || missing != 1 {
+		t.Fatalf("missing before = %d (err %v), want 1", missing, err)
+	}
+	n, err := s.Items.BackfillYouTubeThumbnails()
+	if err != nil || n != 1 {
+		t.Fatalf("backfill = %d (err %v), want 1", n, err)
+	}
+	if missing, _ := s.Items.CountItemsMissingYouTubeThumbnail(); missing != 0 {
+		t.Fatalf("missing after = %d, want 0", missing)
+	}
+
+	got, err := s.Items.List(u.ID, ItemFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byGUID := map[string]string{}
+	for _, it := range got {
+		byGUID[it.GUID] = it.ImageURL
+	}
+	if want := "https://i.ytimg.com/vi/H0KAi8AWsnM/hqdefault.jpg"; byGUID["yt:video:H0KAi8AWsnM"] != want {
+		t.Errorf("backfilled = %q, want %q", byGUID["yt:video:H0KAi8AWsnM"], want)
+	}
+	if byGUID["yt:video:pHfG0oxgshA"] != "https://i.ytimg.com/vi/pHfG0oxgshA/hq720.jpg" {
+		t.Errorf("existing thumb overwritten: %q", byGUID["yt:video:pHfG0oxgshA"])
+	}
+	if byGUID["blog:1"] != "" {
+		t.Errorf("non-youtube item touched: %q", byGUID["blog:1"])
+	}
+}
+
 func TestItemsFlow(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

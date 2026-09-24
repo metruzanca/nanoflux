@@ -344,6 +344,33 @@ func TestFeedListMarksErrors(t *testing.T) {
 	}
 }
 
+func TestItemBackfillThumbs(t *testing.T) {
+	h := newCLI(t)
+	u := createUser(t, h.st, "alice")
+	a, _ := h.st.Authors.Create(u.ID, "SomeDunkVODs", "", "")
+	f, err := h.st.Feeds.Create(u.ID, a.ID, "SomeDunkVODs", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.st.Items.Upsert(f.ID, store.Item{GUID: "yt:video:H0KAi8AWsnM", Title: "No thumb", FetchedAt: db.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.exec(t, "item", "backfill-thumbs"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout.String(), "filled 1 youtube thumbnail(s)") {
+		t.Fatalf("unexpected output: %q", h.stdout.String())
+	}
+	got, err := h.st.Items.List(u.ID, store.ItemFilter{})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("list: %v %d", err, len(got))
+	}
+	if want := "https://i.ytimg.com/vi/H0KAi8AWsnM/hqdefault.jpg"; got[0].ImageURL != want {
+		t.Fatalf("image = %q, want %q", got[0].ImageURL, want)
+	}
+}
+
 func TestBackupRestoreRoundtrip(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "data", "rss.db")

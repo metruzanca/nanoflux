@@ -10,6 +10,19 @@ import (
 	"database/sql"
 )
 
+const backfillYouTubeThumbnails = `-- name: BackfillYouTubeThumbnails :execresult
+UPDATE items
+SET image_url = 'https://i.ytimg.com/vi/' || substr(guid, length('yt:video:') + 1) || '/hqdefault.jpg'
+WHERE image_url IS NULL AND guid LIKE 'yt:video:%'
+`
+
+// Fill image_url for YouTube items stored before the media:thumbnail fix.
+// The thumbnail is deterministic from the video id in the GUID, so no fetch is
+// needed. Only rows with a NULL image_url are touched.
+func (q *Queries) BackfillYouTubeThumbnails(ctx context.Context) (sql.Result, error) {
+	return q.db.ExecContext(ctx, backfillYouTubeThumbnails)
+}
+
 const countAllItems = `-- name: CountAllItems :one
 SELECT COUNT(*) FROM items
 `
@@ -45,6 +58,18 @@ type CountFavoriteItemsParams struct {
 
 func (q *Queries) CountFavoriteItems(ctx context.Context, arg CountFavoriteItemsParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countFavoriteItems, arg.UserID, arg.FeedID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countItemsMissingYouTubeThumbnail = `-- name: CountItemsMissingYouTubeThumbnail :one
+SELECT COUNT(*) FROM items
+WHERE image_url IS NULL AND guid LIKE 'yt:video:%'
+`
+
+func (q *Queries) CountItemsMissingYouTubeThumbnail(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countItemsMissingYouTubeThumbnail)
 	var count int64
 	err := row.Scan(&count)
 	return count, err

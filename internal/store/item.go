@@ -257,6 +257,29 @@ LIMIT ?7`
 	return out, hasMore, nil
 }
 
+// BackfillYouTubeThumbnails fills image_url for YouTube items stored before the
+// plugin's media:thumbnail fix (their feed advertises thumbnails only through
+// media:group, which the generic parser did not map). The URL is deterministic
+// from the video id in the GUID, so no network is involved. It returns how many
+// rows were updated.
+func (s *ItemStore) BackfillYouTubeThumbnails() (int64, error) {
+	res, err := s.q.BackfillYouTubeThumbnails(context.Background())
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// CountItemsMissingYouTubeThumbnail counts YouTube items with no image_url,
+// i.e. the rows BackfillYouTubeThumbnails would fix.
+func (s *ItemStore) CountItemsMissingYouTubeThumbnail() (int64, error) {
+	return s.q.CountItemsMissingYouTubeThumbnail(context.Background())
+}
+
 // Enclosure is one media attachment (podcast, video) on an item.
 type Enclosure struct {
 	URL      string

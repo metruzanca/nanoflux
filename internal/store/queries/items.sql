@@ -10,6 +10,18 @@ UPDATE items
 SET summary = ?, image_url = ?
 WHERE feed_id = ? AND guid = ?;
 
+-- name: CountItemsMissingYouTubeThumbnail :one
+SELECT COUNT(*) FROM items
+WHERE image_url IS NULL AND guid LIKE 'yt:video:%';
+
+-- name: BackfillYouTubeThumbnails :execresult
+-- Fill image_url for YouTube items stored before the media:thumbnail fix.
+-- The thumbnail is deterministic from the video id in the GUID, so no fetch is
+-- needed. Only rows with a NULL image_url are touched.
+UPDATE items
+SET image_url = 'https://i.ytimg.com/vi/' || substr(guid, length('yt:video:') + 1) || '/hqdefault.jpg'
+WHERE image_url IS NULL AND guid LIKE 'yt:video:%';
+
 -- name: ListItems :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
