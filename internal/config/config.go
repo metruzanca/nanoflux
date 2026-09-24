@@ -60,7 +60,7 @@ func Load() Config {
 		PollWorkers:   intEnv("NF_POLL_WORKERS", 4),
 		BootstrapUser: os.Getenv("NF_ADMIN_USER"),
 		BootstrapPass: os.Getenv("NF_ADMIN_PASS"),
-		PluginsDir:    getenv("NF_PLUGINS_DIR", "/plugins"),
+		PluginsDir:    getenv("NF_PLUGINS_DIR", "./plugins"),
 		Backup: BackupConfig{
 			Interval: durationEnv("NF_BACKUP_INTERVAL", 0),
 			Keep:     intEnv("NF_BACKUP_KEEP", 7),

@@ -57,3 +57,13 @@ func TestBackupLocalEnabled(t *testing.T) {
 		t.Errorf("Dir = %q", c.Dir)
 	}
 }
+
+func TestPluginsDirDefault(t *testing.T) {
+	if got := Load().PluginsDir; got != "./plugins" {
+		t.Errorf("default PluginsDir = %q, want ./plugins", got)
+	}
+	t.Setenv("NF_PLUGINS_DIR", "/plugins")
+	if got := Load().PluginsDir; got != "/plugins" {
+		t.Errorf("PluginsDir override = %q, want /plugins", got)
+	}
+}
