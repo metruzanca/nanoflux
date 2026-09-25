@@ -1917,8 +1917,9 @@ func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.store.Collections.RemoveFeed(u.ID, id, feedID)
-	feeds, _ := s.store.Collections.Feeds(u.ID, id)
-	web.Render(w, r, collectionFeeds(collectionData{Collection: c, Feeds: feeds}))
+	// The feed list is a client-side multi-select: the chip is already gone, so
+	// just confirm. A failure (non-2xx) makes the client restore the chip.
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // itemsView reads the ?view= query param and normalizes it to "unread" or "read".

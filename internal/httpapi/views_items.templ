@@ -519,39 +519,17 @@ templ itemMenuFull(itemID, feedID int64, sourceURL, shareToken string, inModal b
 
 // itemListsDialogInner is the add-to-list picker content, injected into the
 // shared #item-lists-dialog (declared in views_layout.templ) by the "add to
-// list" menu action. Favorites is the special list (its checkbox mirrors
-// items.favorite); the others are the user's lists. The form posts to the apply
-// endpoint, which re-renders this content and signals "item-lists-saved"; app.js
-// closes the dialog on that event (an inline after-request close would never run
-// because the swap detaches the form before the event fires).
-templ itemListsDialogInner(itemID int64, favorite bool, lists []store.List, itemListIDs []int64) {
+// list" menu action. It is a multi-select combo: favorites is a normal item
+// whose value "favorites" maps to items.favorite, and the user's lists follow.
+// The form posts to the apply endpoint, which re-renders this content and
+// signals "item-lists-saved"; app.js closes the dialog on that event.
+templ itemListsDialogInner(itemID int64, items []comboItem, selected []string) {
 	<div class="row">
 		<h2>add to list</h2>
 		<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
 	</div>
 	<form class="stack" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/lists" } hx-target="#item-lists-dialog" hx-swap="innerHTML">
-		<label>
-			<input
-				type="checkbox"
-				name="lists"
-				value="favorites"
-				if favorite {
-					checked
-				}
-			/> favorites
-		</label>
-		for _, l := range lists {
-			<label>
-				<input
-					type="checkbox"
-					name="lists"
-					value={ strconv.FormatInt(l.ID, 10) }
-					if containsListID(itemListIDs, l.ID) {
-						checked
-					}
-				/> { l.Name }
-			</label>
-		}
+		@comboMulti("lists", "lists", selected, items)
 		<div id="item-lists-error" class="error"></div>
 		<button type="submit">save</button>
 	</form>

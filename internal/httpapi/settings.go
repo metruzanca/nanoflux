@@ -73,6 +73,22 @@ var autoReadOptions = []autoReadOption{
 	{"off", "off"},
 }
 
+// themeItems are the combo options for the theme setting.
+var themeItems = []comboItem{
+	{Value: "dark", Label: "dark"},
+	{Value: "light", Label: "light"},
+	{Value: "system", Label: "system"},
+}
+
+// autoReadItems are the combo options for the auto-read window setting.
+var autoReadItems = func() []comboItem {
+	out := make([]comboItem, 0, len(autoReadOptions))
+	for _, o := range autoReadOptions {
+		out = append(out, comboItem{Value: o.Value, Label: o.Label})
+	}
+	return out
+}()
+
 type settingsAutoReadData struct {
 	Value string // selected option value, matching autoReadOptions
 	Error string

@@ -210,11 +210,13 @@ func TestAutoCollectionHiddenFromFeedEditCheckboxes(t *testing.T) {
 
 	body := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie).Body.String()
 	if !strings.Contains(body, "Dev") {
-		t.Fatalf("manual collection should appear in edit checkboxes: %s", body)
+		t.Fatalf("manual collection should appear in the edit combo: %s", body)
 	}
 	yt := autoCollection(t, s, u.ID, "youtube.com")
-	if strings.Contains(body, `name="collections" value="`+itoa(yt.ID)+`"`) {
-		t.Fatalf("auto collection should not appear in edit checkboxes: %s", body)
+	// The feed edit collections combo serializes options as JSON; the auto
+	// collection's id must not appear as a selectable item value.
+	if strings.Contains(body, `{"value":"`+itoa(yt.ID)+`"`) {
+		t.Fatalf("auto collection should not appear in the edit combo: %s", body)
 	}
 
 	// Editing the feed must not disturb the auto membership.

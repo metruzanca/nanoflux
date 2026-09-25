@@ -970,3 +970,48 @@ details.feeds-section summary:hover { color: var(--accent); }
 
   .row { flex-wrap: wrap; }
 }
+
+/* --- Vaadin combo-box (vendored) -------------------------------------------
+   v25 ships only structural base styles, so we theme the components with our
+   own tokens and the --vaadin-* custom properties. Mapped to --panel/--bg/
+   --border/--fg/--accent so they match the hand-written inputs above. */
+.combo-field { display: flex; flex-direction: column; gap: 0.35rem; }
+.combo-field > label { font-size: 0.85rem; color: var(--muted); }
+.combo { display: block; }
+
+vaadin-combo-box,
+vaadin-multi-select-combo-box {
+  --vaadin-input-field-background: var(--bg);
+  --vaadin-input-field-border-color: var(--border);
+  --vaadin-input-field-value-color: var(--fg);
+  --vaadin-input-field-label-color: var(--muted);
+  --vaadin-input-field-helper-color: var(--muted);
+  --vaadin-text-color: var(--fg);
+  --vaadin-text-color-secondary: var(--muted);
+  --vaadin-background-color: var(--bg);
+  --vaadin-border-color: var(--border);
+  --vaadin-focus-ring-color: var(--accent);
+  --vaadin-input-field-focus-border-color: var(--accent);
+  --vaadin-chip-background: var(--panel);
+  --vaadin-chip-border-color: var(--border);
+  --vaadin-chip-text-color: var(--fg);
+  --vaadin-input-field-border-radius: 6px;
+  --vaadin-input-field-value-font-size: 0.95rem;
+  --vaadin-field-default-width: 100%;
+}
+
+/* The overlay list reuses the panel/token look of our dropdowns. */
+vaadin-combo-box-overlay,
+vaadin-multi-select-combo-box-overlay {
+  --vaadin-overlay-background: var(--panel);
+  --vaadin-text-color: var(--fg);
+  --vaadin-text-color-secondary: var(--muted);
+  --vaadin-border-color: var(--border);
+}
+
+/* Display-only chip list (collection edit): let it grow tall so every member
+   name is visible, and give the chips a little more room. */
+.combo-chips vaadin-multi-select-combo-box {
+  --vaadin-field-default-width: 100%;
+  --vaadin-input-field-value-font-size: 0.9rem;
+}

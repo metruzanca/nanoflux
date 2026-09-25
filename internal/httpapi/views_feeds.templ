@@ -276,18 +276,7 @@ templ feedFields(d feedsData) {
 	</label>
 	<label class="check"><input type="checkbox" name="enabled" value="1" checked={ d.Form.Enabled }/> enabled (poll this feed)</label>
 	if len(d.Collections) > 0 {
-		<fieldset>
-			<legend>collections</legend>
-			for _, c := range d.Collections {
-				if !c.IsAuto {
-					if hasID(c.ID, d.Form.CollectionIDs) {
-						<label class="check"><input type="checkbox" name="collections" value={ strconv.FormatInt(c.ID, 10) } checked/> { c.Name }</label>
-					} else {
-						<label class="check"><input type="checkbox" name="collections" value={ strconv.FormatInt(c.ID, 10) }/> { c.Name }</label>
-					}
-				}
-			}
-		</fieldset>
+		@comboMulti("collections", "collections", collectionValues(d.Form.CollectionIDs), nonAutoCollections(d.Collections))
 	}
 }
 
@@ -371,12 +360,3 @@ templ feedOlderControl(f feedRow) {
 	</div>
 }
 
-// hasID reports whether id is present in ids.
-func hasID(id int64, ids []int64) bool {
-	for _, i := range ids {
-		if i == id {
-			return true
-		}
-	}
-	return false
-}
