@@ -5,6 +5,7 @@
 - App links are internal by default, ↗ on every external link.
 - mise is for development, make is for selfhosting an instance
 - Do not mention any external plugins in internal code, comments or docs
+- Do not run `make` or `podman` or `docker` commands without user's approval.
 
 # Notes
 
