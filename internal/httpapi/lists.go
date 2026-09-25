@@ -306,6 +306,11 @@ func (s *Server) itemListsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	freshIDs, _ := s.store.Lists.ItemListIDs(u.ID, id)
 	it, _ = s.store.Items.ByID(u.ID, id)
+	// The form's swap target is its own container (#item-lists-dialog), so the
+	// response detaches the form before htmx dispatches htmx:afterRequest on it
+	// (removing any inline close handler first). Signal the close from the
+	// server with HX-Trigger instead; app.js listens on body.
+	w.Header().Set("HX-Trigger", "item-lists-saved")
 	web.Render(w, r, itemListsDialogInner(id, it.Favorite, listsOnly(rows), freshIDs))
 }
 

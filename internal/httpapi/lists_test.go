@@ -66,6 +66,11 @@ func TestListsFlow(t *testing.T) {
 	if !strings.Contains(picker, `hx-target="#item-lists-dialog"`) || !strings.Contains(picker, "reading") {
 		t.Fatalf("picker fragment should render the shared dialog form: %s", picker)
 	}
+	// The form must not rely on an inline after-request close: the swap detaches
+	// it before that event fires. The server signals the close with HX-Trigger.
+	if strings.Contains(picker, "hx-on::after-request") {
+		t.Fatalf("picker form should not use an inline after-request close: %s", picker)
+	}
 
 	// Add the item to the reading list and favorites via the picker.
 	rr = doForm(h, "POST", "/items/"+itoa(item.ID)+"/lists", url.Values{
@@ -73,6 +78,9 @@ func TestListsFlow(t *testing.T) {
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("apply lists: %d %s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("HX-Trigger"); got != "item-lists-saved" {
+		t.Fatalf("apply lists should trigger the dialog close, got %q", got)
 	}
 	ids, _ := s.store.Lists.ItemListIDs(u.ID, item.ID)
 	if len(ids) != 1 || ids[0] != listID {

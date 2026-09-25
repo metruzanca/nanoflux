@@ -356,6 +356,14 @@ document.addEventListener('click', function (e) {
   if (e.target.closest && e.target.closest('.item-menu')) return;
   closeItemMenus();
 });
+// The add-to-list dialog's form is swapped out of its own container on save,
+// so its inline after-request close never runs. The server signals success with
+// HX-Trigger: item-lists-saved, which htmx dispatches on body; close the dialog
+// here. The response has already swapped fresh membership state in.
+document.body.addEventListener('item-lists-saved', function () {
+  var d = document.getElementById('item-lists-dialog');
+  if (d && d.open) d.close();
+});
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') closeItemMenus();
 });

@@ -2728,9 +2728,10 @@ func itemMenuFull(itemID, feedID int64, sourceURL, shareToken string, inModal bo
 // itemListsDialogInner is the add-to-list picker content, injected into the
 // shared #item-lists-dialog (declared in views_layout.templ) by the "add to
 // list" menu action. Favorites is the special list (its checkbox mirrors
-// items.favorite); the others are the user's lists. The form is the fragment
-// target of the apply endpoint, so it re-renders with fresh membership state
-// and closes on success.
+// items.favorite); the others are the user's lists. The form posts to the apply
+// endpoint, which re-renders this content and signals "item-lists-saved"; app.js
+// closes the dialog on that event (an inline after-request close would never run
+// because the swap detaches the form before the event fires).
 func itemListsDialogInner(itemID int64, favorite bool, lists []store.List, itemListIDs []int64) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -2773,7 +2774,7 @@ func itemListsDialogInner(itemID int64, favorite bool, lists []store.List, itemL
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 222, "\" hx-target=\"#item-lists-dialog\" hx-swap=\"innerHTML\" hx-on::after-request=\"if(event.detail.successful){document.getElementById('item-lists-dialog').close()}\"><label><input type=\"checkbox\" name=\"lists\" value=\"favorites\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 222, "\" hx-target=\"#item-lists-dialog\" hx-swap=\"innerHTML\"><label><input type=\"checkbox\" name=\"lists\" value=\"favorites\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
