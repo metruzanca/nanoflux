@@ -169,21 +169,16 @@ templ collectionEditPage(u store.User, d collectionData) {
 	</section>
 }
 
+// collectionFeeds renders the collection's feeds as a large multi-select: every
+// feed is a chip. User collections get a remove button per chip (POSTing to the
+// remove-feed endpoint); auto collections are readonly and carry no remove URL,
+// so their chips show every feed but can't be removed. auto-expand keeps all
+// names visible (wrapping horizontally and vertically) instead of collapsing
+// into an overflow count.
 templ collectionFeeds(d collectionData) {
-	<ul class="plain" id="collection-feeds">
-		if len(d.Feeds) > 0 {
-			for _, f := range d.Feeds {
-				<li>
-					<div class="row">
-						<a href={ "/feeds/" + strconv.FormatInt(f.ID, 10) }>{ f.Title }</a>
-						if !d.Collection.IsAuto {
-							<button class="link danger" title="remove" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/remove-feed/" + strconv.FormatInt(f.ID, 10) } hx-target="#collection-feeds" hx-swap="outerHTML">@web.Lucide("x")</button>
-						}
-					</div>
-				</li>
-			}
-		} else {
-			<li class="muted">no feeds in this collection</li>
-		}
-	</ul>
+	if len(d.Feeds) == 0 {
+		<p class="muted">no feeds in this collection</p>
+		return
+	}
+	@comboChips(removeFeedURL(d.Collection), feedIDs(d.Feeds), feedItems(d.Feeds), d.Collection.IsAuto)
 }

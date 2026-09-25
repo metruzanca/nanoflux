@@ -36,8 +36,8 @@ function applyTheme(theme) {
 })();
 document.body.addEventListener('htmx:afterRequest', function (e) {
   if (e.detail.path && e.detail.path.indexOf('/settings/theme') !== -1) {
-    var checked = document.querySelector('#settings-theme-card input[name="theme"]:checked');
-    if (checked) applyTheme(checked.value);
+    var checked = document.querySelector('#settings-theme-card input[name="theme"]');
+    if (checked && checked.value) applyTheme(checked.value);
   }
   if (e.detail.path && e.detail.path.indexOf('/settings/accent') !== -1) {
     var input = document.querySelector('#settings-accent-card input[name="accent"]');

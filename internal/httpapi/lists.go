@@ -238,7 +238,8 @@ func (s *Server) itemLists(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, _ := s.store.Lists.List(u.ID)
 	ids, _ := s.store.Lists.ItemListIDs(u.ID, id)
-	web.Render(w, r, itemListsDialogInner(id, it.Favorite, listsOnly(rows), ids))
+	items, selected := listsCombo(it.Favorite, rows, ids)
+	web.Render(w, r, itemListsDialogInner(id, items, selected))
 }
 
 // itemListsUpdate applies the add-to-list picker's selections to an item:
@@ -311,16 +312,27 @@ func (s *Server) itemListsUpdate(w http.ResponseWriter, r *http.Request) {
 	// (removing any inline close handler first). Signal the close from the
 	// server with HX-Trigger instead; app.js listens on body.
 	w.Header().Set("HX-Trigger", "item-lists-saved")
-	web.Render(w, r, itemListsDialogInner(id, it.Favorite, listsOnly(rows), freshIDs))
+	items, selected := listsCombo(it.Favorite, rows, freshIDs)
+	web.Render(w, r, itemListsDialogInner(id, items, selected))
 }
 
-// listsOnly strips the item-count wrapper off a List list.
-func listsOnly(rows []store.ListWithCount) []store.List {
-	out := make([]store.List, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, r.List)
+// listsCombo builds the add-to-list picker's combo items and selected values.
+// Favorites is the first item, value "favorites" (matching the checkbox it
+// replaced); the user's lists follow by id.
+func listsCombo(favorite bool, rows []store.ListWithCount, listIDs []int64) ([]comboItem, []string) {
+	selected := make([]string, 0, len(listIDs)+1)
+	if favorite {
+		selected = append(selected, "favorites")
 	}
-	return out
+	for _, id := range listIDs {
+		selected = append(selected, strconv.FormatInt(id, 10))
+	}
+	items := make([]comboItem, 0, len(rows)+1)
+	items = append(items, comboItem{Value: "favorites", Label: "favorites"})
+	for _, r := range rows {
+		items = append(items, comboItem{Value: strconv.FormatInt(r.ID, 10), Label: r.Name})
+	}
+	return items, selected
 }
 
 // sharedListPage serves a shared list publicly by its token. It is

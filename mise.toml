@@ -14,6 +14,10 @@ run = "go run ./tools/iconsgen"
 description = "Package the browser extension into dist/"
 run = "go run ./tools/extzip"
 
+[tasks."vendor:vaadin"]
+description = "Bundle the pinned Vaadin combo-box components into static/ (needs node)"
+run = "./tools/vaadin-vendor/vendor.sh"
+
 [tasks.dev]
 description = "Watch Go sources and rerun the server on change"
 run = "mise watch -r dev-serve"
