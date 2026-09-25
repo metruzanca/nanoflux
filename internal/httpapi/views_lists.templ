@@ -98,12 +98,12 @@ templ listPage(u store.User, d listPageData) {
 		<h1>{ d.List.Name }</h1>
 		<div class="row-actions">
 			@SortDirControl(d.Dir, "/lists/"+strconv.FormatInt(d.List.ID, 10)+"?dir=desc", "/lists/"+strconv.FormatInt(d.List.ID, 10)+"?dir=asc")
-			@DisplayModeControl("/lists/" + strconv.FormatInt(d.List.ID, 10))
+			@DisplayModeControl("/lists/" + strconv.FormatInt(d.List.ID, 10), d.Mode)
 			@listShareControl(d.List.ID, d.List.ShareToken)
 			<a class="small" title="edit" href={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/edit" }>@web.EditIcon()</a>
 		</div>
 	</div>
-	@ItemsListPage(d.Items, d.More, false)
+	@ItemsListPage(d.Items, d.More, false, d.Mode)
 }
 
 // listEditPage renames a list and deletes it. Delete lives in the edit form,

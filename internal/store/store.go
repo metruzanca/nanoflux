@@ -33,6 +33,7 @@ type Store struct {
 	Lists       *ListStore
 	UrlMappings *UrlMappingStore
 	AuthorLinks *AuthorLinkStore
+	ViewPrefs   *ViewPrefStore
 }
 
 func New(sqldb *sql.DB) *Store {
@@ -53,6 +54,7 @@ func New(sqldb *sql.DB) *Store {
 		Lists:       &ListStore{q: q},
 		UrlMappings: &UrlMappingStore{q: q},
 		AuthorLinks: &AuthorLinkStore{q: q},
+		ViewPrefs:   &ViewPrefStore{q: q},
 	}
 }
 

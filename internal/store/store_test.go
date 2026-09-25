@@ -891,8 +891,38 @@ func TestUserHomeConfig(t *testing.T) {
 	}
 }
 
-func TestCollectionFlow(t *testing.T) {
+// TestViewPrefs covers the per-scope display-preference store: a missing scope
+// defaults to list, a saved mode round-trips, and scopes are independent.
+func TestViewPrefs(t *testing.T) {
 	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+
+	if got := s.ViewPrefs.Mode(u.ID, "/feeds/1"); got != ViewModeList {
+		t.Fatalf("default mode = %q, want list", got)
+	}
+	if err := s.ViewPrefs.Set(u.ID, "/feeds/1", ViewModeGrid); err != nil {
+		t.Fatalf("Set grid: %v", err)
+	}
+	if got := s.ViewPrefs.Mode(u.ID, "/feeds/1"); got != ViewModeGrid {
+		t.Fatalf("mode = %q, want grid", got)
+	}
+	// A different scope is untouched.
+	if got := s.ViewPrefs.Mode(u.ID, "/authors/1"); got != ViewModeList {
+		t.Fatalf("other scope mode = %q, want list", got)
+	}
+	// An unknown mode normalizes to list, overwriting in place.
+	if err := s.ViewPrefs.Set(u.ID, "/feeds/1", "bogus"); err != nil {
+		t.Fatalf("Set bogus: %v", err)
+	}
+	if got := s.ViewPrefs.Mode(u.ID, "/feeds/1"); got != ViewModeList {
+		t.Fatalf("bogus mode = %q, want list", got)
+	}
+	if modes, err := s.ViewPrefs.Modes(u.ID); err != nil || modes["/feeds/1"] != ViewModeList {
+		t.Fatalf("Modes = %v (err %v)", modes, err)
+	}
+}
+
+func TestCollectionFlow(t *testing.T) {	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
 	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)

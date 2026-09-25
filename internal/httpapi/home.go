@@ -139,6 +139,7 @@ func (s *Server) renderUnread(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage("unread", u, homePage(homeData{
 		Unread: withTZ(u.Timezone, items), UnreadCount: unread, Dir: dirParam(asc),
 		More: pageCursor("/items?dir="+dirParam(asc), items, more, asc),
+		Mode: s.store.ViewPrefs.Mode(u.ID, "/unread"),
 	})))
 }
 

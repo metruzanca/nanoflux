@@ -44,9 +44,19 @@ type loadMoreData struct {
 	URL string // full fragment URL including the before= cursor
 }
 
-templ ItemsList(items []store.ItemWithFeed, hideAuthor bool) {
+// itemsListClass is the <ul> class for an item list: "items", plus "masonry"
+// when the scope's saved display mode is grid. The mode is server-side (per
+// account), so the list is laid out correctly on first paint.
+func itemsListClass(mode string) string {
+	if store.NormalizeViewMode(mode) == store.ViewModeGrid {
+		return "items masonry"
+	}
+	return "items"
+}
+
+templ ItemsList(items []store.ItemWithFeed, hideAuthor bool, mode string) {
 	if len(items) > 0 {
-		<ul class="items" id="items-list">
+		<ul class={ itemsListClass(mode) } id="items-list">
 			for _, it := range items {
 				@ItemRow(it, hideAuthor)
 			}
@@ -58,8 +68,8 @@ templ ItemsList(items []store.ItemWithFeed, hideAuthor bool) {
 
 // ItemsListPage renders the item list plus a "load more" button when more
 // pages exist. The button appends the next page into the list via htmx.
-templ ItemsListPage(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool) {
-	@ItemsList(items, hideAuthor)
+templ ItemsListPage(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool, mode string) {
+	@ItemsList(items, hideAuthor, mode)
 	if more != nil {
 		<button id="load-more" hx-get={ templ.URL(more.URL) } hx-target="#items-list" hx-swap="beforeend">load more</button>
 	}
@@ -68,9 +78,9 @@ templ ItemsListPage(items []store.ItemWithFeed, more *loadMoreData, hideAuthor b
 // ItemsSection wraps the list and its load-more button so list-wide actions
 // (e.g. "mark all read") can swap the whole section atomically instead of
 // orphaning a stale load-more button.
-templ ItemsSection(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool) {
+templ ItemsSection(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool, mode string) {
 	<div id="items-section">
-		@ItemsListPage(items, more, hideAuthor)
+		@ItemsListPage(items, more, hideAuthor, mode)
 	</div>
 }
 
@@ -151,30 +161,56 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor bool) {
 				</div>
 				<div class="row-actions">
 					if it.Favorite {
-						<button class="link fav-btn" title="unfavorite" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/favorite" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML"
+						<button
+							class="link fav-btn"
+							title="unfavorite"
+							hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/favorite" }
+							hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) }
+							hx-swap="outerHTML"
 							if hideAuthor {
 								hx-vals={ `{"hideAuthor":"1"}` }
-							}>
+							}
+						>
 							@web.FavIcon(true)
 						</button>
 					} else {
-						<button class="link fav-btn" title="favorite" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/favorite" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML"
+						<button
+							class="link fav-btn"
+							title="favorite"
+							hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/favorite" }
+							hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) }
+							hx-swap="outerHTML"
 							if hideAuthor {
 								hx-vals={ `{"hideAuthor":"1"}` }
-							}>
+							}
+						>
 							@web.FavIcon(false)
 						</button>
 					}
 					if it.Read {
-						<button class="link read-btn" title="mark unread" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML"
+						<button
+							class="link read-btn"
+							title="mark unread"
+							hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" }
+							hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) }
+							hx-swap="outerHTML"
 							if hideAuthor {
 								hx-vals={ `{"hideAuthor":"1"}` }
-							}>@web.Lucide("rotate-ccw")</button>
+							}
+						>@web.Lucide("rotate-ccw")
+</button>
 					} else {
-						<button class="link read-btn" title="mark read" hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" } hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) } hx-swap="outerHTML"
+						<button
+							class="link read-btn"
+							title="mark read"
+							hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" }
+							hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) }
+							hx-swap="outerHTML"
 							if hideAuthor {
 								hx-vals={ `{"hideAuthor":"1"}` }
-							}>@web.Lucide("check")</button>
+							}
+						>@web.Lucide("check")
+</button>
 					}
 					@itemMenu(it.ID, it.FeedID)
 				</div>
@@ -211,10 +247,10 @@ templ scopedItemsInner(d scopedItemsData) {
 		</nav>
 		<div class="row-actions">
 			@SortDirControl(d.Dir, d.Path+"?view="+d.View+"&dir=desc", d.Path+"?view="+d.View+"&dir=asc")
-			@DisplayModeControl(d.Path)
+			@DisplayModeControl(d.Path, d.Mode)
 		</div>
 	</div>
-	@ItemsListPage(d.Items, d.More, d.HideAuthor)
+	@ItemsListPage(d.Items, d.More, d.HideAuthor, d.Mode)
 }
 
 // pickerOption is one choice in a PickerControl. Client-side pickers (no Href)
@@ -236,22 +272,44 @@ type pickerOption struct {
 // value (the display mode is remembered per page); it is "" for pickers whose
 // state is not scoped.
 templ PickerControl(name, title, current, scope string, options []pickerOption) {
-	<div class="picker" data-picker={ name } data-scope={ scope }>
+	<div class="picker" data-picker={ name } data-scope={ scope } data-mode={ current }>
 		<button type="button" class="mode-btn" aria-haspopup="true" aria-expanded="false" title={ title } onclick="togglePicker(event)">
 			for _, o := range options {
 				if o.Icon != "" {
-					<span class="pick-ic" data-option={ o.Value } if o.Value != current { hidden }>@ModeIcon(o.Icon)</span>
+					<span
+						class="pick-ic"
+						data-option={ o.Value }
+						if o.Value != current {
+							hidden
+						}
+					>@ModeIcon(o.Icon)
+</span>
 				}
-				<span class="pick-label" data-option={ o.Value } if o.Value != current { hidden }>{ o.Label }</span>
+				<span
+					class="pick-label"
+					data-option={ o.Value }
+					if o.Value != current {
+						hidden
+					}
+				>{ o.Label }</span>
 			}
 		</button>
 		<div class="mode-menu" role="menu" hidden>
 			for _, o := range options {
 				if o.Href != "" {
-					<a class="mode-option" role="menuitemradio" data-option={ o.Value } aria-checked={ strconv.FormatBool(o.Value == current) } href={ templ.URL(o.Href) }
+					<a
+						class="mode-option"
+						role="menuitemradio"
+						data-option={ o.Value }
+						aria-checked={ strconv.FormatBool(o.Value == current) }
+						href={ templ.URL(o.Href) }
 						if o.HxGet != "" {
-							hx-get={ templ.URL(o.HxGet) } hx-target={ o.HxTarget } hx-swap="outerHTML" hx-push-url={ templ.URL(o.Href) }
-						}>
+							hx-get={ templ.URL(o.HxGet) }
+							hx-target={ o.HxTarget }
+							hx-swap="outerHTML"
+							hx-push-url={ templ.URL(o.Href) }
+						}
+					>
 						if o.Icon != "" {
 							@ModeIcon(o.Icon)
 						}
@@ -271,11 +329,12 @@ templ PickerControl(name, title, current, scope string, options []pickerOption) 
 }
 
 // DisplayModeControl is the list/grid picker shown alongside the unread/read
-// tabs and in the home/history/favorites headers. The choice is client-side
-// (localStorage), remembered per scope (the page's path), so the server always
-// renders the default (list) state and app.js re-syncs it.
-templ DisplayModeControl(scope string) {
-	@PickerControl("display", "display mode", "list", scope, []pickerOption{
+// tabs and in the home/history/favorites headers. mode is the user's saved
+// preference for this scope (server-side, per account); scope is the page key
+// the choice is stored under. Clicking an option asks app.js to persist the
+// change to /prefs/display and re-apply it.
+templ DisplayModeControl(scope, mode string) {
+	@PickerControl("display", "display mode", store.NormalizeViewMode(mode), scope, []pickerOption{
 		{Value: "list", Label: "list", Icon: "list"},
 		{Value: "grid", Label: "grid", Icon: "grid"},
 	})
@@ -372,7 +431,8 @@ templ itemContent(d itemViewData, v itemVisuals) {
 		</div>
 	}
 	if d.Body != "" && !v.Image && d.SourceURL == "" && len(d.Gallery) == 0 {
-		<div class="item-body">@templ.Raw(web.UpgradeImageSrcs(string(d.Body)))</div>
+		<div class="item-body">@templ.Raw(web.UpgradeImageSrcs(string(d.Body)))
+</div>
 	}
 	if len(d.Enclosures) > 0 {
 		<div class="enclosures">
@@ -437,7 +497,8 @@ templ itemMenu(itemID, feedID int64) {
 // external "source" link (when the item resolves to one) and the share control.
 templ itemMenuFull(itemID, feedID int64, sourceURL, shareToken string, inModal bool) {
 	<div class="item-menu" data-item-id={ strconv.FormatInt(itemID, 10) }>
-		<button type="button" class="link menu-btn" aria-haspopup="true" aria-expanded="false" title="more actions" onclick="toggleItemMenu(event)">@web.Lucide("ellipsis")</button>
+		<button type="button" class="link menu-btn" aria-haspopup="true" aria-expanded="false" title="more actions" onclick="toggleItemMenu(event)">@web.Lucide("ellipsis")
+</button>
 		<div class="menu-pop" role="menu" hidden>
 			<button type="button" class="link menu-item" role="menuitem" onclick="itemMenuAction(event, 'lists')">add to list</button>
 			<a class="menu-item" role="menuitem" href={ "/feeds/" + strconv.FormatInt(feedID, 10) }>go to feed</a>
@@ -463,21 +524,30 @@ templ itemMenuFull(itemID, feedID int64, sourceURL, shareToken string, inModal b
 templ itemListsDialogInner(itemID int64, favorite bool, lists []store.List, itemListIDs []int64) {
 	<div class="row">
 		<h2>add to list</h2>
-		<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+		<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")
+</button>
 	</div>
 	<form class="stack" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/lists" } hx-target="#item-lists-dialog" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful){document.getElementById('item-lists-dialog').close()}">
 		<label>
-			<input type="checkbox" name="lists" value="favorites"
-			if favorite {
-				checked
-			}/> favorites
+			<input
+				type="checkbox"
+				name="lists"
+				value="favorites"
+				if favorite {
+					checked
+				}
+			/> favorites
 		</label>
 		for _, l := range lists {
 			<label>
-				<input type="checkbox" name="lists" value={ strconv.FormatInt(l.ID, 10) }
-				if containsListID(itemListIDs, l.ID) {
-					checked
-				}/> { l.Name }
+				<input
+					type="checkbox"
+					name="lists"
+					value={ strconv.FormatInt(l.ID, 10) }
+					if containsListID(itemListIDs, l.ID) {
+						checked
+					}
+				/> { l.Name }
 			</label>
 		}
 		<div id="item-lists-error" class="error"></div>
@@ -517,6 +587,7 @@ templ sharedItemPage(it store.ItemWithFeed, d itemViewData) {
 		</body>
 	</html>
 }
+
 // markAllReadControl is the check-check button plus its confirmation dialog,
 // shown in the header of a feed page and an author page. It marks every unread
 // item in scope read; the dialog gates it because the action is not one-click
@@ -524,16 +595,22 @@ templ sharedItemPage(it store.ItemWithFeed, d itemViewData) {
 // relative to the button rather than by a page-unique id.
 templ markAllReadControl(d markAllReadData) {
 	<div class="mark-all-read">
-		<button type="button" class="link" title={ "mark all " + strconv.Itoa(d.Unread) + " items as read" }
+		<button
+			type="button"
+			class="link"
+			title={ "mark all " + strconv.Itoa(d.Unread) + " items as read" }
 			if d.Unread == 0 {
 				disabled
 			}
-			onclick="this.nextElementSibling.showModal()">@web.Lucide("check-check")</button>
+			onclick="this.nextElementSibling.showModal()"
+		>@web.Lucide("check-check")
+</button>
 		if d.Unread > 0 {
 			<dialog class="modal">
 				<div class="row">
 					<h2>mark { d.Unread } items as read?</h2>
-					<button type="button" class="link" title="close" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+					<button type="button" class="link" title="close" onclick="this.closest('dialog').close()">@web.Lucide("x")
+</button>
 				</div>
 				<div class="row-actions">
 					<button type="button" class="link" onclick="this.closest('dialog').close()">cancel</button>
