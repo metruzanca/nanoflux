@@ -1836,6 +1836,54 @@ func TestCollectionsIndexShowsStats(t *testing.T) {
 	}
 }
 
+// TestCollectionsIndexSectionsAndOrder covers item 5: user collections render
+// without a heading, auto collections render under an "auto collections"
+// heading, and each section is ordered most-unread first.
+func TestCollectionsIndexSectionsAndOrder(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+
+	// Two user collections with distinct unread counts (zebra > alpha, so
+	// alphabetical order would be wrong) and one auto collection.
+	zebra, _ := s.store.Collections.Create(u.ID, "zebra")
+	alpha, _ := s.store.Collections.Create(u.ID, "alpha")
+	auto, _ := s.store.Collections.EnsureAuto(u.ID, "auto-site")
+
+	newFeed := func(title, host string, n int) store.Feed {
+		f, _ := s.store.Feeds.Create(u.ID, a.ID, title, "https://"+host+"/rss.xml", "https://"+host, "", 900)
+		for i := 0; i < n; i++ {
+			s.store.Items.Upsert(f.ID, store.Item{GUID: title + itoa(int64(i)), Title: title, Link: "https://" + host + "/" + itoa(int64(i)), FetchedAt: db.Now()})
+		}
+		return f
+	}
+	fz := newFeed("Z", "z.dev", 3)
+	fa := newFeed("A", "a.dev", 1)
+	fauto := newFeed("Auto", "auto.dev", 2)
+	s.store.Collections.AddFeed(u.ID, zebra.ID, fz.ID)
+	s.store.Collections.AddFeed(u.ID, alpha.ID, fa.ID)
+	s.store.Collections.AddFeed(u.ID, auto.ID, fauto.ID)
+
+	body := doGet(h, "/collections", cookie).Body.String()
+
+	// The auto collection is under the heading and in its own list.
+	if !strings.Contains(body, "auto collections") || !strings.Contains(body, `id="auto-collections-list"`) {
+		t.Fatalf("auto section should render with a heading: %s", body)
+	}
+	// The auto collection is not in the user list: the user list closes before
+	// the auto list starts.
+	userList := body[strings.Index(body, `id="collections-list"`):strings.Index(body, `id="auto-collections-list"`)]
+	if strings.Contains(userList, "auto-site") {
+		t.Fatalf("auto collection should not appear in the user section: %s", userList)
+	}
+	// Within the user section, zebra (3 unread) sorts before alpha (1 unread)
+	// despite alphabetical order.
+	if iz, ia := strings.Index(userList, "zebra"), strings.Index(userList, "alpha"); iz < 0 || ia < 0 || iz > ia {
+		t.Fatalf("user collections should sort by unread, got zebra=%d alpha=%d: %s", iz, ia, userList)
+	}
+}
+
 func TestAuthorEditHasAvatarFields(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

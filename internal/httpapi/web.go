@@ -1600,6 +1600,30 @@ func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage("collections", u, collectionsPage(u, rows)))
 }
 
+// userCollections returns the non-auto collections, preserving the query's
+// order (most unread first).
+func userCollections(rows []store.CollectionWithCounts) []store.CollectionWithCounts {
+	out := make([]store.CollectionWithCounts, 0, len(rows))
+	for _, c := range rows {
+		if !c.IsAuto {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// autoCollections returns the auto collections, preserving the query's order
+// (most unread first).
+func autoCollections(rows []store.CollectionWithCounts) []store.CollectionWithCounts {
+	out := make([]store.CollectionWithCounts, 0, len(rows))
+	for _, c := range rows {
+		if c.IsAuto {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func (s *Server) collectionCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -1613,7 +1637,7 @@ func (s *Server) collectionCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-collection-error", "could not create collection")
 		return
 	}
-	web.Render(w, r, CollectionRow(store.CollectionWithCounts{Collection: c}))
+	web.Render(w, r, collectionCreated(store.CollectionWithCounts{Collection: c}))
 }
 
 func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
