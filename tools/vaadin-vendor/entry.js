@@ -5,6 +5,9 @@
 // internal/web/static/vaadin.bundle.js. The output is committed like
 // htmx.min.js so nanoflux needs no npm at build or run time.
 //
+// The bundle is emitted as an IIFE, not ESM: it is loaded with a plain
+// <script defer> (classic scripts cannot contain `export`).
+//
 // v25 ships only structural base styles (no Lumo theme package), so the
 // components are themed from app.css via --vaadin-* custom properties.
 import "@vaadin/combo-box";
