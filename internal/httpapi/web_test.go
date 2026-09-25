@@ -2161,3 +2161,56 @@ func TestCollectionEditAndDelete(t *testing.T) {
 		t.Fatalf("delete collection: %d %q", rr.Code, rr.Header().Get("Location"))
 	}
 }
+
+// TestDisplayPrefPersist covers item 6: the list/grid choice is saved to the
+// account via POST /prefs/display, rendered server-side on the next load, and
+// rejected for unknown scopes.
+func TestDisplayPrefPersist(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Post", Link: "https://b.dev/1", FetchedAt: db.Now()})
+
+	// A feed page renders list by default (the <ul> has no masonry class).
+	body := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
+	if !strings.Contains(body, `data-scope="/feeds/`+itoa(f.ID)+`" data-mode="list"`) {
+		t.Fatalf("feed page should default to list mode: %s", body)
+	}
+
+	// Saving grid persists it and the page renders masonry on the next load.
+	if rr := doForm(h, "POST", "/prefs/display", url.Values{
+		"scope": {"/feeds/" + itoa(f.ID)}, "mode": {"grid"},
+	}, cookie); rr.Code != http.StatusNoContent {
+		t.Fatalf("save display pref: %d %s", rr.Code, rr.Body.String())
+	}
+	body = doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
+	if !strings.Contains(body, `data-mode="grid"`) || !strings.Contains(body, `class="items masonry"`) {
+		t.Fatalf("feed page should render grid after saving: %s", body)
+	}
+	// The fixed views are independent.
+	if got := doGet(h, "/unread", cookie).Body.String(); !strings.Contains(got, `data-mode="list"`) {
+		t.Fatalf("/unread should remain list: %s", got)
+	}
+
+	// An unknown scope or id is rejected.
+	for _, scope := range []string{"/etc/passwd", "/feeds/abc", "/feeds/1/items", ""} {
+		if rr := doForm(h, "POST", "/prefs/display", url.Values{"scope": {scope}, "mode": {"grid"}}, cookie); rr.Code != http.StatusBadRequest {
+			t.Fatalf("scope %q: got %d, want 400", scope, rr.Code)
+		}
+	}
+}
+
+// TestDisplayPrefSurvivesAnotherAccount: preferences are per user.
+func TestDisplayPrefAnotherAccount(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	if err := s.store.ViewPrefs.Set(u.ID, "/unread", "grid"); err != nil {
+		t.Fatal(err)
+	}
+	if got := doGet(h, "/unread", cookie).Body.String(); !strings.Contains(got, `data-mode="grid"`) {
+		t.Fatalf("/unread should render the saved grid mode: %s", got)
+	}
+}

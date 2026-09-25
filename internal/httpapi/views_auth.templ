@@ -83,10 +83,10 @@ templ homePage(d homeData) {
 		<h1>unread ({ d.UnreadCount })</h1>
 		<div class="row-actions">
 			@SortDirControl(d.Dir, "/unread?dir=desc", "/unread?dir=asc")
-			@DisplayModeControl("/unread")
+			@DisplayModeControl("/unread", d.Mode)
 		</div>
 	</div>
-	@ItemsSection(d.Unread, d.More, false)
+	@ItemsSection(d.Unread, d.More, false, d.Mode)
 }
 
 templ readPage(d readData) {
@@ -94,13 +94,13 @@ templ readPage(d readData) {
 		<h1>history ({ d.ReadCount })</h1>
 		<div class="row-actions">
 			@SortDirControl(d.Dir, "/read?dir=desc", "/read?dir=asc")
-			@DisplayModeControl("/read")
+			@DisplayModeControl("/read", d.Mode)
 			if d.ReadCount > 0 {
 				<button hx-post="/items/unread-all" hx-target="#items-section" hx-swap="outerHTML">mark all unread</button>
 			}
 		</div>
 	</div>
-	@ItemsSection(d.Read, d.More, false)
+	@ItemsSection(d.Read, d.More, false, d.Mode)
 }
 
 templ favoritesPage(d favoritesData) {
@@ -108,11 +108,11 @@ templ favoritesPage(d favoritesData) {
 		<h1>favorites ({ d.FavCount })</h1>
 		<div class="row-actions">
 			@SortDirControl(d.Dir, "/favorites?dir=desc", "/favorites?dir=asc")
-			@DisplayModeControl("/favorites")
+			@DisplayModeControl("/favorites", d.Mode)
 			@favoritesShareControl(d.ShareToken)
 		</div>
 	</div>
-	@ItemsListPage(d.Favorites, d.More, false)
+	@ItemsListPage(d.Favorites, d.More, false, d.Mode)
 }
 
 templ searchResultsPage(d searchData) {
@@ -120,5 +120,5 @@ templ searchResultsPage(d searchData) {
 	if d.Query != "" {
 		<p class="muted small">results for “{ d.Query }”</p>
 	}
-	@ItemsListPage(d.Items, d.More, false)
+	@ItemsListPage(d.Items, d.More, false, "")
 }

@@ -43,6 +43,7 @@ var migrations = []migration{
 	{30, schemaV30},
 	{31, schemaV31},
 	{32, schemaV32},
+	{33, schemaV33},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -502,6 +503,20 @@ ALTER TABLE feeds ADD COLUMN disabled_reason TEXT;
 // the default keeps existing users opted in at 30 days.
 const schemaV32 = `
 ALTER TABLE users ADD COLUMN auto_read_after_days INTEGER NOT NULL DEFAULT 30;
+`
+
+// schemaV33 stores per-scope display preferences so list/grid follows the
+// account rather than the browser. scope is a stable page key ("/unread",
+// "/feeds/3", "/authors/1", "/collections/2", "/lists/4", "/read",
+// "/favorites"); mode is "list" or "grid".
+const schemaV33 = `
+CREATE TABLE user_view_prefs (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scope      TEXT NOT NULL,
+    mode       TEXT NOT NULL DEFAULT 'list',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, scope)
+);
 `
 
 // Migrate applies any pending migrations in order, recording each in

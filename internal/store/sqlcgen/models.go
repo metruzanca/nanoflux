@@ -178,3 +178,10 @@ type User struct {
 	FavoritesShareToken   sql.NullString `json:"favorites_share_token"`
 	CreatedAt             string         `json:"created_at"`
 }
+
+type UserViewPref struct {
+	UserID    int64  `json:"user_id"`
+	Scope     string `json:"scope"`
+	Mode      string `json:"mode"`
+	UpdatedAt string `json:"updated_at"`
+}

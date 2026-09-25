@@ -118,36 +118,42 @@ document.addEventListener('click', function (e) {
   else if (name === 'authors') setAuthorSort(value, e);
 });
 
-// Display mode (list / masonry grid). Client-side (localStorage), remembered
-// per scope: the picker carries the page's path in data-scope, so each
-// author/feed/collection (and home/history/favorites) keeps its own choice.
-// Applied to whatever item list is on the page; htmx swaps re-create the list,
-// so applyDisplayMode re-runs on every afterSwap.
-var DISPLAY_MODE_KEY = 'nanoflux.items.mode';
+// Display mode (list / masonry grid). Stored server-side per account, per
+// scope (the picker carries the page key in data-scope and the saved mode in
+// data-mode), so the choice follows the user across devices. The server also
+// renders the list with the right class, so this mostly re-syncs the picker
+// after an htmx swap recreates it.
 function displayScope() {
   var ctl = document.querySelector('.picker[data-picker="display"]');
   return (ctl && ctl.dataset.scope) || '';
 }
 function displayMode() {
-  var scope = displayScope();
-  var m = scope ? localStorage.getItem(DISPLAY_MODE_KEY + ':' + scope) : null;
-  if (m === null) m = localStorage.getItem(DISPLAY_MODE_KEY); // legacy global
-  return m === 'grid' ? 'grid' : 'list';
+  var ctl = document.querySelector('.picker[data-picker="display"]');
+  return (ctl && ctl.dataset.mode === 'grid') ? 'grid' : 'list';
 }
 function applyDisplayMode() {
   var mode = displayMode();
-  var list = document.getElementById('items-list');
-  if (list && list.tagName === 'UL') {
-    list.classList.toggle('masonry', mode === 'grid');
-  }
   setPickerState('display', mode);
 }
 function setDisplayMode(mode, e) {
   if (e) e.stopPropagation();
   var scope = displayScope();
-  localStorage.setItem(scope ? DISPLAY_MODE_KEY + ':' + scope : DISPLAY_MODE_KEY, mode);
-  applyDisplayMode();
   closePickers();
+  // Apply locally right away, then persist. A failed save leaves the page on
+  // the new mode until the next load, which is preferable to a visible jank.
+  document.querySelectorAll('.picker[data-picker="display"]').forEach(function (ctl) {
+    ctl.dataset.mode = mode;
+  });
+  var list = document.getElementById('items-list');
+  if (list && list.tagName === 'UL') {
+    list.classList.toggle('masonry', mode === 'grid');
+  }
+  setPickerState('display', mode);
+  fetch('/prefs/display', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'scope=' + encodeURIComponent(scope) + '&mode=' + encodeURIComponent(mode)
+  }).catch(function () {});
 }
 
 // Authors sort (abc / newest / unread). Client-side (localStorage), reorders

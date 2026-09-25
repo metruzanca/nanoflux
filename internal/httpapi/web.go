@@ -27,6 +27,7 @@ type homeData struct {
 	UnreadCount int
 	Dir         string
 	More        *loadMoreData
+	Mode        string // saved display mode for "/unread"
 }
 
 // pageSize is the number of items rendered per page on every list.
@@ -37,6 +38,7 @@ type readData struct {
 	ReadCount int
 	Dir       string
 	More      *loadMoreData
+	Mode      string // saved display mode for "/read"
 }
 
 type favoritesData struct {
@@ -45,6 +47,7 @@ type favoritesData struct {
 	ShareToken string // public share token for the favorites list, "" when unshared
 	Dir        string
 	More       *loadMoreData
+	Mode       string // saved display mode for "/favorites"
 }
 
 type feedRow struct {
@@ -158,6 +161,7 @@ type scopedItemsData struct {
 	More        *loadMoreData // "load more" cursor, nil when no next page
 	SwapOOB     bool          // render with hx-swap-oob for the collection OOB fragment
 	HideAuthor  bool          // drop the author link from item meta (author-scoped page)
+	Mode        string        // saved display mode for this scope ("list" or "grid")
 }
 
 // itemsAsc reports whether the item list should be ordered oldest-first from
@@ -282,9 +286,10 @@ func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
 	asc := itemsAsc(r)
 	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{ReadOnly: true, Ascending: asc, Limit: pageSize})
 	count, _ := s.store.Items.CountRead(u.ID, 0)
+	mode := s.store.ViewPrefs.Mode(u.ID, "/read")
 	web.Render(w, r, basePage("history", u, readPage(readData{
 		Read: withTZ(u.Timezone, items), ReadCount: count, Dir: dirParam(asc),
-		More: pageCursor("/items?read=1&dir="+dirParam(asc), items, more, asc),
+		More: pageCursor("/items?read=1&dir="+dirParam(asc), items, more, asc), Mode: mode,
 	})))
 }
 
@@ -294,9 +299,10 @@ func (s *Server) favoritesPage(w http.ResponseWriter, r *http.Request) {
 	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{FavoritesOnly: true, Ascending: asc, Limit: pageSize})
 	count, _ := s.store.Items.CountFavorites(u.ID, 0)
 	tok, _ := s.store.Users.FavoritesShareToken(u.ID)
+	mode := s.store.ViewPrefs.Mode(u.ID, "/favorites")
 	web.Render(w, r, basePage("favorites", u, favoritesPage(favoritesData{
 		Favorites: withTZ(u.Timezone, items), FavCount: count, ShareToken: tok, Dir: dirParam(asc),
-		More: pageCursor("/items?fav=1&dir="+dirParam(asc), items, more, asc),
+		More: pageCursor("/items?fav=1&dir="+dirParam(asc), items, more, asc), Mode: mode,
 	})))
 }
 
@@ -310,16 +316,57 @@ func (s *Server) itemsMarkAllUnread(w http.ResponseWriter, r *http.Request) {
 	s.renderReadItemsList(w, r, u.ID, u.Timezone)
 }
 
+// displayPrefSet persists the user's list/grid choice for a page scope. The
+// client applies the mode immediately; this only records it so the choice
+// follows the account across devices. Only known scope shapes are accepted so
+// a malformed client can't write arbitrary keys.
+func (s *Server) displayPrefSet(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	scope := r.FormValue("scope")
+	mode := store.NormalizeViewMode(r.FormValue("mode"))
+	if !validViewScope(scope) {
+		http.Error(w, "invalid scope", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.ViewPrefs.Set(u.ID, scope, mode); err != nil {
+		log.Error("set display pref", "scope", scope, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// validViewScope reports whether scope is one of the display-preference page
+// keys: a fixed view ("/unread", "/read", "/favorites") or an entity page
+// ("/feeds/{id}", "/authors/{id}", "/collections/{id}", "/lists/{id}"). A
+// query string or fragment is rejected.
+func validViewScope(scope string) bool {
+	switch scope {
+	case "/unread", "/read", "/favorites":
+		return true
+	}
+	for _, prefix := range []string{"/feeds/", "/authors/", "/collections/", "/lists/"} {
+		if id, ok := strings.CutPrefix(scope, prefix); ok {
+			if id == "" || strings.ContainsAny(id, "/?#") {
+				return false
+			}
+			_, err := strconv.ParseInt(id, 10, 64)
+			return err == nil
+		}
+	}
+	return false
+}
+
 func (s *Server) renderReadItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
 	asc := itemsAsc(r)
 	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{ReadOnly: true, Ascending: asc, Limit: pageSize})
-	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items?read=1&dir="+dirParam(asc), items, more, asc), false))
+	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items?read=1&dir="+dirParam(asc), items, more, asc), false, s.store.ViewPrefs.Mode(userID, "/read")))
 }
 
 func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
 	asc := itemsAsc(r)
 	items, more, _ := s.store.Items.ListPage(userID, store.ItemFilter{UnreadOnly: true, Ascending: asc, Limit: pageSize})
-	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items?dir="+dirParam(asc), items, more, asc), false))
+	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursor("/items?dir="+dirParam(asc), items, more, asc), false, s.store.ViewPrefs.Mode(userID, "/unread")))
 }
 
 // itemsFragment serves a "load more" page of rows for the home/read/favorites
@@ -1360,6 +1407,7 @@ func (s *Server) authorScopedItems(userID, authorID int64, view, tz string, asc 
 		Path: base, ItemsPath: base + "/items", View: view, Dir: dirParam(asc),
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
 		More: pageCursor(itemsBase, items, more, asc), HideAuthor: true,
+		Mode: s.store.ViewPrefs.Mode(userID, base),
 	}
 }
 
@@ -1424,6 +1472,7 @@ func (s *Server) feedScopedItems(userID, feedID int64, view, tz string, asc bool
 		Path: base, ItemsPath: base + "/items", View: view, Dir: dirParam(asc),
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
 		More: pageCursor(itemsBase, items, more, asc),
+		Mode: s.store.ViewPrefs.Mode(userID, base),
 	}
 }
 
@@ -1699,6 +1748,7 @@ func (s *Server) collectionScopedItems(userID, collectionID int64, view, tz stri
 		Path: base, ItemsPath: base + "/items", View: view, Dir: dirParam(asc),
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
 		More: pageCursor(itemsBase, items, more, asc),
+		Mode: s.store.ViewPrefs.Mode(userID, base),
 	}
 }
 

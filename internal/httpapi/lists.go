@@ -23,6 +23,7 @@ type listPageData struct {
 	Items []store.ItemWithFeed
 	Dir   string
 	More  *loadMoreData
+	Mode  string // saved display mode for "/lists/{id}"
 }
 
 // sharedListData renders the public, unauthenticated view of a shared list.
@@ -80,6 +81,7 @@ func (s *Server) listPage(w http.ResponseWriter, r *http.Request) {
 	base := "/lists/" + strconv.FormatInt(id, 10) + "/items?dir=" + dirParam(asc)
 	web.Render(w, r, basePage(l.Name, u, listPage(u, listPageData{
 		List: l, Items: withTZ(u.Timezone, items), Dir: dirParam(asc), More: pageCursor(base, items, more, asc),
+		Mode: s.store.ViewPrefs.Mode(u.ID, "/lists/"+strconv.FormatInt(id, 10)),
 	})))
 }
 
