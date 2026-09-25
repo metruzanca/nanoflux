@@ -246,7 +246,7 @@ FROM collections c
 LEFT JOIN collection_feeds cf ON cf.collection_id = c.id
 WHERE c.user_id = ?
 GROUP BY c.id
-ORDER BY c.name
+ORDER BY unread_count DESC, c.name
 `
 
 type ListCollectionsWithCountsRow struct {

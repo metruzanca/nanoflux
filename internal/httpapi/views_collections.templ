@@ -29,12 +29,47 @@ templ collectionsPage(u store.User, rows []store.CollectionWithCounts) {
 	</dialog>
 }
 
+// CollectionsList renders the collections index grouped into two sections:
+// the user's own collections, then auto collections (created from a feed's
+// site) under a heading that explains them. Both groups keep the query's
+// order, most unread first.
 templ CollectionsList(rows []store.CollectionWithCounts) {
-	<ul class="plain" id="collections-list">
-		for _, c := range rows {
-			@CollectionRow(c)
+	@collectionsGroup(userCollections(rows), false)
+	@collectionsGroup(autoCollections(rows), true)
+}
+
+templ collectionsGroup(rows []store.CollectionWithCounts, auto bool) {
+	if auto {
+		if len(rows) == 0 {
+			return
 		}
-	</ul>
+		<div class="row">
+			<h2>auto collections</h2>
+		</div>
+		<p class="muted small">auto collections are created from a feed's site and update automatically. Use edit to see every feed in one.</p>
+		<ul class="plain" id="auto-collections-list">
+			for _, c := range rows {
+				@CollectionRow(c)
+			}
+		</ul>
+	} else {
+		<ul class="plain" id="collections-list">
+			for _, c := range rows {
+				@CollectionRow(c)
+			}
+		</ul>
+		if len(rows) == 0 {
+			<p class="muted" id="collections-empty">no collections yet — add one, or add a feed and its site gets an auto collection.</p>
+		}
+	}
+}
+
+// collectionCreated is the response to creating a collection: the new row,
+// appended to #collections-list, plus an out-of-band delete of the empty-state
+// note (present only when the user had no collections yet).
+templ collectionCreated(c store.CollectionWithCounts) {
+	@CollectionRow(c)
+	<p id="collections-empty" hx-swap-oob="delete" hidden></p>
 }
 
 templ CollectionRow(c store.CollectionWithCounts) {
