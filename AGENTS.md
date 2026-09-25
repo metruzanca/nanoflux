@@ -4,6 +4,7 @@
 - Document all environment variables in `.env.example`.
 - App links are internal by default, ↗ on every external link.
 - mise is for development, make is for selfhosting an instance
+- Do not mention any external plugins in internal code, comments or docs
 
 # Notes
 
