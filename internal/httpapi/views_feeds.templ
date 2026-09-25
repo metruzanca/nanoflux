@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
@@ -15,51 +16,53 @@ templ FeedsList(rows []feedRow) {
 	</ul>
 }
 
+// FeedRow is a feed as it appears on the author page's feed list (and the
+// fragments that append to it). It is deliberately read-only: editing and
+// refreshing live on the feed's own page, and the link points at the feed's
+// home site rather than its feed URL, which is what a reader wants to visit.
 templ FeedRow(r feedRow) {
 	<li id={ "feed-" + strconv.FormatInt(r.ID, 10) }>
-		<div class="row">
-			<div>
-				<a href={ "/feeds/" + strconv.FormatInt(r.ID, 10) }>
-					<strong>@web.SourceIcon(feedIconURL(r.Feed))
-					{ r.Title }</strong>
-				</a>
-				if !r.Enabled {
-					if r.DisabledReason != "" {
-						<span class="badge danger" title={ r.DisabledReason }>disabled · { r.DisabledReason }</span>
-					} else {
-						<span class="badge">paused</span>
-					}
+		<div>
+			<a href={ "/feeds/" + strconv.FormatInt(r.ID, 10) }>
+				<strong>
+					@web.SourceIcon(feedIconURL(r.Feed))
+					{ r.Title }
+				</strong>
+			</a>
+			if !r.Enabled {
+				if r.DisabledReason != "" {
+					<span class="badge danger" title={ r.DisabledReason }>disabled · { r.DisabledReason }</span>
+				} else {
+					<span class="badge">paused</span>
 				}
-				if r.LastError != "" {
-					<span class="badge danger" title={ r.LastError }>last poll failed</span>
+			}
+			if r.LastError != "" {
+				<span class="badge danger" title={ r.LastError }>last poll failed</span>
+			}
+			if r.Cooling() {
+				<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited · retry { web.Until(r.NextPollAt) }</span>
+			}
+			@staleBadge(r.Feed, r.Timezone)
+			<div class="item-meta">
+				if home := strings.TrimSpace(r.HomeURL); home != "" {
+					<a href={ templ.URL(home) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home</a>
+				} else {
+					<a href={ templ.URL(r.FeedURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">feed</a>
 				}
-				if r.Cooling() {
-					<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited · retry { web.Until(r.NextPollAt) }</span>
+				· { r.Unread } unread · last polled 
+				if r.LastPolledAt != "" {
+					{ web.TimeFmt(r.Timezone, r.LastPolledAt) }
+				} else {
+					never
 				}
-				@staleBadge(r.Feed, r.Timezone)
-				<div class="item-meta">
-					<a href={ templ.URL(r.FeedURL) } class="external" referrerpolicy="no-referrer">feed</a> · { r.Unread } unread · last polled 
-					if r.LastPolledAt != "" {
-						{ web.TimeFmt(r.Timezone, r.LastPolledAt) }
-					} else {
-						never
+			</div>
+			if len(r.Collections) > 0 {
+				<div class="feed-collections">
+					for _, c := range r.Collections {
+						<a class="tag" href={ "/collections/" + strconv.FormatInt(c.ID, 10) } title={ c.Name }>#{ c.Name }</a>
 					}
 				</div>
-				if len(r.Collections) > 0 {
-					<div class="feed-collections">
-						for _, c := range r.Collections {
-							<a class="tag" href={ "/collections/" + strconv.FormatInt(c.ID, 10) } title={ c.Name }>#{ c.Name }</a>
-						}
-					</div>
-				}
-			</div>
-			<div class="row-actions">
-				<a class="small" title="edit" href={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit" }>@web.EditIcon()</a>
-				<button class="link" title="refresh" hx-post={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/refresh" } hx-target={ "#feed-" + strconv.FormatInt(r.ID, 10) } hx-swap="outerHTML"
-					if r.Cooling() {
-						disabled
-					}>@web.Lucide("refresh-cw")</button>
-			</div>
+			}
 		</div>
 	</li>
 }
@@ -89,20 +92,24 @@ templ feedPreviewFields(d feedPreviewForm) {
 		if d.Redirect {
 			<input type="hidden" name="redirect" value="1"/>
 		}
-		<label>title
+		<label>
+			title
 			<input name="title" type="text" value={ d.Title }/>
 		</label>
-		<label>feed url
+		<label>
+			feed url
 			<input name="feed_url" type="text" value={ d.FeedURL } required/>
 		</label>
-		<label>home url
+		<label>
+			home url
 			<input id="feed-home-url" name="home_url" type="url" value={ d.HomeURL }/>
 		</label>
 		if d.FixedAuthor != nil {
 			<input type="hidden" name="author_id" value={ strconv.FormatInt(d.FixedAuthor.ID, 10) }/>
 			<p class="muted small">author · { d.FixedAuthor.Name }</p>
 		} else {
-			<label>author
+			<label>
+				author
 				<select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change" hx-include="#feed-home-url">
 					<option value="new">+ create new author</option>
 					for _, a := range d.Authors {
@@ -185,20 +192,23 @@ templ feedRulesSection(d feedRulesData) {
 		<p class="muted small">Rules run against new items when the feed is polled. "hide" drops the item; "mark read" stores it as already read.</p>
 		<form class="stack" hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters" } hx-target="#feed-rules" hx-swap="outerHTML">
 			<div class="row">
-				<label>action
+				<label>
+					action
 					<select name="action">
 						<option value="hide">hide</option>
 						<option value="mark_read">mark read</option>
 					</select>
 				</label>
-				<label>field
+				<label>
+					field
 					<select name="field">
 						<option value="title">title</option>
 						<option value="summary">summary</option>
 						<option value="link">link</option>
 					</select>
 				</label>
-				<label>pattern
+				<label>
+					pattern
 					<input name="pattern" type="text" placeholder="e.g. sponsored" required/>
 				</label>
 				<label class="check"><input type="checkbox" name="is_regex" value="1"/> regex</label>
@@ -221,7 +231,8 @@ templ FilterList(feedID int64, rows []store.Filter) {
 							· regex
 						}
 					</span>
-					<button class="link danger" title="delete rule" hx-post={ "/filters/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#feed-filters-list" hx-swap="outerHTML" hx-confirm="delete this rule?">@web.Lucide("x")</button>
+					<button class="link danger" title="delete rule" hx-post={ "/filters/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#feed-filters-list" hx-swap="outerHTML" hx-confirm="delete this rule?">@web.Lucide("x")
+</button>
 				</div>
 			</li>
 		}
@@ -232,16 +243,20 @@ templ FilterList(feedID int64, rows []store.Filter) {
 }
 
 templ feedFields(d feedsData) {
-	<label>title
+	<label>
+		title
 		<input name="title" value={ d.Form.Title } required/>
 	</label>
-	<label>feed url
+	<label>
+		feed url
 		<input name="feed_url" type="text" value={ d.Form.FeedURL } required/>
 	</label>
-	<label>home url
+	<label>
+		home url
 		<input name="home_url" type="url" value={ d.Form.HomeURL }/>
 	</label>
-	<label>author
+	<label>
+		author
 		<select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change">
 			<option value="new">+ create new author</option>
 			for _, a := range d.Authors {
@@ -255,7 +270,8 @@ templ feedFields(d feedsData) {
 	</label>
 	<div id="new-author"></div>
 	<label class="check"><input type="checkbox" name="poll_interval_auto" value="1" checked={ d.Form.PollIntervalAuto }/> auto-adjust poll interval</label>
-	<label>poll interval (seconds) — used when auto-adjust is off
+	<label>
+		poll interval (seconds) — used when auto-adjust is off
 		<input name="poll_interval_sec" type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min="60"/>
 	</label>
 	<label class="check"><input type="checkbox" name="enabled" value="1" checked={ d.Form.Enabled }/> enabled (poll this feed)</label>
@@ -278,11 +294,24 @@ templ feedFields(d feedsData) {
 templ feedPage(u store.User, d feedPageData) {
 	<section class="card">
 		<div class="row">
-			<h1>@web.SourceIcon(feedIconURL(d.Row.Feed))
-			{ d.Row.Title }</h1>
+			<h1>
+				@web.SourceIcon(feedIconURL(d.Row.Feed))
+				{ d.Row.Title }
+			</h1>
 			<div class="row-actions">
-				<a class="small" title="edit" href={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/edit" }>@web.EditIcon()</a>
-				<button class="link" title="refresh" hx-post={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/refresh" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">@web.Lucide("refresh-cw")</button>
+				<a class="small" title="edit" href={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/edit" }>@web.EditIcon()
+</a>
+				<button
+					class="link"
+					title="refresh"
+					hx-post={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/refresh" }
+					hx-swap="none"
+					hx-on::after-request="if(event.detail.successful) window.location.reload()"
+					if d.Row.Cooling() {
+						disabled
+					}
+				>@web.Lucide("refresh-cw")
+</button>
 				@markAllReadControl(d.MarkAll)
 			</div>
 		</div>
@@ -297,15 +326,19 @@ templ feedPage(u store.User, d feedPageData) {
 				· <a href={ templ.URL(d.Row.HomeURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home</a>
 			}
 		</p>
-		<p class="muted small">{ d.Row.Unread } unread · last polled 
-		if d.Row.LastPolledAt != "" {
-			{ web.TimeFmt(d.Row.Timezone, d.Row.LastPolledAt) }
-		} else {
-			never
-		}
-	</p>
+		<p class="muted small">
+			{ d.Row.Unread } unread · last polled 
+			if d.Row.LastPolledAt != "" {
+				{ web.TimeFmt(d.Row.Timezone, d.Row.LastPolledAt) }
+			} else {
+				never
+			}
+		</p>
 		if d.Row.LastError != "" {
 			<div class="error" role="alert">last poll failed: { d.Row.LastError }</div>
+		}
+		if d.Row.Cooling() {
+			<div class="notice">rate limited · retry { web.Until(d.Row.NextPollAt) }</div>
 		}
 		if sf, ok := web.StaleFeedFor(d.Row.LastItemAt); ok {
 			<div class="notice">

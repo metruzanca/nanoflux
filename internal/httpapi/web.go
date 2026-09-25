@@ -1117,17 +1117,6 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
 	row := s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread)
-
-	// When refreshed from an author page, the author's item list sits on the
-	// same page, so refresh it out-of-band too: a poll that brought new items
-	// should surface them immediately, not just bump the feed's unread count.
-	// The feed detail page discards the response and reloads instead.
-	if view, asc, ok := authorPageScope(r); ok {
-		scoped := s.authorScopedItems(u.ID, f.AuthorID, view, u.Timezone, asc)
-		scoped.SwapOOB = true
-		web.Render(w, r, templ.Join(FeedRow(row), ScopedItems(scoped)))
-		return
-	}
 	web.Render(w, r, FeedRow(row))
 }
 
@@ -1143,24 +1132,6 @@ func cooling(nextPollAt string) bool {
 		return false
 	}
 	return time.Now().Before(t)
-}
-
-// authorPageScope reports the read/unread view and sort direction of the page
-// the request was issued from, but only when it is an author page's feed row
-// (the only refresh surface that also renders an author-scoped item list). The
-// scope rides on htmx's HX-Current-URL so a refresh preserves the user's
-// current tab and sort order rather than resetting them to the defaults.
-func authorPageScope(r *http.Request) (view string, asc, ok bool) {
-	cur := r.Header.Get("HX-Current-URL")
-	if !isAuthorPageURL(cur) {
-		return "", false, false
-	}
-	u, err := url.Parse(cur)
-	if err != nil {
-		return "", false, false
-	}
-	q := u.Query()
-	return normalizeItemsView(q.Get("view")), q.Get("dir") == "asc", true
 }
 
 // feedOlder fetches the next page of a paginated feed ("load older items"),
@@ -1479,7 +1450,7 @@ func (s *Server) feedItems(w http.ResponseWriter, r *http.Request) {
 }
 
 // feedRowFor builds a single feed row with its collection tags, for the feed
-// row fragments the add/refresh/toggle handlers swap in on the author page.
+// row fragments the add/refresh handlers render.
 func (s *Server) feedRowFor(userID int64, f store.Feed, authorName, tz string, unread int) feedRow {
 	byFeed, _ := s.store.Collections.CollectionsByAuthorFeed(userID, f.AuthorID)
 	return feedRow{
