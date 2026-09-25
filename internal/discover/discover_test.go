@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/metruzanca/nanoflux/internal/feedparse"
@@ -165,6 +166,42 @@ func TestDiscoverSurfacesHostRuleRateLimit(t *testing.T) {
 	}
 }
 
+// TestDiscoverRedditUserFeed asserts that a reddit user page resolves to its
+// Atom feed via the host rule, for both the /user/ and /u/ path forms.
+func TestDiscoverRedditUserFeed(t *testing.T) {
+	atom := `<?xml version="1.0"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>overview for spez</title>
+  <entry><id>t3_1</id><title>A post</title><link href="https://www.reddit.com/r/x/comments/1/a/"/></entry>
+</feed>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/.rss") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/atom+xml")
+		w.Write([]byte(atom))
+	}))
+	defer srv.Close()
+
+	d := New(clientTo(srv))
+	for _, page := range []string{
+		"https://www.reddit.com/user/spez",
+		"https://www.reddit.com/u/spez/",
+	} {
+		cs, err := d.Discover(context.Background(), page)
+		if err != nil {
+			t.Fatalf("%s: %v", page, err)
+		}
+		if len(cs) != 1 || cs[0].Strategy != "host" {
+			t.Fatalf("%s: candidates = %+v", page, cs)
+		}
+		if cs[0].FeedURL != "https://www.reddit.com/user/spez/.rss" {
+			t.Errorf("%s: feed url = %q", page, cs[0].FeedURL)
+		}
+	}
+}
+
 func TestHostSpecificURLs(t *testing.T) {
 	u := func(s string) *url.URL {
 		parsed, err := url.Parse(s)
@@ -182,6 +219,10 @@ func TestHostSpecificURLs(t *testing.T) {
 		{"https://bsk.app/profile/metru.dev", []string{"https://bsk.app/profile/metru.dev/rss"}, nil},
 		{"https://bsky.app/profile/metru.dev.bsky.social", []string{"https://bsky.app/profile/metru.dev.bsky.social/rss"}, nil},
 		{"https://www.reddit.com/r/golang/", []string{"https://www.reddit.com/r/golang/.rss"}, nil},
+		{"https://www.reddit.com/user/spez", []string{"https://www.reddit.com/user/spez/.rss"}, nil},
+		{"https://www.reddit.com/u/spez/", []string{"https://www.reddit.com/user/spez/.rss"}, nil},
+		{"https://old.reddit.com/user/spez", []string{"https://www.reddit.com/user/spez/.rss"}, nil},
+		{"https://www.reddit.com/user/spez/comments", nil, nil}, // a sub-page, not the profile
 		{"https://github.com/metru", []string{"https://github.com/metru.atom"}, map[string]string{"https://github.com/metru.atom": "metru's Github activity"}},
 		{"https://github.com/spf13/cobra", []string{
 			"https://github.com/spf13/cobra/releases.atom",

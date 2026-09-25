@@ -88,6 +88,10 @@ func hostSpecificURLs(u *url.URL) []hostFeed {
 		if len(parts) >= 2 && parts[0] == "r" {
 			return []hostFeed{{URL: "https://www.reddit.com/r/" + parts[1] + "/.rss"}}
 		}
+		// User pages expose /user/{name}/.rss (both /user/ and /u/ forms).
+		if len(parts) == 2 && (parts[0] == "user" || parts[0] == "u") {
+			return []hostFeed{{URL: "https://www.reddit.com/user/" + parts[1] + "/.rss"}}
+		}
 
 	case host == "github.com" || host == "www.github.com":
 		// Profile: github.com/USERNAME -> the user's activity feed.
