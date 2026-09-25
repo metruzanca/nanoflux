@@ -414,10 +414,6 @@ templ itemContent(d itemViewData, v itemVisuals) {
 				<img src={ templ.URL(img) } alt="" loading="lazy"/>
 			}
 		</div>
-	} else if v.Image {
-		<div class="image-lightbox">
-			<img src={ templ.URL(web.BestImageURL(d.Summary, d.ImageURL)) } alt={ d.Title } loading="lazy"/>
-		</div>
 	} else if d.EmbedSrc != "" {
 		<div class="video-embed">
 			<iframe src={ templ.URL(d.EmbedSrc) } title={ d.Title } frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>
@@ -428,6 +424,10 @@ templ itemContent(d itemViewData, v itemVisuals) {
 			     Referer the YouTube player needs (error 153). Override it here
 			     so only the embedding origin is sent. -->
 			<iframe src={ templ.URL(d.EmbedURL) } title={ d.Title } frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="origin"></iframe>
+		</div>
+	} else if v.Image {
+		<div class="image-lightbox">
+			<img src={ templ.URL(web.BestImageURL(d.Summary, d.ImageURL)) } alt={ d.Title } loading="lazy"/>
 		</div>
 	}
 	if d.Body != "" && !v.Image && d.SourceURL == "" && len(d.Gallery) == 0 {
@@ -449,15 +449,17 @@ templ itemContent(d itemViewData, v itemVisuals) {
 					</div>
 				}
 			}
-			for _, e := range d.Enclosures {
-				if kind := web.EnclosureKind(e); kind == "video" {
-					<figure>
-						<video controls preload="none" src={ templ.URL(e.URL) }></video>
-					</figure>
-				} else if kind == "audio" {
-					<figure>
-						<audio controls preload="none" src={ templ.URL(e.URL) }></audio>
-					</figure>
+			if d.EmbedSrc == "" {
+				for _, e := range d.Enclosures {
+					if kind := web.EnclosureKind(e); kind == "video" {
+						<figure>
+							<video controls preload="none" src={ templ.URL(e.URL) }></video>
+						</figure>
+					} else if kind == "audio" {
+						<figure>
+							<audio controls preload="none" src={ templ.URL(e.URL) }></audio>
+						</figure>
+					}
 				}
 			}
 			<ul class="plain small">

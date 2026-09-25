@@ -96,15 +96,18 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o plugins/nanoflux-plugin-appc .
 Then restart nanoflux. Logs from the plugin (stdout/stderr, or `h.Logf`) are
 forwarded to nanoflux's logs prefixed with the plugin name.
 
-## The two capabilities
+## The capabilities
 
-A `Fetcher` can implement either or both. `Match` tells the host which URL
-shapes (and which capability) it applies to.
+A plugin implements `Fetcher`; it may also implement the optional `Renderer`
+interface. `Match` tells the host which URL shapes (and which capability) each
+applies to.
 
 - **`Fetch` (required)** — given a feed URL, return its `Feed` metadata and
   `[]Item`s. Runs in the poller and on manual refresh.
 - **`Discover` (optional)** — given a page URL, return `[]Candidate`s (feeds
   found on that page). Runs in the add-feed "find feed" flow.
+- **`Render` (optional)** — given an item, resolve view-time media that a
+  stored item cannot carry. Runs when the item modal opens.
 
 ```go
 func (AppC) Discover(ctx context.Context, pageURL string, h pluginapi.Host) ([]pluginapi.Candidate, error) {
@@ -121,6 +124,34 @@ A candidate's `Title`/`IconURL`/`HomeURL` are the **preview metadata** shown in
 the add form; when set, they take precedence over nanoflux's generic page
 metadata (`PageMeta`). This is how a plugin keeps a site's real author name and
 avatar instead of a generic favicon.
+
+### View-time rendering (`Render`)
+
+Some sites mark an item's real content only in its HTML — an external
+destination, an embeddable player, or a multi-image gallery — and enumerating it
+needs live lookups the stored `Item` cannot hold. A plugin implements `Renderer`
+for those:
+
+```go
+func (AppC) Render(ctx context.Context, req pluginapi.RenderRequest, h pluginapi.Host) (pluginapi.Media, error) {
+	// req.Link / req.Summary / req.ImageURL describe the stored item.
+	return pluginapi.Media{
+		SourceURL: "https://external.example/page", // "source" menu link
+		EmbedSrc:  "https://player.example/embed/1", // iframe src
+		Gallery:   []string{"https://cdn/1.jpg", "https://cdn/2.jpg"},
+	}, nil
+}
+```
+
+`Match(u, pluginapi.CapRender)` gates it: return true for the item links the
+plugin can resolve. Every `Media` field is optional; empty fields leave the
+item's stored content in place. Returning `pluginapi.ErrUnsupportedCapability`
+(or an empty `Media`) means "nothing extra".
+
+`Render` runs in the item-view path with a 4-second timeout, once per modal
+open. Use `h.Do` for any lookup (oEmbed discovery, an embed page) so the host
+still paces and inspects the requests. The native reddit plugin
+(`internal/plugin/native/reddit`) is the reference implementation.
 
 ## HTTP: `Host.Do` vs `RawNetwork`
 
@@ -220,8 +251,9 @@ against the matching `pluginapi` release when you upgrade nanoflux.
 - **Toolchain and module versions do not need to match** the host — the gRPC
   boundary decouples them (unlike Go's `plugin` package, which needs cgo and
   exact-version builds; nanoflux deliberately does not use it).
-- **View-time rendering stays in core.** A plugin provides data; nanoflux still
-  renders items. For example, the YouTube embed player and brand icon are core,
-  not plugin, concerns.
+- **View-time rendering is opt-in.** A plugin may resolve an item's view-time
+  media through the optional `Render` capability (see above); a plugin that
+  does not implement it still just provides data, and nanoflux renders the item.
+  Brand chrome (the YouTube embed player and icon) remains core.
 - The plugin API is intended to be iterated on; breaking changes are expected
   until v1.0.0.

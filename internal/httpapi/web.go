@@ -465,12 +465,40 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
-	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemSource(ctx, data)
+	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemPlugins(ctx, data)
 	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
+	if data.EmbedSrc == "" {
+		data.EmbedSrc = s.resolveMediaEmbed(ctx, data)
+	}
 	if sh, err := s.store.Shares.ByItem(u.ID, it.ID); err == nil {
 		data.ShareToken = sh.Token
 	}
 	web.Render(w, r, ItemView(data))
+}
+
+// resolveMediaEmbed returns an embeddable player for an item whose own link is
+// a media page that publishes oEmbed. It runs only when the item carries a
+// playable enclosure, so ordinary article links never trigger the fetch, and it
+// skips a link that is itself a direct media file (nothing to discover there).
+// An empty result means the item keeps its native media rendering.
+func (s *Server) resolveMediaEmbed(ctx context.Context, it itemViewData) string {
+	playable := false
+	for _, e := range it.Enclosures {
+		if k := web.EnclosureKind(e); k == "video" || k == "audio" {
+			playable = true
+			break
+		}
+	}
+	if !playable || it.Link == "" {
+		return ""
+	}
+	if web.EnclosureKind(store.Enclosure{URL: it.Link}) != "" {
+		return ""
+	}
+	if e, err := s.oembed.Resolve(ctx, it.Link); err == nil && e.Src != "" {
+		return e.Src
+	}
+	return ""
 }
 
 // itemShare creates a public share link for an item and re-renders the share
@@ -538,7 +566,10 @@ func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
 	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
-	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemSource(ctx, data)
+	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemPlugins(ctx, data)
+	if data.EmbedSrc == "" {
+		data.EmbedSrc = s.resolveMediaEmbed(ctx, data)
+	}
 	web.Render(w, r, sharedItemPage(it, data))
 }
 

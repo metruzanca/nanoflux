@@ -30,7 +30,6 @@ type Server struct {
 	client       *http.Client
 	files        filestore.Store
 	oembed       *oembed.Resolver
-	reddit       *redditCache
 	loginLimiter *loginLimiter
 }
 
@@ -44,7 +43,6 @@ func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore
 		client:       client,
 		files:        fs,
 		oembed:       oembed.New(client, 5*time.Minute, 30*time.Second, 2000),
-		reddit:       newRedditCache(),
 		loginLimiter: newLoginLimiter(),
 	}
 }

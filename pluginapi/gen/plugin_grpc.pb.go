@@ -201,6 +201,7 @@ const (
 	Fetcher_Match_FullMethodName    = "/nanoflux.plugin.v1.Fetcher/Match"
 	Fetcher_Discover_FullMethodName = "/nanoflux.plugin.v1.Fetcher/Discover"
 	Fetcher_Fetch_FullMethodName    = "/nanoflux.plugin.v1.Fetcher/Fetch"
+	Fetcher_Render_FullMethodName   = "/nanoflux.plugin.v1.Fetcher/Render"
 )
 
 // FetcherClient is the client API for Fetcher service.
@@ -211,6 +212,7 @@ type FetcherClient interface {
 	Match(ctx context.Context, in *MatchRequest, opts ...grpc.CallOption) (*MatchResponse, error)
 	Discover(ctx context.Context, in *DiscoverRequest, opts ...grpc.CallOption) (*DiscoverResponse, error)
 	Fetch(ctx context.Context, in *FetchRequest, opts ...grpc.CallOption) (*FetchResponse, error)
+	Render(ctx context.Context, in *RenderRequest, opts ...grpc.CallOption) (*RenderResponse, error)
 }
 
 type fetcherClient struct {
@@ -261,6 +263,16 @@ func (c *fetcherClient) Fetch(ctx context.Context, in *FetchRequest, opts ...grp
 	return out, nil
 }
 
+func (c *fetcherClient) Render(ctx context.Context, in *RenderRequest, opts ...grpc.CallOption) (*RenderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RenderResponse)
+	err := c.cc.Invoke(ctx, Fetcher_Render_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FetcherServer is the server API for Fetcher service.
 // All implementations must embed UnimplementedFetcherServer
 // for forward compatibility.
@@ -269,6 +281,7 @@ type FetcherServer interface {
 	Match(context.Context, *MatchRequest) (*MatchResponse, error)
 	Discover(context.Context, *DiscoverRequest) (*DiscoverResponse, error)
 	Fetch(context.Context, *FetchRequest) (*FetchResponse, error)
+	Render(context.Context, *RenderRequest) (*RenderResponse, error)
 	mustEmbedUnimplementedFetcherServer()
 }
 
@@ -290,6 +303,9 @@ func (UnimplementedFetcherServer) Discover(context.Context, *DiscoverRequest) (*
 }
 func (UnimplementedFetcherServer) Fetch(context.Context, *FetchRequest) (*FetchResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Fetch not implemented")
+}
+func (UnimplementedFetcherServer) Render(context.Context, *RenderRequest) (*RenderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Render not implemented")
 }
 func (UnimplementedFetcherServer) mustEmbedUnimplementedFetcherServer() {}
 func (UnimplementedFetcherServer) testEmbeddedByValue()                 {}
@@ -384,6 +400,24 @@ func _Fetcher_Fetch_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fetcher_Render_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).Render(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_Render_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).Render(ctx, req.(*RenderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Fetcher_ServiceDesc is the grpc.ServiceDesc for Fetcher service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -406,6 +440,10 @@ var Fetcher_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Fetch",
 			Handler:    _Fetcher_Fetch_Handler,
+		},
+		{
+			MethodName: "Render",
+			Handler:    _Fetcher_Render_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

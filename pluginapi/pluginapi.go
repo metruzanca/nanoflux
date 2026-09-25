@@ -17,7 +17,7 @@ import (
 
 // APIVersion is the plugin API version. The host refuses a plugin whose
 // Meta().APIVersion differs.
-const APIVersion = "0.1"
+const APIVersion = "0.2"
 
 // Capability selects which operation a Match call is about. A Fetcher may
 // support either or both.
@@ -28,6 +28,10 @@ const (
 	CapDiscover Capability = iota
 	// CapFetch asks whether the plugin can fetch a feed URL into items.
 	CapFetch
+	// CapRender asks whether the plugin can resolve view-time media for an
+	// item (an embed player, gallery images, or an external source link) that
+	// cannot be represented on a stored Item.
+	CapRender
 )
 
 // Meta describes a plugin to the host.
@@ -151,4 +155,44 @@ type Fetcher interface {
 	Discover(ctx context.Context, pageURL string, h Host) ([]Candidate, error)
 	// Fetch returns the feed's metadata and items for req.
 	Fetch(ctx context.Context, req FetchRequest, h Host) (Result, error)
+}
+
+// Renderer is an optional capability a plugin may implement to resolve
+// view-time media for an item. Some sites (reddit) mark a post's real content —
+// an external destination, an embeddable player, a multi-image gallery — only in
+// the item's HTML, and enumerating it needs live lookups the stored Item cannot
+// carry. Such a plugin answers Match(u, CapRender) for the item's link, and
+// Render resolves the media when the item modal opens.
+//
+// Render returning ErrUnsupportedCapability (or an empty Media) means "nothing
+// extra"; the host falls back to the item's stored fields.
+type Renderer interface {
+	// Render resolves an item's view-time media. req describes the item; the
+	// returned Media is merged into the modal.
+	Render(ctx context.Context, req RenderRequest, h Host) (Media, error)
+}
+
+// RenderRequest describes the item whose view-time media is being resolved.
+type RenderRequest struct {
+	// Link is the item's stored link (the post permalink).
+	Link string
+	// Summary is the item's stored HTML content.
+	Summary string
+	// ImageURL is the item's stored thumbnail, if any.
+	ImageURL string
+	// Config is the per-feed plugin config (JSON), may be nil.
+	Config json.RawMessage
+}
+
+// Media is a plugin's view-time rendering for an item. Every field is optional;
+// empty fields leave the item's stored content in place.
+type Media struct {
+	// SourceURL is an external destination of a link post (rendered as a
+	// "source" entry in the item menu).
+	SourceURL string
+	// EmbedSrc is an iframe src for an embeddable player.
+	EmbedSrc string
+	// Gallery is a list of full-res image URLs to render instead of the single
+	// stored thumbnail.
+	Gallery []string
 }

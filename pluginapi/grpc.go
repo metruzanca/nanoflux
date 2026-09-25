@@ -87,6 +87,26 @@ func (s *grpcFetcherServer) Fetch(ctx context.Context, req *pb.FetchRequest) (*p
 	}, nil
 }
 
+func (s *grpcFetcherServer) Render(ctx context.Context, req *pb.RenderRequest) (*pb.RenderResponse, error) {
+	// Rendering is optional: a plugin that does not implement Renderer answers
+	// ErrUnsupportedCapability, which the host treats as "nothing extra".
+	r, ok := s.impl.(Renderer)
+	if !ok {
+		return &pb.RenderResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	host, err := s.dialHost(req.HostServer)
+	if err != nil {
+		return &pb.RenderResponse{Error: toPBError(err)}, nil
+	}
+	m, err := r.Render(ctx, RenderRequest{
+		Link: req.Link, Summary: req.Summary, ImageURL: req.ImageUrl, Config: req.Config,
+	}, host)
+	if err != nil {
+		return &pb.RenderResponse{Error: toPBError(err)}, nil
+	}
+	return &pb.RenderResponse{SourceUrl: m.SourceURL, EmbedSrc: m.EmbedSrc, Gallery: m.Gallery}, nil
+}
+
 // dialHost connects back to the host's Host service over the broker.
 func (s *grpcFetcherServer) dialHost(id uint32) (Host, error) {
 	conn, err := s.broker.Dial(id)
@@ -170,7 +190,25 @@ func (c *grpcFetcherClient) serveHost(h Host) (uint32, func()) {
 	return id, func() {}
 }
 
-var _ Fetcher = (*grpcFetcherClient)(nil)
+func (c *grpcFetcherClient) Render(ctx context.Context, req RenderRequest, h Host) (Media, error) {
+	id, stop := c.serveHost(h)
+	defer stop()
+	resp, err := c.client.Render(ctx, &pb.RenderRequest{
+		HostServer: id, Link: req.Link, Summary: req.Summary, ImageUrl: req.ImageURL, Config: req.Config,
+	})
+	if err != nil {
+		return Media{}, err
+	}
+	if resp.Error != nil {
+		return Media{}, fromPBError(resp.Error)
+	}
+	return Media{SourceURL: resp.SourceUrl, EmbedSrc: resp.EmbedSrc, Gallery: resp.Gallery}, nil
+}
+
+var (
+	_ Fetcher  = (*grpcFetcherClient)(nil)
+	_ Renderer = (*grpcFetcherClient)(nil)
+)
 
 // ---- conversions ----
 

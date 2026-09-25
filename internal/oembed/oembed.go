@@ -8,6 +8,7 @@
 package oembed
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -101,7 +102,7 @@ func (r *Resolver) Resolve(ctx context.Context, pageURL string) (Embed, error) {
 	}
 	r.mu.Unlock()
 
-	emb, err := Discover(ctx, r.client, pageURL)
+	emb, err := discoverWith(ctx, clientFetcher(r.client), pageURL)
 
 	r.mu.Lock()
 	if len(r.items) >= r.max {
@@ -123,31 +124,62 @@ func (r *Resolver) Resolve(ctx context.Context, pageURL string) (Embed, error) {
 // provider's embeddable player. It never inserts the provider's raw html into
 // the page: only the iframe src and dimensions are carried across.
 func Discover(ctx context.Context, client *http.Client, pageURL string) (Embed, error) {
-	endpoint, err := discoverEndpoint(ctx, client, pageURL)
+	return discoverWith(ctx, clientFetcher(client), pageURL)
+}
+
+// Getter fetches a URL for oEmbed discovery. It returns the HTTP status and the
+// response body. A plugin implements it over Host.Do so oEmbed requests are
+// mediated (User-Agent, timeouts, per-host pacing) like every other request.
+type Getter func(ctx context.Context, rawurl string) (status int, body []byte, err error)
+
+// DiscoverWith is Discover for callers that fetch through their own transport
+// (e.g. a plugin's Host.Do) rather than an *http.Client.
+func DiscoverWith(ctx context.Context, get Getter, pageURL string) (Embed, error) {
+	return discoverWith(ctx, get, pageURL)
+}
+
+// clientFetcher adapts an *http.Client (which always uses the browser agent) to
+// a Getter.
+func clientFetcher(client *http.Client) Getter {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return func(ctx context.Context, rawurl string) (int, []byte, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawurl, nil)
+		if err != nil {
+			return 0, nil, err
+		}
+		req.Header.Set("User-Agent", BrowserUserAgent)
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, nil, err
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, bodyCap))
+		return resp.StatusCode, body, nil
+	}
+}
+
+func discoverWith(ctx context.Context, get Getter, pageURL string) (Embed, error) {
+	endpoint, err := discoverEndpoint(ctx, get, pageURL)
 	if err != nil {
 		return Embed{}, err
 	}
-	return fetchEmbed(ctx, client, endpoint)
+	return fetchEmbed(ctx, get, endpoint)
 }
 
 // discoverEndpoint fetches pageURL and returns the absolute URL of its
 // application/json+oembed (or text/html+oembed) alternate link.
-func discoverEndpoint(ctx context.Context, client *http.Client, pageURL string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+func discoverEndpoint(ctx context.Context, get Getter, pageURL string) (string, error) {
+	status, body, err := get(ctx, pageURL)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", BrowserUserAgent)
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return "", fmt.Errorf("get %s: status %d", pageURL, resp.StatusCode)
+	if status >= 400 {
+		return "", fmt.Errorf("get %s: status %d", pageURL, status)
 	}
 	base, _ := url.Parse(pageURL)
-	z := html.NewTokenizer(io.LimitReader(resp.Body, bodyCap))
+	z := html.NewTokenizer(bytes.NewReader(body))
 	for {
 		tt := z.Next()
 		switch tt {
@@ -202,22 +234,16 @@ type oembedDoc struct {
 
 // fetchEmbed fetches an oEmbed endpoint and extracts the player iframe from
 // its html field.
-func fetchEmbed(ctx context.Context, client *http.Client, endpoint string) (Embed, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+func fetchEmbed(ctx context.Context, get Getter, endpoint string) (Embed, error) {
+	status, body, err := get(ctx, endpoint)
 	if err != nil {
 		return Embed{}, err
 	}
-	req.Header.Set("User-Agent", BrowserUserAgent)
-	resp, err := client.Do(req)
-	if err != nil {
-		return Embed{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return Embed{}, fmt.Errorf("oembed %s: status %d", endpoint, resp.StatusCode)
+	if status >= 400 {
+		return Embed{}, fmt.Errorf("oembed %s: status %d", endpoint, status)
 	}
 	var doc oembedDoc
-	if err := json.NewDecoder(io.LimitReader(resp.Body, bodyCap)).Decode(&doc); err != nil {
+	if err := json.Unmarshal(body, &doc); err != nil {
 		return Embed{}, err
 	}
 	src, width, height := iframeFromHTML(doc.HTML)

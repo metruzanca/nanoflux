@@ -66,6 +66,51 @@ func (r *Registry) Match(u *url.URL, cap pluginapi.Capability) pluginapi.Fetcher
 	return nil
 }
 
+// MatchRenderer returns the first plugin that matches u for rendering and
+// implements the Renderer interface, along with its Fetcher (for the host
+// factory), or (nil, nil).
+func (r *Registry) MatchRenderer(u *url.URL) (pluginapi.Renderer, pluginapi.Fetcher) {
+	if u == nil {
+		return nil, nil
+	}
+	for _, f := range r.all() {
+		if !f.Match(u, pluginapi.CapRender) {
+			continue
+		}
+		if rd, ok := f.(pluginapi.Renderer); ok {
+			return rd, f
+		}
+	}
+	return nil, nil
+}
+
+// RenderItem runs the plugin that handles view-time rendering for the item's
+// link and returns its media. When no plugin matches (or the match does not
+// implement Renderer), it returns an empty Media so the caller falls back to
+// the item's stored fields. Errors from the plugin are returned for the caller
+// to log; ErrUnsupportedCapability is reported as (Media{}, nil).
+func (r *Registry) RenderItem(ctx context.Context, req pluginapi.RenderRequest, hosts func(pluginapi.Fetcher) pluginapi.Host) (pluginapi.Media, error) {
+	if r.Empty() {
+		return pluginapi.Media{}, nil
+	}
+	u, err := url.Parse(req.Link)
+	if err != nil {
+		return pluginapi.Media{}, nil
+	}
+	rd, f := r.MatchRenderer(u)
+	if rd == nil {
+		return pluginapi.Media{}, nil
+	}
+	m, err := rd.Render(ctx, req, hosts(f))
+	if err != nil {
+		if err == pluginapi.ErrUnsupportedCapability {
+			return pluginapi.Media{}, nil
+		}
+		return pluginapi.Media{}, err
+	}
+	return m, nil
+}
+
 // Discover runs every plugin that handles discovery for pageURL and merges the
 // candidates, de-duplicating by FeedURL (first wins, so native metadata sets
 // the preview). Errors from individual plugins are logged and skipped.

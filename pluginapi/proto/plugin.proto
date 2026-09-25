@@ -40,6 +40,7 @@ service Fetcher {
   rpc Match(MatchRequest) returns (MatchResponse);
   rpc Discover(DiscoverRequest) returns (DiscoverResponse);
   rpc Fetch(FetchRequest) returns (FetchResponse);
+  rpc Render(RenderRequest) returns (RenderResponse);
 }
 
 message MetaRequest {}
@@ -110,6 +111,23 @@ message FetchResponse {
   string last_modified = 4;
   string next_page_url = 5;
   PluginError error = 6;
+}
+
+// Render resolves an item's view-time media (an embed player, gallery images,
+// or an external source link) that cannot be carried on a stored Item.
+
+message RenderRequest {
+  uint32 host_server = 1;
+  string link = 2;
+  string summary = 3;
+  string image_url = 4;
+  bytes config = 5;
+}
+message RenderResponse {
+  string source_url = 1;
+  string embed_src = 2;
+  repeated string gallery = 3;
+  PluginError error = 4;
 }
 
 // PluginError carries a structured failure back to the host so it can map it
