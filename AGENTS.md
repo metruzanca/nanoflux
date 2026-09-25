@@ -6,6 +6,7 @@
 - mise is for development, make is for selfhosting an instance
 - Do not mention any external plugins in internal code, comments or docs
 - Do not run `make` or `podman` or `docker` commands without user's approval.
+- NEVER try to use playwright or another headless browser, always defer to the user.
 
 # Notes
 
@@ -80,3 +81,28 @@ polling with 429. The app treats this as pacing, not failure:
   plugins card lists owned domains with a reset button.
 - See `docs/fetching.md` (how fetching works) and
   `docs/writing-plugins.md` (author guide).
+
+## Combo boxes (Vaadin)
+
+Single- and multi-select form fields use vendored Vaadin v25 web components
+(`vaadin-combo-box`, `vaadin-multi-select-combo-box`) instead of `<select>` and
+checkbox groups, so long option lists are searchable.
+
+- The bundle is committed at `internal/web/static/vaadin.bundle.js` and must be
+  regenerated with `mise run vendor:vaadin` when the pinned version changes
+  (`tools/vaadin-vendor/`). The build needs node once; runtime does not.
+- v25 ships only structural base styles (there is no Lumo theme package); the
+  components are themed from `app.css` via `--vaadin-*` custom properties.
+- The components are **not form-associated**, so `htmx` (which serializes with
+  `FormData`) would not see them. `views_combo.templ` therefore pairs each
+  component with hidden native input mirrors, and `static/vaadin.js` syncs them:
+  a single-select keeps one mirror (carrying any `hx-*` attributes, so
+  `hx-trigger="change"` still works) and a multi-select keeps one mirror per
+  selected value, so the field submits as repeated params like the checkbox
+  group it replaces.
+- Options are shipped as a `<script type="application/json">` payload (the
+  components take `items` as a JS array, not child elements). v25 has no
+  optgroup, so grouped pickers prefix the group name onto the label.
+- `comboChips` is the display-only variant for the collection edit feed list:
+  chips with a remove button, `auto-expand-horizontally`/`-vertically` so all
+  names show, and `readonly` (no remove URL) for auto collections.
