@@ -191,10 +191,10 @@ func TestSettingsHomeRenderMode(t *testing.T) {
 	u, cats, _ := homeFixture(t, s)
 	s.store.Users.SetHomeConfig(u.ID, `[{"kind":"collection","ref_id":`+itoa(cats.ID)+`}]`)
 
-	// The settings card offers a per-section render-method select.
+	// The settings card offers a per-section render-method combo.
 	body := doGet(h, "/settings", cookie).Body.String()
-	if !strings.Contains(body, `name="mode"`) || !strings.Contains(body, `>grid</option>`) {
-		t.Fatalf("settings home card should offer a render-method select: %s", body)
+	if !strings.Contains(body, `name="mode"`) || !strings.Contains(body, `"value":"grid"`) {
+		t.Fatalf("settings home card should offer a render-method combo: %s", body)
 	}
 
 	rr := doForm(h, "POST", "/settings/home", url.Values{

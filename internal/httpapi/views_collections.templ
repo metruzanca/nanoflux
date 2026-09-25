@@ -116,15 +116,7 @@ templ collectionPage(u store.User, d collectionData) {
 			</div>
 			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-feed" } hx-target="#scoped-items" hx-swap="outerHTML" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
 				<input type="hidden" name="view" value={ d.Scoped.View }/>
-				<select name="feed_id">
-					for _, g := range d.AllFeeds {
-						<optgroup label={ g.AuthorName }>
-							for _, f := range g.Feeds {
-								<option value={ strconv.FormatInt(f.ID, 10) }>{ f.Title }</option>
-							}
-						</optgroup>
-					}
-				</select>
+				@comboSelect("feed_id", firstGroupedFeedValue(d.AllFeeds), "feed", "search feeds", groupedFeedItems(d.AllFeeds), nil)
 				<button type="submit">add</button>
 			</form>
 		</dialog>

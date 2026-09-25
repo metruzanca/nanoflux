@@ -3,6 +3,7 @@ package httpapi
 import (
 	"strconv"
 
+	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -23,6 +24,99 @@ type comboPayload struct {
 	Value any         `json:"value,omitempty"` // string for single, []string for multi
 }
 
+// authorItems maps authors to combo items with a leading "+ create new author"
+// option (value "new").
+func authorItems(authors []store.Author) []comboItem {
+	items := make([]comboItem, 0, len(authors)+1)
+	items = append(items, comboItem{Value: "new", Label: "+ create new author"})
+	for _, a := range authors {
+		items = append(items, comboItem{Value: strconv.FormatInt(a.ID, 10), Label: a.Name})
+	}
+	return items
+}
+
+// authorValue is the combo's initial value for an author selection: the author
+// id, or "new" when none is selected (id 0).
+func authorValue(selected int64) string {
+	if selected == 0 {
+		return "new"
+	}
+	return strconv.FormatInt(selected, 10)
+}
+
+// candidateItems maps discovered feeds to combo items (feed URL value, title
+// label falling back to the URL).
+func candidateItems(cs []discover.Candidate) []comboItem {
+	out := make([]comboItem, 0, len(cs))
+	for _, c := range cs {
+		label := c.Title
+		if label == "" {
+			label = c.FeedURL
+		}
+		out = append(out, comboItem{Value: c.FeedURL, Label: label})
+	}
+	return out
+}
+
+// candidateValue is the combo's initial value: the first candidate's feed URL.
+func candidateValue(cs []discover.Candidate) string {
+	if len(cs) == 0 {
+		return ""
+	}
+	return cs[0].FeedURL
+}
+
+// groupedFeedItems maps author-grouped feeds to combo items, prefixing each
+// label with its author so the author stays visible (v25 combo boxes have no
+// optgroup equivalent) and searchable.
+func groupedFeedItems(groups []collectionFeedGroup) []comboItem {
+	out := make([]comboItem, 0)
+	for _, g := range groups {
+		for _, f := range g.Feeds {
+			out = append(out, comboItem{
+				Value: strconv.FormatInt(f.ID, 10),
+				Label: g.AuthorName + " · " + f.Title,
+			})
+		}
+	}
+	return out
+}
+
+// firstGroupedFeedValue is the default selection for the grouped feed picker:
+// the first feed's id, or "" when there are none.
+func firstGroupedFeedValue(groups []collectionFeedGroup) string {
+	for _, g := range groups {
+		if len(g.Feeds) > 0 {
+			return strconv.FormatInt(g.Feeds[0].ID, 10)
+		}
+	}
+	return ""
+}
+
+// extAuthorItems maps authors to combo items with a leading "auto — new author"
+// option (empty value), which the extension save handler treats as "create one".
+func extAuthorItems(authors []store.Author) []comboItem {
+	items := make([]comboItem, 0, len(authors)+1)
+	items = append(items, comboItem{Value: "", Label: "auto — new author"})
+	for _, a := range authors {
+		items = append(items, comboItem{Value: strconv.FormatInt(a.ID, 10), Label: a.Name})
+	}
+	return items
+}
+
+// filterActionItems and filterFieldItems are the fixed choices for a feed
+// filter rule (action and field).
+var filterActionItems = []comboItem{
+	{Value: "hide", Label: "hide"},
+	{Value: "mark_read", Label: "mark read"},
+}
+
+var filterFieldItems = []comboItem{
+	{Value: "title", Label: "title"},
+	{Value: "summary", Label: "summary"},
+	{Value: "link", Label: "link"},
+}
+
 // nonAutoCollections returns the user's own collections (auto collections are
 // managed from each feed's site and are not user-selectable on the feed form).
 func nonAutoCollections(cs []store.Collection) []comboItem {
@@ -35,11 +129,21 @@ func nonAutoCollections(cs []store.Collection) []comboItem {
 	return out
 }
 
-// collectionValues renders the selected collection ids as combo values.
-func collectionValues(ids []int64) []string {
+// nonAutoCollectionValues returns the selected collection ids that are
+// user-selectable (non-auto), so auto collections never appear as combo
+// selections even though they are part of the feed's membership.
+func nonAutoCollectionValues(collections []store.Collection, ids []int64) []string {
+	selectable := map[int64]bool{}
+	for _, c := range collections {
+		if !c.IsAuto {
+			selectable[c.ID] = true
+		}
+	}
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
-		out = append(out, strconv.FormatInt(id, 10))
+		if selectable[id] {
+			out = append(out, strconv.FormatInt(id, 10))
+		}
 	}
 	return out
 }

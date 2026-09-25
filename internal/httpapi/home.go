@@ -88,6 +88,31 @@ type dashboardData struct {
 	Sections []homeSectionData
 }
 
+// homeModeItems are the combo options for a pinned section's render method.
+var homeModeItems = []comboItem{
+	{Value: homeModeList, Label: "list"},
+	{Value: homeModeGrid, Label: "grid"},
+}
+
+// collectionComboItems maps the user's collections to combo items for the home
+// "pin a collection" picker.
+func collectionComboItems(cs []store.Collection) []comboItem {
+	out := make([]comboItem, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, comboItem{Value: strconv.FormatInt(c.ID, 10), Label: c.Name})
+	}
+	return out
+}
+
+// firstCollectionValue is the default selection for the pin picker: the first
+// collection's id, or "" when there are none.
+func firstCollectionValue(cs []store.Collection) string {
+	if len(cs) == 0 {
+		return ""
+	}
+	return strconv.FormatInt(cs[0].ID, 10)
+}
+
 // home is the landing page: the user's pinned collection sections, each showing
 // recent unread items. With no config (or when every pinned section is empty) it
 // falls back to the plain unread list, so behavior is unchanged until the user

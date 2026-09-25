@@ -1990,8 +1990,10 @@ func TestCollectionAddFeedGroupedByAuthor(t *testing.T) {
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
 
 	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
-	if !strings.Contains(body, `<optgroup label="Metru">`) {
-		t.Fatalf("collection add-feed dropdown should group feeds by author: %s", body)
+	// v25 combo boxes have no optgroup, so the author is prefixed onto each
+	// feed label ("Metru · Blog") to keep the grouping visible and searchable.
+	if !strings.Contains(body, `"label":"Metru · Blog"`) {
+		t.Fatalf("collection add-feed combo should label feeds by author: %s", body)
 	}
 }
 

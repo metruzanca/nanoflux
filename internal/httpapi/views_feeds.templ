@@ -108,19 +108,13 @@ templ feedPreviewFields(d feedPreviewForm) {
 			<input type="hidden" name="author_id" value={ strconv.FormatInt(d.FixedAuthor.ID, 10) }/>
 			<p class="muted small">author · { d.FixedAuthor.Name }</p>
 		} else {
-			<label>
-				author
-				<select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change" hx-include="#feed-home-url">
-					<option value="new">+ create new author</option>
-					for _, a := range d.Authors {
-						if a.ID == d.SelectedAuthorID {
-							<option value={ strconv.FormatInt(a.ID, 10) } selected>{ a.Name }</option>
-						} else {
-							<option value={ strconv.FormatInt(a.ID, 10) }>{ a.Name }</option>
-						}
-					}
-				</select>
-			</label>
+			@comboSelect("author_id", authorValue(d.SelectedAuthorID), "author", "search authors", authorItems(d.Authors), templ.Attributes{
+				"hx-get":     "/fragments/author-form",
+				"hx-target":  "#new-author",
+				"hx-swap":    "innerHTML",
+				"hx-trigger": "change",
+				"hx-include": "#feed-home-url",
+			})
 			<div id="new-author">
 				if d.SelectedAuthorID == 0 {
 					@authorCreateFields(d.newAuthor())
@@ -146,11 +140,12 @@ templ feedChooser(d feedChoose) {
 		if d.Redirect {
 			<input type="hidden" id="feed-redirect" name="redirect" value="1"/>
 		}
-		<select name="feed_url" hx-post="/fragments/feed-preview" hx-target={ d.Target } hx-swap="innerHTML" hx-include="#feed-url-input, #feed-author-id, #feed-author-scoped, #feed-redirect">
-			for _, c := range d.Candidates {
-				<option value={ c.FeedURL }>{ c.Title }</option>
-			}
-		</select>
+		@comboSelect("feed_url", candidateValue(d.Candidates), "", "search feeds", candidateItems(d.Candidates), templ.Attributes{
+			"hx-post":   "/fragments/feed-preview",
+			"hx-target": d.Target,
+			"hx-swap":   "innerHTML",
+			"hx-include": "#feed-url-input, #feed-author-id, #feed-author-scoped, #feed-redirect",
+		})
 		<button type="submit">use this feed</button>
 	</form>
 }
@@ -192,21 +187,8 @@ templ feedRulesSection(d feedRulesData) {
 		<p class="muted small">Rules run against new items when the feed is polled. "hide" drops the item; "mark read" stores it as already read.</p>
 		<form class="stack" hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters" } hx-target="#feed-rules" hx-swap="outerHTML">
 			<div class="row">
-				<label>
-					action
-					<select name="action">
-						<option value="hide">hide</option>
-						<option value="mark_read">mark read</option>
-					</select>
-				</label>
-				<label>
-					field
-					<select name="field">
-						<option value="title">title</option>
-						<option value="summary">summary</option>
-						<option value="link">link</option>
-					</select>
-				</label>
+				@comboSelect("action", "hide", "action", "", filterActionItems, nil)
+				@comboSelect("field", "title", "field", "", filterFieldItems, nil)
 				<label>
 					pattern
 					<input name="pattern" type="text" placeholder="e.g. sponsored" required/>
@@ -255,19 +237,12 @@ templ feedFields(d feedsData) {
 		home url
 		<input name="home_url" type="url" value={ d.Form.HomeURL }/>
 	</label>
-	<label>
-		author
-		<select name="author_id" hx-get="/fragments/author-form" hx-target="#new-author" hx-swap="innerHTML" hx-trigger="change">
-			<option value="new">+ create new author</option>
-			for _, a := range d.Authors {
-				if a.ID == d.Form.AuthorID {
-					<option value={ strconv.FormatInt(a.ID, 10) } selected>{ a.Name }</option>
-				} else {
-					<option value={ strconv.FormatInt(a.ID, 10) }>{ a.Name }</option>
-				}
-			}
-		</select>
-	</label>
+	@comboSelect("author_id", authorValue(d.Form.AuthorID), "author", "search authors", authorItems(d.Authors), templ.Attributes{
+		"hx-get":     "/fragments/author-form",
+		"hx-target":  "#new-author",
+		"hx-swap":    "innerHTML",
+		"hx-trigger": "change",
+	})
 	<div id="new-author"></div>
 	<label class="check"><input type="checkbox" name="poll_interval_auto" value="1" checked={ d.Form.PollIntervalAuto }/> auto-adjust poll interval</label>
 	<label>
@@ -276,7 +251,7 @@ templ feedFields(d feedsData) {
 	</label>
 	<label class="check"><input type="checkbox" name="enabled" value="1" checked={ d.Form.Enabled }/> enabled (poll this feed)</label>
 	if len(d.Collections) > 0 {
-		@comboMulti("collections", "collections", collectionValues(d.Form.CollectionIDs), nonAutoCollections(d.Collections))
+		@comboMulti("collections", "collections", nonAutoCollectionValues(d.Collections, d.Form.CollectionIDs), nonAutoCollections(d.Collections))
 	}
 }
 

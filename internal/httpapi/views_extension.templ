@@ -1,8 +1,6 @@
 package httpapi
 
 import (
-	"strconv"
-
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -18,14 +16,7 @@ templ extFeedForm(feedURL, homeURL, title string, authors []store.Author) {
 		<label>title
 			<input name="title" type="text" value={ title } required/>
 		</label>
-		<label>author
-			<select name="author_id">
-				<option value="">auto — new author</option>
-				for _, a := range authors {
-					<option value={ strconv.FormatInt(a.ID, 10) }>{ a.Name }</option>
-				}
-			</select>
-		</label>
+		@comboSelect("author_id", "", "author", "auto — new author", extAuthorItems(authors), nil)
 		<button type="submit">add feed</button>
 	</form>
 	<div id="ext-result"></div>

@@ -22,15 +22,13 @@ templ settingsHomeCard(d settingsHomeData) {
 					<div class="row">
 						<a href={ "/collections/" + strconv.FormatInt(r.Collection.ID, 10) }>{ r.Collection.Name }</a>
 						<div class="row-actions">
-							<select name="mode" title="how this section renders on your home page" aria-label="render method" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-trigger="change" hx-vals={ `{"action":"mode","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>
-								if r.Mode == "grid" {
-									<option value="list">list</option>
-									<option value="grid" selected>grid</option>
-								} else {
-									<option value="list" selected>list</option>
-									<option value="grid">grid</option>
-								}
-							</select>
+							@comboSelectInline("mode", r.Mode, "", homeModeItems, templ.Attributes{
+								"hx-post":    "/settings/home",
+								"hx-target":  "#settings-home-card",
+								"hx-swap":    "outerHTML",
+								"hx-trigger": "change",
+								"hx-vals":    `{"action":"mode","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}`,
+							})
 							if i > 0 {
 								<button class="link" title="move up" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-vals={ `{"action":"up","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>↑</button>
 							}
@@ -47,15 +45,9 @@ templ settingsHomeCard(d settingsHomeData) {
 			}
 		</ul>
 		if len(d.Collections) > 0 {
-			<form class="row" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML">
+			<form class="stack" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML">
 				<input type="hidden" name="action" value="add"/>
-				<label>pin a collection
-					<select name="add_collection">
-						for _, c := range d.Collections {
-							<option value={ strconv.FormatInt(c.ID, 10) }>{ c.Name }</option>
-						}
-					</select>
-				</label>
+				@comboSelect("add_collection", firstCollectionValue(d.Collections), "pin a collection", "pick a collection", collectionComboItems(d.Collections), nil)
 				<button type="submit">pin</button>
 			</form>
 		}
