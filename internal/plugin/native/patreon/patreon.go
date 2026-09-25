@@ -1,7 +1,7 @@
 // Package patreon is the native plugin for Patreon creator feeds. Patreon has
 // no RSS, but its public web API is credential-free: a campaign is resolved from
-// the page's vanity slug, and its posts come from the campaign-posts endpoint
-// (cursor-paginated). Treat it as best-effort.
+// the page's vanity slug, and its posts come from the campaign-filtered posts
+// endpoint (cursor-paginated). Treat it as best-effort.
 package patreon
 
 import (
@@ -32,7 +32,16 @@ var hosts = []string{"patreon.com", "www.patreon.com"}
 // postsCount is how many posts to request per page.
 const postsCount = 20
 
-var postsRe = regexp.MustCompile(`^/api/campaigns/(\d+)/posts$`)
+// postFields is the explicit field set requested for each post. Patreon's posts
+// endpoint omits content_json_string/content unless asked for by name. Locked
+// posts still return their title/image/url; their content fields come back null.
+const postFields = "title,url,published_at,created_at,teaser_text,teaser_text_json_string," +
+	"content,content_json_string,image,thumbnail,post_file"
+
+// postsRe matches the campaign-filtered posts endpoint (the feed URL we derive),
+// and the older per-campaign posts endpoint, so a next_page_url stored by an
+// older build still routes here.
+var postsRe = regexp.MustCompile(`^/api/(?:posts|campaigns/\d+/posts)$`)
 
 // Plugin is the Patreon Fetcher.
 type Plugin struct{}
@@ -125,15 +134,15 @@ func isHost(host string) bool {
 	return false
 }
 
-// vanityOf returns the creator's vanity slug for /cw/{vanity} or /{vanity}, or
-// "" for non-creator paths.
+// vanityOf returns the creator's vanity slug for /c/{vanity}, /cw/{vanity}, or
+// /{vanity}, or "" for non-creator paths.
 func vanityOf(u *url.URL) string {
 	if u == nil || !isHost(u.Hostname()) {
 		return ""
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	switch {
-	case len(parts) == 2 && parts[0] == "cw" && parts[1] != "":
+	case len(parts) == 2 && (parts[0] == "cw" || parts[0] == "c") && parts[1] != "":
 		return parts[1]
 	case len(parts) == 1 && parts[0] != "":
 		switch parts[0] {
@@ -160,8 +169,16 @@ type campaign struct {
 	AvatarURL string
 }
 
+// postsURL is the campaign-filtered posts endpoint. The legacy
+// /campaigns/{id}/posts endpoint returns only the subset of posts viewable
+// anonymously (observed: 1 of 137 for one campaign), so a mostly-paid creator's
+// feed shows one very old post and never the recent ones. /api/posts filtered by
+// campaign returns the whole timeline; viewable posts keep their content, and
+// locked posts still supply a title and image.
 func (c campaign) postsURL() string {
-	return apiBase + "/campaigns/" + c.ID + "/posts?page[count]=" + strconv.Itoa(postsCount)
+	return apiBase + "/posts?filter[campaign_id]=" + url.QueryEscape(c.ID) +
+		"&sort=-published_at&fields[post]=" + url.QueryEscape(postFields) +
+		"&page[count]=" + strconv.Itoa(postsCount)
 }
 
 func (p Plugin) resolveCampaign(ctx context.Context, vanity string, h pluginapi.Host) (campaign, error) {
