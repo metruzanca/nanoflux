@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 	"sync"
@@ -41,10 +42,34 @@ func (s *Server) resolveItemSource(ctx context.Context, it itemViewData) (source
 		sub, _, _ := redditPostID(it.Link)
 		return "", "", s.redditGalleryImages(ctx, sub, gid)
 	}
+	// A reddit image post's [link] points straight at the image itself (usually
+	// the full-res i.redd.it original). Render it as the post's content rather
+	// than treating it as an external destination: a JPEG has no oEmbed, so the
+	// "source" path would otherwise leave the post with no media at all.
+	if isImageURL(dest) {
+		if full := fullRedditImage(dest); full != "" {
+			dest = full
+		}
+		return "", "", []string{dest}
+	}
 	if e, err := s.oembed.Resolve(ctx, dest); err == nil && e.Src != "" {
 		embedSrc = e.Src
 	}
 	return dest, embedSrc, nil
+}
+
+// isImageURL reports whether raw points directly at an image, by URL path
+// extension. The parsed path is used so signed URLs (photo.jpg?e=…&t=…) match.
+func isImageURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Path == "" {
+		return false
+	}
+	switch strings.ToLower(path.Ext(u.Path)) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".bmp":
+		return true
+	}
+	return false
 }
 
 // redditDestination finds the [link] anchor destination of a reddit post. The
@@ -166,8 +191,8 @@ func (s *Server) redditSubExternalLink(ctx context.Context, sub, id string) (str
 // a short TTL. Results are keyed by subreddit/post id.
 type redditCache struct {
 	mu      sync.Mutex
-	sub     map[string]subEntry  // subreddit -> guid -> [link] href
-	gallery map[string]galEntry  // post id -> full-res images
+	sub     map[string]subEntry // subreddit -> guid -> [link] href
+	gallery map[string]galEntry // post id -> full-res images
 }
 
 type subEntry struct {
@@ -181,7 +206,7 @@ type galEntry struct {
 }
 
 const (
-	redditSubTTL    = 10 * time.Minute
+	redditSubTTL     = 10 * time.Minute
 	redditGalleryTTL = 15 * time.Minute
 	redditCacheCap   = 1000
 )

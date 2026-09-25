@@ -246,6 +246,47 @@ func TestFullRedditImage(t *testing.T) {
 	}
 }
 
+func TestItemViewImagePost(t *testing.T) {
+	// A reddit image post's [link] points straight at the image (i.redd.it),
+	// not at an external page. There is no oEmbed for a JPEG, so the post must
+	// still render the image as its content rather than an empty modal.
+	redditSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("subreddit RSS should not be fetched when summary has [link]")
+		http.NotFound(w, r)
+	}))
+	defer redditSrv.Close()
+
+	old := redditRSSBaseURL
+	redditRSSBaseURL = redditSrv.URL
+	t.Cleanup(func() { redditRSSBaseURL = old })
+
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "t3_1abcde", Title: "Mittens enjoys a sunny nap",
+		Link:      "https://www.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/",
+		ImageURL:  "https://preview.redd.it/1q2w3e4r.jpeg?width=640&crop=smart&auto=webp&s=x",
+		Summary:   `<table><tr><td><a href="https://www.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/"><img src="https://preview.redd.it/1q2w3e4r.jpeg?width=640&amp;crop=smart" alt="Mittens enjoys a sunny nap"></a></td><td> submitted by <a href="https://www.reddit.com/user/u">/u/u</a> <span><a href="https://i.redd.it/1q2w3e4r.jpeg">[link]</a></span> <span><a href="https://www.reddit.com/r/cats/comments/1abcde/mittens_enjoys_a_sunny_nap/">[comments]</a></span></td></tr></table>`,
+		FetchedAt: db.Now(),
+	})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	rr := doGet(h, "/items/"+itoa(items[0].ID)+"/view", cookie)
+	body := rr.Body.String()
+	if rr.Code != http.StatusOK {
+		t.Fatalf("item view: %d %s", rr.Code, body)
+	}
+	if !strings.Contains(body, `src="https://i.redd.it/1q2w3e4r.jpeg"`) {
+		t.Fatalf("image post should render the full-res image: %s", body)
+	}
+	if strings.Contains(body, `class="external">source`) {
+		t.Fatalf("image post should not show an external source link: %s", body)
+	}
+}
+
 func TestItemViewGallery(t *testing.T) {
 	// The proxy-stripped summary has no [link]; the subreddit RSS reveals the
 	// gallery URL and the embed page enumerates both images.
