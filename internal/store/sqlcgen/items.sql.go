@@ -858,6 +858,27 @@ func (q *Queries) MarkAuthorItemsBeforeRead(ctx context.Context, arg MarkAuthorI
 	return err
 }
 
+const markAuthorItemsRead = `-- name: MarkAuthorItemsRead :exec
+UPDATE items
+SET read = 1, read_at = ?1
+WHERE items.feed_id IN (
+    SELECT f.id FROM feeds f
+    WHERE f.user_id = ?2 AND f.author_id = ?3
+  )
+`
+
+type MarkAuthorItemsReadParams struct {
+	ReadAt   sql.NullString `json:"readAt"`
+	UserID   int64          `json:"userID"`
+	AuthorID int64          `json:"authorID"`
+}
+
+// Mark every item read across all of an author's feeds.
+func (q *Queries) MarkAuthorItemsRead(ctx context.Context, arg MarkAuthorItemsReadParams) error {
+	_, err := q.db.ExecContext(ctx, markAuthorItemsRead, arg.ReadAt, arg.UserID, arg.AuthorID)
+	return err
+}
+
 const markItemsAfterRead = `-- name: MarkItemsAfterRead :exec
 UPDATE items
 SET read = 1, read_at = ?1

@@ -283,6 +283,7 @@ templ feedPage(u store.User, d feedPageData) {
 			<div class="row-actions">
 				<a class="small" title="edit" href={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/edit" }>@web.EditIcon()</a>
 				<button class="link" title="refresh" hx-post={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/refresh" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">@web.Lucide("refresh-cw")</button>
+				@markAllReadControl(d.MarkAll)
 			</div>
 		</div>
 		<p class="item-meta">

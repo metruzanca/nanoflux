@@ -182,7 +182,10 @@ templ authorPage(u store.User, d authorData) {
 				}
 				<h1>{ d.Author.Name }</h1>
 			</div>
-			<a class="small" title="edit" href={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/edit" }>@web.EditIcon()</a>
+			<div class="row-actions">
+				@markAllReadControl(d.MarkAll)
+				<a class="small" title="edit" href={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/edit" }>@web.EditIcon()</a>
+			</div>
 		</div>
 		@authorPageLinks(d.Links)
 		if d.Author.Description != "" {

@@ -114,11 +114,20 @@ type authorData struct {
 	Stats     store.AuthorItemStats
 	Frequency string // approximate posting cadence, "" when unknown
 	Timezone  string
+	MarkAll   markAllReadData
 }
 
 type feedPageData struct {
-	Row    feedRow
-	Scoped scopedItemsData
+	Row     feedRow
+	Scoped  scopedItemsData
+	MarkAll markAllReadData
+}
+
+// markAllReadData drives the "mark all as read" control on a feed or author
+// page: the button, its confirmation dialog, and the POST that performs it.
+type markAllReadData struct {
+	Action string // POST endpoint that marks the scope read
+	Unread int    // items the confirmation names and the button counts
 }
 
 type collectionData struct {
@@ -224,6 +233,48 @@ func (s *Server) itemsReadAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderItemsList(w, r, u.ID, u.Timezone)
+}
+
+// feedReadAll marks every item in one feed read ("mark all as read" on the feed
+// page). The client reloads the page on success.
+func (s *Server) feedReadAll(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.Feeds.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.Items.MarkAllRead(u.ID, id); err != nil {
+		log.Error("mark feed read", "feed_id", id, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// authorReadAll marks every item across all of an author's feeds read ("mark all
+// as read" on the author page). The client reloads the page on success.
+func (s *Server) authorReadAll(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.Authors.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.Items.MarkAuthorRead(u.ID, id); err != nil {
+		log.Error("mark author read", "author_id", id, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
@@ -1257,6 +1308,10 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
 		Author: a, Rows: rows, Links: links, Scoped: scoped,
 		Stats: stats, Frequency: frequency, Timezone: u.Timezone,
+		MarkAll: markAllReadData{
+			Action: "/authors/" + strconv.FormatInt(id, 10) + "/read-all",
+			Unread: stats.Unread,
+		},
 	})))
 }
 
@@ -1379,6 +1434,10 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 	scoped := s.feedScopedItems(u.ID, id, itemsView(r), u.Timezone, itemsAsc(r))
 	web.Render(w, r, basePage(feed.Title, u, feedPage(u, feedPageData{
 		Row: feedRow{Feed: feed, AuthorName: authorName, Unread: unread, Timezone: u.Timezone}, Scoped: scoped,
+		MarkAll: markAllReadData{
+			Action: "/feeds/" + strconv.FormatInt(id, 10) + "/read-all",
+			Unread: unread,
+		},
 	})))
 }
 

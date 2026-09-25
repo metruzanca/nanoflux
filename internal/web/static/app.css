@@ -547,6 +547,11 @@ li.text-card .card-body { flex: 1; min-width: 0; }
 
 .row-actions { display: flex; gap: 0.5rem; align-items: center; }
 
+/* The "mark all as read" button and its confirmation dialog share one wrapper
+   so the button can open the dialog without a page-unique id. The dialog is
+   display:none until opened, so the wrapper lays out as just the button. */
+.mark-all-read { display: inline-flex; align-items: center; }
+
 /* The unread/read tabs sit left, the display-mode picker right. */
 .tabs-row {
   display: flex;
