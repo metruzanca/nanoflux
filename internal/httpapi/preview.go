@@ -403,11 +403,14 @@ func (s *Server) manualFeedForm(w http.ResponseWriter, r *http.Request) {
 			fixedAuthor = &a
 		}
 	}
-	name, avatar := s.authorPrefill(r.Context(), pageURL, pageURL)
+	// No PageMeta fetch here: "add manually" is the fast path for a user who
+	// already knows the feed url, so it must render the form without a network
+	// round-trip. The new-author name falls back to the url's host and the user
+	// fills in the rest.
 	form := feedPreviewForm{
 		FeedURL: stripWWW(pageURL), HomeURL: stripWWW(pageURL), Authors: authors,
 		SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor, Redirect: fixedAuthor == nil,
-		NewAuthorName: name, NewAuthorAvatar: avatar,
+		NewAuthorName: authorNameFallback(pageURL),
 	}
 	if fixedAuthor != nil {
 		form.Action = "/authors/" + strconv.FormatInt(fixedAuthor.ID, 10) + "/feeds"
@@ -430,15 +433,11 @@ func pageURLFromForm(r *http.Request) string {
 	return r.FormValue("feed_url")
 }
 
-// authorPrefill returns a default name and avatar for the create-new-author
-// fields, derived from the page's <title> and icon. Falls back to the host.
-func (s *Server) authorPrefill(ctx context.Context, pageURL, fallback string) (string, string) {
-	meta, _ := s.discoverer.PageMeta(ctx, pageURL)
-	name := meta.Title
-	if name == "" {
-		if u, err := url.Parse(stripWWW(fallback)); err == nil && u.Host != "" {
-			name = u.Host
-		}
+// authorNameFallback derives a default new-author name from a page url's host,
+// for flows that must not fetch the page. Returns "" when the url has no host.
+func authorNameFallback(pageURL string) string {
+	if u, err := url.Parse(stripWWW(pageURL)); err == nil && u.Host != "" {
+		return u.Host
 	}
-	return name, meta.IconURL
+	return ""
 }
