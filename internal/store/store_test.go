@@ -550,6 +550,43 @@ func TestItemScopedCounts(t *testing.T) {
 	}
 }
 
+// TestMarkAuthorRead marks one author's items read and asserts the other
+// author's items are untouched, since the action is scoped through feeds.user_id
+// AND feeds.author_id.
+func TestMarkAuthorRead(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a1, _ := s.Authors.Create(u.ID, "Metru", "", "")
+	f1, _ := s.Feeds.Create(u.ID, a1.ID, "One", "https://one.dev/rss.xml", "", "", 900)
+	a2, _ := s.Authors.Create(u.ID, "Other", "", "")
+	f2, _ := s.Feeds.Create(u.ID, a2.ID, "Two", "https://two.dev/rss.xml", "", "", 900)
+
+	for _, f := range []struct {
+		id   int64
+		guid string
+	}{{f1.ID, "a1"}, {f1.ID, "a2"}, {f2.ID, "b1"}} {
+		if _, err := s.Items.Upsert(f.id, Item{GUID: f.guid, Title: f.guid, Link: "https://x/" + f.guid, FetchedAt: db.Now()}); err != nil {
+			t.Fatalf("upsert %s: %v", f.guid, err)
+		}
+	}
+
+	if err := s.Items.MarkAuthorRead(u.ID, a1.ID); err != nil {
+		t.Fatalf("MarkAuthorRead: %v", err)
+	}
+	if n, _ := s.Items.CountUnreadAuthor(u.ID, a1.ID); n != 0 {
+		t.Fatalf("author 1 unread = %d, want 0", n)
+	}
+	if n, _ := s.Items.CountUnreadAuthor(u.ID, a2.ID); n != 1 {
+		t.Fatalf("author 2 unread = %d, want 1 (untouched)", n)
+	}
+	items, _ := s.Items.List(u.ID, ItemFilter{})
+	for _, it := range items {
+		if it.FeedID == f1.ID && (!it.Read || it.ReadAt == "") {
+			t.Fatalf("author 1 item not marked read with timestamp: %+v", it)
+		}
+	}
+}
+
 func TestListWithCounts(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

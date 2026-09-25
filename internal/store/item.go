@@ -497,6 +497,15 @@ func (s *ItemStore) MarkAllRead(userID, feedID int64) error {
 	})
 }
 
+// MarkAuthorRead marks every item read across all of an author's feeds.
+func (s *ItemStore) MarkAuthorRead(userID, authorID int64) error {
+	return s.q.MarkAuthorItemsRead(context.Background(), sqlcgen.MarkAuthorItemsReadParams{
+		ReadAt:   ns(db.Now()),
+		UserID:   userID,
+		AuthorID: authorID,
+	})
+}
+
 // MarkOlderThanRead marks every unread item older than days (by
 // COALESCE(published_at, fetched_at)) as read for a user, regardless of
 // favorite state. It returns how many items were marked. days must be > 0;
