@@ -9,12 +9,24 @@ package httpapi
 // placeholder is the empty-state text.
 templ comboSelect(name, value, label, placeholder string, items []comboItem, attrs templ.Attributes) {
 	<div class="combo-field">
-		<label for={ name }>{ label }</label>
+		if label != "" {
+			<label for={ name }>{ label }</label>
+		}
 		<div class="combo" data-vaadin="single">
 			<vaadin-combo-box id={ name } placeholder={ placeholder }></vaadin-combo-box>
 			<input type="hidden" data-vaadin-target name={ name } value={ value } { attrs... }/>
 			@templ.JSONScript("", comboPayload{Items: items, Value: value})
 		</div>
+	</div>
+}
+
+// comboSelectInline is comboSelect without the external label, for compact
+// controls that sit inline in a row (e.g. the home section render-mode picker).
+templ comboSelectInline(name, value, placeholder string, items []comboItem, attrs templ.Attributes) {
+	<div class="combo combo-inline" data-vaadin="single">
+		<vaadin-combo-box id={ name } placeholder={ placeholder }></vaadin-combo-box>
+		<input type="hidden" data-vaadin-target name={ name } value={ value } { attrs... }/>
+		@templ.JSONScript("", comboPayload{Items: items, Value: value})
 	</div>
 }
 

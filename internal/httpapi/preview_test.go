@@ -298,14 +298,15 @@ func TestFeedPreviewPreselectsAuthor(t *testing.T) {
 		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, `value="`+itoa(a.ID)+`" selected`) {
+	// The author combo's hidden mirror carries the selected author id.
+	if !strings.Contains(body, `data-vaadin-target name="author_id" value="`+itoa(a.ID)+`"`) {
 		t.Fatalf("expected author preselected in the form: %s", body)
 	}
-	// Without author_id nothing is preselected.
+	// Without author_id the mirror defaults to "new".
 	rr = doForm(h, "POST", "/fragments/feed-preview", url.Values{
 		"url": {feedSrv.URL + "/rss"},
 	}, cookie)
-	if strings.Contains(rr.Body.String(), " selected") {
+	if !strings.Contains(rr.Body.String(), `data-vaadin-target name="author_id" value="new"`) {
 		t.Fatalf("no author should be preselected by default: %s", rr.Body.String())
 	}
 }
