@@ -44,6 +44,65 @@ func (f fakeFetcher) Fetch(context.Context, pluginapi.FetchRequest, pluginapi.Ho
 	return f.result, nil
 }
 
+// fakeRenderer is a fakeFetcher that also implements the optional Renderer.
+type fakeRenderer struct {
+	fakeFetcher
+	media pluginapi.Media
+	err   error
+	cap   pluginapi.Capability
+}
+
+func (f fakeRenderer) Render(context.Context, pluginapi.RenderRequest, pluginapi.Host) (pluginapi.Media, error) {
+	return f.media, f.err
+}
+
+// TestRegistryRenderItem covers the view-time rendering dispatch: a matching
+// renderer is asked for media, a plugin that does not match CapRender is
+// skipped, an unsupported result is empty, and an error is surfaced.
+func TestRegistryRenderItem(t *testing.T) {
+	hosts := func(pluginapi.Fetcher) pluginapi.Host { return nil }
+	renderURL, _ := url.Parse("https://posts.example/1")
+
+	reg := NewRegistry()
+	reg.RegisterNative(fakeRenderer{
+		fakeFetcher: fakeFetcher{name: "r", match: func(u *url.URL, cap pluginapi.Capability) bool {
+			return cap == pluginapi.CapRender && u != nil && u.Hostname() == "posts.example"
+		}},
+		media: pluginapi.Media{SourceURL: "https://dest.example/x", Gallery: []string{"https://cdn/1.jpg"}},
+	})
+	m, err := reg.RenderItem(context.Background(), pluginapi.RenderRequest{Link: renderURL.String()}, hosts)
+	if err != nil || m.SourceURL != "https://dest.example/x" || len(m.Gallery) != 1 {
+		t.Fatalf("RenderItem = %+v, %v", m, err)
+	}
+
+	// A link no plugin matches for CapRender yields empty media, no error.
+	other, _ := url.Parse("https://elsewhere.example/1")
+	m, err = reg.RenderItem(context.Background(), pluginapi.RenderRequest{Link: other.String()}, hosts)
+	if err != nil || m.SourceURL != "" || m.EmbedSrc != "" || m.Gallery != nil {
+		t.Fatalf("unmatched RenderItem = %+v, %v", m, err)
+	}
+
+	// Unsupported maps to empty media.
+	reg2 := NewRegistry()
+	reg2.RegisterNative(fakeRenderer{
+		fakeFetcher: fakeFetcher{name: "r2", match: func(*url.URL, pluginapi.Capability) bool { return true }},
+		err:         pluginapi.ErrUnsupportedCapability,
+	})
+	if m, err := reg2.RenderItem(context.Background(), pluginapi.RenderRequest{Link: renderURL.String()}, hosts); err != nil || m.SourceURL != "" {
+		t.Fatalf("unsupported RenderItem = %+v, %v", m, err)
+	}
+
+	// A real error is surfaced.
+	reg3 := NewRegistry()
+	reg3.RegisterNative(fakeRenderer{
+		fakeFetcher: fakeFetcher{name: "r3", match: func(*url.URL, pluginapi.Capability) bool { return true }},
+		err:         errors.New("boom"),
+	})
+	if _, err := reg3.RenderItem(context.Background(), pluginapi.RenderRequest{Link: renderURL.String()}, hosts); err == nil {
+		t.Fatal("RenderItem should surface the plugin error")
+	}
+}
+
 func TestRegistryMatchPrecedence(t *testing.T) {
 	reg := NewRegistry()
 	native := fakeFetcher{name: "native", match: func(*url.URL, pluginapi.Capability) bool { return true }}
@@ -286,6 +345,47 @@ func TestLoadExternalEndToEnd(t *testing.T) {
 	}
 	if got := res.Items[0].ImageURL; got != "https://i.ytimg.com/vi/abc/hqdefault.jpg" {
 		t.Fatalf("image = %q, want media:thumbnail to survive gRPC", got)
+	}
+}
+
+// TestLoadExternalRenderExample builds the minimal external plugin that
+// implements only Render and loads it over gRPC, proving view-time rendering
+// crosses the gRPC boundary: Match(CapRender), the Render call, and the Media
+// fields all round-trip.
+func TestLoadExternalRenderExample(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a plugin binary")
+	}
+	bin := buildExamplePlugin(t, "plugin-render", "nanoflux-plugin-render")
+
+	reg := NewRegistry()
+	hosts := NewHosts(http.DefaultClient, NewCooldown())
+	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
+	defer cleanup()
+
+	if len(reg.Names()) != 1 || reg.Names()[0] != "render-example" {
+		t.Fatalf("loaded plugins = %v, want [render-example]", reg.Names())
+	}
+	// A link on the plugin's host resolves to its media over gRPC.
+	m, err := reg.RenderItem(context.Background(), pluginapi.RenderRequest{
+		Link: "https://posts.render.example/1",
+	}, hosts.For)
+	if err != nil {
+		t.Fatalf("RenderItem: %v", err)
+	}
+	if m.SourceURL != "https://external.example/page" || m.EmbedSrc != "https://player.example/embed/1" {
+		t.Fatalf("media = %+v", m)
+	}
+	if len(m.Gallery) != 2 || m.Gallery[0] != "https://cdn.example/1.jpg" {
+		t.Fatalf("gallery = %v", m.Gallery)
+	}
+
+	// A link on another host is not rendered.
+	m, err = reg.RenderItem(context.Background(), pluginapi.RenderRequest{
+		Link: "https://other.example/1",
+	}, hosts.For)
+	if err != nil || m.SourceURL != "" || len(m.Gallery) != 0 {
+		t.Fatalf("unmatched media = %+v, %v", m, err)
 	}
 }
 
