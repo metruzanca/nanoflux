@@ -1188,10 +1188,11 @@ func TestExternalLinksCarryMarker(t *testing.T) {
 		t.Fatalf("author link should be external-marked: %s", body)
 	}
 
-	// Author page feeds list row: the "feed" link is external and marked.
+	// Author page feeds list row: the row links to the feed's home site (not
+	// its feed URL), external and marked.
 	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
-	if !strings.Contains(body, `href="https://b.dev/rss.xml" class="external" referrerpolicy="no-referrer">feed`) {
-		t.Fatalf("author page feeds list feed link should be external-marked: %s", body)
+	if !strings.Contains(body, `href="https://b.dev" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home`) {
+		t.Fatalf("author page feeds list should link to the home site: %s", body)
 	}
 
 	// "open live" in the item modal meta is external and marked.
@@ -1770,12 +1771,27 @@ func TestFeedEditDeleteFlow(t *testing.T) {
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
-	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "https://b.dev", "", 900)
 
-	// The author page's feed rows no longer carry pause/delete buttons.
+	// The author page's feed rows are read-only: no edit, refresh, pause, or
+	// delete — those live on the feed's own page.
 	author := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
-	if strings.Contains(author, "/toggle") || strings.Contains(author, "/feeds/"+itoa(f.ID)+"/delete") {
-		t.Fatalf("feed rows should not offer pause/delete outside the edit page: %s", author)
+	for _, dead := range []string{
+		`/feeds/` + itoa(f.ID) + `/edit`,
+		`/feeds/` + itoa(f.ID) + `/refresh`,
+		`/feeds/` + itoa(f.ID) + `/toggle`,
+		`/feeds/` + itoa(f.ID) + `/delete`,
+	} {
+		if strings.Contains(author, dead) {
+			t.Fatalf("author feed row should not link to %s: %s", dead, author)
+		}
+	}
+	// The row links to the feed's home site, labelled "home", not its feed URL.
+	if !strings.Contains(author, `href="https://b.dev" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home`) {
+		t.Fatalf("author feed row should link to the home site: %s", author)
+	}
+	if strings.Contains(author, `href="https://b.dev/rss.xml"`) {
+		t.Fatalf("author feed row should not link to the feed URL: %s", author)
 	}
 
 	// The feed edit page carries the delete form.
