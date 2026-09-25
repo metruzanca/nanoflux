@@ -90,7 +90,10 @@ checkbox groups, so long option lists are searchable.
 
 - The bundle is committed at `internal/web/static/vaadin.bundle.js` and must be
   regenerated with `mise run vendor:vaadin` when the pinned version changes
-  (`tools/vaadin-vendor/`). The build needs node once; runtime does not.
+  (`tools/vaadin-vendor/`). The build needs node once; runtime does not. It is
+  emitted as an **IIFE**, not ESM: it is loaded with a plain `<script defer>`,
+  and a classic script containing `export` fails to parse (the elements never
+  register, so they render as zero-size unknown elements).
 - v25 ships only structural base styles (there is no Lumo theme package); the
   components are themed from `app.css` via `--vaadin-*` custom properties.
 - The components are **not form-associated**, so `htmx` (which serializes with
