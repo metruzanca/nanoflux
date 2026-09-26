@@ -32,15 +32,35 @@ const (
 	// minWake is the smallest next-wake delay, so a just-cleared backoff can't
 	// make the loop spin.
 	minWake = 30 * time.Second
+
+	// defaultHostSpacing is the spacing the poller enforces between two
+	// requests to the same registrable host even when the host has never
+	// rate-limited it. It stops a domain with many due feeds from bursting all
+	// of them in one cycle, which is what tends to trigger the first 429. A
+	// learned rate-limit window overrides it when larger. Configured via
+	// NF_POLL_HOST_SPACING; 0 disables the default spacing.
+	defaultHostSpacing = 30 * time.Second
 )
+
+// hostCooler is the rate-limit cooldown the poller consults, satisfied by
+// *plugin.Cooldown. Kept as a local interface so the poller does not import the
+// plugin package; when set, a limit learned by either the poller or a plugin
+// paces both.
+type hostCooler interface {
+	Cooling(rawURL string) bool
+	Cool(rawURL string, t time.Time)
+	Until(rawURL string) (time.Time, bool)
+}
 
 // Poller fetches due feeds on an interval. Per-feed schedules come from each
 // feed's poll_interval_sec; the ticker just wakes the loop.
 type Poller struct {
-	store    *store.Store
-	client   *http.Client
-	interval time.Duration
-	workers  int
+	store       *store.Store
+	client      *http.Client
+	interval    time.Duration
+	workers     int
+	hostSpacing time.Duration
+	cool        hostCooler
 
 	// hostWindow records, per registrable host, the minimum spacing the host
 	// has asked for after a rate limit (learned from Retry-After /
@@ -62,8 +82,22 @@ func New(st *store.Store, interval time.Duration, workers int) *Poller {
 		client:      &http.Client{Timeout: fetchTimeout},
 		interval:    interval,
 		workers:     workers,
+		hostSpacing: defaultHostSpacing,
 		hostWindow:  map[string]time.Duration{},
 		hostNextHit: map[string]time.Time{},
+	}
+}
+
+// SetHostSpacing sets the default minimum spacing between two requests to the
+// same host, applied even to hosts that have never rate-limited the poller. A
+// learned rate-limit window still overrides it when larger. Zero disables it.
+func (p *Poller) SetHostSpacing(d time.Duration) { p.hostSpacing = d }
+
+// SetHostCooler shares a rate-limit cooldown with the poller, so a limit seen
+// by a plugin (or by the poller) paces both. A nil cooler is ignored.
+func (p *Poller) SetHostCooler(c hostCooler) {
+	if c != nil {
+		p.cool = c
 	}
 }
 
@@ -167,13 +201,20 @@ func (p *Poller) pollGroup(ctx context.Context, group []store.Feed) (int, time.T
 
 	host := store.RegistrableDomain(group[0].FeedURL)
 	n := 0
-	for _, f := range group {
+	for i, f := range group {
 		if ctx.Err() != nil {
 			return n, time.Time{}
 		}
+		// A host cooling from a rate limit — learned by the poller or by a
+		// plugin — is not hit; its feeds stay due until the window clears.
+		if p.cool != nil && p.cool.Cooling(f.FeedURL) {
+			if until, ok := p.cool.Until(f.FeedURL); ok {
+				return n, until
+			}
+		}
 		if host != "" && !p.hostReady(host, time.Now()) {
-			// The host is inside its rate-limit window: leave the remaining
-			// feeds due and wake when it clears.
+			// The host is inside its pacing window: leave the remaining feeds
+			// due and wake when it clears.
 			return n, p.hostNextHitTime(host)
 		}
 		got, err := p.PollOne(ctx, f)
@@ -181,14 +222,29 @@ func (p *Poller) pollGroup(ctx context.Context, group []store.Feed) (int, time.T
 		if err != nil {
 			log.Error("poll feed", "feed_id", f.ID, "url", f.FeedURL, "err", err)
 		}
-		// If this host has a learned window, space the next request to it.
-		if host != "" {
-			if w, ok := p.hostWindowFor(host); ok {
-				p.setHostNextHit(host, time.Now().Add(w))
+		// Space the host's next request (learned rate-limit window wins over
+		// the default spacing). Only stop early when another feed is waiting:
+		// the group's last feed must not sit out the window it just set, so a
+		// single-feed host is never delayed.
+		if host != "" && i < len(group)-1 {
+			if w := p.effectiveSpacing(host); w > 0 {
+				next := time.Now().Add(w)
+				p.setHostNextHit(host, next)
+				return n, next
 			}
 		}
 	}
 	return n, time.Time{}
+}
+
+// effectiveSpacing returns the spacing to enforce before a host's next request:
+// its learned rate-limit window when larger, otherwise the default hostSpacing.
+func (p *Poller) effectiveSpacing(host string) time.Duration {
+	spacing := p.hostSpacing
+	if w, ok := p.hostWindowFor(host); ok && w > spacing {
+		spacing = w
+	}
+	return spacing
 }
 
 // groupByHost buckets feeds by their registrable domain, preserving the input
@@ -283,6 +339,10 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 			p.store.Feeds.SetNextPollAt(f.ID, db.FormatTime(until))
 			if host := store.RegistrableDomain(f.FeedURL); host != "" {
 				p.learnWindow(host, rl.RetryAfter)
+			}
+			// Refuse plugin requests to the same host for the same window.
+			if p.cool != nil {
+				p.cool.Cool(f.FeedURL, until)
 			}
 			p.store.Feeds.SetPollMeta(f.ID, "", "", fetched, truncateError(err.Error()))
 			return 0, err

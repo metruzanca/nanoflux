@@ -702,8 +702,10 @@ func TestPollDueSerializesPerHost(t *testing.T) {
 	}
 
 	// A generous worker pool means any cross-host parallelism is available; the
-	// same-host feeds must still run one at a time.
+	// same-host feeds must still run one at a time. Default spacing is off so
+	// all four complete in one cycle for the overlap assertion.
 	p := New(st, time.Minute, 8)
+	p.SetHostSpacing(0)
 	if _, err := p.PollDue(context.Background()); err != nil {
 		t.Fatalf("PollDue: %v", err)
 	}
@@ -837,6 +839,7 @@ func TestPollDueRotatesLeastRecentlyPolledFirst(t *testing.T) {
 	st.Feeds.SetPollMeta(ids[0], "", "", db.FormatTime(time.Now().Add(-40*time.Minute)), "")
 
 	p := New(st, time.Minute, 4)
+	p.SetHostSpacing(0) // observe the full rotation order in one cycle
 	if _, err := p.PollDue(context.Background()); err != nil {
 		t.Fatalf("PollDue: %v", err)
 	}
@@ -849,6 +852,203 @@ func TestPollDueRotatesLeastRecentlyPolledFirst(t *testing.T) {
 		if order[i] != want[i] {
 			t.Fatalf("rotation order = %v, want %v", order, want)
 		}
+	}
+}
+
+// TestPollDueDefaultSpacingSpreadsMultiFeedHost covers the default per-host
+// spacing: a multi-feed host is fetched at most once per spacing window, its
+// remaining feeds stay due, and the poller reports when the host may be hit
+// again.
+func TestPollDueDefaultSpacingSpreadsMultiFeedHost(t *testing.T) {
+	st := newPollerStore(t)
+	u, _ := st.Users.ByUsername("alice")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	var hits int
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title></channel></rss>`))
+	}))
+	defer srv.Close()
+
+	for i := 0; i < 3; i++ {
+		st.Feeds.Create(u.ID, a.ID, "f", fmt.Sprintf("%s/feed%d", srv.URL, i), "", "", 900)
+	}
+
+	p := New(st, time.Minute, 4)
+	p.SetHostSpacing(50 * time.Millisecond)
+	_, wake, err := p.pollDue(context.Background())
+	if err != nil {
+		t.Fatalf("pollDue: %v", err)
+	}
+	if hits != 1 {
+		t.Fatalf("hits = %d, want 1 (host spaced after one fetch)", hits)
+	}
+	if wake.IsZero() || !wake.After(time.Now()) {
+		t.Fatalf("expected a future wake for the spaced host, got %v", wake)
+	}
+	// The untouched feeds stay due to be picked up when the window clears.
+	due, _ := st.Feeds.ListDue(db.Now())
+	if len(due) != 2 {
+		t.Fatalf("spaced host's remaining feeds should stay due, got %d", len(due))
+	}
+}
+
+// TestPollDueDefaultSpacingSingleFeedNotDelayed asserts a host with one feed is
+// fetched immediately and never made to wait on the spacing it just set.
+func TestPollDueDefaultSpacingSingleFeedNotDelayed(t *testing.T) {
+	st := newPollerStore(t)
+	u, _ := st.Users.ByUsername("alice")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title></channel></rss>`))
+	}))
+	defer srv.Close()
+
+	st.Feeds.Create(u.ID, a.ID, "f", srv.URL+"/feed", "", "", 900)
+	p := New(st, time.Minute, 4)
+	p.SetHostSpacing(50 * time.Millisecond)
+	_, wake, err := p.pollDue(context.Background())
+	if err != nil {
+		t.Fatalf("pollDue: %v", err)
+	}
+	if !wake.IsZero() {
+		t.Fatalf("single-feed host should not be paced, got wake %v", wake)
+	}
+	got, _ := st.Feeds.ListDue(db.Now())
+	if len(got) != 0 {
+		t.Fatalf("single feed should be fetched, still due: %d", len(got))
+	}
+}
+
+// TestPollDueLearnedWindowOverridesDefaultSpacing asserts a learned rate-limit
+// window wins over the smaller default spacing.
+func TestPollDueLearnedWindowOverridesDefaultSpacing(t *testing.T) {
+	st := newPollerStore(t)
+	u, _ := st.Users.ByUsername("alice")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title></channel></rss>`))
+	}))
+	defer srv.Close()
+
+	st.Feeds.Create(u.ID, a.ID, "f", fmt.Sprintf("%s/feed0", srv.URL), "", "", 900)
+	st.Feeds.Create(u.ID, a.ID, "f", fmt.Sprintf("%s/feed1", srv.URL), "", "", 900)
+
+	p := New(st, time.Minute, 4)
+	p.SetHostSpacing(50 * time.Millisecond)
+	p.learnWindow(store.RegistrableDomain(srv.URL+"/x"), time.Hour)
+
+	_, wake, err := p.pollDue(context.Background())
+	if err != nil {
+		t.Fatalf("pollDue: %v", err)
+	}
+	if wake.Before(time.Now().Add(55 * time.Minute)) {
+		t.Fatalf("wake %v should reflect the learned hour window, not the default spacing", wake)
+	}
+}
+
+// fakeCooler is a hostCooler stub for the shared-cooldown tests.
+type fakeCooler struct {
+	mu    sync.Mutex
+	until map[string]time.Time
+}
+
+func newFakeCooler() *fakeCooler { return &fakeCooler{until: map[string]time.Time{}} }
+
+func (c *fakeCooler) Cooling(rawURL string) bool {
+	_, ok := c.Until(rawURL)
+	return ok
+}
+
+func (c *fakeCooler) Cool(rawURL string, t time.Time) {
+	host := store.RegistrableDomain(rawURL)
+	if host == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.until[host] = t
+}
+
+func (c *fakeCooler) Until(rawURL string) (time.Time, bool) {
+	host := store.RegistrableDomain(rawURL)
+	if host == "" {
+		return time.Time{}, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t, ok := c.until[host]
+	if !ok || time.Now().After(t) {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// TestPollDueSkipsCoolingHost asserts the poller consults the shared cooldown: a
+// host a plugin cooled is not fetched, and the poller wakes when it clears.
+func TestPollDueSkipsCoolingHost(t *testing.T) {
+	st := newPollerStore(t)
+	u, _ := st.Users.ByUsername("alice")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	var hits int
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title></channel></rss>`))
+	}))
+	defer srv.Close()
+
+	st.Feeds.Create(u.ID, a.ID, "f", srv.URL+"/feed", "", "", 900)
+
+	cool := newFakeCooler()
+	cool.Cool(srv.URL, time.Now().Add(time.Hour))
+	p := New(st, time.Minute, 4)
+	p.SetHostCooler(cool)
+
+	_, wake, err := p.pollDue(context.Background())
+	if err != nil {
+		t.Fatalf("pollDue: %v", err)
+	}
+	if hits != 0 {
+		t.Fatalf("cooling host was fetched: hits = %d", hits)
+	}
+	if wake.IsZero() {
+		t.Fatal("expected a wake at the cooldown's expiry")
+	}
+}
+
+// TestPollOneRateLimitCoolsSharedHost asserts a poller-observed limit teaches
+// the shared cooldown, so plugins back off the same host.
+func TestPollOneRateLimitCoolsSharedHost(t *testing.T) {
+	st := newPollerStore(t)
+	u, _ := st.Users.ByUsername("alice")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "600")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "f", srv.URL+"/feed", "", "", 900)
+	cool := newFakeCooler()
+	p := New(st, time.Minute, 1)
+	p.SetHostCooler(cool)
+
+	if _, err := p.PollOne(context.Background(), f); err == nil {
+		t.Fatal("expected a rate-limit error")
+	}
+	if !cool.Cooling(srv.URL) {
+		t.Fatal("poller rate limit should cool the shared host")
 	}
 }
 

@@ -18,7 +18,8 @@ func describe(f pluginapi.Fetcher) string {
 // Cooldown tracks, per registrable host, a time before which the host must not
 // be hit again — set when a fetch is rate limited. It is in-memory (reset on
 // restart) and complements the persisted per-feed backoff. The plugin host and
-// the poller share one instance so a limit seen by either paces both.
+// the poller share one instance (wired in cmd/server) so a limit seen by either
+// paces both.
 type Cooldown struct {
 	mu    sync.Mutex
 	until map[string]time.Time
@@ -31,21 +32,28 @@ func NewCooldown() *Cooldown {
 
 // Cooling reports whether the host for rawURL is currently backed off.
 func (c *Cooldown) Cooling(rawURL string) bool {
+	_, ok := c.Until(rawURL)
+	return ok
+}
+
+// Until returns the time until which the host for rawURL is backed off and
+// whether it is currently cooling. An expired entry is pruned.
+func (c *Cooldown) Until(rawURL string) (time.Time, bool) {
 	host := store.RegistrableDomain(rawURL)
 	if host == "" {
-		return false
+		return time.Time{}, false
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	t, ok := c.until[host]
 	if !ok {
-		return false
+		return time.Time{}, false
 	}
 	if time.Now().After(t) {
 		delete(c.until, host)
-		return false
+		return time.Time{}, false
 	}
-	return true
+	return t, true
 }
 
 // Cool records that the host for rawURL must not be hit again until t.

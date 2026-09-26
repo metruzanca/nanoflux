@@ -81,11 +81,16 @@ func runServer() {
 	}
 
 	p := poller.New(st, cfg.PollInterval, cfg.PollWorkers)
+	p.SetHostSpacing(cfg.PollHostSpacing)
+	// One cooldown shared by the poller and the plugin host: a rate limit seen
+	// by either paces both.
+	cooldown := plugin.NewCooldown()
+	p.SetHostCooler(cooldown)
 	go p.Run(ctx)
 
 	// Load feed plugins (native + external), route fetches through them, and
 	// reconcile stored feeds against the loaded set.
-	plugins := plugin.Setup(ctx, st, p.Client(), cfg.PluginsDir)
+	plugins := plugin.Setup(ctx, st, p.Client(), cfg.PluginsDir, cooldown)
 	defer plugins.Close()
 
 	backupRunner := newBackupRunner(ctx, cfg, sqldb)
