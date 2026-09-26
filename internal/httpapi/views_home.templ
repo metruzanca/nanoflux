@@ -6,6 +6,26 @@ import (
 	"github.com/metruzanca/nanoflux/internal/web"
 )
 
+// homeModeControl picks how one pinned home section renders (list or grid).
+// It is the custom pill picker (not a combo box): the choice is a server-side
+// mutation, so each option POSTs to /settings/home and the card is swapped back.
+templ homeModeControl(collectionID int64, mode string) {
+	@PickerControl("mode-"+strconv.FormatInt(collectionID, 10), "how this section renders", mode, "", []pickerOption{
+		{
+			Value: "list", Label: "list", Icon: "list",
+			HxPost:   "/settings/home",
+			HxTarget: "#settings-home-card",
+			HxVals:   `{"action":"mode","collection_id":"` + strconv.FormatInt(collectionID, 10) + `","mode":"list"}`,
+		},
+		{
+			Value: "grid", Label: "grid", Icon: "grid",
+			HxPost:   "/settings/home",
+			HxTarget: "#settings-home-card",
+			HxVals:   `{"action":"mode","collection_id":"` + strconv.FormatInt(collectionID, 10) + `","mode":"grid"}`,
+		},
+	})
+}
+
 // settingsHomeCard lets the user pin collections to their home screen. Rows are
 // reordered with server-side up/down actions (no client JS), and empty
 // collections simply don't render on the home page.
@@ -22,13 +42,7 @@ templ settingsHomeCard(d settingsHomeData) {
 					<div class="row">
 						<a href={ "/collections/" + strconv.FormatInt(r.Collection.ID, 10) }>{ r.Collection.Name }</a>
 						<div class="row-actions">
-							@comboSelectInline("mode", r.Mode, "", homeModeItems, templ.Attributes{
-								"hx-post":    "/settings/home",
-								"hx-target":  "#settings-home-card",
-								"hx-swap":    "outerHTML",
-								"hx-trigger": "change",
-								"hx-vals":    `{"action":"mode","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}`,
-							})
+							@homeModeControl(r.Collection.ID, r.Mode)
 							if i > 0 {
 								<button class="link" title="move up" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-vals={ `{"action":"up","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>↑</button>
 							}

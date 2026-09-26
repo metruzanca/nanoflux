@@ -25,15 +25,6 @@ templ comboSelect(name, value, label, placeholder string, items []comboItem, att
 	</div>
 }
 
-// comboSelectInline is comboSelect without the external label, for compact
-// controls that sit inline in a row (e.g. the home section render-mode picker).
-templ comboSelectInline(name, value, placeholder string, items []comboItem, attrs templ.Attributes) {
-	<div class="combo combo-inline" data-vaadin="single">
-		<vaadin-combo-box id={ name } placeholder={ placeholder } items={ comboItemsJSON(items) } value={ value }></vaadin-combo-box>
-		<input type="hidden" data-vaadin-target name={ name } value={ value } { attrs... }/>
-	</div>
-}
-
 // comboMulti is a multi-select Vaadin combo-box that submits like the checkbox
 // group it replaces. selected-items must hold the item objects (not value
 // strings) so labels resolve, so it is computed from items + the selected

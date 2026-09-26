@@ -88,12 +88,6 @@ type dashboardData struct {
 	Sections []homeSectionData
 }
 
-// homeModeItems are the combo options for a pinned section's render method.
-var homeModeItems = []comboItem{
-	{Value: homeModeList, Label: "list"},
-	{Value: homeModeGrid, Label: "grid"},
-}
-
 // collectionComboItems maps the user's collections to combo items for the home
 // "pin a collection" picker.
 func collectionComboItems(cs []store.Collection) []comboItem {
