@@ -20,7 +20,7 @@ latest_image_tag = $(shell \
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop restart update status logs shell version backup restore
+.PHONY: help start stop restart update status logs shell version backup restore plugins
 
 help:
 	@echo "nanoflux - manage your instance"
@@ -35,6 +35,7 @@ help:
 	@echo "  version   print the running app's version"
 	@echo "  backup    snapshot the database and file store into backups/"
 	@echo "  restore   restore from backups/ and restart (usage: make restore ARCHIVE=backups/<file>.tar.gz)"
+	@echo "  plugins   rebuild every plugin in plugins/ against the current pluginapi"
 	@echo ""
 	@echo "Run with podman: make <cmd> RUNTIME=podman"
 	@echo "Development tasks (icons, extension, dev, gen) live in mise: mise tasks"
@@ -106,3 +107,17 @@ restore:
 	$(COMPOSE) run --rm -T nanoflux restore /backups/$(ARCHIVE)
 	$(COMPOSE) up -d
 	@echo "restore complete - instance is back up"
+
+# Build every plugin module in plugins/ into plugins/. Each subdirectory with a
+# go.mod is one plugin; the binary is named nanoflux-plugin-<dir>, matching the
+# name the plugin ships under and overwriting any previous build. Run this before
+# `make update` so the container picks up binaries built against the current
+# pluginapi.
+plugins:
+	@for mod in plugins/*/go.mod; do \
+		dir=$$(dirname "$$mod"); \
+		name=$$(basename "$$dir"); \
+		case "$$name" in nanoflux-plugin-*) out="$$name";; *) out="nanoflux-plugin-$$name";; esac; \
+		echo "building $$out"; \
+		go -C "$$dir" build -o "../$$out" . || exit 1; \
+	done
