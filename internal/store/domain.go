@@ -56,12 +56,13 @@ var redditHosts = map[string]bool{
 	"m.reddit.com": true,
 }
 
-// CanonicalFeedURL rewrites a feed URL to the form its site actually serves, for
-// hosts where nanoflux knows the canonical shape. It leaves other URLs
-// untouched.
+// CanonicalFeedURL rewrites a feed URL to the form nanoflux prefers, for hosts
+// where it knows the canonical shape. It leaves other URLs untouched.
 //
-// Reddit: old./np. hosts redirect to a login wall for .rss and must be rewritten
-// to www.reddit.com, and the /u/{name} user form redirects to /user/{name}.
+// Reddit: all of reddit.com/www./old./np./m. collapse to the bare reddit.com
+// origin (old./np. redirect .rss to a login wall), and the /user/{name} form is
+// rewritten to /u/{name}. Reddit serves the same feeds on reddit.com, and the
+// shorter, stable shape matches what discover.Derive produces.
 func CanonicalFeedURL(raw string) string {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Host == "" {
@@ -71,17 +72,17 @@ func CanonicalFeedURL(raw string) string {
 	if !redditHosts[host] {
 		return raw
 	}
-	// Canonical host: www.reddit.com, keeping any port.
+	// Canonical host: reddit.com, keeping any port.
 	u.Scheme = "https"
 	if port := u.Port(); port != "" {
-		u.Host = "www.reddit.com:" + port
+		u.Host = "reddit.com:" + port
 	} else {
-		u.Host = "www.reddit.com"
+		u.Host = "reddit.com"
 	}
-	// /u/{name} -> /user/{name}.
+	// /user/{name} -> /u/{name}.
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) >= 2 && parts[0] == "u" {
-		parts[0] = "user"
+	if len(parts) >= 2 && parts[0] == "user" {
+		parts[0] = "u"
 		u.Path = "/" + strings.Join(parts, "/")
 	} else if len(parts) >= 1 && parts[0] != "" {
 		u.Path = "/" + strings.Join(parts, "/")

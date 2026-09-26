@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
+	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
@@ -27,17 +28,32 @@ import (
 // home — e.g. a YouTube @handle page rather than the feed's /channel/UC...
 // URL. When empty it falls back to res.Feed.HomeURL.
 func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, title string, authorID int64) (apiFeed, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
-	res, err := feedparse.Fetch(ctx, feedURL, client, "", "")
-	if err != nil {
-		return apiFeed{}, err
-	}
+	// A derived feed (reddit) needs no validation fetch: its .rss sits behind a
+	// tight anonymous rate limit, so the candidate supplies the title and home
+	// and the host's budget is saved for the first poll.
 	pageURL := homeURL // the page the user was on, before the feed-home fallback
-	if homeURL == "" {
-		homeURL = res.Feed.HomeURL
-	}
-	if title == "" {
-		title = res.Feed.Title
+	var derivedAuthor string
+	if c, ok := discover.Derive(feedURL); ok {
+		feedURL = c.FeedURL
+		derivedAuthor = c.AuthorName
+		if homeURL == "" {
+			homeURL = c.HomeURL
+		}
+		if title == "" {
+			title = c.Title
+		}
+	} else {
+		client := &http.Client{Timeout: 15 * time.Second}
+		res, err := feedparse.Fetch(ctx, feedURL, client, "", "")
+		if err != nil {
+			return apiFeed{}, err
+		}
+		if homeURL == "" {
+			homeURL = res.Feed.HomeURL
+		}
+		if title == "" {
+			title = res.Feed.Title
+		}
 	}
 	if title == "" {
 		title = feedURL
@@ -50,10 +66,15 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 		}
 		authorName = a.Name
 	} else {
-		a, err := s.store.Authors.Create(u.ID, title, s.pageIconURL(ctx, pageURL), "")
+		newName := title
+		if derivedAuthor != "" {
+			newName = derivedAuthor
+		}
+		a, err := s.store.Authors.Create(u.ID, newName, s.pageIconURL(ctx, pageURL), "")
 		if err != nil {
 			return apiFeed{}, err
 		}
+		authorName = a.Name
 		if a.AvatarURL != "" {
 			cctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 			s.autoCacheAuthorAvatar(cctx, a)
@@ -78,9 +99,11 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 // pageIconURL derives an author avatar URL from the page the user was on when
 // adding the feed — the site favicon, or the channel's og:image on YouTube. It
 // returns "" when no page URL is known or the fetch fails, so a feed added
-// without a page is still created.
+// without a page is still created. Reddit pages are skipped: a page fetch shares
+// the host's tight anonymous rate limit with the feed's .rss, so discovery and
+// add stay request-free and the budget is left for polling.
 func (s *Server) pageIconURL(ctx context.Context, pageURL string) string {
-	if pageURL == "" {
+	if pageURL == "" || discover.IsRedditHost(pageURL) {
 		return ""
 	}
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)

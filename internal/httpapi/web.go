@@ -17,6 +17,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 	"github.com/metruzanca/nanoflux/pluginapi"
@@ -876,8 +877,10 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
 	}
 	// Auto-cache the site's favicon when the form supplied a home url. Best
-	// effort and bounded so a slow site can't stall the create response.
-	if homeURL != "" {
+	// effort and bounded so a slow site can't stall the create response. Reddit
+	// is skipped: a page fetch shares the host's tight anonymous rate limit with
+	// the feed's .rss, and the immediate poll needs that budget more.
+	if homeURL != "" && !discover.IsRedditHost(homeURL) {
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		s.autoCacheFeedIcon(ctx, userID, homeURL)
 		cancel()

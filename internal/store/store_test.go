@@ -1092,10 +1092,12 @@ func TestListDueNextPollAtOverridesInterval(t *testing.T) {
 
 func TestCanonicalFeedURL(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"https://old.reddit.com/u/Dominan-t.rss", "https://www.reddit.com/user/Dominan-t.rss"},
-		{"https://reddit.com/u/foo.rss", "https://www.reddit.com/user/foo.rss"},
-		{"https://www.reddit.com/r/golang/.rss", "https://www.reddit.com/r/golang/.rss"},
-		{"https://np.reddit.com/user/foo.rss", "https://www.reddit.com/user/foo.rss"},
+		{"https://old.reddit.com/u/Dominan-t.rss", "https://reddit.com/u/Dominan-t.rss"},
+		{"https://www.reddit.com/user/foo.rss", "https://reddit.com/u/foo.rss"},
+		{"https://reddit.com/u/foo.rss", "https://reddit.com/u/foo.rss"},
+		{"https://www.reddit.com/r/golang/.rss", "https://reddit.com/r/golang/.rss"},
+		{"https://np.reddit.com/user/foo.rss", "https://reddit.com/u/foo.rss"},
+		{"https://m.reddit.com/r/golang.rss", "https://reddit.com/r/golang.rss"},
 		{"https://example.com/feed.xml", "https://example.com/feed.xml"},
 		{"not a url", "not a url"},
 	}
@@ -1125,7 +1127,7 @@ func TestCanonicalizeFeedURLs(t *testing.T) {
 		t.Fatalf("CanonicalizeFeedURLs = %d, %v", n, err)
 	}
 	got, _ := s.Feeds.ByID(u.ID, f.ID)
-	if got.FeedURL != "https://www.reddit.com/user/foo.rss" {
+	if got.FeedURL != "https://reddit.com/u/foo.rss" {
 		t.Fatalf("FeedURL = %q", got.FeedURL)
 	}
 }
