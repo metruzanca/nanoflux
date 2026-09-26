@@ -35,6 +35,11 @@ func (s *Store) EnsureSystemAuthor(userID int64) (Author, error) {
 		Description: ns("system author for saved pages"),
 	})
 	if err != nil {
+		// A concurrent first save may have won the insert (idx_authors_system
+		// keeps it unique); re-read rather than fail.
+		if a2, gerr := s.q.GetSystemAuthor(context.Background(), userID); gerr == nil {
+			return toAuthor(a2), nil
+		}
 		return Author{}, fmt.Errorf("create system author: %w", err)
 	}
 	return toAuthor(a), nil
@@ -62,6 +67,11 @@ func (s *Store) EnsureSystemFeed(userID int64) (Feed, error) {
 		Description: ns("holds pages saved from the browser extension"),
 	})
 	if err != nil {
+		// A concurrent first save may have won the insert (idx_feeds_system
+		// keeps it unique); re-read rather than fail.
+		if f2, gerr := s.q.GetSystemFeed(context.Background(), userID); gerr == nil {
+			return toFeed(f2), nil
+		}
 		return Feed{}, fmt.Errorf("create system feed: %w", err)
 	}
 	return toFeed(f), nil
