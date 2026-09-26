@@ -131,9 +131,15 @@ func UserFrom(r *http.Request) (store.User, bool) {
 }
 
 // Require wraps a handler, rejecting unauthenticated requests. Web requests
-// redirect to /login; JSON API requests get a 401.
+// redirect to /login; JSON API requests get a 401. When a prior middleware
+// already resolved the user into the context (e.g. the nav-counts middleware),
+// that user is reused instead of hitting the session store again.
 func (a *Authenticator) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := UserFrom(r); ok {
+			next.ServeHTTP(w, r)
+			return
+		}
 		u, err := a.User(r)
 		if err != nil {
 			if strings.HasPrefix(r.URL.Path, "/api/") {

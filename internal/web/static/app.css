@@ -78,6 +78,9 @@ a.external::after {
 
 .top nav { display: flex; gap: 1rem; align-items: center; }
 .top nav a { color: var(--fg); }
+/* Unread badges in the nav: a darker gray than the link text so the count
+   reads as secondary metadata rather than another nav item. */
+.nav-count { color: var(--muted); font-weight: 400; font-size: 0.85em; }
 .top-search { margin: 0; display: inline-flex; }
 .top-search input {
   width: 11rem;
@@ -773,6 +776,7 @@ dialog.palette input:focus { outline: none; }
 .sigil-collection { color: var(--warn); }
 .sigil-feed { color: var(--muted); }
 .palette-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-count { color: var(--muted); font-size: 0.75rem; }
 .palette-hint { color: var(--muted); font-size: 0.75rem; }
 .palette-empty { padding: 0.6rem 0.7rem; font-size: 0.85rem; }
 

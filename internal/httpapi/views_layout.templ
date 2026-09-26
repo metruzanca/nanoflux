@@ -34,12 +34,23 @@ templ topbar(u store.User) {
 			<span>nanoflux</span>
 		</a>
 		if u.ID != 0 {
+			{{ nc := navCountsFrom(ctx) }}
 			<nav id="top-nav">
 				<form class="top-search" action="/search" method="get" role="search">
 					<input id="search-input" name="q" type="search" placeholder="search…" autocomplete="off"/>
 				</form>
-				<a href="/unread">unread</a>
-				<a href="/authors">authors</a>
+				<a id="nav-unread" href="/unread">
+					unread
+					if nc.Unread > 0 {
+						<span id="nav-unread-count" class="nav-count">({ nc.Unread })</span>
+					}
+				</a>
+				<a id="nav-authors" href="/authors">
+					authors
+					if nc.AuthorsWithUnread > 0 {
+						<span id="nav-authors-count" class="nav-count">({ nc.AuthorsWithUnread })</span>
+					}
+				</a>
 				<a href="/collections">collections</a>
 				<a href="/lists">lists</a>
 				<div class="user-menu">
