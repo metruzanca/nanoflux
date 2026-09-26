@@ -169,6 +169,38 @@ type settingsHomeRow struct {
 	Mode       string
 }
 
+// homeGridItem is one pinned collection as the grid's row data. The grid renders
+// each row by cloning a server template (see views_home.templ), so the row's
+// markup carries its own htmx attributes; only id/name/mode ride in the data.
+type homeGridItem struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Mode string `json:"mode"`
+}
+
+// homeGridItems maps the pinned rows to grid items, preserving order.
+func homeGridItems(rows []settingsHomeRow) []homeGridItem {
+	out := make([]homeGridItem, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, homeGridItem{
+			ID:   strconv.FormatInt(r.Collection.ID, 10),
+			Name: r.Collection.Name,
+			Mode: r.Mode,
+		})
+	}
+	return out
+}
+
+// homeGridItemsJSON marshals the pinned rows for the grid's inline `items`
+// attribute. A marshal error degrades to an empty list (the struct cannot fail).
+func homeGridItemsJSON(rows []settingsHomeRow) string {
+	b, err := json.Marshal(homeGridItems(rows))
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
 // settingsHomeData is the home-screen settings card's data.
 type settingsHomeData struct {
 	Rows        []settingsHomeRow
@@ -227,10 +259,11 @@ func (s *Server) settingsHome(w http.ResponseWriter, r *http.Request) {
 		if owned(addID) && !homeHasSection(sections, addID) {
 			sections = append(sections, homeSection{Kind: "collection", RefID: addID})
 		}
-	case "up":
-		sections = moveSection(sections, id, -1)
-	case "down":
-		sections = moveSection(sections, id, +1)
+	case "reorder":
+		// Drag-and-drop reorder: the client posts the full ordered list of
+		// pinned collection ids. Keep only ids that are still pinned and
+		// owned; append any section the client omitted so nothing is lost.
+		sections = reorderSections(sections, r.Form["order"], owned)
 	case "remove":
 		sections = removeSection(sections, id)
 	case "mode":
@@ -276,22 +309,41 @@ func homeHasSection(sections []homeSection, id int64) bool {
 	return false
 }
 
-// moveSection swaps a section with its neighbor (delta -1 up, +1 down). A no-op
-// at the ends.
-func moveSection(sections []homeSection, id int64, delta int) []homeSection {
-	i := -1
-	for j, s := range sections {
-		if s.RefID == id {
-			i = j
-			break
+// reorderSections applies a drag-and-drop reorder: order is the client's full
+// list of pinned collection ids, newest-first. Ids that are not owned or not
+// currently pinned are dropped, and any pinned section the client omitted is
+// appended so a stale client can never lose a pin.
+func reorderSections(sections []homeSection, order []string, owned func(int64) bool) []homeSection {
+	pinned := make(map[int64]bool, len(sections))
+	for _, s := range sections {
+		pinned[s.RefID] = true
+	}
+	seen := make(map[int64]bool, len(order))
+	out := make([]homeSection, 0, len(sections))
+	for _, raw := range order {
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || seen[n] || !pinned[n] || !owned(n) {
+			continue
+		}
+		seen[n] = true
+		out = append(out, homeSection{Kind: "collection", RefID: n, Mode: modeOf(sections, n)})
+	}
+	for _, s := range sections {
+		if !seen[s.RefID] {
+			out = append(out, s)
 		}
 	}
-	k := i + delta
-	if i < 0 || k < 0 || k >= len(sections) {
-		return sections
+	return out
+}
+
+// modeOf returns a pinned section's render mode, or "" when it is not pinned.
+func modeOf(sections []homeSection, id int64) string {
+	for _, s := range sections {
+		if s.RefID == id {
+			return s.Mode
+		}
 	}
-	sections[i], sections[k] = sections[k], sections[i]
-	return sections
+	return ""
 }
 
 func removeSection(sections []homeSection, id int64) []homeSection {

@@ -216,6 +216,48 @@ func TestSettingsHomeRenderMode(t *testing.T) {
 	}
 }
 
+// TestSettingsHomeReorder covers the drag-and-drop reorder action: the client
+// posts the full ordered id list and the stored config follows it. Ids that are
+// not pinned/owned are ignored, and an omitted pin is preserved.
+func TestSettingsHomeReorder(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, cats, quiet := homeFixture(t, s)
+	s.store.Users.SetHomeConfig(u.ID,
+		`[{"kind":"collection","ref_id":`+itoa(cats.ID)+`},{"kind":"collection","ref_id":`+itoa(quiet.ID)+`}]`)
+
+	// Reverse the order. htmx repeats the `order` param, so mirror that.
+	order := []string{itoa(quiet.ID), itoa(cats.ID)}
+	rr := doForm(h, "POST", "/settings/home", url.Values{
+		"action": {"reorder"}, "order": order,
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("reorder: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ := s.store.Users.ByID(u.ID)
+	firstQuiet := strings.Index(after.HomeConfig, itoa(quiet.ID))
+	firstCats := strings.Index(after.HomeConfig, itoa(cats.ID))
+	if firstQuiet < 0 || firstCats < 0 || firstQuiet > firstCats {
+		t.Fatalf("reorder should put quiet first: %q", after.HomeConfig)
+	}
+
+	// A forged id (not owned) and an omitted pin: the forged id is ignored and
+	// the omitted pin is kept, so nothing is lost.
+	rr = doForm(h, "POST", "/settings/home", url.Values{
+		"action": {"reorder"}, "order": {"999999", itoa(cats.ID)},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("reorder: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if strings.Contains(after.HomeConfig, "999999") {
+		t.Fatalf("forged id should be dropped: %q", after.HomeConfig)
+	}
+	if !strings.Contains(after.HomeConfig, itoa(quiet.ID)) {
+		t.Fatalf("omitted pin should be preserved: %q", after.HomeConfig)
+	}
+}
+
 func TestHomeRequiresAuth(t *testing.T) {
 	_, h := newTestServer(t)
 	if rr := doGet(h, "/", nil); rr.Code != http.StatusFound {

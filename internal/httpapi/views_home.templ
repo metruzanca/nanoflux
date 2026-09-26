@@ -26,38 +26,38 @@ templ homeModeControl(collectionID int64, mode string) {
 	})
 }
 
-// settingsHomeCard lets the user pin collections to their home screen. Rows are
-// reordered with server-side up/down actions (no client JS), and empty
-// collections simply don't render on the home page.
+// settingsHomeCard lets the user pin collections to their home screen, in
+// order, and drag them to reorder. The list is a vaadin-grid; each row's markup
+// is a server-rendered <template> (below) that the grid clones per item, so the
+// row keeps its htmx attributes and the JS is limited to rendering and the
+// drag-drop reorder POST. Empty collections simply don't render on the home page.
 templ settingsHomeCard(d settingsHomeData) {
 	<section class="card" id="settings-home-card">
 		<h2>home screen</h2>
-		<p class="muted small">Pin collections to your home page. Each shows that collection's unread items; a collection with no unread items is hidden. Pick list or grid per section. With nothing pinned, home is your unread list.</p>
+		<p class="muted small">Pin collections to your home page. Each shows that collection's unread items; a collection with no unread items is hidden. Pick list or grid per section, and drag a row to reorder. With nothing pinned, home is your unread list.</p>
 		if d.Error != "" {
 			<div class="error" role="alert">{ d.Error }</div>
 		}
-		<ul class="plain" id="settings-home-list">
-			for i, r := range d.Rows {
-				<li id={ "settings-home-" + strconv.FormatInt(r.Collection.ID, 10) }>
-					<div class="row">
-						<a href={ "/collections/" + strconv.FormatInt(r.Collection.ID, 10) }>{ r.Collection.Name }</a>
-						<div class="row-actions">
-							@homeModeControl(r.Collection.ID, r.Mode)
-							if i > 0 {
-								<button class="link" title="move up" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-vals={ `{"action":"up","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>↑</button>
-							}
-							if i < len(d.Rows)-1 {
-								<button class="link" title="move down" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-vals={ `{"action":"down","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>↓</button>
-							}
-							<button class="link danger" title="remove" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-vals={ `{"action":"remove","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>@web.Lucide("x")</button>
-						</div>
-					</div>
-				</li>
+		if len(d.Rows) == 0 {
+			<p class="muted small">no pinned collections</p>
+		} else {
+			<vaadin-grid
+				id="settings-home-grid"
+				all-rows-visible
+				rows-draggable
+				drop-mode="between"
+				items={ homeGridItemsJSON(d.Rows) }
+				data-reorder-url="/settings/home"
+				aria-label="pinned collections, drag to reorder"
+			>
+				<vaadin-grid-column></vaadin-grid-column>
+			</vaadin-grid>
+			for _, r := range d.Rows {
+				<template id={ "settings-home-row-" + strconv.FormatInt(r.Collection.ID, 10) }>
+					@homeGridRow(r)
+				</template>
 			}
-			if len(d.Rows) == 0 {
-				<li class="muted small">no pinned collections</li>
-			}
-		</ul>
+		}
 		if len(d.Collections) > 0 {
 			<form class="stack" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML">
 				<input type="hidden" name="action" value="add"/>
@@ -69,4 +69,17 @@ templ settingsHomeCard(d settingsHomeData) {
 			<button class="link" hx-post="/settings/home/reset" hx-target="#settings-home-card" hx-swap="outerHTML" hx-confirm="reset your home screen to the default unread list?">reset to default</button>
 		}
 	</section>
+}
+
+// homeGridRow is one row's markup, cloned by the grid once per pinned item. It
+// is a plain server fragment (not grid-specific): the collection link, the
+// render-mode picker, and the remove button, all wired with htmx.
+templ homeGridRow(r settingsHomeRow) {
+	<div class="home-grid-row">
+		<a href={ "/collections/" + strconv.FormatInt(r.Collection.ID, 10) }>{ r.Collection.Name }</a>
+		<div class="row-actions">
+			@homeModeControl(r.Collection.ID, r.Mode)
+			<button class="link danger" title="remove" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML" hx-vals={ `{"action":"remove","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}` }>@web.Lucide("x")</button>
+		</div>
+	</div>
 }

@@ -9,8 +9,8 @@ This document covers the Vaadin web components used for form controls: where the
 bundle comes from, how to regenerate it, how the server talks to the components,
 and how to add more of them.
 
-Status: Vaadin **25.3.0**, vendored as `vaadin-combo-box` and
-`vaadin-multi-select-combo-box`.
+Status: Vaadin **25.3.0**, vendored as `vaadin-combo-box`,
+`vaadin-multi-select-combo-box`, and `vaadin-grid`.
 
 ## Why vendored, not a bundler
 
@@ -55,10 +55,11 @@ components ship. It currently imports:
 ```js
 import "@vaadin/combo-box";
 import "@vaadin/multi-select-combo-box";
+import "@vaadin/grid";
 ```
 
 Everything else in the bundle (the overlay, scroller, item, input-container,
-theme mixin, usage-statistics, …) is a transitive dependency of those two.
+theme mixin, usage-statistics, …) is a transitive dependency of those.
 
 ## How the server uses the components
 
@@ -112,8 +113,38 @@ add-to-list dialog) fire no htmx swap event, so callers must invoke
 v25 ships **only structural base styles** — there is no Lumo theme package in
 the dependency tree. Components are themed with CSS custom properties from
 `app.css`, mapped to nanoflux tokens (`--panel`, `--bg`, `--border`, `--fg`,
-`--accent`). Vaadin exposes `--vaadin-*` properties and `::part()` hooks; the
-styles live near the bottom of `app.css` under the "Vaadin combo-box" heading.
+`--accent`).
+
+Vaadin's base color tokens default via CSS `light-dark()`, which follows the
+**OS** preference, not our `data-theme`. They are therefore mapped once on
+`:root` (which inherits into every component's shadow DOM) so the components
+follow the app theme. Component-specific overrides sit near the bottom of
+`app.css` under the "Vaadin components (vendored)" heading.
+
+### Grid (`vaadin-grid`)
+
+`vaadin-grid` is used once: the pinned-collection list on `/settings`, where
+rows drag to reorder (`views_home.templ`, `static/home-grid.js`). It is the one
+component that needs real glue, because its columns render imperatively:
+
+- Columns take a JS `renderer`, not declarative templates. The card emits one
+  `<template id="settings-home-row-{id}">` per pinned collection holding the
+  row's plain server markup, and `home-grid.js`'s renderer clones the matching
+  template into the cell, then `htmx.process(root)` so the row's `hx-*`
+  attributes bind. The grid's cell content is slotted from the light DOM
+  (`vaadin-grid-cell-content`), so htmx can reach it.
+- Reordering listens for `grid-drop` (from Vaadin's drag-and-drop mixin),
+  computes the new id order, and `htmx.ajax('POST', …)`s it to the card's
+  `data-reorder-url`. The server's `reorder` action rebuilds the pinned order
+  from the posted `order` list, ignoring unowned/unknown ids and preserving any
+  pin the client omitted.
+- `all-rows-visible` makes the grid as tall as its content (no inner scroll).
+- `rows-draggable` + `drop-mode="between"` enable row drag and between-row
+  drops.
+
+Note: pass htmx `values` as a **plain object** (`{ action: 'reorder', order: idList }`),
+not a `URLSearchParams` — htmx's encoder iterates own keys, so a
+`URLSearchParams` silently sends nothing.
 
 ## Bringing in another Vaadin component
 
@@ -145,6 +176,12 @@ styles live near the bottom of `app.css` under the "Vaadin combo-box" heading.
   properties from JS, so the markup is complete without hydration.
 - **Form participation.** Assume a new component is not form-associated until
   proven otherwise; test `new FormData(form)` for the value you expect.
+- **Component internals can be shadow DOM.** Grid cell content happens to be
+  slotted (light DOM) so htmx can reach it, but do not assume that of other
+  components; check where their interactive content lands.
+- **`htmx:afterSwap`'s `detail.target` may be detached** after an `outerHTML`
+  swap. The init hooks scan the whole document when the target is disconnected,
+  so re-initialization is not skipped.
 
 ## Where this lives in the code
 
@@ -153,8 +190,9 @@ styles live near the bottom of `app.css` under the "Vaadin combo-box" heading.
 | Pinned versions + bundle command | `tools/vaadin-vendor/vendor.sh` |
 | Which components ship | `tools/vaadin-vendor/entry.js` |
 | Committed bundle (generated) | `internal/web/static/vaadin.bundle.js` |
-| Committed bridge script | `internal/web/static/vaadin.js` |
-| Templ wrappers | `internal/httpapi/views_combo.templ` |
-| Option/data helpers | `internal/httpapi/combo.go` |
+| Committed bridge script (combos) | `internal/web/static/vaadin.js` |
+| Committed renderer/reorder script (grid) | `internal/web/static/home-grid.js` |
+| Templ wrappers | `internal/httpapi/views_combo.templ`, `views_home.templ` |
+| Option/data helpers | `internal/httpapi/combo.go`, `home.go` |
 | Theming | `internal/web/static/app.css` (Vaadin section) |
 | Load order (htmx, bundle, bridge, app) | `internal/httpapi/views_layout.templ` |

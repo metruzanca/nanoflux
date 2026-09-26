@@ -12,3 +12,4 @@
 // components are themed from app.css via --vaadin-* custom properties.
 import "@vaadin/combo-box";
 import "@vaadin/multi-select-combo-box";
+import "@vaadin/grid";

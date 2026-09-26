@@ -143,9 +143,12 @@
   } else {
     boot(document);
   }
-  // Re-run after htmx swaps in new wrappers (dialogs, settings cards).
+  // Re-run after htmx swaps in new wrappers (dialogs, settings cards). The swap
+  // target may be detached (an outerHTML swap replaces it), in which case scan
+  // the whole document instead.
   document.body.addEventListener('htmx:afterSwap', function (e) {
-    boot(e.detail.target || document);
+    var t = e.detail && e.detail.target;
+    boot(t && t.isConnected ? t : document);
   });
   // Some fragments are injected with fetch + innerHTML (the add-to-list dialog),
   // which fires no htmx swap event, so expose an explicit re-init hook callers

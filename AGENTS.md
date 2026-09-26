@@ -103,3 +103,8 @@ The invariants that bite:
   `window.nanofluxReinitVaadin(target)` after injecting so the bridge binds.
 - For a plain fixed-set choice where search adds nothing, prefer the custom pill
   picker (`PickerControl` in `views_items.templ`); see `/settings` home screen.
+- `vaadin-grid` renders columns imperatively (a JS `renderer`), used for the
+  drag-to-reorder pinned collections on `/settings` (`static/home-grid.js`). Its
+  cell content is slotted from the light DOM, so htmx can reach the cloned row
+  markup. Vaadin's base color tokens default via `light-dark()` (OS preference,
+  not `data-theme`) and are remapped on `:root` in `app.css`.
