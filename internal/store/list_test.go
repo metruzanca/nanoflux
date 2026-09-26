@@ -20,7 +20,7 @@ func mustFeedWithItem(t *testing.T, s *Store, u User, title, guid string) (Feed,
 	if _, err := s.Items.Upsert(f.ID, Item{GUID: guid, Title: title, Link: "https://x.dev/" + guid, FetchedAt: db.Now()}); err != nil {
 		t.Fatalf("upsert item: %v", err)
 	}
-	id, err := s.Items.ByFeedGUID(f.ID, guid)
+	id, err := s.Items.ByFeedIdentity(f.ID, guid)
 	if err != nil {
 		t.Fatalf("find item: %v", err)
 	}
@@ -285,5 +285,105 @@ func TestFavoritesShareToken(t *testing.T) {
 	}
 	if got, _ := s.Users.FavoritesShareToken(u.ID); got != "" {
 		t.Fatalf("FavoritesShareToken after clear: %q", got)
+	}
+}
+
+// An item stored under a stable Identity is not duplicated when its GUID later
+// changes shape (a GUID-scheme change), while a distinct Identity still
+// inserts a new row.
+func TestItemIdentityDedup(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Blog", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+
+	// First ingest: GUID is the post URL, Identity is the stable id.
+	if ins, err := s.Items.Upsert(f.ID, Item{
+		GUID: "https://b.dev/post/1", Identity: "scheme:1",
+		Title: "Post 1", Link: "https://b.dev/post/1", FetchedAt: db.Now(),
+	}); err != nil || !ins {
+		t.Fatalf("first upsert: inserted=%v err=%v", ins, err)
+	}
+	// Second ingest: GUID changed shape, Identity is unchanged -> no new row.
+	if ins, err := s.Items.Upsert(f.ID, Item{
+		GUID: "scheme:1", Identity: "scheme:1",
+		Title: "Post 1", Link: "https://b.dev/post/1", FetchedAt: db.Now(),
+	}); err != nil || ins {
+		t.Fatalf("re-upsert with new GUID should not insert: inserted=%v err=%v", ins, err)
+	}
+	// A genuinely different identity inserts.
+	if ins, err := s.Items.Upsert(f.ID, Item{
+		GUID: "scheme:2", Identity: "scheme:2",
+		Title: "Post 2", Link: "https://b.dev/post/2", FetchedAt: db.Now(),
+	}); err != nil || !ins {
+		t.Fatalf("distinct identity should insert: inserted=%v err=%v", ins, err)
+	}
+	items, _ := s.Items.List(u.ID, ItemFilter{FeedID: f.ID, Limit: 10})
+	if len(items) != 2 {
+		t.Fatalf("want 2 items after re-upsert, got %d", len(items))
+	}
+}
+
+// DeduplicateItems merges same-feed/same-link/same-time duplicates, keeps the
+// newest-fetched row and carries over read/favorite state.
+func TestDeduplicateItems(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Blog", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	pub := "2026-09-22 22:04:56"
+
+	// The old scheme row (earlier fetch), favorited and read.
+	if _, err := s.Items.Upsert(f.ID, Item{
+		GUID: "https://b.dev/post/9", Title: "Post 9", Link: "https://b.dev/post/9",
+		PublishedAt: pub, FetchedAt: "2026-09-22 22:37:02",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	oldID, _ := s.Items.ByFeedIdentity(f.ID, "https://b.dev/post/9")
+	if err := s.Items.SetRead(u.ID, oldID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Items.SetFavorite(u.ID, oldID, true); err != nil {
+		t.Fatal(err)
+	}
+	// The current scheme row (later fetch, the one polls will match).
+	if _, err := s.Items.Upsert(f.ID, Item{
+		GUID: "scheme:9", Title: "Post 9", Link: "https://b.dev/post/9",
+		PublishedAt: pub, FetchedAt: "2026-09-25 06:23:16",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	newID, _ := s.Items.ByFeedIdentity(f.ID, "scheme:9")
+
+	report, err := s.Items.FindDedupGroups()
+	if err != nil {
+		t.Fatalf("FindDedupGroups: %v", err)
+	}
+	if len(report.Groups) != 1 || report.Groups[0].Survivor != newID ||
+		len(report.Groups[0].Losers) != 1 || report.Groups[0].Losers[0] != oldID {
+		t.Fatalf("unexpected groups: %+v", report.Groups)
+	}
+
+	applied, err := s.Items.DeduplicateItems(false)
+	if err != nil {
+		t.Fatalf("DeduplicateItems: %v", err)
+	}
+	if applied.ItemsMerged != 1 {
+		t.Fatalf("merged %d, want 1", applied.ItemsMerged)
+	}
+	if _, err := s.Items.ByID(u.ID, oldID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("loser should be gone, got %v", err)
+	}
+	surv, err := s.Items.ByID(u.ID, newID)
+	if err != nil {
+		t.Fatalf("survivor gone: %v", err)
+	}
+	if !surv.Read || !surv.Favorite {
+		t.Fatalf("survivor should inherit read+favorite: %+v", surv)
+	}
+	items, _ := s.Items.List(u.ID, ItemFilter{FeedID: f.ID, Limit: 10})
+	if len(items) != 1 {
+		t.Fatalf("want 1 item after merge, got %d", len(items))
 	}
 }

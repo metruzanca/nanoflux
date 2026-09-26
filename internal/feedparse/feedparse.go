@@ -54,7 +54,11 @@ type Enclosure struct {
 
 // Item is one normalized entry.
 type Item struct {
-	GUID        string
+	GUID string
+	// Identity is the stable per-feed dedup key (see pluginapi.Item.Identity).
+	// Empty means "use GUID". Generic feeds have no distinct identity, so it
+	// stays empty there.
+	Identity    string
 	Title       string
 	Link        string
 	Summary     string

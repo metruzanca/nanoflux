@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -396,9 +397,9 @@ func TestPollOne(t *testing.T) {
 	}
 
 	// Item 1's enclosure is stored and playable.
-	itemID, err := st.Items.ByFeedGUID(f.ID, "1")
+	itemID, err := st.Items.ByFeedIdentity(f.ID, "1")
 	if err != nil || itemID == 0 {
-		t.Fatalf("ByFeedGUID: %v %d", err, itemID)
+		t.Fatalf("ByFeedIdentity: %v %d", err, itemID)
 	}
 	encs, err := st.Items.Enclosures(itemID)
 	if err != nil || len(encs) != 1 {
@@ -848,5 +849,68 @@ func TestPollDueRotatesLeastRecentlyPolledFirst(t *testing.T) {
 		if order[i] != want[i] {
 			t.Fatalf("rotation order = %v, want %v", order, want)
 		}
+	}
+}
+
+// fakeIdentityPlugin is a feedparse.Plugin that returns one item whose GUID
+// changes shape between "polls" for the same stable Identity. It reproduces the
+// GUID-scheme change without a network.
+type fakeIdentityPlugin struct {
+	guid string
+}
+
+func (fakeIdentityPlugin) MatchFetch(feedparse.FetchRequest) bool { return true }
+func (p *fakeIdentityPlugin) FetchPlugin(context.Context, feedparse.FetchRequest) (feedparse.Result, error) {
+	return feedparse.Result{
+		Feed: feedparse.Feed{Title: "Blog", HomeURL: "https://b.dev/"},
+		Items: []feedparse.Item{{
+			GUID:        p.guid,
+			Identity:    "post:1",
+			Title:       "Post 1",
+			Link:        "https://b.dev/post/1",
+			PublishedAt: "2026-09-22 22:04:56",
+		}},
+	}, nil
+}
+
+// TestPollIdentityPreventGuidSchemeDuplicates proves the end-to-end fix: when a
+// plugin's GUID changes shape but its Identity is stable, the poller does not
+// store the entry twice.
+func TestPollIdentityPreventGuidSchemeDuplicates(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/feed", "", "", 900)
+
+	plug := &fakeIdentityPlugin{guid: "https://b.dev/post/1"}
+	feedparse.SetPlugin(plug)
+	defer feedparse.SetPlugin(nil)
+
+	p := New(st, time.Minute, 1)
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("first poll: %v", err)
+	}
+	// The same entry, now under the new GUID scheme.
+	plug.guid = "post:1"
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("second poll: %v", err)
+	}
+
+	items, _ := st.Items.List(u.ID, store.ItemFilter{FeedID: f.ID, Limit: 10})
+	if len(items) != 1 {
+		t.Fatalf("GUID change must not duplicate the item: got %d items", len(items))
+	}
+	// The survivor keeps its first-seen GUID (identity/read state are not
+	// rewritten on re-poll); the durable key is what prevented the duplicate.
+	if items[0].GUID != "https://b.dev/post/1" {
+		t.Fatalf("stored GUID = %q, want the first-seen %q", items[0].GUID, "https://b.dev/post/1")
 	}
 }

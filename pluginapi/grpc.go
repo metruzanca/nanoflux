@@ -266,8 +266,9 @@ func toPBItems(items []Item) []*pb.Item {
 			encs = append(encs, &pb.Enclosure{Url: e.URL, MimeType: e.MIMEType, Length: e.Length})
 		}
 		out = append(out, &pb.Item{
-			Guid: it.GUID, Title: it.Title, Link: it.Link, Summary: it.Summary,
-			ImageUrl: it.ImageURL, PublishedAt: it.PublishedAt, Enclosures: encs,
+			Guid: it.GUID, Identity: it.Identity, Title: it.Title, Link: it.Link,
+			Summary: it.Summary, ImageUrl: it.ImageURL, PublishedAt: it.PublishedAt,
+			Enclosures: encs,
 		})
 	}
 	return out
@@ -281,8 +282,9 @@ func fromPBItems(items []*pb.Item) []Item {
 			encs = append(encs, Enclosure{URL: e.Url, MIMEType: e.MimeType, Length: e.Length})
 		}
 		out = append(out, Item{
-			GUID: it.Guid, Title: it.Title, Link: it.Link, Summary: it.Summary,
-			ImageURL: it.ImageUrl, PublishedAt: it.PublishedAt, Enclosures: encs,
+			GUID: it.Guid, Identity: it.Identity, Title: it.Title, Link: it.Link,
+			Summary: it.Summary, ImageURL: it.ImageUrl, PublishedAt: it.PublishedAt,
+			Enclosures: encs,
 		})
 	}
 	return out

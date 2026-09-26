@@ -88,6 +88,9 @@ message Item {
   string image_url = 5;
   string published_at = 6;
   repeated Enclosure enclosures = 7;
+  // Stable per-feed dedup key. Empty means "use guid". Set it when guid may
+  // change shape for the same entry over time.
+  string identity = 8;
 }
 
 message Feed {

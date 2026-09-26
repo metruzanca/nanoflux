@@ -242,7 +242,7 @@ func (q *Queries) GetAuthorItemStats(ctx context.Context, arg GetAuthorItemStats
 }
 
 const getItem = `-- name: GetItem :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.dedup_key, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -261,6 +261,7 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 		&i.ID,
 		&i.FeedID,
 		&i.Guid,
+		&i.DedupKey,
 		&i.Title,
 		&i.Link,
 		&i.Summary,
@@ -274,18 +275,20 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 	return i, err
 }
 
-const getItemByFeedGuid = `-- name: GetItemByFeedGuid :one
+const getItemByDedupKey = `-- name: GetItemByDedupKey :one
 SELECT id FROM items
-WHERE feed_id = ? AND guid = ?
+WHERE feed_id = ? AND dedup_key = ?
 `
 
-type GetItemByFeedGuidParams struct {
-	FeedID int64  `json:"feed_id"`
-	Guid   string `json:"guid"`
+type GetItemByDedupKeyParams struct {
+	FeedID   int64  `json:"feed_id"`
+	DedupKey string `json:"dedup_key"`
 }
 
-func (q *Queries) GetItemByFeedGuid(ctx context.Context, arg GetItemByFeedGuidParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, getItemByFeedGuid, arg.FeedID, arg.Guid)
+// Look an item up by its stable per-feed identity (dedup_key), not its display
+// GUID.
+func (q *Queries) GetItemByDedupKey(ctx context.Context, arg GetItemByDedupKeyParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getItemByDedupKey, arg.FeedID, arg.DedupKey)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -1006,14 +1009,14 @@ func (q *Queries) SetItemRead(ctx context.Context, arg SetItemReadParams) (sql.R
 const updateItemSnapshot = `-- name: UpdateItemSnapshot :exec
 UPDATE items
 SET summary = ?, image_url = ?
-WHERE feed_id = ? AND guid = ?
+WHERE feed_id = ? AND dedup_key = ?
 `
 
 type UpdateItemSnapshotParams struct {
 	Summary  string         `json:"summary"`
 	ImageUrl sql.NullString `json:"image_url"`
 	FeedID   int64          `json:"feed_id"`
-	Guid     string         `json:"guid"`
+	DedupKey string         `json:"dedup_key"`
 }
 
 // Refresh the content snapshot of an existing item (summary, thumbnail) on
@@ -1023,20 +1026,21 @@ func (q *Queries) UpdateItemSnapshot(ctx context.Context, arg UpdateItemSnapshot
 		arg.Summary,
 		arg.ImageUrl,
 		arg.FeedID,
-		arg.Guid,
+		arg.DedupKey,
 	)
 	return err
 }
 
 const upsertItem = `-- name: UpsertItem :execresult
-INSERT INTO items (feed_id, guid, title, link, summary, image_url, published_at, fetched_at, read, read_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (feed_id, guid) DO NOTHING
+INSERT INTO items (feed_id, guid, dedup_key, title, link, summary, image_url, published_at, fetched_at, read, read_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (feed_id, dedup_key) DO NOTHING
 `
 
 type UpsertItemParams struct {
 	FeedID      int64          `json:"feed_id"`
 	Guid        string         `json:"guid"`
+	DedupKey    string         `json:"dedup_key"`
 	Title       string         `json:"title"`
 	Link        string         `json:"link"`
 	Summary     string         `json:"summary"`
@@ -1047,10 +1051,13 @@ type UpsertItemParams struct {
 	ReadAt      sql.NullString `json:"read_at"`
 }
 
+// dedup_key is the stable per-feed identity (the plugin's Identity, else the
+// GUID); guid is the display identity and may legitimately change shape.
 func (q *Queries) UpsertItem(ctx context.Context, arg UpsertItemParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, upsertItem,
 		arg.FeedID,
 		arg.Guid,
+		arg.DedupKey,
 		arg.Title,
 		arg.Link,
 		arg.Summary,

@@ -12,9 +12,12 @@ import (
 )
 
 type Item struct {
-	ID          int64
-	FeedID      int64
-	GUID        string
+	ID     int64
+	FeedID int64
+	GUID   string
+	// Identity is the stable per-feed dedup key (a plugin's Item.Identity).
+	// Empty means "use GUID". Stored as items.dedup_key.
+	Identity    string
 	Title       string
 	Link        string
 	Summary     string
@@ -24,6 +27,15 @@ type Item struct {
 	Read        bool
 	ReadAt      string
 	Favorite    bool
+}
+
+// dedupKey is the value items are deduplicated on: the item's Identity when
+// set, else its GUID. It keeps the storage layer's identity rule in one place.
+func dedupKey(it Item) string {
+	if it.Identity != "" {
+		return it.Identity
+	}
+	return it.GUID
 }
 
 // ItemWithFeed joins an item with its feed and author for display.
@@ -65,14 +77,17 @@ type ItemStore struct {
 	db *sql.DB // raw handle for the FTS5 search query sqlc cannot generate
 }
 
-// Upsert inserts an item, ignoring duplicates on (feed_id, guid). It reports
-// whether a new row was actually inserted; when the item already exists its
-// content snapshot (summary, thumbnail) is refreshed so the listing tracks the
-// live feed without touching identity, published_at or read state.
+// Upsert inserts an item, ignoring duplicates on (feed_id, dedup_key) — the
+// item's stable Identity, or its GUID when none is set. It reports whether a
+// new row was actually inserted; when the item already exists its content
+// snapshot (summary, thumbnail) is refreshed so the listing tracks the live
+// feed without touching identity, published_at or read state.
 func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
+	key := dedupKey(it)
 	res, err := s.q.UpsertItem(context.Background(), sqlcgen.UpsertItemParams{
 		FeedID:      feedID,
 		Guid:        it.GUID,
+		DedupKey:    key,
 		Title:       it.Title,
 		Link:        it.Link,
 		Summary:     it.Summary,
@@ -96,7 +111,7 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 		Summary:  it.Summary,
 		ImageUrl: ns(it.ImageURL),
 		FeedID:   feedID,
-		Guid:     it.GUID,
+		DedupKey: key,
 	}); err != nil {
 		return false, fmt.Errorf("refresh item snapshot: %w", err)
 	}
@@ -183,12 +198,13 @@ func (s *ItemStore) ByID(userID, id int64) (Item, error) {
 	return toItem(it), nil
 }
 
-// ByFeedGUID returns the id of the item stored for (feedID, guid), or 0 when
-// it does not exist.
-func (s *ItemStore) ByFeedGUID(feedID int64, guid string) (int64, error) {
-	id, err := s.q.GetItemByFeedGuid(context.Background(), sqlcgen.GetItemByFeedGuidParams{
-		FeedID: feedID,
-		Guid:   guid,
+// ByFeedIdentity returns the id of the item stored for (feedID, identity), or 0
+// when it does not exist. identity is the item's stable dedup key: its
+// Identity when set, else its GUID.
+func (s *ItemStore) ByFeedIdentity(feedID int64, identity string) (int64, error) {
+	id, err := s.q.GetItemByDedupKey(context.Background(), sqlcgen.GetItemByDedupKeyParams{
+		FeedID:   feedID,
+		DedupKey: identity,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil

@@ -45,6 +45,7 @@ var migrations = []migration{
 	{32, schemaV32},
 	{33, schemaV33},
 	{34, schemaV34},
+	{35, schemaV35},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -529,6 +530,18 @@ ALTER TABLE authors ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE feeds ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0;
 CREATE UNIQUE INDEX idx_authors_system ON authors(user_id) WHERE is_system = 1;
 CREATE UNIQUE INDEX idx_feeds_system ON feeds(user_id) WHERE is_system = 1;
+`
+
+// schemaV35 adds items.dedup_key: the stable per-feed identity an item is
+// deduplicated on, distinct from the display GUID. A plugin may regenerate its
+// GUID (e.g. a post URL becoming "scheme:<id>") for the same entry; keying on a
+// durable Identity prevents that from storing the entry twice. Existing rows
+// default to their GUID, which is today's identity, so behavior is unchanged
+// for feeds whose plugin does not set one. A unique index enforces it.
+const schemaV35 = `
+ALTER TABLE items ADD COLUMN dedup_key TEXT NOT NULL DEFAULT '';
+UPDATE items SET dedup_key = guid;
+CREATE UNIQUE INDEX idx_items_dedup ON items(feed_id, dedup_key);
 `
 
 // Migrate applies any pending migrations in order, recording each in

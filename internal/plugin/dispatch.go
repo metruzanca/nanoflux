@@ -73,6 +73,7 @@ func toFeedparseResult(res pluginapi.Result) feedparse.Result {
 	for _, it := range res.Items {
 		fi := feedparse.Item{
 			GUID:        it.GUID,
+			Identity:    it.Identity,
 			Title:       it.Title,
 			Link:        it.Link,
 			Summary:     it.Summary,

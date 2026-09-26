@@ -89,6 +89,7 @@ CREATE TABLE items (
     id           INTEGER PRIMARY KEY,
     feed_id      INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
     guid         TEXT NOT NULL,
+    dedup_key    TEXT NOT NULL DEFAULT '',
     title        TEXT NOT NULL DEFAULT '',
     link         TEXT NOT NULL DEFAULT '',
     summary      TEXT NOT NULL DEFAULT '',
@@ -102,6 +103,7 @@ CREATE TABLE items (
 );
 CREATE INDEX idx_items_feed ON items(feed_id);
 CREATE INDEX idx_items_fetched ON items(feed_id, fetched_at);
+CREATE UNIQUE INDEX idx_items_dedup ON items(feed_id, dedup_key);
 
 CREATE TABLE collections (
     id         INTEGER PRIMARY KEY,
