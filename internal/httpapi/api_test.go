@@ -572,6 +572,58 @@ func TestAPIExtSavePage(t *testing.T) {
 	}
 }
 
+// The in-app "save url for later" dialog reuses the extension save logic: the
+// form fragment creates the default list on demand, and the POST stores the page
+// in the chosen list.
+func TestSavePageWebFlow(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	pageSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><head><title>The Article</title>
+			<meta property="og:description" content="A good read">
+			</head><body>hi</body></html>`))
+	}))
+	defer pageSrv.Close()
+
+	// The form fragment renders with the default list selected.
+	rr := doGet(h, "/fragments/save-page", cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save-page fragment: %d %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `hx-post="/save-page"`) ||
+		!strings.Contains(body, `name="list_id"`) ||
+		!strings.Contains(body, "watch later") {
+		t.Fatalf("save-page fragment should render the form with the default list: %s", body)
+	}
+
+	// Missing url is a form error, kept in the dialog.
+	rr = doForm(h, "POST", "/save-page", url.Values{"title": {"No URL"}}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "page url required") {
+		t.Fatalf("save-page without url: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// A valid save stores the page in the default list with fetched metadata.
+	rr = doForm(h, "POST", "/save-page", url.Values{
+		"url": {pageSrv.URL}, "title": {"The Article"},
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "saved") ||
+		!strings.Contains(rr.Body.String(), "The Article") {
+		t.Fatalf("save-page: %d %s", rr.Code, rr.Body.String())
+	}
+	lists, _ := s.store.Lists.List(u.ID)
+	if len(lists) != 1 || lists[0].Name != "watch later" || lists[0].ItemCount != 1 {
+		t.Fatalf("lists after save: %+v", lists)
+	}
+	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false)
+	if len(items) != 1 || items[0].Title != "The Article" || items[0].Summary != "A good read" {
+		t.Fatalf("list items after save: %+v", items)
+	}
+}
+
 // The hidden saved-pages feed and its author are not reachable as ordinary feed
 // or author pages.
 func TestSavedPageHiddenEntities(t *testing.T) {

@@ -1098,10 +1098,11 @@ func TestAuthorPageHasAddFeedDialog(t *testing.T) {
 	}
 	// The add-feed control is a link-styled button that sits after the feed
 	// list, not a primary button above it.
-	if !strings.Contains(body, `<button type="button" class="link" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>`) {
+	const addFeedBtn = `<button type="button" class="link" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>`
+	if !strings.Contains(body, addFeedBtn) {
 		t.Fatalf("author page add-feed should be a link-styled button: %s", body)
 	}
-	if strings.Index(body, `id="feeds-list"`) > strings.Index(body, `+ add feed`) {
+	if strings.Index(body, `id="feeds-list"`) > strings.Index(body, addFeedBtn) {
 		t.Fatalf("add-feed should render below the feed list: %s", body)
 	}
 }
