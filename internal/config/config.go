@@ -8,16 +8,20 @@ import (
 )
 
 type Config struct {
-	Addr          string
-	DBPath        string
-	FileStoreDir  string
-	LogLevel      string
-	PollInterval  time.Duration
-	PollWorkers   int
-	BootstrapUser string
-	BootstrapPass string
-	PluginsDir    string
-	Backup        BackupConfig
+	Addr         string
+	DBPath       string
+	FileStoreDir string
+	LogLevel     string
+	PollInterval time.Duration
+	PollWorkers  int
+	// PollHostSpacing is the default minimum spacing between two fetches to the
+	// same registrable host, applied even before that host ever rate-limits.
+	// Zero disables it; a learned rate-limit window still overrides it.
+	PollHostSpacing time.Duration
+	BootstrapUser   string
+	BootstrapPass   string
+	PluginsDir      string
+	Backup          BackupConfig
 }
 
 // BackupConfig configures automatic instance backups. It is disabled unless a
@@ -52,15 +56,17 @@ func (b BackupConfig) UsesS3() bool { return b.S3.Endpoint != "" }
 func Load() Config {
 	dbPath := getenv("NF_DB", "./data/rss.db")
 	return Config{
-		Addr:          getenv("NF_ADDR", ":8080"),
-		DBPath:        dbPath,
-		FileStoreDir:  getenv("NF_FILE_STORE", filepath.Join(filepath.Dir(dbPath), "filestore")),
-		LogLevel:      getenv("NF_LOG_LEVEL", "info"),
-		PollInterval:  durationEnv("NF_POLL_INTERVAL", 15*time.Minute),
-		PollWorkers:   intEnv("NF_POLL_WORKERS", 4),
-		BootstrapUser: os.Getenv("NF_ADMIN_USER"),
-		BootstrapPass: os.Getenv("NF_ADMIN_PASS"),
-		PluginsDir:    getenv("NF_PLUGINS_DIR", "./plugins"),
+		Addr:         getenv("NF_ADDR", ":8080"),
+		DBPath:       dbPath,
+		FileStoreDir: getenv("NF_FILE_STORE", filepath.Join(filepath.Dir(dbPath), "filestore")),
+		LogLevel:     getenv("NF_LOG_LEVEL", "info"),
+		PollInterval: durationEnv("NF_POLL_INTERVAL", 15*time.Minute),
+		PollWorkers:  intEnv("NF_POLL_WORKERS", 4),
+		// 30s matches the poller's wake floor; 0 disables the default spacing.
+		PollHostSpacing: durationEnv("NF_POLL_HOST_SPACING", 30*time.Second),
+		BootstrapUser:   os.Getenv("NF_ADMIN_USER"),
+		BootstrapPass:   os.Getenv("NF_ADMIN_PASS"),
+		PluginsDir:      getenv("NF_PLUGINS_DIR", "./plugins"),
 		Backup: BackupConfig{
 			Interval: durationEnv("NF_BACKUP_INTERVAL", 0),
 			Keep:     intEnv("NF_BACKUP_KEEP", 7),

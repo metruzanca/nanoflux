@@ -43,10 +43,15 @@ type Runtime struct {
 // Setup builds the plugin system: it registers the native plugins, loads any
 // external plugins from pluginsDir, installs the fetch dispatcher hook, and
 // reconciles stored feeds against the loaded plugins. The returned Runtime is
-// always non-nil; a broken plugin is logged and skipped.
-func Setup(ctx context.Context, st *store.Store, client *http.Client, pluginsDir string) *Runtime {
+// always non-nil; a broken plugin is logged and skipped. cool is the shared
+// rate-limit cooldown (the poller holds the same one, so a limit seen by either
+// paces both); a nil cool creates a fresh one.
+func Setup(ctx context.Context, st *store.Store, client *http.Client, pluginsDir string, cool *Cooldown) *Runtime {
+	if cool == nil {
+		cool = NewCooldown()
+	}
 	reg := NewRegistry()
-	hosts := NewHosts(client, NewCooldown())
+	hosts := NewHosts(client, cool)
 
 	registerNative(reg)
 

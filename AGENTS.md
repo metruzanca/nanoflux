@@ -37,6 +37,16 @@ polling with 429. The app treats this as pacing, not failure:
   and are picked up when the window clears, rather than skipped for the cycle.
   `Run` wakes at the earliest of the base interval or a host's next-hit time, so
   rotating hosts are revisited promptly (floored at `minWake`).
+- Even a host that never rate-limits is spaced: after one fetch the group stops
+  and wakes after `hostSpacing` (`NF_POLL_HOST_SPACING`, default 30s; learned
+  window overrides when larger; 0 disables). `pollGroup` only stops early when
+  another feed is still waiting (`i < len(group)-1`), so a single-feed host is
+  never delayed. The default spacing is poller-only and must not pace plugin
+  `Host.Do` calls.
+- The poller and plugin host share **one** `plugin.Cooldown` (wired in
+  `cmd/server/main.go`, poller holds it via the local `hostCooler` interface):
+  a limit seen by either paces both. Do not give `plugin.Setup` or `poller.New`
+  their own instance.
 - The manual refresh button and `feedRefresh` respect `next_poll_at`: a cooling
   feed shows a "rate limited · retry in …" badge with the button disabled, and a
   click during the window is a no-op.

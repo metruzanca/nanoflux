@@ -113,17 +113,26 @@ adaptive interval. A successful poll (or a `304`) clears `next_poll_at`.
 ### Per-host pacing and fair rotation
 
 Feeds are grouped by **registrable host** (e.g. all `reddit.com` feeds are one
-group). Two rules keep a host from being hammered:
+group). Three rules keep a host from being hammered:
 
 - **One host at a time.** Feeds in a group are fetched sequentially, while
   different hosts run in parallel up to `NF_POLL_WORKERS`. This prevents
   bursting a single site.
+- **Default spacing.** Even a host that has never rate-limited the poller is
+  spaced: after fetching one of its feeds, the next same-host fetch waits
+  `NF_POLL_HOST_SPACING` (default **30 seconds**). This stops a domain with many
+  due feeds from firing them all in one cycle, which is what tends to trigger
+  the first `429`. A single-feed host is never delayed, and a host's last
+  waiting feed is fetched promptly once the window clears. Set the variable to
+  `0s` to disable; a learned rate-limit window always overrides the default.
 - **Learned window.** When a host rate-limits a fetch, the poller remembers how
   long it asked to be left alone (`hostWindow`, floored at **60 seconds**) and
   records the next time the host may be hit (`hostNextHit`). Until that time,
   the host's remaining feeds are **not fetched** — but they stay **due**, so
-  they are picked up the moment the window clears. A host that never rate-limits
-  is never paced.
+  they are picked up the moment the window clears.
+
+The `NF_POLL_HOST_SPACING` floor is the poller's **30-second wake floor**: a
+smaller configured value cannot make the loop revisit a host sooner.
 
 Within a group, feeds are processed **least-recently-polled first**. So if a
 host can only be hit once per minute and there are twenty of its feeds, they
@@ -162,6 +171,11 @@ through the host, which applies the same User-Agent and timeout policy and
 inspects every response for limits, cooling the request host. A plugin that
 cannot avoid a limit returns a `RateLimit`, and the poller applies exactly the
 backoff described above.
+
+The plugin host and the poller share **one** cooldown instance (wired in
+`cmd/server/main.go`): a limit seen by either paces both, so a feed fetch and a
+plugin's auxiliary request cannot trip the same host twice in a row. The default
+spacing above is poller-only — it never blocks a plugin request.
 
 ### When a plugin goes missing
 
@@ -227,6 +241,7 @@ backfill.
 | --- | --- | --- |
 | `NF_POLL_INTERVAL` | `15m` | The poller's base wake interval (a ceiling; dynamic wakes can be sooner) |
 | `NF_POLL_WORKERS` | `4` | Concurrent fetches across *distinct hosts*; a single host's feeds are serial |
+| `NF_POLL_HOST_SPACING` | `30s` | Minimum spacing between two fetches to the same host, even before it rate-limits. `0s` disables; floored at 30s by the wake floor |
 | `NF_USER_AGENT` | `nanoflux (<repo URL>)` | Outbound User-Agent for fetching and discovery; set a contact URL for a large instance |
 
 Per-feed interval and adaptive polling are set in the feed edit form, not by env
