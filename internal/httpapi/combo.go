@@ -9,19 +9,11 @@ import (
 
 // comboItem is one option for a Vaadin combo-box. Value is the form value
 // (usually a numeric id as a string); Label is what the user sees and types to
-// filter. Group is optional and only used to render a section heading.
+// filter. It marshals to the shape the component expects in its inline `items`
+// and `selected-items` attributes.
 type comboItem struct {
 	Value string `json:"value"`
 	Label string `json:"label"`
-	Group string `json:"group,omitempty"`
-}
-
-// comboPayload is the JSON payload a combo wrapper embeds for the client to
-// turn into the component's `items` (and initial selection). The components take
-// options as a JS array property, so options are shipped as data, not markup.
-type comboPayload struct {
-	Items []comboItem `json:"items"`
-	Value any         `json:"value,omitempty"` // string for single, []string for multi
 }
 
 // authorItems maps authors to combo items with a leading "+ create new author"

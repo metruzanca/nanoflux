@@ -1992,7 +1992,9 @@ func TestCollectionAddFeedGroupedByAuthor(t *testing.T) {
 	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
 	// v25 combo boxes have no optgroup, so the author is prefixed onto each
 	// feed label ("Metru · Blog") to keep the grouping visible and searchable.
-	if !strings.Contains(body, `"label":"Metru · Blog"`) {
+	// The options are emitted inline as a JSON attribute (templ escapes the
+	// quotes as &#34;, which the browser decodes).
+	if !strings.Contains(body, `&#34;label&#34;:&#34;Metru · Blog&#34;`) {
 		t.Fatalf("collection add-feed combo should label feeds by author: %s", body)
 	}
 }
