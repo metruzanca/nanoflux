@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/metruzanca/nanoflux/internal/db"
@@ -21,12 +22,39 @@ type Item struct {
 	Title       string
 	Link        string
 	Summary     string
+	Categories  []string
 	ImageURL    string
 	PublishedAt string
 	FetchedAt   string
 	Read        bool
 	ReadAt      string
 	Favorite    bool
+}
+
+// joinCategories encodes an item's categories for the denormalized
+// items.categories column: newline-joined, so a category containing a comma or
+// space stays intact. Newlines inside a category are stripped so the encoding
+// is unambiguous.
+func joinCategories(cats []string) string {
+	if len(cats) == 0 {
+		return ""
+	}
+	clean := make([]string, 0, len(cats))
+	for _, c := range cats {
+		c = strings.ReplaceAll(strings.TrimSpace(c), "\n", " ")
+		if c != "" {
+			clean = append(clean, c)
+		}
+	}
+	return strings.Join(clean, "\n")
+}
+
+// splitCategories decodes the items.categories column back into a slice.
+func splitCategories(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "\n")
 }
 
 // dedupKey is the value items are deduplicated on: the item's Identity when
@@ -80,8 +108,8 @@ type ItemStore struct {
 // Upsert inserts an item, ignoring duplicates on (feed_id, dedup_key) — the
 // item's stable Identity, or its GUID when none is set. It reports whether a
 // new row was actually inserted; when the item already exists its content
-// snapshot (summary, thumbnail) is refreshed so the listing tracks the live
-// feed without touching identity, published_at or read state.
+// snapshot (summary, categories, thumbnail) is refreshed so the listing tracks
+// the live feed without touching identity, published_at or read state.
 func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 	key := dedupKey(it)
 	res, err := s.q.UpsertItem(context.Background(), sqlcgen.UpsertItemParams{
@@ -91,6 +119,7 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 		Title:       it.Title,
 		Link:        it.Link,
 		Summary:     it.Summary,
+		Categories:  joinCategories(it.Categories),
 		ImageUrl:    ns(it.ImageURL),
 		PublishedAt: ns(it.PublishedAt),
 		FetchedAt:   it.FetchedAt,
@@ -108,10 +137,11 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 		return true, nil
 	}
 	if err := s.q.UpdateItemSnapshot(context.Background(), sqlcgen.UpdateItemSnapshotParams{
-		Summary:  it.Summary,
-		ImageUrl: ns(it.ImageURL),
-		FeedID:   feedID,
-		DedupKey: key,
+		Summary:    it.Summary,
+		Categories: joinCategories(it.Categories),
+		ImageUrl:   ns(it.ImageURL),
+		FeedID:     feedID,
+		DedupKey:   key,
 	}); err != nil {
 		return false, fmt.Errorf("refresh item snapshot: %w", err)
 	}
@@ -418,7 +448,8 @@ func (s *ItemStore) DeleteSaved(userID, itemID int64) error {
 }
 
 // OneWithFeed returns a single item joined with its feed and author.
-func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {	it, err := s.q.GetItemWithFeed(context.Background(), sqlcgen.GetItemWithFeedParams{ID: itemID, UserID: userID})
+func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
+	it, err := s.q.GetItemWithFeed(context.Background(), sqlcgen.GetItemWithFeedParams{ID: itemID, UserID: userID})
 	if errors.Is(err, sql.ErrNoRows) {
 		return ItemWithFeed{}, ErrNotFound
 	}

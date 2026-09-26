@@ -107,6 +107,7 @@ var filterFieldItems = []comboItem{
 	{Value: "title", Label: "title"},
 	{Value: "summary", Label: "summary"},
 	{Value: "link", Label: "link"},
+	{Value: "category", Label: "category"},
 }
 
 // nonAutoCollections returns the user's own collections (auto collections are

@@ -272,7 +272,7 @@ func TestAPIExtSaveRedditDerived(t *testing.T) {
 		t.Fatalf("expected one feed, got %+v", feeds)
 	}
 	f := feeds[0]
-	if f.FeedURL != "https://reddit.com/u/spez.rss" {
+	if f.FeedURL != "https://reddit.com/u/spez/submitted.rss" {
 		t.Errorf("feed url = %q, want the canonical .rss", f.FeedURL)
 	}
 	if f.Title != "u/spez" {

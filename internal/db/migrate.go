@@ -46,6 +46,7 @@ var migrations = []migration{
 	{33, schemaV33},
 	{34, schemaV34},
 	{35, schemaV35},
+	{36, schemaV36},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -542,6 +543,16 @@ const schemaV35 = `
 ALTER TABLE items ADD COLUMN dedup_key TEXT NOT NULL DEFAULT '';
 UPDATE items SET dedup_key = guid;
 CREATE UNIQUE INDEX idx_items_dedup ON items(feed_id, dedup_key);
+`
+
+// schemaV36 adds items.categories: the feed-provided categories an item was
+// published under, newline-joined (e.g. a reddit entry's subreddit "r/golang"
+// and author "u/someuser"). They are matched by an ingest filter rule's
+// "category" field, so context a feed already carries (which subreddit, whose
+// post) becomes filterable without any site-specific code. Denormalized because
+// categories are only read at ingest time.
+const schemaV36 = `
+ALTER TABLE items ADD COLUMN categories TEXT NOT NULL DEFAULT '';
 `
 
 // Migrate applies any pending migrations in order, recording each in

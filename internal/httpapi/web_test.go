@@ -335,6 +335,31 @@ func TestFeedFilterRulesFlow(t *testing.T) {
 		t.Fatalf("stored rule mismatch: %+v", rules)
 	}
 
+	// A category rule (e.g. reddit's r/golang) is accepted and persisted.
+	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters", url.Values{
+		"action": {"hide"}, "field": {"category"}, "pattern": {"r/golang"},
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "r/golang") {
+		t.Fatalf("add category rule: %d %s", rr.Code, rr.Body.String())
+	}
+	rules, _ = s.store.Filters.ListByFeed(u.ID, f.ID)
+	var catRule *store.Filter
+	for i := range rules {
+		if rules[i].Field == "category" {
+			catRule = &rules[i]
+		}
+	}
+	if catRule == nil || catRule.Pattern != "r/golang" {
+		t.Fatalf("category rule not stored: %+v", rules)
+	}
+	if err := s.store.Filters.Delete(u.ID, catRule.ID); err != nil {
+		t.Fatalf("cleanup category rule: %v", err)
+	}
+	rules, _ = s.store.Filters.ListByFeed(u.ID, f.ID)
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule after cleanup, got %d", len(rules))
+	}
+
 	// Invalid regex -> 400 with a visible error, nothing saved.
 	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters", url.Values{
 		"action": {"hide"}, "field": {"title"}, "pattern": {"("}, "is_regex": {"1"},

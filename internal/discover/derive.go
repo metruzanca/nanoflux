@@ -28,10 +28,13 @@ var redditHosts = map[string]bool{
 // the canonical shape, then appends .rss:
 //
 //	/r/{sub}[/...]        -> https://reddit.com/r/{sub}.rss
-//	/user/{name}[/...]    -> https://reddit.com/u/{name}.rss
-//	/u/{name}[/...]       -> https://reddit.com/u/{name}.rss
+//	/user/{name}[/...]    -> https://reddit.com/u/{name}/submitted.rss
+//	/u/{name}[/...]       -> https://reddit.com/u/{name}/submitted.rss
 //
-// An already-.rss URL of those shapes is accepted unchanged (idempotent).
+// A user's bare overview feed mixes posts and comments; /submitted.rss is
+// posts-only, which is what a reader wants and what keeps the entries' own
+// categories meaningful. An already-.rss URL of those shapes is accepted
+// unchanged (idempotent).
 //
 // Title is the feed's display name ("r/sub" or "u/name"). AuthorName is the
 // preferred name for a newly created author: "r/sub" for a subreddit (the user
@@ -71,7 +74,7 @@ func Derive(rawurl string) (Candidate, bool) {
 		}
 		home := redditCanonicalOrigin + "/u/" + name
 		return Candidate{
-			FeedURL:    home + ".rss",
+			FeedURL:    home + "/submitted.rss",
 			Title:      "u/" + name,
 			AuthorName: name,
 			HomeURL:    home,

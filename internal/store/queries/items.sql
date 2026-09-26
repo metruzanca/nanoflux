@@ -1,15 +1,15 @@
 -- name: UpsertItem :execresult
 -- dedup_key is the stable per-feed identity (the plugin's Identity, else the
 -- GUID); guid is the display identity and may legitimately change shape.
-INSERT INTO items (feed_id, guid, dedup_key, title, link, summary, image_url, published_at, fetched_at, read, read_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO items (feed_id, guid, dedup_key, title, link, summary, categories, image_url, published_at, fetched_at, read, read_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (feed_id, dedup_key) DO NOTHING;
 
 -- name: UpdateItemSnapshot :exec
--- Refresh the content snapshot of an existing item (summary, thumbnail) on
--- poll. Identity, published_at and read state are left untouched.
+-- Refresh the content snapshot of an existing item (summary, categories,
+-- thumbnail) on poll. Identity, published_at and read state are left untouched.
 UPDATE items
-SET summary = ?, image_url = ?
+SET summary = ?, categories = ?, image_url = ?
 WHERE feed_id = ? AND dedup_key = ?;
 
 -- name: CountItemsMissingYouTubeThumbnail :one
@@ -76,7 +76,7 @@ ORDER BY COALESCE(i.published_at, i.fetched_at) ASC, i.id ASC
 LIMIT sqlc.arg('limit');
 
 -- name: GetItem :one
-SELECT i.id, i.feed_id, i.guid, i.dedup_key, i.title, i.link, i.summary, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.dedup_key, i.title, i.link, i.summary, i.categories, i.image_url,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
 FROM items i
 JOIN feeds f ON f.id = i.feed_id

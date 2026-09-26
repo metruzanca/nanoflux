@@ -132,7 +132,7 @@ func TestFeedPreviewRedditDerived(t *testing.T) {
 		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, `value="https://reddit.com/u/spez.rss"`) {
+	if !strings.Contains(body, `value="https://reddit.com/u/spez/submitted.rss"`) {
 		t.Fatalf("preview should prefill the derived .rss feed: %s", body)
 	}
 	if !strings.Contains(body, `value="https://reddit.com/u/spez"`) {

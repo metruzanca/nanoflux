@@ -262,7 +262,7 @@ func (q *Queries) GetAuthorItemStats(ctx context.Context, arg GetAuthorItemStats
 }
 
 const getItem = `-- name: GetItem :one
-SELECT i.id, i.feed_id, i.guid, i.dedup_key, i.title, i.link, i.summary, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.dedup_key, i.title, i.link, i.summary, i.categories, i.image_url,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -285,6 +285,7 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 		&i.Title,
 		&i.Link,
 		&i.Summary,
+		&i.Categories,
 		&i.ImageUrl,
 		&i.PublishedAt,
 		&i.FetchedAt,
@@ -1028,22 +1029,24 @@ func (q *Queries) SetItemRead(ctx context.Context, arg SetItemReadParams) (sql.R
 
 const updateItemSnapshot = `-- name: UpdateItemSnapshot :exec
 UPDATE items
-SET summary = ?, image_url = ?
+SET summary = ?, categories = ?, image_url = ?
 WHERE feed_id = ? AND dedup_key = ?
 `
 
 type UpdateItemSnapshotParams struct {
-	Summary  string         `json:"summary"`
-	ImageUrl sql.NullString `json:"image_url"`
-	FeedID   int64          `json:"feed_id"`
-	DedupKey string         `json:"dedup_key"`
+	Summary    string         `json:"summary"`
+	Categories string         `json:"categories"`
+	ImageUrl   sql.NullString `json:"image_url"`
+	FeedID     int64          `json:"feed_id"`
+	DedupKey   string         `json:"dedup_key"`
 }
 
-// Refresh the content snapshot of an existing item (summary, thumbnail) on
-// poll. Identity, published_at and read state are left untouched.
+// Refresh the content snapshot of an existing item (summary, categories,
+// thumbnail) on poll. Identity, published_at and read state are left untouched.
 func (q *Queries) UpdateItemSnapshot(ctx context.Context, arg UpdateItemSnapshotParams) error {
 	_, err := q.db.ExecContext(ctx, updateItemSnapshot,
 		arg.Summary,
+		arg.Categories,
 		arg.ImageUrl,
 		arg.FeedID,
 		arg.DedupKey,
@@ -1052,8 +1055,8 @@ func (q *Queries) UpdateItemSnapshot(ctx context.Context, arg UpdateItemSnapshot
 }
 
 const upsertItem = `-- name: UpsertItem :execresult
-INSERT INTO items (feed_id, guid, dedup_key, title, link, summary, image_url, published_at, fetched_at, read, read_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO items (feed_id, guid, dedup_key, title, link, summary, categories, image_url, published_at, fetched_at, read, read_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (feed_id, dedup_key) DO NOTHING
 `
 
@@ -1064,6 +1067,7 @@ type UpsertItemParams struct {
 	Title       string         `json:"title"`
 	Link        string         `json:"link"`
 	Summary     string         `json:"summary"`
+	Categories  string         `json:"categories"`
 	ImageUrl    sql.NullString `json:"image_url"`
 	PublishedAt sql.NullString `json:"published_at"`
 	FetchedAt   string         `json:"fetched_at"`
@@ -1081,6 +1085,7 @@ func (q *Queries) UpsertItem(ctx context.Context, arg UpsertItemParams) (sql.Res
 		arg.Title,
 		arg.Link,
 		arg.Summary,
+		arg.Categories,
 		arg.ImageUrl,
 		arg.PublishedAt,
 		arg.FetchedAt,

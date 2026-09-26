@@ -496,6 +496,7 @@ func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter
 			Title:       it.Title,
 			Link:        it.Link,
 			Summary:     it.Summary,
+			Categories:  it.Categories,
 			ImageURL:    it.ImageURL,
 			PublishedAt: it.PublishedAt,
 			FetchedAt:   fetched,
@@ -531,8 +532,20 @@ func truncateError(msg string) string {
 }
 
 // matchFilter reports whether a rule's pattern matches an item's selected
-// field. Summary matching uses the visible text, not the raw HTML.
+// field. Summary matching uses the visible text, not the raw HTML. Category
+// matching succeeds when any one of the item's feed-provided categories
+// matches, so a rule need not know how categories are joined.
 func matchFilter(rule store.Filter, it feedparse.Item) (bool, error) {
+	if rule.Field == "category" {
+		for _, c := range it.Categories {
+			if m, err := matchText(rule, c); err != nil {
+				return false, err
+			} else if m {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
 	var text string
 	switch rule.Field {
 	case "title":
@@ -544,6 +557,12 @@ func matchFilter(rule store.Filter, it feedparse.Item) (bool, error) {
 	default:
 		return false, nil
 	}
+	return matchText(rule, text)
+}
+
+// matchText applies a single rule's pattern to one string: a regex match when
+// IsRegex is set, otherwise a case-insensitive substring test.
+func matchText(rule store.Filter, text string) (bool, error) {
 	if rule.IsRegex {
 		re, err := regexp.Compile(rule.Pattern)
 		if err != nil {

@@ -482,6 +482,62 @@ func TestPollOneAppliesFilters(t *testing.T) {
 	}
 }
 
+// TestPollOneCategoryFilter asserts a rule on the "category" field matches an
+// item's feed-provided categories (here atom <category> labels), so a reddit
+// subreddit or author can be hidden without any site-specific rule.
+func TestPollOneCategoryFilter(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
+
+	const body = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>sub</title>
+  <link href="https://reddit.com/r/golang"/>
+  <entry>
+    <category term="golang" label="r/golang"/>
+    <id>t3_1</id><title>keep me</title><link href="https://reddit.com/r/golang/comments/1/x/"/>
+    <updated>2026-01-02T03:04:05+00:00</updated>
+  </entry>
+  <entry>
+    <category term="rust" label="r/rust"/>
+    <id>t3_2</id><title>hide me</title><link href="https://reddit.com/r/rust/comments/2/y/"/>
+    <updated>2026-01-02T04:04:05+00:00</updated>
+  </entry>
+</feed>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/atom+xml")
+		w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "sub", srv.URL, "", "", 900)
+	if _, err := st.Filters.Create(u.ID, f.ID, "hide", "category", "r/rust", false); err != nil {
+		t.Fatalf("create category rule: %v", err)
+	}
+
+	p := New(st, time.Minute, 1)
+	n, err := p.PollOne(context.Background(), f)
+	if err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("new items = %d, want 1 (r/rust item hidden)", n)
+	}
+	items, _ := st.Items.List(u.ID, store.ItemFilter{})
+	if len(items) != 1 || items[0].Title != "keep me" {
+		t.Fatalf("stored items = %+v, want only 'keep me'", items)
+	}
+}
+
 func TestPollDue(t *testing.T) {
 	sqldb, err := db.Open(":memory:")
 	if err != nil {

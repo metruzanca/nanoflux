@@ -226,6 +226,27 @@ plugin are re-enabled; a feed the user paused stays paused.
 feed page. It is distinct from the amber **stale** badge ("no new posts in a
 while"), which is not a failure.
 
+## Ingest filters and item categories
+
+Filter rules are applied when new items are stored (see `internal/poller`). A
+rule selects a field, a pattern (substring, case-insensitive, or regex), and an
+action (`hide` drops the item; `mark_read` stores it already read).
+
+Beyond `title`, `summary` and `link`, a rule can match on `category`. Categories
+are the context a feed already provides, normalized at parse time:
+
+- each RSS/Atom `<category>` value (gofeed prefers the atom `label`, e.g.
+  reddit's `r/golang`),
+- each item author name (reddit's `/u/poster`; the leading slash is dropped).
+
+A subreddit feed therefore gives each item the subreddit as a category and the
+poster as its author; a user feed gives the destination subreddit. The
+`category` field matches if **any one** of an item's categories matches, so
+`action: hide, field: category, pattern: r/golang` hides anything from that
+subreddit with no site-specific code. Categories are stored newline-joined in
+`items.categories` (schemaV36) and refreshed on re-poll, so an item already
+stored gains them without a re-fetch.
+
 ## Pagination ("load older items")
 
 A feed may advertise a next page via a feed-level `rel="next"` link or a

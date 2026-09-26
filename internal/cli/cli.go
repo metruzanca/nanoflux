@@ -71,6 +71,7 @@ func New(version string, st *store.Store, env Env, stdout, stderr io.Writer) *co
 	root.AddCommand(userCmd(st, env.Files, stdout, stderr))
 	root.AddCommand(feedCmd(st, stdout))
 	root.AddCommand(itemCmd(st, stdout))
+	root.AddCommand(fixCmd(st, stdout))
 	root.AddCommand(backupCmd(st, env, stdout, stderr))
 	root.AddCommand(restoreCmd(st, env, stdout, stderr))
 	root.AddCommand(versionCmd(version))

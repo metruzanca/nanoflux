@@ -185,8 +185,8 @@ func TestDiscoverRedditDerived(t *testing.T) {
 	}{
 		{"https://www.reddit.com/r/golang/", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang"},
 		{"https://old.reddit.com/r/golang/top/", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang"},
-		{"https://www.reddit.com/user/spez", "https://reddit.com/u/spez.rss", "https://reddit.com/u/spez"},
-		{"https://www.reddit.com/u/spez/", "https://reddit.com/u/spez.rss", "https://reddit.com/u/spez"},
+		{"https://www.reddit.com/user/spez", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez"},
+		{"https://www.reddit.com/u/spez/", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez"},
 		{"https://m.reddit.com/r/golang/", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang"},
 	}
 	for _, c := range cases {
@@ -275,10 +275,10 @@ func TestDerive(t *testing.T) {
 		{"https://old.reddit.com/r/golang/top/?t=week", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang", "r/golang", "r/golang", true},
 		{"https://np.reddit.com/r/golang/.rss", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang", "r/golang", "r/golang", true},
 		{"https://www.reddit.com/r/golang.rss", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang", "r/golang", "r/golang", true},
-		{"https://www.reddit.com/user/spez", "https://reddit.com/u/spez.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
-		{"https://www.reddit.com/u/spez/", "https://reddit.com/u/spez.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
-		{"https://m.reddit.com/user/spez/comments", "https://reddit.com/u/spez.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
-		{"https://old.reddit.com/u/spez.rss", "https://reddit.com/u/spez.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
+		{"https://www.reddit.com/user/spez", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
+		{"https://www.reddit.com/u/spez/", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
+		{"https://m.reddit.com/user/spez/comments", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
+		{"https://old.reddit.com/u/spez.rss", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
 		{"https://www.reddit.com/", "", "", "", "", false},
 		{"https://www.reddit.com/r/", "", "", "", "", false},
 		{"https://www.reddit.com/user/", "", "", "", "", false},

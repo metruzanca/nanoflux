@@ -65,6 +65,12 @@ type Item struct {
 	ImageURL    string
 	PublishedAt string // "" when unknown
 	Enclosures  []Enclosure
+	// Categories are the feed-provided categories the entry was published
+	// under: its RSS/Atom <category> values plus its author name(s). Reddit
+	// uses both (an entry on r/golang carries label "r/golang" and author
+	// "/u/poster"), which is why its subreddit/author become filterable
+	// without any site-specific code.
+	Categories []string
 }
 
 // Result is the normalized output of a successful fetch.
@@ -321,9 +327,40 @@ func normalizeItem(it *gofeed.Item) Item {
 	case it.UpdatedParsed != nil:
 		out.PublishedAt = db.FormatTime(*it.UpdatedParsed)
 	}
+	out.Categories = itemCategories(it)
 	// The GUID is derived from the raw link above; the stored link is the
 	// cleaned one so tracking params never leak to the client.
 	out.Link = StripTracking(out.Link)
+	return out
+}
+
+// itemCategories collects an entry's feed-provided categories: its RSS/Atom
+// <category> values (gofeed already prefers the atom label, e.g. reddit's
+// "r/golang") plus its author name(s). A leading slash is dropped so reddit's
+// "/u/name" author becomes "u/name"; duplicates are removed, order preserved.
+func itemCategories(it *gofeed.Item) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(raw string) {
+		c := strings.TrimSpace(raw)
+		c = strings.TrimPrefix(c, "/")
+		if c == "" || seen[c] {
+			return
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+	for _, c := range it.Categories {
+		add(c)
+	}
+	if it.Author != nil {
+		add(it.Author.Name)
+	}
+	for _, a := range it.Authors {
+		if a != nil {
+			add(a.Name)
+		}
+	}
 	return out
 }
 

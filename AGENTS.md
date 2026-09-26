@@ -53,9 +53,33 @@ polling with 429. The app treats this as pacing, not failure:
 - `discover` surfaces the host's fetch error when a rule's probe fails, so
   adding a reddit feed at limit says "rate-limiting requests (HTTP 429)" rather
   than a bare "no feed found".
-- `store.CanonicalFeedURL` rewrites reddit URLs (`old.`/`np.` → `www.`,
-  `/u/` → `/user/`) on create and via a startup pass, since the old hosts now
-  redirect to a login wall.
+- `store.CanonicalFeedURL` rewrites reddit feed URLs on create and via a startup
+  pass: hosts collapse to bare `reddit.com`, `/user/{name}` → `/u/{name}`, and a
+  user's bare feed → `/u/{name}/submitted.rss` (posts only; the bare overview
+  mixes posts and comments). An explicit `/comments.rss` or `/submitted.rss` is
+  left alone. `discover.Derive` produces the same shapes, so the add-feed form
+  prefills `/submitted.rss` for a user page. The temporary `nanoflux fix
+  reddit-user-feeds` command reports/rewrites stored feeds (removed before v1.0.0).
+
+## Item categories (ingest filters)
+
+Feeds carry context that should be filterable without any site-specific code:
+reddit, for example, tags every entry with its subreddit (`<category
+label="r/golang"/>`) and its author (`<name>/u/poster</name>`). A subreddit feed
+gives the poster as the item author; a user feed gives the destination sub as the
+category.
+
+- `feedparse.normalizeItem` maps an entry's `<category>` values plus its author
+  name(s) into `Item.Categories` (leading `/` stripped, deduped). This is the
+  generic parser path reddit uses; plugin-fetched items do not carry categories
+  yet (`pluginapi.Item` has no field for them).
+- `items.categories` (schemaV36) stores them newline-joined (denormalized);
+  `Upsert`/`UpdateItemSnapshot` write them, so an already-stored item gains
+  categories on re-poll without a re-fetch. `poller.ingest` copies them through.
+- A filter rule's `field = "category"` matches if **any one** category matches
+  (contains, case-insensitive; regex per-category), so
+  `action: hide, field: category, pattern: r/golang` works. Choices live in
+  `filterFieldItems`; `feedRuleCreate` accepts the field.
 
 ## Auto-read
 

@@ -481,3 +481,42 @@ func TestSwapDBCrossDevice(t *testing.T) {
 		t.Fatalf("temp .old file left behind: %v", err)
 	}
 }
+
+// TestFixRedditUserFeeds asserts the temporary `fix reddit-user-feeds` command
+// reports by default and rewrites a bare reddit user feed to /submitted.rss
+// only with --apply.
+func TestFixRedditUserFeeds(t *testing.T) {
+	h := newCLI(t)
+	u := createUser(t, h.st, "alice")
+	a, _ := h.st.Authors.Create(u.ID, "spez", "", "")
+	f, err := h.st.Feeds.Create(u.ID, a.ID, "u/spez", "https://reddit.com/u/spez/submitted.rss", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Model a feed added before the change: the bare user form has already been
+	// canonicalized to this. Rewrite the row directly.
+	if err := h.st.Feeds.Update(u.ID, f.ID, a.ID, "u/spez", "https://reddit.com/u/spez.rss", "", "", 900, true, true); err != nil {
+		t.Fatal(err)
+	}
+
+	// Report-only: nothing changes.
+	if err := h.exec(t, "fix", "reddit-user-feeds"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout.String(), "would rewrite") || !strings.Contains(h.stdout.String(), "--apply") {
+		t.Fatalf("report output = %q", h.stdout.String())
+	}
+	got, _ := h.st.Feeds.ByID(u.ID, f.ID)
+	if got.FeedURL != "https://reddit.com/u/spez.rss" {
+		t.Fatalf("report mode must not change the feed: %q", got.FeedURL)
+	}
+
+	// Apply: the feed moves to the posts-only form.
+	if err := h.exec(t, "fix", "reddit-user-feeds", "--apply"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = h.st.Feeds.ByID(u.ID, f.ID)
+	if got.FeedURL != "https://reddit.com/u/spez/submitted.rss" {
+		t.Fatalf("feed url = %q, want /submitted.rss", got.FeedURL)
+	}
+}
