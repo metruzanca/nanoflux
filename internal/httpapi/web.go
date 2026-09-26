@@ -164,6 +164,9 @@ type scopedItemsData struct {
 	SwapOOB     bool          // render with hx-swap-oob for the collection OOB fragment
 	HideAuthor  bool          // drop the author link from item meta (author-scoped page)
 	Mode        string        // saved display mode for this scope ("list" or "grid")
+	FeedsTab    bool          // collection scope only: render the "feeds" tab
+	FeedCount   int           // feeds in the collection, for the "feeds (N)" tab
+	Feeds       []feedRow     // feed cards for the "feeds" view
 }
 
 // itemsAsc reports whether the item list should be ordered oldest-first from
@@ -1788,7 +1791,7 @@ func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	d, err := s.collectionDataFor(u.ID, id, itemsView(r), u.Timezone, itemsAsc(r))
+	d, err := s.collectionDataFor(u.ID, id, collectionView(r), u.Timezone, itemsAsc(r))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -1829,19 +1832,49 @@ func groupFeedsByAuthor(rows []store.FeedWithUnread) []collectionFeedGroup {
 }
 
 // collectionScopedItems loads one read/unread item list for a collection plus
-// the counts that drive the tabs.
+// the counts that drive the tabs. The collection scope also gets a "feeds" tab
+// listing the collection's feeds as cards; when that view is active no items
+// are loaded.
 func (s *Server) collectionScopedItems(userID, collectionID int64, view, tz string, asc bool) scopedItemsData {
-	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, asc, 0, 0, collectionID))
+	memberFeeds, _ := s.store.Collections.Feeds(userID, collectionID)
 	unread, _ := s.store.Items.CountUnreadCollection(userID, collectionID)
 	read, _ := s.store.Items.CountReadCollection(userID, collectionID)
 	base := "/collections/" + strconv.FormatInt(collectionID, 10)
-	itemsBase := base + "/items?view=" + view + "&dir=" + dirParam(asc)
-	return scopedItemsData{
+	d := scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Dir: dirParam(asc),
-		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
-		More: pageCursor(itemsBase, items, more, asc),
+		UnreadCount: unread, ReadCount: read, FeedsTab: true, FeedCount: len(memberFeeds),
 		Mode: s.store.ViewPrefs.Mode(userID, base),
 	}
+	if view == "feeds" {
+		d.Feeds = s.collectionFeedRows(userID, memberFeeds, tz)
+		return d
+	}
+	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, asc, 0, 0, collectionID))
+	itemsBase := base + "/items?view=" + view + "&dir=" + dirParam(asc)
+	d.Items = withTZ(tz, dedupItems(items))
+	d.More = pageCursor(itemsBase, items, more, asc)
+	return d
+}
+
+// collectionFeedRows joins a collection's member feeds with their author name
+// and unread count (the same join the add-feed picker uses), preserving the
+// title order Collections.Feeds returns.
+func (s *Server) collectionFeedRows(userID int64, memberFeeds []store.Feed, tz string) []feedRow {
+	withUnread, _ := s.store.Feeds.ListWithUnread(userID)
+	byID := make(map[int64]store.FeedWithUnread, len(withUnread))
+	for _, f := range withUnread {
+		byID[f.ID] = f
+	}
+	out := make([]feedRow, 0, len(memberFeeds))
+	for _, f := range memberFeeds {
+		row := feedRow{Feed: f, Timezone: tz}
+		if w, ok := byID[f.ID]; ok {
+			row.AuthorName = w.AuthorName
+			row.Unread = w.Unread
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
@@ -1851,17 +1884,19 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	view := itemsView(r)
+	view := collectionView(r)
 	asc := itemsAsc(r)
-	if cursor := cursorID(r, asc); cursor > 0 {
-		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, cursor, asc, 0, 0, id))
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+	if view != "feeds" {
+		if cursor := cursorID(r, asc); cursor > 0 {
+			items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, cursor, asc, 0, 0, id))
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			base := "/collections/" + strconv.FormatInt(id, 10) + "/items?view=" + view + "&dir=" + dirParam(asc)
+			web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more, asc), false))
 			return
 		}
-		base := "/collections/" + strconv.FormatInt(id, 10) + "/items?view=" + view + "&dir=" + dirParam(asc)
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursor(base, items, more, asc), false))
-		return
 	}
 	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, view, u.Timezone, asc)))
 }
@@ -1953,7 +1988,7 @@ func (s *Server) collectionAddFeed(w http.ResponseWriter, r *http.Request) {
 	if feedID != 0 {
 		s.store.Collections.AddFeed(u.ID, id, feedID)
 	}
-	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeItemsView(r.FormValue("view")), u.Timezone, itemsAsc(r))))
+	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeCollectionView(r.FormValue("view")), u.Timezone, itemsAsc(r))))
 }
 
 func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
@@ -1993,6 +2028,19 @@ func normalizeItemsView(v string) string {
 		return "read"
 	}
 	return "unread"
+}
+
+// collectionView reads the collection page's ?view= param. It understands the
+// collection-only "feeds" tab in addition to the shared unread/read views.
+func collectionView(r *http.Request) string {
+	return normalizeCollectionView(r.URL.Query().Get("view"))
+}
+
+func normalizeCollectionView(v string) string {
+	if v == "feeds" {
+		return "feeds"
+	}
+	return normalizeItemsView(v)
 }
 
 // writeFormError responds to an htmx add-form submit with an out-of-band swap

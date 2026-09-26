@@ -161,6 +161,46 @@ templ collectionEditPage(u store.User, d collectionData) {
 	</section>
 }
 
+// CollectionFeedCards lists a collection's feeds as cards for the collection
+// page's "feeds" tab. Each card names the feed's author and shows its unread
+// count, so a collection's sources can be scanned without opening each feed.
+templ CollectionFeedCards(rows []feedRow) {
+	if len(rows) == 0 {
+		<p class="muted">no feeds in this collection</p>
+		return
+	}
+	<ul class="plain" id="collection-feeds-list">
+		for _, r := range rows {
+			@CollectionFeedCard(r)
+		}
+	</ul>
+}
+
+templ CollectionFeedCard(r feedRow) {
+	<li id={ "collection-feed-" + strconv.FormatInt(r.ID, 10) }>
+		<div class="card">
+			<div class="row">
+				<div>
+					<a href={ "/feeds/" + strconv.FormatInt(r.ID, 10) }>
+						<strong>
+							@web.SourceIcon(feedIconURL(r.Feed))
+							{ r.Title }
+						</strong>
+					</a>
+				</div>
+			</div>
+			<div class="item-meta">
+				if r.AuthorName != "" {
+					<a href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.AuthorName }</a>
+				} else {
+					no author
+				}
+				· <span class="unread-count">{ r.Unread } unread</span>
+			</div>
+		</div>
+	</li>
+}
+
 // collectionFeeds renders the collection's feeds as a large multi-select: every
 // feed is a chip. User collections get a remove button per chip (POSTing to the
 // remove-feed endpoint); auto collections are readonly and carry no remove URL,

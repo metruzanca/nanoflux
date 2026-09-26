@@ -383,6 +383,50 @@ func TestCollectionPageDedups(t *testing.T) {
 	}
 }
 
+func TestCollectionFeedsTab(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	c, _ := s.store.Collections.Create(u.ID, "all")
+	s.store.Collections.AddFeed(u.ID, c.ID, f.ID)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Post", Link: "https://b.dev/1", FetchedAt: db.Now()})
+
+	base := "/collections/" + itoa(c.ID)
+
+	// The tabs always carry the feeds tab with its count.
+	body := doGet(h, base, cookie).Body.String()
+	if !strings.Contains(body, "feeds (1)") {
+		t.Fatalf("collection page missing feeds tab: %s", body)
+	}
+
+	// The feeds view lists the feed card with its author and unread count, and
+	// none of the scope's items.
+	body = doGet(h, base+"?view=feeds", cookie).Body.String()
+	for _, want := range []string{"Blog", "Metru", "1 unread", `id="collection-feeds-list"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("feeds view missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, `data-item-link="https://b.dev/1"`) {
+		t.Fatalf("feeds view should not render items: %s", body)
+	}
+
+	// The fragment endpoint returns the same card list.
+	rr := doGet(h, base+"/items?view=feeds", cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `id="collection-feeds-list"`) {
+		t.Fatalf("feeds fragment: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// An empty collection shows its empty state on the feeds tab.
+	empty, _ := s.store.Collections.Create(u.ID, "empty")
+	body = doGet(h, "/collections/"+itoa(empty.ID)+"?view=feeds", cookie).Body.String()
+	if !strings.Contains(body, "no feeds in this collection") {
+		t.Fatalf("empty feeds view missing empty state: %s", body)
+	}
+}
+
 func TestFeedToggle(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
