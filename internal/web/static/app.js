@@ -233,8 +233,9 @@ function openItemData(id) {
     .then(function (r) { return r.text(); })
     .then(function (html) {
       body.innerHTML = html;
-      // The item fragment renders the ⋯ (and share) controls inside the
-      // scrollable body; relocate them into the dialog header next to ✕.
+      // The item fragment renders the title and the fav / read / ⋯ controls in
+      // one block inside the scrollable body; relocate it into the dialog header
+      // so the title and buttons stay pinned at the top and only content scrolls.
       var controls = body.querySelector('#item-dialog-controls-src');
       if (controls && slot) slot.replaceChildren(controls);
       // The modal is injected via plain innerHTML, so htmx never processed its
