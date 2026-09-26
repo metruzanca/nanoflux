@@ -527,6 +527,8 @@ CREATE TABLE user_view_prefs (
 const schemaV34 = `
 ALTER TABLE authors ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE feeds ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0;
+CREATE UNIQUE INDEX idx_authors_system ON authors(user_id) WHERE is_system = 1;
+CREATE UNIQUE INDEX idx_feeds_system ON feeds(user_id) WHERE is_system = 1;
 `
 
 // Migrate applies any pending migrations in order, recording each in

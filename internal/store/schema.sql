@@ -56,6 +56,7 @@ CREATE TABLE authors (
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_authors_user ON authors(user_id);
+CREATE UNIQUE INDEX idx_authors_system ON authors(user_id) WHERE is_system = 1;
 
 CREATE TABLE feeds (
     id                INTEGER PRIMARY KEY,
@@ -82,6 +83,7 @@ CREATE TABLE feeds (
 );
 CREATE INDEX idx_feeds_user ON feeds(user_id);
 CREATE INDEX idx_feeds_author ON feeds(author_id);
+CREATE UNIQUE INDEX idx_feeds_system ON feeds(user_id) WHERE is_system = 1;
 
 CREATE TABLE items (
     id           INTEGER PRIMARY KEY,
