@@ -398,9 +398,27 @@ func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
 	return nil
 }
 
+// DeleteSaved hard-deletes a saved page: an item under the user's hidden
+// system feed. Regular feed items are never touched (the query's system-feed
+// guard). Child rows (enclosures, list memberships, shares) cascade, and the
+// items_ad trigger keeps items_fts consistent. Returns ErrNotFound when the id
+// is not one of the user's saved pages.
+func (s *ItemStore) DeleteSaved(userID, itemID int64) error {
+	res, err := s.q.DeleteSavedItem(context.Background(), sqlcgen.DeleteSavedItemParams{
+		ItemID: itemID,
+		UserID: userID,
+	})
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // OneWithFeed returns a single item joined with its feed and author.
-func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
-	it, err := s.q.GetItemWithFeed(context.Background(), sqlcgen.GetItemWithFeedParams{ID: itemID, UserID: userID})
+func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {	it, err := s.q.GetItemWithFeed(context.Background(), sqlcgen.GetItemWithFeedParams{ID: itemID, UserID: userID})
 	if errors.Is(err, sql.ErrNoRows) {
 		return ItemWithFeed{}, ErrNotFound
 	}

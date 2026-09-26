@@ -601,6 +601,9 @@ templ itemMenuFullSys(itemID, feedID int64, sourceURL, shareToken string, inModa
 				<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/unread" } hx-swap="none" hx-on::after-request="if(event.detail.successful) markUnreadReload()">mark as not read</button>
 				@shareControl(itemID, shareToken)
 			}
+			if isSystem {
+				<button type="button" class="link menu-item danger" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/delete" } hx-swap="none" hx-confirm="delete this saved url?">delete saved url</button>
+			}
 		</div>
 	</div>
 }

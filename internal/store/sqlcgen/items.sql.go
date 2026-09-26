@@ -193,6 +193,26 @@ func (q *Queries) DeleteEnclosures(ctx context.Context, itemID int64) error {
 	return err
 }
 
+const deleteSavedItem = `-- name: DeleteSavedItem :execresult
+DELETE FROM items
+WHERE items.id = ?1
+  AND items.feed_id IN (
+    SELECT f.id FROM feeds f
+    WHERE f.user_id = ?2 AND f.is_system = 1
+  )
+`
+
+type DeleteSavedItemParams struct {
+	ItemID int64 `json:"itemID"`
+	UserID int64 `json:"userID"`
+}
+
+// Hard-delete a saved page: an item under the user's hidden system feed. The
+// system-feed guard means a regular feed item can never be deleted this way.
+func (q *Queries) DeleteSavedItem(ctx context.Context, arg DeleteSavedItemParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, deleteSavedItem, arg.ItemID, arg.UserID)
+}
+
 const getAuthorItemStats = `-- name: GetAuthorItemStats :one
 SELECT
     COUNT(i.id) AS total_posts,

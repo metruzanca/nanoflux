@@ -366,6 +366,17 @@ document.body.addEventListener('item-lists-saved', function () {
   var d = document.getElementById('item-lists-dialog');
   if (d && d.open) d.close();
 });
+// A saved page was hard-deleted: drop its row, close the modal if it was open,
+// and clear the row cursor. The server signals this with HX-Trigger: item-deleted.
+document.body.addEventListener('item-deleted', function (e) {
+  var id = e.detail && e.detail.id;
+  if (!id) return;
+  var row = document.getElementById('item-' + id);
+  if (row) row.remove();
+  var d = document.getElementById('item-dialog');
+  if (d && d.open) d.close();
+  if (activeItemId === '#item-' + id) activeItemId = null;
+});
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') closeItemMenus();
 });

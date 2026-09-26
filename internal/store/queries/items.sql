@@ -218,6 +218,16 @@ ORDER BY sort;
 DELETE FROM item_enclosures
 WHERE item_id = ?;
 
+-- name: DeleteSavedItem :execresult
+-- Hard-delete a saved page: an item under the user's hidden system feed. The
+-- system-feed guard means a regular feed item can never be deleted this way.
+DELETE FROM items
+WHERE items.id = sqlc.arg('itemID')
+  AND items.feed_id IN (
+    SELECT f.id FROM feeds f
+    WHERE f.user_id = sqlc.arg('userID') AND f.is_system = 1
+  );
+
 -- name: InsertEnclosure :exec
 INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort)
 VALUES (?, ?, ?, ?, ?, ?);

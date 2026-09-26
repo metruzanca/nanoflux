@@ -237,8 +237,70 @@ func TestSavePage(t *testing.T) {
 	_ = feedItem
 }
 
-func mustSystemFeedID(t *testing.T, s *Store, userID int64) int64 {
-	t.Helper()
+// TestDeleteSaved covers hard-deleting a saved page: only the user's system-feed
+// item is removable, siblings survive, and a regular feed item is never touched.
+func TestDeleteSaved(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	other := mustUser(t, s, "bob")
+
+	// A regular feed item must be undeletable through this path.
+	_, feedItem := mustFeedWithItem(t, s, u, "Feed post", "g1")
+
+	l, err := s.Lists.Ensure(u.ID, "watch later")
+	if err != nil {
+		t.Fatalf("Ensure list: %v", err)
+	}
+	keepID, _, err := s.SavePage(u.ID, l.ID, "page:example.com/keep", "Keep", "https://example.com/keep", "", "")
+	if err != nil {
+		t.Fatalf("SavePage keep: %v", err)
+	}
+	dropID, _, err := s.SavePage(u.ID, l.ID, "page:example.com/drop", "Drop", "https://example.com/drop", "", "")
+	if err != nil {
+		t.Fatalf("SavePage drop: %v", err)
+	}
+
+	// A regular item (system feed guard) and another user's saved page are both
+	// refused as not found.
+	if err := s.Items.DeleteSaved(u.ID, feedItem.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("DeleteSaved on a feed item should be ErrNotFound, got %v", err)
+	}
+	otherList, _ := s.Lists.Ensure(other.ID, "watch later")
+	otherPage, _, err := s.SavePage(other.ID, otherList.ID, "page:example.com/other", "Other", "https://example.com/other", "", "")
+	if err != nil {
+		t.Fatalf("SavePage other: %v", err)
+	}
+	if err := s.Items.DeleteSaved(u.ID, otherPage); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-user DeleteSaved should be ErrNotFound, got %v", err)
+	}
+
+	// The owner's saved page is deleted; its sibling and the feed item remain.
+	if err := s.Items.DeleteSaved(u.ID, dropID); err != nil {
+		t.Fatalf("DeleteSaved: %v", err)
+	}
+	if _, err := s.Items.ByID(u.ID, dropID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("dropped saved page should be gone, got %v", err)
+	}
+	if _, err := s.Items.ByID(u.ID, keepID); err != nil {
+		t.Fatalf("sibling saved page should survive: %v", err)
+	}
+	if _, err := s.Items.ByID(u.ID, feedItem.ID); err != nil {
+		t.Fatalf("feed item should survive: %v", err)
+	}
+	// Deleting again is a not-found, not an error cascade.
+	if err := s.Items.DeleteSaved(u.ID, dropID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("second DeleteSaved should be ErrNotFound, got %v", err)
+	}
+	// Search no longer finds it.
+	found, _, _ := s.Items.SearchPage(u.ID, "Drop", ItemFilter{Limit: 10})
+	for _, it := range found {
+		if it.ID == dropID {
+			t.Fatal("deleted saved page should not appear in search")
+		}
+	}
+}
+
+func mustSystemFeedID(t *testing.T, s *Store, userID int64) int64 {	t.Helper()
 	f, err := s.EnsureSystemFeed(userID)
 	if err != nil {
 		t.Fatalf("EnsureSystemFeed: %v", err)

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -621,6 +622,79 @@ func TestSavePageWebFlow(t *testing.T) {
 	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false)
 	if len(items) != 1 || items[0].Title != "The Article" || items[0].Summary != "A good read" {
 		t.Fatalf("list items after save: %+v", items)
+	}
+}
+
+// A saved page exposes a delete entry in its item menu and can be hard-deleted
+// from the web UI; a regular feed item cannot.
+func TestDeleteSavedPageEndpoint(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	pageSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><head><title>Saved One</title></head><body>hi</body></html>`))
+	}))
+	defer pageSrv.Close()
+
+	// Save a page and a regular feed item for contrast.
+	rr := doForm(h, "POST", "/save-page", url.Values{
+		"url": {pageSrv.URL}, "title": {"Saved One"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save-page: %d %s", rr.Code, rr.Body.String())
+	}
+	lists, _ := s.store.Lists.List(u.ID)
+	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false)
+	if len(items) != 1 {
+		t.Fatalf("saved items: %+v", items)
+	}
+	savedID := items[0].ID
+
+	a, _ := s.store.Authors.Create(u.ID, "Blog", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Feed", "https://x.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Feed post", Link: "https://x.dev/g1", FetchedAt: db.Now()})
+	feedItemID, _ := s.store.Items.ByFeedIdentity(f.ID, "g1")
+
+	// The modal menu for the saved page offers delete; the feed item's does not.
+	body := doGet(h, "/items/"+itoa(savedID)+"/view", cookie).Body.String()
+	if !strings.Contains(body, `/items/`+itoa(savedID)+`/delete`) || !strings.Contains(body, "delete saved url") {
+		t.Fatalf("saved page modal should offer delete: %s", body)
+	}
+	feedBody := doGet(h, "/items/"+itoa(feedItemID)+"/view", cookie).Body.String()
+	if strings.Contains(feedBody, "/delete") || strings.Contains(feedBody, "delete saved url") {
+		t.Fatalf("regular item should not offer delete: %s", feedBody)
+	}
+
+	// Deleting a regular item is refused (system-feed guard).
+	if rr := doForm(h, "POST", "/items/"+itoa(feedItemID)+"/delete", url.Values{}, cookie); rr.Code != http.StatusNotFound {
+		t.Fatalf("delete regular item should 404, got %d", rr.Code)
+	}
+	if _, err := s.store.Items.ByID(u.ID, feedItemID); err != nil {
+		t.Fatalf("regular item must survive: %v", err)
+	}
+
+	// Deleting the saved page succeeds, signals the client, and removes it.
+	rr = doForm(h, "POST", "/items/"+itoa(savedID)+"/delete", url.Values{}, cookie)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("delete saved page: %d %s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("HX-Trigger"); !strings.Contains(got, "item-deleted") {
+		t.Fatalf("delete should signal item-deleted, got %q", got)
+	}
+	if _, err := s.store.Items.ByID(u.ID, savedID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("saved page should be gone, got %v", err)
+	}
+	// A second delete is a 404, not a crash.
+	if rr := doForm(h, "POST", "/items/"+itoa(savedID)+"/delete", url.Values{}, cookie); rr.Code != http.StatusNotFound {
+		t.Fatalf("second delete should 404, got %d", rr.Code)
+	}
+	// Search no longer surfaces it (the query echo is not a result, so assert
+	// the results list is empty).
+	search := doGet(h, "/search?q=Saved+One", cookie).Body.String()
+	if !strings.Contains(search, `id="items-list">nothing here`) {
+		t.Fatalf("deleted page should not appear in search results: %s", search)
 	}
 }
 
