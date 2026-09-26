@@ -113,11 +113,17 @@ restore:
 # name the plugin ships under and overwriting any previous build. Run this before
 # `make update` so the container picks up binaries built against the current
 # pluginapi.
+#
+# Plugins run inside the Alpine/musl container, so they must be static: CGO
+# would link against the host's libc (a Nix store glibc path on NixOS), and the
+# container's exec would then fail with "no such file or directory" because that
+# interpreter does not exist there. GOOS=linux pins the target for hosts that
+# build for another OS.
 plugins:
 	@for mod in plugins/*/go.mod; do \
 		dir=$$(dirname "$$mod"); \
 		name=$$(basename "$$dir"); \
 		case "$$name" in nanoflux-plugin-*) out="$$name";; *) out="nanoflux-plugin-$$name";; esac; \
 		echo "building $$out"; \
-		go -C "$$dir" build -o "../$$out" . || exit 1; \
+		GOOS=linux CGO_ENABLED=0 go -C "$$dir" build -o "../$$out" . || exit 1; \
 	done
