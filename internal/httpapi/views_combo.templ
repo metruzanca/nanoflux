@@ -1,21 +1,26 @@
 package httpapi
 
-// comboSelect is a single-select Vaadin combo-box with a hidden native mirror.
-// The mirror carries the field name and any hx-* attributes (spread from attrs),
-// so htmx sees exactly the element it used to see when this was a <select>: the
-// component's value is copied into the mirror, which then fires "change".
+import "encoding/json"
+
+// comboSelect is a single-select Vaadin combo-box. `items` is emitted inline as a
+// JSON attribute (Lit's default converter JSON-parses Array-typed attributes),
+// so no client-side hydration is needed to populate the options.
 //
-// label renders an external <label>; the component's own label part stays empty.
-// placeholder is the empty-state text.
+// The component is not form-associated: its own input submits the display label,
+// not the value. So a hidden native mirror carries the real value, the field
+// name, and any hx-* attributes (spread from attrs), letting htmx see exactly
+// the element it used to see when this was a <select>. static/vaadin.js updates
+// the mirror on change.
+//
+// label renders an external <label>; placeholder is the empty-state text.
 templ comboSelect(name, value, label, placeholder string, items []comboItem, attrs templ.Attributes) {
 	<div class="combo-field">
 		if label != "" {
 			<label for={ name }>{ label }</label>
 		}
 		<div class="combo" data-vaadin="single">
-			<vaadin-combo-box id={ name } placeholder={ placeholder }></vaadin-combo-box>
+			<vaadin-combo-box id={ name } placeholder={ placeholder } items={ comboItemsJSON(items) } value={ value }></vaadin-combo-box>
 			<input type="hidden" data-vaadin-target name={ name } value={ value } { attrs... }/>
-			@templ.JSONScript("", comboPayload{Items: items, Value: value})
 		</div>
 	</div>
 }
@@ -24,27 +29,27 @@ templ comboSelect(name, value, label, placeholder string, items []comboItem, att
 // controls that sit inline in a row (e.g. the home section render-mode picker).
 templ comboSelectInline(name, value, placeholder string, items []comboItem, attrs templ.Attributes) {
 	<div class="combo combo-inline" data-vaadin="single">
-		<vaadin-combo-box id={ name } placeholder={ placeholder }></vaadin-combo-box>
+		<vaadin-combo-box id={ name } placeholder={ placeholder } items={ comboItemsJSON(items) } value={ value }></vaadin-combo-box>
 		<input type="hidden" data-vaadin-target name={ name } value={ value } { attrs... }/>
-		@templ.JSONScript("", comboPayload{Items: items, Value: value})
 	</div>
 }
 
 // comboMulti is a multi-select Vaadin combo-box that submits like the checkbox
-// group it replaces: one hidden input per selected value, all sharing name, so
-// the server still reads r.Form[name] as repeated params. The server renders the
-// initial inputs; the component's change handler rebuilds them.
+// group it replaces. selected-items must hold the item objects (not value
+// strings) so labels resolve, so it is computed from items + the selected
+// values. The server renders one hidden mirror per selected value (all sharing
+// name) so the field submits as repeated params; static/vaadin.js rebuilds them
+// on change.
 templ comboMulti(name, label string, values []string, items []comboItem) {
 	<div class="combo-field">
 		<label for={ name }>{ label }</label>
-		<div class="combo" data-vaadin="multi" data-vaadin-name={ name }>
-			<vaadin-multi-select-combo-box id={ name } auto-expand-horizontally auto-expand-vertically placeholder="—"></vaadin-multi-select-combo-box>
-			<div data-vaadin-mirrors>
+		<div class="combo" data-vaadin="multi">
+			<vaadin-multi-select-combo-box id={ name } auto-expand-horizontally auto-expand-vertically placeholder="—" items={ comboItemsJSON(items) } selected-items={ comboSelectionJSON(items, values) }></vaadin-multi-select-combo-box>
+			<div data-vaadin-mirrors data-vaadin-name={ name }>
 				for _, v := range values {
 					<input type="hidden" name={ name } value={ v }/>
 				}
 			</div>
-			@templ.JSONScript("", comboPayload{Items: items, Value: values})
 		</div>
 	</div>
 }
@@ -56,7 +61,34 @@ templ comboMulti(name, label string, values []string, items []comboItem) {
 // (auto collections). auto-expand-* keep every name visible, wrapping as needed.
 templ comboChips(removeURL string, values []string, items []comboItem, readonly bool) {
 	<div class="combo combo-chips" data-vaadin="chips" data-remove-url={ removeURL }>
-		<vaadin-multi-select-combo-box auto-expand-horizontally auto-expand-vertically readonly?={ readonly } placeholder="—"></vaadin-multi-select-combo-box>
-		@templ.JSONScript("", comboPayload{Items: items, Value: values})
+		<vaadin-multi-select-combo-box auto-expand-horizontally auto-expand-vertically readonly?={ readonly } placeholder="—" items={ comboItemsJSON(items) } selected-items={ comboSelectionJSON(items, values) }></vaadin-multi-select-combo-box>
 	</div>
+}
+
+// comboItemsJSON marshals items for an inline `items` attribute. It cannot fail
+// for our struct, so a marshal error degrades to an empty list.
+func comboItemsJSON(items []comboItem) string {
+	b, err := json.Marshal(items)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+// comboSelectionJSON marshals the selected items (as full objects, not values)
+// for a `selected-items` attribute. The components label a selection by looking
+// up the item object; given a bare value they fall back to its string form, so
+// the objects matter.
+func comboSelectionJSON(items []comboItem, values []string) string {
+	want := make(map[string]bool, len(values))
+	for _, v := range values {
+		want[v] = true
+	}
+	sel := make([]comboItem, 0, len(values))
+	for _, it := range items {
+		if want[it.Value] {
+			sel = append(sel, it)
+		}
+	}
+	return comboItemsJSON(sel)
 }

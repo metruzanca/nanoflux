@@ -347,8 +347,9 @@ function itemMenuAction(e, action) {
     .then(function (html) {
       d.innerHTML = html;
       // The picker's form carries hx attributes; it was injected via innerHTML,
-      // so initialize it.
+      // so initialize it (and its combo box, which no htmx event announced).
       htmx.process(d);
+      if (window.nanofluxReinitVaadin) window.nanofluxReinitVaadin(d);
     })
     .catch(function () { d.innerHTML = '<p class="error">could not load lists</p>'; });
 }

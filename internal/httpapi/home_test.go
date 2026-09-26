@@ -193,7 +193,7 @@ func TestSettingsHomeRenderMode(t *testing.T) {
 
 	// The settings card offers a per-section render-method combo.
 	body := doGet(h, "/settings", cookie).Body.String()
-	if !strings.Contains(body, `name="mode"`) || !strings.Contains(body, `"value":"grid"`) {
+	if !strings.Contains(body, `name="mode"`) || !strings.Contains(body, `&#34;value&#34;:&#34;grid&#34;`) {
 		t.Fatalf("settings home card should offer a render-method combo: %s", body)
 	}
 

@@ -5,8 +5,7 @@
 - App links are internal by default, ↗ on every external link.
 - mise is for development, make is for selfhosting an instance
 - Do not mention any external plugins in internal code, comments or docs
-- Do not run `make` or `podman` or `docker` commands without user's approval.
-- NEVER try to use playwright or another headless browser, always defer to the user.
+- Do not run `make` or `podman` or `docker` commands without user's approval. The container is likely the user's production deployment. Use go to run the app locally instead e.g. go run cmd/server/main.go which runs on 8080. You may kill port 8080 if necessary.
 
 # Notes
 
@@ -103,9 +102,14 @@ checkbox groups, so long option lists are searchable.
   `hx-trigger="change"` still works) and a multi-select keeps one mirror per
   selected value, so the field submits as repeated params like the checkbox
   group it replaces.
-- Options are shipped as a `<script type="application/json">` payload (the
-  components take `items` as a JS array, not child elements). v25 has no
-  optgroup, so grouped pickers prefix the group name onto the label.
+- Options are emitted inline as JSON attributes (`items`, and `selected-items`
+  as full item objects, not bare values — the component labels a selection from
+  the item object). Lit JSON-parses Array-typed attributes, so no client-side
+  hydration is needed. v25 has no optgroup, so grouped pickers prefix the group
+  name onto the label.
+- Some fragments are injected with `fetch` + `innerHTML` (the add-to-list
+  dialog), which fires no htmx swap event; `static/app.js` calls
+  `window.nanofluxReinitVaadin(target)` after injecting so the bridge binds.
 - `comboChips` is the display-only variant for the collection edit feed list:
   chips with a remove button, `auto-expand-horizontally`/`-vertically` so all
   names show, and `readonly` (no remove URL) for auto collections.
