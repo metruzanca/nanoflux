@@ -21,23 +21,25 @@ func fixCmd(st *store.Store, out io.Writer) *cobra.Command {
 			"automatically at server startup, so this is for running them\n" +
 			"explicitly and seeing what changed.",
 	}
-	cmd.AddCommand(fixRedditUserFeedsCmd(st, out))
+	cmd.AddCommand(fixRedditURLsCmd(st, out))
 	return cmd
 }
 
-// fixRedditUserFeedsCmd rewrites a reddit user's bare feed URL to the
-// posts-only /submitted.rss form. Reddit's bare user feed mixes posts and
-// comments; /submitted.rss is posts-only and is what discover.Derive now
-// produces, so existing feeds must be moved to match. It reports by default;
-// --apply performs the rewrite. Idempotent.
-func fixRedditUserFeedsCmd(st *store.Store, out io.Writer) *cobra.Command {
+// fixRedditURLsCmd normalizes every stored reddit feed URL to its canonical
+// form via store.CanonicalFeedURL: old./np./m. hosts collapse to reddit.com,
+// /user/{name} becomes /u/{name}, and a user's bare feed (both the
+// /u/{name}.rss and /u/{name}/.rss forms) becomes the posts-only
+// /u/{name}/submitted.rss. It reports by default; --apply performs the
+// rewrite. Idempotent.
+func fixRedditURLsCmd(st *store.Store, out io.Writer) *cobra.Command {
 	var apply bool
 	cmd := &cobra.Command{
-		Use:   "reddit-user-feeds",
-		Short: "Rewrite reddit user feeds to /submitted.rss",
-		Long: "Rewrite stored reddit user feeds (reddit.com/u/<name>.rss) to the\n" +
-			"posts-only reddit.com/u/<name>/submitted.rss form. The bare user feed\n" +
-			"mixes posts and comments. Runs as a report unless --apply is given.",
+		Use:   "reddit-urls",
+		Short: "Normalize stored reddit feed urls",
+		Long: "Rewrite every stored reddit feed url to its canonical form:\n" +
+			"old./np./m. hosts -> reddit.com, /user/{name} -> /u/{name}, and a\n" +
+			"user's bare feed -> the posts-only /u/{name}/submitted.rss. Runs as a\n" +
+			"report unless --apply is given.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			feeds, err := st.Feeds.ListAll()
@@ -58,7 +60,7 @@ func fixRedditUserFeedsCmd(st *store.Store, out io.Writer) *cobra.Command {
 				changed++
 			}
 			if changed == 0 {
-				fmt.Fprintln(out, "no reddit user feeds to rewrite")
+				fmt.Fprintln(out, "no reddit feed urls to rewrite")
 				return nil
 			}
 			if !apply {

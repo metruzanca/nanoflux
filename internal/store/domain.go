@@ -87,12 +87,16 @@ func CanonicalFeedURL(raw string) string {
 	if len(parts) >= 2 && parts[0] == "user" {
 		parts[0] = "u"
 	}
-	// A user's bare feed (nothing after the name, or the ".rss" suffix on the
-	// name) -> the posts-only /submitted.rss. Explicit /submitted.rss and
+	// A user's bare feed -> the posts-only /submitted.rss. Both bare forms are
+	// handled: the ".rss" suffix on the name (/u/{name}.rss) and a trailing
+	// ".rss" segment (/u/{name}/.rss). Explicit /submitted.rss and
 	// /comments.rss are preserved.
 	if len(parts) >= 2 && parts[0] == "u" {
 		if name, ok := strings.CutSuffix(parts[1], ".rss"); ok {
 			parts = append([]string{parts[0], name}, parts[2:]...)
+		}
+		if len(parts) >= 3 && parts[2] == ".rss" {
+			parts = append([]string{parts[0], parts[1]}, parts[3:]...)
 		}
 		if len(parts) == 2 {
 			parts = append(parts, "submitted.rss")

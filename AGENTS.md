@@ -56,10 +56,12 @@ polling with 429. The app treats this as pacing, not failure:
 - `store.CanonicalFeedURL` rewrites reddit feed URLs on create and via a startup
   pass: hosts collapse to bare `reddit.com`, `/user/{name}` → `/u/{name}`, and a
   user's bare feed → `/u/{name}/submitted.rss` (posts only; the bare overview
-  mixes posts and comments). An explicit `/comments.rss` or `/submitted.rss` is
+  mixes posts and comments). Both bare shapes are normalized: `/u/{name}.rss`
+  and `/u/{name}/.rss`. An explicit `/comments.rss` or `/submitted.rss` is
   left alone. `discover.Derive` produces the same shapes, so the add-feed form
   prefills `/submitted.rss` for a user page. The temporary `nanoflux fix
-  reddit-user-feeds` command reports/rewrites stored feeds (removed before v1.0.0).
+  reddit-urls` command reports/rewrites every stored reddit feed URL (removed
+  before v1.0.0).
 
 ## Item categories (ingest filters)
 

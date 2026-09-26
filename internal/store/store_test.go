@@ -1135,6 +1135,8 @@ func TestCanonicalFeedURL(t *testing.T) {
 		{"https://old.reddit.com/u/Dominan-t.rss", "https://reddit.com/u/Dominan-t/submitted.rss"},
 		{"https://www.reddit.com/user/foo.rss", "https://reddit.com/u/foo/submitted.rss"},
 		{"https://reddit.com/u/foo.rss", "https://reddit.com/u/foo/submitted.rss"},
+		{"https://www.reddit.com/u/foo/.rss", "https://reddit.com/u/foo/submitted.rss"},
+		{"https://old.reddit.com/u/foo/.rss", "https://reddit.com/u/foo/submitted.rss"},
 		{"https://www.reddit.com/u/foo/submitted.rss", "https://reddit.com/u/foo/submitted.rss"},
 		{"https://www.reddit.com/u/foo/comments.rss", "https://reddit.com/u/foo/comments.rss"},
 		{"https://www.reddit.com/r/golang/.rss", "https://reddit.com/r/golang/.rss"},
