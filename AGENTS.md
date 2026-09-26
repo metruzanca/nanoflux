@@ -84,32 +84,22 @@ polling with 429. The app treats this as pacing, not failure:
 ## Combo boxes (Vaadin)
 
 Single- and multi-select form fields use vendored Vaadin v25 web components
-(`vaadin-combo-box`, `vaadin-multi-select-combo-box`) instead of `<select>` and
-checkbox groups, so long option lists are searchable.
+(`vaadin-combo-box`, `vaadin-multi-select-combo-box`), so long option lists are
+searchable. See [`docs/vendored-web-components.md`](docs/vendored-web-components.md)
+for the full guide (regenerating the bundle, adding more components, gotchas).
+The invariants that bite:
 
-- The bundle is committed at `internal/web/static/vaadin.bundle.js` and must be
-  regenerated with `mise run vendor:vaadin` when the pinned version changes
-  (`tools/vaadin-vendor/`). The build needs node once; runtime does not. It is
-  emitted as an **IIFE**, not ESM: it is loaded with a plain `<script defer>`,
-  and a classic script containing `export` fails to parse (the elements never
-  register, so they render as zero-size unknown elements).
-- v25 ships only structural base styles (there is no Lumo theme package); the
-  components are themed from `app.css` via `--vaadin-*` custom properties.
-- The components are **not form-associated**, so `htmx` (which serializes with
-  `FormData`) would not see them. `views_combo.templ` therefore pairs each
-  component with hidden native input mirrors, and `static/vaadin.js` syncs them:
-  a single-select keeps one mirror (carrying any `hx-*` attributes, so
-  `hx-trigger="change"` still works) and a multi-select keeps one mirror per
-  selected value, so the field submits as repeated params like the checkbox
-  group it replaces.
-- Options are emitted inline as JSON attributes (`items`, and `selected-items`
-  as full item objects, not bare values — the component labels a selection from
-  the item object). Lit JSON-parses Array-typed attributes, so no client-side
-  hydration is needed. v25 has no optgroup, so grouped pickers prefix the group
-  name onto the label.
+- The committed bundle (`internal/web/static/vaadin.bundle.js`) is regenerated
+  with `mise run vendor:vaadin` (needs node once; runtime does not). It is an
+  **IIFE**, not ESM: a plain `<script defer>` containing `export` fails to parse,
+  so the elements never register and render as zero-size unknown elements.
+- The components are **not form-associated**, so htmx's `FormData` would submit
+  the label (single-select) or nothing (multi-select). Each wrapper in
+  `views_combo.templ` pairs the component with hidden native mirrors, synced by
+  `static/vaadin.js`. Options ride inline as JSON attributes (`items`,
+  `selected-items` as full item objects, not bare values).
 - Some fragments are injected with `fetch` + `innerHTML` (the add-to-list
   dialog), which fires no htmx swap event; `static/app.js` calls
   `window.nanofluxReinitVaadin(target)` after injecting so the bridge binds.
-- `comboChips` is the display-only variant for the collection edit feed list:
-  chips with a remove button, `auto-expand-horizontally`/`-vertically` so all
-  names show, and `readonly` (no remove URL) for auto collections.
+- For a plain fixed-set choice where search adds nothing, prefer the custom pill
+  picker (`PickerControl` in `views_items.templ`); see `/settings` home screen.
