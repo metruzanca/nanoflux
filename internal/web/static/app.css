@@ -246,7 +246,8 @@ button {
 button.link { background: none; border: none; color: var(--accent); padding: 0; }
 
 /* Red ghost button for destructive actions: transparent, red border + text,
-   light red fill on hover. */
+   light red fill on hover. Used by standalone destructive buttons (the
+   "delete" forms). */
 button.danger {
   background: none;
   border: 1px solid var(--danger);
@@ -254,6 +255,16 @@ button.danger {
 }
 button.danger:hover {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+/* A destructive icon button ("link danger", e.g. the row ✕): just a red glyph,
+   no border or fill, matching the other borderless .link icon buttons. */
+button.link.danger,
+button.link.danger:hover {
+  background: none;
+  border: none;
+  padding: 0;
   color: var(--danger);
 }
 
