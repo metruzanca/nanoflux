@@ -120,6 +120,16 @@ it. Favorites is the special built-in list; create others from `/lists`.
 Nanoflux is a progressive web app, you can install it for convenience on Android/IOS.
 Installing nanoflux as a PWA also registers it as a **share target** allowing you to quickly add a feed.
 
+## Plugins
+
+nanoflux supports external feed plugins — small executables dropped into
+`plugins/` that add site-specific sources. Build them with `make plugins`. See
+[`docs/writing-plugins.md`](docs/writing-plugins.md) to write your own.
+
+- [nanoflux-plugin-x](https://github.com/metruzanca/nanoflux-plugin-x)↗ — X
+  (Twitter) profile feeds, fetched with your own logged-in session. Use at your
+  own risk.
+
 ## Contributing
 
 I'm not accepting contributions at this time — but issues are very welcome for
