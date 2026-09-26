@@ -295,13 +295,26 @@ templ scopedItemsInner(d scopedItemsData) {
 			} else {
 				<a href={ d.Path + "?view=read&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=read&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read&dir=" + d.Dir }>read ({ d.ReadCount })</a>
 			}
+			if d.FeedsTab {
+				if d.View == "feeds" {
+					<a class="active" href={ d.Path + "?view=feeds" } hx-get={ d.ItemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=feeds" }>feeds ({ d.FeedCount })</a>
+				} else {
+					<a href={ d.Path + "?view=feeds" } hx-get={ d.ItemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=feeds" }>feeds ({ d.FeedCount })</a>
+				}
+			}
 		</nav>
-		<div class="row-actions">
-			@SortDirControl(d.Dir, d.Path+"?view="+d.View+"&dir=desc", d.Path+"?view="+d.View+"&dir=asc")
-			@DisplayModeControl(d.Path, d.Mode)
-		</div>
+		if d.View != "feeds" {
+			<div class="row-actions">
+				@SortDirControl(d.Dir, d.Path+"?view="+d.View+"&dir=desc", d.Path+"?view="+d.View+"&dir=asc")
+				@DisplayModeControl(d.Path, d.Mode)
+			</div>
+		}
 	</div>
-	@ItemsListPage(d.Items, d.More, d.HideAuthor, d.Mode)
+	if d.View == "feeds" {
+		@CollectionFeedCards(d.Feeds)
+	} else {
+		@ItemsListPage(d.Items, d.More, d.HideAuthor, d.Mode)
+	}
 }
 
 // pickerOption is one choice in a PickerControl. Client-side pickers (no Href)
