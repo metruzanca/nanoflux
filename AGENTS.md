@@ -6,6 +6,7 @@
 - mise is for development, make is for selfhosting an instance
 - Do not mention any external plugins in internal code, comments or docs
 - Do not run `make` or `podman` or `docker` commands without user's approval. The container is likely the user's production deployment. Use go to run the app locally instead e.g. go run cmd/server/main.go which runs on 8080. You may kill port 8080 if necessary.
+- we're pre v1 so breaking changes are allowed/expected if they make v1 better.
 
 # Notes
 
