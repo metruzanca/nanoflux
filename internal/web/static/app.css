@@ -971,10 +971,27 @@ details.feeds-section summary:hover { color: var(--accent); }
   .row { flex-wrap: wrap; }
 }
 
-/* --- Vaadin combo-box (vendored) -------------------------------------------
-   v25 ships only structural base styles, so we theme the components with our
-   own tokens and the --vaadin-* custom properties. Mapped to --panel/--bg/
-   --border/--fg/--accent so they match the hand-written inputs above. */
+/* --- Vaadin components (vendored) ------------------------------------------
+   v25 ships only structural base styles; its base color tokens default via
+   light-dark(), which follows the OS preference, not our data-theme. Map them to
+   nanoflux tokens here (inherited into every component's shadow DOM) so the
+   components match the hand-written controls and the selected theme. */
+:root {
+  --vaadin-background-color: var(--bg);
+  --vaadin-text-color: var(--fg);
+  --vaadin-text-color-secondary: var(--muted);
+  --vaadin-text-color-disabled: var(--muted);
+  --vaadin-border-color: var(--border);
+  --vaadin-border-color-secondary: var(--border);
+  --vaadin-focus-ring-color: var(--accent);
+  --vaadin-grid-background: var(--panel);
+  --vaadin-grid-row-background-color: var(--panel);
+  --vaadin-grid-row-odd-background-color: var(--panel);
+  --vaadin-grid-row-hover-background-color: var(--panel);
+  --vaadin-grid-header-text-color: var(--muted);
+  --vaadin-grid-cell-background-color: transparent;
+}
+
 .combo-field { display: flex; flex-direction: column; gap: 0.35rem; }
 .combo-field > label { font-size: 0.85rem; color: var(--muted); }
 .combo { display: block; }
@@ -986,11 +1003,6 @@ vaadin-multi-select-combo-box {
   --vaadin-input-field-value-color: var(--fg);
   --vaadin-input-field-label-color: var(--muted);
   --vaadin-input-field-helper-color: var(--muted);
-  --vaadin-text-color: var(--fg);
-  --vaadin-text-color-secondary: var(--muted);
-  --vaadin-background-color: var(--bg);
-  --vaadin-border-color: var(--border);
-  --vaadin-focus-ring-color: var(--accent);
   --vaadin-input-field-focus-border-color: var(--accent);
   --vaadin-chip-background: var(--panel);
   --vaadin-chip-border-color: var(--border);
@@ -1015,3 +1027,24 @@ vaadin-multi-select-combo-box-overlay {
   --vaadin-field-default-width: 100%;
   --vaadin-input-field-value-font-size: 0.9rem;
 }
+
+/* Home-screen pinned-collection grid (vendored Vaadin grid). Rows are draggable
+   to reorder; all-rows-visible keeps it as tall as its content, no inner scroll. */
+#settings-home-grid {
+  --vaadin-grid-border-color: var(--border);
+  --vaadin-grid-border-radius: 6px;
+  --vaadin-grid-cell-padding: 0.5rem 0.6rem;
+  margin-bottom: 0.25rem;
+}
+/* The grid's cell content is slotted from our light DOM; make each cloned row
+   fill the cell and lay out its name + actions. */
+#settings-home-grid .home-grid-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+}
+/* A grab affordance on the row, since dragging is the reorder gesture. */
+#settings-home-grid vaadin-grid-cell-content[draggable-source] .home-grid-row { cursor: grab; }
+#settings-home-grid [dragging-rows] .home-grid-row { cursor: grabbing; }

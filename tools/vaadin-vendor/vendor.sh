@@ -22,6 +22,7 @@ npm init -y >/dev/null 2>&1
 npm install --no-audit --no-fund --silent \
   "@vaadin/combo-box@$VAADIN_VERSION" \
   "@vaadin/multi-select-combo-box@$VAADIN_VERSION" \
+  "@vaadin/grid@$VAADIN_VERSION" \
   "esbuild@$ESBUILD_VERSION"
 
 cp "$ROOT/tools/vaadin-vendor/entry.js" entry.js
