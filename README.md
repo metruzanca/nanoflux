@@ -65,6 +65,7 @@ For selfhosting convenience, I've setup a `Makefile` with the most likely comman
 | `make version` | print the running app's version |
 | `make backup` | snapshot the database and file store into `backups/` |
 | `make restore ARCHIVE=backups/<file>.tar.gz` | stop, restore from a backup, and restart |
+| `make plugins` | rebuild every plugin in `plugins/` (run before `make update`) |
 
 Some admin operations are more easily done via a CLI app.
 Nanoflux ships with one, you can access it easily by running
