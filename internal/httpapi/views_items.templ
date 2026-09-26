@@ -262,6 +262,8 @@ type pickerOption struct {
 	Icon     string // ModeIcon name; "" renders a label only
 	Href     string
 	HxGet    string
+	HxPost   string // POST endpoint for a server-side mutation picker (e.g. home mode)
+	HxVals   string // JSON extra values sent with HxPost
 	HxTarget string
 }
 
@@ -315,6 +317,23 @@ templ PickerControl(name, title, current, scope string, options []pickerOption) 
 						}
 						<span>{ o.Label }</span>
 					</a>
+				} else if o.HxPost != "" {
+					<button
+						type="button"
+						class="mode-option"
+						role="menuitemradio"
+						data-option={ o.Value }
+						aria-checked={ strconv.FormatBool(o.Value == current) }
+						hx-post={ o.HxPost }
+						hx-vals={ o.HxVals }
+						hx-target={ o.HxTarget }
+						hx-swap="outerHTML"
+					>
+						if o.Icon != "" {
+							@ModeIcon(o.Icon)
+						}
+						<span>{ o.Label }</span>
+					</button>
 				} else {
 					<button type="button" class="mode-option" role="menuitemradio" data-option={ o.Value } aria-checked={ strconv.FormatBool(o.Value == current) }>
 						if o.Icon != "" {

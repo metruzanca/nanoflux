@@ -191,10 +191,13 @@ func TestSettingsHomeRenderMode(t *testing.T) {
 	u, cats, _ := homeFixture(t, s)
 	s.store.Users.SetHomeConfig(u.ID, `[{"kind":"collection","ref_id":`+itoa(cats.ID)+`}]`)
 
-	// The settings card offers a per-section render-method combo.
+	// The settings card offers a per-section render-method picker (the custom
+	// pill picker, not a combo): each option POSTs the mode for that collection.
 	body := doGet(h, "/settings", cookie).Body.String()
-	if !strings.Contains(body, `name="mode"`) || !strings.Contains(body, `&#34;value&#34;:&#34;grid&#34;`) {
-		t.Fatalf("settings home card should offer a render-method combo: %s", body)
+	if !strings.Contains(body, `data-picker="mode-`+itoa(cats.ID)+`"`) ||
+		!strings.Contains(body, `hx-post="/settings/home"`) ||
+		!strings.Contains(body, `&#34;mode&#34;:&#34;grid&#34;`) {
+		t.Fatalf("settings home card should offer a render-method picker: %s", body)
 	}
 
 	rr := doForm(h, "POST", "/settings/home", url.Values{
