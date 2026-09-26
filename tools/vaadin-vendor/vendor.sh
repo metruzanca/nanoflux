@@ -5,7 +5,7 @@
 # Vaadin publishes a tree of @vaadin/* ES modules that import each other by
 # bare specifier, so a browser cannot load them directly. This installs the
 # pinned versions in a throwaway dir and bundles the transitive closure into
-# one minified ESM file with no runtime npm dependency. The output is committed
+# one minified IIFE with no runtime npm dependency. The output is committed
 # (like htmx.min.js), so builds and self-hosting never touch npm.
 set -euo pipefail
 
