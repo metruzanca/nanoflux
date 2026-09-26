@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -242,6 +243,51 @@ func TestAPIExtSaveHomeURL(t *testing.T) {
 	}
 	if noHome == nil || noHome.HomeURL != "https://api.dev/" {
 		t.Fatalf("ext feed home should fall back to the feed's own home: %+v", feeds)
+	}
+}
+
+// TestAPIExtSaveRedditDerived asserts the extension save path derives reddit
+// feeds without a validation fetch (which would spend the host's tight rate
+// limit) and stores the canonical .rss url, derived title and home url.
+func TestAPIExtSaveRedditDerived(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	ct := &countingTransport{}
+	client := &http.Client{Transport: ct}
+	s.client = client
+	s.discoverer = discover.New(client)
+
+	rr := doForm(h, "POST", "/api/ext/save", url.Values{
+		"feed_url": {"https://old.reddit.com/u/spez/"},
+		"title":    {""},
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "saved") {
+		t.Fatalf("ext save: %d %s", rr.Code, rr.Body.String())
+	}
+	feeds, _ := s.store.Feeds.List(u.ID)
+	if len(feeds) != 1 {
+		t.Fatalf("expected one feed, got %+v", feeds)
+	}
+	f := feeds[0]
+	if f.FeedURL != "https://reddit.com/u/spez.rss" {
+		t.Errorf("feed url = %q, want the canonical .rss", f.FeedURL)
+	}
+	if f.Title != "u/spez" {
+		t.Errorf("title = %q, want u/spez", f.Title)
+	}
+	if f.HomeURL != "https://reddit.com/u/spez" {
+		t.Errorf("home url = %q, want the canonical home", f.HomeURL)
+	}
+	// A user-derived feed auto-creates an author named after the user alone, so
+	// the same person can have feeds on other sites without a "u/" prefix.
+	a, err := s.store.Authors.ByID(u.ID, f.AuthorID)
+	if err != nil || a.Name != "spez" {
+		t.Errorf("author = %+v, err %v, want name spez", a, err)
+	}
+	if ct.hits != 0 {
+		t.Fatalf("reddit ext save made %d request(s); it must make none", ct.hits)
 	}
 }
 

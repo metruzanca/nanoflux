@@ -12,6 +12,9 @@ import (
 // in their HTML. It returns the candidates it validated, plus the last fetch
 // error when a known rule's feed could not be fetched (so a caller can explain
 // why — e.g. a rate limit — instead of reporting "no feed").
+//
+// Reddit is not here: its feeds are derived without a request (see Derive), so
+// its tight .rss rate limit is never spent on discovery.
 func (d *Discoverer) hostSpecific(ctx context.Context, pageURL string) ([]Candidate, error) {
 	u, err := url.Parse(pageURL)
 	if err != nil {
@@ -81,16 +84,6 @@ func hostSpecificURLs(u *url.URL) []hostFeed {
 		// bsk.app/profile/{handle} -> the profile's RSS feed.
 		if len(parts) >= 2 && parts[0] == "profile" {
 			return []hostFeed{{URL: "https://" + u.Host + "/profile/" + parts[1] + "/rss"}}
-		}
-
-	case host == "reddit.com" || host == "www.reddit.com" || host == "old.reddit.com":
-		// Subreddits expose /r/{sub}.rss.
-		if len(parts) >= 2 && parts[0] == "r" {
-			return []hostFeed{{URL: "https://www.reddit.com/r/" + parts[1] + "/.rss"}}
-		}
-		// User pages expose /user/{name}/.rss (both /user/ and /u/ forms).
-		if len(parts) == 2 && (parts[0] == "user" || parts[0] == "u") {
-			return []hostFeed{{URL: "https://www.reddit.com/user/" + parts[1] + "/.rss"}}
 		}
 
 	case host == "github.com" || host == "www.github.com":

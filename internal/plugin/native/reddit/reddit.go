@@ -1,7 +1,8 @@
 // Package reddit is the native plugin for reddit subreddits and user profiles.
 //
-// Reddit's .rss feeds are public and are handled by the generic feed parser via
-// discover's host rules, so this plugin does not fetch feeds. What it owns is
+// Reddit's .rss feeds are public and are handled by the generic feed parser;
+// their URLs are derived from the page URL by discover.Derive (no request), so
+// this plugin does not fetch feeds. What it owns is
 // the *view-time* media resolution for a post: reddit marks a post's real
 // content in its feed HTML with a "[link]" anchor, and that content — an
 // external destination, an oEmbed player, or a multi-image gallery — cannot be
@@ -66,7 +67,7 @@ func (*Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
 	return isRedditHost(u.Hostname())
 }
 
-// Discover is unsupported: reddit's feeds are plain RSS found by host rules.
+// Discover is unsupported: reddit's feeds are plain RSS derived from the URL.
 func (*Plugin) Discover(context.Context, string, pluginapi.Host) ([]pluginapi.Candidate, error) {
 	return nil, pluginapi.ErrUnsupportedCapability
 }

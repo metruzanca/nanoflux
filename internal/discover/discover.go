@@ -1,7 +1,9 @@
 // Package discover finds the RSS/Atom/JSON-feed for a web page. It tries, in
-// order: parsing the URL itself, scanning the page's HTML for feed <link>s,
-// host-specific rules (Bluesky, YouTube, Reddit, GitHub), and common feed
-// paths. Candidates are only returned after they are fetched and parsed.
+// order: deriving the feed from a known URL shape (Reddit), parsing the URL
+// itself, scanning the page's HTML for feed <link>s, host-specific rules
+// (Bluesky, YouTube, GitHub), and common feed paths. Candidates are only
+// returned after they are fetched and parsed, except for derived ones, which
+// need no request.
 package discover
 
 import (
@@ -28,6 +30,10 @@ type Candidate struct {
 	IconURL  string `json:"icon_url,omitempty"` // author avatar / site icon (plugin-supplied)
 	HomeURL  string `json:"home_url,omitempty"`
 	Strategy string `json:"strategy"`
+	// AuthorName is the preferred name for a newly created author, when the
+	// site suggests one that differs from the feed title (reddit users: "spez"
+	// rather than "u/spez"). Empty means fall back to Title.
+	AuthorName string `json:"author_name,omitempty"`
 }
 
 // Discoverer finds feeds for URLs.
@@ -52,13 +58,20 @@ func (d *Discoverer) Discover(ctx context.Context, pageURL string) ([]Candidate,
 		return nil, errors.New("invalid url")
 	}
 
+	// 0. Hosts with a known, fixed feed shape are derived without a request.
+	// Reddit's .rss sits behind a tight anonymous rate limit, so probing it
+	// would spend the host's budget on discovery; the URL alone is enough.
+	if c, ok := Derive(pageURL); ok {
+		return []Candidate{c}, nil
+	}
+
 	// 1. The URL itself might already be a feed.
 	if c, err := d.tryFeed(ctx, pageURL, "direct", pageURL); err == nil {
 		return []Candidate{c}, nil
 	}
 
-	// 2. Host-specific rules (GitHub, Reddit, Bluesky, YouTube). These are the
-	// site's canonical feeds (e.g. a GitHub profile's activity atom, a repo's
+	// 2. Host-specific rules (GitHub, Bluesky, YouTube). These are the site's
+	// canonical feeds (e.g. a GitHub profile's activity atom, a repo's
 	// releases/commits/tags), so they take precedence over whatever the page's
 	// HTML advertises — and may carry a fixed display title.
 	cs, hostErr := d.hostSpecific(ctx, pageURL)
@@ -80,8 +93,8 @@ func (d *Discoverer) Discover(ctx context.Context, pageURL string) ([]Candidate,
 	cs = d.validateAll(ctx, probes, "paths", pageURL, "")
 	if len(cs) == 0 {
 		// Nothing found: surface why when we can, instead of a bare "no feed
-		// found". A known host rule that failed (e.g. reddit rate-limiting its
-		// .rss probe) takes precedence, then a page-fetch failure (e.g. 429).
+		// found". A known host rule that failed takes precedence, then a
+		// page-fetch failure (e.g. 429).
 		if hostErr != nil {
 			return nil, hostErr
 		}

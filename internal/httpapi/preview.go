@@ -130,11 +130,13 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, feedChooser(feedChoose{URL: pageURL, Target: previewTarget, Candidates: candidates, Redirect: fixedAuthor == nil}))
 }
 
-// previewHome returns the home page to pre-fill for a candidate: a direct feed
-// URL carries its own discovered home, while a feed found on a page keeps the
-// page the user entered as home (so a stale mapping never changes it).
+// previewHome returns the home page to pre-fill for a candidate: a direct or
+// derived feed URL carries its own home (a derived reddit feed's canonical
+// page, not the possibly-old./np. URL the user entered), while a feed found on
+// a page keeps the page the user entered as home (so a stale mapping never
+// changes it).
 func previewHome(c discover.Candidate, pageURL string) string {
-	if c.Strategy == "direct" {
+	if c.Strategy == "direct" || c.Strategy == "derived" {
 		return c.HomeURL
 	}
 	return pageURL
@@ -237,6 +239,13 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 		}
 	}
 
+	// Hosts with a known, fixed feed shape are derived without a request. Reddit
+	// is the case that matters: probing its .rss would spend the host's tight
+	// anonymous rate limit on discovery, so the candidate is built from the URL.
+	if c, ok := discover.Derive(feedURL); ok {
+		return []discover.Candidate{c}, nil
+	}
+
 	var directErr error
 	// The URL itself may already be a feed; if so we can also derive the home page.
 	// Remember the fetch error so a rate limit / server error can be surfaced
@@ -329,19 +338,30 @@ func feedPreviewError(err error) string {
 // global add flow (no fixed author) sends the saved feed to its author page;
 // the author-scoped flow appends the new feed row in place.
 func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c discover.Candidate, pageURL, homeURL string, authors []store.Author, selectedAuthor int64, fixedAuthor *store.Author) {
-	meta, _ := s.discoverer.PageMeta(r.Context(), pageURL)
+	// A derived candidate (reddit) already carries a clean title and home URL,
+	// and the page must not be fetched: that request shares the host's tight
+	// anonymous rate limit with the feed's .rss (which the immediate poll needs).
+	var meta discover.PageMeta
+	if c.Strategy != "derived" {
+		meta, _ = s.discoverer.PageMeta(r.Context(), pageURL)
+	}
 	// A plugin-discovered candidate carries its own preview metadata, which wins
 	// over the generic page metadata. A generic candidate's Title is the feed
 	// title, so only use it as a fallback (below), never over the page title.
 	name := meta.Title
 	avatar := meta.IconURL
-	if c.Strategy == "plugin" {
+	if c.Strategy == "plugin" || c.Strategy == "derived" {
 		if c.Title != "" {
 			name = c.Title
 		}
 		if c.IconURL != "" {
 			avatar = c.IconURL
 		}
+	}
+	// A derived candidate may suggest a cleaner author name than the feed title
+	// (a reddit user is "spez", not "u/spez").
+	if c.AuthorName != "" {
+		name = c.AuthorName
 	}
 	if name == "" {
 		name = c.Title

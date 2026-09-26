@@ -104,6 +104,48 @@ func TestFeedPreviewSingleAndNone(t *testing.T) {
 	}
 }
 
+// countingTransport counts requests and fails them, so a test can assert that a
+// code path makes no network request at all.
+type countingTransport struct{ hits int }
+
+func (c *countingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	c.hits++
+	return nil, fmt.Errorf("unexpected request")
+}
+
+// TestFeedPreviewRedditDerived asserts the reddit add path is request-free: the
+// feed is derived from the URL and no reddit page or .rss is fetched, leaving
+// the host's tight anonymous rate limit for the immediate poll.
+func TestFeedPreviewRedditDerived(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	ct := &countingTransport{}
+	client := &http.Client{Transport: ct}
+	s.client = client
+	s.discoverer = discover.New(client)
+
+	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url": {"https://old.reddit.com/u/spez/"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `value="https://reddit.com/u/spez.rss"`) {
+		t.Fatalf("preview should prefill the derived .rss feed: %s", body)
+	}
+	if !strings.Contains(body, `value="https://reddit.com/u/spez"`) {
+		t.Fatalf("preview should prefill the canonical home url: %s", body)
+	}
+	if !strings.Contains(body, `value="spez"`) {
+		t.Fatalf("new author should be prefilled as spez (no u/ prefix): %s", body)
+	}
+	if ct.hits != 0 {
+		t.Fatalf("reddit preview made %d request(s); it must make none", ct.hits)
+	}
+}
+
 // TestFeedPreviewRateLimitReason asserts that when discovery fails with an HTTP
 // status the user sees a specific reason (a 429 is a rate limit, not a missing
 // feed), and that no raw URL leaks.

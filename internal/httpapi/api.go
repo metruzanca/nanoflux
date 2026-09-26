@@ -205,22 +205,36 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Confirm the URL is a real feed before saving.
-	client := &http.Client{Timeout: 15 * time.Second}
-	res, err := feedparse.Fetch(r.Context(), req.FeedURL, client, "", "")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a feed: " + err.Error()})
-		return
-	}
-	// The entered page URL wins over the feed's own advertised home (e.g. a
-	// YouTube @handle page rather than the /channel/UC... URL).
-	homeURL := req.HomeURL
-	if homeURL == "" {
-		homeURL = res.Feed.HomeURL
-	}
+	// Confirm the URL is a real feed before saving, unless it is derived from a
+	// known URL shape (reddit), whose .rss sits behind a tight anonymous rate
+	// limit — the candidate supplies the metadata without spending a request.
 	title := req.Title
-	if title == "" {
-		title = res.Feed.Title
+	homeURL := req.HomeURL
+	var derivedAuthor string
+	if c, ok := discover.Derive(req.FeedURL); ok {
+		req.FeedURL = c.FeedURL
+		derivedAuthor = c.AuthorName
+		if homeURL == "" {
+			homeURL = c.HomeURL
+		}
+		if title == "" {
+			title = c.Title
+		}
+	} else {
+		client := &http.Client{Timeout: 15 * time.Second}
+		res, err := feedparse.Fetch(r.Context(), req.FeedURL, client, "", "")
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a feed: " + err.Error()})
+			return
+		}
+		// The entered page URL wins over the feed's own advertised home (e.g. a
+		// YouTube @handle page rather than the /channel/UC... URL).
+		if homeURL == "" {
+			homeURL = res.Feed.HomeURL
+		}
+		if title == "" {
+			title = res.Feed.Title
+		}
 	}
 	if title == "" {
 		title = req.FeedURL
@@ -242,7 +256,11 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		authorID = a.ID
 	}
 	if authorID == 0 {
-		a, err := s.store.Authors.Create(u.ID, title, "", "")
+		newName := title
+		if derivedAuthor != "" {
+			newName = derivedAuthor
+		}
+		a, err := s.store.Authors.Create(u.ID, newName, "", "")
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "create author failed"})
 			return
