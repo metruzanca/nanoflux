@@ -99,11 +99,23 @@ templ ItemsPage(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool)
 }
 
 templ ItemRow(it store.ItemWithFeed, hideAuthor bool) {
-	@itemRowInner(it, visualsOf(it), hideAuthor)
+	@itemRowInner(it, visualsOf(it), hideAuthor, false)
 }
 
-templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor bool) {
-	<li id={ "item-" + strconv.FormatInt(it.ID, 10) } class={ itemCardClass(v) }>
+// ItemRowOOB renders a row as an out-of-band swap, so a modal toggle can update
+// the row behind the dialog in the same response.
+templ ItemRowOOB(it store.ItemWithFeed, hideAuthor bool) {
+	@itemRowInner(it, visualsOf(it), hideAuthor, true)
+}
+
+templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
+	<li
+		id={ "item-" + strconv.FormatInt(it.ID, 10) }
+		class={ itemCardClass(v) }
+		if oob {
+			hx-swap-oob="outerHTML"
+		}
+	>
 		if v.Video {
 			<a class="thumb" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
 				if it.ImageURL != "" {
@@ -160,63 +172,98 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor bool) {
 					}
 				</div>
 				<div class="row-actions">
-					if it.Favorite {
-						<button
-							class="link fav-btn"
-							title="unfavorite"
-							hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/favorite" }
-							hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) }
-							hx-swap="outerHTML"
-							if hideAuthor {
-								hx-vals={ `{"hideAuthor":"1"}` }
-							}
-						>
-							@web.FavIcon(true)
-						</button>
-					} else {
-						<button
-							class="link fav-btn"
-							title="favorite"
-							hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/favorite" }
-							hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) }
-							hx-swap="outerHTML"
-							if hideAuthor {
-								hx-vals={ `{"hideAuthor":"1"}` }
-							}
-						>
-							@web.FavIcon(false)
-						</button>
-					}
-					if it.Read {
-						<button
-							class="link read-btn"
-							title="mark unread"
-							hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" }
-							hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) }
-							hx-swap="outerHTML"
-							if hideAuthor {
-								hx-vals={ `{"hideAuthor":"1"}` }
-							}
-						>@web.Lucide("rotate-ccw")
-</button>
-					} else {
-						<button
-							class="link read-btn"
-							title="mark read"
-							hx-post={ "/items/" + strconv.FormatInt(it.ID, 10) + "/read" }
-							hx-target={ "#item-" + strconv.FormatInt(it.ID, 10) }
-							hx-swap="outerHTML"
-							if hideAuthor {
-								hx-vals={ `{"hideAuthor":"1"}` }
-							}
-						>@web.Lucide("check")
-</button>
-					}
+					@itemToggleButtons(it.ID, it.Favorite, it.Read, false, hideAuthor)
 					@itemMenu(it.ID, it.FeedID)
 				</div>
 			</div>
 		</div>
 	</li>
+}
+
+// itemToggleButtons renders the favorite and read/unread toggles for one item,
+// shared by the item row and the modal header. inView selects the surface:
+// true means the modal (swap target is the controls container and the handler
+// answers with just the fresh toggles); false means the row (swap target is the
+// row itself and the handler answers with the fresh row). hideAuthor carries
+// the author-scoped flag a swapped row needs to stay consistent.
+templ itemToggleButtons(itemID int64, favorite, read, inView, hideAuthor bool) {
+	@favToggle(itemID, favorite, toggleTarget(itemID, inView), toggleVals(inView, hideAuthor))
+	@readToggle(itemID, read, toggleTarget(itemID, inView), toggleVals(inView, false))
+}
+
+// toggleTarget is the htmx swap target for a toggle: the modal's controls
+// container when inView, else the item's own row.
+func toggleTarget(itemID int64, inView bool) string {
+	if inView {
+		return "#item-view-controls"
+	}
+	return "#item-" + strconv.FormatInt(itemID, 10)
+}
+
+// toggleVals builds the hx-vals JSON for a toggle: view=1 asks the handler for
+// the modal toggles; hideAuthor preserves the author-scoped row.
+func toggleVals(inView, hideAuthor bool) string {
+	if inView {
+		return `{"view":"1"}`
+	}
+	if hideAuthor {
+		return `{"hideAuthor":"1"}`
+	}
+	return "{}"
+}
+
+// itemViewControls is the modal header's toggle container, swapped in place when
+// a toggle is used from the modal.
+templ itemViewControls(itemID int64, favorite, read bool) {
+	<div class="item-controls" id="item-view-controls">
+		@itemToggleButtons(itemID, favorite, read, true, false)
+	</div>
+}
+
+// favToggle is the favorite star button.
+templ favToggle(itemID int64, favorite bool, target, vals string) {
+	<button
+		class="link fav-btn"
+		title={ favTitle(favorite) }
+		hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/favorite" }
+		hx-target={ target }
+		hx-swap="outerHTML"
+		hx-vals={ vals }
+	>
+		@web.FavIcon(favorite)
+	</button>
+}
+
+// readToggle is the mark read/unread button.
+templ readToggle(itemID int64, read bool, target, vals string) {
+	<button
+		class="link read-btn"
+		title={ readTitle(read) }
+		hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read" }
+		hx-target={ target }
+		hx-swap="outerHTML"
+		hx-vals={ vals }
+	>
+		if read {
+			@web.Lucide("rotate-ccw")
+		} else {
+			@web.Lucide("check")
+		}
+	</button>
+}
+
+func favTitle(favorite bool) string {
+	if favorite {
+		return "unfavorite"
+	}
+	return "favorite"
+}
+
+func readTitle(read bool) string {
+	if read {
+		return "mark unread"
+	}
+	return "mark read"
 }
 
 templ ScopedItems(d scopedItemsData) {
@@ -406,7 +453,16 @@ templ ItemView(d itemViewData) {
 
 templ itemViewInner(d itemViewData, v itemVisuals) {
 	<div class="item-view">
-		<h1>{ d.Title }</h1>
+		<!-- Relocated into the dialog header by openItem: the title (left) and
+		     the fav / read / ⋯ controls (right), so both sit at the top and only
+		     the content below scrolls. -->
+		<div id="item-dialog-controls-src">
+			<h1>{ d.Title }</h1>
+			<div class="item-controls">
+				@itemViewControls(d.ID, d.Favorite, d.Read)
+				@itemMenuFull(d.ID, d.FeedID, d.SourceURL, d.ShareToken, true)
+			</div>
+		</div>
 		<p class="item-meta">
 			if d.AuthorName != "" {
 				<a href={ "/authors/" + strconv.FormatInt(d.AuthorID, 10) }>{ d.AuthorName }</a> ·
@@ -417,9 +473,6 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 			}
 			· <a href={ templ.URL(d.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">open live</a>
 		</p>
-		<div class="item-controls" id="item-dialog-controls-src">
-			@itemMenuFull(d.ID, d.FeedID, d.SourceURL, d.ShareToken, true)
-		</div>
 		@itemContent(d, v)
 	</div>
 }

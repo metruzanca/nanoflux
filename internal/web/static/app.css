@@ -144,17 +144,40 @@ a.external::after {
   position: relative;
   display: inline-block;
 }
-/* The modal's share + ⋯ controls, rendered inside the scrollable body and
-   relocated into the dialog header next to ✕ by openItem. */
+/* The modal's fav / read / ⋯ controls, rendered inside the scrollable body and
+   relocated into the dialog header by openItem. */
 .item-controls {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  flex: none;
 }
-/* The item dialog header: just the relocated controls + the close ✕, right
-   aligned (the redundant "item" title was dropped). */
-.item-dialog-head { justify-content: flex-end; margin-bottom: 0.25rem; }
-#item-dialog-controls { display: inline-flex; align-items: center; gap: 0.5rem; }
+/* The item dialog header: the relocated title + controls on the left, and the
+   close ✕ on the right, so both sit at the top while only the body scrolls. */
+.item-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+/* The relocated block: title (left) and the toggle/menu controls (right). */
+#item-dialog-controls { flex: 1; min-width: 0; }
+#item-dialog-controls-src {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+/* The title moved out of .item-view into the dialog header, so restate its
+   typography here. */
+#item-dialog-controls-src h1 {
+  min-width: 0;
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.3;
+}
 .menu-pop {
   position: absolute;
   right: 0;

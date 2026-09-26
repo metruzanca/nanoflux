@@ -649,6 +649,70 @@ func TestItemUnreadEndpoint(t *testing.T) {
 	}
 }
 
+// TestItemViewToggles covers the item modal's favorite and read/unread buttons.
+// The modal renders the title and both toggles in the relocatable block, and a
+// toggle posted with view=1 answers with the fresh controls plus an
+// out-of-band row update so the row behind the dialog stays in sync.
+func TestItemViewToggles(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	id := items[0].ID
+
+	// The modal fragment carries the title and both toggles in one relocatable
+	// block, plus the ⋯ menu; opening auto-marks read.
+	body := doGet(h, "/items/"+itoa(id)+"/view", cookie).Body.String()
+	for _, want := range []string{
+		`id="item-dialog-controls-src"`,
+		`<h1>Item</h1>`,
+		`/items/` + itoa(id) + `/favorite`,
+		`/items/` + itoa(id) + `/read`,
+		`id="item-view-controls"`,
+		`class="item-menu"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("modal fragment missing %q: %s", want, body)
+		}
+	}
+	if it, _ := s.store.Items.ByID(u.ID, id); !it.Read {
+		t.Fatal("opening the modal should mark the item read")
+	}
+
+	// Favorite from the modal: view=1 returns the controls (now "unfavorite")
+	// and an OOB row update, both reflecting the new state.
+	rr := doForm(h, "POST", "/items/"+itoa(id)+"/favorite", url.Values{"view": {"1"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("favorite: %d %s", rr.Code, rr.Body.String())
+	}
+	out := rr.Body.String()
+	if !strings.Contains(out, `id="item-view-controls"`) || !strings.Contains(out, `title="unfavorite"`) {
+		t.Fatalf("modal favorite should return updated controls: %s", out)
+	}
+	if !strings.Contains(out, `hx-swap-oob="outerHTML"`) {
+		t.Fatalf("modal favorite should OOB-update the row behind: %s", out)
+	}
+	if it, _ := s.store.Items.ByID(u.ID, id); !it.Favorite {
+		t.Fatal("item should be favorited")
+	}
+
+	// Read toggle from the modal mirrors the same shape.
+	rr = doForm(h, "POST", "/items/"+itoa(id)+"/read", url.Values{"view": {"1"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("read toggle: %d %s", rr.Code, rr.Body.String())
+	}
+	out = rr.Body.String()
+	if !strings.Contains(out, `title="mark read"`) || !strings.Contains(out, `hx-swap-oob="outerHTML"`) {
+		t.Fatalf("modal read toggle should return updated controls + OOB row: %s", out)
+	}
+	if it, _ := s.store.Items.ByID(u.ID, id); it.Read {
+		t.Fatal("item should be unread after the modal toggle")
+	}
+}
+
 func TestYouTubeEmbedURL(t *testing.T) {
 	cases := []struct {
 		link string

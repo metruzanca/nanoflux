@@ -269,7 +269,7 @@ func topbar(u store.User) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</header><dialog id=\"item-dialog\" class=\"modal wide\"><div class=\"row-actions item-dialog-head\"><div id=\"item-dialog-controls\"></div><button type=\"button\" class=\"link\" onclick=\"document.getElementById('item-dialog').close()\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "</header><dialog id=\"item-dialog\" class=\"modal wide\"><div class=\"item-dialog-head\"><div id=\"item-dialog-controls\"></div><button type=\"button\" class=\"link\" title=\"close\" onclick=\"document.getElementById('item-dialog').close()\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

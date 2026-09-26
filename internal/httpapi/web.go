@@ -428,6 +428,8 @@ type itemViewData struct {
 	Enclosures  []store.Enclosure
 	ShareToken  string // public share token, "" when the item is not shared
 	Timezone    string // user's IANA timezone, for relative timestamps in templates
+	Favorite    bool   // drives the modal's favorite toggle
+	Read        bool   // drives the modal's read/unread toggle (true after auto-mark)
 }
 
 // itemView renders an item's stored content as a fragment, injected into the
@@ -447,6 +449,8 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	if !it.Read {
 		if err := s.store.Items.SetRead(u.ID, id, true); err != nil {
 			log.Error("auto mark read on view", "item_id", id, "err", err)
+		} else {
+			it.Read = true
 		}
 	}
 	data := itemViewData{
@@ -462,6 +466,8 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		Body:        template.HTML(it.Summary),
 		EmbedURL:    web.YoutubeEmbedURL(it.Link),
 		Timezone:    u.Timezone,
+		Favorite:    it.Favorite,
+		Read:        it.Read,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
@@ -590,6 +596,19 @@ func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	// From the item modal there is no row to swap; return the fresh toggle pair
+	// plus an out-of-band update of the row behind the dialog (if the list is
+	// author-scoped, keep it author-scoped) so the two never disagree.
+	if r.FormValue("view") == "1" {
+		row, _ := s.store.Items.OneWithFeed(u.ID, id)
+		row.Timezone = u.Timezone
+		hideAuthor := isAuthorPageURL(r.Header.Get("HX-Current-URL"))
+		web.Render(w, r, templ.Join(
+			itemViewControls(id, it.Favorite, !it.Read),
+			ItemRowOOB(row, hideAuthor),
+		))
+		return
+	}
 	row, err := s.store.Items.OneWithFeed(u.ID, id)
 	if err != nil {
 		w.WriteHeader(http.StatusNoContent)
@@ -713,6 +732,19 @@ func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.Items.SetFavorite(u.ID, id, !it.Favorite); err != nil {
 		log.Error("set favorite", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	// From the item modal there is no row to swap; return the fresh toggle pair
+	// plus an out-of-band update of the row behind the dialog (if the list is
+	// author-scoped, keep it author-scoped) so the two never disagree.
+	if r.FormValue("view") == "1" {
+		row, _ := s.store.Items.OneWithFeed(u.ID, id)
+		row.Timezone = u.Timezone
+		hideAuthor := isAuthorPageURL(r.Header.Get("HX-Current-URL"))
+		web.Render(w, r, templ.Join(
+			itemViewControls(id, !it.Favorite, it.Read),
+			ItemRowOOB(row, hideAuthor),
+		))
 		return
 	}
 	row, err := s.store.Items.OneWithFeed(u.ID, id)
