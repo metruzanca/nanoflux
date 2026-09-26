@@ -27,6 +27,44 @@ templ extSaved(title string) {
 	<div class="ext-ok" role="status">saved <strong>{ title }</strong> @web.Lucide("check")</div>
 }
 
+// extPageForm is the save-page form the browser extension loads into its popup
+// when the current page is not a feed. The page URL is fixed; the title is
+// prefilled from the tab and editable, and the page is saved into the selected
+// list (defaulting to "watch later") or a new list typed in the name field.
+templ extPageForm(pageURL, title, selectedList string, lists []comboItem) {
+	<form class="stack" hx-post="/api/ext/page-save" hx-target="#ext-result" hx-swap="innerHTML">
+		<input type="hidden" name="url" value={ pageURL }/>
+		<label>title
+			<input name="title" type="text" value={ title } placeholder="page title"/>
+		</label>
+		<label>save to list
+			<select name="list_id">
+				for _, l := range lists {
+					if l.Value == selectedList {
+						<option value={ l.Value } selected>{ l.Label }</option>
+					} else {
+						<option value={ l.Value }>{ l.Label }</option>
+					}
+				}
+			</select>
+		</label>
+		<label>or new list
+			<input name="new_list" type="text" placeholder="new list name" autocomplete="off"/>
+		</label>
+		<button type="submit">save page</button>
+	</form>
+	<div id="ext-result"></div>
+}
+
+// extPageSaved is the success fragment shown after saving a page.
+templ extPageSaved(title, list string) {
+	<div class="ext-ok" role="status">saved <strong>{ title }</strong>
+		if list != "" {
+			<span class="muted">to { list }</span>
+		}
+		@web.Lucide("check")</div>
+}
+
 // extError is the error banner for the extension popup.
 templ extError(msg string) {
 	<div class="error" role="alert">{ msg }</div>

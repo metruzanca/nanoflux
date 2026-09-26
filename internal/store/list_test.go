@@ -135,6 +135,126 @@ func TestListStore(t *testing.T) {
 	}
 }
 
+func TestSavePage(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+
+	// A feed item for contrast, so we can assert the saved page does not join
+	// the ordinary streams.
+	_, feedItem := mustFeedWithItem(t, s, u, "Feed post", "g1")
+
+	l, err := s.Lists.Ensure(u.ID, "watch later")
+	if err != nil {
+		t.Fatalf("Ensure list: %v", err)
+	}
+	// Ensure is idempotent.
+	again, err := s.Lists.Ensure(u.ID, "watch later")
+	if err != nil || again.ID != l.ID {
+		t.Fatalf("Ensure not idempotent: %+v %v", again, err)
+	}
+
+	itemID, inserted, err := s.SavePage(u.ID, l.ID, "page:example.com/a", "A page", "https://example.com/a", "desc", "https://example.com/a.png")
+	if err != nil {
+		t.Fatalf("SavePage: %v", err)
+	}
+	if !inserted {
+		t.Fatal("first save should insert")
+	}
+
+	// The system feed is hidden from feed listings and feed counts.
+	feeds, _ := s.Feeds.List(u.ID)
+	if len(feeds) != 1 || feeds[0].Title != "Feed post" {
+		t.Fatalf("Feeds.List leaked system feed: %+v", feeds)
+	}
+	authors, _ := s.Authors.List(u.ID)
+	if len(authors) != 1 || authors[0].Name != "Blog" {
+		t.Fatalf("Authors.List leaked system author: %+v", authors)
+	}
+	if _, err := s.Feeds.ByID(u.ID, mustSystemFeedID(t, s, u.ID)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("system feed must not be reachable via ByID, got %v", err)
+	}
+	if _, err := s.Authors.ByID(u.ID, mustSystemAuthorID(t, s, u.ID)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("system author must not be reachable via ByID, got %v", err)
+	}
+
+	// It appears in the list it was saved to, and in favorites once favorited.
+	items, _, err := s.Lists.ItemList(u.ID, l.ID, 0, 10, false)
+	if err != nil || len(items) != 1 || items[0].ID != itemID {
+		t.Fatalf("ItemList: %v %+v", err, items)
+	}
+	if !items[0].FeedIsSystem {
+		t.Fatal("saved-page item should carry FeedIsSystem")
+	}
+	if err := s.Items.SetFavorite(u.ID, itemID, true); err != nil {
+		t.Fatalf("SetFavorite: %v", err)
+	}
+	favs, _ := s.Items.List(u.ID, ItemFilter{FavoritesOnly: true, Limit: 10})
+	if len(favs) != 1 || favs[0].ID != itemID {
+		t.Fatalf("favorites should include the saved page: %+v", favs)
+	}
+
+	// It is absent from the unread/read streams and their counts.
+	unread, _ := s.Items.List(u.ID, ItemFilter{UnreadOnly: true, Limit: 10})
+	for _, it := range unread {
+		if it.ID == itemID {
+			t.Fatal("saved page must not appear in the unread stream")
+		}
+	}
+	read, _ := s.Items.List(u.ID, ItemFilter{ReadOnly: true, Limit: 10})
+	for _, it := range read {
+		if it.ID == itemID {
+			t.Fatal("saved page must not appear in the read stream")
+		}
+	}
+	if n, _ := s.Items.CountUnread(u.ID, 0); n != 1 {
+		t.Fatalf("CountUnread = %d, want 1 (only the feed item)", n)
+	}
+
+	// Re-saving the same page is idempotent and reports no insert.
+	itemID2, inserted2, err := s.SavePage(u.ID, l.ID, "page:example.com/a", "A page", "https://example.com/a", "", "")
+	if err != nil {
+		t.Fatalf("re-SavePage: %v", err)
+	}
+	if inserted2 || itemID2 != itemID {
+		t.Fatalf("re-save should reuse the item: inserted=%v id=%d want %d", inserted2, itemID2, itemID)
+	}
+	// Re-saving does not blank stored metadata when the new fetch has none.
+	if got, _ := s.Items.ByID(u.ID, itemID); got.Summary != "desc" {
+		t.Fatalf("re-save blanked the summary: %q", got.Summary)
+	}
+
+	// A saved page survives list deletion (only its membership goes).
+	if err := s.Lists.Delete(u.ID, l.ID); err != nil {
+		t.Fatalf("delete list: %v", err)
+	}
+	if _, err := s.Items.ByID(u.ID, itemID); err != nil {
+		t.Fatalf("saved page should survive list deletion: %v", err)
+	}
+	// The hidden feed remains, but is still not listed.
+	if feeds, _ := s.Feeds.List(u.ID); len(feeds) != 1 {
+		t.Fatalf("Feeds.List after delete: %+v", feeds)
+	}
+	_ = feedItem
+}
+
+func mustSystemFeedID(t *testing.T, s *Store, userID int64) int64 {
+	t.Helper()
+	f, err := s.EnsureSystemFeed(userID)
+	if err != nil {
+		t.Fatalf("EnsureSystemFeed: %v", err)
+	}
+	return f.ID
+}
+
+func mustSystemAuthorID(t *testing.T, s *Store, userID int64) int64 {
+	t.Helper()
+	a, err := s.EnsureSystemAuthor(userID)
+	if err != nil {
+		t.Fatalf("EnsureSystemAuthor: %v", err)
+	}
+	return a.ID
+}
+
 func TestFavoritesShareToken(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

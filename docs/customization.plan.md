@@ -229,9 +229,12 @@ that already exists and lowers the cost. Effort is a rough S/M/L.
 - **Context-menu add (S).** The extension requests only `activeTab`/`storage`
   (`extension/manifest.json:6`). Add a context menu and toolbar action so a
   right-click on any page or link adds it as a feed.
-- **Send current page item to nanoflux (M).** Inoreader's "save article":
-  clip the page you are reading into a list, bypassing feeds entirely. Pairs
-  with personal access tokens.
+- ~~**Send current page item to nanoflux (M).** Inoreader's "save article":
+  clip the page you are reading into a list, bypassing feeds entirely.~~ **Done**:
+  the extension's save-page flow (`POST /api/ext/page-form`, `/api/ext/page-save`,
+  `extension/popup.js`) stores a page as a hidden system-feed item
+  (`schemaV34`), defaulting to a "watch later" list; it surfaces only in lists,
+  favorites and search. Pairs with personal access tokens (still open).
 - **Share-sheet parity on desktop (S).** The PWA already registers as a mobile
   share target; surface the same "send to" endpoint in the extension.
 

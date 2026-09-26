@@ -50,6 +50,11 @@ default 15m) and fetches every feed that is *due*. It re-computes the next wake
 after each pass (see "Waking at the right time"), so the base interval is a
 ceiling, not a fixed tick.
 
+The hidden per-user **saved-pages feed** (`feeds.is_system`, `schemaV34`) is
+never a fetch target: it is created with `enabled = 0`, holds arbitrary pages
+saved from the extension rather than feed entries, and `ListFeedsDue` excludes
+it (`is_system = 0`). Nothing else in this document applies to it.
+
 ### Per-feed interval and adaptive cadence
 
 - A new feed starts at a default interval (900s / 15m).

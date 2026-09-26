@@ -451,3 +451,96 @@ func TestAPIExtSaveDerivesAuthorAvatar(t *testing.T) {
 		t.Fatalf("author avatar = %q, want %q", authors[0].AvatarURL, srv.URL+"/icon.png")
 	}
 }
+
+// A page that is not a feed can be saved from the extension into a list,
+// defaulting to "watch later" and appearing in that list but not the unread
+// stream.
+func TestAPIExtSavePage(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// A page with metadata plus a feed link, so it looks like a real article
+	// page (the save flow must not mistake it for a feed).
+	pageSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><head><title>The Article</title>
+			<meta property="og:description" content="A good read">
+			<meta property="og:image" content="https://example.com/cover.png">
+			</head><body>hi</body></html>`))
+	}))
+	defer pageSrv.Close()
+
+	// The save form creates the default list on demand.
+	rr := doForm(h, "POST", "/api/ext/page-form", url.Values{
+		"url": {pageSrv.URL}, "title": {"The Article"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("page-form: %d %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `hx-post="/api/ext/page-save"`) ||
+		!strings.Contains(body, `name="list_id"`) ||
+		!strings.Contains(body, "watch later") {
+		t.Fatalf("page-form should render the save form with the default list: %s", body)
+	}
+
+	// Save with the default list (no list_id posted).
+	rr = doForm(h, "POST", "/api/ext/page-save", url.Values{
+		"url": {pageSrv.URL}, "title": {"The Article"},
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "saved") ||
+		!strings.Contains(rr.Body.String(), "The Article") {
+		t.Fatalf("page-save: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// The default list now holds the page, with fetched metadata.
+	lists, _ := s.store.Lists.List(u.ID)
+	if len(lists) != 1 || lists[0].Name != "watch later" || lists[0].ItemCount != 1 {
+		t.Fatalf("lists after save: %+v", lists)
+	}
+	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false)
+	if len(items) != 1 || items[0].Title != "The Article" || !items[0].FeedIsSystem {
+		t.Fatalf("list items after save: %+v", items)
+	}
+	if items[0].Summary != "A good read" || items[0].ImageURL != "https://example.com/cover.png" {
+		t.Fatalf("saved page should carry fetched metadata: %+v", items[0])
+	}
+
+	// It is absent from the unread stream.
+	unread := doGet(h, "/unread", cookie).Body.String()
+	if strings.Contains(unread, "The Article") {
+		t.Fatalf("saved page must not appear in the unread stream: %s", unread)
+	}
+
+	// Saving to a named new list creates and uses it.
+	rr = doForm(h, "POST", "/api/ext/page-save", url.Values{
+		"url": {pageSrv.URL + "/two"}, "title": {"Second"}, "new_list": {"later maybe"},
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "later maybe") {
+		t.Fatalf("page-save to new list: %d %s", rr.Code, rr.Body.String())
+	}
+	lists, _ = s.store.Lists.List(u.ID)
+	if len(lists) != 2 {
+		t.Fatalf("expected two lists, got %+v", lists)
+	}
+}
+
+// The hidden saved-pages feed and its author are not reachable as ordinary feed
+// or author pages.
+func TestSavedPageHiddenEntities(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	f, err := s.store.EnsureSystemFeed(u.ID)
+	if err != nil {
+		t.Fatalf("EnsureSystemFeed: %v", err)
+	}
+	if rr := doGet(h, "/feeds/"+itoa(f.ID), cookie); rr.Code != http.StatusNotFound {
+		t.Fatalf("system feed page should 404, got %d", rr.Code)
+	}
+	if rr := doGet(h, "/authors/"+itoa(f.AuthorID), cookie); rr.Code != http.StatusNotFound {
+		t.Fatalf("system author page should 404, got %d", rr.Code)
+	}
+}

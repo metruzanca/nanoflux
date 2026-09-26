@@ -11,7 +11,7 @@ import (
 )
 
 const countAllAuthors = `-- name: CountAllAuthors :one
-SELECT COUNT(*) FROM authors
+SELECT COUNT(*) FROM authors WHERE is_system = 0
 `
 
 func (q *Queries) CountAllAuthors(ctx context.Context) (int64, error) {
@@ -24,7 +24,7 @@ func (q *Queries) CountAllAuthors(ctx context.Context) (int64, error) {
 const createAuthor = `-- name: CreateAuthor :one
 INSERT INTO authors (user_id, name, avatar_url, description)
 VALUES (?, ?, ?, ?)
-RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, created_at
+RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, created_at
 `
 
 type CreateAuthorParams struct {
@@ -50,6 +50,36 @@ func (q *Queries) CreateAuthor(ctx context.Context, arg CreateAuthorParams) (Aut
 		&i.AvatarKey,
 		&i.LastFetchedAt,
 		&i.Description,
+		&i.IsSystem,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createSystemAuthor = `-- name: CreateSystemAuthor :one
+INSERT INTO authors (user_id, name, description, is_system)
+VALUES (?, ?, ?, 1)
+RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, created_at
+`
+
+type CreateSystemAuthorParams struct {
+	UserID      int64          `json:"user_id"`
+	Name        string         `json:"name"`
+	Description sql.NullString `json:"description"`
+}
+
+func (q *Queries) CreateSystemAuthor(ctx context.Context, arg CreateSystemAuthorParams) (Author, error) {
+	row := q.db.QueryRowContext(ctx, createSystemAuthor, arg.UserID, arg.Name, arg.Description)
+	var i Author
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.AvatarUrl,
+		&i.AvatarKey,
+		&i.LastFetchedAt,
+		&i.Description,
+		&i.IsSystem,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -57,7 +87,7 @@ func (q *Queries) CreateAuthor(ctx context.Context, arg CreateAuthorParams) (Aut
 
 const deleteAuthor = `-- name: DeleteAuthor :execresult
 DELETE FROM authors
-WHERE id = ? AND user_id = ?
+WHERE id = ? AND user_id = ? AND is_system = 0
 `
 
 type DeleteAuthorParams struct {
@@ -70,7 +100,7 @@ func (q *Queries) DeleteAuthor(ctx context.Context, arg DeleteAuthorParams) (sql
 }
 
 const getAuthor = `-- name: GetAuthor :one
-SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, created_at
 FROM authors
 WHERE id = ? AND user_id = ?
 `
@@ -91,13 +121,14 @@ func (q *Queries) GetAuthor(ctx context.Context, arg GetAuthorParams) (Author, e
 		&i.AvatarKey,
 		&i.LastFetchedAt,
 		&i.Description,
+		&i.IsSystem,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getAuthorByName = `-- name: GetAuthorByName :one
-SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, created_at
 FROM authors
 WHERE user_id = ? AND name = ? COLLATE NOCASE
 `
@@ -118,15 +149,41 @@ func (q *Queries) GetAuthorByName(ctx context.Context, arg GetAuthorByNameParams
 		&i.AvatarKey,
 		&i.LastFetchedAt,
 		&i.Description,
+		&i.IsSystem,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getSystemAuthor = `-- name: GetSystemAuthor :one
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, created_at
+FROM authors
+WHERE user_id = ? AND is_system = 1
+LIMIT 1
+`
+
+// The hidden per-user author that owns the system feed holding saved pages.
+func (q *Queries) GetSystemAuthor(ctx context.Context, userID int64) (Author, error) {
+	row := q.db.QueryRowContext(ctx, getSystemAuthor, userID)
+	var i Author
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.AvatarUrl,
+		&i.AvatarKey,
+		&i.LastFetchedAt,
+		&i.Description,
+		&i.IsSystem,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listAuthors = `-- name: ListAuthors :many
-SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, created_at
 FROM authors
-WHERE user_id = ?
+WHERE user_id = ? AND is_system = 0
 ORDER BY name
 `
 
@@ -147,6 +204,7 @@ func (q *Queries) ListAuthors(ctx context.Context, userID int64) ([]Author, erro
 			&i.AvatarKey,
 			&i.LastFetchedAt,
 			&i.Description,
+			&i.IsSystem,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -191,13 +249,13 @@ func (q *Queries) ListAuthorsAvatarKeys(ctx context.Context, userID int64) ([]sq
 }
 
 const listAuthorsWithFeedCount = `-- name: ListAuthorsWithFeedCount :many
-SELECT a.id, a.user_id, a.name, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.created_at,
+SELECT a.id, a.user_id, a.name, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.is_system, a.created_at,
        COUNT(DISTINCT f.id) AS feed_count,
        COUNT(DISTINCT i.id) AS unread_count
 FROM authors a
 LEFT JOIN feeds f ON f.author_id = a.id AND f.user_id = a.user_id
 LEFT JOIN items i ON i.feed_id = f.id AND i.read = 0
-WHERE a.user_id = ?
+WHERE a.user_id = ? AND a.is_system = 0
 GROUP BY a.id
 ORDER BY a.name
 `
@@ -210,6 +268,7 @@ type ListAuthorsWithFeedCountRow struct {
 	AvatarKey     sql.NullString `json:"avatar_key"`
 	LastFetchedAt sql.NullString `json:"last_fetched_at"`
 	Description   sql.NullString `json:"description"`
+	IsSystem      int64          `json:"is_system"`
 	CreatedAt     string         `json:"created_at"`
 	FeedCount     int64          `json:"feed_count"`
 	UnreadCount   int64          `json:"unread_count"`
@@ -232,6 +291,7 @@ func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([
 			&i.AvatarKey,
 			&i.LastFetchedAt,
 			&i.Description,
+			&i.IsSystem,
 			&i.CreatedAt,
 			&i.FeedCount,
 			&i.UnreadCount,
@@ -274,7 +334,7 @@ func (q *Queries) SetAuthorAvatarKey(ctx context.Context, arg SetAuthorAvatarKey
 const updateAuthor = `-- name: UpdateAuthor :execresult
 UPDATE authors
 SET name = ?, avatar_url = ?, description = ?
-WHERE id = ? AND user_id = ?
+WHERE id = ? AND user_id = ? AND is_system = 0
 `
 
 type UpdateAuthorParams struct {

@@ -60,6 +60,32 @@ polling with 429. The app treats this as pacing, not failure:
 - The sweep only flips `read`/`read_at` — nothing is deleted, so it is
   reversible with "mark all unread".
 
+## Saved pages
+
+The extension can save an arbitrary page ("watch later") when the current page
+has no feed. A saved page is a normal `items` row under a hidden per-user system
+feed, so lists, favorites, FTS search and share pages all work unchanged.
+
+- `authors.is_system` / `feeds.is_system` (schemaV34) mark the hidden pair.
+  `Store.EnsureSystemFeed`/`EnsureSystemAuthor` create them lazily;
+  `Store.SavePage` upserts by `guid` (`page:<normalized-url>`, so re-saving is
+  idempotent) and adds list membership.
+- The system feed is `enabled = 0`, never polled, and excluded from every feed
+  and author listing (`ListFeeds*`, `ListAuthors*`, `ListAllFeeds`, collections,
+  OPML, plugin reconcile). `FeedStore.ByID`/`AuthorStore.ByID` return
+  `ErrNotFound` for them, so their pages 404 instead of rendering.
+- Saved pages surface **only** in lists, favorites and search. The `ListItems`
+  queries keep them out of the unread/read/feed/author/collection streams
+  (`AND (f.is_system = 0 OR favorites = 1)`); `CountUnread`/`MarkAllItemsRead`/
+  `MarkAllItemsUnread` exclude them. They stay favoriteable, searchable and
+  subject to the auto-read sweep.
+- `ItemWithFeed.FeedIsSystem` drives rendering: the row/modal show "saved" as
+  plain text (no link to the hidden feed/author) and `dedupItems` never merges a
+  saved page into a feed item.
+- Default list is "watch later", created on demand by
+  `Server.defaultSavedListID`; the extension form can pick another list or type
+  a new name. Routes: `POST /api/ext/page-form` and `/api/ext/page-save`.
+
 ## Plugins
 
 - `feeds.plugin_name` (schemaV31) records which plugin owns a feed; empty means

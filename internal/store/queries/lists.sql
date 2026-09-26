@@ -13,6 +13,12 @@ SELECT id, user_id, name, share_token, created_at
 FROM lists
 WHERE share_token = sqlc.arg('token');
 
+-- name: GetListByName :one
+SELECT id, user_id, name, share_token, created_at
+FROM lists
+WHERE user_id = sqlc.arg('userID') AND name = sqlc.arg('name') COLLATE NOCASE
+LIMIT 1;
+
 -- name: ListLists :many
 SELECT l.id, l.user_id, l.name, l.share_token, l.created_at,
        COUNT(li.item_id) AS item_count
@@ -69,6 +75,7 @@ WHERE li.item_id = sqlc.arg('itemID') AND l.user_id = sqlc.arg('userID');
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
 JOIN items i ON i.id = li.item_id
@@ -84,6 +91,7 @@ LIMIT sqlc.arg('limit');
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
 JOIN items i ON i.id = li.item_id
@@ -99,6 +107,7 @@ LIMIT sqlc.arg('limit');
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
 JOIN items i ON i.id = li.item_id

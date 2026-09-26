@@ -226,6 +226,8 @@ func (s *Server) Handler() http.Handler {
 	// Browser-extension HTML fragments (loaded/submitted with htmx).
 	mux.Handle("POST /api/ext/feed-form", s.auth.Require(http.HandlerFunc(s.apiExtFeedForm)))
 	mux.Handle("POST /api/ext/save", s.auth.Require(http.HandlerFunc(s.apiExtSave)))
+	mux.Handle("POST /api/ext/page-form", s.auth.Require(http.HandlerFunc(s.apiExtPageForm)))
+	mux.Handle("POST /api/ext/page-save", s.auth.Require(http.HandlerFunc(s.apiExtPageSave)))
 
 	return logRequests(privacyHeaders(cors(mux)))
 }

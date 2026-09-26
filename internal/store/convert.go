@@ -66,6 +66,7 @@ func toFeed(f sqlcgen.Feed) Feed {
 		PluginName:       f.PluginName,
 		DisabledReason:   f.DisabledReason.String,
 		Enabled:          f.Enabled,
+		IsSystem:         f.IsSystem != 0,
 		CreatedAt:        f.CreatedAt,
 	}
 }
@@ -90,7 +91,7 @@ func toItem(m sqlcgen.Item) Item {
 func toItemWithFeed(id, feedID int64, guid, title, link, summary string,
 	imageURL, publishedAt sql.NullString, fetchedAt string, read, favorite bool,
 	readAt sql.NullString, feedTitle, feedURL string, feedHomeURL sql.NullString,
-	authorID sql.NullInt64, authorName sql.NullString,
+	feedIsSystem int64, authorID sql.NullInt64, authorName sql.NullString,
 ) ItemWithFeed {
 	return ItemWithFeed{
 		Item: Item{
@@ -107,11 +108,12 @@ func toItemWithFeed(id, feedID int64, guid, title, link, summary string,
 			ReadAt:      readAt.String,
 			Favorite:    favorite,
 		},
-		FeedTitle:   feedTitle,
-		FeedURL:     feedURL,
-		FeedHomeURL: feedHomeURL.String,
-		AuthorID:    authorID.Int64,
-		AuthorName:  authorName.String,
+		FeedTitle:    feedTitle,
+		FeedURL:      feedURL,
+		FeedHomeURL:  feedHomeURL.String,
+		FeedIsSystem: feedIsSystem != 0,
+		AuthorID:     authorID.Int64,
+		AuthorName:   authorName.String,
 	}
 }
 
@@ -124,6 +126,7 @@ func toAuthor(a sqlcgen.Author) Author {
 		AvatarKey:     a.AvatarKey.String,
 		LastFetchedAt: a.LastFetchedAt.String,
 		Description:   a.Description.String,
+		IsSystem:      a.IsSystem != 0,
 		CreatedAt:     a.CreatedAt,
 	}
 }
@@ -174,7 +177,7 @@ func toUrlMapping(id, userID int64, pattern, template, createdAt string) UrlMapp
 func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 	homeURL, description, etag, lastModified, lastPolledAt, lastError sql.NullString,
 	nextPageURL string, pollIntervalSec int64, pollIntervalAuto int64, lastItemAt, nextPollAt sql.NullString,
-	pluginName string, disabledReason sql.NullString, enabled bool, createdAt string,
+	pluginName string, disabledReason sql.NullString, enabled bool, isSystem int64, createdAt string,
 ) sqlcgen.Feed {
 	return sqlcgen.Feed{
 		ID:               id,
@@ -196,13 +199,14 @@ func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 		PluginName:       pluginName,
 		DisabledReason:   disabledReason,
 		Enabled:          enabled,
+		IsSystem:         isSystem,
 		CreatedAt:        createdAt,
 	}
 }
 
 func toFeedWithUnread(f sqlcgen.ListFeedsWithUnreadRow) FeedWithUnread {
 	return FeedWithUnread{
-		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.CreatedAt)),
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.CreatedAt)),
 		AuthorName: f.AuthorName.String,
 		Unread:     int(f.Unread),
 	}
@@ -210,7 +214,7 @@ func toFeedWithUnread(f sqlcgen.ListFeedsWithUnreadRow) FeedWithUnread {
 
 func toFeedByAuthorWithUnread(f sqlcgen.ListFeedsByAuthorWithUnreadRow) FeedWithUnread {
 	return FeedWithUnread{
-		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.CreatedAt)),
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.CreatedAt)),
 		AuthorName: f.AuthorName.String,
 		Unread:     int(f.Unread),
 	}

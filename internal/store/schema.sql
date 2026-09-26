@@ -52,6 +52,7 @@ CREATE TABLE authors (
     avatar_key  TEXT,
     last_fetched_at TEXT,
     description TEXT,
+    is_system   INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_authors_user ON authors(user_id);
@@ -76,6 +77,7 @@ CREATE TABLE feeds (
     plugin_name       TEXT NOT NULL DEFAULT '',
     disabled_reason   TEXT,
     enabled           INTEGER NOT NULL DEFAULT 1,
+    is_system         INTEGER NOT NULL DEFAULT 0,
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_feeds_user ON feeds(user_id);

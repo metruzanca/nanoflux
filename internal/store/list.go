@@ -59,6 +59,32 @@ func (s *ListStore) ByID(userID, id int64) (List, error) {
 	return toList(l.ID, l.UserID, l.Name, l.ShareToken, l.CreatedAt), nil
 }
 
+// ByName returns the user's list matching name (case-insensitive), or
+// ErrNotFound.
+func (s *ListStore) ByName(userID int64, name string) (List, error) {
+	l, err := s.q.GetListByName(context.Background(), sqlcgen.GetListByNameParams{UserID: userID, Name: name})
+	if errors.Is(err, sql.ErrNoRows) {
+		return List{}, ErrNotFound
+	}
+	if err != nil {
+		return List{}, err
+	}
+	return toList(l.ID, l.UserID, l.Name, l.ShareToken, l.CreatedAt), nil
+}
+
+// Ensure returns the user's list named name, creating it when absent. Used to
+// materialize a default list (e.g. "watch later") on demand.
+func (s *ListStore) Ensure(userID int64, name string) (List, error) {
+	l, err := s.ByName(userID, name)
+	if err == nil {
+		return l, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return List{}, err
+	}
+	return s.Create(userID, name)
+}
+
 // ByToken resolves a shared list by its public token, regardless of user.
 func (s *ListStore) ByToken(token string) (List, error) {
 	l, err := s.q.GetListByToken(context.Background(), ns(token))
@@ -191,7 +217,7 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 		for _, r := range rows {
 			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
 				r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
-				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.AuthorID, r.AuthorName))
+				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 		}
 		return out, hasMore, nil
 	}
@@ -212,7 +238,7 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 	for _, r := range rows {
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
 			r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
-			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.AuthorID, r.AuthorName))
+			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	return out, hasMore, nil
 }
@@ -239,7 +265,7 @@ func (s *ListStore) ItemListPublic(listID, before int64, limit int) ([]ItemWithF
 	for _, r := range rows {
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
 			r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
-			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.AuthorID, r.AuthorName))
+			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	return out, hasMore, nil
 }
