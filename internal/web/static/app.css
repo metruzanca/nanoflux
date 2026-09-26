@@ -845,7 +845,8 @@ dialog.modal.wide[open] {
   margin: 0.75rem 0;
 }
 .image-lightbox img {
-  max-width: 100%;
+  width: 100%;
+  height: auto;
   max-height: 80vh;
   max-height: 80dvh;
   object-fit: contain;
