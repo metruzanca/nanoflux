@@ -893,7 +893,7 @@ func feedRulesSection(d feedRulesData) templ.Component {
 			templ_7745c5c3_Var40 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<section class=\"card\" id=\"feed-rules\"><h2>filters</h2><p class=\"muted small\">Rules run against new items when the feed is polled. \"hide\" drops the item; \"mark read\" stores it as already read.</p><form class=\"stack\" hx-post=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "<section class=\"card\" id=\"feed-rules\"><h2>filters</h2><p class=\"muted small\">Rules run against new items when the feed is polled. \"hide\" drops the item; \"mark read\" stores it as already read. The \"category\" field matches any feed-provided category, e.g. <code>r/golang</code> or <code>u/someuser</code>.</p><form class=\"stack\" hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

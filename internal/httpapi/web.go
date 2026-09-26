@@ -1034,7 +1034,7 @@ func (s *Server) feedRuleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	field := r.FormValue("field")
 	switch field {
-	case "title", "summary", "link":
+	case "title", "summary", "link", "category":
 	default:
 		field = "title"
 	}

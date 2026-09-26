@@ -184,7 +184,7 @@ templ feedEditPage(u store.User, d feedsData) {
 templ feedRulesSection(d feedRulesData) {
 	<section class="card" id="feed-rules">
 		<h2>filters</h2>
-		<p class="muted small">Rules run against new items when the feed is polled. "hide" drops the item; "mark read" stores it as already read.</p>
+		<p class="muted small">Rules run against new items when the feed is polled. "hide" drops the item; "mark read" stores it as already read. The "category" field matches any feed-provided category, e.g. <code>r/golang</code> or <code>u/someuser</code>.</p>
 		<form class="stack" hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters" } hx-target="#feed-rules" hx-swap="outerHTML">
 			<div class="row">
 				@comboSelect("action", "hide", "action", "", filterActionItems, nil)

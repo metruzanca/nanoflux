@@ -498,3 +498,46 @@ func TestNextPageParamFallback(t *testing.T) {
 		}
 	}
 }
+
+// TestFetchExtractsCategories asserts an item's feed-provided categories are
+// normalized into Item.Categories: atom <category> labels (reddit's "r/<sub>")
+// plus the author name (reddit's "/u/<user>", stored without the leading
+// slash). This is what makes a reddit feed's subreddit and poster filterable.
+func TestFetchExtractsCategories(t *testing.T) {
+	const atom = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>sub</title>
+  <link href="https://reddit.com/r/golang"/>
+  <entry>
+    <author><name>/u/poster</name><uri>https://reddit.com/user/poster</uri></author>
+    <category term="golang" label="r/golang"/>
+    <id>t3_1</id>
+    <link href="https://reddit.com/r/golang/comments/1/x/"/>
+    <title>Post</title>
+    <updated>2026-01-02T03:04:05+00:00</updated>
+  </entry>
+</feed>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/atom+xml")
+		w.Write([]byte(atom))
+	}))
+	defer srv.Close()
+
+	res, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if len(res.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(res.Items))
+	}
+	got := res.Items[0].Categories
+	want := []string{"r/golang", "u/poster"}
+	if len(got) != len(want) {
+		t.Fatalf("categories = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("categories[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

@@ -432,6 +432,46 @@ func TestItemEnclosures(t *testing.T) {
 	}
 }
 
+// TestItemCategoriesRoundTrip asserts an item's categories survive a store
+// write and are refreshed (not appended) when the feed's snapshot changes.
+func TestItemCategoriesRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+
+	if _, err := s.Items.Upsert(f.ID, Item{
+		GUID: "g1", Title: "Post", Link: "https://metru.dev/1",
+		Categories: []string{"r/golang", "u/poster"}, FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	itemID, _ := s.Items.ByFeedIdentity(f.ID, "g1")
+	got, err := s.Items.ByID(u.ID, itemID)
+	if err != nil {
+		t.Fatalf("ByID: %v", err)
+	}
+	if len(got.Categories) != 2 || got.Categories[0] != "r/golang" || got.Categories[1] != "u/poster" {
+		t.Fatalf("categories = %v, want [r/golang u/poster]", got.Categories)
+	}
+
+	// A re-poll refreshes the snapshot; categories change, they don't append.
+	if _, err := s.Items.Upsert(f.ID, Item{
+		GUID: "g1", Title: "Post", Link: "https://metru.dev/1",
+		Categories: []string{"r/rust"}, FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatalf("upsert again: %v", err)
+	}
+	itemID, _ = s.Items.ByFeedIdentity(f.ID, "g1")
+	got, _ = s.Items.ByID(u.ID, itemID)
+	if len(got.Categories) != 1 || got.Categories[0] != "r/rust" {
+		t.Fatalf("categories after refresh = %v, want [r/rust]", got.Categories)
+	}
+	if got.Title != "Post" || got.Read {
+		t.Fatalf("refresh touched identity/read state: %+v", got)
+	}
+}
+
 func TestShareStore(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
@@ -1092,11 +1132,13 @@ func TestListDueNextPollAtOverridesInterval(t *testing.T) {
 
 func TestCanonicalFeedURL(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"https://old.reddit.com/u/Dominan-t.rss", "https://reddit.com/u/Dominan-t.rss"},
-		{"https://www.reddit.com/user/foo.rss", "https://reddit.com/u/foo.rss"},
-		{"https://reddit.com/u/foo.rss", "https://reddit.com/u/foo.rss"},
+		{"https://old.reddit.com/u/Dominan-t.rss", "https://reddit.com/u/Dominan-t/submitted.rss"},
+		{"https://www.reddit.com/user/foo.rss", "https://reddit.com/u/foo/submitted.rss"},
+		{"https://reddit.com/u/foo.rss", "https://reddit.com/u/foo/submitted.rss"},
+		{"https://www.reddit.com/u/foo/submitted.rss", "https://reddit.com/u/foo/submitted.rss"},
+		{"https://www.reddit.com/u/foo/comments.rss", "https://reddit.com/u/foo/comments.rss"},
 		{"https://www.reddit.com/r/golang/.rss", "https://reddit.com/r/golang/.rss"},
-		{"https://np.reddit.com/user/foo.rss", "https://reddit.com/u/foo.rss"},
+		{"https://np.reddit.com/user/foo.rss", "https://reddit.com/u/foo/submitted.rss"},
 		{"https://m.reddit.com/r/golang.rss", "https://reddit.com/r/golang.rss"},
 		{"https://example.com/feed.xml", "https://example.com/feed.xml"},
 		{"not a url", "not a url"},
@@ -1127,7 +1169,7 @@ func TestCanonicalizeFeedURLs(t *testing.T) {
 		t.Fatalf("CanonicalizeFeedURLs = %d, %v", n, err)
 	}
 	got, _ := s.Feeds.ByID(u.ID, f.ID)
-	if got.FeedURL != "https://reddit.com/u/foo.rss" {
+	if got.FeedURL != "https://reddit.com/u/foo/submitted.rss" {
 		t.Fatalf("FeedURL = %q", got.FeedURL)
 	}
 }

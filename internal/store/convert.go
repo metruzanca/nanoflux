@@ -80,6 +80,7 @@ func toItem(m sqlcgen.Item) Item {
 		Title:       m.Title,
 		Link:        m.Link,
 		Summary:     m.Summary,
+		Categories:  splitCategories(m.Categories),
 		ImageURL:    m.ImageUrl.String,
 		PublishedAt: m.PublishedAt.String,
 		FetchedAt:   m.FetchedAt,

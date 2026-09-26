@@ -60,9 +60,12 @@ var redditHosts = map[string]bool{
 // where it knows the canonical shape. It leaves other URLs untouched.
 //
 // Reddit: all of reddit.com/www./old./np./m. collapse to the bare reddit.com
-// origin (old./np. redirect .rss to a login wall), and the /user/{name} form is
-// rewritten to /u/{name}. Reddit serves the same feeds on reddit.com, and the
-// shorter, stable shape matches what discover.Derive produces.
+// origin (old./np. redirect .rss to a login wall), the /user/{name} form is
+// rewritten to /u/{name}, and a user's bare feed is rewritten to the
+// posts-only /submitted.rss (their overview feed mixes posts and comments).
+// Reddit serves the same feeds on reddit.com, and the shorter, stable shape
+// matches what discover.Derive produces. An explicit /comments.rss or
+// /submitted.rss is left as-is.
 func CanonicalFeedURL(raw string) string {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Host == "" {
@@ -79,12 +82,23 @@ func CanonicalFeedURL(raw string) string {
 	} else {
 		u.Host = "reddit.com"
 	}
-	// /user/{name} -> /u/{name}.
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	// /user/{name} -> /u/{name}.
 	if len(parts) >= 2 && parts[0] == "user" {
 		parts[0] = "u"
-		u.Path = "/" + strings.Join(parts, "/")
-	} else if len(parts) >= 1 && parts[0] != "" {
+	}
+	// A user's bare feed (nothing after the name, or the ".rss" suffix on the
+	// name) -> the posts-only /submitted.rss. Explicit /submitted.rss and
+	// /comments.rss are preserved.
+	if len(parts) >= 2 && parts[0] == "u" {
+		if name, ok := strings.CutSuffix(parts[1], ".rss"); ok {
+			parts = append([]string{parts[0], name}, parts[2:]...)
+		}
+		if len(parts) == 2 {
+			parts = append(parts, "submitted.rss")
+		}
+	}
+	if len(parts) >= 1 && parts[0] != "" {
 		u.Path = "/" + strings.Join(parts, "/")
 	}
 	return u.String()
