@@ -397,9 +397,9 @@ func TestItemEnclosures(t *testing.T) {
 	if _, err := s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "Podcast", Link: "https://metru.dev/1", FetchedAt: db.Now()}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	itemID, _ := s.Items.ByFeedGUID(f.ID, "g1")
+	itemID, _ := s.Items.ByFeedIdentity(f.ID, "g1")
 	if itemID == 0 {
-		t.Fatal("ByFeedGUID should find the item")
+		t.Fatal("ByFeedIdentity should find the item")
 	}
 
 	encs := []Enclosure{
@@ -440,7 +440,7 @@ func TestShareStore(t *testing.T) {
 	if _, err := s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "Post", Link: "https://metru.dev/1", FetchedAt: db.Now()}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	itemID, _ := s.Items.ByFeedGUID(f.ID, "g1")
+	itemID, _ := s.Items.ByFeedIdentity(f.ID, "g1")
 
 	sh, err := s.Shares.Create(u.ID, itemID)
 	if err != nil {
@@ -922,7 +922,8 @@ func TestViewPrefs(t *testing.T) {
 	}
 }
 
-func TestCollectionFlow(t *testing.T) {	s := newTestStore(t)
+func TestCollectionFlow(t *testing.T) {
+	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
 	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
@@ -1745,9 +1746,9 @@ func TestMarkOlderThanRead(t *testing.T) {
 	s.Items.Upsert(bf.ID, Item{GUID: "bobold", Title: "bobold", PublishedAt: old, FetchedAt: db.Now()})
 
 	// Favorite one of the old items: favorites are included in the sweep.
-	favID, err := s.Items.ByFeedGUID(f.ID, "oldfav")
+	favID, err := s.Items.ByFeedIdentity(f.ID, "oldfav")
 	if err != nil {
-		t.Fatalf("ByFeedGUID: %v", err)
+		t.Fatalf("ByFeedIdentity: %v", err)
 	}
 	if err := s.Items.SetFavorite(alice.ID, favID, true); err != nil {
 		t.Fatalf("SetFavorite: %v", err)

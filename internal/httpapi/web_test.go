@@ -296,7 +296,7 @@ func TestItemModalShowsEnclosure(t *testing.T) {
 	if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Episode", Link: "https://p.dev/1", FetchedAt: db.Now()}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	itemID, _ := s.store.Items.ByFeedGUID(f.ID, "g1")
+	itemID, _ := s.store.Items.ByFeedIdentity(f.ID, "g1")
 	s.store.Items.ReplaceEnclosures(itemID, []store.Enclosure{
 		{URL: "https://p.dev/ep1.mp3", Title: "Episode 1", MIMEType: "audio/mpeg", Size: 100},
 	})
@@ -437,7 +437,7 @@ func TestShareFlow(t *testing.T) {
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Shareable post", Link: "https://b.dev/1", Summary: "body text", FetchedAt: db.Now()})
-	itemID, _ := s.store.Items.ByFeedGUID(f.ID, "g1")
+	itemID, _ := s.store.Items.ByFeedIdentity(f.ID, "g1")
 
 	// The modal shows a share button when unshared.
 	body := doGet(h, "/items/"+itoa(itemID)+"/view", cookie).Body.String()
@@ -1563,7 +1563,7 @@ func TestItemModalShowsImageEnclosure(t *testing.T) {
 	if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Shot", Link: "https://p.dev/1", FetchedAt: db.Now()}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	itemID, _ := s.store.Items.ByFeedGUID(f.ID, "g1")
+	itemID, _ := s.store.Items.ByFeedIdentity(f.ID, "g1")
 	s.store.Items.ReplaceEnclosures(itemID, []store.Enclosure{
 		{URL: "https://p.dev/photo.jpg?e=1790070194&t=signed", Title: "Photo", MIMEType: "image/jpeg", Size: 100},
 		{URL: "https://p.dev/notes.txt", Title: "Notes", MIMEType: "text/plain", Size: 10},
@@ -1596,7 +1596,7 @@ func TestItemModalSkipsImageEnclosureAlreadyInBody(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
-	itemID, _ := s.store.Items.ByFeedGUID(f.ID, "g1")
+	itemID, _ := s.store.Items.ByFeedIdentity(f.ID, "g1")
 	enc := "https://p.dev/enclosure.jpg?e=1&t=signed"
 	s.store.Items.ReplaceEnclosures(itemID, []store.Enclosure{
 		{URL: enc, Title: "Photo", MIMEType: "image/jpeg", Size: 100},

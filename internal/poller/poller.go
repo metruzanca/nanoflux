@@ -432,6 +432,7 @@ func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter
 		}
 		item := store.Item{
 			GUID:        it.GUID,
+			Identity:    it.Identity,
 			Title:       it.Title,
 			Link:        it.Link,
 			Summary:     it.Summary,
@@ -496,7 +497,11 @@ func matchFilter(rule store.Filter, it feedparse.Item) (bool, error) {
 // storeEnclosures copies a newly inserted item's media attachments into the
 // item_enclosures table.
 func (p *Poller) storeEnclosures(feedID int64, it feedparse.Item) error {
-	itemID, err := p.store.Items.ByFeedGUID(feedID, it.GUID)
+	identity := it.Identity
+	if identity == "" {
+		identity = it.GUID
+	}
+	itemID, err := p.store.Items.ByFeedIdentity(feedID, identity)
 	if err != nil {
 		return err
 	}

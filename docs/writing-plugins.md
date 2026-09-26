@@ -148,6 +148,60 @@ plugin can resolve. Every `Media` field is optional; empty fields leave the
 item's stored content in place. Returning `pluginapi.ErrUnsupportedCapability`
 (or an empty `Media`) means "nothing extra".
 
+### Item identity (`Identity`)
+
+The host deduplicates a feed's items on `Item.Identity` when you set it, and on
+`Item.GUID` when you do not. **Set it whenever your `GUID` may change shape for
+the same entry over time.** `GUID` is the display/feed identity and you are free
+to regenerate it; `Identity` is the durable key and must never change for the
+same entry:
+
+```go
+it := pluginapi.Item{
+	GUID:     "appc:" + post.ID,   // display identity, may evolve
+	Identity: "appc:" + post.ID,   // durable: the site's stable post id
+	// ...
+}
+```
+
+The failure this prevents: a plugin that once emitted a post URL as `GUID` and
+later switched to `"scheme:id"` gets the same post stored **twice** — the host
+cannot know the two GUIDs mean one entry. Derive `Identity` from the site's own
+immutable identifier (a numeric post/gallery id), never from a URL or a
+timestamp. A common real change is a plugin whose `GUID` starts as the post URL
+and later becomes `"scheme:<id>"`; setting `Identity` to `"scheme:<id>"` from the
+start keeps the identity stable across that change.
+
+If you shipped a plugin before setting `Identity` and it split entries, the
+duplicates can be merged with `nanoflux item dedup --apply` (see below). The host
+also keeps a one-time fallback: when `Identity` is empty it uses `GUID`, so a
+plugin that never sets it behaves exactly as before the field existed.
+
+Adding `Identity` to an existing plugin needs a repair pass: the host backfills
+existing rows' dedup key from their GUID, so a row already stored under the old
+GUID scheme does not match the new `Identity` until the split is merged. After
+updating the plugin, run `nanoflux item dedup --apply`. It is idempotent and
+safe to re-run; a pair that only appears after the feed's next poll merges on the
+following run. The repair keys on link + published time, not GUID, so it does not
+matter whether the new identity has been polled yet.
+
+### Repairing duplicate items
+
+A GUID-scheme change stores the same entry under two rows. The host provides a
+conservative repair:
+
+```bash
+nanoflux item dedup            # report the groups that would merge
+nanoflux item dedup --apply    # merge them
+```
+
+It groups only rows in the **same feed with the same link and same published
+time** — a triple a GUID change leaves untouched, so distinct posts are never
+merged. The row most recently confirmed by the feed (the current scheme, which
+future polls will match) is kept; the others' read/favorite state, enclosures,
+list memberships and share links carry over. Run it inside the container
+(`make shell`) or on the host against the same `NF_DB`.
+
 `Render` runs in the item-view path with a 4-second timeout, once per modal
 open. Use `h.Do` for any lookup (oEmbed discovery, an embed page) so the host
 still paces and inspects the requests. The native reddit plugin

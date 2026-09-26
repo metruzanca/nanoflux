@@ -89,7 +89,7 @@ func (s *Store) SavePage(userID, listID int64, guid, title, link, summary, image
 	// Re-saving an already-saved page is a no-op (beyond list membership): the
 	// stored item keeps its content rather than being blanked by a re-save whose
 	// metadata fetch failed.
-	itemID, err = s.Items.ByFeedGUID(feed.ID, guid)
+	itemID, err = s.Items.ByFeedIdentity(feed.ID, guid)
 	if err != nil {
 		return 0, false, err
 	}
@@ -104,7 +104,7 @@ func (s *Store) SavePage(userID, listID int64, guid, title, link, summary, image
 		}); err != nil {
 			return 0, false, err
 		}
-		itemID, err = s.Items.ByFeedGUID(feed.ID, guid)
+		itemID, err = s.Items.ByFeedIdentity(feed.ID, guid)
 		if err != nil {
 			return 0, false, err
 		}

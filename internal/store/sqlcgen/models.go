@@ -81,6 +81,7 @@ type Item struct {
 	ID          int64          `json:"id"`
 	FeedID      int64          `json:"feed_id"`
 	Guid        string         `json:"guid"`
+	DedupKey    string         `json:"dedup_key"`
 	Title       string         `json:"title"`
 	Link        string         `json:"link"`
 	Summary     string         `json:"summary"`

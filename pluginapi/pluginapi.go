@@ -70,7 +70,17 @@ type Enclosure struct {
 
 // Item is one normalized feed entry.
 type Item struct {
-	GUID        string
+	GUID string
+	// Identity is the stable per-feed key the host deduplicates on. When empty
+	// the host falls back to GUID, so a plugin that never sets it behaves
+	// exactly as before.
+	//
+	// Set it when GUID may change shape for the same underlying entry — e.g. a
+	// plugin that once emitted a post URL and now emits "scheme:id". GUID is
+	// the display/feed identity and may be regenerated; Identity is the durable
+	// one. For a site with numeric post ids, Identity is that id (or a stable
+	// prefix like "post:<id>"), never the URL.
+	Identity    string
 	Title       string
 	Link        string
 	Summary     string

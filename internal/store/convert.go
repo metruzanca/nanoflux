@@ -76,6 +76,7 @@ func toItem(m sqlcgen.Item) Item {
 		ID:          m.ID,
 		FeedID:      m.FeedID,
 		GUID:        m.Guid,
+		Identity:    m.DedupKey,
 		Title:       m.Title,
 		Link:        m.Link,
 		Summary:     m.Summary,

@@ -17,7 +17,7 @@ func setupListsItem(t *testing.T, s *Server) (store.User, store.Item) {
 	a, _ := s.store.Authors.Create(u.ID, "Blog", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Listable post", Link: "https://b.dev/1", Summary: "body", FetchedAt: db.Now()})
-	itemID, _ := s.store.Items.ByFeedGUID(f.ID, "g1")
+	itemID, _ := s.store.Items.ByFeedIdentity(f.ID, "g1")
 	it, _ := s.store.Items.ByID(u.ID, itemID)
 	return u, it
 }

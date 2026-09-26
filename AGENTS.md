@@ -107,6 +107,22 @@ feed, so lists, favorites, FTS search and share pages all work unchanged.
 - See `docs/fetching.md` (how fetching works) and
   `docs/writing-plugins.md` (author guide).
 
+### Item identity and dedup
+
+- Items are deduplicated on `(feed_id, dedup_key)` (schemaV35). `dedup_key` is
+  the plugin's `Item.Identity` when set, else its `GUID` (`store.dedupKey`). The
+  legacy `UNIQUE(feed_id, guid)` remains but is no longer the conflict target.
+- `Identity` exists so a plugin whose `GUID` changes shape for the same entry
+  (e.g. a post URL → `"scheme:<id>"`) does not store it twice. Existing rows
+  were backfilled `dedup_key = guid`. New plugins should set `Identity` from the
+  site's immutable id; the generic parser leaves it empty (identity == GUID).
+- A GUID-scheme change already split rows can be repaired with `nanoflux item
+  dedup` (report) / `--apply` (merge). `ItemStore.FindDedupGroups` /
+  `DeduplicateItems` group only same-feed + same-link + same-published-time rows
+  (conservative), keep the most recently fetched row (the current scheme), and
+  carry over read/favorite state, enclosures, list memberships and shares. The
+  merge runs in one transaction; verify integrity + FK + FTS after a run.
+
 ## Combo boxes (Vaadin)
 
 Single- and multi-select form fields use vendored Vaadin v25 web components
