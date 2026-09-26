@@ -216,6 +216,7 @@ func (s *Server) Handler() http.Handler {
 	// JSON API (for the browser extension).
 	mux.HandleFunc("POST /api/login", s.apiLogin)
 	mux.Handle("GET /api/unread-count", s.auth.Require(http.HandlerFunc(s.apiUnreadCount)))
+	mux.Handle("GET /api/nav-counts", s.auth.Require(http.HandlerFunc(s.apiNavCounts)))
 	mux.Handle("GET /api/items", s.auth.Require(http.HandlerFunc(s.apiItems)))
 	mux.Handle("GET /api/search", s.auth.Require(http.HandlerFunc(s.apiSearch)))
 	mux.Handle("GET /api/entities", s.auth.Require(http.HandlerFunc(s.apiEntities)))
@@ -229,7 +230,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/ext/page-form", s.auth.Require(http.HandlerFunc(s.apiExtPageForm)))
 	mux.Handle("POST /api/ext/page-save", s.auth.Require(http.HandlerFunc(s.apiExtPageSave)))
 
-	return logRequests(privacyHeaders(cors(mux)))
+	return logRequests(privacyHeaders(cors(s.navCountsMiddleware(mux))))
 }
 
 // privacyHeaders prevents referrer leakage on every response.

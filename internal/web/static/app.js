@@ -528,6 +528,12 @@ function paletteItemEl(row) {
   name.className = 'palette-name';
   name.textContent = row.label;
   li.appendChild(name);
+  if (row.count > 0) {
+    var count = document.createElement('span');
+    count.className = 'palette-count';
+    count.textContent = row.count + ' unread';
+    li.appendChild(count);
+  }
   if (row.hint) {
     var hint = document.createElement('span');
     hint.className = 'palette-hint';
@@ -690,7 +696,7 @@ function filterEntities(q) {
     return !needle || e.name.toLowerCase().indexOf(needle) !== -1;
   }).map(function (e) {
     return {
-      kind: e.kind, sigil: SIGILS[e.kind], label: e.name,
+      kind: e.kind, sigil: SIGILS[e.kind], label: e.name, count: e.unread,
       hint: e.kind, url: e.url,
     };
   });
@@ -702,6 +708,43 @@ if (entityPalette) {
   entityPalette.open = function () {
     fetchEntities().then(function () { openEntity(); });
   };
+}
+
+// Keep the topbar badges in sync after an htmx swap (mark read/unread, mark all
+// read) that changes the totals without a full page load. The palette caches
+// entities for the session, so drop that cache when a count moved and the
+// palette will refetch on its next open.
+var NAV_COUNTS = null;
+function refreshNavCounts() {
+  fetch('/api/nav-counts', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (!d) return;
+      var unread = d.unread || 0, authors = d.authors || 0;
+      setNavBadge('nav-unread', 'nav-unread-count', unread);
+      setNavBadge('nav-authors', 'nav-authors-count', authors);
+      var sig = unread + ':' + authors;
+      if (NAV_COUNTS !== null && NAV_COUNTS !== sig) ENTITY_CACHE = null;
+      NAV_COUNTS = sig;
+    })
+    .catch(function () {});
+}
+// setNavBadge updates the count span inside a nav link, creating it when the
+// server rendered no badge (count was zero at page load) and removing it when
+// the count drops to zero.
+function setNavBadge(linkId, spanId, n) {
+  var link = document.getElementById(linkId);
+  if (!link) return;
+  var span = document.getElementById(spanId);
+  if (!span) {
+    if (n <= 0) return;
+    span = document.createElement('span');
+    span.id = spanId;
+    span.className = 'nav-count';
+    link.appendChild(span);
+  }
+  span.textContent = '(' + n + ')';
+  span.hidden = n <= 0;
 }
 
 document.addEventListener('keydown', function (e) {
@@ -841,6 +884,7 @@ document.addEventListener('keydown', function (e) {
 document.body.addEventListener('htmx:afterSwap', function (e) {
   applyDisplayMode();
   applyAuthorSort();
+  refreshNavCounts();
   if (activeItemId) {
     var r = document.getElementById(activeItemId);
     if (r) r.classList.add('active-row');
