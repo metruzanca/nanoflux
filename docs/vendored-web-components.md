@@ -137,7 +137,9 @@ component that needs real glue, because its columns render imperatively:
   computes the new id order, and `htmx.ajax('POST', …)`s it to the card's
   `data-reorder-url`. The server's `reorder` action rebuilds the pinned order
   from the posted `order` list, ignoring unowned/unknown ids and preserving any
-  pin the client omitted.
+  pin the client omitted. Note `grid-drop` carries only `dropTargetItem` /
+  `dropLocation`; the dragged items are on **`grid-dragstart`**, so the handler
+  remembers them when the drag begins.
 - `all-rows-visible` makes the grid as tall as its content (no inner scroll).
 - `rows-draggable` + `drop-mode="between"` enable row drag and between-row
   drops.

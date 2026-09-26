@@ -32,9 +32,17 @@
 
     const reorderURL = grid.dataset.reorderUrl;
     if (reorderURL) {
+      // grid-drop carries dropTargetItem/dropLocation but NOT the dragged items
+      // (only grid-dragstart does), so remember them when the drag begins.
+      var dragging = [];
+      grid.addEventListener('grid-dragstart', function (e) {
+        dragging = e.detail.draggedItems || [];
+      });
+
       grid.addEventListener('grid-drop', function (e) {
-        const dragged = (e.detail.draggedItems || [])[0];
+        const dragged = dragging[0];
         const target = e.detail.dropTargetItem;
+        dragging = [];
         if (!dragged || !target || String(dragged.id) === String(target.id)) return;
         const ids = (grid.items || []).map(function (it) { return String(it.id); });
         const order = ids.filter(function (id) { return id !== String(dragged.id); });
