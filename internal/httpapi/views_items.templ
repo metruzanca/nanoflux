@@ -152,7 +152,11 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 					}
 					<div class="item-meta">
 						@web.SourceIcon(itemIconURL(it))
-						if it.AuthorName != "" && !hideAuthor {
+						if it.FeedIsSystem {
+							// Saved page: its feed/author are hidden, so the
+							// source is plain text, not a navigation link.
+							<span>saved</span><a href={ templ.URL(it.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external"></a>
+						} else if it.AuthorName != "" && !hideAuthor {
 							<a href={ "/authors/" + strconv.FormatInt(it.AuthorID, 10) }>{ it.AuthorName }</a>
 						} else {
 							<a href={ "/feeds/" + strconv.FormatInt(it.FeedID, 10) }>{ it.FeedTitle }</a>
@@ -173,7 +177,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 				</div>
 				<div class="row-actions">
 					@itemToggleButtons(it.ID, it.Favorite, it.Read, false, hideAuthor)
-					@itemMenu(it.ID, it.FeedID)
+					@itemMenuFullSys(it.ID, it.FeedID, "", "", false, it.FeedIsSystem)
 				</div>
 			</div>
 		</div>
@@ -460,14 +464,18 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 			<h1>{ d.Title }</h1>
 			<div class="item-controls">
 				@itemViewControls(d.ID, d.Favorite, d.Read)
-				@itemMenuFull(d.ID, d.FeedID, d.SourceURL, d.ShareToken, true)
+				@itemMenuFullSys(d.ID, d.FeedID, d.SourceURL, d.ShareToken, true, d.FeedIsSystem)
 			</div>
 		</div>
 		<p class="item-meta">
-			if d.AuthorName != "" {
-				<a href={ "/authors/" + strconv.FormatInt(d.AuthorID, 10) }>{ d.AuthorName }</a> ·
+			if d.FeedIsSystem {
+				<span>saved</span>
+			} else {
+				if d.AuthorName != "" {
+					<a href={ "/authors/" + strconv.FormatInt(d.AuthorID, 10) }>{ d.AuthorName }</a> ·
+				}
+				<a href={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) }>feed</a>
 			}
-			<a href={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) }>feed</a>
 			if d.PublishedAt != "" {
 				· { web.TimeFmt(d.Timezone, d.PublishedAt) }
 			}
@@ -570,12 +578,20 @@ templ itemMenu(itemID, feedID int64) {
 // itemMenuFull renders the ⋯ menu. In the modal (inModal) it also carries the
 // external "source" link (when the item resolves to one) and the share control.
 templ itemMenuFull(itemID, feedID int64, sourceURL, shareToken string, inModal bool) {
+	@itemMenuFullSys(itemID, feedID, sourceURL, shareToken, inModal, false)
+}
+
+// itemMenuFullSys is itemMenuFull with an explicit saved-page flag: a saved
+// page's feed is hidden, so its "go to feed" entry is omitted.
+templ itemMenuFullSys(itemID, feedID int64, sourceURL, shareToken string, inModal, isSystem bool) {
 	<div class="item-menu" data-item-id={ strconv.FormatInt(itemID, 10) }>
 		<button type="button" class="link menu-btn" aria-haspopup="true" aria-expanded="false" title="more actions" onclick="toggleItemMenu(event)">@web.Lucide("ellipsis")
 </button>
 		<div class="menu-pop" role="menu" hidden>
 			<button type="button" class="link menu-item" role="menuitem" onclick="itemMenuAction(event, 'lists')">add to list</button>
-			<a class="menu-item" role="menuitem" href={ "/feeds/" + strconv.FormatInt(feedID, 10) }>go to feed</a>
+			if !isSystem {
+				<a class="menu-item" role="menuitem" href={ "/feeds/" + strconv.FormatInt(feedID, 10) }>go to feed</a>
+			}
 			if inModal && sourceURL != "" {
 				<a class="menu-item external" role="menuitem" href={ templ.URL(sourceURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">source</a>
 			}

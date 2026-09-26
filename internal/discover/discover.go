@@ -152,9 +152,11 @@ func dedup(cs []Candidate) []Candidate {
 
 // PageMeta is the basic metadata discoverable from a page's HTML.
 type PageMeta struct {
-	Title   string
-	IconURL string
-	HomeURL string
+	Title       string
+	IconURL     string
+	HomeURL     string
+	Description string // meta description / og:description, for a saved page's summary
+	ImageURL    string // og:image, for a saved page's thumbnail
 }
 
 // pageTitle returns a page's display title with YouTube's " - YouTube" and
@@ -223,7 +225,7 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 	z := html.NewTokenizer(io.LimitReader(body, maxBody))
 	inTitle := false
 	inStructured := false
-	var ogImage, structured string
+	var ogImage, structured, description string
 	for {
 		tt := z.Next()
 		switch tt {
@@ -233,6 +235,10 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 			// directly may wrap its <title> in CDATA, which the HTML tokenizer
 			// passes through raw.
 			meta.Title = stripCDATA(pageTitle(pageURL, meta.Title))
+			meta.Description = strings.TrimSpace(description)
+			if ogImage != "" {
+				meta.ImageURL = ogImage
+			}
 			// A YouTube channel page's real avatar is its og:image
 			// (yt3.googleusercontent.com), not the hashed build favicon.
 			if isYT && ogImage != "" {
@@ -283,17 +289,28 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 					meta.IconURL = resolveURL(base, href)
 				}
 			case "meta":
-				var prop, content string
+				var prop, name, content string
 				for _, a := range t.Attr {
 					switch a.Key {
 					case "property":
 						prop = strings.ToLower(a.Val)
+					case "name":
+						name = strings.ToLower(a.Val)
 					case "content":
 						content = a.Val
 					}
 				}
 				if ogImage == "" && prop == "og:image" && content != "" {
 					ogImage = content
+				}
+				// og:description wins over a plain meta description, but any
+				// non-empty description is better than none.
+				if content != "" && description == "" {
+					if prop == "og:description" || name == "description" {
+						description = content
+					}
+				} else if prop == "og:description" && content != "" {
+					description = content
 				}
 			}
 		case html.EndTagToken:

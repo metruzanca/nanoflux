@@ -26,6 +26,7 @@ WHERE image_url IS NULL AND guid LIKE 'yt:video:%';
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -38,6 +39,9 @@ WHERE f.user_id = sqlc.arg('userID')
   AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
+  -- Saved pages (system feed items) surface only in favorites and search, not
+  -- in the unread/read/feed/author/collection streams.
+  AND (f.is_system = 0 OR CAST(sqlc.arg('favorites') AS INTEGER) = 1)
   AND (CAST(sqlc.arg('beforeID') AS INTEGER) = 0 OR
        (COALESCE(i.published_at, i.fetched_at), i.id) <
        (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(sqlc.arg('beforeID') AS INTEGER)))
@@ -48,6 +52,7 @@ LIMIT sqlc.arg('limit');
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -60,6 +65,8 @@ WHERE f.user_id = sqlc.arg('userID')
   AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
+  -- Saved pages (system feed items) surface only in favorites and search.
+  AND (f.is_system = 0 OR CAST(sqlc.arg('favorites') AS INTEGER) = 1)
   AND (CAST(sqlc.arg('afterID') AS INTEGER) = 0 OR
        (COALESCE(i.published_at, i.fetched_at), i.id) >
        (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(sqlc.arg('afterID') AS INTEGER)))
@@ -77,6 +84,7 @@ WHERE i.id = ? AND f.user_id = ?;
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -87,6 +95,7 @@ WHERE i.id = ? AND f.user_id = ?;
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -106,7 +115,7 @@ WHERE items.id = ? AND items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_i
 -- name: MarkAllItemsRead :exec
 UPDATE items
 SET read = 1, read_at = sqlc.arg('readAt')
-WHERE items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = sqlc.arg('userID'))
+WHERE items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = sqlc.arg('userID') AND f.is_system = 0)
   AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR items.feed_id = CAST(sqlc.arg('feedID') AS INTEGER));
 
 -- name: MarkAuthorItemsRead :exec
@@ -131,7 +140,7 @@ WHERE read = 0
 -- name: MarkAllItemsUnread :exec
 UPDATE items
 SET read = 0, read_at = NULL
-WHERE items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = sqlc.arg('userID'))
+WHERE items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = sqlc.arg('userID') AND f.is_system = 0)
   AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR items.feed_id = CAST(sqlc.arg('feedID') AS INTEGER));
 
 -- name: MarkItemsBeforeRead :exec
@@ -227,13 +236,15 @@ ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
 LIMIT sqlc.arg('limit');
 
 -- name: CountUnreadItems :one
+-- Excludes saved pages (the system feed), which never appear in the unread
+-- stream or its count.
 SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = sqlc.arg('userID') AND i.read = 0
+WHERE f.user_id = sqlc.arg('userID') AND f.is_system = 0 AND i.read = 0
   AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR f.id = CAST(sqlc.arg('feedID') AS INTEGER));
 
 -- name: CountReadItems :one
 SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = sqlc.arg('userID') AND i.read = 1
+WHERE f.user_id = sqlc.arg('userID') AND f.is_system = 0 AND i.read = 1
   AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR f.id = CAST(sqlc.arg('feedID') AS INTEGER));
 
 -- name: CountFavoriteItems :one

@@ -44,6 +44,7 @@ var migrations = []migration{
 	{31, schemaV31},
 	{32, schemaV32},
 	{33, schemaV33},
+	{34, schemaV34},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -517,6 +518,15 @@ CREATE TABLE user_view_prefs (
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, scope)
 );
+`
+
+// schemaV34 marks the per-user hidden feed that holds saved pages (arbitrary
+// URLs, not feed entries). A system feed and its system author never appear in
+// feeds/authors listings, OPML, discovery or plugin reconciliation; their items
+// surface only in lists, favorites and search.
+const schemaV34 = `
+ALTER TABLE authors ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE feeds ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0;
 `
 
 // Migrate applies any pending migrations in order, recording each in

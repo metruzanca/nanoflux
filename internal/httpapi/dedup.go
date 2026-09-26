@@ -21,7 +21,9 @@ func dedupItems(items []store.ItemWithFeed) []store.ItemWithFeed {
 	out := make([]store.ItemWithFeed, 0, len(items))
 	for _, it := range items {
 		key := normalizeTitle(it.Title)
-		if key == "" {
+		// A saved page (hidden system feed) is never merged into a feed item:
+		// it is deliberate, user-held content, not a duplicate to collapse.
+		if key == "" || it.FeedIsSystem {
 			out = append(out, it)
 			continue
 		}

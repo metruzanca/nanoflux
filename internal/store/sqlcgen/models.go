@@ -16,6 +16,7 @@ type Author struct {
 	AvatarKey     sql.NullString `json:"avatar_key"`
 	LastFetchedAt sql.NullString `json:"last_fetched_at"`
 	Description   sql.NullString `json:"description"`
+	IsSystem      int64          `json:"is_system"`
 	CreatedAt     string         `json:"created_at"`
 }
 
@@ -61,6 +62,7 @@ type Feed struct {
 	PluginName       string         `json:"plugin_name"`
 	DisabledReason   sql.NullString `json:"disabled_reason"`
 	Enabled          bool           `json:"enabled"`
+	IsSystem         int64          `json:"is_system"`
 	CreatedAt        string         `json:"created_at"`
 }
 

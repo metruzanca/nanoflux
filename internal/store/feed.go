@@ -30,6 +30,7 @@ type Feed struct {
 	PluginName       string // plugin that owns this feed, "" for the generic parser
 	DisabledReason   string // why the feed is disabled (e.g. its plugin is missing); "" when enabled or user-paused
 	Enabled          bool
+	IsSystem         bool // hidden feed holding saved pages; never listed or polled
 	CreatedAt        string
 }
 
@@ -66,6 +67,9 @@ func (s *FeedStore) CreateWithPlugin(userID, authorID int64, title, feedURL, hom
 	return toFeed(f), nil
 }
 
+// ByID returns a user's feed by id. The hidden system feed that holds saved
+// pages is excluded (ErrNotFound): it has no feed page, is never polled and is
+// reached only through EnsureSystemFeed.
 func (s *FeedStore) ByID(userID, id int64) (Feed, error) {
 	f, err := s.q.GetFeed(context.Background(), sqlcgen.GetFeedParams{ID: id, UserID: userID})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -73,6 +77,9 @@ func (s *FeedStore) ByID(userID, id int64) (Feed, error) {
 	}
 	if err != nil {
 		return Feed{}, err
+	}
+	if f.IsSystem != 0 {
+		return Feed{}, ErrNotFound
 	}
 	return toFeed(f), nil
 }
@@ -386,7 +393,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

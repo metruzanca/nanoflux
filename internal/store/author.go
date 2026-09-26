@@ -17,6 +17,7 @@ type Author struct {
 	AvatarKey     string
 	LastFetchedAt string
 	Description   string
+	IsSystem      bool // hidden author owning the system feed; never listed
 	CreatedAt     string
 }
 
@@ -42,6 +43,17 @@ func (s *AuthorStore) Create(userID int64, name, avatarURL, description string) 
 	return toAuthor(a), nil
 }
 
+// IsSystemAuthor reports whether id is the user's hidden system author (the
+// owner of the saved-pages feed). Callers use it to redirect instead of
+// rendering a normal author page.
+func (s *AuthorStore) IsSystemAuthor(userID, id int64) bool {
+	a, err := s.q.GetAuthor(context.Background(), sqlcgen.GetAuthorParams{ID: id, UserID: userID})
+	return err == nil && a.IsSystem != 0
+}
+
+// ByID returns a user's author by id. The hidden system author that owns the
+// saved-pages feed is excluded (ErrNotFound): it has no author page and is
+// reached only through EnsureSystemAuthor.
 func (s *AuthorStore) ByID(userID, id int64) (Author, error) {
 	a, err := s.q.GetAuthor(context.Background(), sqlcgen.GetAuthorParams{ID: id, UserID: userID})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -49,6 +61,9 @@ func (s *AuthorStore) ByID(userID, id int64) (Author, error) {
 	}
 	if err != nil {
 		return Author{}, err
+	}
+	if a.IsSystem != 0 {
+		return Author{}, ErrNotFound
 	}
 	return toAuthor(a), nil
 }

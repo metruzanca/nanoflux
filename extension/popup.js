@@ -9,6 +9,20 @@ function status(msg, ok) {
   el.className = ok ? 'ok' : '';
 }
 
+// loadPageForm asks the server for the save-page form and swaps it into slot.
+// The page URL and title are sent so the form is prefilled; the form's own
+// POST goes back to /api/ext/page-save.
+function loadPageForm(slot, tab) {
+  slot.textContent = '';
+  const h = document.createElement('div');
+  h.setAttribute('hx-post', '/api/ext/page-form');
+  h.setAttribute('hx-trigger', 'load');
+  h.setAttribute('hx-swap', 'innerHTML');
+  h.setAttribute('hx-vals', JSON.stringify({ url: tab.url, title: tab.title || '' }));
+  slot.appendChild(h);
+  htmx.process(slot);
+}
+
 async function main() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.url || !/^https?:/.test(tab.url)) {
@@ -39,16 +53,18 @@ async function main() {
   // Match the app's per-user accent color.
   if (data.accent) document.documentElement.style.setProperty('--accent', data.accent);
 
+  const slot = document.getElementById('form-slot');
+
+  // No feed on this page: offer to save the page itself to a list.
   if (!data.candidates.length) {
-    status('no feeds found on this page');
+    status('no feeds found — save this page instead');
+    loadPageForm(slot, tab);
     return;
   }
 
   const saved = data.candidates.some((c) => c.saved);
   const n = data.candidates.length;
   status(`${n} feed${n === 1 ? '' : 's'} detected${saved ? ' · already saved' : ''}`, saved);
-
-  const slot = document.getElementById('form-slot');
 
   // Already saved: link to the feed in nanoflux instead of the add form.
   if (saved) {
@@ -59,6 +75,7 @@ async function main() {
     a.rel = 'noopener';
     a.textContent = 'open this feed in nanoflux';
     slot.appendChild(a);
+    addPageLink(slot, tab);
     return;
   }
 
@@ -75,6 +92,18 @@ async function main() {
   slot.appendChild(h);
   // Processing the element fires its hx-trigger="load", which loads the form.
   htmx.process(slot);
+  addPageLink(slot, tab);
+}
+
+// addPageLink appends the "or save this page to a list" escape hatch, so a page
+// that carries feeds can still be saved in its own right.
+function addPageLink(slot, tab) {
+  const alt = document.createElement('button');
+  alt.type = 'button';
+  alt.className = 'link alt';
+  alt.textContent = 'or save this page to a list';
+  alt.addEventListener('click', () => loadPageForm(slot, tab));
+  slot.appendChild(alt);
 }
 
 document.getElementById('options-link').addEventListener('click', (e) => {

@@ -411,25 +411,26 @@ func withTZ(tz string, items []store.ItemWithFeed) []store.ItemWithFeed {
 }
 
 type itemViewData struct {
-	ID          int64
-	Title       string
-	AuthorName  string
-	AuthorID    int64
-	FeedID      int64
-	PublishedAt string
-	Summary     string
-	ImageURL    string
-	Link        string
-	Body        template.HTML
-	EmbedURL    string
-	SourceURL   string   // external destination of a reddit link post
-	EmbedSrc    string   // iframe src from the destination's oEmbed
-	Gallery     []string // full-res images of a reddit gallery post
-	Enclosures  []store.Enclosure
-	ShareToken  string // public share token, "" when the item is not shared
-	Timezone    string // user's IANA timezone, for relative timestamps in templates
-	Favorite    bool   // drives the modal's favorite toggle
-	Read        bool   // drives the modal's read/unread toggle (true after auto-mark)
+	ID           int64
+	Title        string
+	AuthorName   string
+	AuthorID     int64
+	FeedID       int64
+	PublishedAt  string
+	Summary      string
+	ImageURL     string
+	Link         string
+	Body         template.HTML
+	EmbedURL     string
+	SourceURL    string   // external destination of a reddit link post
+	EmbedSrc     string   // iframe src from the destination's oEmbed
+	Gallery      []string // full-res images of a reddit gallery post
+	FeedIsSystem bool     // true for a saved page (hidden feed/author, no internal links)
+	Enclosures   []store.Enclosure
+	ShareToken   string // public share token, "" when the item is not shared
+	Timezone     string // user's IANA timezone, for relative timestamps in templates
+	Favorite     bool   // drives the modal's favorite toggle
+	Read         bool   // drives the modal's read/unread toggle (true after auto-mark)
 }
 
 // itemView renders an item's stored content as a fragment, injected into the
@@ -454,20 +455,21 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data := itemViewData{
-		ID:          it.ID,
-		Title:       it.Title,
-		AuthorName:  it.AuthorName,
-		AuthorID:    it.AuthorID,
-		FeedID:      it.FeedID,
-		PublishedAt: it.PublishedAt,
-		Summary:     it.Summary,
-		ImageURL:    it.ImageURL,
-		Link:        it.Link,
-		Body:        template.HTML(it.Summary),
-		EmbedURL:    web.YoutubeEmbedURL(it.Link),
-		Timezone:    u.Timezone,
-		Favorite:    it.Favorite,
-		Read:        it.Read,
+		ID:           it.ID,
+		Title:        it.Title,
+		AuthorName:   it.AuthorName,
+		AuthorID:     it.AuthorID,
+		FeedID:       it.FeedID,
+		PublishedAt:  it.PublishedAt,
+		Summary:      it.Summary,
+		ImageURL:     it.ImageURL,
+		Link:         it.Link,
+		Body:         template.HTML(it.Summary),
+		EmbedURL:     web.YoutubeEmbedURL(it.Link),
+		Timezone:     u.Timezone,
+		Favorite:     it.Favorite,
+		Read:         it.Read,
+		FeedIsSystem: it.FeedIsSystem,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
