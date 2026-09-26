@@ -97,6 +97,26 @@ a.external::after {
 
 .user-menu { position: relative; display: inline-flex; }
 
+/* Nav "add" split button: a primary action joined to a caret that opens the
+   add-actions dropdown. The caret and primary share a pill edge. */
+.add-menu { position: relative; display: inline-flex; }
+.add-menu .add-primary {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
+}
+.add-menu .add-caret {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.4rem;
+  border-left: none;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.add-menu .add-caret svg { width: 14px; height: 14px; }
+.add-menu .menu-pop { right: 0; }
+
 .avatar-btn {
   background: none;
   border: none;
@@ -974,6 +994,17 @@ details.feeds-section summary:hover { color: var(--accent); }
     border-top: 1px solid var(--border);
   }
   .top nav > .user-menu .avatar-btn { display: none; }
+
+  /* The add split button spans the collapsed column; the caret dropdown stays
+     anchored to it and overlays the items below. */
+  .top nav > .add-menu {
+    width: 100%;
+    border-top: 1px solid var(--border);
+  }
+  .top nav > .add-menu .add-primary {
+    flex: 1;
+    padding: 0.5rem 0.25rem;
+  }
 
   .top nav .user-menu-pop {
     position: static;

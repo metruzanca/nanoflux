@@ -265,8 +265,10 @@ func TestCollectionsPageHidesDeleteForAuto(t *testing.T) {
 		t.Fatalf("collection page should not offer delete: %s", cbody)
 	}
 
-	// The auto collection page hides the manual add-feed/remove controls.
-	if strings.Contains(cbody, "add feed") {
+	// The auto collection page hides the manual add-feed/remove controls. The
+	// nav's global "+ add feed" button is unrelated, so match the collection's
+	// own add-feed dialog instead.
+	if strings.Contains(cbody, "collection-add-feed-dialog") {
 		t.Fatalf("auto collection page should not offer add feed: %s", cbody)
 	}
 	if strings.Contains(cbody, "/remove-feed/") {

@@ -65,6 +65,55 @@ templ extPageSaved(title, list string) {
 		@web.Lucide("check")</div>
 }
 
+// savePageForm is the in-app "save url for later" form, fetched into the shared
+// #save-page-dialog by the nav "add" menu. Unlike the extension variant the URL
+// is not fixed by the current tab, so it is an editable field. The page is saved
+// into the selected list (defaulting to "watch later") or a new list typed in
+// the name field.
+templ savePageForm(selectedList string, lists []comboItem) {
+	<div class="row">
+		<h2>save url for later</h2>
+		<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+	</div>
+	<form class="stack" hx-post="/save-page" hx-target="#save-page-dialog" hx-swap="innerHTML">
+		<label>url
+			<input name="url" type="text" placeholder="https://site.com/page" autofocus required/>
+		</label>
+		<label>title
+			<input name="title" type="text" placeholder="optional — fetched from the page"/>
+		</label>
+		<label>save to list
+			<select name="list_id">
+				for _, l := range lists {
+					if l.Value == selectedList {
+						<option value={ l.Value } selected>{ l.Label }</option>
+					} else {
+						<option value={ l.Value }>{ l.Label }</option>
+					}
+				}
+			</select>
+		</label>
+		<label>or new list
+			<input name="new_list" type="text" placeholder="new list name" autocomplete="off"/>
+		</label>
+		<div id="save-page-error" class="error"></div>
+		<button type="submit">save page</button>
+	</form>
+}
+
+// savePageSaved is the success fragment shown in the dialog after saving a page
+// in-app.
+templ savePageSaved(title, list string) {
+	<div class="ext-ok" role="status">saved <strong>{ title }</strong>
+		if list != "" {
+			<span class="muted">to { list }</span>
+		}
+		@web.Lucide("check")</div>
+	<div class="row">
+		<button type="button" onclick="this.closest('dialog').close()">close</button>
+	</div>
+}
+
 // extError is the error banner for the extension popup.
 templ extError(msg string) {
 	<div class="error" role="alert">{ msg }</div>

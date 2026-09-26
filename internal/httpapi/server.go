@@ -168,6 +168,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /fragments/feed-preview", s.auth.Require(http.HandlerFunc(s.feedPreview)))
 	mux.Handle("POST /fragments/manual-feed", s.auth.Require(http.HandlerFunc(s.manualFeedForm)))
 	mux.Handle("POST /fragments/mapping-test", s.auth.Require(http.HandlerFunc(s.settingsMappingTest)))
+	mux.Handle("GET /fragments/save-page", s.auth.Require(http.HandlerFunc(s.savePageFormFragment)))
+
+	// Saved pages (in-app "save url for later").
+	mux.Handle("POST /save-page", s.auth.Require(http.HandlerFunc(s.savePageWeb)))
 
 	// Image proxy for avatars.
 	mux.Handle("GET /img", s.auth.Require(http.HandlerFunc(s.imgProxy)))

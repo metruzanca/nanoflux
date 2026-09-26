@@ -72,43 +72,41 @@ func extDefaultListValue(rows []store.ListWithCount, defaultID int64) string {
 	return ""
 }
 
-// apiExtPageSave stores the current page as an item in a list. The list is the
-// posted list_id, or a list named by the optional new_list field (created on
-// demand), or the default "watch later" list. Page metadata (summary, image,
-// title fallback) is fetched server-side so the item renders like a feed entry.
-func (s *Server) apiExtPageSave(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
+// savePageTo resolves the destination list and stores the posted page,
+// fetching its metadata server-side so the item renders like a feed entry. The
+// list is the posted list_id, a list named by the optional new_list field
+// (created on demand), or the default "watch later" list. It returns the saved
+// title and list name, or a user-facing error message. Shared by the browser
+// extension (apiExtPageSave) and the in-app dialog (savePageWeb).
+func (s *Server) savePageTo(r *http.Request, u store.User) (title, listName, errMsg string) {
 	pageURL := normalizeURL(r.FormValue("url"))
 	if pageURL == "" {
-		web.Render(w, r, extError("page url required"))
-		return
+		return "", "", "page url required"
 	}
 
 	var listID int64
 	if name := strings.TrimSpace(r.FormValue("new_list")); name != "" {
 		l, err := s.store.Lists.Ensure(u.ID, name)
 		if err != nil {
-			log.Error("extension save page list", "err", err)
-			web.Render(w, r, extError("could not create that list"))
-			return
+			log.Error("save page list", "err", err)
+			return "", "", "could not create that list"
 		}
 		listID = l.ID
 	} else if v, _ := strconv.ParseInt(r.FormValue("list_id"), 10, 64); v != 0 {
 		if _, err := s.store.Lists.ByID(u.ID, v); err != nil {
-			web.Render(w, r, extError("list not found"))
-			return
+			return "", "", "list not found"
 		}
 		listID = v
 	} else {
 		id, err := s.defaultSavedListID(u.ID)
 		if err != nil {
-			internalError(w, "could not prepare list", err)
-			return
+			log.Error("prepare save list", "err", err)
+			return "", "", "could not prepare list"
 		}
 		listID = id
 	}
 
-	title := strings.TrimSpace(r.FormValue("title"))
+	title = strings.TrimSpace(r.FormValue("title"))
 	summary, imageURL, metaTitle := s.pageMetaFor(r.Context(), pageURL)
 	if title == "" {
 		title = metaTitle
@@ -125,12 +123,50 @@ func (s *Server) apiExtPageSave(w http.ResponseWriter, r *http.Request) {
 	}
 	guid := "page:" + key
 	if _, _, err := s.store.SavePage(u.ID, listID, guid, title, pageURL, summary, imageURL); err != nil {
-		log.Error("extension save page", "url", pageURL, "err", err)
-		web.Render(w, r, extError("could not save that page"))
-		return
+		log.Error("save page", "url", pageURL, "err", err)
+		return "", "", "could not save that page"
 	}
 	l, _ := s.store.Lists.ByID(u.ID, listID)
-	web.Render(w, r, extPageSaved(title, l.Name))
+	return title, l.Name, ""
+}
+
+// apiExtPageSave stores the current page as an item in a list. The list is the
+// posted list_id, or a list named by the optional new_list field (created on
+// demand), or the default "watch later" list. Page metadata (summary, image,
+// title fallback) is fetched server-side so the item renders like a feed entry.
+func (s *Server) apiExtPageSave(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	title, listName, errMsg := s.savePageTo(r, u)
+	if errMsg != "" {
+		web.Render(w, r, extError(errMsg))
+		return
+	}
+	web.Render(w, r, extPageSaved(title, listName))
+}
+
+// savePageFormFragment renders the in-app "save url for later" form into the
+// shared #save-page-dialog. It creates the default list on demand so the picker
+// always has a sensible initial selection.
+func (s *Server) savePageFormFragment(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	defaultID, err := s.defaultSavedListID(u.ID)
+	if err != nil {
+		internalError(w, "could not prepare list", err)
+		return
+	}
+	rows, _ := s.store.Lists.List(u.ID)
+	web.Render(w, r, savePageForm(extDefaultListValue(rows, defaultID), savedListItems(rows)))
+}
+
+// savePageWeb stores a page submitted from the in-app dialog.
+func (s *Server) savePageWeb(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	title, listName, errMsg := s.savePageTo(r, u)
+	if errMsg != "" {
+		writeFormError(w, r, "save-page-error", errMsg)
+		return
+	}
+	web.Render(w, r, savePageSaved(title, listName))
 }
 
 // pageMetaFor fetches a saved page's title, description and og:image, with a
