@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"html/template"
 	"net"
 	"net/http"
@@ -757,6 +758,29 @@ func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {
 	}
 	row.Timezone = u.Timezone
 	web.Render(w, r, ItemRow(row, r.FormValue("hideAuthor") == "1"))
+}
+
+// itemDeleteSaved hard-deletes a saved page. It responds 204 and signals the
+// client with HX-Trigger: item-deleted (carrying the id), so app.js drops the
+// row and closes the modal; no swap body is needed.
+func (s *Server) itemDeleteSaved(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.Items.DeleteSaved(u.ID, id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Error("delete saved item", "item_id", id, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("HX-Trigger", `{"item-deleted":{"id":`+strconv.FormatInt(id, 10)+`}}`)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // feedCreate is the global add flow: the URL auto-detect result is an author

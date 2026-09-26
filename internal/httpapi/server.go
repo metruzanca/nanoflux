@@ -100,6 +100,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /items/{id}/read-before", s.auth.Require(http.HandlerFunc(s.itemReadBefore)))
 	mux.Handle("POST /items/{id}/read-after", s.auth.Require(http.HandlerFunc(s.itemReadAfter)))
 	mux.Handle("POST /items/{id}/favorite", s.auth.Require(http.HandlerFunc(s.itemFavorite)))
+	mux.Handle("POST /items/{id}/delete", s.auth.Require(http.HandlerFunc(s.itemDeleteSaved)))
 	mux.Handle("GET /items/{id}/view", s.auth.Require(http.HandlerFunc(s.itemView)))
 	mux.Handle("POST /items/{id}/share", s.auth.Require(http.HandlerFunc(s.itemShare)))
 	mux.Handle("POST /items/{id}/revoke", s.auth.Require(http.HandlerFunc(s.itemRevokeShare)))
