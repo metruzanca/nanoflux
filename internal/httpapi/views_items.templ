@@ -148,7 +148,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 		if v.Video {
 			<a class="thumb" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
 				if it.ImageURL != "" {
-					<img src={ templ.URL(it.ImageURL) } alt="" loading="lazy"/>
+					<img src={ templ.URL(web.ProxiedImageURL(it.ImageURL)) } alt="" loading="lazy"/>
 				} else {
 					<span class="thumb-ph">▶</span>
 				}
@@ -159,9 +159,9 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 		} else if v.Image || v.Link || v.Gallery {
 			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
 				if gthumb := web.GalleryThumb(it.ImageURL); gthumb != "" {
-					<img src={ templ.URL(gthumb) } alt="" loading="lazy"/>
+					<img src={ templ.URL(web.ProxiedImageURL(gthumb)) } alt="" loading="lazy"/>
 				} else {
-					<img src={ templ.URL(it.ImageURL) } alt="" loading="lazy"/>
+					<img src={ templ.URL(web.ProxiedImageURL(it.ImageURL)) } alt="" loading="lazy"/>
 				}
 				if v.Link {
 					<span class="thumb-badge" title="content lives on an external site">external</span>
@@ -171,7 +171,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 			// A text post that still carries a thumbnail (e.g. one that arrived
 			// only as an image enclosure) gets a thumb beside its text.
 			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
-				<img src={ templ.URL(it.ImageURL) } alt="" loading="lazy"/>
+				<img src={ templ.URL(web.ProxiedImageURL(it.ImageURL)) } alt="" loading="lazy"/>
 			</a>
 		}
 		<div class="card-body">
@@ -549,7 +549,7 @@ templ itemContent(d itemViewData, v itemVisuals) {
 	if len(d.Gallery) > 0 {
 		<div class="gallery">
 			for _, img := range d.Gallery {
-				<img src={ templ.URL(img) } alt="" loading="lazy"/>
+				<img src={ templ.URL(d.imgSrc(img)) } alt="" loading="lazy"/>
 			}
 		</div>
 	} else if d.EmbedSrc != "" {
@@ -565,11 +565,11 @@ templ itemContent(d itemViewData, v itemVisuals) {
 		</div>
 	} else if v.Image {
 		<div class="image-lightbox">
-			<img src={ templ.URL(web.BestImageURL(d.Summary, d.ImageURL)) } alt={ d.Title } loading="lazy"/>
+			<img src={ templ.URL(d.imgSrc(web.BestImageURL(d.Summary, d.ImageURL))) } alt={ d.Title } loading="lazy"/>
 		</div>
 	}
 	if d.Body != "" && !v.Image && d.SourceURL == "" && len(d.Gallery) == 0 {
-		<div class="item-body">@templ.Raw(web.UpgradeImageSrcs(string(d.Body)))
+		<div class="item-body">@templ.Raw(d.bodyHTML())
 </div>
 	}
 	if len(d.Enclosures) > 0 {
@@ -577,12 +577,12 @@ templ itemContent(d itemViewData, v itemVisuals) {
 			if imgs := web.ImageEnclosures(d.Enclosures); len(imgs) > 0 && !v.Image && len(d.Gallery) == 0 && !web.BodyHasImage(d.Summary) {
 				if len(imgs) == 1 {
 					<div class="image-lightbox">
-						<img src={ templ.URL(imgs[0].URL) } alt="" loading="lazy"/>
+						<img src={ templ.URL(d.imgSrc(imgs[0].URL)) } alt="" loading="lazy"/>
 					</div>
 				} else {
 					<div class="gallery">
 						for _, e := range imgs {
-							<img src={ templ.URL(e.URL) } alt="" loading="lazy"/>
+							<img src={ templ.URL(d.imgSrc(e.URL)) } alt="" loading="lazy"/>
 						}
 					</div>
 				}

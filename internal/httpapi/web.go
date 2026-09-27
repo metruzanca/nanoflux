@@ -443,6 +443,25 @@ type itemViewData struct {
 	Timezone     string // user's IANA timezone, for relative timestamps in templates
 	Favorite     bool   // drives the modal's favorite toggle
 	Read         bool   // drives the modal's read/unread toggle (true after auto-mark)
+	ProxyImages  bool   // route remote images through /img (authenticated modal only)
+}
+
+// imgSrc returns a remote image URL as it should be rendered: proxied through
+// /img when the view may use that authenticated route, unchanged otherwise.
+func (d itemViewData) imgSrc(u string) string {
+	if d.ProxyImages {
+		return web.ProxiedImageURL(u)
+	}
+	return u
+}
+
+// bodyHTML returns the item body ready for rendering, proxying its images when
+// the view may use /img.
+func (d itemViewData) bodyHTML() string {
+	if d.ProxyImages {
+		return web.ProxyImageSrcs(string(d.Body))
+	}
+	return web.UpgradeImageSrcs(string(d.Body))
 }
 
 // itemView renders an item's stored content as a fragment, injected into the
@@ -484,6 +503,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		Read:         it.Read,
 		FeedIsSystem: it.FeedIsSystem,
 		Attribution:  itemAttribution(it),
+		ProxyImages:  true,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()

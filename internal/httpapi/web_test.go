@@ -18,6 +18,12 @@ import (
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
+// pxImg returns a rendered <img src="…"> attribute for the proxied form of a
+// remote image URL, so tests assert what the templates actually emit.
+func pxImg(rawurl string) string {
+	return `src="` + web.ProxiedImageURL(rawurl) + `"`
+}
+
 func doForm(h http.Handler, method, path string, form url.Values, cookie *http.Cookie) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -552,13 +558,18 @@ func TestShareFlow(t *testing.T) {
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
-	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Shareable post", Link: "https://b.dev/1", Summary: "body text", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Shareable post", Link: "https://b.dev/1",
+		Summary: `<p>body text</p><img src="https://cdn.b.dev/photo.jpg">`, FetchedAt: db.Now()})
 	itemID, _ := s.store.Items.ByFeedIdentity(f.ID, "g1")
 
-	// The modal shows a share button when unshared.
+	// The modal shows a share button when unshared, and its body image is
+	// proxied through /img (which requires the viewer's session).
 	body := doGet(h, "/items/"+itoa(itemID)+"/view", cookie).Body.String()
 	if !strings.Contains(body, `hx-post="/items/`+itoa(itemID)+`/share"`) {
 		t.Fatalf("item modal should offer sharing: %s", body)
+	}
+	if !strings.Contains(body, `<img `+pxImg("https://cdn.b.dev/photo.jpg")) {
+		t.Fatalf("authed modal body image should be proxied: %s", body)
 	}
 
 	// Share it.
@@ -586,6 +597,14 @@ func TestShareFlow(t *testing.T) {
 	}
 	if strings.Contains(prr.Body.String(), `href="/authors/`) || strings.Contains(prr.Body.String(), `href="/feeds/`) {
 		t.Fatalf("public page should not expose internal links: %s", prr.Body.String())
+	}
+	// The public page has no session, so its body image is NOT routed through
+	// the authenticated /img proxy.
+	if !strings.Contains(prr.Body.String(), `src="https://cdn.b.dev/photo.jpg"`) {
+		t.Fatalf("public page should hotlink the image as-is: %s", prr.Body.String())
+	}
+	if strings.Contains(prr.Body.String(), "/img?u=") {
+		t.Fatalf("public page must not use the authenticated proxy: %s", prr.Body.String())
 	}
 
 	// Unknown token -> 404.
@@ -920,7 +939,7 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	if !strings.Contains(body, `id="item-1" class="video-card"`) {
 		t.Fatalf("video item should render a video-card: %s", body)
 	}
-	if !strings.Contains(body, `src="https://i.ytimg.com/vi/H0KAi8AWsnM/hq720.jpg"`) {
+	if !strings.Contains(body, pxImg("https://i.ytimg.com/vi/H0KAi8AWsnM/hq720.jpg")) {
 		t.Fatalf("video card missing thumbnail: %s", body)
 	}
 	if !strings.Contains(body, `class="thumb-duration"`) || !strings.Contains(body, `>5:41</span>`) {
@@ -932,13 +951,13 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	if !strings.Contains(body, `id="item-3" class="image-card"`) {
 		t.Fatalf("image post should render an image-card: %s", body)
 	}
-	if !strings.Contains(body, `src="https://example.com/pic.jpg"`) {
+	if !strings.Contains(body, pxImg("https://example.com/pic.jpg")) {
 		t.Fatalf("image card missing the image: %s", body)
 	}
 	if !strings.Contains(body, `id="item-4" class="link-card"`) {
 		t.Fatalf("link post should render a link-card: %s", body)
 	}
-	if !strings.Contains(body, `src="https://external-preview.redd.it/1q2w3e4r.jpeg?width=320"`) {
+	if !strings.Contains(body, pxImg("https://external-preview.redd.it/1q2w3e4r.jpeg?width=320")) {
 		t.Fatalf("link card missing the external-preview thumbnail: %s", body)
 	}
 	if !strings.Contains(body, `class="thumb-badge"`) || !strings.Contains(body, ">external</span>") {
@@ -947,7 +966,7 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	if !strings.Contains(body, `id="item-5" class="image-card"`) {
 		t.Fatalf("gallery should render an image-card: %s", body)
 	}
-	if !strings.Contains(body, `src="https://i.redd.it/5t6y7u8i.jpg"`) {
+	if !strings.Contains(body, pxImg("https://i.redd.it/5t6y7u8i.jpg")) {
 		t.Fatalf("gallery card should use the full-res i.redd.it thumbnail: %s", body)
 	}
 	// The row keeps the modal data attrs and the read toggle.
@@ -995,7 +1014,7 @@ func TestItemViewImageLightbox(t *testing.T) {
 	if !strings.Contains(body, `class="image-lightbox"`) {
 		t.Fatalf("image post view missing image-lightbox: %s", body)
 	}
-	if !strings.Contains(body, `src="https://pics.dev/pic.jpg"`) {
+	if !strings.Contains(body, pxImg("https://pics.dev/pic.jpg")) {
 		t.Fatalf("image post view missing the lightbox image: %s", body)
 	}
 	if strings.Contains(body, "item-body") {
@@ -1729,7 +1748,7 @@ func TestItemModalShowsImageEnclosure(t *testing.T) {
 	})
 
 	body := doGet(h, "/items/"+itoa(itemID)+"/view", cookie).Body.String()
-	if !strings.Contains(body, `<img src="https://p.dev/photo.jpg?e=1790070194&amp;t=signed"`) {
+	if !strings.Contains(body, `<img `+pxImg("https://p.dev/photo.jpg?e=1790070194&t=signed")) {
 		t.Fatalf("item modal should embed the image enclosure: %s", body)
 	}
 	// The image enclosure is rendered inline, not as a bare download link; the
@@ -1764,7 +1783,7 @@ func TestItemModalSkipsImageEnclosureAlreadyInBody(t *testing.T) {
 	body := doGet(h, "/items/"+itoa(itemID)+"/view", cookie).Body.String()
 	// The body's own image renders; the enclosure duplicates it, so it must
 	// not be shown inline nor as a bare link.
-	if !strings.Contains(body, `<img src="https://p.dev/inline.jpg"`) {
+	if !strings.Contains(body, `<img `+pxImg("https://p.dev/inline.jpg")) {
 		t.Fatalf("item body should render its embedded image: %s", body)
 	}
 	if strings.Contains(body, "enclosure.jpg") {

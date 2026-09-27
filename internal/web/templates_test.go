@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -249,6 +250,34 @@ func TestBestImageURL(t *testing.T) {
 	// No linked image: keep the given url.
 	if got := BestImageURL(`<img src="https://p.dev/plain.jpg">`, "https://p.dev/plain.jpg"); got != "https://p.dev/plain.jpg" {
 		t.Errorf("BestImageURL = %q, want the given url", got)
+	}
+}
+
+func TestProxiedImageURL(t *testing.T) {
+	if got := ProxiedImageURL("https://cdn.example/a.jpg?x=1&y=2"); got != "/img?u="+url.QueryEscape("https://cdn.example/a.jpg?x=1&y=2") {
+		t.Errorf("ProxiedImageURL = %q", got)
+	}
+	// Non-http(s) and empty inputs are left alone.
+	for _, raw := range []string{"", "data:image/png;base64,AAA", "/static/x.png"} {
+		if got := ProxiedImageURL(raw); got != raw {
+			t.Errorf("ProxiedImageURL(%q) = %q, want unchanged", raw, got)
+		}
+	}
+}
+
+func TestProxyImageSrcs(t *testing.T) {
+	// Both the link upgrade and proxying compose: the full-size href becomes
+	// the src, and that src is then routed through /img.
+	body := `<a href="https://p.dev/full/1.jpg"><img src="https://p.dev/320/1.jpg"></a>`
+	got := ProxyImageSrcs(body)
+	want := `src="` + ProxiedImageURL("https://p.dev/full/1.jpg") + `"`
+	if !strings.Contains(got, want) {
+		t.Fatalf("upgraded src should be proxied: %s", got)
+	}
+	// A bare image is proxied in place.
+	bare := ProxyImageSrcs(`<img src="https://p.dev/plain.jpg">`)
+	if !strings.Contains(bare, `src="`+ProxiedImageURL("https://p.dev/plain.jpg")+`"`) {
+		t.Fatalf("bare img should be proxied: %s", bare)
 	}
 }
 

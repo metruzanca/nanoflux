@@ -118,7 +118,7 @@ func TestItemViewImagePost(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("item view: %d %s", rr.Code, body)
 	}
-	if !strings.Contains(body, `src="https://i.redd.it/1q2w3e4r.jpeg"`) {
+	if !strings.Contains(body, `<img `+pxImg("https://i.redd.it/1q2w3e4r.jpeg")) {
 		t.Fatalf("image post should render the full-res image: %s", body)
 	}
 	if strings.Contains(body, `class="external">source`) {
@@ -165,7 +165,7 @@ func TestItemViewGallery(t *testing.T) {
 		t.Fatalf("gallery post should render a gallery: %s", body)
 	}
 	for _, img := range []string{"https://i.redd.it/9z8x7c6v.jpg", "https://i.redd.it/5t6y7u8i.jpg"} {
-		if !strings.Contains(body, img) {
+		if !strings.Contains(body, pxImg(img)) {
 			t.Fatalf("gallery missing %s: %s", img, body)
 		}
 	}
