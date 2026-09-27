@@ -356,8 +356,10 @@ func TestAPIDiscoverSavedFlag(t *testing.T) {
 	defer feedSrv.Close()
 
 	type candidate struct {
-		FeedURL string `json:"feed_url"`
-		Saved   bool   `json:"saved"`
+		FeedURL       string `json:"feed_url"`
+		Saved         bool   `json:"saved"`
+		SavedFeedID   int64  `json:"saved_feed_id"`
+		SavedAuthorID int64  `json:"saved_author_id"`
 	}
 	var resp struct {
 		Candidates []candidate `json:"candidates"`
@@ -369,11 +371,16 @@ func TestAPIDiscoverSavedFlag(t *testing.T) {
 		t.Fatalf("unsaved candidate: %+v", resp)
 	}
 
-	s.store.Feeds.Create(u.ID, a.ID, "Blog", feedSrv.URL, "", "", 900)
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", feedSrv.URL, "", "", 900)
 	rr = apiJSON(h, "POST", "/api/discover", token, map[string]string{"url": feedSrv.URL})
 	json.Unmarshal(rr.Body.Bytes(), &resp)
 	if len(resp.Candidates) != 1 || !resp.Candidates[0].Saved {
 		t.Fatalf("saved candidate: %+v", resp)
+	}
+	// The saved candidate carries both ids so the popup can link to the feed and
+	// its author.
+	if resp.Candidates[0].SavedFeedID != f.ID || resp.Candidates[0].SavedAuthorID != a.ID {
+		t.Fatalf("saved candidate ids = %+v, want feed %d author %d", resp.Candidates[0], f.ID, a.ID)
 	}
 }
 
@@ -422,6 +429,10 @@ func TestAPIExtSave(t *testing.T) {
 	if len(feeds) != 1 || feeds[0].Title != "My Feed" || feeds[0].AuthorID != metru.ID {
 		t.Fatalf("feed not stored under selected author: %+v", feeds)
 	}
+	// The success fragment links to that author (not an auto-navigation).
+	if !strings.Contains(rr.Body.String(), "/authors/"+itoa(metru.ID)) {
+		t.Fatalf("ext save should link to the author: %s", rr.Body.String())
+	}
 
 	// Missing feed_url -> error banner.
 	rr = doForm(h, "POST", "/api/ext/save", url.Values{"title": {"X"}}, cookie)
@@ -440,10 +451,10 @@ func TestSavedFeedsNoFalsePositive(t *testing.T) {
 	s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://example.com/actual-feed", "https://example.com", "", 900)
 
 	sf := s.savedFeedsFor(u.ID)
-	if id := sf.saved("https://example.com/other-feed"); id != 0 {
+	if id := sf.saved("https://example.com/other-feed"); id.FeedID != 0 {
 		t.Fatal("an unsaved feed on the page must not be marked saved")
 	}
-	if id := sf.saved("https://example.com/actual-feed"); id == 0 {
+	if id := sf.saved("https://example.com/actual-feed"); id.FeedID == 0 {
 		t.Fatal("the actually-saved feed should match")
 	}
 }
@@ -457,10 +468,10 @@ func TestSavedFeedsDistinguishesQueryParams(t *testing.T) {
 	s.store.Feeds.Create(u.ID, a.ID, "Saved", "https://www.youtube.com/feeds/videos.xml?channel_id=AAAA", "", "", 900)
 
 	sf := s.savedFeedsFor(u.ID)
-	if id := sf.saved("https://www.youtube.com/feeds/videos.xml?channel_id=BBBB"); id != 0 {
+	if id := sf.saved("https://www.youtube.com/feeds/videos.xml?channel_id=BBBB"); id.FeedID != 0 {
 		t.Fatal("a different channel must not be marked saved")
 	}
-	if id := sf.saved("https://www.youtube.com/feeds/videos.xml?channel_id=AAAA"); id == 0 {
+	if id := sf.saved("https://www.youtube.com/feeds/videos.xml?channel_id=AAAA"); id.FeedID == 0 {
 		t.Fatal("the saved channel should match")
 	}
 }
@@ -540,6 +551,10 @@ func TestAPIExtSavePage(t *testing.T) {
 		!strings.Contains(rr.Body.String(), "The Article") {
 		t.Fatalf("page-save: %d %s", rr.Code, rr.Body.String())
 	}
+	// The success fragment deep-links to the saved item's modal.
+	if !strings.Contains(rr.Body.String(), "/#item-") || !strings.Contains(rr.Body.String(), "open this page") {
+		t.Fatalf("page-save should link to the saved item: %s", rr.Body.String())
+	}
 
 	// The default list now holds the page, with fetched metadata.
 	lists, _ := s.store.Lists.List(u.ID)
@@ -614,6 +629,10 @@ func TestSavePageWebFlow(t *testing.T) {
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "saved") ||
 		!strings.Contains(rr.Body.String(), "The Article") {
 		t.Fatalf("save-page: %d %s", rr.Code, rr.Body.String())
+	}
+	// The dialog's success fragment deep-links to the saved item.
+	if !strings.Contains(rr.Body.String(), "/#item-") || !strings.Contains(rr.Body.String(), "open this page") {
+		t.Fatalf("save-page should link to the saved item: %s", rr.Body.String())
 	}
 	lists, _ := s.store.Lists.List(u.ID)
 	if len(lists) != 1 || lists[0].Name != "watch later" || lists[0].ItemCount != 1 {

@@ -9,6 +9,16 @@ function status(msg, ok) {
   el.className = ok ? 'ok' : '';
 }
 
+// link builds an anchor that opens a relative nanoflux path in a new tab.
+function link(href, text) {
+  const a = document.createElement('a');
+  a.href = href;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  a.textContent = text;
+  return a;
+}
+
 // loadPageForm asks the server for the save-page form and swaps it into slot.
 // The page URL and title are sent so the form is prefilled; the form's own
 // POST goes back to /api/ext/page-save.
@@ -62,19 +72,20 @@ async function main() {
     return;
   }
 
-  const saved = data.candidates.some((c) => c.saved);
+  const saved = data.candidates.find((c) => c.saved);
   const n = data.candidates.length;
-  status(`${n} feed${n === 1 ? '' : 's'} detected${saved ? ' · already saved' : ''}`, saved);
+  status(`${n} feed${n === 1 ? '' : 's'} detected${saved ? ' · already saved' : ''}`, !!saved);
 
-  // Already saved: link to the feed in nanoflux instead of the add form.
+  // Already saved: link to the feed (and its author) in nanoflux instead of the
+  // add form.
   if (saved) {
-    const c = data.candidates.find((c) => c.saved);
-    const a = document.createElement('a');
-    a.href = '/feeds/' + c.saved_feed_id;
-    a.target = '_blank';
-    a.rel = 'noopener';
-    a.textContent = 'open this feed in nanoflux';
-    slot.appendChild(a);
+    const links = document.createElement('div');
+    links.className = 'ext-links';
+    links.appendChild(link('/feeds/' + saved.saved_feed_id, 'open this feed in nanoflux'));
+    if (saved.saved_author_id) {
+      links.appendChild(link('/authors/' + saved.saved_author_id, 'open its author'));
+    }
+    slot.appendChild(links);
     addPageLink(slot, tab);
     return;
   }
