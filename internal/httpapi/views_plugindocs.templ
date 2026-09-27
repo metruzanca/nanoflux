@@ -1,0 +1,31 @@
+package httpapi
+
+import (
+	"html/template"
+
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+// pluginDocsDialog is the content of the shared #plugin-docs-dialog: a title
+// bar, an optional note (when there is nothing to show), and the plugin's
+// documentation rendered from Markdown. body is already sanitized HTML (raw
+// HTML is disabled in the Markdown renderer), so it is safe to render raw.
+templ pluginDocsDialog(name string, body template.HTML, note string) {
+	<div class="row">
+		<h2 class="muted">
+			if name != "" {
+				{ name }
+				<span class="small">docs</span>
+			} else {
+				plugin docs
+			}
+		</h2>
+		<button type="button" class="link" title="close" onclick="document.getElementById('plugin-docs-dialog').close()">@web.Lucide("x")</button>
+	</div>
+	if note != "" {
+		<p class="muted">{ note }</p>
+	}
+	if body != "" {
+		<article class="prose">@templ.Raw(string(body))</article>
+	}
+}

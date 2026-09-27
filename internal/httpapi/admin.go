@@ -33,6 +33,8 @@ type adminPluginRow struct {
 	Version   string
 	RawNet    bool
 	UserAgent string
+	Summary   string
+	HasDocs   bool
 }
 
 // adminPluginDomain is one registrable domain owned by a plugin, with the number
@@ -218,6 +220,8 @@ func (s *Server) adminPluginRows() []adminPluginRow {
 			Version:   in.Version,
 			RawNet:    in.RawNet,
 			UserAgent: in.UserAgent,
+			Summary:   in.Summary,
+			HasDocs:   in.HasDocs,
 		})
 	}
 	return rows

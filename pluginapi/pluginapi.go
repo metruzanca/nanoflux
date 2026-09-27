@@ -32,6 +32,11 @@ const (
 	// item (an embed player, gallery images, or an external source link) that
 	// cannot be represented on a stored Item.
 	CapRender
+	// CapDocs asks whether the plugin documents u. It is how a docs affordance
+	// reaches a feed the plugin does not own the fetch of: a reddit feed is
+	// fetched by the generic parser (so feeds.plugin_name is empty), yet the
+	// reddit plugin still documents its category filters for reddit URLs.
+	CapDocs
 )
 
 // Meta describes a plugin to the host.
@@ -49,6 +54,14 @@ type Meta struct {
 	// specific identity (e.g. Instagram serves the logged-out post grid only to
 	// crawler agents), so a plugin that needs one sets it here.
 	UserAgent string
+	// Summary is a one-line description of what the plugin does, shown on its
+	// card in the admin panel. Empty hides the line.
+	Summary string
+	// HasDocs reports whether the plugin implements Docser. It is filled in by
+	// the host (from a type assertion for native plugins, or from the wire for
+	// external ones) — a plugin does not set it. It lets a UI offer a docs
+	// button without calling Docs() just to find out there is nothing.
+	HasDocs bool
 }
 
 // Candidate is one feed a plugin discovered on a page. Title/IconURL/HomeURL are
@@ -189,6 +202,17 @@ type Renderer interface {
 	// Render resolves an item's view-time media. req describes the item; the
 	// returned Media is merged into the modal.
 	Render(ctx context.Context, req RenderRequest, h Host) (Media, error)
+}
+
+// Docser is an optional capability a plugin may implement to document itself.
+// Docs returns Markdown describing the plugin — typically how it maps a site's
+// context into item categories, so a user can write filter rules against them
+// (reddit, for example, exposes each post's subreddit and author as categories).
+//
+// Docs must return promptly and must not perform network I/O: the host calls it
+// while rendering a modal. Returning "" means "no documentation".
+type Docser interface {
+	Docs() string
 }
 
 // RenderRequest describes the item whose view-time media is being resolved.

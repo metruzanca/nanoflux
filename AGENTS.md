@@ -150,6 +150,32 @@ feed, so lists, favorites, FTS search and share pages all work unchanged.
 - See `docs/fetching.md` (how fetching works) and
   `docs/writing-plugins.md` (author guide).
 
+### Plugin docs
+
+- A plugin may implement `pluginapi.Docser` (`Docs() string`, Markdown) to
+  document itself; `Meta.Summary` is its one-line admin-card description.
+  `HasDocs` on `Meta` is host-filled (native: type assertion; external: the
+  wire), not authored.
+- Docs are matched on `CapDocs`, **not** on feed ownership, so a plugin that
+  does not own a feed's fetch can still document it. reddit is the reason:
+  reddit `.rss` feeds are fetched by the generic parser (`plugin_name` empty),
+  yet reddit's plugin documents the subreddit/author categories its parser
+  adds. Its `Match` returns true for `CapDocs` on reddit hosts.
+- `Registry.Docs(name)` / `Registry.MatchDocs(url)` / `Registry.ByName(name)`
+  back it; `Registry.ErrNotFound` distinguishes "no such plugin" from
+  "plugin has no docs" (`pluginapi.ErrUnsupportedCapability`).
+- `Registry.Docs` is called lazily by `GET /fragments/plugin-docs?plugin=<name>`
+  (auth-only, **not** admin-only: the feed edit page offers the same docs next
+  to the filter rules). The readme must not do network I/O.
+- The docs modal is the shared `#plugin-docs-dialog` in `views_layout.templ`,
+  filled by `openPluginDocs(name)` in `app.js`. Entry points: the admin plugin
+  card and the feed edit filter section.
+- Markdown is rendered by `web.Markdown` (goldmark, raw HTML disabled; anchors
+  get `class="external"` + `target/rel`). goldmark is a root-module dep only;
+  `pluginapi` stays dependency-free.
+- Native readmes live beside their plugin code (`readme.md`, `//go:embed`):
+  reddit (categories), youtube, bluesky.
+
 ### The native YouTube plugin
 
 - The plugin fetches a channel's recent videos through YouTube's internal

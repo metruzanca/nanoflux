@@ -170,6 +170,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /fragments/manual-feed", s.auth.Require(http.HandlerFunc(s.manualFeedForm)))
 	mux.Handle("POST /fragments/mapping-test", s.auth.Require(http.HandlerFunc(s.settingsMappingTest)))
 	mux.Handle("GET /fragments/save-page", s.auth.Require(http.HandlerFunc(s.savePageFormFragment)))
+	// Plugin docs are available to every signed-in user: the feed edit page
+	// offers them next to the filter rules, not just the admin plugin card.
+	mux.Handle("GET /fragments/plugin-docs", s.auth.Require(http.HandlerFunc(s.pluginDocsFragment)))
 
 	// Saved pages (in-app "save url for later").
 	mux.Handle("POST /save-page", s.auth.Require(http.HandlerFunc(s.savePageWeb)))

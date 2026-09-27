@@ -108,6 +108,9 @@ applies to.
   found on that page). Runs in the add-feed "find feed" flow.
 - **`Render` (optional)** — given an item, resolve view-time media that a
   stored item cannot carry. Runs when the item modal opens.
+- **`Docs` (optional)** — return Markdown describing the plugin, shown from the
+  admin plugin card and from a feed's edit page. `Match(u, CapDocs)` decides
+  which URLs it documents.
 
 ```go
 func (AppC) Discover(ctx context.Context, pageURL string, h pluginapi.Host) ([]pluginapi.Candidate, error) {
@@ -147,6 +150,44 @@ func (AppC) Render(ctx context.Context, req pluginapi.RenderRequest, h pluginapi
 plugin can resolve. Every `Media` field is optional; empty fields leave the
 item's stored content in place. Returning `pluginapi.ErrUnsupportedCapability`
 (or an empty `Media`) means "nothing extra".
+
+### Documentation (`Docs`)
+
+A plugin can document itself in Markdown so its users know what to expect and
+how to write filter rules against it. Implement `Docser`:
+
+```go
+//go:embed readme.md
+var readme string
+
+func (AppC) Docs() string { return readme }
+```
+
+Two things make `Docs` different from the other optional capabilities:
+
+- **It is keyed on `CapDocs`, not on ownership.** A plugin that does not own a
+  feed's fetch can still document it. reddit is the case that matters: reddit
+  feeds are plain RSS fetched by the generic parser, so `feeds.plugin_name` is
+  empty, yet the reddit plugin documents the subreddit/author categories it
+  adds. Its `Match` returns true for `CapDocs` on reddit hosts, so the feed
+  edit page finds it by URL:
+
+  ```go
+  func (*Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
+      switch cap {
+      case pluginapi.CapRender, pluginapi.CapDocs:
+          return isRedditHost(u.Hostname())
+      }
+      return false
+  }
+  ```
+
+- **It must not do network I/O.** The host calls `Docs()` while rendering a
+  modal, so return Markdown from an embedded string. Raw HTML in it is escaped
+  by the renderer, so a readme cannot inject markup.
+
+`Meta().Summary` is a separate one-line description shown on the plugin's card;
+keep it short.
 
 ### Item identity (`Identity`)
 

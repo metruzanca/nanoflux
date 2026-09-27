@@ -1132,3 +1132,64 @@ vaadin-multi-select-combo-box-overlay {
 /* A grab affordance on the row, since dragging is the reorder gesture. */
 #settings-home-grid vaadin-grid-cell-content[draggable-source] .home-grid-row { cursor: grab; }
 #settings-home-grid [dragging-rows] .home-grid-row { cursor: grabbing; }
+
+/* Admin plugin list: one card per loaded plugin, wrapping in a responsive grid
+   so a long summary or user-agent does not stretch a row to full width. */
+.plugin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.plugin-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem;
+}
+.plugin-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.plugin-card-head strong { font-size: 1rem; }
+.plugin-summary { margin: 0; }
+.plugin-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: auto;
+}
+
+/* Prose: rendered Markdown (plugin docs today, any long-form body later). The
+   measure is capped so lines stay readable even in a wide dialog, and spacing
+   is generous enough that headings clearly separate sections. */
+.prose {
+  max-width: 42rem;
+  line-height: 1.6;
+}
+.prose > :first-child { margin-top: 0; }
+.prose h1 { font-size: 1.35rem; }
+.prose h2 { font-size: 1.15rem; }
+.prose h3 { font-size: 1rem; }
+.prose h1, .prose h2, .prose h3 { margin: 1.8rem 0 0.6rem; line-height: 1.3; }
+.prose h2 { padding-top: 0.4rem; border-top: 1px solid var(--border); }
+.prose p, .prose ul, .prose ol { margin: 0.6rem 0; }
+.prose ul, .prose ol { padding-left: 1.4rem; }
+.prose li { margin: 0.25rem 0; }
+.prose pre {
+  overflow-x: auto;
+  padding: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.prose pre code { background: none; border: none; padding: 0; }
+.prose blockquote {
+  margin: 0.75rem 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.prose table { border-collapse: collapse; margin: 0.75rem 0; }
+.prose th, .prose td { border: 1px solid var(--border); padding: 0.35rem 0.6rem; text-align: left; }

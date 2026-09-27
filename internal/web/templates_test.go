@@ -216,6 +216,29 @@ func TestBodyHasImage(t *testing.T) {
 	}
 }
 
+func TestMarkdown(t *testing.T) {
+	got := string(Markdown("# Title\n\n- one\n- two\n\n`code`\n\n[link](https://example.com)"))
+	for _, want := range []string{"<h1", "Title", "<ul>", "<li>one", "<code>code</code>"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Markdown missing %q in: %s", want, got)
+		}
+	}
+	// Links are marked external so the ↗ marker and safe target apply.
+	if !strings.Contains(got, `class="external"`) ||
+		!strings.Contains(got, `target="_blank"`) ||
+		!strings.Contains(got, `rel="noopener noreferrer"`) {
+		t.Errorf("link should be external: %s", got)
+	}
+	// Raw HTML in the source is escaped, not passed through.
+	danger := string(Markdown(`<script>alert(1)</script> and <b>bold</b>`))
+	if strings.Contains(danger, "<script>") || strings.Contains(danger, "<b>") {
+		t.Errorf("raw HTML should be escaped: %s", danger)
+	}
+	if Markdown("   ") != "" {
+		t.Errorf("blank input should render empty")
+	}
+}
+
 func TestUpgradeImageSrcs(t *testing.T) {
 	// Blogger-style: img thumbnails inside <a> links to the full-size image.
 	body := `<div class="separator"><a href="https://p.dev/full/1.jpg"><img src="https://p.dev/320/1.jpg" width="320"/></a></div><div><a href="https://p.dev/full/2.jpg"><img src="https://p.dev/320/2.jpg"/></a></div>`

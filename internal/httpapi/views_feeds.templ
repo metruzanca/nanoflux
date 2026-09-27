@@ -183,7 +183,12 @@ templ feedEditPage(u store.User, d feedsData) {
 
 templ feedRulesSection(d feedRulesData) {
 	<section class="card" id="feed-rules">
-		<h2>filters</h2>
+		<div class="row">
+			<h2>filters</h2>
+			if d.DocsPlugin != "" {
+				<button type="button" class="link" data-plugin={ d.DocsPlugin } title="read this feed's plugin documentation" onclick="openPluginDocs(this.dataset.plugin)">plugin docs</button>
+			}
+		</div>
 		<p class="muted small">Rules run against new items when the feed is polled. "hide" drops the item; "mark read" stores it as already read. The "category" field matches any feed-provided category, e.g. <code>r/golang</code> or <code>u/someuser</code>.</p>
 		<form class="stack" hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters" } hx-target="#feed-rules" hx-swap="outerHTML">
 			<div class="row">

@@ -40,7 +40,11 @@ type grpcFetcherServer struct {
 
 func (s *grpcFetcherServer) Meta(context.Context, *pb.MetaRequest) (*pb.MetaResponse, error) {
 	m := s.impl.Meta()
-	return &pb.MetaResponse{Name: m.Name, ApiVersion: m.APIVersion, RawNetwork: m.RawNetwork, UserAgent: m.UserAgent}, nil
+	_, hasDocs := s.impl.(Docser)
+	return &pb.MetaResponse{
+		Name: m.Name, ApiVersion: m.APIVersion, RawNetwork: m.RawNetwork,
+		UserAgent: m.UserAgent, Summary: m.Summary, HasDocs: hasDocs,
+	}, nil
 }
 
 func (s *grpcFetcherServer) Match(_ context.Context, req *pb.MatchRequest) (*pb.MatchResponse, error) {
@@ -107,6 +111,16 @@ func (s *grpcFetcherServer) Render(ctx context.Context, req *pb.RenderRequest) (
 	return &pb.RenderResponse{SourceUrl: m.SourceURL, EmbedSrc: m.EmbedSrc, Gallery: m.Gallery}, nil
 }
 
+func (s *grpcFetcherServer) Docs(context.Context, *pb.DocsRequest) (*pb.DocsResponse, error) {
+	// Docs is optional: a plugin that does not implement Docser answers
+	// ErrUnsupportedCapability, which the host treats as "no documentation".
+	d, ok := s.impl.(Docser)
+	if !ok {
+		return &pb.DocsResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	return &pb.DocsResponse{Docs: d.Docs()}, nil
+}
+
 // dialHost connects back to the host's Host service over the broker.
 func (s *grpcFetcherServer) dialHost(id uint32) (Host, error) {
 	conn, err := s.broker.Dial(id)
@@ -128,7 +142,10 @@ func (c *grpcFetcherClient) Meta() Meta {
 	if err != nil {
 		return Meta{}
 	}
-	return Meta{Name: resp.Name, APIVersion: resp.ApiVersion, RawNetwork: resp.RawNetwork, UserAgent: resp.UserAgent}
+	return Meta{
+		Name: resp.Name, APIVersion: resp.ApiVersion, RawNetwork: resp.RawNetwork,
+		UserAgent: resp.UserAgent, Summary: resp.Summary, HasDocs: resp.HasDocs,
+	}
 }
 
 func (c *grpcFetcherClient) Match(u *url.URL, cap Capability) bool {
@@ -205,9 +222,23 @@ func (c *grpcFetcherClient) Render(ctx context.Context, req RenderRequest, h Hos
 	return Media{SourceURL: resp.SourceUrl, EmbedSrc: resp.EmbedSrc, Gallery: resp.Gallery}, nil
 }
 
+// Docs fetches the plugin's Markdown documentation over the wire. An
+// unsupported answer maps to ErrUnsupportedCapability.
+func (c *grpcFetcherClient) Docs() string {
+	resp, err := c.client.Docs(context.Background(), &pb.DocsRequest{})
+	if err != nil {
+		return ""
+	}
+	if resp.Error != nil {
+		return ""
+	}
+	return resp.Docs
+}
+
 var (
 	_ Fetcher  = (*grpcFetcherClient)(nil)
 	_ Renderer = (*grpcFetcherClient)(nil)
+	_ Docser   = (*grpcFetcherClient)(nil)
 )
 
 // ---- conversions ----

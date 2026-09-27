@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,6 +57,59 @@ type fakeRenderer struct {
 
 func (f fakeRenderer) Render(context.Context, pluginapi.RenderRequest, pluginapi.Host) (pluginapi.Media, error) {
 	return f.media, f.err
+}
+
+// fakeDocser is a fakeFetcher that also implements the optional Docser.
+type fakeDocser struct {
+	fakeFetcher
+	docs string
+}
+
+func (f fakeDocser) Docs() string { return f.docs }
+
+// TestRegistryDocs covers the docs lookup and URL matching: Info reports a
+// summary and whether the plugin has docs, Docs resolves by name (and
+// distinguishes "no such plugin" from "no docs"), and MatchDocs finds the
+// documenting plugin for a URL the plugin does not own the fetch of.
+func TestRegistryDocs(t *testing.T) {
+	reg := NewRegistry()
+	reg.RegisterNative(fakeDocser{
+		fakeFetcher: fakeFetcher{
+			name: "d",
+			match: func(u *url.URL, cap pluginapi.Capability) bool {
+				return cap == pluginapi.CapDocs && u.Hostname() == "docs.example"
+			},
+		},
+		docs: "# docs",
+	})
+	reg.RegisterNative(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
+
+	infos := reg.Infos()
+	if infos[0].Name != "d" || !infos[0].HasDocs {
+		t.Fatalf("docser info = %+v", infos[0])
+	}
+	if infos[1].Name != "plain" || infos[1].HasDocs {
+		t.Fatalf("plain info = %+v", infos[1])
+	}
+
+	if got, err := reg.Docs("d"); err != nil || got != "# docs" {
+		t.Fatalf("Docs(d) = %q, %v", got, err)
+	}
+	if _, err := reg.Docs("plain"); err != pluginapi.ErrUnsupportedCapability {
+		t.Fatalf("Docs(plain) err = %v, want unsupported", err)
+	}
+	if _, err := reg.Docs("nope"); err != ErrNotFound {
+		t.Fatalf("Docs(nope) err = %v, want not found", err)
+	}
+
+	u, _ := url.Parse("https://docs.example/feed")
+	if name := reg.MatchDocs(u); name != "d" {
+		t.Fatalf("MatchDocs = %q, want d", name)
+	}
+	other, _ := url.Parse("https://other.example/feed")
+	if name := reg.MatchDocs(other); name != "" {
+		t.Fatalf("MatchDocs(other) = %q, want empty", name)
+	}
 }
 
 // TestFetchPluginCarriesCategories guards the plugin -> feedparse bridge: a
@@ -475,6 +529,17 @@ func TestLoadExternalYouTubeExample(t *testing.T) {
 	feedURL, _ := url.Parse("https://www.youtube.com/feeds/videos.xml?channel_id=UC5--wS0Ljbin1TjWQX6eafA")
 	if f := reg.Match(feedURL, pluginapi.CapFetch); f == nil {
 		t.Fatal("external youtube plugin should match the channel feed URL")
+	}
+
+	// Meta and Docs cross the wire: the host sees the summary and that the
+	// plugin documents itself, and Docs returns the readme.
+	info := reg.Infos()[0]
+	if info.Summary == "" || !info.HasDocs {
+		t.Fatalf("external meta should carry summary and has-docs: %+v", info)
+	}
+	docs, err := reg.Docs("youtube")
+	if err != nil || !strings.Contains(docs, "# youtube") {
+		t.Fatalf("external Docs = %q, err %v", docs, err)
 	}
 }
 

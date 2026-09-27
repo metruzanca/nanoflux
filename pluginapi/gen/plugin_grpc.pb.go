@@ -202,6 +202,7 @@ const (
 	Fetcher_Discover_FullMethodName = "/nanoflux.plugin.v1.Fetcher/Discover"
 	Fetcher_Fetch_FullMethodName    = "/nanoflux.plugin.v1.Fetcher/Fetch"
 	Fetcher_Render_FullMethodName   = "/nanoflux.plugin.v1.Fetcher/Render"
+	Fetcher_Docs_FullMethodName     = "/nanoflux.plugin.v1.Fetcher/Docs"
 )
 
 // FetcherClient is the client API for Fetcher service.
@@ -213,6 +214,9 @@ type FetcherClient interface {
 	Discover(ctx context.Context, in *DiscoverRequest, opts ...grpc.CallOption) (*DiscoverResponse, error)
 	Fetch(ctx context.Context, in *FetchRequest, opts ...grpc.CallOption) (*FetchResponse, error)
 	Render(ctx context.Context, in *RenderRequest, opts ...grpc.CallOption) (*RenderResponse, error)
+	// Docs is optional: a plugin that does not implement Docser answers with an
+	// unsupported PluginError, which the host treats as "no documentation".
+	Docs(ctx context.Context, in *DocsRequest, opts ...grpc.CallOption) (*DocsResponse, error)
 }
 
 type fetcherClient struct {
@@ -273,6 +277,16 @@ func (c *fetcherClient) Render(ctx context.Context, in *RenderRequest, opts ...g
 	return out, nil
 }
 
+func (c *fetcherClient) Docs(ctx context.Context, in *DocsRequest, opts ...grpc.CallOption) (*DocsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DocsResponse)
+	err := c.cc.Invoke(ctx, Fetcher_Docs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FetcherServer is the server API for Fetcher service.
 // All implementations must embed UnimplementedFetcherServer
 // for forward compatibility.
@@ -282,6 +296,9 @@ type FetcherServer interface {
 	Discover(context.Context, *DiscoverRequest) (*DiscoverResponse, error)
 	Fetch(context.Context, *FetchRequest) (*FetchResponse, error)
 	Render(context.Context, *RenderRequest) (*RenderResponse, error)
+	// Docs is optional: a plugin that does not implement Docser answers with an
+	// unsupported PluginError, which the host treats as "no documentation".
+	Docs(context.Context, *DocsRequest) (*DocsResponse, error)
 	mustEmbedUnimplementedFetcherServer()
 }
 
@@ -306,6 +323,9 @@ func (UnimplementedFetcherServer) Fetch(context.Context, *FetchRequest) (*FetchR
 }
 func (UnimplementedFetcherServer) Render(context.Context, *RenderRequest) (*RenderResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Render not implemented")
+}
+func (UnimplementedFetcherServer) Docs(context.Context, *DocsRequest) (*DocsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Docs not implemented")
 }
 func (UnimplementedFetcherServer) mustEmbedUnimplementedFetcherServer() {}
 func (UnimplementedFetcherServer) testEmbeddedByValue()                 {}
@@ -418,6 +438,24 @@ func _Fetcher_Render_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fetcher_Docs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DocsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).Docs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_Docs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).Docs(ctx, req.(*DocsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Fetcher_ServiceDesc is the grpc.ServiceDesc for Fetcher service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -444,6 +482,10 @@ var Fetcher_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Render",
 			Handler:    _Fetcher_Render_Handler,
+		},
+		{
+			MethodName: "Docs",
+			Handler:    _Fetcher_Docs_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

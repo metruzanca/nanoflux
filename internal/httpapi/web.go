@@ -89,6 +89,10 @@ type feedsData struct {
 type feedRulesData struct {
 	FeedID int64
 	Rows   []store.Filter
+	// DocsPlugin is the loaded plugin that documents this feed's URL (matched
+	// on CapDocs, so a generic-parser feed like reddit's still finds it), or ""
+	// when none does. It drives the "docs" button beside the filters.
+	DocsPlugin string
 }
 
 type authorRow struct {
@@ -1057,9 +1061,11 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 	form.CollectionIDs = s.collectionIDsForFeed(u.ID, f.ID)
 	authors, _ := s.store.Authors.List(u.ID)
 
+	rules := s.feedRules(u.ID, f.ID)
+	rules.DocsPlugin = s.pluginDocNameFor(f.FeedURL)
 	web.Render(w, r, basePage("edit "+f.Title, u, feedEditPage(u, feedsData{
 		Authors: authors, Collections: collections, Form: form,
-		Rules: s.feedRules(u.ID, f.ID),
+		Rules: rules,
 	})))
 }
 

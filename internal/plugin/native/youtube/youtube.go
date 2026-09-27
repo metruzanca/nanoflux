@@ -13,6 +13,7 @@ package youtube
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,12 @@ import (
 // Name is the plugin's stable identifier (stored in feeds.plugin_name).
 const Name = "youtube"
 
+// readme is the plugin's Markdown documentation, shown from the admin plugin
+// card and from a feed's edit page.
+//
+//go:embed readme.md
+var readme string
+
 const (
 	innerTubeKey        = "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w"
 	browseClientVersion = "2.20250710.00.00"
@@ -40,8 +47,15 @@ type Plugin struct{}
 var _ pluginapi.Fetcher = Plugin{}
 
 func (Plugin) Meta() pluginapi.Meta {
-	return pluginapi.Meta{Name: Name, APIVersion: pluginapi.APIVersion}
+	return pluginapi.Meta{
+		Name:       Name,
+		APIVersion: pluginapi.APIVersion,
+		Summary:    "YouTube channels: fetches recent videos with duration and views",
+	}
 }
+
+// Docs returns this plugin's Markdown documentation.
+func (Plugin) Docs() string { return readme }
 
 // Match handles discovery on any YouTube host, and fetch for the channel RSS
 // URL (whose 404 fallback requires the plugin to own the fetch).

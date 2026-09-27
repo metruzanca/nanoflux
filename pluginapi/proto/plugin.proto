@@ -41,6 +41,9 @@ service Fetcher {
   rpc Discover(DiscoverRequest) returns (DiscoverResponse);
   rpc Fetch(FetchRequest) returns (FetchResponse);
   rpc Render(RenderRequest) returns (RenderResponse);
+  // Docs is optional: a plugin that does not implement Docser answers with an
+  // unsupported PluginError, which the host treats as "no documentation".
+  rpc Docs(DocsRequest) returns (DocsResponse);
 }
 
 message MetaRequest {}
@@ -49,11 +52,15 @@ message MetaResponse {
   string api_version = 2;
   bool raw_network = 3;
   string user_agent = 4;
+  // One-line description shown on the plugin's admin card.
+  string summary = 5;
+  // Whether the plugin implements Docser. Filled by the host, not authored.
+  bool has_docs = 6;
 }
 
 message MatchRequest {
   string url = 1;
-  // 0 = discover, 1 = fetch
+  // 0 = discover, 1 = fetch, 2 = render, 3 = docs
   int32 capability = 2;
 }
 message MatchResponse { bool match = 1; }
@@ -135,6 +142,15 @@ message RenderResponse {
   string embed_src = 2;
   repeated string gallery = 3;
   PluginError error = 4;
+}
+
+// Docs returns the plugin's Markdown documentation. An unsupported PluginError
+// means the plugin has none.
+
+message DocsRequest {}
+message DocsResponse {
+  string docs = 1;
+  PluginError error = 2;
 }
 
 // PluginError carries a structured failure back to the host so it can map it

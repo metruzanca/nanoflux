@@ -10,6 +10,7 @@ require (
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/mmcdole/gofeed v1.4.2
 	github.com/spf13/cobra v1.10.2
+	github.com/yuin/goldmark v1.8.6
 	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.46.0
 	golang.org/x/net v0.58.0
