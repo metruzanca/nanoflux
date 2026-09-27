@@ -32,8 +32,8 @@ func redditItem(t *testing.T, item store.Item) (*Server, http.Handler, *http.Coo
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Merari01", "", "")
-	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Merari01", "https://www.reddit.com/user/Merari01/.rss", "", "", 900)
+	a, _ := s.store.Authors.Create(u.ID, "gopherfan", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "gopherfan", "https://www.reddit.com/user/gopherfan/.rss", "", "", 900)
 	item.FetchedAt = db.Now()
 	if _, err := s.store.Items.Upsert(f.ID, item); err != nil {
 		t.Fatal(err)
