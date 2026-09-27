@@ -48,6 +48,7 @@ var migrations = []migration{
 	{35, schemaV35},
 	{36, schemaV36},
 	{37, schemaV37},
+	{38, schemaV38},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -562,6 +563,31 @@ ALTER TABLE items ADD COLUMN categories TEXT NOT NULL DEFAULT '';
 // browse API, whose channel RSS carries no duration.
 const schemaV37 = `
 ALTER TABLE items ADD COLUMN duration_sec INTEGER;
+`
+
+// schemaV38 makes an item a member of one or more feeds, so the same post seen
+// through two subscriptions (a reddit user feed and the subreddit feed the post
+// went to) is one row with shared read/favorite/list/share state instead of two.
+//
+// items.user_id denormalizes the owning user (items.feed_id stays the owner /
+// display feed). items.cross_key holds the per-user cross-feed identity
+// ("reddit:t3_<id>", empty when the item cannot be cross-deduped). item_feeds
+// is the membership set. cross_key is deliberately NOT backfilled here: pre-
+// existing duplicates would violate the unique index, so it is derived and
+// merged at startup by ItemStore.MergeCrossFeedDuplicates, which then creates
+// the partial unique index.
+const schemaV38 = `
+ALTER TABLE items ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE items ADD COLUMN cross_key TEXT NOT NULL DEFAULT '';
+UPDATE items SET user_id = (SELECT f.user_id FROM feeds f WHERE f.id = items.feed_id);
+CREATE TABLE item_feeds (
+    item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    feed_id    INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (item_id, feed_id)
+);
+CREATE INDEX idx_item_feeds_feed ON item_feeds(feed_id);
+INSERT INTO item_feeds(item_id, feed_id) SELECT id, feed_id FROM items;
 `
 
 // Migrate applies any pending migrations in order, recording each in

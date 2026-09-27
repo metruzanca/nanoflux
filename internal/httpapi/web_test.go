@@ -408,6 +408,53 @@ func TestCollectionPageDedups(t *testing.T) {
 	}
 }
 
+// A reddit post seen through both a subreddit feed and a user feed renders once
+// on each feed page, attributed as "r/cats by u/sam" with both parts linked
+// internally, and reading it on one page is reflected on the other.
+func TestCrossFeedRedditItem(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	subA, _ := s.store.Authors.Create(u.ID, "r/cats", "", "")
+	userA, _ := s.store.Authors.Create(u.ID, "sam", "", "")
+	subFeed, _ := s.store.Feeds.Create(u.ID, subA.ID, "r/cats", "https://www.reddit.com/r/cats.rss", "", "", 900)
+	userFeed, _ := s.store.Feeds.Create(u.ID, userA.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
+
+	post := store.Item{
+		GUID: "t3_1abc", Title: "A cat", Link: "https://www.reddit.com/r/cats/comments/1abc/a_cat/",
+		Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now(),
+	}
+	s.store.Items.Upsert(subFeed.ID, post)
+	s.store.Items.Upsert(userFeed.ID, post)
+
+	body := doGet(h, "/feeds/"+itoa(subFeed.ID), cookie).Body.String()
+	if got := strings.Count(body, "A cat"); got != 1 {
+		t.Fatalf("sub feed page should show the post once, saw %d: %s", got, body)
+	}
+	if !strings.Contains(body, `href="/authors/`+itoa(subA.ID)+`">r/cats</a>`) ||
+		!strings.Contains(body, `<span>by</span>`) ||
+		!strings.Contains(body, `href="/authors/`+itoa(userA.ID)+`">u/sam</a>`) {
+		t.Fatalf("row should attribute 'r/cats by u/sam' with internal links: %s", body)
+	}
+
+	// Reading on the sub feed is reflected on the user feed page.
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{FeedID: subFeed.ID})
+	if len(items) != 1 {
+		t.Fatalf("want one row, got %d", len(items))
+	}
+	if err := s.store.Items.SetRead(u.ID, items[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	ubody := doGet(h, "/feeds/"+itoa(userFeed.ID)+"?view=read", cookie).Body.String()
+	if !strings.Contains(ubody, `href="/authors/`+itoa(subA.ID)+`">r/cats</a>`) ||
+		!strings.Contains(ubody, `href="/authors/`+itoa(userA.ID)+`">u/sam</a>`) {
+		t.Fatalf("user feed read view should render the shared item attributed: %s", ubody)
+	}
+	if strings.Contains(ubody, `class="item-title unread"`) {
+		t.Fatalf("the item should read as read on the user feed page: %s", ubody)
+	}
+}
+
 func TestCollectionFeedsTab(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

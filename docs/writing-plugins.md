@@ -215,6 +215,21 @@ future polls will match) is kept; the others' read/favorite state, enclosures,
 list memberships and share links carry over. Run it inside the container
 (`make shell`) or on the host against the same `NF_DB`.
 
+### Cross-feed items (`Identity` shared across feeds)
+
+Identity dedup is per feed: two subscriptions that both see the same post store
+two rows even when `Identity` matches. The host additionally collapses a post
+seen through a user's feeds when it can derive a **cross-feed key** from the
+GUID. Today that applies to reddit only: the Atom GUID is the post fullname
+`t3_<id>`, identical in a subreddit feed and the user feed, so the host stores
+one row that both feeds are members of (shared read/favorite/list/share state).
+
+A plugin that fetches reddit-like content and can set `Item.GUID` to a stable
+per-post fullname of the form `t3_<base36>` gets this for free through the
+generic path; other shapes are not cross-deduped. `nanoflux item cross-dedup`
+reports/merges any rows stored before this, and the server runs the same merge at
+startup. See the "Cross-feed items" note in `AGENTS.md`.
+
 `Render` runs in the item-view path with a 4-second timeout, once per modal
 open. Use `h.Do` for any lookup (oEmbed discovery, an embed page) so the host
 still paces and inspects the requests. The native reddit plugin

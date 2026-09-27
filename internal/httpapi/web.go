@@ -433,10 +433,11 @@ type itemViewData struct {
 	Link         string
 	Body         template.HTML
 	EmbedURL     string
-	SourceURL    string   // external destination of a reddit link post
-	EmbedSrc     string   // iframe src from the destination's oEmbed
-	Gallery      []string // full-res images of a reddit gallery post
-	FeedIsSystem bool     // true for a saved page (hidden feed/author, no internal links)
+	SourceURL    string     // external destination of a reddit link post
+	EmbedSrc     string     // iframe src from the destination's oEmbed
+	Gallery      []string   // full-res images of a reddit gallery post
+	FeedIsSystem bool       // true for a saved page (hidden feed/author, no internal links)
+	Attribution  []attrPart // source line: "r/x by u/y" (reddit) or author/feed
 	Enclosures   []store.Enclosure
 	ShareToken   string // public share token, "" when the item is not shared
 	Timezone     string // user's IANA timezone, for relative timestamps in templates
@@ -482,6 +483,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		Favorite:     it.Favorite,
 		Read:         it.Read,
 		FeedIsSystem: it.FeedIsSystem,
+		Attribution:  itemAttribution(it),
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
@@ -693,7 +695,9 @@ func (s *Server) markRangeRead(w http.ResponseWriter, r *http.Request, before bo
 		http.NotFound(w, r)
 		return
 	}
-	authorScoped := isAuthorPageURL(r.Header.Get("HX-Current-URL"))
+	currentURL := r.Header.Get("HX-Current-URL")
+	authorScoped := isAuthorPageURL(currentURL)
+	feedID := feedPageID(currentURL)
 	var derr error
 	switch {
 	case authorScoped && before:
@@ -701,9 +705,9 @@ func (s *Server) markRangeRead(w http.ResponseWriter, r *http.Request, before bo
 	case authorScoped:
 		derr = s.store.Items.MarkAuthorAfterRead(u.ID, id)
 	case before:
-		derr = s.store.Items.MarkBeforeRead(u.ID, id)
+		derr = s.store.Items.MarkBeforeRead(u.ID, feedID, id)
 	default:
-		derr = s.store.Items.MarkAfterRead(u.ID, id)
+		derr = s.store.Items.MarkAfterRead(u.ID, feedID, id)
 	}
 	if derr != nil {
 		log.Error("mark range read", "item_id", id, "before", before, "author_scoped", authorScoped, "err", derr)
@@ -730,6 +734,28 @@ func isAuthorPageURL(rawurl string) bool {
 	}
 	_, err = strconv.ParseInt(parts[1], 10, 64)
 	return err == nil
+}
+
+// feedPageID parses the feed id out of a feed page URL ("/feeds/12"), or 0 when
+// the URL is not a feed page. Used to scope a range mark to the page's feed
+// membership rather than the item's owner feed.
+func feedPageID(rawurl string) int64 {
+	if rawurl == "" {
+		return 0
+	}
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return 0
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) != 2 || parts[0] != "feeds" {
+		return 0
+	}
+	id, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
 }
 
 func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {

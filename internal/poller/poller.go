@@ -596,7 +596,7 @@ func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter
 		if inserted {
 			newItems++
 			if len(it.Enclosures) > 0 {
-				if err := p.storeEnclosures(f.ID, it); err != nil {
+				if err := p.storeEnclosures(f, it); err != nil {
 					log.Error("store enclosures", "feed_id", f.ID, "guid", it.GUID, "err", err)
 				}
 			}
@@ -667,13 +667,15 @@ func matchText(rule store.Filter, text string) (bool, error) {
 }
 
 // storeEnclosures copies a newly inserted item's media attachments into the
-// item_enclosures table.
-func (p *Poller) storeEnclosures(feedID int64, it feedparse.Item) error {
+// item_enclosures table. The item may be owned by another feed (a reddit post
+// seen through two subscriptions), so it is resolved by the user's cross-feed
+// identity too.
+func (p *Poller) storeEnclosures(f store.Feed, it feedparse.Item) error {
 	identity := it.Identity
 	if identity == "" {
 		identity = it.GUID
 	}
-	itemID, err := p.store.Items.ByFeedIdentity(feedID, identity)
+	itemID, err := p.store.Items.IngestItemID(f.UserID, f.ID, identity, store.CrossFeedKey(it.GUID))
 	if err != nil {
 		return err
 	}

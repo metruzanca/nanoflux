@@ -185,6 +185,44 @@ feed, so lists, favorites, FTS search and share pages all work unchanged.
   carry over read/favorite state, enclosures, list memberships and shares. The
   merge runs in one transaction; verify integrity + FK + FTS after a run.
 
+### Cross-feed items (one item-id per post)
+
+The same reddit post can be subscribed twice: through the subreddit feed and
+through the poster's user feed. It is stored as one row, not two, so read/
+favorite/list/share state is shared and the combined streams count it once.
+
+- `items.user_id` (schemaV38) denormalizes the owner; `items.cross_key` is the
+  per-user cross-feed identity (`reddit:t3_<id>`, empty when not dedupable).
+  `items.feed_id` remains the owner/display feed. `item_feeds(item_id, feed_id)`
+  is the membership set; feeds list items through it, while the display join
+  still uses the owner feed.
+- `store.crossFeedKey` derives the key from a reddit post fullname (`t3_<id>`),
+  the GUID reddit's Atom sets identically in both feeds. Nothing else is
+  cross-deduped: outside a same-domain identity like reddit's, two feeds sharing
+  a link or title is too weak to merge.
+- `ItemStore.Upsert` resolves by `(user_id, cross_key)` first: a post already
+  stored through another feed gains a membership (and its snapshot is refreshed)
+  instead of a second row. Its `inserted` return means "new to this feed" (new
+  row or new membership), which the poller uses for history exhaustion.
+- A partial unique index `idx_items_cross ON items(user_id, cross_key) WHERE
+  cross_key <> ''` enforces it. It is created by
+  `ItemStore.MergeCrossFeedDuplicates` **after** merging pre-existing duplicate
+  rows (the migration cannot backfill `cross_key`, since old duplicates would
+  violate the index). The server runs that merge at startup, next to
+  `CanonicalizeFeedURLs`; `nanoflux item cross-dedup` is the manual/report form.
+  The merge carries read/favorite state, memberships, enclosures, lists and
+  shares, and is idempotent.
+- `FeedStore.Delete` re-homes items the deleted feed owns that are also members
+  of another feed, so deleting the sub feed does not delete a post still
+  reachable via the user feed.
+- Attribution: `httpapi.itemAttribution` renders a reddit post as "r/cats by
+  u/sam", linking the sub to the subscribed sub feed's author page (else its
+  feed page, else reddit) and the poster to an internal author when that user
+  feed is subscribed (else the reddit profile). Non-reddit items keep the
+  author-or-feed source. `ItemWithFeed.Sources` is now populated from
+  `item_feeds`; the title-based `httpapi.dedupItems` remains only for non-reddit
+  near-duplicate titles and skips reddit items.
+
 ## Combo boxes (Vaadin)
 
 Single- and multi-select form fields use vendored Vaadin v25 web components

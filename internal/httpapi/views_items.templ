@@ -102,6 +102,35 @@ templ ItemRow(it store.ItemWithFeed, hideAuthor bool) {
 	@itemRowInner(it, visualsOf(it), hideAuthor, false)
 }
 
+// sourcesList renders an item's alternate feeds as "· also in <feed>" links.
+// A source that carries a Link (the legacy title-based view-time collapse) also
+// gets an external-link marker.
+templ sourcesList(sources []store.ItemSource) {
+	for _, src := range sources {
+		· also in <a href={ "/feeds/" + strconv.FormatInt(src.FeedID, 10) }>{ src.FeedTitle }</a>
+		if src.Link != "" {
+			<a href={ templ.URL(src.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external"></a>
+		}
+	}
+}
+
+// attrParts renders an attribution as space-separated parts, linking the ones
+// that have a URL and marking external links.
+templ attrParts(parts []attrPart) {
+	for i, p := range parts {
+		if i > 0 {
+			{ " " }
+		}
+		if p.URL == "" {
+			<span>{ p.Text }</span>
+		} else if p.External {
+			<a href={ templ.URL(p.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ p.Text }</a>
+		} else {
+			<a href={ templ.URL(p.URL) }>{ p.Text }</a>
+		}
+	}
+}
+
 // ItemRowOOB renders a row as an out-of-band swap, so a modal toggle can update
 // the row behind the dialog in the same response.
 templ ItemRowOOB(it store.ItemWithFeed, hideAuthor bool) {
@@ -159,13 +188,14 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 							// Saved page: its feed/author are hidden, so the
 							// source is plain text, not a navigation link.
 							<span>saved</span><a href={ templ.URL(it.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external"></a>
+						} else if reddit, ok := redditAttribution(it); ok {
+							@attrParts(reddit)
 						} else if it.AuthorName != "" && !hideAuthor {
 							<a href={ "/authors/" + strconv.FormatInt(it.AuthorID, 10) }>{ it.AuthorName }</a>
+							@sourcesList(it.Sources)
 						} else {
 							<a href={ "/feeds/" + strconv.FormatInt(it.FeedID, 10) }>{ it.FeedTitle }</a>
-						}
-						for _, src := range it.Sources {
-							· also in <a href={ "/feeds/" + strconv.FormatInt(src.FeedID, 10) }>{ src.FeedTitle }</a><a href={ templ.URL(src.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external"></a>
+							@sourcesList(it.Sources)
 						}
 						if it.PublishedAt != "" {
 							· { web.TimeFmt(it.Timezone, it.PublishedAt) }
@@ -493,6 +523,8 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 		<p class="item-meta">
 			if d.FeedIsSystem {
 				<span>saved</span>
+			} else if len(d.Attribution) > 0 {
+				@attrParts(d.Attribution)
 			} else {
 				if d.AuthorName != "" {
 					<a href={ "/authors/" + strconv.FormatInt(d.AuthorID, 10) }>{ d.AuthorName }</a> ·

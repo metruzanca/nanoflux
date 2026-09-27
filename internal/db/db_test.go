@@ -105,6 +105,23 @@ func TestMigrateUpgrade(t *testing.T) {
 	); err == nil {
 		t.Fatalf("author_id must be NOT NULL after schemaV20")
 	}
+
+	// schemaV38 backfills the item's owner user_id and a feed membership.
+	var itemUser, memberCount int64
+	if err := sqldb.QueryRow(`SELECT user_id FROM items WHERE feed_id = 1`).Scan(&itemUser); err != nil {
+		t.Fatalf("read item user_id: %v", err)
+	}
+	if itemUser != 1 {
+		t.Fatalf("items.user_id = %d, want 1", itemUser)
+	}
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM item_feeds WHERE item_id = (SELECT id FROM items WHERE feed_id = 1) AND feed_id = 1`,
+	).Scan(&memberCount); err != nil {
+		t.Fatalf("read item_feeds: %v", err)
+	}
+	if memberCount != 1 {
+		t.Fatalf("item_feeds membership = %d, want 1", memberCount)
+	}
 }
 
 // TestMigrateBackfillsAuthorlessFeeds builds a v2-era database holding an

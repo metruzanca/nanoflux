@@ -695,7 +695,7 @@ func TestMarkRangeRead(t *testing.T) {
 	}
 
 	// "before" = newer items in the same feed.
-	if err := s.Items.MarkBeforeRead(u.ID, middle); err != nil {
+	if err := s.Items.MarkBeforeRead(u.ID, 0, middle); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
@@ -710,7 +710,7 @@ func TestMarkRangeRead(t *testing.T) {
 	}
 
 	// "after" = older items in the same feed.
-	if err := s.Items.MarkAfterRead(u.ID, middle); err != nil {
+	if err := s.Items.MarkAfterRead(u.ID, 0, middle); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {

@@ -80,6 +80,16 @@ func runServer() {
 		log.Info("canonicalized feed urls", "changed", n)
 	}
 
+	// Merge the same reddit post stored once per subscription (a subreddit feed
+	// and a user feed) into one item with shared read/favorite state, then
+	// create the cross-feed unique index. Idempotent; a no-op after the first
+	// run on an already-merged database.
+	if rep, err := st.Items.MergeCrossFeedDuplicates(false); err != nil {
+		log.Error("merge cross-feed duplicates", "err", err)
+	} else if rep.ItemsMerged > 0 {
+		log.Info("merged cross-feed duplicate items", "merged", rep.ItemsMerged, "groups", len(rep.Groups))
+	}
+
 	p := poller.New(st, cfg.PollInterval, cfg.PollWorkers)
 	p.SetHostSpacing(cfg.PollHostSpacing)
 	// One cooldown shared by the poller and the plugin host: a rate limit seen
