@@ -8,10 +8,22 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/hashicorp/go-hclog"
 	goplugin "github.com/hashicorp/go-plugin"
 
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
+
+// pluginLogger is go-plugin's internal logger. Its default is Trace, which
+// prints a DEBUG/TRACE line for every handshake step of every plugin at
+// startup. Level Error keeps the happy path quiet (nanoflux logs its own
+// "registered external plugin" line), while still surfacing anything that goes
+// wrong during a load.
+var pluginLogger = hclog.New(&hclog.LoggerOptions{
+	Name:   "plugin",
+	Level:  hclog.Error,
+	Output: os.Stderr,
+})
 
 // LoadExternal scans dir for plugin executables and loads each over gRPC,
 // registering the ones whose handshake and API version succeed. It returns a
@@ -78,6 +90,9 @@ func loadOne(ctx context.Context, path string) (pluginapi.Fetcher, *goplugin.Cli
 		// The plugin's own logs are forwarded through the host; suppress
 		// go-plugin's mirrored stderr to avoid double-printing.
 		SyncStderr: nil,
+		// go-plugin's default logger is Trace and narrates every handshake step
+		// at startup; only log plugin-transport errors.
+		Logger: pluginLogger,
 	})
 	proto, err := client.Client()
 	if err != nil {
