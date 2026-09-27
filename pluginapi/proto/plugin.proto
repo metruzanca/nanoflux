@@ -93,6 +93,8 @@ message Item {
   string identity = 8;
   // Media runtime in seconds (a video's length). 0 means unknown.
   int32 duration_sec = 9;
+  // Feed-provided labels the host stores and matches filter rules against.
+  repeated string categories = 10;
 }
 
 message Feed {
