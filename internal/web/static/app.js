@@ -106,21 +106,68 @@ function pickerMenu(el) {
   var ctl = el.closest('.picker');
   return ctl ? ctl.querySelector('.mode-menu') : null;
 }
-function togglePicker(e) {
-  e.stopPropagation();
-  var menu = pickerMenu(e.currentTarget);
-  if (!menu) return;
-  var open = menu.hidden;
-  menu.hidden = !open;
-  e.currentTarget.setAttribute('aria-expanded', String(!open));
+// pickerLayer is the fixed overlay a portaled picker menu is moved into. A
+// dropdown inside a vaadin-grid cannot be shown in place: the grid's shadow-DOM
+// scroller clips it (overflow:hidden) and later grid rows paint over it, so the
+// menu is moved here and positioned against the button instead.
+function pickerLayer() {
+  var l = document.getElementById('picker-layer');
+  if (!l) {
+    l = document.createElement('div');
+    l.id = 'picker-layer';
+    document.body.appendChild(l);
+  }
+  return l;
+}
+function openPicker(ctl, btn, menu) {
+  var layer = pickerLayer();
+  layer.appendChild(menu);
+  menu.hidden = false;
+  menu._pickerBtn = btn;
+  // Position fixed under the button, flipping above it when it would overflow
+  // the viewport bottom.
+  var r = btn.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.right = 'auto';
+  menu.style.top = '0px';
+  menu.style.left = '0px';
+  var mw = menu.offsetWidth;
+  var mh = menu.offsetHeight;
+  var left = Math.max(4, Math.min(r.right - mw, window.innerWidth - mw - 4));
+  var top = r.bottom + 6;
+  if (top + mh > window.innerHeight - 4) top = Math.max(4, r.top - mh - 6);
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+  btn.setAttribute('aria-expanded', 'true');
 }
 function closePickers() {
   document.querySelectorAll('.mode-menu:not([hidden])').forEach(function (m) {
     m.hidden = true;
-    var btn = m.parentElement && m.parentElement.querySelector('.mode-btn');
+    var btn = m._pickerBtn;
     if (btn) btn.setAttribute('aria-expanded', 'false');
   });
 }
+function togglePicker(e) {
+  e.stopPropagation();
+  var btn = e.currentTarget;
+  var ctl = btn.closest('.picker');
+  var menu = pickerMenu(btn);
+  if (!menu) return;
+  var wasOpen = !menu.hidden;
+  closePickers();
+  if (wasOpen) return;
+  // Only a menu trapped inside a grid needs portaling; pickers elsewhere open
+  // in place (their state sync via setPickerState relies on the DOM position).
+  if (ctl.closest('vaadin-grid')) openPicker(ctl, btn, menu);
+  else {
+    menu.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+  }
+}
+// A portaled menu is positioned against the button, so close it on scroll or
+// resize rather than tracking the button.
+window.addEventListener('scroll', closePickers, true);
+window.addEventListener('resize', closePickers);
 document.addEventListener('click', function (e) {
   document.querySelectorAll('.mode-menu:not([hidden])').forEach(function (m) {
     if (!m.contains(e.target) && !e.target.closest('.picker')) m.hidden = true;
@@ -128,6 +175,12 @@ document.addEventListener('click', function (e) {
 });
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') closePickers();
+});
+// A portaled menu belongs to a card that an htmx swap may replace; drop any
+// orphaned menus so they don't accumulate in the layer.
+document.body.addEventListener('htmx:afterSwap', function () {
+  var layer = document.getElementById('picker-layer');
+  if (layer) layer.replaceChildren();
 });
 
 // Set a picker's rendered state (button icon/label + aria-checked options).

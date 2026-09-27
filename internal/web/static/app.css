@@ -1218,6 +1218,11 @@ vaadin-multi-select-combo-box-overlay {
 /* A grab affordance on the row, since dragging is the reorder gesture. */
 #settings-home-grid vaadin-grid-cell-content[draggable-source] .home-grid-row { cursor: grab; }
 #settings-home-grid [dragging-rows] .home-grid-row { cursor: grabbing; }
+/* The per-row list/grid picker's dropdown is portaled to #picker-layer when it
+   opens (see app.js), because the grid's shadow-DOM scroller clips anything
+   rendered in place. The layer is a fixed overlay above the page. */
+#picker-layer { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
+#picker-layer .mode-menu { pointer-events: auto; }
 
 /* Admin plugin list: one card per loaded plugin, wrapping in a responsive grid
    so a long summary or user-agent does not stretch a row to full width. */
