@@ -333,8 +333,8 @@ The plugin system is a URL-shaped source adapter: `Match(url, cap)` decides what
 it handles, and `Fetch` returns normalized items through host-mediated HTTP
 (`pluginapi/pluginapi.go:145`). Native plugins are compiled in; external ones are
 executables in `NF_PLUGINS_DIR` and may read their own env vars for API keys
-(see `docs/writing-plugins.md`). Native coverage today: YouTube, Instagram,
-Patreon.
+(see `docs/writing-plugins.md`). Native coverage today: YouTube, Bluesky,
+Instagram, Patreon.
 
 Three shapes of idea are worth distinguishing:
 
@@ -346,8 +346,9 @@ Three shapes of idea are worth distinguishing:
 
 ### Source plugins - easy (public API or feed, no key)
 
-- **Bluesky.** Public AT Protocol endpoints serve profiles and feeds without
-  auth; a strong replacement for the X plugin, which is fragile. High value.
+- **Bluesky.** Done: the native `bluesky` plugin reads `app.bsky.feed.post`
+  records through the public AT Protocol endpoints and resolves media via
+  `com.atproto.sync.getBlob`, replacing the text-only profile RSS.
 - **Hacker News.** Official Firebase API and Algolia search API are open and
   keyless; covers front page, per-user submissions, and comment threads.
 - **Lobsters, Lemmy, PeerTube.** All expose public JSON or ActivityPub/Atom;
@@ -411,11 +412,11 @@ audience on top of existing enclosure rendering), per-feed HTTP auth (unlocks
 private feeds), full-text body search (cheap and broadly felt), and list/faves
 as RSS (small, distinctive).
 
-For plugins specifically: **Bluesky** and **Hacker News** (keyless, replace the
-fragile X plugin), **AO3 / Royal Road** (the serialized-fiction niche nanoflux
-already serves), a **Reddit OAuth plugin** (kills the recurring 429 story), and
-the **extractor/sink capability kinds** (unlocks full-text and save-to without
-growing core).
+For plugins specifically: **Hacker News** (keyless, replaces the fragile X
+plugin), **AO3 / Royal Road** (the serialized-fiction niche nanoflux already
+serves), a **Reddit OAuth plugin** (kills the recurring 429 story), and the
+**extractor/sink capability kinds** (unlocks full-text and save-to without
+growing core). **Bluesky** is done.
 
 ## Open questions
 

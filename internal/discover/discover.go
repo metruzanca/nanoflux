@@ -1,9 +1,10 @@
 // Package discover finds the RSS/Atom/JSON-feed for a web page. It tries, in
 // order: deriving the feed from a known URL shape (Reddit), parsing the URL
 // itself, scanning the page's HTML for feed <link>s, host-specific rules
-// (Bluesky, YouTube, GitHub), and common feed paths. Candidates are only
-// returned after they are fetched and parsed, except for derived ones, which
-// need no request.
+// (YouTube, GitHub), and common feed paths. Candidates are only returned after
+// they are fetched and parsed, except for derived ones, which need no request.
+// Sites with a native plugin (Bluesky) are not listed here: the plugin's own
+// Discover supplies their candidates.
 package discover
 
 import (

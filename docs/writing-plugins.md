@@ -198,6 +198,23 @@ The native YouTube plugin is the reference: its channel RSS carries no duration,
 so it fetches through YouTube's browse API, which returns the runtime alongside
 each entry.
 
+### Media and enclosures (`Enclosures`, `ImageURL`)
+
+`Item.Enclosures` attaches media to an entry; set `Enclosures` for anything the
+reader can play or open (images, audio, video). The host stores them per item and
+renders images inline, audio/video in a player, and other files as download
+links. `Item.ImageURL` is the listing thumbnail. Because enclosure storage is
+refreshed on every poll (not only on insert), a plugin that starts returning
+enclosures later fills them in on an existing feed without an identity change.
+
+An image enclosure's URL is also the image the host renders inline; a video
+enclosure is played with `<video controls>`. Prefer a directly playable file
+(e.g. an `mp4`) over a streaming manifest: a manifest needs a player the
+frontend does not ship. The native Bluesky plugin is the reference for
+reconstructing media from a site's own records: its profile RSS carries no
+media, so it reads `app.bsky.feed.post` records and resolves each blob to a
+full-size image or an `mp4` via `com.atproto.sync.getBlob`.
+
 ### Repairing duplicate items
 
 A GUID-scheme change stores the same entry under two rows. The host provides a

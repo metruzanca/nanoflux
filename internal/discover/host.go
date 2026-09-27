@@ -80,12 +80,6 @@ func hostSpecificURLs(u *url.URL) []hostFeed {
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 
 	switch {
-	case strings.HasSuffix(host, "bsky.app"), strings.HasSuffix(host, "bsk.app"):
-		// bsk.app/profile/{handle} -> the profile's RSS feed.
-		if len(parts) >= 2 && parts[0] == "profile" {
-			return []hostFeed{{URL: "https://" + u.Host + "/profile/" + parts[1] + "/rss"}}
-		}
-
 	case host == "github.com" || host == "www.github.com":
 		// Profile: github.com/USERNAME -> the user's activity feed.
 		if len(parts) == 1 && parts[0] != "" {
