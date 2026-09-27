@@ -108,6 +108,7 @@ type authorsData struct {
 	Rows       []authorRow
 	Form       authorForm
 	Links      []store.AuthorLink   // edit page: the author's external links, editable
+	Feeds      []feedRow            // edit page: the author's feeds, shown as a UX assist
 	AvatarCard authorAvatarCardData // edit page avatar cache card
 }
 
@@ -1659,9 +1660,11 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
+	feeds, _ := s.feedRowsForAuthor(u.ID, a.ID, u.Timezone)
 	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
 		Form:       authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
 		Links:      links,
+		Feeds:      feeds,
 		AvatarCard: s.authorAvatarCardData(a, u.Timezone, ""),
 	})))
 }

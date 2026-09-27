@@ -2037,6 +2037,21 @@ func TestAuthorEditHasAvatarFields(t *testing.T) {
 	}
 }
 
+func TestAuthorEditListsFeedsWithEditLinks(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit", cookie).Body.String()
+	if !strings.Contains(edit, `id="collection-feed-`+itoa(f.ID)+`"`) ||
+		!strings.Contains(edit, `href="/feeds/`+itoa(f.ID)+`/edit"`) ||
+		!strings.Contains(edit, "Blog") {
+		t.Fatalf("author edit should list the author's feeds with an edit link: %s", edit)
+	}
+}
+
 func TestGlobalAddCreatesAuthorWithFeed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
