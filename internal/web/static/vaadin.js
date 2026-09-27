@@ -15,11 +15,15 @@
 //
 //   - chips: no mirrors; it is display-only, and a removed chip POSTs to the
 //     wrapper's data-remove-url.
+//   - switch: one mirror carries the hidden input's value ("1" when checked,
+//     "" otherwise) and any hx-* attributes, so the field submits exactly as the
+//     checkbox it replaces.
 (function () {
   'use strict';
 
   var SINGLE = 'vaadin-combo-box';
   var MULTI = 'vaadin-multi-select-combo-box';
+  var SWITCH = 'vaadin-switch';
 
   function valueOfItem(item) {
     if (item && typeof item === 'object') return String(item.value);
@@ -100,6 +104,22 @@
     });
   }
 
+  // initSwitch mirrors the component's checked state into the hidden input as
+  // the "1"/"" the server reads (r.FormValue(name) == "1"), and fires "change"
+  // so any hx-trigger on the mirror still runs.
+  function initSwitch(wrap, sw) {
+    var mirror = wrap.querySelector('input[data-vaadin-target]');
+    if (!mirror) return;
+    var apply = function () {
+      var next = sw.checked ? '1' : '';
+      if (mirror.value === next) return;
+      mirror.value = next;
+      fireChange(mirror);
+    };
+    apply();
+    sw.addEventListener('checked-changed', apply);
+  }
+
   function initOne(wrap) {
     if (wrap.dataset.vaadinReady === '1') return;
     var kind = wrap.dataset.vaadin;
@@ -107,6 +127,10 @@
       var combo = wrap.querySelector(SINGLE);
       if (!combo) return;
       initSingle(wrap, combo);
+    } else if (kind === 'switch') {
+      var sw = wrap.querySelector(SWITCH);
+      if (!sw) return;
+      initSwitch(wrap, sw);
     } else if (kind === 'multi') {
       var mcombo = wrap.querySelector(MULTI);
       if (!mcombo) return;
@@ -132,6 +156,7 @@
     return Promise.all([
       customElements.whenDefined(SINGLE),
       customElements.whenDefined(MULTI),
+      customElements.whenDefined(SWITCH),
     ]).catch(function () {});
   }
 

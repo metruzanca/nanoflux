@@ -16,12 +16,13 @@ OUT="$ROOT/internal/web/static/vaadin.bundle.js"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "vendoring @vaadin/combo-box + @vaadin/multi-select-combo-box @ $VAADIN_VERSION"
+echo "vendoring @vaadin/combo-box + @vaadin/multi-select-combo-box + @vaadin/switch + @vaadin/grid @ $VAADIN_VERSION"
 cd "$WORK"
 npm init -y >/dev/null 2>&1
 npm install --no-audit --no-fund --silent \
   "@vaadin/combo-box@$VAADIN_VERSION" \
   "@vaadin/multi-select-combo-box@$VAADIN_VERSION" \
+  "@vaadin/switch@$VAADIN_VERSION" \
   "@vaadin/grid@$VAADIN_VERSION" \
   "esbuild@$ESBUILD_VERSION"
 

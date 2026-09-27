@@ -10,7 +10,7 @@ bundle comes from, how to regenerate it, how the server talks to the components,
 and how to add more of them.
 
 Status: Vaadin **25.3.0**, vendored as `vaadin-combo-box`,
-`vaadin-multi-select-combo-box`, and `vaadin-grid`.
+`vaadin-multi-select-combo-box`, `vaadin-switch`, and `vaadin-grid`.
 
 ## Why vendored, not a bundler
 
@@ -26,7 +26,7 @@ The bundle is **emitted as an IIFE, not ESM**, and loaded with a plain
 silently leaves every element unregistered — they then render as zero-size
 unknown elements. Do not change the format without also changing the script tag.
 
-Current size: ~237 KB minified, ~55 KB gzipped, no dynamic imports.
+Current size: ~370 KB minified, ~89 KB gzipped, no dynamic imports.
 
 ## Regenerating the bundle
 
@@ -55,6 +55,7 @@ components ship. It currently imports:
 ```js
 import "@vaadin/combo-box";
 import "@vaadin/multi-select-combo-box";
+import "@vaadin/switch";
 import "@vaadin/grid";
 ```
 
@@ -68,9 +69,15 @@ a small script wires them up. There are three moving parts.
 
 ### 1. Templ wrappers (`internal/httpapi/views_combo.templ`)
 
-`comboSelect`, `comboMulti`, and `comboChips` render the element plus the
-hidden native mirrors described below. Options are passed as `[]comboItem`
-(`internal/httpapi/combo.go`).
+`comboSelect`, `comboMulti`, `comboChips`, and `switchField` render the element
+plus the hidden native mirrors described below. Options are passed as
+`[]comboItem` (`internal/httpapi/combo.go`).
+
+`switchField` replaces the plain checkbox on the feed edit form (`enabled`,
+`poll_interval_auto`, `is_regex`). Its label is a string set as the component's
+own `label` attribute (not a slotted `<label>`), so the mirror stays a single
+self-contained control. The mirror's value is `"1"` when on and `""` when off
+(`switchValue`), matching how the checkbox submitted.
 
 Options are emitted **inline as JSON attributes**:
 
@@ -102,6 +109,8 @@ wrapper pairs the component with hidden native inputs:
   group it replaced.
 - **chips**: no mirrors; display-only, and a removed chip POSTs to the
   wrapper's `data-remove-url`.
+- **switch**: one mirror `input[data-vaadin-target]` carries `"1"`/`""` and any
+  `hx-*` attributes; `checked-changed` updates it.
 
 The script is idempotent, waits for `customElements.whenDefined`, and re-runs
 after `htmx:afterSwap`. Fragments injected with `fetch` + `innerHTML` (the

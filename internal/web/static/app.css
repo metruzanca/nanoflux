@@ -1080,6 +1080,16 @@ details.feeds-section summary:hover { color: var(--accent); }
 .combo-field > label { font-size: 0.85rem; color: var(--muted); }
 .combo { display: block; }
 
+/* Vaadin switch (form control): sit inline at its natural width rather than
+   stretching to the stacked form's full width, and keep the filter row's
+   baseline alignment. */
+.switch-field { display: flex; align-items: center; }
+vaadin-switch {
+  --vaadin-field-default-width: auto;
+  --vaadin-switch-label-font-size: 0.9rem;
+  --vaadin-switch-gap: 0.5rem;
+}
+
 vaadin-combo-box,
 vaadin-multi-select-combo-box {
   --vaadin-input-field-background: var(--bg);

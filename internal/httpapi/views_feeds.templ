@@ -198,7 +198,7 @@ templ feedRulesSection(d feedRulesData) {
 					pattern
 					<input name="pattern" type="text" placeholder="e.g. sponsored" required/>
 				</label>
-				<label class="check"><input type="checkbox" name="is_regex" value="1"/> regex</label>
+				@switchField("is_regex", "regex", false, nil)
 			</div>
 			<div id="feed-rules-error" class="error"></div>
 			<button type="submit">add rule</button>
@@ -230,6 +230,7 @@ templ FilterList(feedID int64, rows []store.Filter) {
 }
 
 templ feedFields(d feedsData) {
+	@switchField("enabled", "enabled (poll this feed)", d.Form.Enabled, nil)
 	<label>
 		title
 		<input name="title" value={ d.Form.Title } required/>
@@ -249,12 +250,11 @@ templ feedFields(d feedsData) {
 		"hx-trigger": "change",
 	})
 	<div id="new-author"></div>
-	<label class="check"><input type="checkbox" name="poll_interval_auto" value="1" checked={ d.Form.PollIntervalAuto }/> auto-adjust poll interval</label>
+	@switchField("poll_interval_auto", "auto-adjust poll interval", d.Form.PollIntervalAuto, nil)
 	<label>
 		poll interval (seconds) — used when auto-adjust is off
 		<input name="poll_interval_sec" type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min="60"/>
 	</label>
-	<label class="check"><input type="checkbox" name="enabled" value="1" checked={ d.Form.Enabled }/> enabled (poll this feed)</label>
 	if len(d.Collections) > 0 {
 		@comboMulti("collections", "collections", nonAutoCollectionValues(d.Collections, d.Form.CollectionIDs), nonAutoCollections(d.Collections))
 	}
