@@ -48,6 +48,20 @@ func FormatBytes(n int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
+// FormatDuration renders a media runtime in seconds as a clock string:
+// "5:41" under an hour, "1:02:03" at or above it. Zero means unknown and
+// returns "", so callers can treat an empty result as "no duration to show".
+func FormatDuration(sec int) string {
+	if sec <= 0 {
+		return ""
+	}
+	h, m, s := sec/3600, (sec%3600)/60, sec%60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
+}
+
 // Static serves embedded assets (css, htmx.js, app.js) at /static/.
 func Static() http.Handler {
 	sub, err := fs.Sub(staticFS, "static")

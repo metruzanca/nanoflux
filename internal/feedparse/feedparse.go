@@ -64,6 +64,9 @@ type Item struct {
 	Summary     string
 	ImageURL    string
 	PublishedAt string // "" when unknown
+	// DurationSec is the media's runtime in seconds (a video's length). 0 means
+	// unknown. It is denormalized onto the item so a card can show it.
+	DurationSec int
 	Enclosures  []Enclosure
 	// Categories are the feed-provided categories the entry was published
 	// under: its RSS/Atom <category> values plus its author name(s). Reddit

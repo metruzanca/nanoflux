@@ -269,6 +269,24 @@ func TestFormatBytes(t *testing.T) {
 	}
 }
 
+func TestFormatDuration(t *testing.T) {
+	for _, tc := range []struct {
+		in   int
+		want string
+	}{
+		{0, ""},
+		{-1, ""},
+		{7, "0:07"},
+		{341, "5:41"},
+		{3723, "1:02:03"},
+		{3600, "1:00:00"},
+	} {
+		if got := FormatDuration(tc.in); got != tc.want {
+			t.Errorf("FormatDuration(%d) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestPostFrequency(t *testing.T) {
 	cases := []struct {
 		gapSec float64

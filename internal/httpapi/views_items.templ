@@ -123,6 +123,9 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 				} else {
 					<span class="thumb-ph">▶</span>
 				}
+				if dur := web.FormatDuration(it.DurationSec); dur != "" {
+					<span class="thumb-duration">{ dur }</span>
+				}
 			</a>
 		} else if v.Image || v.Link || v.Gallery {
 			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
@@ -492,6 +495,9 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 			if d.PublishedAt != "" {
 				· { web.TimeFmt(d.Timezone, d.PublishedAt) }
 			}
+			if dur := web.FormatDuration(d.DurationSec); dur != "" {
+				· { dur }
+			}
 			· <a href={ templ.URL(d.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">open live</a>
 		</p>
 		@itemContent(d, v)
@@ -655,6 +661,9 @@ templ sharedItemPage(it store.ItemWithFeed, d itemViewData) {
 						{ it.FeedTitle }
 						if d.PublishedAt != "" {
 							· { web.TimeFmt("", d.PublishedAt) }
+						}
+						if dur := web.FormatDuration(d.DurationSec); dur != "" {
+							· { dur }
 						}
 						· <a href={ templ.URL(d.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">open live</a>
 					</p>

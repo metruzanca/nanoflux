@@ -79,6 +79,7 @@ func toFeedparseResult(res pluginapi.Result) feedparse.Result {
 			Summary:     it.Summary,
 			ImageURL:    it.ImageURL,
 			PublishedAt: it.PublishedAt,
+			DurationSec: it.DurationSec,
 		}
 		for _, e := range it.Enclosures {
 			fi.Enclosures = append(fi.Enclosures, feedparse.Enclosure{URL: e.URL, MIMEType: e.MIMEType, Length: e.Length})

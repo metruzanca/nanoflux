@@ -1,8 +1,14 @@
 // Package youtube is the reference native plugin. It implements
 // pluginapi.Fetcher for YouTube channels: discovery resolves a channel id from
-// any channel URL form, and fetch reads the channel's RSS, falling back to the
-// site's internal browse API when the RSS endpoint is unavailable (a known
-// upstream issue).
+// any channel URL form, and fetch reads the channel's recent videos through the
+// site's internal browse API.
+//
+// The channel RSS (feeds/videos.xml) is not used: it carries no video duration,
+// and the browse API returns duration (and views) for every entry in the same
+// single request. Browse reports publish times only as relative text ("3 days
+// ago"), which parseRelativeTime turns into an absolute UTC timestamp at fetch
+// time — the host stores an absolute time, so a card never shows a stale "3
+// days ago" that was frozen at ingest.
 package youtube
 
 import (
@@ -16,8 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mmcdole/gofeed"
-
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
@@ -25,14 +29,10 @@ import (
 const Name = "youtube"
 
 const (
-	innerTubeKey         = "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w"
-	browseClientVersion  = "2.20250710.00.00"
-	browseVideosParams   = "EgZ2aWRlb3PyBgQKAjoA"
-	defaultBrowseBaseURL = "https://www.youtube.com"
+	innerTubeKey        = "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w"
+	browseClientVersion = "2.20250710.00.00"
+	browseVideosParams  = "EgZ2aWRlb3PyBgQKAjoA"
 )
-
-// browseBaseURL is a var so tests can point it at a mock host.
-var browseBaseURL = defaultBrowseBaseURL
 
 // Plugin is the YouTube Fetcher.
 type Plugin struct{}
@@ -96,105 +96,34 @@ func (p Plugin) Discover(ctx context.Context, pageURL string, h pluginapi.Host) 
 	}}, nil
 }
 
-// Fetch reads the channel's RSS; when that endpoint fails (404 for active
-// channels is a known upstream issue) it falls back to the browse API.
+// Fetch reads the channel's recent videos through the browse API. The channel
+// feed URL carries the channel id; anything else is rejected. The browse origin
+// is taken from the request URL, so the plugin talks to the same YouTube origin
+// the feed URL names (www.youtube.com in production) and a test can point it at
+// a mock host without any env plumbing.
 func (p Plugin) Fetch(ctx context.Context, req pluginapi.FetchRequest, h pluginapi.Host) (pluginapi.Result, error) {
-	resp, err := h.Do(ctx, pluginapi.HTTPRequest{Method: "GET", URL: req.URL})
-	if err != nil {
-		return pluginapi.Result{}, err
-	}
-	if resp.RateLimited {
-		// The host already cooled the host; surface the limit so the feed is
-		// parked rather than retried (falling back to browse would just hit the
-		// same cooled host).
-		return pluginapi.Result{}, &pluginapi.RateLimit{URL: req.URL, Status: resp.Status, RetryAfter: resp.RetryAfter}
-	}
-	if resp.Status < 400 {
-		if res, ok := parseRSS(resp.Body); ok {
-			return res, nil
-		}
-	}
-	// Fall back to the browse API.
 	u, perr := url.Parse(req.URL)
 	if perr != nil {
 		return pluginapi.Result{}, perr
 	}
 	channelID := u.Query().Get("channel_id")
 	if channelID == "" {
-		return pluginapi.Result{}, &pluginapi.StatusError{Code: resp.Status, URL: req.URL}
+		return pluginapi.Result{}, &pluginapi.StatusError{Code: 400, URL: req.URL}
 	}
-	return p.fetchViaBrowse(ctx, channelID, h)
+	base := u.Scheme + "://" + u.Host
+	return p.fetchViaBrowse(ctx, channelID, base, h)
 }
 
-// parseRSS normalizes the channel's Atom feed. ok is false when the body is not
-// a usable feed.
-func parseRSS(body []byte) (pluginapi.Result, bool) {
-	parsed, err := gofeed.NewParser().Parse(strings.NewReader(string(body)))
-	if err != nil || parsed == nil {
-		return pluginapi.Result{}, false
-	}
-	res := pluginapi.Result{
-		Feed: pluginapi.Feed{Title: parsed.Title, HomeURL: parsed.Link, Description: parsed.Description},
-	}
-	for _, it := range parsed.Items {
-		out := pluginapi.Item{GUID: it.GUID, Title: it.Title, Link: it.Link, Summary: it.Description}
-		if out.GUID == "" {
-			out.GUID = it.Link
-		}
-		if it.PublishedParsed != nil {
-			out.PublishedAt = dbTime(*it.PublishedParsed)
-		} else if it.UpdatedParsed != nil {
-			out.PublishedAt = dbTime(*it.UpdatedParsed)
-		}
-		if it.Image != nil {
-			out.ImageURL = it.Image.URL
-		}
-		// gofeed does not map media:thumbnail onto Item.Image, and YouTube
-		// advertises every video thumbnail only through it (inside a
-		// media:group), so without this fallback RSS items render blank.
-		if out.ImageURL == "" {
-			out.ImageURL = mediaThumbnailURL(it)
-		}
-		res.Items = append(res.Items, out)
-	}
-	if len(res.Items) == 0 {
-		return pluginapi.Result{}, false
-	}
-	return res, true
-}
-
-// mediaThumbnailURL returns the first media:thumbnail URL on an item, either a
-// direct <media:thumbnail> child or one nested in <media:group> (the shape
-// YouTube's channel feed uses). gofeed's Item.Image ignores media:thumbnail.
-func mediaThumbnailURL(it *gofeed.Item) string {
-	media, ok := it.Extensions["media"]
-	if !ok {
-		return ""
-	}
-	for _, g := range media["group"] {
-		for _, th := range g.Children["thumbnail"] {
-			if u := th.Attrs["url"]; u != "" {
-				return u
-			}
-		}
-	}
-	for _, th := range media["thumbnail"] {
-		if u := th.Attrs["url"]; u != "" {
-			return u
-		}
-	}
-	return ""
-}
-
-// fetchViaBrowse pulls a channel's recent videos through youtubei/v1/browse.
-func (p Plugin) fetchViaBrowse(ctx context.Context, channelID string, h pluginapi.Host) (pluginapi.Result, error) {
+// fetchViaBrowse pulls a channel's recent videos through youtubei/v1/browse on
+// baseURL.
+func (p Plugin) fetchViaBrowse(ctx context.Context, channelID, baseURL string, h pluginapi.Host) (pluginapi.Result, error) {
 	payload := fmt.Sprintf(
 		`{"context":{"client":{"clientName":"WEB","clientVersion":%q}},"browseId":%q,"params":%q}`,
 		browseClientVersion, channelID, browseVideosParams,
 	)
 	resp, err := h.Do(ctx, pluginapi.HTTPRequest{
 		Method:  "POST",
-		URL:     browseBaseURL + "/youtubei/v1/browse?key=" + innerTubeKey,
+		URL:     baseURL + "/youtubei/v1/browse?key=" + innerTubeKey,
 		Headers: map[string]string{"Content-Type": "application/json"},
 		Body:    []byte(payload),
 	})
@@ -202,10 +131,10 @@ func (p Plugin) fetchViaBrowse(ctx context.Context, channelID string, h pluginap
 		return pluginapi.Result{}, err
 	}
 	if resp.RateLimited {
-		return pluginapi.Result{}, &pluginapi.RateLimit{URL: browseBaseURL, Status: resp.Status, RetryAfter: resp.RetryAfter}
+		return pluginapi.Result{}, &pluginapi.RateLimit{URL: baseURL, Status: resp.Status, RetryAfter: resp.RetryAfter}
 	}
 	if resp.Status >= 400 {
-		return pluginapi.Result{}, &pluginapi.StatusError{Code: resp.Status, URL: browseBaseURL}
+		return pluginapi.Result{}, &pluginapi.StatusError{Code: resp.Status, URL: baseURL}
 	}
 	var root any
 	if err := json.Unmarshal(resp.Body, &root); err != nil {
@@ -384,10 +313,71 @@ func lockupItem(lv map[string]any) (pluginapi.Item, bool) {
 	if thumb := firstSourceURL(lv, "contentImage", "thumbnailViewModel", "image", "sources"); thumb != "" {
 		it.ImageURL = thumb
 	}
+	if secs, ok := lockupDuration(lv); ok {
+		it.DurationSec = secs
+	}
 	if t := parseRelativeTime(relativePart(metadataParts(lv))); !t.IsZero() {
 		it.PublishedAt = dbTime(t)
 	}
 	return it, true
+}
+
+// lockupDuration finds a video's runtime from the lockup's thumbnail-overlay
+// badges. Browse exposes the runtime only as a badge ("5:41", "1:02:03"); a
+// live stream's badge reads "LIVE" and a fresh video's may read "New", so it
+// takes the first badge that parses as a clock, not merely the first badge.
+func lockupDuration(lv map[string]any) (int, bool) {
+	var found int
+	done := false
+	var walk func(v any)
+	walk = func(v any) {
+		if done {
+			return
+		}
+		switch t := v.(type) {
+		case map[string]any:
+			if badge, ok := t["thumbnailBadgeViewModel"].(map[string]any); ok {
+				if s, _ := badge["text"].(string); s != "" {
+					if secs, ok := parseDuration(s); ok {
+						found, done = secs, true
+						return
+					}
+				}
+			}
+			for _, c := range t {
+				walk(c)
+			}
+		case []any:
+			for _, c := range t {
+				walk(c)
+			}
+		}
+	}
+	walk(lv)
+	return found, done
+}
+
+// parseDuration parses a clock-formatted runtime ("5:41", "1:02:03") into
+// seconds. It rejects the "LIVE"/"PREMIERE" badges browse may put in the same
+// slot, so a live stream stays duration-unknown (0).
+func parseDuration(s string) (int, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return 0, false
+	}
+	total := 0
+	for _, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return 0, false
+		}
+		total = total*60 + n
+	}
+	return total, true
 }
 
 func stringAt(m map[string]any, keys ...string) string {

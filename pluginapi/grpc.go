@@ -268,7 +268,8 @@ func toPBItems(items []Item) []*pb.Item {
 		out = append(out, &pb.Item{
 			Guid: it.GUID, Identity: it.Identity, Title: it.Title, Link: it.Link,
 			Summary: it.Summary, ImageUrl: it.ImageURL, PublishedAt: it.PublishedAt,
-			Enclosures: encs,
+			DurationSec: int32(it.DurationSec),
+			Enclosures:  encs,
 		})
 	}
 	return out
@@ -284,7 +285,8 @@ func fromPBItems(items []*pb.Item) []Item {
 		out = append(out, Item{
 			GUID: it.Guid, Identity: it.Identity, Title: it.Title, Link: it.Link,
 			Summary: it.Summary, ImageURL: it.ImageUrl, PublishedAt: it.PublishedAt,
-			Enclosures: encs,
+			DurationSec: int(it.DurationSec),
+			Enclosures:  encs,
 		})
 	}
 	return out

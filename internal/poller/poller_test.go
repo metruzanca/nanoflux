@@ -1201,6 +1201,50 @@ func (p *fakeIdentityPlugin) FetchPlugin(context.Context, feedparse.FetchRequest
 	}, nil
 }
 
+// TestPollStoresItemDuration asserts a plugin-supplied media duration reaches
+// the stored item, so the card can render it without a view-time lookup.
+func TestPollStoresItemDuration(t *testing.T) {
+	st := newPollerStore(t)
+	u, _ := st.Users.ByUsername("alice")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Video", "https://v.dev/feed", "", "", 900)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title><item><guid>g</guid><title>t</title><link>https://v.dev/1</link></item></channel></rss>`))
+	}))
+	defer srv.Close()
+
+	plug := &fakeDurationPlugin{}
+	feedparse.SetPlugin(plug)
+	defer feedparse.SetPlugin(nil)
+
+	p := New(st, time.Minute, 1)
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("poll: %v", err)
+	}
+	items, _ := st.Items.List(u.ID, store.ItemFilter{FeedID: f.ID, Limit: 10})
+	if len(items) != 1 || items[0].DurationSec != 341 {
+		t.Fatalf("duration = %d (items=%d), want 341", items[0].DurationSec, len(items))
+	}
+	if got := items[0].DurationSec; got != 341 {
+		t.Fatalf("duration round-trip = %d, want 341", got)
+	}
+}
+
+// fakeDurationPlugin returns one item with a duration, bypassing the network.
+type fakeDurationPlugin struct{}
+
+func (fakeDurationPlugin) MatchFetch(feedparse.FetchRequest) bool { return true }
+func (fakeDurationPlugin) FetchPlugin(context.Context, feedparse.FetchRequest) (feedparse.Result, error) {
+	return feedparse.Result{
+		Feed: feedparse.Feed{Title: "Video"},
+		Items: []feedparse.Item{{
+			GUID: "yt:video:abc", Title: "Video One", Link: "https://youtu.be/abc",
+			DurationSec: 341, PublishedAt: "2026-09-22 22:04:56",
+		}},
+	}, nil
+}
+
 // TestPollIdentityPreventGuidSchemeDuplicates proves the end-to-end fix: when a
 // plugin's GUID changes shape but its Identity is stable, the poller does not
 // store the entry twice.

@@ -94,6 +94,7 @@ CREATE TABLE items (
     link         TEXT NOT NULL DEFAULT '',
     summary      TEXT NOT NULL DEFAULT '',
     categories   TEXT NOT NULL DEFAULT '',
+    duration_sec INTEGER,
     image_url    TEXT,
     published_at TEXT,
     fetched_at   TEXT NOT NULL DEFAULT (datetime('now')),

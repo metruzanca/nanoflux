@@ -214,7 +214,7 @@ func TestItemsFlow(t *testing.T) {
 	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 
-	base := Item{GUID: "g1", Title: "One", Link: "https://metru.dev/1", FetchedAt: db.Now()}
+	base := Item{GUID: "g1", Title: "One", Link: "https://metru.dev/1", DurationSec: 341, FetchedAt: db.Now()}
 	inserted, err := s.Items.Upsert(f.ID, base)
 	if err != nil || !inserted {
 		t.Fatalf("upsert new: %v %v", inserted, err)
@@ -225,12 +225,13 @@ func TestItemsFlow(t *testing.T) {
 		t.Fatalf("upsert dup: %v %v", inserted, err)
 	}
 	refresh := Item{
-		GUID:      "g1",
-		Title:     "One",
-		Link:      "https://metru.dev/1",
-		Summary:   "updated summary",
-		ImageURL:  "https://metru.dev/thumb.jpg",
-		FetchedAt: db.Now(),
+		GUID:        "g1",
+		Title:       "One",
+		Link:        "https://metru.dev/1",
+		Summary:     "updated summary",
+		ImageURL:    "https://metru.dev/thumb.jpg",
+		DurationSec: 600,
+		FetchedAt:   db.Now(),
 	}
 	inserted, err = s.Items.Upsert(f.ID, refresh)
 	if err != nil || inserted {
@@ -242,6 +243,10 @@ func TestItemsFlow(t *testing.T) {
 	}
 	if items[0].Summary != "updated summary" || items[0].ImageURL != "https://metru.dev/thumb.jpg" {
 		t.Fatalf("snapshot not refreshed: %+v", items[0].Item)
+	}
+	// Duration is part of the snapshot, so a re-poll refreshes it too.
+	if items[0].DurationSec != 600 {
+		t.Fatalf("duration not refreshed: got %d, want 600", items[0].DurationSec)
 	}
 	if items[0].Title != "One" {
 		t.Fatalf("identity touched on refresh: title = %q", items[0].Title)

@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -314,21 +315,32 @@ func TestPluginLoggerQuietByDefault(t *testing.T) {
 
 // TestLoadExternalEndToEnd builds the example plugin and loads it over gRPC,
 // exercising handshake, version check, dispense, Match, and Fetch through the
-// broker, including the host-mediated HTTP path and the item image the feed
-// carries (media:thumbnail) surviving the gRPC boundary.
+// broker, including the host-mediated HTTP path and the item's image and
+// duration surviving the gRPC boundary.
 func TestLoadExternalEndToEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a plugin binary")
 	}
-	// A local upstream serving a YouTube channel feed the plugin fetches
-	// through Host.Do.
+	// A local upstream serving a browse response the plugin fetches through
+	// Host.Do. The plugin always browses (the channel RSS carries no duration).
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`<?xml version="1.0"?>
-<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
-<title>External Channel</title><link href="https://www.youtube.com/channel/UCx"/>
-<entry><id>yt:video:abc</id><title>Video One</title><link href="https://www.youtube.com/watch?v=abc"/>
-<media:group><media:thumbnail url="https://i.ytimg.com/vi/abc/hqdefault.jpg"/></media:group>
-<published>2026-01-01T00:00:00Z</published></entry></feed>`))
+		json.NewEncoder(w).Encode(map[string]any{
+			"metadata": map[string]any{"channelMetadataRenderer": map[string]any{"title": "External Channel"}},
+			"contents": []any{map[string]any{"lockupViewModel": map[string]any{
+				"contentId": "abc",
+				"metadata": map[string]any{"lockupMetadataViewModel": map[string]any{
+					"title": map[string]any{"content": "Video One"},
+				}},
+				"contentImage": map[string]any{"thumbnailViewModel": map[string]any{
+					"image": map[string]any{"sources": []any{
+						map[string]any{"url": "https://i.ytimg.com/vi/abc/hqdefault.jpg"},
+					}},
+					"overlays": []any{map[string]any{"thumbnailBottomOverlayViewModel": map[string]any{
+						"badges": []any{map[string]any{"thumbnailBadgeViewModel": map[string]any{"text": "5:41"}}},
+					}}},
+				}},
+			}}},
+		})
 	}))
 	defer upstream.Close()
 
@@ -349,6 +361,8 @@ func TestLoadExternalEndToEnd(t *testing.T) {
 		t.Fatal("youtube plugin should match the channel feed URL")
 	}
 	// Fetch goes: plugin -> gRPC -> host.Do -> upstream -> back to the plugin.
+	// The feed URL carries the mock host, so the plugin's browse request lands
+	// on the upstream too (it derives the browse origin from the feed URL).
 	res, err := f.Fetch(context.Background(), pluginapi.FetchRequest{
 		URL: upstream.URL + "/feeds/videos.xml?channel_id=UCx",
 	}, hosts.For(f))
@@ -359,7 +373,10 @@ func TestLoadExternalEndToEnd(t *testing.T) {
 		t.Fatalf("fetch result = %+v", res)
 	}
 	if got := res.Items[0].ImageURL; got != "https://i.ytimg.com/vi/abc/hqdefault.jpg" {
-		t.Fatalf("image = %q, want media:thumbnail to survive gRPC", got)
+		t.Fatalf("image = %q, want the thumbnail to survive gRPC", got)
+	}
+	if got := res.Items[0].DurationSec; got != 5*60+41 {
+		t.Fatalf("duration = %d, want 341 (5:41) to survive gRPC", got)
 	}
 }
 

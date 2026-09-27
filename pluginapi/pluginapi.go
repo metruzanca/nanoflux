@@ -86,6 +86,9 @@ type Item struct {
 	Summary     string
 	ImageURL    string
 	PublishedAt string // "" when unknown; host format is "2006-01-02 15:04:05" UTC
+	// DurationSec is the media's runtime in seconds (a video's length). 0 means
+	// unknown. Stored so a card can show it without a view-time lookup.
+	DurationSec int
 	Enclosures  []Enclosure
 }
 

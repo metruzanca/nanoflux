@@ -581,6 +581,7 @@ func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter
 			Summary:     it.Summary,
 			Categories:  it.Categories,
 			ImageURL:    it.ImageURL,
+			DurationSec: it.DurationSec,
 			PublishedAt: it.PublishedAt,
 			FetchedAt:   fetched,
 		}
