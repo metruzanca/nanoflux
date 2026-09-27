@@ -41,7 +41,10 @@ type FeedWithUnread struct {
 	Unread     int
 }
 
-type FeedStore struct{ q *sqlcgen.Queries }
+type FeedStore struct {
+	q  *sqlcgen.Queries
+	db *sql.DB // for the transactional re-home on delete
+}
 
 func (s *FeedStore) Create(userID, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int) (Feed, error) {
 	return s.CreateWithPlugin(userID, authorID, title, feedURL, homeURL, description, "", pollIntervalSec)
@@ -192,15 +195,47 @@ func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, hom
 	return nil
 }
 
+// Delete removes a feed. Items the feed owns that are also members of another
+// feed are re-homed to that feed first (so deleting the subreddit feed does not
+// delete a post still reachable through a user feed); items whose only
+// membership is this feed are removed with it. Both the feed's membership rows
+// and its remaining items cascade.
 func (s *FeedStore) Delete(userID, id int64) error {
-	res, err := s.q.DeleteFeed(context.Background(), sqlcgen.DeleteFeedParams{ID: id, UserID: userID})
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin delete feed: %w", err)
+	}
+	defer tx.Rollback()
+	ctx := context.Background()
+	q := s.q.WithTx(tx)
+
+	f, err := q.GetFeed(ctx, sqlcgen.GetFeedParams{ID: id, UserID: userID})
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
 	if err != nil {
 		return fmt.Errorf("delete feed: %w", err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
+
+	// Re-home owned items that have another membership to one of those feeds,
+	// before the feed's cascade removes them.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE items
+		SET feed_id = (
+			SELECT mf.feed_id FROM item_feeds mf
+			WHERE mf.item_id = items.id AND mf.feed_id <> ?
+			ORDER BY mf.feed_id LIMIT 1
+		)
+		WHERE items.feed_id = ?
+		  AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = items.id AND mf.feed_id <> ?)`,
+		f.ID, f.ID, f.ID); err != nil {
+		return fmt.Errorf("re-home feed items: %w", err)
 	}
-	return nil
+
+	if _, err := q.DeleteFeed(ctx, sqlcgen.DeleteFeedParams{ID: id, UserID: userID}); err != nil {
+		return fmt.Errorf("delete feed: %w", err)
+	}
+	return tx.Commit()
 }
 
 // SetPollMeta records the result of a fetch: entity tags for conditional GET

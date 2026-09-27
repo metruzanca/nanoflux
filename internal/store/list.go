@@ -215,9 +215,12 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 		}
 		out := make([]ItemWithFeed, 0, len(rows))
 		for _, r := range rows {
-			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
+			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
 				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
+		}
+		if err := attachSources(s.q, out); err != nil {
+			return nil, false, err
 		}
 		return out, hasMore, nil
 	}
@@ -236,9 +239,12 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 	}
 	out := make([]ItemWithFeed, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
+		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
 			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
+	}
+	if err := attachSources(s.q, out); err != nil {
+		return nil, false, err
 	}
 	return out, hasMore, nil
 }
@@ -263,9 +269,12 @@ func (s *ListStore) ItemListPublic(listID, before int64, limit int) ([]ItemWithF
 	}
 	out := make([]ItemWithFeed, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
+		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
 			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
+	}
+	if err := attachSources(s.q, out); err != nil {
+		return nil, false, err
 	}
 	return out, hasMore, nil
 }

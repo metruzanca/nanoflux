@@ -45,7 +45,7 @@ func New(sqldb *sql.DB) *Store {
 		Sessions:    &SessionStore{q: q},
 		Settings:    &SettingStore{q: q},
 		Authors:     &AuthorStore{q: q},
-		Feeds:       &FeedStore{q: q},
+		Feeds:       &FeedStore{q: q, db: sqldb},
 		Items:       &ItemStore{q: q, db: sqldb},
 		Collections: &CollectionStore{q: q},
 		SourceIcons: &SourceIconStore{q: q},

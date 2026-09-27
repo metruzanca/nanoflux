@@ -80,8 +80,10 @@ type Filter struct {
 type Item struct {
 	ID          int64          `json:"id"`
 	FeedID      int64          `json:"feed_id"`
+	UserID      int64          `json:"user_id"`
 	Guid        string         `json:"guid"`
 	DedupKey    string         `json:"dedup_key"`
+	CrossKey    string         `json:"cross_key"`
 	Title       string         `json:"title"`
 	Link        string         `json:"link"`
 	Summary     string         `json:"summary"`
@@ -103,6 +105,12 @@ type ItemEnclosure struct {
 	MimeType sql.NullString `json:"mime_type"`
 	Size     int64          `json:"size"`
 	Sort     int64          `json:"sort"`
+}
+
+type ItemFeed struct {
+	ItemID    int64  `json:"item_id"`
+	FeedID    int64  `json:"feed_id"`
+	CreatedAt string `json:"created_at"`
 }
 
 type ItemsFt struct {

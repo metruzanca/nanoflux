@@ -88,8 +88,10 @@ CREATE UNIQUE INDEX idx_feeds_system ON feeds(user_id) WHERE is_system = 1;
 CREATE TABLE items (
     id           INTEGER PRIMARY KEY,
     feed_id      INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    user_id      INTEGER NOT NULL DEFAULT 0,
     guid         TEXT NOT NULL,
     dedup_key    TEXT NOT NULL DEFAULT '',
+    cross_key    TEXT NOT NULL DEFAULT '',
     title        TEXT NOT NULL DEFAULT '',
     link         TEXT NOT NULL DEFAULT '',
     summary      TEXT NOT NULL DEFAULT '',
@@ -106,6 +108,20 @@ CREATE TABLE items (
 CREATE INDEX idx_items_feed ON items(feed_id);
 CREATE INDEX idx_items_fetched ON items(feed_id, fetched_at);
 CREATE UNIQUE INDEX idx_items_dedup ON items(feed_id, dedup_key);
+-- Partial unique index over the per-user cross-feed identity. Created at
+-- startup after MergeCrossFeedDuplicates has merged pre-existing duplicates, so
+-- it is declared here for sqlc only (migrations create it, not schema.sql).
+CREATE UNIQUE INDEX idx_items_cross ON items(user_id, cross_key) WHERE cross_key <> '';
+
+-- Membership: an item belongs to its owner feed (items.feed_id) plus any other
+-- feeds it was also seen in. Feeds list items through this table.
+CREATE TABLE item_feeds (
+    item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    feed_id    INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (item_id, feed_id)
+);
+CREATE INDEX idx_item_feeds_feed ON item_feeds(feed_id);
 
 CREATE TABLE collections (
     id         INTEGER PRIMARY KEY,

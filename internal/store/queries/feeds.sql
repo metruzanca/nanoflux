@@ -34,7 +34,8 @@ ORDER BY title;
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
        f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.created_at,
        a.name AS author_name,
-       (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.read = 0) AS unread
+       (SELECT COUNT(*) FROM items i JOIN item_feeds mf ON mf.item_id = i.id
+        WHERE mf.feed_id = f.id AND i.read = 0) AS unread
 FROM feeds f
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE f.user_id = ? AND f.is_system = 0
@@ -44,7 +45,8 @@ ORDER BY f.title;
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
        f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.created_at,
        a.name AS author_name,
-       (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.read = 0) AS unread
+       (SELECT COUNT(*) FROM items i JOIN item_feeds mf ON mf.item_id = i.id
+        WHERE mf.feed_id = f.id AND i.read = 0) AS unread
 FROM feeds f
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE f.user_id = ? AND f.author_id = ? AND f.is_system = 0

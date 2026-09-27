@@ -16,6 +16,51 @@ func itemCmd(st *store.Store, out io.Writer) *cobra.Command {
 	}
 	cmd.AddCommand(itemBackfillThumbsCmd(st, out))
 	cmd.AddCommand(itemDedupCmd(st, out))
+	cmd.AddCommand(itemCrossDedupCmd(st, out))
+	return cmd
+}
+
+// itemCrossDedupCmd merges the same reddit post stored once per subscription (a
+// subreddit feed and a user feed) into a single item whose feeds are both
+// members, so read/favorite/list/share state is shared and the streams show it
+// once. Also derives the per-user cross-feed identity and creates the unique
+// index. The server runs this at startup; the command is for a manual run or a
+// report.
+func itemCrossDedupCmd(st *store.Store, out io.Writer) *cobra.Command {
+	var apply bool
+	cmd := &cobra.Command{
+		Use:   "cross-dedup",
+		Short: "Merge the same reddit post stored once per subscription",
+		Long: "Find reddit posts stored more than once because the same post was seen\n" +
+			"through two subscriptions (the subreddit feed and a user feed) and merge\n" +
+			"them into one item that both feeds are members of. Read/favorite state,\n" +
+			"enclosures, list memberships and shares carry over; the row most recently\n" +
+			"confirmed by a feed is kept. Also creates the per-user cross-feed unique\n" +
+			"index. Runs as a report unless --apply is given. The server already runs\n" +
+			"this at startup.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			report, err := st.Items.MergeCrossFeedDuplicates(!apply)
+			if err != nil {
+				return err
+			}
+			verb := "would merge"
+			if apply {
+				verb = "merged"
+			}
+			for _, g := range report.Groups {
+				fmt.Fprintf(out, "%s user #%d %s: keep %d, drop %v\n",
+					verb, g.UserID, g.CrossKey, g.Survivor, g.Losers)
+			}
+			fmt.Fprintf(out, "%s %d duplicate item(s) across %d group(s)\n",
+				verb, report.ItemsMerged, len(report.Groups))
+			if !apply && report.ItemsMerged > 0 {
+				fmt.Fprintln(out, "re-run with --apply to perform the merge")
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&apply, "apply", false, "perform the merge (default: report only)")
 	return cmd
 }
 

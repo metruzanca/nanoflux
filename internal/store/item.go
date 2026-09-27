@@ -14,11 +14,16 @@ import (
 
 type Item struct {
 	ID     int64
-	FeedID int64
+	FeedID int64 // owner/display feed; memberships live in item_feeds
+	UserID int64 // denormalized owner, for user-scoped lookups and the cross index
 	GUID   string
 	// Identity is the stable per-feed dedup key (a plugin's Item.Identity).
 	// Empty means "use GUID". Stored as items.dedup_key.
-	Identity   string
+	Identity string
+	// CrossKey is the per-user cross-feed identity ("reddit:t3_<id>" for a
+	// reddit post); empty when the item cannot be shared between feeds. Stored
+	// as items.cross_key and unique per user. Set by Upsert, never by callers.
+	CrossKey   string
 	Title      string
 	Link       string
 	Summary    string
@@ -68,6 +73,42 @@ func dedupKey(it Item) string {
 	return it.GUID
 }
 
+// crossFeedKey derives an item's per-user cross-feed identity from its GUID, or
+// "" when the item cannot be shared between feeds. Reddit's Atom entries carry
+// the post fullname "t3_<id>" as their GUID, identical in a subreddit feed and
+// the user feed the same post reaches, so that value identifies one post across
+// subscriptions. Nothing else is cross-deduped: outside a same-domain identity
+// like reddit's, two feeds sharing a link or title is too weak to merge safely.
+func crossFeedKey(guid string) string {
+	if isRedditPostGUID(guid) {
+		return "reddit:" + guid
+	}
+	return ""
+}
+
+// CrossFeedKey is the exported crossFeedKey, for callers that resolve an item
+// without going through Upsert (e.g. enclosure attachment in the poller).
+func CrossFeedKey(guid string) string { return crossFeedKey(guid) }
+
+// isRedditPostGUID reports whether guid is a reddit post fullname: "t3_" then a
+// base36 id. t1_ (comments) and t2_ (accounts) are not post identities.
+func isRedditPostGUID(guid string) bool {
+	const prefix = "t3_"
+	if !strings.HasPrefix(guid, prefix) {
+		return false
+	}
+	id := guid[len(prefix):]
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
+	return true
+}
+
 // ItemWithFeed joins an item with its feed and author for display.
 type ItemWithFeed struct {
 	Item
@@ -81,12 +122,15 @@ type ItemWithFeed struct {
 	Timezone     string       // user's IANA timezone, for relative timestamps in templates
 }
 
-// ItemSource is one alternate copy of an item that was merged into the
-// surviving row during view-time dedup.
+// ItemSource is one alternate feed an item is a member of, besides the owner
+// feed whose title/author the row displays. Populated from item_feeds (and, for
+// the legacy title-based view-time collapse, by httpapi's dedupItems).
 type ItemSource struct {
-	FeedID    int64
-	FeedTitle string
-	Link      string
+	FeedID     int64
+	FeedTitle  string
+	AuthorID   int64  // the source feed's author, for reddit "r/x by u/y" links
+	AuthorName string // "" when the source feed has no author
+	Link       string
 }
 
 type ItemFilter struct {
@@ -107,49 +151,126 @@ type ItemStore struct {
 	db *sql.DB // raw handle for the FTS5 search query sqlc cannot generate
 }
 
-// Upsert inserts an item, ignoring duplicates on (feed_id, dedup_key) — the
-// item's stable Identity, or its GUID when none is set. It reports whether a
-// new row was actually inserted; when the item already exists its content
-// snapshot (summary, categories, thumbnail) is refreshed so the listing tracks
-// the live feed without touching identity, published_at or read state.
+// Upsert stores an item for feedID, deduplicating within the feed on
+// (feed_id, dedup_key) — the item's stable Identity, or its GUID when none is
+// set. A reddit post additionally carries a per-user cross_key, so the same
+// post arriving through two subscriptions (a subreddit feed and a user feed)
+// resolves to one row with two memberships rather than two rows: read/favorite/
+// list/share state is then shared automatically.
+//
+// It reports whether the item is new to feedID (a new row or a new membership),
+// which the poller uses to detect an exhausted history. When the item already
+// exists its content snapshot (summary, categories, thumbnail, duration) is
+// refreshed without touching identity, published_at or read state.
 func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 	key := dedupKey(it)
-	res, err := s.q.UpsertItem(context.Background(), sqlcgen.UpsertItemParams{
-		FeedID:      feedID,
-		Guid:        it.GUID,
-		DedupKey:    key,
-		Title:       it.Title,
-		Link:        it.Link,
-		Summary:     it.Summary,
-		Categories:  joinCategories(it.Categories),
-		ImageUrl:    ns(it.ImageURL),
-		DurationSec: ni(int64(it.DurationSec)),
-		PublishedAt: ns(it.PublishedAt),
-		FetchedAt:   it.FetchedAt,
-		Read:        it.Read,
-		ReadAt:      ns(it.ReadAt),
-	})
+	crossKey := crossFeedKey(it.GUID)
+	ctx := context.Background()
+
+	tx, err := s.db.Begin()
 	if err != nil {
-		return false, fmt.Errorf("upsert item: %w", err)
+		return false, fmt.Errorf("begin upsert: %w", err)
 	}
-	n, err := res.RowsAffected()
+	defer tx.Rollback()
+	q := s.q.WithTx(tx)
+
+	userID, err := q.FeedUserID(ctx, feedID)
 	if err != nil {
-		return false, fmt.Errorf("upsert item rows affected: %w", err)
+		return false, fmt.Errorf("upsert item feed owner: %w", err)
 	}
-	if n > 0 {
-		return true, nil
+
+	var itemID int64
+	if crossKey != "" {
+		itemID, err = q.GetItemByUserCrossKey(ctx, sqlcgen.GetItemByUserCrossKeyParams{
+			UserID:   userID,
+			CrossKey: crossKey,
+		})
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return false, fmt.Errorf("upsert item cross lookup: %w", err)
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			itemID = 0
+		}
 	}
-	if err := s.q.UpdateItemSnapshot(context.Background(), sqlcgen.UpdateItemSnapshotParams{
-		Summary:     it.Summary,
-		Categories:  joinCategories(it.Categories),
-		ImageUrl:    ns(it.ImageURL),
-		DurationSec: ni(int64(it.DurationSec)),
-		FeedID:      feedID,
-		DedupKey:    key,
-	}); err != nil {
-		return false, fmt.Errorf("refresh item snapshot: %w", err)
+
+	newRow := false
+	if itemID == 0 {
+		res, err := q.UpsertItem(ctx, sqlcgen.UpsertItemParams{
+			FeedID:      feedID,
+			UserID:      userID,
+			Guid:        it.GUID,
+			DedupKey:    key,
+			CrossKey:    crossKey,
+			Title:       it.Title,
+			Link:        it.Link,
+			Summary:     it.Summary,
+			Categories:  joinCategories(it.Categories),
+			ImageUrl:    ns(it.ImageURL),
+			DurationSec: ni(int64(it.DurationSec)),
+			PublishedAt: ns(it.PublishedAt),
+			FetchedAt:   it.FetchedAt,
+			Read:        it.Read,
+			ReadAt:      ns(it.ReadAt),
+		})
+		if err != nil {
+			return false, fmt.Errorf("upsert item: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return false, fmt.Errorf("upsert item rows affected: %w", err)
+		}
+		newRow = n > 0
+		// Resolve the id whether we inserted or collided on (feed_id, dedup_key).
+		itemID, err = q.GetItemByDedupKey(ctx, sqlcgen.GetItemByDedupKeyParams{
+			FeedID:   feedID,
+			DedupKey: key,
+		})
+		if err != nil {
+			return false, fmt.Errorf("upsert item resolve id: %w", err)
+		}
 	}
-	return false, nil
+
+	// A row that predates the cross-key backfill (or was stored by a feed that
+	// did not derive one) adopts it now, so subsequent polls resolve to it.
+	if crossKey != "" && !newRow {
+		if err := q.SetItemCrossKey(ctx, sqlcgen.SetItemCrossKeyParams{
+			CrossKey: crossKey,
+			FeedID:   feedID,
+			DedupKey: key,
+		}); err != nil {
+			return false, fmt.Errorf("set item cross key: %w", err)
+		}
+	}
+
+	// Refresh the content snapshot of an already-stored row (including one owned
+	// by another feed), so a cross-feed member tracks the live feed too.
+	if !newRow {
+		if err := q.UpdateItemSnapshotByID(ctx, sqlcgen.UpdateItemSnapshotByIDParams{
+			Summary:     it.Summary,
+			Categories:  joinCategories(it.Categories),
+			ImageUrl:    ns(it.ImageURL),
+			DurationSec: ni(int64(it.DurationSec)),
+			ID:          itemID,
+		}); err != nil {
+			return false, fmt.Errorf("refresh item snapshot: %w", err)
+		}
+	}
+
+	// Membership makes the item visible in this feed's streams. A new membership
+	// (or a new row) counts as new for this feed.
+	mres, err := q.AddItemFeed(ctx, sqlcgen.AddItemFeedParams{ItemID: itemID, FeedID: feedID})
+	if err != nil {
+		return false, fmt.Errorf("add item feed: %w", err)
+	}
+	mn, err := mres.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("add item feed rows affected: %w", err)
+	}
+	inserted = newRow || mn > 0
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit upsert: %w", err)
+	}
+	return inserted, nil
 }
 
 func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
@@ -188,9 +309,12 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 		}
 		out := make([]ItemWithFeed, 0, len(rows))
 		for _, r := range rows {
-			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
+			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
 				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
+		}
+		if err := s.attachSources(out); err != nil {
+			return nil, false, err
 		}
 		return out, hasMore, nil
 	}
@@ -214,9 +338,12 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	}
 	out := make([]ItemWithFeed, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
+		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
 			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
+	}
+	if err := s.attachSources(out); err != nil {
+		return nil, false, err
 	}
 	return out, hasMore, nil
 }
@@ -249,6 +376,36 @@ func (s *ItemStore) ByFeedIdentity(feedID int64, identity string) (int64, error)
 	return id, nil
 }
 
+// ByUserCrossKey returns the id of the item stored for an identity shared
+// across a user's feeds (crossKey), or 0 when it does not exist.
+func (s *ItemStore) ByUserCrossKey(userID int64, crossKey string) (int64, error) {
+	id, err := s.q.GetItemByUserCrossKey(context.Background(), sqlcgen.GetItemByUserCrossKeyParams{
+		UserID:   userID,
+		CrossKey: crossKey,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+// IngestItemID resolves the stored row for a just-ingested entry: its stable
+// per-feed identity first, then the user's cross-feed identity. Used to attach
+// enclosures to the row however it was first stored.
+func (s *ItemStore) IngestItemID(userID, feedID int64, identity, crossKey string) (int64, error) {
+	id, err := s.ByFeedIdentity(feedID, identity)
+	if err != nil || id != 0 {
+		return id, err
+	}
+	if crossKey == "" {
+		return 0, nil
+	}
+	return s.ByUserCrossKey(userID, crossKey)
+}
+
 // searchPageLimit is the default page size for search results.
 const searchPageLimit = 25
 
@@ -262,7 +419,7 @@ func (s *ItemStore) SearchPage(userID int64, query string, f ItemFilter) ([]Item
 	if limit <= 0 {
 		limit = searchPageLimit
 	}
-	const sql = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
+	const sql = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -271,10 +428,13 @@ FROM items i
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 JOIN items_fts fts ON fts.rowid = i.id
-WHERE f.user_id = ?1
+WHERE i.user_id = ?1
   AND items_fts MATCH ?2
-  AND (CAST(?3 AS INTEGER) = 0 OR f.id = CAST(?3 AS INTEGER))
-  AND (CAST(?4 AS INTEGER) = 0 OR f.author_id = CAST(?4 AS INTEGER))
+  AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?3 AS INTEGER)))
+  AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
+        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?4 AS INTEGER)))
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR
        (COALESCE(i.published_at, i.fetched_at), i.id) <
@@ -291,12 +451,12 @@ LIMIT ?7`
 	out := make([]ItemWithFeed, 0, limit)
 	for rows.Next() {
 		var r sqlcgen.ListItemsRow
-		if err := rows.Scan(&r.ID, &r.FeedID, &r.Guid, &r.Title, &r.Link, &r.Summary,
+		if err := rows.Scan(&r.ID, &r.FeedID, &r.Guid, &r.Title, &r.Link, &r.Summary, &r.Categories,
 			&r.ImageUrl, &r.DurationSec, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.ReadAt,
 			&r.FeedTitle, &r.FeedUrl, &r.FeedHomeUrl, &r.FeedIsSystem, &r.AuthorID, &r.AuthorName); err != nil {
 			return nil, false, err
 		}
-		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
+		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
 			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
@@ -306,6 +466,9 @@ LIMIT ?7`
 	hasMore := len(out) > limit
 	if hasMore {
 		out = out[:limit]
+	}
+	if err := s.attachSources(out); err != nil {
+		return nil, false, err
 	}
 	return out, hasMore, nil
 }
@@ -460,9 +623,13 @@ func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 	if err != nil {
 		return ItemWithFeed{}, err
 	}
-	return toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary,
+	slice := []ItemWithFeed{toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary, it.Categories,
 		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
-		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName), nil
+		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName)}
+	if err := s.attachSources(slice); err != nil {
+		return ItemWithFeed{}, err
+	}
+	return slice[0], nil
 }
 
 // OneWithFeedAny returns a single item regardless of user. Used by the public
@@ -475,10 +642,53 @@ func (s *ItemStore) OneWithFeedAny(itemID int64) (ItemWithFeed, error) {
 	if err != nil {
 		return ItemWithFeed{}, err
 	}
-	return toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary,
+	return toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary, it.Categories,
 		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
 		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName), nil
 }
+
+// attachSources populates each item's Sources from its item_feeds memberships
+// other than the owner feed, in one query for the whole page. This is the
+// persisted cross-feed membership set, replacing the old title-based view-time
+// collapse for items stored once.
+func (s *ItemStore) attachSources(items []ItemWithFeed) error {
+	return attachSources(s.q, items)
+}
+
+// attachSources is the query-layer implementation, shared by ItemStore and
+// ListStore (which has no ItemStore handle of its own).
+func attachSources(q *sqlcgen.Queries, items []ItemWithFeed) error {
+	if len(items) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].ID)
+	}
+	rows, err := q.ListItemSourcesForItems(context.Background(), ids)
+	if err != nil {
+		return err
+	}
+	byID := make(map[int64]int, len(items))
+	for i := range items {
+		byID[items[i].ID] = i
+	}
+	for _, r := range rows {
+		idx, ok := byID[r.ItemID]
+		if !ok || r.FeedID == items[idx].FeedID {
+			continue
+		}
+		items[idx].Sources = append(items[idx].Sources, ItemSource{
+			FeedID:     r.FeedID,
+			FeedTitle:  r.FeedTitle,
+			AuthorID:   r.AuthorID.Int64,
+			AuthorName: r.AuthorName.String,
+		})
+	}
+	return nil
+}
+
+
 
 // SetRead marks an item read/unread, verifying it belongs to the user. When an
 // item is marked read its read_at timestamp is recorded; unread clears it.
@@ -502,21 +712,25 @@ func (s *ItemStore) SetRead(userID, itemID int64, read bool) error {
 	return nil
 }
 
-// MarkBeforeRead marks every unread item in the same feed as itemID that is
-// newer than it (listed above it, newest first) as read.
-func (s *ItemStore) MarkBeforeRead(userID, itemID int64) error {
+// MarkBeforeRead marks every unread item in the same feed page as itemID that is
+// newer than it (listed above it, newest first) as read. feedID is the page's
+// feed; 0 falls back to the item's owner feed.
+func (s *ItemStore) MarkBeforeRead(userID, feedID, itemID int64) error {
 	return s.q.MarkItemsBeforeRead(context.Background(), sqlcgen.MarkItemsBeforeReadParams{
 		ReadAt: ns(db.Now()),
+		FeedID: feedID,
 		ItemID: itemID,
 		UserID: userID,
 	})
 }
 
-// MarkAfterRead marks every unread item in the same feed as itemID that is
-// older than it (listed below it, newest first) as read.
-func (s *ItemStore) MarkAfterRead(userID, itemID int64) error {
+// MarkAfterRead marks every unread item in the same feed page as itemID that is
+// older than it (listed below it, newest first) as read. feedID is the page's
+// feed; 0 falls back to the item's owner feed.
+func (s *ItemStore) MarkAfterRead(userID, feedID, itemID int64) error {
 	return s.q.MarkItemsAfterRead(context.Background(), sqlcgen.MarkItemsAfterReadParams{
 		ReadAt: ns(db.Now()),
+		FeedID: feedID,
 		ItemID: itemID,
 		UserID: userID,
 	})

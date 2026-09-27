@@ -15,6 +15,10 @@ type DedupGroup struct {
 	Link      string
 	Survivor  int64   // the row kept: newest fetched_at, then highest id
 	Losers    []int64 // rows merged into the survivor and deleted
+	// Populated only by the cross-feed scan: the user owning the merged rows
+	// and the shared cross-feed identity they collapsed on.
+	UserID   int64
+	CrossKey string
 }
 
 // DedupReport summarizes a deduplication scan/run.
@@ -150,7 +154,13 @@ func (s *ItemStore) mergeDedupGroup(g DedupGroup) error {
 			WHERE id = ?`, loser, loser, loser, g.Survivor); err != nil {
 			return err
 		}
-		// Repoint or fold in every reference to the loser.
+		// Fold the loser's feed memberships into the survivor, then repoint
+		// every other reference to the loser.
+		if err := exec(ctx, tx, `
+			INSERT OR IGNORE INTO item_feeds (item_id, feed_id, created_at)
+			SELECT ?, feed_id, created_at FROM item_feeds WHERE item_id = ?`, g.Survivor, loser); err != nil {
+			return err
+		}
 		if err := exec(ctx, tx, `UPDATE item_enclosures SET item_id = ? WHERE item_id = ?`, g.Survivor, loser); err != nil {
 			return err
 		}
@@ -183,4 +193,117 @@ func (s *ItemStore) mergeDedupGroup(g DedupGroup) error {
 func exec(ctx context.Context, tx *sql.Tx, query string, args ...any) error {
 	_, err := tx.ExecContext(ctx, query, args...)
 	return err
+}
+
+// crossKeyBackfillSQL adopts the per-user cross-feed identity on every stored
+// reddit post that does not have one yet. The identity is derived from the GUID
+// (t3_<id>), so this is a pure SQL prefix test; it matches isRedditPostGUID.
+const crossKeyBackfillSQL = `
+UPDATE items
+SET cross_key = 'reddit:' || guid
+WHERE cross_key = ''
+  AND guid GLOB 't3_*'
+  AND length(guid) > 3
+  AND substr(guid, 4) NOT GLOB '*[^0-9a-zA-Z]*'`
+
+// crossDuplicatesSQL finds reddit rows that share a per-user cross-feed identity
+// but are still stored separately (a subreddit feed and a user feed both holding
+// the same post), plus the surviving row's id: the newest fetched_at, then the
+// highest id. It ignores the owner feed and returns every member row.
+const crossDuplicatesSQL = `
+SELECT i.id, i.user_id, i.feed_id, i.cross_key, i.fetched_at
+FROM items i
+WHERE i.cross_key <> ''
+  AND (i.user_id, i.cross_key) IN (
+    SELECT user_id, cross_key FROM items
+    WHERE cross_key <> ''
+    GROUP BY user_id, cross_key
+    HAVING COUNT(*) > 1
+  )
+ORDER BY i.user_id, i.cross_key, i.fetched_at, i.id`
+
+// MergeCrossFeedDuplicates brings already-stored rows onto the cross-feed model:
+// it derives cross_key for every reddit item, merges rows that share a per-user
+// cross-feed identity into one row (carrying read/favorite state, memberships,
+// enclosures, lists and shares), and only then creates the partial unique index
+// that keeps them merged. Idempotent and cheap to call on every startup: with
+// nothing to merge it is one UPDATE and one scan.
+func (s *ItemStore) MergeCrossFeedDuplicates(dryRun bool) (DedupReport, error) {
+	ctx := context.Background()
+	if _, err := s.db.ExecContext(ctx, crossKeyBackfillSQL); err != nil {
+		return DedupReport{}, err
+	}
+
+	rows, err := s.db.QueryContext(ctx, crossDuplicatesSQL)
+	if err != nil {
+		return DedupReport{}, err
+	}
+	defer rows.Close()
+
+	type key struct {
+		userID   int64
+		crossKey string
+	}
+	type entry struct {
+		id        int64
+		feedID    int64
+		fetchedAt string
+	}
+	order := []key{}
+	groups := map[key][]entry{}
+	for rows.Next() {
+		var id, userID, feedID int64
+		var crossKey, fetchedAt string
+		if err := rows.Scan(&id, &userID, &feedID, &crossKey, &fetchedAt); err != nil {
+			return DedupReport{}, err
+		}
+		k := key{userID, crossKey}
+		if _, ok := groups[k]; !ok {
+			order = append(order, k)
+		}
+		groups[k] = append(groups[k], entry{id, feedID, fetchedAt})
+	}
+	if err := rows.Err(); err != nil {
+		return DedupReport{}, err
+	}
+
+	var report DedupReport
+	for _, k := range order {
+		es := groups[k]
+		if len(es) < 2 {
+			continue
+		}
+		// Survivor: latest fetched_at, then highest id.
+		sort.SliceStable(es, func(i, j int) bool {
+			if es[i].fetchedAt != es[j].fetchedAt {
+				return es[i].fetchedAt < es[j].fetchedAt
+			}
+			return es[i].id < es[j].id
+		})
+		survivor := es[len(es)-1].id
+		losers := make([]int64, 0, len(es)-1)
+		for _, e := range es[:len(es)-1] {
+			losers = append(losers, e.id)
+		}
+		report.Groups = append(report.Groups, DedupGroup{
+			FeedID: k.userID, Link: k.crossKey, UserID: k.userID, CrossKey: k.crossKey,
+			Survivor: survivor, Losers: losers,
+		})
+		report.ItemsMerged += len(losers)
+	}
+
+	if dryRun {
+		return report, nil
+	}
+	for _, g := range report.Groups {
+		if err := s.mergeDedupGroup(g); err != nil {
+			return report, err
+		}
+	}
+
+	if _, err := s.db.ExecContext(ctx,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_items_cross ON items(user_id, cross_key) WHERE cross_key <> ''`); err != nil {
+		return report, err
+	}
+	return report, nil
 }

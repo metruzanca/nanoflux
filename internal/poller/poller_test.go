@@ -541,6 +541,60 @@ func TestPollOneCategoryFilter(t *testing.T) {
 	}
 }
 
+// The same reddit post polled through a subreddit feed and a user feed is
+// stored once and is a member of both; the second poll reports it as new to the
+// second feed (so paging continues) without duplicating the row.
+func TestPollCrossFeedSharedItem(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	subAuthor, _ := st.Authors.Create(u.ID, "r/cats", "", "")
+	userAuthor, _ := st.Authors.Create(u.ID, "sam", "", "")
+
+	const body = `<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>sub</title>
+  <entry>
+    <category term="cats" label="r/cats"/>
+    <author><name>/u/sam</name></author>
+    <id>t3_1</id><title>a cat</title><link href="https://www.reddit.com/r/cats/comments/1/a_cat/"/>
+    <updated>2026-01-02T03:04:05+00:00</updated>
+  </entry>
+</feed>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/atom+xml")
+		w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	subFeed, _ := st.Feeds.Create(u.ID, subAuthor.ID, "r/cats", srv.URL, "", "", 900)
+	userFeed, _ := st.Feeds.Create(u.ID, userAuthor.ID, "u/sam", srv.URL, "", "", 900)
+
+	p := New(st, time.Minute, 1)
+	if n, err := p.PollOne(context.Background(), subFeed); err != nil || n != 1 {
+		t.Fatalf("sub poll: n=%d err=%v", n, err)
+	}
+	if n, err := p.PollOne(context.Background(), userFeed); err != nil || n != 1 {
+		t.Fatalf("user poll should report the post new to this feed: n=%d err=%v", n, err)
+	}
+
+	subItems, _ := st.Items.List(u.ID, store.ItemFilter{FeedID: subFeed.ID})
+	userItems, _ := st.Items.List(u.ID, store.ItemFilter{FeedID: userFeed.ID})
+	if len(subItems) != 1 || len(userItems) != 1 {
+		t.Fatalf("want one item per feed, got sub=%d user=%d", len(subItems), len(userItems))
+	}
+	if subItems[0].ID != userItems[0].ID {
+		t.Fatalf("the two feeds should share one row: %d vs %d", subItems[0].ID, userItems[0].ID)
+	}
+}
+
 func TestPollDue(t *testing.T) {
 	sqldb, err := db.Open(":memory:")
 	if err != nil {

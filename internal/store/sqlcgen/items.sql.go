@@ -8,7 +8,24 @@ package sqlcgen
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
+
+const addItemFeed = `-- name: AddItemFeed :execresult
+INSERT INTO item_feeds (item_id, feed_id)
+VALUES (?, ?)
+ON CONFLICT (item_id, feed_id) DO NOTHING
+`
+
+type AddItemFeedParams struct {
+	ItemID int64 `json:"item_id"`
+	FeedID int64 `json:"feed_id"`
+}
+
+// Add an item to a feed's membership set. Idempotent.
+func (q *Queries) AddItemFeed(ctx context.Context, arg AddItemFeedParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, addItemFeed, arg.ItemID, arg.FeedID)
+}
 
 const backfillYouTubeThumbnails = `-- name: BackfillYouTubeThumbnails :execresult
 UPDATE items
@@ -46,9 +63,10 @@ func (q *Queries) CountAllUnreadItems(ctx context.Context) (int64, error) {
 }
 
 const countFavoriteItems = `-- name: CountFavoriteItems :one
-SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = ?1 AND i.favorite = 1
-  AND (CAST(?2 AS INTEGER) = 0 OR f.id = CAST(?2 AS INTEGER))
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = ?1 AND i.favorite = 1
+  AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
+        SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(?2 AS INTEGER)))
 `
 
 type CountFavoriteItemsParams struct {
@@ -64,13 +82,16 @@ func (q *Queries) CountFavoriteItems(ctx context.Context, arg CountFavoriteItems
 }
 
 const countFavoriteItemsByAuthor = `-- name: CountFavoriteItemsByAuthor :one
-SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = ? AND i.favorite = 1 AND f.author_id = ?
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = ?1 AND i.favorite = 1
+  AND i.id IN (
+    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND f.author_id = ?2)
 `
 
 type CountFavoriteItemsByAuthorParams struct {
-	UserID   int64 `json:"user_id"`
-	AuthorID int64 `json:"author_id"`
+	UserID   int64 `json:"userID"`
+	AuthorID int64 `json:"authorID"`
 }
 
 func (q *Queries) CountFavoriteItemsByAuthor(ctx context.Context, arg CountFavoriteItemsByAuthorParams) (int64, error) {
@@ -93,9 +114,11 @@ func (q *Queries) CountItemsMissingYouTubeThumbnail(ctx context.Context) (int64,
 }
 
 const countReadItems = `-- name: CountReadItems :one
-SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = ?1 AND f.is_system = 0 AND i.read = 1
-  AND (CAST(?2 AS INTEGER) = 0 OR f.id = CAST(?2 AS INTEGER))
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = ?1 AND i.read = 1
+  AND i.feed_id NOT IN (SELECT f.id FROM feeds f WHERE f.is_system = 1)
+  AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
+        SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(?2 AS INTEGER)))
 `
 
 type CountReadItemsParams struct {
@@ -111,13 +134,16 @@ func (q *Queries) CountReadItems(ctx context.Context, arg CountReadItemsParams) 
 }
 
 const countReadItemsByAuthor = `-- name: CountReadItemsByAuthor :one
-SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = ? AND i.read = 1 AND f.author_id = ?
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = ?1 AND i.read = 1
+  AND i.id IN (
+    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND f.author_id = ?2)
 `
 
 type CountReadItemsByAuthorParams struct {
-	UserID   int64 `json:"user_id"`
-	AuthorID int64 `json:"author_id"`
+	UserID   int64 `json:"userID"`
+	AuthorID int64 `json:"authorID"`
 }
 
 func (q *Queries) CountReadItemsByAuthor(ctx context.Context, arg CountReadItemsByAuthorParams) (int64, error) {
@@ -128,14 +154,16 @@ func (q *Queries) CountReadItemsByAuthor(ctx context.Context, arg CountReadItems
 }
 
 const countReadItemsByCollection = `-- name: CountReadItemsByCollection :one
-SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = ? AND i.read = 1
-  AND i.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?)
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = ?1 AND i.read = 1
+  AND i.id IN (
+    SELECT mf.item_id FROM item_feeds mf
+    WHERE mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?2))
 `
 
 type CountReadItemsByCollectionParams struct {
-	UserID       int64 `json:"user_id"`
-	CollectionID int64 `json:"collection_id"`
+	UserID       int64 `json:"userID"`
+	CollectionID int64 `json:"collectionID"`
 }
 
 func (q *Queries) CountReadItemsByCollection(ctx context.Context, arg CountReadItemsByCollectionParams) (int64, error) {
@@ -146,9 +174,11 @@ func (q *Queries) CountReadItemsByCollection(ctx context.Context, arg CountReadI
 }
 
 const countUnreadItems = `-- name: CountUnreadItems :one
-SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = ?1 AND f.is_system = 0 AND i.read = 0
-  AND (CAST(?2 AS INTEGER) = 0 OR f.id = CAST(?2 AS INTEGER))
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = ?1 AND i.read = 0
+  AND i.feed_id NOT IN (SELECT f.id FROM feeds f WHERE f.is_system = 1)
+  AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
+        SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(?2 AS INTEGER)))
 `
 
 type CountUnreadItemsParams struct {
@@ -157,7 +187,8 @@ type CountUnreadItemsParams struct {
 }
 
 // Excludes saved pages (the system feed), which never appear in the unread
-// stream or its count.
+// stream or its count. Feed scope matches membership, and the item is counted
+// once however many member feeds it has.
 func (q *Queries) CountUnreadItems(ctx context.Context, arg CountUnreadItemsParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countUnreadItems, arg.UserID, arg.FeedID)
 	var count int64
@@ -166,13 +197,16 @@ func (q *Queries) CountUnreadItems(ctx context.Context, arg CountUnreadItemsPara
 }
 
 const countUnreadItemsByAuthor = `-- name: CountUnreadItemsByAuthor :one
-SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = ? AND i.read = 0 AND f.author_id = ?
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = ?1 AND i.read = 0
+  AND i.id IN (
+    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND f.author_id = ?2)
 `
 
 type CountUnreadItemsByAuthorParams struct {
-	UserID   int64 `json:"user_id"`
-	AuthorID int64 `json:"author_id"`
+	UserID   int64 `json:"userID"`
+	AuthorID int64 `json:"authorID"`
 }
 
 func (q *Queries) CountUnreadItemsByAuthor(ctx context.Context, arg CountUnreadItemsByAuthorParams) (int64, error) {
@@ -183,14 +217,16 @@ func (q *Queries) CountUnreadItemsByAuthor(ctx context.Context, arg CountUnreadI
 }
 
 const countUnreadItemsByCollection = `-- name: CountUnreadItemsByCollection :one
-SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = ? AND i.read = 0
-  AND i.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?)
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = ?1 AND i.read = 0
+  AND i.id IN (
+    SELECT mf.item_id FROM item_feeds mf
+    WHERE mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?2))
 `
 
 type CountUnreadItemsByCollectionParams struct {
-	UserID       int64 `json:"user_id"`
-	CollectionID int64 `json:"collection_id"`
+	UserID       int64 `json:"userID"`
+	CollectionID int64 `json:"collectionID"`
 }
 
 func (q *Queries) CountUnreadItemsByCollection(ctx context.Context, arg CountUnreadItemsByCollectionParams) (int64, error) {
@@ -230,6 +266,18 @@ func (q *Queries) DeleteSavedItem(ctx context.Context, arg DeleteSavedItemParams
 	return q.db.ExecContext(ctx, deleteSavedItem, arg.ItemID, arg.UserID)
 }
 
+const feedUserID = `-- name: FeedUserID :one
+SELECT user_id FROM feeds WHERE id = ?
+`
+
+// The owner of a feed, for denormalizing items.user_id on insert.
+func (q *Queries) FeedUserID(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, feedUserID, id)
+	var user_id int64
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
 const getAuthorItemStats = `-- name: GetAuthorItemStats :one
 SELECT
     COUNT(i.id) AS total_posts,
@@ -240,8 +288,10 @@ SELECT
     CAST(COALESCE(MAX(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS last_post_at,
     COUNT(CASE WHEN COALESCE(i.published_at, i.fetched_at) >= datetime('now', '-30 days') THEN 1 END) AS recent_posts
 FROM items i
-JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = ?1 AND f.author_id = ?2
+WHERE i.user_id = ?1
+  AND i.id IN (
+    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND f.author_id = ?2)
 `
 
 type GetAuthorItemStatsParams struct {
@@ -279,11 +329,10 @@ func (q *Queries) GetAuthorItemStats(ctx context.Context, arg GetAuthorItemStats
 }
 
 const getItem = `-- name: GetItem :one
-SELECT i.id, i.feed_id, i.guid, i.dedup_key, i.title, i.link, i.summary, i.categories, i.duration_sec, i.image_url,
+SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.categories, i.duration_sec, i.image_url,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
 FROM items i
-JOIN feeds f ON f.id = i.feed_id
-WHERE i.id = ? AND f.user_id = ?
+WHERE i.id = ? AND i.user_id = ?
 `
 
 type GetItemParams struct {
@@ -297,8 +346,10 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 	err := row.Scan(
 		&i.ID,
 		&i.FeedID,
+		&i.UserID,
 		&i.Guid,
 		&i.DedupKey,
+		&i.CrossKey,
 		&i.Title,
 		&i.Link,
 		&i.Summary,
@@ -333,8 +384,27 @@ func (q *Queries) GetItemByDedupKey(ctx context.Context, arg GetItemByDedupKeyPa
 	return id, err
 }
 
+const getItemByUserCrossKey = `-- name: GetItemByUserCrossKey :one
+SELECT id FROM items
+WHERE user_id = ? AND cross_key = ?
+`
+
+type GetItemByUserCrossKeyParams struct {
+	UserID   int64  `json:"user_id"`
+	CrossKey string `json:"cross_key"`
+}
+
+// Look an item up by its per-user cross-feed identity, regardless of which feed
+// owns it.
+func (q *Queries) GetItemByUserCrossKey(ctx context.Context, arg GetItemByUserCrossKeyParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, getItemByUserCrossKey, arg.UserID, arg.CrossKey)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getItemWithFeed = `-- name: GetItemWithFeed :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -342,7 +412,7 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.durat
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
-WHERE i.id = ? AND f.user_id = ?
+WHERE i.id = ? AND i.user_id = ?
 `
 
 type GetItemWithFeedParams struct {
@@ -357,6 +427,7 @@ type GetItemWithFeedRow struct {
 	Title        string         `json:"title"`
 	Link         string         `json:"link"`
 	Summary      string         `json:"summary"`
+	Categories   string         `json:"categories"`
 	ImageUrl     sql.NullString `json:"image_url"`
 	DurationSec  sql.NullInt64  `json:"duration_sec"`
 	PublishedAt  sql.NullString `json:"published_at"`
@@ -382,6 +453,7 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 		&i.Title,
 		&i.Link,
 		&i.Summary,
+		&i.Categories,
 		&i.ImageUrl,
 		&i.DurationSec,
 		&i.PublishedAt,
@@ -400,7 +472,7 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 }
 
 const getItemWithFeedAny = `-- name: GetItemWithFeedAny :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -418,6 +490,7 @@ type GetItemWithFeedAnyRow struct {
 	Title        string         `json:"title"`
 	Link         string         `json:"link"`
 	Summary      string         `json:"summary"`
+	Categories   string         `json:"categories"`
 	ImageUrl     sql.NullString `json:"image_url"`
 	DurationSec  sql.NullInt64  `json:"duration_sec"`
 	PublishedAt  sql.NullString `json:"published_at"`
@@ -443,6 +516,7 @@ func (q *Queries) GetItemWithFeedAny(ctx context.Context, id int64) (GetItemWith
 		&i.Title,
 		&i.Link,
 		&i.Summary,
+		&i.Categories,
 		&i.ImageUrl,
 		&i.DurationSec,
 		&i.PublishedAt,
@@ -489,8 +563,10 @@ func (q *Queries) InsertEnclosure(ctx context.Context, arg InsertEnclosureParams
 const listAuthorRecentItemTimes = `-- name: ListAuthorRecentItemTimes :many
 SELECT COALESCE(i.published_at, i.fetched_at) AS t
 FROM items i
-JOIN feeds f ON f.id = i.feed_id
-WHERE f.user_id = ?1 AND f.author_id = ?2
+WHERE i.user_id = ?1
+  AND i.id IN (
+    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND f.author_id = ?2)
 ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
 LIMIT ?3
 `
@@ -570,8 +646,68 @@ func (q *Queries) ListEnclosures(ctx context.Context, itemID int64) ([]ListEnclo
 	return items, nil
 }
 
+const listItemSourcesForItems = `-- name: ListItemSourcesForItems :many
+SELECT mf.item_id, f.id AS feed_id, f.title AS feed_title,
+       a.id AS author_id, a.name AS author_name
+FROM item_feeds mf
+JOIN feeds f ON f.id = mf.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE mf.item_id IN (/*SLICE:itemIDs*/?)
+ORDER BY mf.item_id, f.title
+`
+
+type ListItemSourcesForItemsRow struct {
+	ItemID     int64          `json:"item_id"`
+	FeedID     int64          `json:"feed_id"`
+	FeedTitle  string         `json:"feed_title"`
+	AuthorID   sql.NullInt64  `json:"author_id"`
+	AuthorName sql.NullString `json:"author_name"`
+}
+
+// Every feed membership (including the owner feed) for a set of items, so a
+// page can attach alternate sources without a query per item. The caller drops
+// the row whose feed_id equals the item's owner feed.
+func (q *Queries) ListItemSourcesForItems(ctx context.Context, itemids []int64) ([]ListItemSourcesForItemsRow, error) {
+	query := listItemSourcesForItems
+	var queryParams []interface{}
+	if len(itemids) > 0 {
+		for _, v := range itemids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", strings.Repeat(",?", len(itemids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListItemSourcesForItemsRow
+	for rows.Next() {
+		var i ListItemSourcesForItemsRow
+		if err := rows.Scan(
+			&i.ItemID,
+			&i.FeedID,
+			&i.FeedTitle,
+			&i.AuthorID,
+			&i.AuthorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listItems = `-- name: ListItems :many
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -579,11 +715,15 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.durat
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
-WHERE f.user_id = ?1
-  AND (CAST(?2 AS INTEGER) = 0 OR f.id = CAST(?2 AS INTEGER))
-  AND (CAST(?3 AS INTEGER) = 0 OR f.author_id = CAST(?3 AS INTEGER))
-  AND (CAST(?4 AS INTEGER) = 0 OR i.feed_id IN (
-        SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(?4 AS INTEGER)))
+WHERE i.user_id = ?1
+  AND (CAST(?2 AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?2 AS INTEGER)))
+  AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
+        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?3 AS INTEGER)))
+  AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (
+          SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(?4 AS INTEGER))))
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(?7 AS INTEGER) = 0 OR i.favorite = 1)
@@ -616,6 +756,7 @@ type ListItemsRow struct {
 	Title        string         `json:"title"`
 	Link         string         `json:"link"`
 	Summary      string         `json:"summary"`
+	Categories   string         `json:"categories"`
 	ImageUrl     sql.NullString `json:"image_url"`
 	DurationSec  sql.NullInt64  `json:"duration_sec"`
 	PublishedAt  sql.NullString `json:"published_at"`
@@ -631,6 +772,9 @@ type ListItemsRow struct {
 	AuthorName   sql.NullString `json:"author_name"`
 }
 
+// The display feed is the item's owner (i.feed_id); feed/author/collection
+// filters match membership (item_feeds), so an item seen through two feeds
+// appears in both streams but as one row.
 func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListItemsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listItems,
 		arg.UserID,
@@ -657,6 +801,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 			&i.Title,
 			&i.Link,
 			&i.Summary,
+			&i.Categories,
 			&i.ImageUrl,
 			&i.DurationSec,
 			&i.PublishedAt,
@@ -685,7 +830,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 }
 
 const listItemsAsc = `-- name: ListItemsAsc :many
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -693,11 +838,15 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.durat
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
-WHERE f.user_id = ?1
-  AND (CAST(?2 AS INTEGER) = 0 OR f.id = CAST(?2 AS INTEGER))
-  AND (CAST(?3 AS INTEGER) = 0 OR f.author_id = CAST(?3 AS INTEGER))
-  AND (CAST(?4 AS INTEGER) = 0 OR i.feed_id IN (
-        SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(?4 AS INTEGER)))
+WHERE i.user_id = ?1
+  AND (CAST(?2 AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?2 AS INTEGER)))
+  AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
+        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?3 AS INTEGER)))
+  AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (
+          SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(?4 AS INTEGER))))
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(?7 AS INTEGER) = 0 OR i.favorite = 1)
@@ -729,6 +878,7 @@ type ListItemsAscRow struct {
 	Title        string         `json:"title"`
 	Link         string         `json:"link"`
 	Summary      string         `json:"summary"`
+	Categories   string         `json:"categories"`
 	ImageUrl     sql.NullString `json:"image_url"`
 	DurationSec  sql.NullInt64  `json:"duration_sec"`
 	PublishedAt  sql.NullString `json:"published_at"`
@@ -770,6 +920,7 @@ func (q *Queries) ListItemsAsc(ctx context.Context, arg ListItemsAscParams) ([]L
 			&i.Title,
 			&i.Link,
 			&i.Summary,
+			&i.Categories,
 			&i.ImageUrl,
 			&i.DurationSec,
 			&i.PublishedAt,
@@ -798,18 +949,20 @@ func (q *Queries) ListItemsAsc(ctx context.Context, arg ListItemsAscParams) ([]L
 }
 
 const listRecentItemTimes = `-- name: ListRecentItemTimes :many
-SELECT COALESCE(published_at, fetched_at) AS t
-FROM items
-WHERE feed_id = ?
-ORDER BY COALESCE(published_at, fetched_at) DESC, id DESC
-LIMIT ?
+SELECT COALESCE(i.published_at, i.fetched_at) AS t
+FROM items i
+JOIN item_feeds mf ON mf.item_id = i.id
+WHERE mf.feed_id = ?1
+ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
+LIMIT ?2
 `
 
 type ListRecentItemTimesParams struct {
-	FeedID int64 `json:"feed_id"`
+	FeedID int64 `json:"feedID"`
 	Limit  int64 `json:"limit"`
 }
 
+// A feed's most recent item times (by membership, so a cross-feed item counts).
 func (q *Queries) ListRecentItemTimes(ctx context.Context, arg ListRecentItemTimesParams) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listRecentItemTimes, arg.FeedID, arg.Limit)
 	if err != nil {
@@ -836,8 +989,11 @@ func (q *Queries) ListRecentItemTimes(ctx context.Context, arg ListRecentItemTim
 const markAllItemsRead = `-- name: MarkAllItemsRead :exec
 UPDATE items
 SET read = 1, read_at = ?1
-WHERE items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?2 AND f.is_system = 0)
-  AND (CAST(?3 AS INTEGER) = 0 OR items.feed_id = CAST(?3 AS INTEGER))
+WHERE items.user_id = ?2
+  AND items.id IN (
+    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?2 AND f.is_system = 0
+      AND (CAST(?3 AS INTEGER) = 0 OR mf.feed_id = CAST(?3 AS INTEGER)))
 `
 
 type MarkAllItemsReadParams struct {
@@ -846,6 +1002,9 @@ type MarkAllItemsReadParams struct {
 	FeedID int64          `json:"feedID"`
 }
 
+// Scope by membership so a cross-feed item is marked even on a feed that does
+// not own it. Only the user's non-system feeds count (saved pages are never in
+// the read stream); each item is updated once.
 func (q *Queries) MarkAllItemsRead(ctx context.Context, arg MarkAllItemsReadParams) error {
 	_, err := q.db.ExecContext(ctx, markAllItemsRead, arg.ReadAt, arg.UserID, arg.FeedID)
 	return err
@@ -854,8 +1013,11 @@ func (q *Queries) MarkAllItemsRead(ctx context.Context, arg MarkAllItemsReadPara
 const markAllItemsUnread = `-- name: MarkAllItemsUnread :exec
 UPDATE items
 SET read = 0, read_at = NULL
-WHERE items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?1 AND f.is_system = 0)
-  AND (CAST(?2 AS INTEGER) = 0 OR items.feed_id = CAST(?2 AS INTEGER))
+WHERE items.user_id = ?1
+  AND items.id IN (
+    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND f.is_system = 0
+      AND (CAST(?2 AS INTEGER) = 0 OR mf.feed_id = CAST(?2 AS INTEGER)))
 `
 
 type MarkAllItemsUnreadParams struct {
@@ -863,6 +1025,7 @@ type MarkAllItemsUnreadParams struct {
 	FeedID int64 `json:"feedID"`
 }
 
+// The mirror of MarkAllItemsRead: membership-scoped, non-system feeds only.
 func (q *Queries) MarkAllItemsUnread(ctx context.Context, arg MarkAllItemsUnreadParams) error {
 	_, err := q.db.ExecContext(ctx, markAllItemsUnread, arg.UserID, arg.FeedID)
 	return err
@@ -872,13 +1035,14 @@ const markAuthorItemsAfterRead = `-- name: MarkAuthorItemsAfterRead :exec
 UPDATE items
 SET read = 1, read_at = ?1
 WHERE read = 0
-  AND feed_id IN (
-    SELECT f.id FROM feeds f
+  AND items.id IN (
+    SELECT mf.item_id FROM item_feeds mf
+    JOIN feeds f ON f.id = mf.feed_id
     WHERE f.user_id = ?2
       AND f.author_id = (
         SELECT fa.author_id FROM feeds fa
-        JOIN items ia ON ia.feed_id = fa.id
-        WHERE ia.id = ?3 AND fa.user_id = ?2
+        JOIN item_feeds mfx ON mfx.feed_id = fa.id
+        WHERE mfx.item_id = ?3 AND fa.user_id = ?2
       ))
   AND (COALESCE(items.published_at, items.fetched_at), items.id) <
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
@@ -901,13 +1065,14 @@ const markAuthorItemsBeforeRead = `-- name: MarkAuthorItemsBeforeRead :exec
 UPDATE items
 SET read = 1, read_at = ?1
 WHERE read = 0
-  AND feed_id IN (
-    SELECT f.id FROM feeds f
+  AND items.id IN (
+    SELECT mf.item_id FROM item_feeds mf
+    JOIN feeds f ON f.id = mf.feed_id
     WHERE f.user_id = ?2
       AND f.author_id = (
         SELECT fa.author_id FROM feeds fa
-        JOIN items ia ON ia.feed_id = fa.id
-        WHERE ia.id = ?3 AND fa.user_id = ?2
+        JOIN item_feeds mfx ON mfx.feed_id = fa.id
+        WHERE mfx.item_id = ?3 AND fa.user_id = ?2
       ))
   AND (COALESCE(items.published_at, items.fetched_at), items.id) >
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
@@ -930,8 +1095,10 @@ func (q *Queries) MarkAuthorItemsBeforeRead(ctx context.Context, arg MarkAuthorI
 const markAuthorItemsRead = `-- name: MarkAuthorItemsRead :exec
 UPDATE items
 SET read = 1, read_at = ?1
-WHERE items.feed_id IN (
-    SELECT f.id FROM feeds f
+WHERE items.user_id = ?2
+  AND items.id IN (
+    SELECT mf.item_id FROM item_feeds mf
+    JOIN feeds f ON f.id = mf.feed_id
     WHERE f.user_id = ?2 AND f.author_id = ?3
   )
 `
@@ -942,7 +1109,7 @@ type MarkAuthorItemsReadParams struct {
 	AuthorID int64          `json:"authorID"`
 }
 
-// Mark every item read across all of an author's feeds.
+// Mark every item read across all of an author's feeds (by membership).
 func (q *Queries) MarkAuthorItemsRead(ctx context.Context, arg MarkAuthorItemsReadParams) error {
 	_, err := q.db.ExecContext(ctx, markAuthorItemsRead, arg.ReadAt, arg.UserID, arg.AuthorID)
 	return err
@@ -952,22 +1119,35 @@ const markItemsAfterRead = `-- name: MarkItemsAfterRead :exec
 UPDATE items
 SET read = 1, read_at = ?1
 WHERE read = 0
-  AND feed_id = (SELECT i.feed_id FROM items i WHERE i.id = ?2)
-  AND feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?3)
+  AND items.id IN (
+    SELECT mf.item_id FROM item_feeds mf
+    WHERE mf.feed_id = (CASE WHEN CAST(?2 AS INTEGER) = 0
+                             THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
+                             ELSE CAST(?2 AS INTEGER) END))
+  AND EXISTS (SELECT 1 FROM feeds f WHERE f.id = (CASE WHEN CAST(?2 AS INTEGER) = 0
+                             THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
+                             ELSE CAST(?2 AS INTEGER) END) AND f.user_id = ?4)
   AND (COALESCE(items.published_at, items.fetched_at), items.id) <
-      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?2)
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
 `
 
 type MarkItemsAfterReadParams struct {
 	ReadAt sql.NullString `json:"readAt"`
+	FeedID int64          `json:"feedID"`
 	ItemID int64          `json:"itemID"`
 	UserID int64          `json:"userID"`
 }
 
 // Mark unread items older than itemID (listed below it, newest first) in the
-// same feed as read.
+// same feed page as read. feedID is the page's feed; 0 falls back to the item's
+// owner feed.
 func (q *Queries) MarkItemsAfterRead(ctx context.Context, arg MarkItemsAfterReadParams) error {
-	_, err := q.db.ExecContext(ctx, markItemsAfterRead, arg.ReadAt, arg.ItemID, arg.UserID)
+	_, err := q.db.ExecContext(ctx, markItemsAfterRead,
+		arg.ReadAt,
+		arg.FeedID,
+		arg.ItemID,
+		arg.UserID,
+	)
 	return err
 }
 
@@ -975,22 +1155,35 @@ const markItemsBeforeRead = `-- name: MarkItemsBeforeRead :exec
 UPDATE items
 SET read = 1, read_at = ?1
 WHERE read = 0
-  AND feed_id = (SELECT i.feed_id FROM items i WHERE i.id = ?2)
-  AND feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?3)
+  AND items.id IN (
+    SELECT mf.item_id FROM item_feeds mf
+    WHERE mf.feed_id = (CASE WHEN CAST(?2 AS INTEGER) = 0
+                             THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
+                             ELSE CAST(?2 AS INTEGER) END))
+  AND EXISTS (SELECT 1 FROM feeds f WHERE f.id = (CASE WHEN CAST(?2 AS INTEGER) = 0
+                             THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
+                             ELSE CAST(?2 AS INTEGER) END) AND f.user_id = ?4)
   AND (COALESCE(items.published_at, items.fetched_at), items.id) >
-      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?2)
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
 `
 
 type MarkItemsBeforeReadParams struct {
 	ReadAt sql.NullString `json:"readAt"`
+	FeedID int64          `json:"feedID"`
 	ItemID int64          `json:"itemID"`
 	UserID int64          `json:"userID"`
 }
 
 // Mark unread items newer than itemID (listed above it, newest first) in the
-// same feed as read.
+// same feed page as read. feedID is the page's feed; 0 falls back to the item's
+// owner feed.
 func (q *Queries) MarkItemsBeforeRead(ctx context.Context, arg MarkItemsBeforeReadParams) error {
-	_, err := q.db.ExecContext(ctx, markItemsBeforeRead, arg.ReadAt, arg.ItemID, arg.UserID)
+	_, err := q.db.ExecContext(ctx, markItemsBeforeRead,
+		arg.ReadAt,
+		arg.FeedID,
+		arg.ItemID,
+		arg.UserID,
+	)
 	return err
 }
 
@@ -999,7 +1192,7 @@ UPDATE items
 SET read = 1, read_at = ?1
 WHERE read = 0
   AND COALESCE(items.published_at, items.fetched_at) < ?2
-  AND items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?3)
+  AND items.user_id = ?3
 `
 
 type MarkItemsOlderThanReadParams struct {
@@ -1015,10 +1208,29 @@ func (q *Queries) MarkItemsOlderThanRead(ctx context.Context, arg MarkItemsOlder
 	return q.db.ExecContext(ctx, markItemsOlderThanRead, arg.ReadAt, arg.Cutoff, arg.UserID)
 }
 
+const setItemCrossKey = `-- name: SetItemCrossKey :exec
+UPDATE items
+SET cross_key = ?
+WHERE feed_id = ? AND dedup_key = ?
+`
+
+type SetItemCrossKeyParams struct {
+	CrossKey string `json:"cross_key"`
+	FeedID   int64  `json:"feed_id"`
+	DedupKey string `json:"dedup_key"`
+}
+
+// Adopt a cross-feed identity on an already-stored item (e.g. a row that
+// predates the backfill), within its owning feed.
+func (q *Queries) SetItemCrossKey(ctx context.Context, arg SetItemCrossKeyParams) error {
+	_, err := q.db.ExecContext(ctx, setItemCrossKey, arg.CrossKey, arg.FeedID, arg.DedupKey)
+	return err
+}
+
 const setItemFavorite = `-- name: SetItemFavorite :execresult
 UPDATE items
 SET favorite = ?
-WHERE items.id = ? AND items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?)
+WHERE items.id = ? AND items.user_id = ?
 `
 
 type SetItemFavoriteParams struct {
@@ -1034,7 +1246,7 @@ func (q *Queries) SetItemFavorite(ctx context.Context, arg SetItemFavoriteParams
 const setItemRead = `-- name: SetItemRead :execresult
 UPDATE items
 SET read = ?, read_at = ?
-WHERE items.id = ? AND items.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?)
+WHERE items.id = ? AND items.user_id = ?
 `
 
 type SetItemReadParams struct {
@@ -1053,46 +1265,47 @@ func (q *Queries) SetItemRead(ctx context.Context, arg SetItemReadParams) (sql.R
 	)
 }
 
-const updateItemSnapshot = `-- name: UpdateItemSnapshot :exec
+const updateItemSnapshotByID = `-- name: UpdateItemSnapshotByID :exec
 UPDATE items
 SET summary = ?, categories = ?, image_url = ?, duration_sec = ?
-WHERE feed_id = ? AND dedup_key = ?
+WHERE id = ?
 `
 
-type UpdateItemSnapshotParams struct {
+type UpdateItemSnapshotByIDParams struct {
 	Summary     string         `json:"summary"`
 	Categories  string         `json:"categories"`
 	ImageUrl    sql.NullString `json:"image_url"`
 	DurationSec sql.NullInt64  `json:"duration_sec"`
-	FeedID      int64          `json:"feed_id"`
-	DedupKey    string         `json:"dedup_key"`
+	ID          int64          `json:"id"`
 }
 
 // Refresh the content snapshot of an existing item (summary, categories,
 // thumbnail, duration) on poll. Identity, published_at and read state are left
-// untouched.
-func (q *Queries) UpdateItemSnapshot(ctx context.Context, arg UpdateItemSnapshotParams) error {
-	_, err := q.db.ExecContext(ctx, updateItemSnapshot,
+// untouched. Keyed by id so an item owned by another feed (a cross-feed
+// member) is refreshed correctly.
+func (q *Queries) UpdateItemSnapshotByID(ctx context.Context, arg UpdateItemSnapshotByIDParams) error {
+	_, err := q.db.ExecContext(ctx, updateItemSnapshotByID,
 		arg.Summary,
 		arg.Categories,
 		arg.ImageUrl,
 		arg.DurationSec,
-		arg.FeedID,
-		arg.DedupKey,
+		arg.ID,
 	)
 	return err
 }
 
 const upsertItem = `-- name: UpsertItem :execresult
-INSERT INTO items (feed_id, guid, dedup_key, title, link, summary, categories, image_url, duration_sec, published_at, fetched_at, read, read_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO items (feed_id, user_id, guid, dedup_key, cross_key, title, link, summary, categories, image_url, duration_sec, published_at, fetched_at, read, read_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (feed_id, dedup_key) DO NOTHING
 `
 
 type UpsertItemParams struct {
 	FeedID      int64          `json:"feed_id"`
+	UserID      int64          `json:"user_id"`
 	Guid        string         `json:"guid"`
 	DedupKey    string         `json:"dedup_key"`
+	CrossKey    string         `json:"cross_key"`
 	Title       string         `json:"title"`
 	Link        string         `json:"link"`
 	Summary     string         `json:"summary"`
@@ -1107,11 +1320,14 @@ type UpsertItemParams struct {
 
 // dedup_key is the stable per-feed identity (the plugin's Identity, else the
 // GUID); guid is the display identity and may legitimately change shape.
+// cross_key is the per-user cross-feed identity ("reddit:t3_<id>" or "").
 func (q *Queries) UpsertItem(ctx context.Context, arg UpsertItemParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, upsertItem,
 		arg.FeedID,
+		arg.UserID,
 		arg.Guid,
 		arg.DedupKey,
+		arg.CrossKey,
 		arg.Title,
 		arg.Link,
 		arg.Summary,

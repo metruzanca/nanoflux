@@ -300,7 +300,8 @@ func TestDeleteSaved(t *testing.T) {
 	}
 }
 
-func mustSystemFeedID(t *testing.T, s *Store, userID int64) int64 {	t.Helper()
+func mustSystemFeedID(t *testing.T, s *Store, userID int64) int64 {
+	t.Helper()
 	f, err := s.EnsureSystemFeed(userID)
 	if err != nil {
 		t.Fatalf("EnsureSystemFeed: %v", err)
@@ -383,6 +384,135 @@ func TestItemIdentityDedup(t *testing.T) {
 	items, _ := s.Items.List(u.ID, ItemFilter{FeedID: f.ID, Limit: 10})
 	if len(items) != 2 {
 		t.Fatalf("want 2 items after re-upsert, got %d", len(items))
+	}
+}
+
+// The same reddit post (GUID t3_<id>) seen through two subscriptions is stored
+// once, is a member of both feeds, and shares read/favorite state.
+func TestCrossFeedItemShared(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	subAuthor, _ := s.Authors.Create(u.ID, "r/cats", "", "")
+	userAuthor, _ := s.Authors.Create(u.ID, "sam", "", "")
+	subFeed, _ := s.Feeds.Create(u.ID, subAuthor.ID, "r/cats", "https://www.reddit.com/r/cats.rss", "", "", 900)
+	userFeed, _ := s.Feeds.Create(u.ID, userAuthor.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
+
+	post := Item{
+		GUID: "t3_1abc", Title: "A cat", Link: "https://www.reddit.com/r/cats/comments/1abc/a_cat/",
+		Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now(),
+	}
+	if ins, err := s.Items.Upsert(subFeed.ID, post); err != nil || !ins {
+		t.Fatalf("sub ingest: inserted=%v err=%v", ins, err)
+	}
+	if ins, err := s.Items.Upsert(userFeed.ID, post); err != nil || !ins {
+		t.Fatalf("user ingest should be new to the user feed: inserted=%v err=%v", ins, err)
+	}
+	// Re-ingest through the sub feed is not new (membership exists).
+	if ins, err := s.Items.Upsert(subFeed.ID, post); err != nil || ins {
+		t.Fatalf("re-ingest should not be new: inserted=%v err=%v", ins, err)
+	}
+
+	subItems, _ := s.Items.List(u.ID, ItemFilter{FeedID: subFeed.ID, Limit: 10})
+	userItems, _ := s.Items.List(u.ID, ItemFilter{FeedID: userFeed.ID, Limit: 10})
+	if len(subItems) != 1 || len(userItems) != 1 {
+		t.Fatalf("want one item per feed stream, got sub=%d user=%d", len(subItems), len(userItems))
+	}
+	if subItems[0].ID != userItems[0].ID {
+		t.Fatalf("both streams should show the same row: %d vs %d", subItems[0].ID, userItems[0].ID)
+	}
+
+	// Reading it once is visible through both feeds.
+	if err := s.Items.SetRead(u.ID, subItems[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	userItems, _ = s.Items.List(u.ID, ItemFilter{FeedID: userFeed.ID, Limit: 10})
+	if !userItems[0].Read {
+		t.Fatalf("read state should be shared across feeds")
+	}
+	if n, _ := s.Items.CountUnread(u.ID, userFeed.ID); n != 0 {
+		t.Fatalf("user feed unread count should be 0, got %d", n)
+	}
+}
+
+// Deleting a feed re-homes items it owns that are also members of another feed.
+func TestFeedDeleteRehomesSharedItem(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a1, _ := s.Authors.Create(u.ID, "r/cats", "", "")
+	a2, _ := s.Authors.Create(u.ID, "sam", "", "")
+	subFeed, _ := s.Feeds.Create(u.ID, a1.ID, "r/cats", "https://www.reddit.com/r/cats.rss", "", "", 900)
+	userFeed, _ := s.Feeds.Create(u.ID, a2.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
+
+	post := Item{GUID: "t3_1abc", Title: "A cat", Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now()}
+	s.Items.Upsert(subFeed.ID, post)
+	s.Items.Upsert(userFeed.ID, post)
+
+	if err := s.Feeds.Delete(u.ID, subFeed.ID); err != nil {
+		t.Fatalf("delete sub feed: %v", err)
+	}
+	items, _ := s.Items.List(u.ID, ItemFilter{FeedID: userFeed.ID, Limit: 10})
+	if len(items) != 1 {
+		t.Fatalf("item should survive via the user feed, got %d", len(items))
+	}
+	if items[0].FeedID != userFeed.ID {
+		t.Fatalf("item should be re-homed to the user feed, owner=%d", items[0].FeedID)
+	}
+}
+
+// MergeCrossFeedDuplicates collapses rows that were stored separately before the
+// cross-feed model existed, carrying read state onto the survivor.
+func TestMergeCrossFeedDuplicates(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a1, _ := s.Authors.Create(u.ID, "r/cats", "", "")
+	a2, _ := s.Authors.Create(u.ID, "sam", "", "")
+	subFeed, _ := s.Feeds.Create(u.ID, a1.ID, "r/cats", "https://www.reddit.com/r/cats.rss", "", "", 900)
+	userFeed, _ := s.Feeds.Create(u.ID, a2.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
+
+	// Simulate two pre-existing rows: same reddit post, different owner feeds.
+	// Insert directly so cross_key is not set on the second (as a pre-V38 row).
+	if ins, err := s.Items.Upsert(subFeed.ID, Item{
+		GUID: "t3_old", Title: "Old post", Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now(),
+	}); err != nil || !ins {
+		t.Fatalf("sub ingest: inserted=%v err=%v", ins, err)
+	}
+	oldID, _ := s.Items.ByFeedIdentity(subFeed.ID, "t3_old")
+	if err := s.Items.SetRead(u.ID, oldID, true); err != nil {
+		t.Fatal(err)
+	}
+	// Clear cross_key to emulate the pre-migration shape, then add the twin.
+	if _, err := s.db.Exec(`UPDATE items SET cross_key = '' WHERE id = ?`, oldID); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.db.Exec(`INSERT INTO items (feed_id, user_id, guid, dedup_key, title, fetched_at) VALUES (?, ?, 't3_old', 't3_old', 'Old post', ?)`,
+		userFeed.ID, u.ID, "2026-09-26 00:00:00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	twinID, _ := res.LastInsertId()
+	if _, err := s.db.Exec(`INSERT INTO item_feeds (item_id, feed_id) VALUES (?, ?)`, twinID, userFeed.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := s.Items.MergeCrossFeedDuplicates(false)
+	if err != nil {
+		t.Fatalf("MergeCrossFeedDuplicates: %v", err)
+	}
+	if report.ItemsMerged != 1 {
+		t.Fatalf("merged %d, want 1", report.ItemsMerged)
+	}
+	items, _ := s.Items.List(u.ID, ItemFilter{Limit: 10})
+	if len(items) != 1 {
+		t.Fatalf("want one item after merge, got %d", len(items))
+	}
+	if !items[0].Read {
+		t.Fatalf("read state should carry to the survivor")
+	}
+	// Both feeds still see it (memberships folded).
+	subItems, _ := s.Items.List(u.ID, ItemFilter{FeedID: subFeed.ID, Limit: 10})
+	userItems, _ := s.Items.List(u.ID, ItemFilter{FeedID: userFeed.ID, Limit: 10})
+	if len(subItems) != 1 || len(userItems) != 1 {
+		t.Fatalf("both feeds should see the merged item: sub=%d user=%d", len(subItems), len(userItems))
 	}
 }
 
