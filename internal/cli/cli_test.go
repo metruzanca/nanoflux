@@ -484,35 +484,35 @@ func TestSwapDBCrossDevice(t *testing.T) {
 
 // TestFixRedditURLs asserts the temporary `fix reddit-urls` command reports by
 // default and normalizes every reddit feed URL only with --apply: old./np.
-// hosts, /user/{name}, and both bare user-feed shapes (the ".rss" suffix on the
-// name and the trailing "/.rss" segment).
+// hosts, the /u/ short form, and both bare user-feed shapes (the ".rss" suffix
+// on the name and the trailing "/.rss" segment).
 func TestFixRedditURLs(t *testing.T) {
 	h := newCLI(t)
 	u := createUser(t, h.st, "alice")
 	a, _ := h.st.Authors.Create(u.ID, "spez", "", "")
-	f, err := h.st.Feeds.Create(u.ID, a.ID, "u/spez", "https://reddit.com/u/spez/submitted.rss", "", "", 900)
+	// Model feeds added before the change; rewrite the stored URLs directly so
+	// each uses a different non-canonical shape (Create/Update now canonicalize).
+	setURL := func(id int64, raw string) {
+		t.Helper()
+		if _, err := h.sqldb.Exec("UPDATE feeds SET feed_url = ? WHERE id = ?", raw, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f, err := h.st.Feeds.Create(u.ID, a.ID, "u/spez", "https://reddit.com/user/spez/submitted.rss", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Model feeds added before the change; rewrite the rows directly so each
-	// uses a different non-canonical shape.
-	if err := h.st.Feeds.Update(u.ID, f.ID, a.ID, "u/spez", "https://reddit.com/u/spez.rss", "", "", 900, true, true); err != nil {
-		t.Fatal(err)
-	}
-	g, err := h.st.Feeds.Create(u.ID, a.ID, "u/alice", "https://reddit.com/u/alice/submitted.rss", "", "", 900)
+	setURL(f.ID, "https://reddit.com/u/spez.rss")
+	g, err := h.st.Feeds.Create(u.ID, a.ID, "u/alice", "https://reddit.com/user/alice/submitted.rss", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := h.st.Feeds.Update(u.ID, g.ID, a.ID, "u/alice", "https://reddit.com/u/alice/.rss", "", "", 900, true, true); err != nil {
-		t.Fatal(err)
-	}
-	r, err := h.st.Feeds.Create(u.ID, a.ID, "r/golang", "https://reddit.com/r/golang.rss", "", "", 900)
+	setURL(g.ID, "https://reddit.com/u/alice/.rss")
+	r, err := h.st.Feeds.Create(u.ID, a.ID, "r/golang", "https://www.reddit.com/r/golang.rss", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := h.st.Feeds.Update(u.ID, r.ID, a.ID, "r/golang", "https://old.reddit.com/r/golang/.rss", "", "", 900, true, true); err != nil {
-		t.Fatal(err)
-	}
+	setURL(r.ID, "https://old.reddit.com/r/golang/.rss")
 
 	// Report-only: nothing changes, all feeds are listed.
 	if err := h.exec(t, "fix", "reddit-urls"); err != nil {
@@ -523,7 +523,7 @@ func TestFixRedditURLs(t *testing.T) {
 	}
 	for _, id := range []int64{f.ID, g.ID, r.ID} {
 		got, _ := h.st.Feeds.ByID(u.ID, id)
-		if got.FeedURL == "https://reddit.com" || got.FeedURL == "" {
+		if got.FeedURL == "https://www.reddit.com" || got.FeedURL == "" {
 			t.Fatalf("report mode must not change the feed: %q", got.FeedURL)
 		}
 	}
@@ -533,15 +533,15 @@ func TestFixRedditURLs(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := h.st.Feeds.ByID(u.ID, f.ID)
-	if got.FeedURL != "https://reddit.com/u/spez/submitted.rss" {
+	if got.FeedURL != "https://www.reddit.com/user/spez/submitted.rss" {
 		t.Fatalf("feed url = %q, want /submitted.rss", got.FeedURL)
 	}
 	got, _ = h.st.Feeds.ByID(u.ID, g.ID)
-	if got.FeedURL != "https://reddit.com/u/alice/submitted.rss" {
+	if got.FeedURL != "https://www.reddit.com/user/alice/submitted.rss" {
 		t.Fatalf("feed url = %q, want /submitted.rss", got.FeedURL)
 	}
 	got, _ = h.st.Feeds.ByID(u.ID, r.ID)
-	if got.FeedURL != "https://reddit.com/r/golang/.rss" {
+	if got.FeedURL != "https://www.reddit.com/r/golang/.rss" {
 		t.Fatalf("feed url = %q, want the canonical subreddit feed", got.FeedURL)
 	}
 }

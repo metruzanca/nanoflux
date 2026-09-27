@@ -194,14 +194,14 @@ func TestAPISaveHomeURL(t *testing.T) {
 
 	rr := apiJSON(h, "POST", "/api/save", token, map[string]any{
 		"feed_url": feedSrv.URL,
-		"home_url": "https://www.youtube.com/@ThinkBeforeYouSleepYT",
+		"home_url": "https://www.youtube.com/@GopherHourYT",
 		"author":   map[string]string{"name": "Metru"},
 	})
 	if rr.Code != http.StatusOK {
 		t.Fatalf("save: %d %s", rr.Code, rr.Body.String())
 	}
 	feeds, _ := s.store.Feeds.List(u.ID)
-	if len(feeds) != 1 || feeds[0].HomeURL != "https://www.youtube.com/@ThinkBeforeYouSleepYT" {
+	if len(feeds) != 1 || feeds[0].HomeURL != "https://www.youtube.com/@GopherHourYT" {
 		t.Fatalf("feed home should be the provided page url: %+v", feeds)
 	}
 }
@@ -216,14 +216,14 @@ func TestAPIExtSaveHomeURL(t *testing.T) {
 	// Provided home_url wins.
 	rr := doForm(h, "POST", "/api/ext/save", url.Values{
 		"feed_url": {feedSrv.URL},
-		"home_url": {"https://www.youtube.com/@ThinkBeforeYouSleepYT"},
-		"title":    {"Think Before You Sleep"},
+		"home_url": {"https://www.youtube.com/@GopherHourYT"},
+		"title":    {"Gopher Hour"},
 	}, cookie)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "saved") {
 		t.Fatalf("ext save: %d %s", rr.Code, rr.Body.String())
 	}
 	feeds, _ := s.store.Feeds.List(u.ID)
-	if len(feeds) != 1 || feeds[0].HomeURL != "https://www.youtube.com/@ThinkBeforeYouSleepYT" {
+	if len(feeds) != 1 || feeds[0].HomeURL != "https://www.youtube.com/@GopherHourYT" {
 		t.Fatalf("ext feed home should be the provided page url: %+v", feeds)
 	}
 
@@ -272,13 +272,13 @@ func TestAPIExtSaveRedditDerived(t *testing.T) {
 		t.Fatalf("expected one feed, got %+v", feeds)
 	}
 	f := feeds[0]
-	if f.FeedURL != "https://reddit.com/u/spez/submitted.rss" {
+	if f.FeedURL != "https://www.reddit.com/user/spez/submitted.rss" {
 		t.Errorf("feed url = %q, want the canonical .rss", f.FeedURL)
 	}
 	if f.Title != "u/spez" {
 		t.Errorf("title = %q, want u/spez", f.Title)
 	}
-	if f.HomeURL != "https://reddit.com/u/spez" {
+	if f.HomeURL != "https://www.reddit.com/user/spez" {
 		t.Errorf("home url = %q, want the canonical home", f.HomeURL)
 	}
 	// A user-derived feed auto-creates an author named after the user alone, so

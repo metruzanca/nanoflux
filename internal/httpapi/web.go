@@ -1196,8 +1196,14 @@ func normalizeURL(s string) string {
 // rest of the host's case and any port. Auto-filled urls (the find-author
 // preview form's feed/home fields, new-author prefill) are
 // cleaned through this so "https://www.example.com" shows up as
-// "https://example.com". Returns s unchanged when it can't be parsed.
+// "https://example.com". Reddit is exempt: its canonical shape keeps the www
+// host, which serves a feed without a redirect and so does not spend a request
+// from the host's tight anonymous rate limit. Returns s unchanged when it can't
+// be parsed.
 func stripWWW(s string) string {
+	if discover.IsRedditHost(s) {
+		return s
+	}
 	u, err := url.Parse(s)
 	if err != nil {
 		return s

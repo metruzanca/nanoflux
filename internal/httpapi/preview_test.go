@@ -132,10 +132,10 @@ func TestFeedPreviewRedditDerived(t *testing.T) {
 		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, `value="https://reddit.com/u/spez/submitted.rss"`) {
+	if !strings.Contains(body, `value="https://www.reddit.com/user/spez/submitted.rss"`) {
 		t.Fatalf("preview should prefill the derived .rss feed: %s", body)
 	}
-	if !strings.Contains(body, `value="https://reddit.com/u/spez"`) {
+	if !strings.Contains(body, `value="https://www.reddit.com/user/spez"`) {
 		t.Fatalf("preview should prefill the canonical home url: %s", body)
 	}
 	if !strings.Contains(body, `value="spez"`) {
@@ -441,13 +441,13 @@ func TestYouTubePreviewHandleAndAvatar(t *testing.T) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/feeds/videos.xml"):
 			w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel>
-			  <title>Think Before You Sleep</title>
+			  <title>Gopher Hour</title>
 			  <link>https://www.youtube.com/channel/UCwu</link>
 			  <item><guid>1</guid><title>v</title><link>https://youtu.be/x</link></item>
 			</channel></rss>`))
 		default:
 			w.Header().Set("Content-Type", "text/html")
-			w.Write([]byte(`<html><head><title>Think Before You Sleep</title>
+			w.Write([]byte(`<html><head><title>Gopher Hour</title>
 			  <meta property="og:image" content="https://yt3.googleusercontent.com/abc=s900-c-k-c0x00ffffff-no-rj">
 			  <link rel="shortcut icon" href="https://www.youtube.com/s/desktop/hash/img/favicon.ico">
 			  <link rel="alternate" type="application/rss+xml" href="https://www.youtube.com/feeds/videos.xml?channel_id=UCwu">
@@ -461,13 +461,13 @@ func TestYouTubePreviewHandleAndAvatar(t *testing.T) {
 	s.discoverer = discover.New(client)
 
 	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{
-		"url": {"https://www.youtube.com/@ThinkBeforeYouSleepYT"},
+		"url": {"https://www.youtube.com/@GopherHourYT"},
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, `name="home_url" type="url" value="https://youtube.com/@ThinkBeforeYouSleepYT"`) {
+	if !strings.Contains(body, `name="home_url" type="url" value="https://youtube.com/@GopherHourYT"`) {
 		t.Fatalf("home should be the entered handle url: %s", body)
 	}
 	if !strings.Contains(body, `name="avatar_url" type="url" value="https://yt3.googleusercontent.com/abc=s900-c-k-c0x00ffffff-no-rj"`) {

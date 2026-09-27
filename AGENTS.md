@@ -53,13 +53,17 @@ polling with 429. The app treats this as pacing, not failure:
 - `discover` surfaces the host's fetch error when a rule's probe fails, so
   adding a reddit feed at limit says "rate-limiting requests (HTTP 429)" rather
   than a bare "no feed found".
-- `store.CanonicalFeedURL` rewrites reddit feed URLs on create and via a startup
-  pass: hosts collapse to bare `reddit.com`, `/user/{name}` → `/u/{name}`, and a
-  user's bare feed → `/u/{name}/submitted.rss` (posts only; the bare overview
-  mixes posts and comments). Both bare shapes are normalized: `/u/{name}.rss`
-  and `/u/{name}/.rss`. An explicit `/comments.rss` or `/submitted.rss` is
-  left alone. `discover.Derive` produces the same shapes, so the add-feed form
-  prefills `/submitted.rss` for a user page. The temporary `nanoflux fix
+- `store.CanonicalFeedURL` rewrites reddit feed URLs on create and edit (and via
+  a startup pass): every host collapses to `www.reddit.com`, `/u/{name}` →
+  `/user/{name}`, and a user's bare feed → `/user/{name}/submitted.rss` (posts
+  only; the bare overview mixes posts and comments). Both bare shapes are
+  normalized: `/user/{name}.rss` and `/user/{name}/.rss`. An explicit
+  `/comments.rss` or `/submitted.rss` is left alone. The canonical shape is the
+  one reddit answers **without a redirect** (the `www` host and the `/user/`
+  form); each redirect hop spends a request from reddit's ~1/minute anonymous
+  per-IP budget, and the `/u/` → `/user/` hop was deterministically 429ing every
+  user feed. `discover.Derive` produces the same shapes, and `stripWWW` exempts
+  reddit so the preview form keeps the `www` host. The temporary `nanoflux fix
   reddit-urls` command reports/rewrites every stored reddit feed URL (removed
   before v1.0.0).
 

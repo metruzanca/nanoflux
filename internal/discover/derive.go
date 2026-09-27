@@ -7,9 +7,11 @@ import (
 
 // redditCanonicalOrigin is nanoflux's preferred reddit origin. Reddit serves
 // the same .rss feeds on the bare host (reddit.com redirects to www), so the
-// shorter form is used and kept stable. old./np./m. hosts are rewritten to it:
-// old.reddit.com sends .rss to a login wall.
-const redditCanonicalOrigin = "https://reddit.com"
+// www host is used: it is the one that answers without a redirect, and each
+// redirect hop spends a request from reddit's tight anonymous rate-limit
+// budget. old./np./m. hosts are rewritten to it: old.reddit.com sends .rss to a
+// login wall.
+const redditCanonicalOrigin = "https://www.reddit.com"
 
 // redditHosts are the reddit hostnames whose pages map to a derivable feed.
 var redditHosts = map[string]bool{
@@ -27,14 +29,16 @@ var redditHosts = map[string]bool{
 // It normalizes any reddit host (www./old./np./m.) and both user path forms to
 // the canonical shape, then appends .rss:
 //
-//	/r/{sub}[/...]        -> https://reddit.com/r/{sub}.rss
-//	/user/{name}[/...]    -> https://reddit.com/u/{name}/submitted.rss
-//	/u/{name}[/...]       -> https://reddit.com/u/{name}/submitted.rss
+//	/r/{sub}[/...]        -> https://www.reddit.com/r/{sub}.rss
+//	/user/{name}[/...]    -> https://www.reddit.com/user/{name}/submitted.rss
+//	/u/{name}[/...]       -> https://www.reddit.com/user/{name}/submitted.rss
 //
-// A user's bare overview feed mixes posts and comments; /submitted.rss is
-// posts-only, which is what a reader wants and what keeps the entries' own
-// categories meaningful. An already-.rss URL of those shapes is accepted
-// unchanged (idempotent).
+// The /user/ form (not the /u/ short form) is used because reddit
+// 301-redirects /u/ to /user/, and the extra hop spends a request from the
+// host's tight anonymous rate-limit budget. A user's bare overview feed mixes
+// posts and comments; /submitted.rss is posts-only, which is what a reader
+// wants and what keeps the entries' own categories meaningful. An already-.rss
+// URL of those shapes is accepted unchanged (idempotent).
 //
 // Title is the feed's display name ("r/sub" or "u/name"). AuthorName is the
 // preferred name for a newly created author: "r/sub" for a subreddit (the user
@@ -72,7 +76,7 @@ func Derive(rawurl string) (Candidate, bool) {
 		if name == "" {
 			return Candidate{}, false
 		}
-		home := redditCanonicalOrigin + "/u/" + name
+		home := redditCanonicalOrigin + "/user/" + name
 		return Candidate{
 			FeedURL:    home + "/submitted.rss",
 			Title:      "u/" + name,
