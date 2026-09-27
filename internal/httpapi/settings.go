@@ -126,12 +126,29 @@ type settingsSessionRow struct {
 
 type settingsAvatarData struct {
 	HasAvatar bool
+	Username  string // the fallback initial, shown when there is no picture
 	Error     string
 }
 
 type settingsTimezoneData struct {
 	Timezone string
+	Items    []comboItem // resolvable IANA zones for the picker
 	Error    string
+}
+
+// timezoneItems is the timezone picker's option list: timezoneNames filtered to
+// the zones this build can actually resolve (tzdata present), with a leading
+// "server time" choice. Filtering keeps the picker from offering a zone the
+// handler's time.LoadLocation would reject.
+func timezoneItems() []comboItem {
+	items := []comboItem{{Value: "", Label: "server time"}}
+	for _, name := range timezoneNames {
+		if _, err := time.LoadLocation(name); err != nil {
+			continue
+		}
+		items = append(items, comboItem{Value: name, Label: name})
+	}
+	return items
 }
 
 type settingsThemeData struct {
@@ -152,9 +169,9 @@ type settingsIconRow struct {
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	web.Render(w, r, basePage("settings", u, settingsPage(u, settingsData{
-		settingsAvatarData: settingsAvatarData{HasAvatar: u.HasAvatar},
+		settingsAvatarData: settingsAvatarData{HasAvatar: u.HasAvatar, Username: u.Username},
 		Home:               s.settingsHomeData(u.ID, ""),
-		Timezone:           settingsTimezoneData{Timezone: u.Timezone},
+		Timezone:           settingsTimezoneData{Timezone: u.Timezone, Items: timezoneItems()},
 		Theme:              settingsThemeData{Theme: u.Theme},
 		AutoRead:           settingsAutoReadData{Value: autoReadValue(u.AutoReadAfterDays)},
 		Accent:             settingsAccentData{Accent: u.AccentColor},
@@ -183,7 +200,7 @@ func (s *Server) settingsPassword(w http.ResponseWriter, r *http.Request) {
 		if d.Error != "" {
 			w.WriteHeader(http.StatusBadRequest)
 		}
-		web.Render(w, r, settingsPassword(d))
+		web.Render(w, r, settingsPasswordCard(d))
 	}
 	current := r.FormValue("current_password")
 	newpw := r.FormValue("new_password")
@@ -347,7 +364,7 @@ func (s *Server) settingsTimezone(w http.ResponseWriter, r *http.Request) {
 		if errMsg != "" {
 			w.WriteHeader(http.StatusBadRequest)
 		}
-		web.Render(w, r, settingsTimezone(settingsTimezoneData{Timezone: tz, Error: errMsg}))
+		web.Render(w, r, settingsTimezone(settingsTimezoneData{Timezone: tz, Items: timezoneItems(), Error: errMsg}))
 	}
 	if tz != "" {
 		if _, err := time.LoadLocation(tz); err != nil {
@@ -370,7 +387,7 @@ func (s *Server) settingsAvatar(w http.ResponseWriter, r *http.Request) {
 		if errMsg != "" {
 			w.WriteHeader(http.StatusBadRequest)
 		}
-		web.Render(w, r, settingsAvatar(settingsAvatarData{HasAvatar: hasAvatar, Error: errMsg}))
+		web.Render(w, r, settingsAvatar(settingsAvatarData{HasAvatar: hasAvatar, Username: u.Username, Error: errMsg}))
 	}
 
 	file, _, err := r.FormFile("avatar")

@@ -857,6 +857,53 @@ dialog.palette input:focus { outline: none; }
   line-height: 1;
 }
 
+/* Profile picture editor: the avatar with a pencil badge in its top-right
+   corner. Clicking either opens the (visually hidden) file input; dropping an
+   image on it uploads too. */
+.avatar-edit {
+  position: relative;
+  display: inline-block;
+  width: fit-content;
+  align-self: flex-start; /* don't stretch to full width inside the form */
+  cursor: pointer;
+  line-height: 0;
+}
+.avatar-edit.drop-active .avatar { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.avatar-pencil {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--fg);
+  cursor: pointer;
+  line-height: 1;
+}
+.avatar-pencil:hover { border-color: var(--accent); color: var(--accent); }
+.avatar-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Home-screen pin control: a compact button sitting inline beside the
+   collection picker rather than under it. */
+.pin-row { display: flex; align-items: flex-end; gap: 0.5rem; max-width: 26rem; }
+.pin-row .combo-field { flex: 1; min-width: 0; }
+
 .accent-swatches { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .accent-swatch {
   width: 1.6rem;

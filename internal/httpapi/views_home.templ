@@ -59,10 +59,10 @@ templ settingsHomeCard(d settingsHomeData) {
 			}
 		}
 		if len(d.Collections) > 0 {
-			<form class="stack" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML">
+			<form class="pin-row" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML">
 				<input type="hidden" name="action" value="add"/>
 				@comboSelect("add_collection", firstCollectionValue(d.Collections), "pin a collection", "pick a collection", collectionComboItems(d.Collections), nil)
-				<button type="submit">pin</button>
+				<button type="submit" class="small">pin</button>
 			</form>
 		}
 		if len(d.Rows) > 0 {

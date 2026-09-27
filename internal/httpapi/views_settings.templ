@@ -15,7 +15,6 @@ templ settingsPage(u store.User, d settingsData) {
 	@settingsTheme(d.Theme)
 	@settingsAutoRead(d.AutoRead)
 	@settingsAccent(d.Accent)
-	@settingsPassword(d.Password)
 	@settingsSessions(d.Sessions)
 	@settingsOpml(d.Opml)
 	@settingsExtension(d.Extension)
@@ -40,6 +39,7 @@ templ settingsPage(u store.User, d settingsData) {
 	@settingsMappings(d)
 
 	@settingsShortcuts()
+	@passwordDialog(d.Password)
 	@footer()
 }
 
@@ -70,24 +70,31 @@ templ settingsShortcuts() {
 	</section>
 }
 
+// settingsAvatar shows the profile picture with a pencil badge in its corner.
+// Clicking the badge (or the picture) opens the file picker; picking a file, or
+// dropping one onto the picture, uploads immediately. There is no save button:
+// app.js submits the hidden form on change/drop. The card also carries the
+// "change password" trigger, since the two account actions sit together.
 templ settingsAvatar(d settingsAvatarData) {
 	<section class="card" id="settings-avatar-card">
-		<h2>profile picture</h2>
-		<form class="stack" hx-post="/settings/avatar" hx-target="#settings-avatar-card" hx-swap="outerHTML" enctype="multipart/form-data">
-			<div class="row">
+		<div class="row">
+			<h2>profile</h2>
+			<button type="button" class="link" onclick="document.getElementById('password-dialog').showModal()">change password</button>
+		</div>
+		<form id="avatar-form" class="stack" hx-post="/settings/avatar" hx-target="#settings-avatar-card" hx-swap="outerHTML" enctype="multipart/form-data">
+			<div class="avatar-edit" id="avatar-edit" data-avatar-drop title="click or drop an image to update your picture">
 				if d.HasAvatar {
-					<img class="avatar avatar-lg" src={ templ.URL("/avatar") } alt="profile picture"/>
+					<img class="avatar avatar-lg" id="avatar-img" src={ templ.URL("/avatar") } alt="profile picture"/>
 				} else {
-					<span class="muted">no picture yet</span>
+					<span class="avatar avatar-lg avatar-default" id="avatar-img">{ web.Initial(d.Username) }</span>
 				}
-				<label>upload a picture
-					<input type="file" name="avatar" accept="image/*"/>
-				</label>
+				<button type="button" class="avatar-pencil" aria-label="change profile picture" onclick="document.getElementById('avatar-input').click()">@web.Lucide("pencil")
+</button>
+				<input id="avatar-input" class="avatar-file" type="file" name="avatar" accept="image/*" onchange="submitAvatar(this.form)"/>
 			</div>
 			if d.Error != "" {
 				<div class="error" role="alert">{ d.Error }</div>
 			}
-			<button type="submit">save</button>
 		</form>
 	</section>
 }
@@ -95,15 +102,12 @@ templ settingsAvatar(d settingsAvatarData) {
 templ settingsTimezone(d settingsTimezoneData) {
 	<section class="card" id="settings-timezone-card">
 		<h2>timezone</h2>
-		<p class="muted small">Timestamps render in this timezone. Leave it empty to use the server's time.</p>
-		<form class="stack" hx-post="/settings/timezone" hx-target="#settings-timezone-card" hx-swap="outerHTML">
-			<label>iana timezone name
-				<input type="text" name="timezone" value={ d.Timezone } placeholder="America/New_York" autocomplete="off"/>
-			</label>
+		<p class="muted small">Timestamps render in this timezone. Pick "server time" to use the server's time.</p>
+		<form class="stack" hx-post="/settings/timezone" hx-trigger="change" hx-target="#settings-timezone-card" hx-swap="outerHTML">
+			@comboSelect("timezone", d.Timezone, "timezone", "search timezones", d.Items, nil)
 			if d.Error != "" {
 				<div class="error" role="alert">{ d.Error }</div>
 			}
-			<button type="submit">save</button>
 		</form>
 	</section>
 }
@@ -111,10 +115,9 @@ templ settingsTimezone(d settingsTimezoneData) {
 templ settingsTheme(d settingsThemeData) {
 	<section class="card" id="settings-theme-card">
 		<h2>theme</h2>
-		<p class="muted small">system follows your device's light/dark preference.</p>
-		<form class="stack" hx-post="/settings/theme" hx-target="#settings-theme-card" hx-swap="outerHTML">
+		<p class="muted small">system follows your device's light/dark preference. Applies immediately.</p>
+		<form class="stack" hx-post="/settings/theme" hx-trigger="change" hx-target="#settings-theme-card" hx-swap="outerHTML">
 			@comboSelect("theme", d.Theme, "theme", "select a theme", themeItems, nil)
-			<button type="submit">save</button>
 		</form>
 	</section>
 }
@@ -136,7 +139,7 @@ templ settingsAutoRead(d settingsAutoReadData) {
 templ settingsAccent(d settingsAccentData) {
 	<section class="card" id="settings-accent-card">
 		<h2>accent color</h2>
-		<p class="muted small">Used across the app for links, buttons, and highlights. Presets apply immediately; the picker needs save.</p>
+		<p class="muted small">Used across the app for links, buttons, and highlights. Applies immediately.</p>
 		<form class="stack" hx-post="/settings/accent" hx-target="#settings-accent-card" hx-swap="outerHTML">
 			<div class="accent-swatches" role="list" aria-label="preset accent colors">
 				for _, c := range accentPresets {
@@ -144,19 +147,34 @@ templ settingsAccent(d settingsAccentData) {
 				}
 			</div>
 			<label>custom color
-				<input type="color" name="accent" value={ d.Accent }/>
+				<input type="color" name="accent" value={ d.Accent } onchange="this.form.requestSubmit()"/>
 			</label>
 			if d.Error != "" {
 				<div class="error" role="alert">{ d.Error }</div>
 			}
-			<button type="submit">save</button>
 		</form>
 	</section>
 }
 
-templ settingsPassword(d settingsPasswordData) {
-	<section class="card" id="settings-password-card">
-		<h2>password</h2>
+// passwordDialog is the change-password modal, opened from the profile card.
+// Its body is settingsPasswordCard, which the form swaps in place on
+// error/success so the dialog stays open and the message is visible (htmx's
+// global beforeSwap listener renders 4xx bodies).
+templ passwordDialog(d settingsPasswordData) {
+	<dialog id="password-dialog" class="modal">
+		@settingsPasswordCard(d)
+	</dialog>
+}
+
+// settingsPasswordCard is the dialog's inner content and its own htmx swap
+// target, so a failed or successful change re-renders just this, not the whole
+// (open) dialog.
+templ settingsPasswordCard(d settingsPasswordData) {
+	<div id="settings-password-card">
+		<div class="row">
+			<h2>change password</h2>
+			<button type="button" class="link" title="close" onclick="document.getElementById('password-dialog').close()">@web.Lucide("x")</button>
+		</div>
 		<form class="stack" hx-post="/settings/password" hx-target="#settings-password-card" hx-swap="outerHTML">
 			<label>current password
 				<input name="current_password" type="password" autocomplete="current-password" required/>
@@ -175,7 +193,7 @@ templ settingsPassword(d settingsPasswordData) {
 			}
 			<button type="submit">change password</button>
 		</form>
-	</section>
+	</div>
 }
 
 templ settingsSessions(d settingsSessionsData) {

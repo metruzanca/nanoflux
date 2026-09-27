@@ -45,6 +45,42 @@ document.body.addEventListener('htmx:afterRequest', function (e) {
   }
 });
 
+// submitAvatar submits the profile-picture form as soon as a file is chosen
+// (there is no save button): the <input type=file> onchange calls this, and the
+// drop handler assigns its file to the input then calls it too.
+function submitAvatar(form) {
+  if (form && form.requestSubmit) form.requestSubmit();
+}
+
+// Drag-and-drop onto the avatar: dropping an image sets the file input and
+// uploads it, the same as picking one. Only the first file is used, and only
+// when it is an image (the server re-checks the content type anyway).
+(function () {
+  document.addEventListener('dragover', function (e) {
+    var zone = e.target.closest && e.target.closest('[data-avatar-drop]');
+    if (!zone) return;
+    e.preventDefault();
+    zone.classList.add('drop-active');
+  });
+  document.addEventListener('dragleave', function (e) {
+    var zone = e.target.closest && e.target.closest('[data-avatar-drop]');
+    if (!zone) return;
+    zone.classList.remove('drop-active');
+  });
+  document.addEventListener('drop', function (e) {
+    var zone = e.target.closest && e.target.closest('[data-avatar-drop]');
+    if (!zone) return;
+    e.preventDefault();
+    zone.classList.remove('drop-active');
+    var input = zone.querySelector('input[type="file"]');
+    var files = e.dataTransfer && e.dataTransfer.files;
+    if (!input || !files || !files.length) return;
+    if (!/^image\//.test(files[0].type)) return;
+    input.files = files;
+    submitAvatar(input.form);
+  });
+})();
+
 // Accent color. The server renders --accent inline on <html>; this keeps it
 // in sync when the setting changes via htmx without a full page load.
 function applyAccent(color) {
