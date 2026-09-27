@@ -162,14 +162,14 @@ func TestRunnerSnapshot(t *testing.T) {
 
 	dir := t.TempDir()
 	dest := &LocalDestination{Dir: dir}
-	r := NewRunner(sqldb, Config{Keep: 1}, dest)
+	r := NewRunner(sqldb, Config{Keep: 1, Version: "1.2.3"}, dest)
 	r.now = func() time.Time { return time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC) }
 
 	name, err := r.Snapshot(context.Background())
 	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
-	if name != "nanoflux-20260101-120000.tar.gz" {
+	if name != "nanoflux-20260101-120000-1.2.3.tar.gz" {
 		t.Fatalf("archive name = %q", name)
 	}
 	st := r.Status()
@@ -186,15 +186,23 @@ func TestRunnerSnapshot(t *testing.T) {
 		t.Fatalf("Snapshot 2: %v", err)
 	}
 	snaps, _ := dest.List(context.Background())
-	if len(snaps) != 1 || snaps[0].Name != "nanoflux-20260102-120000.tar.gz" {
+	if len(snaps) != 1 || snaps[0].Name != "nanoflux-20260102-120000-1.2.3.tar.gz" {
 		t.Fatalf("retention failed, have %+v", snaps)
 	}
 }
 
 func TestArchiveName(t *testing.T) {
-	got := ArchiveName(time.Date(2026, 9, 22, 16, 17, 43, 0, time.UTC))
-	if got != "nanoflux-20260922-161743.tar.gz" {
+	tm := time.Date(2026, 9, 22, 16, 17, 43, 0, time.UTC)
+	if got := ArchiveName("1.2.3", tm); got != "nanoflux-20260922-161743-1.2.3.tar.gz" {
 		t.Fatalf("ArchiveName = %q", got)
+	}
+	// An empty version omits the segment; a version with path/space characters
+	// is made filename-safe rather than creating directories.
+	if got := ArchiveName("", tm); got != "nanoflux-20260922-161743.tar.gz" {
+		t.Fatalf("ArchiveName empty = %q", got)
+	}
+	if got := ArchiveName("v1.2.3/rc 1", tm); got != "nanoflux-20260922-161743-v1.2.3_rc_1.tar.gz" {
+		t.Fatalf("ArchiveName sanitized = %q", got)
 	}
 }
 
