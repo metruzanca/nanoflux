@@ -5,6 +5,7 @@ go 1.26.6
 require (
 	github.com/a-h/templ v0.3.1020
 	github.com/charmbracelet/log v1.0.0
+	github.com/hashicorp/go-hclog v0.14.1
 	github.com/hashicorp/go-plugin v1.6.3
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/mmcdole/gofeed v1.4.2
@@ -19,7 +20,6 @@ require (
 require (
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/hashicorp/go-hclog v0.14.1 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/oklog/run v1.0.0 // indirect

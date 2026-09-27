@@ -297,6 +297,21 @@ func buildExamplePlugin(t *testing.T, dir, name string) string {
 	return bin
 }
 
+// TestPluginLoggerQuietByDefault guards the startup log: go-plugin's default
+// logger narrates every handshake step at Trace, so our client must pass a
+// logger that only surfaces errors. A happy path keeps its own "registered
+// external plugin" line and nothing else.
+func TestPluginLoggerQuietByDefault(t *testing.T) {
+	// go-plugin's default is Trace; Error is what we set, so the happy path
+	// stays quiet while a transport error still surfaces.
+	if pluginLogger.IsTrace() || pluginLogger.IsDebug() || pluginLogger.IsInfo() || pluginLogger.IsWarn() {
+		t.Fatal("plugin logger should not emit below Error, or startup narrates every handshake")
+	}
+	if !pluginLogger.IsError() {
+		t.Fatal("plugin logger should still emit Errors")
+	}
+}
+
 // TestLoadExternalEndToEnd builds the example plugin and loads it over gRPC,
 // exercising handshake, version check, dispense, Match, and Fetch through the
 // broker, including the host-mediated HTTP path and the item image the feed
