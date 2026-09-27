@@ -19,11 +19,8 @@ type listsPageData struct {
 }
 
 type listPageData struct {
-	List  store.List
-	Items []store.ItemWithFeed
-	Dir   string
-	More  *loadMoreData
-	Mode  string // saved display mode for "/lists/{id}"
+	List   store.List
+	Scoped scopedItemsData
 }
 
 // sharedListData renders the public, unauthenticated view of a shared list.
@@ -76,17 +73,31 @@ func (s *Server) listPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	asc := itemsAsc(r)
-	items, more, _ := s.store.Lists.ItemList(u.ID, id, 0, pageSize, asc)
-	base := "/lists/" + strconv.FormatInt(id, 10) + "/items?dir=" + dirParam(asc)
 	web.Render(w, r, basePage(l.Name, u, listPage(u, listPageData{
-		List: l, Items: withTZ(u.Timezone, items), Dir: dirParam(asc), More: pageCursor(base, items, more, asc),
-		Mode: s.store.ViewPrefs.Mode(u.ID, "/lists/"+strconv.FormatInt(id, 10)),
+		List:   l,
+		Scoped: s.listScopedItems(u.ID, id, itemsView(r), u.Timezone, itemsAsc(r)),
 	})))
 }
 
+// listScopedItems loads one read/unread item list for a list plus the counts
+// that drive the tabs. Unlike feeds, a list's items keep their added order.
+func (s *Server) listScopedItems(userID, listID int64, view, tz string, asc bool) scopedItemsData {
+	f := store.ListItemFilter{UnreadOnly: view != "read"}
+	items, more, _ := s.store.Lists.ItemList(userID, listID, 0, pageSize, asc, f)
+	unread, _ := s.store.Lists.CountUnread(userID, listID)
+	read, _ := s.store.Lists.CountRead(userID, listID)
+	base := "/lists/" + strconv.FormatInt(listID, 10)
+	itemsBase := base + "/items?view=" + view + "&dir=" + dirParam(asc)
+	return scopedItemsData{
+		Path: base, ItemsPath: base + "/items", View: view, Dir: dirParam(asc),
+		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
+		More: pageCursor(itemsBase, items, more, asc),
+		Mode: s.store.ViewPrefs.Mode(userID, base),
+	}
+}
+
 // listItems serves a "load more" page of a list's items, appended to the
-// existing #items-list.
+// existing #items-list, or the whole scoped fragment when switching tabs.
 func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -94,15 +105,21 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	view := itemsView(r)
 	asc := itemsAsc(r)
-	items, more, err := s.store.Lists.ItemList(u.ID, id, cursorID(r, asc), pageSize, asc)
-	if err != nil {
-		log.Error("list items", "list_id", id, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	if cursor := cursorID(r, asc); cursor > 0 {
+		f := store.ListItemFilter{UnreadOnly: view != "read"}
+		items, more, err := s.store.Lists.ItemList(u.ID, id, cursor, pageSize, asc, f)
+		if err != nil {
+			log.Error("list items", "list_id", id, "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		base := "/lists/" + strconv.FormatInt(id, 10) + "/items?view=" + view + "&dir=" + dirParam(asc)
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more, asc), false))
 		return
 	}
-	base := "/lists/" + strconv.FormatInt(id, 10) + "/items?dir=" + dirParam(asc)
-	web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more, asc), false))
+	web.Render(w, r, ScopedItems(s.listScopedItems(u.ID, id, view, u.Timezone, asc)))
 }
 
 // listEdit renders a list's edit form (rename + delete).

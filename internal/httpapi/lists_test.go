@@ -91,10 +91,33 @@ func TestListsFlow(t *testing.T) {
 		t.Fatal("picker should also have favorited the item")
 	}
 
-	// The list page shows the item.
+	// The list page shows the item. The list defaults to the unread tab, but
+	// opening the item modal earlier marked it read, so the default page is
+	// empty and the item is on the read tab.
 	body = doGet(h, "/lists/"+itoa(listID), cookie).Body.String()
-	if !strings.Contains(body, "Listable post") {
-		t.Fatalf("list page missing item: %s", body)
+	if strings.Contains(body, "Listable post") {
+		t.Fatalf("read item should not appear on the default unread list page: %s", body)
+	}
+
+	// It has unread/read tabs.
+	if !strings.Contains(body, "view=read") || !strings.Contains(body, "unread (0)") ||
+		!strings.Contains(body, "read (1)") {
+		t.Fatalf("list page should render unread/read tabs: %s", body)
+	}
+	unreadTab := doGet(h, "/lists/"+itoa(listID)+"/items?view=unread", cookie).Body.String()
+	if strings.Contains(unreadTab, "Listable post") {
+		t.Fatalf("read item should not appear in the unread tab: %s", unreadTab)
+	}
+	readTab := doGet(h, "/lists/"+itoa(listID)+"/items?view=read", cookie).Body.String()
+	if !strings.Contains(readTab, "Listable post") {
+		t.Fatalf("read item missing from the read tab: %s", readTab)
+	}
+
+	// Marking it unread moves it to the unread tab.
+	doForm(h, "POST", "/items/"+itoa(item.ID)+"/read", url.Values{}, cookie)
+	unreadTab = doGet(h, "/lists/"+itoa(listID)+"/items?view=unread", cookie).Body.String()
+	if !strings.Contains(unreadTab, "Listable post") {
+		t.Fatalf("unread item missing from the unread tab: %s", unreadTab)
 	}
 
 	// Uncheck everything: removes the item from the list and unfavorites it.

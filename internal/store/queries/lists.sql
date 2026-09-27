@@ -82,6 +82,8 @@ JOIN items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID')
+  AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
+  AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('beforeItemID') AS INTEGER) = 0 OR
        (li.created_at, i.id) < (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = sqlc.arg('listID') AND li2.item_id = CAST(sqlc.arg('beforeItemID') AS INTEGER)))
 ORDER BY li.created_at DESC, i.id DESC
@@ -98,10 +100,24 @@ JOIN items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID')
+  AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
+  AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('afterItemID') AS INTEGER) = 0 OR
        (li.created_at, i.id) > (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = sqlc.arg('listID') AND li2.item_id = CAST(sqlc.arg('afterItemID') AS INTEGER)))
 ORDER BY li.created_at ASC, i.id ASC
 LIMIT sqlc.arg('limit');
+
+-- name: CountUnreadItemsInList :one
+SELECT COUNT(*) FROM list_items li
+JOIN items i ON i.id = li.item_id
+JOIN feeds f ON f.id = i.feed_id
+WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID') AND i.read = 0;
+
+-- name: CountReadItemsInList :one
+SELECT COUNT(*) FROM list_items li
+JOIN items i ON i.id = li.item_id
+JOIN feeds f ON f.id = i.feed_id
+WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID') AND i.read = 1;
 
 -- name: ListItemsInListPublic :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,

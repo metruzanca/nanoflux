@@ -193,9 +193,16 @@ func (s *ListStore) ItemListIDs(userID, itemID int64) ([]int64, error) {
 	})
 }
 
+// ListItemFilter narrows a list's items to a read/unread view. The zero value
+// matches every item in the list.
+type ListItemFilter struct {
+	ReadOnly   bool
+	UnreadOnly bool
+}
+
 // ItemList returns one page of a list's items, newest-added first (oldest-added
 // first when ascending). Pass the last returned id as cursor to page further.
-func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending bool) ([]ItemWithFeed, bool, error) {
+func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending bool, f ListItemFilter) ([]ItemWithFeed, bool, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
@@ -204,6 +211,8 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 			ListID:      listID,
 			UserID:      userID,
 			AfterItemID: cursor,
+			Unread:      boolInt(f.UnreadOnly),
+			Read:        boolInt(f.ReadOnly),
 			Limit:       int64(limit) + 1,
 		})
 		if err != nil {
@@ -228,6 +237,8 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 		ListID:       listID,
 		UserID:       userID,
 		BeforeItemID: cursor,
+		Unread:       boolInt(f.UnreadOnly),
+		Read:         boolInt(f.ReadOnly),
 		Limit:        int64(limit) + 1,
 	})
 	if err != nil {
@@ -247,6 +258,24 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 		return nil, false, err
 	}
 	return out, hasMore, nil
+}
+
+// CountUnread returns the number of unread items in a list.
+func (s *ListStore) CountUnread(userID, listID int64) (int, error) {
+	n, err := s.q.CountUnreadItemsInList(context.Background(), sqlcgen.CountUnreadItemsInListParams{
+		ListID: listID,
+		UserID: userID,
+	})
+	return int(n), err
+}
+
+// CountRead returns the number of read items in a list.
+func (s *ListStore) CountRead(userID, listID int64) (int, error) {
+	n, err := s.q.CountReadItemsInList(context.Background(), sqlcgen.CountReadItemsInListParams{
+		ListID: listID,
+		UserID: userID,
+	})
+	return int(n), err
 }
 
 // ItemListPublic returns one page of a shared list's items, for the public
