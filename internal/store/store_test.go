@@ -1324,20 +1324,9 @@ func TestSourceIconStore(t *testing.T) {
 	if err := s.SourceIcons.SetIconKey(u.ID, ic.ID, "icons/1/github.com", db.Now()); err != nil {
 		t.Fatalf("SetIconKey: %v", err)
 	}
-	got, _ = s.SourceIcons.ByID(u.ID, ic.ID)
+	got, _ = s.SourceIcons.ByDomain(u.ID, "github.com")
 	if got.IconKey != "icons/1/github.com" || got.LastFetchedAt == "" {
 		t.Fatalf("cached icon: %+v", got)
-	}
-
-	rows, _ := s.SourceIcons.List(u.ID)
-	if len(rows) != 1 {
-		t.Fatalf("List: %d", len(rows))
-	}
-	if err := s.SourceIcons.Delete(u.ID, ic.ID); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if _, err := s.SourceIcons.ByID(u.ID, ic.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected ErrNotFound after delete, got %v", err)
 	}
 }
 
@@ -1502,7 +1491,7 @@ func TestMigrateLegacyFiles(t *testing.T) {
 	if !got.HasAvatar {
 		t.Fatal("avatar key should be set")
 	}
-	icon, _ := s.SourceIcons.ByID(u.ID, ic.ID)
+	icon, _ := s.SourceIcons.ByDomain(u.ID, "github.com")
 	if icon.IconKey != "icons/1/github.com" {
 		t.Fatalf("icon key = %q", icon.IconKey)
 	}

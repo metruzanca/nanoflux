@@ -63,7 +63,6 @@ is a special list. Dev via `mise`, selfhost via `make`.
   `settings.go:268`).
 - Accent color, 8 presets + picker (`users.accent_color`, `settings.go:306`).
 - Password, sessions, OPML import/export, extension download.
-- Custom source icons (`source_icons`).
 - Keyboard shortcuts (read-only list).
 
 ### Per-feed settings (`GET /feeds/{id}/edit`)

@@ -47,57 +47,6 @@ func (q *Queries) CreateSourceIcon(ctx context.Context, arg CreateSourceIconPara
 	return i, err
 }
 
-const deleteSourceIcon = `-- name: DeleteSourceIcon :exec
-DELETE FROM source_icons
-WHERE id = ? AND user_id = ?
-`
-
-type DeleteSourceIconParams struct {
-	ID     int64 `json:"id"`
-	UserID int64 `json:"user_id"`
-}
-
-func (q *Queries) DeleteSourceIcon(ctx context.Context, arg DeleteSourceIconParams) error {
-	_, err := q.db.ExecContext(ctx, deleteSourceIcon, arg.ID, arg.UserID)
-	return err
-}
-
-const getSourceIcon = `-- name: GetSourceIcon :one
-SELECT id, user_id, domain, icon_url, icon_key, last_fetched_at, created_at
-FROM source_icons
-WHERE id = ? AND user_id = ?
-`
-
-type GetSourceIconParams struct {
-	ID     int64 `json:"id"`
-	UserID int64 `json:"user_id"`
-}
-
-type GetSourceIconRow struct {
-	ID            int64          `json:"id"`
-	UserID        int64          `json:"user_id"`
-	Domain        string         `json:"domain"`
-	IconUrl       string         `json:"icon_url"`
-	IconKey       sql.NullString `json:"icon_key"`
-	LastFetchedAt sql.NullString `json:"last_fetched_at"`
-	CreatedAt     string         `json:"created_at"`
-}
-
-func (q *Queries) GetSourceIcon(ctx context.Context, arg GetSourceIconParams) (GetSourceIconRow, error) {
-	row := q.db.QueryRowContext(ctx, getSourceIcon, arg.ID, arg.UserID)
-	var i GetSourceIconRow
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Domain,
-		&i.IconUrl,
-		&i.IconKey,
-		&i.LastFetchedAt,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getSourceIconByDomain = `-- name: GetSourceIconByDomain :one
 SELECT id, user_id, domain, icon_url, icon_key, last_fetched_at, created_at
 FROM source_icons
@@ -132,54 +81,6 @@ func (q *Queries) GetSourceIconByDomain(ctx context.Context, arg GetSourceIconBy
 		&i.CreatedAt,
 	)
 	return i, err
-}
-
-const listSourceIcons = `-- name: ListSourceIcons :many
-SELECT id, user_id, domain, icon_url, icon_key, last_fetched_at, created_at
-FROM source_icons
-WHERE user_id = ?
-ORDER BY domain
-`
-
-type ListSourceIconsRow struct {
-	ID            int64          `json:"id"`
-	UserID        int64          `json:"user_id"`
-	Domain        string         `json:"domain"`
-	IconUrl       string         `json:"icon_url"`
-	IconKey       sql.NullString `json:"icon_key"`
-	LastFetchedAt sql.NullString `json:"last_fetched_at"`
-	CreatedAt     string         `json:"created_at"`
-}
-
-func (q *Queries) ListSourceIcons(ctx context.Context, userID int64) ([]ListSourceIconsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listSourceIcons, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListSourceIconsRow
-	for rows.Next() {
-		var i ListSourceIconsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.Domain,
-			&i.IconUrl,
-			&i.IconKey,
-			&i.LastFetchedAt,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const setSourceIconKey = `-- name: SetSourceIconKey :exec
