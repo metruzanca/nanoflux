@@ -86,12 +86,16 @@ func runServer() {
 	// by either paces both.
 	cooldown := plugin.NewCooldown()
 	p.SetHostCooler(cooldown)
-	go p.Run(ctx)
 
 	// Load feed plugins (native + external), route fetches through them, and
-	// reconcile stored feeds against the loaded set.
+	// reconcile stored feeds against the loaded set. This must finish before the
+	// poller starts: a feed due at boot would otherwise be fetched through the
+	// generic parser while its plugin was still loading, and a plugin-only feed
+	// would fail to parse and record a spurious "last poll failed".
 	plugins := plugin.Setup(ctx, st, p.Client(), cfg.PluginsDir, cooldown)
 	defer plugins.Close()
+
+	go p.Run(ctx)
 
 	backupRunner := newBackupRunner(ctx, cfg, sqldb)
 	if backupRunner != nil {
