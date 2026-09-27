@@ -25,6 +25,21 @@ templ comboSelect(name, value, label, placeholder string, items []comboItem, att
 	</div>
 }
 
+// switchField is a Vaadin switch paired with a hidden native mirror. The
+// component is not form-associated, so the mirror carries the field name, the
+// "1"/"" value the server reads, and any hx-* attributes (spread from attrs);
+// static/vaadin.js keeps it in sync with the switch's checked state.
+//
+// The label is a string (the component's own label attribute) rather than
+// slotted markup, so it stays a single self-contained control and the mirror
+// never renders as a stray input.
+templ switchField(name, label string, checked bool, attrs templ.Attributes) {
+	<div class="switch-field" data-vaadin="switch">
+		<vaadin-switch label={ label } checked?={ checked }></vaadin-switch>
+		<input type="hidden" data-vaadin-target name={ name } value={ switchValue(checked) } { attrs... }/>
+	</div>
+}
+
 // comboMulti is a multi-select Vaadin combo-box that submits like the checkbox
 // group it replaces. selected-items must hold the item objects (not value
 // strings) so labels resolve, so it is computed from items + the selected
@@ -54,6 +69,15 @@ templ comboChips(removeURL string, values []string, items []comboItem, readonly 
 	<div class="combo combo-chips" data-vaadin="chips" data-remove-url={ removeURL }>
 		<vaadin-multi-select-combo-box auto-expand-horizontally auto-expand-vertically readonly?={ readonly } placeholder="—" items={ comboItemsJSON(items) } selected-items={ comboSelectionJSON(items, values) }></vaadin-multi-select-combo-box>
 	</div>
+}
+
+// switchValue is the hidden mirror's value for a switch: "1" when on, "" when
+// off, matching how the checkbox submitted and how handlers read it.
+func switchValue(checked bool) string {
+	if checked {
+		return "1"
+	}
+	return ""
 }
 
 // comboItemsJSON marshals items for an inline `items` attribute. It cannot fail
