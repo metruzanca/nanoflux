@@ -54,7 +54,7 @@ func TestListStore(t *testing.T) {
 		t.Fatalf("add item2: %v", err)
 	}
 
-	items, more, err := s.Lists.ItemList(u.ID, l.ID, 0, 10, false)
+	items, more, err := s.Lists.ItemList(u.ID, l.ID, 0, 10, false, ListItemFilter{})
 	if err != nil {
 		t.Fatalf("ItemList: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestListStore(t *testing.T) {
 	if err := s.Lists.RemoveItem(u.ID, l.ID, item2.ID); err != nil {
 		t.Fatalf("RemoveItem: %v", err)
 	}
-	items, _, _ = s.Lists.ItemList(u.ID, l.ID, 0, 10, false)
+	items, _, _ = s.Lists.ItemList(u.ID, l.ID, 0, 10, false, ListItemFilter{})
 	if len(items) != 1 || items[0].ID != item1.ID {
 		t.Fatalf("ItemList after remove: %+v", items)
 	}
@@ -135,6 +135,40 @@ func TestListStore(t *testing.T) {
 	}
 }
 
+func TestListItemFilter(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	_, item1 := mustFeedWithItem(t, s, u, "One", "g1")
+	_, item2 := mustFeedWithItem(t, s, u, "Two", "g2")
+
+	l, _ := s.Lists.Create(u.ID, "reading")
+	s.Lists.AddItem(u.ID, l.ID, item1.ID)
+	s.Lists.AddItem(u.ID, l.ID, item2.ID)
+	if err := s.Items.SetRead(u.ID, item1.ID, true); err != nil {
+		t.Fatalf("SetRead: %v", err)
+	}
+
+	unread, _, _ := s.Lists.ItemList(u.ID, l.ID, 0, 10, false, ListItemFilter{UnreadOnly: true})
+	if len(unread) != 1 || unread[0].ID != item2.ID {
+		t.Fatalf("unread filter: %+v", unread)
+	}
+	read, _, _ := s.Lists.ItemList(u.ID, l.ID, 0, 10, false, ListItemFilter{ReadOnly: true})
+	if len(read) != 1 || read[0].ID != item1.ID {
+		t.Fatalf("read filter: %+v", read)
+	}
+	all, _, _ := s.Lists.ItemList(u.ID, l.ID, 0, 10, false, ListItemFilter{})
+	if len(all) != 2 {
+		t.Fatalf("no filter should match both: %+v", all)
+	}
+
+	if n, _ := s.Lists.CountUnread(u.ID, l.ID); n != 1 {
+		t.Fatalf("CountUnread: %d", n)
+	}
+	if n, _ := s.Lists.CountRead(u.ID, l.ID); n != 1 {
+		t.Fatalf("CountRead: %d", n)
+	}
+}
+
 func TestSavePage(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
@@ -178,7 +212,7 @@ func TestSavePage(t *testing.T) {
 	}
 
 	// It appears in the list it was saved to, and in favorites once favorited.
-	items, _, err := s.Lists.ItemList(u.ID, l.ID, 0, 10, false)
+	items, _, err := s.Lists.ItemList(u.ID, l.ID, 0, 10, false, ListItemFilter{})
 	if err != nil || len(items) != 1 || items[0].ID != itemID {
 		t.Fatalf("ItemList: %v %+v", err, items)
 	}

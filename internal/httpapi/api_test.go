@@ -546,7 +546,7 @@ func TestAPIExtSavePage(t *testing.T) {
 	if len(lists) != 1 || lists[0].Name != "watch later" || lists[0].ItemCount != 1 {
 		t.Fatalf("lists after save: %+v", lists)
 	}
-	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false)
+	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false, store.ListItemFilter{})
 	if len(items) != 1 || items[0].Title != "The Article" || !items[0].FeedIsSystem {
 		t.Fatalf("list items after save: %+v", items)
 	}
@@ -619,7 +619,7 @@ func TestSavePageWebFlow(t *testing.T) {
 	if len(lists) != 1 || lists[0].Name != "watch later" || lists[0].ItemCount != 1 {
 		t.Fatalf("lists after save: %+v", lists)
 	}
-	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false)
+	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false, store.ListItemFilter{})
 	if len(items) != 1 || items[0].Title != "The Article" || items[0].Summary != "A good read" {
 		t.Fatalf("list items after save: %+v", items)
 	}
@@ -646,7 +646,7 @@ func TestDeleteSavedPageEndpoint(t *testing.T) {
 		t.Fatalf("save-page: %d %s", rr.Code, rr.Body.String())
 	}
 	lists, _ := s.store.Lists.List(u.ID)
-	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false)
+	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false, store.ListItemFilter{})
 	if len(items) != 1 {
 		t.Fatalf("saved items: %+v", items)
 	}

@@ -41,6 +41,44 @@ func (q *Queries) ClearListShareToken(ctx context.Context, arg ClearListShareTok
 	return err
 }
 
+const countReadItemsInList = `-- name: CountReadItemsInList :one
+SELECT COUNT(*) FROM list_items li
+JOIN items i ON i.id = li.item_id
+JOIN feeds f ON f.id = i.feed_id
+WHERE li.list_id = ?1 AND f.user_id = ?2 AND i.read = 1
+`
+
+type CountReadItemsInListParams struct {
+	ListID int64 `json:"listID"`
+	UserID int64 `json:"userID"`
+}
+
+func (q *Queries) CountReadItemsInList(ctx context.Context, arg CountReadItemsInListParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countReadItemsInList, arg.ListID, arg.UserID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUnreadItemsInList = `-- name: CountUnreadItemsInList :one
+SELECT COUNT(*) FROM list_items li
+JOIN items i ON i.id = li.item_id
+JOIN feeds f ON f.id = i.feed_id
+WHERE li.list_id = ?1 AND f.user_id = ?2 AND i.read = 0
+`
+
+type CountUnreadItemsInListParams struct {
+	ListID int64 `json:"listID"`
+	UserID int64 `json:"userID"`
+}
+
+func (q *Queries) CountUnreadItemsInList(ctx context.Context, arg CountUnreadItemsInListParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUnreadItemsInList, arg.ListID, arg.UserID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createList = `-- name: CreateList :one
 INSERT INTO lists (user_id, name)
 VALUES (?1, ?2)
@@ -241,15 +279,19 @@ JOIN items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE li.list_id = ?1 AND f.user_id = ?2
-  AND (CAST(?3 AS INTEGER) = 0 OR
-       (li.created_at, i.id) < (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = ?1 AND li2.item_id = CAST(?3 AS INTEGER)))
+  AND (CAST(?3 AS INTEGER) = 0 OR i.read = 0)
+  AND (CAST(?4 AS INTEGER) = 0 OR i.read = 1)
+  AND (CAST(?5 AS INTEGER) = 0 OR
+       (li.created_at, i.id) < (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = ?1 AND li2.item_id = CAST(?5 AS INTEGER)))
 ORDER BY li.created_at DESC, i.id DESC
-LIMIT ?4
+LIMIT ?6
 `
 
 type ListItemsInListParams struct {
 	ListID       int64 `json:"listID"`
 	UserID       int64 `json:"userID"`
+	Unread       int64 `json:"unread"`
+	Read         int64 `json:"read"`
 	BeforeItemID int64 `json:"beforeItemID"`
 	Limit        int64 `json:"limit"`
 }
@@ -281,6 +323,8 @@ func (q *Queries) ListItemsInList(ctx context.Context, arg ListItemsInListParams
 	rows, err := q.db.QueryContext(ctx, listItemsInList,
 		arg.ListID,
 		arg.UserID,
+		arg.Unread,
+		arg.Read,
 		arg.BeforeItemID,
 		arg.Limit,
 	)
@@ -337,15 +381,19 @@ JOIN items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE li.list_id = ?1 AND f.user_id = ?2
-  AND (CAST(?3 AS INTEGER) = 0 OR
-       (li.created_at, i.id) > (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = ?1 AND li2.item_id = CAST(?3 AS INTEGER)))
+  AND (CAST(?3 AS INTEGER) = 0 OR i.read = 0)
+  AND (CAST(?4 AS INTEGER) = 0 OR i.read = 1)
+  AND (CAST(?5 AS INTEGER) = 0 OR
+       (li.created_at, i.id) > (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = ?1 AND li2.item_id = CAST(?5 AS INTEGER)))
 ORDER BY li.created_at ASC, i.id ASC
-LIMIT ?4
+LIMIT ?6
 `
 
 type ListItemsInListAscParams struct {
 	ListID      int64 `json:"listID"`
 	UserID      int64 `json:"userID"`
+	Unread      int64 `json:"unread"`
+	Read        int64 `json:"read"`
 	AfterItemID int64 `json:"afterItemID"`
 	Limit       int64 `json:"limit"`
 }
@@ -377,6 +425,8 @@ func (q *Queries) ListItemsInListAsc(ctx context.Context, arg ListItemsInListAsc
 	rows, err := q.db.QueryContext(ctx, listItemsInListAsc,
 		arg.ListID,
 		arg.UserID,
+		arg.Unread,
+		arg.Read,
 		arg.AfterItemID,
 		arg.Limit,
 	)
