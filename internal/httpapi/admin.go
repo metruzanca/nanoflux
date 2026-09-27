@@ -304,7 +304,10 @@ func (s *Server) adminInstanceData(u store.User, ctx context.Context) adminData 
 // adminSetSignup toggles the global signup setting from the instance card.
 func (s *Server) adminSetSignup(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	allow := r.FormValue("allow") == "true"
+	// The signup switch's hidden mirror submits "1" when on (see switchField);
+	// the banner's "disable signups" button posts "false". Accept both.
+	v := r.FormValue("allow")
+	allow := v == "1" || v == "true"
 	if err := s.store.Settings.SetAllowSignup(allow); err != nil {
 		log.Error("admin: set allow_signup", "err", err)
 		writeFormError(w, r, "admin-instance-error", "could not update setting")

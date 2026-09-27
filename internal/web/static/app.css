@@ -1244,13 +1244,6 @@ vaadin-multi-select-combo-box-overlay {
 .plugin-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
 .plugin-card-head strong { font-size: 1rem; }
 .plugin-summary { margin: 0; }
-.plugin-card-foot {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-top: auto;
-}
 
 /* Prose: rendered Markdown (plugin docs today, any long-form body later). The
    measure is capped so lines stay readable even in a wide dialog, and spacing

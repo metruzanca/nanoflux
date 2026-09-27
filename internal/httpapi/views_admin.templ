@@ -38,26 +38,22 @@ templ AdminPluginsCard(rows []adminPluginRow, domains []adminPluginDomain) {
 						<div class="plugin-card-head">
 							<strong>{ r.Name }</strong>
 							<span class="badge">{ r.Kind }</span>
+							<span class="badge" title="plugin API version the plugin reported">api { r.Version }</span>
 							if r.RawNet {
 								<span class="badge warn" title="plugin uses its own HTTP client and surfaces rate limits itself">raw network</span>
 							}
 						</div>
-						if r.Summary != "" {
-							<p class="plugin-summary muted small">{ r.Summary }</p>
-						}
-						<div class="plugin-card-foot">
-							<span class="item-meta muted">
-								api { r.Version }
-								if r.UserAgent != "" {
-									· user-agent: { r.UserAgent }
-								} else {
-									· user-agent: app default
+						if r.Summary != "" || r.HasDocs {
+							<p class="plugin-summary muted small">
+								if r.Summary != "" {
+									{ r.Summary }
 								}
-							</span>
-							if r.HasDocs {
-								<button type="button" class="link" data-plugin={ r.Name } title="read this plugin's documentation" onclick="openPluginDocs(this.dataset.plugin)">docs</button>
-							}
-						</div>
+								if r.HasDocs {
+									{ " " }
+									<a href="#" data-plugin={ r.Name } title="read this plugin's documentation" onclick="openPluginDocs(this.dataset.plugin);return false">read more</a>
+								}
+							</p>
+						}
 					</div>
 				}
 			</div>
@@ -141,35 +137,37 @@ templ AdminInstanceCard(d adminData) {
 			<div class="error banner" role="alert">
 				<strong>signups are open to anyone.</strong> Anyone who can reach this instance can create an account — consider disabling signups.
 				<div class="row">
-					<button class="small" hx-post="/admin/settings/signup" hx-vals='{"allow": "false"}' hx-target="#admin-instance-card" hx-swap="outerHTML">disable signups</button>
+					<button class="small" hx-post="/admin/settings/signup" hx-vals='{"allow": "0"}' hx-target="#admin-instance-card" hx-swap="outerHTML">disable signups</button>
 					<button class="link" hx-post="/admin/settings/signup-banner-dismiss" hx-target="#admin-instance-card" hx-swap="outerHTML">dismiss</button>
 				</div>
 			</div>
 		}
 		<div id="admin-instance-error" class="error"></div>
-		<div class="row">
-			<span>signups</span>
-			<button class="link" hx-post="/admin/settings/signup" hx-vals={ "{\"allow\": " + strconv.FormatBool(!d.AllowSignup) + "}" } hx-target="#admin-instance-card" hx-swap="outerHTML">
-				if d.AllowSignup {
-					enabled
-				} else {
-					disabled
-				}
-			</button>
-		</div>
+		if !d.AllowSignup {
+			<p class="muted small">Registration is closed. Existing accounts can still sign in.</p>
+		}
+		@switchField("allow", "signups", d.AllowSignup, templ.Attributes{
+			"hx-post":   "/admin/settings/signup",
+			"hx-target": "#admin-instance-card",
+			"hx-swap":   "outerHTML",
+			"hx-trigger": "change",
+		})
 	</section>
 }
 
 templ AdminStats(st adminStats) {
-	<div class="row stats" aria-label="instance statistics">
-		<span><strong>{ st.Users }</strong> users</span>
-		<span><strong>{ st.Feeds }</strong> feeds</span>
-		<span><strong>{ st.Authors }</strong> authors</span>
-		<span><strong>{ st.Items }</strong> items</span>
-		<span><strong>{ st.Unread }</strong> unread</span>
-		<span><strong>{ st.Objects }</strong> objects</span>
-		<span><strong>{ st.Storage }</strong> storage</span>
-	</div>
+	<section class="card">
+		<h2>stats</h2>
+		<div class="row stats" aria-label="instance statistics">
+			<span><strong>{ st.Users }</strong> users</span>
+			<span><strong>{ st.Feeds }</strong> feeds</span>
+			<span><strong>{ st.Authors }</strong> authors</span>
+			<span><strong>{ st.Items }</strong> items</span>
+			<span><strong>{ st.Unread }</strong> unread</span>
+			<span><strong>{ st.Objects }</strong> objects</span>
+			<span><strong>{ st.Storage }</strong> storage</span>
+		</div>
+	</section>
 }
 
 templ AdminUserList(rows []adminUserRow) {
