@@ -90,6 +90,25 @@ retry hint). nanoflux treats this as **pacing, not failure**. None of this is
 site-specific: it triggers on the response and the host, so any site that
 behaves this way is handled the same.
 
+Pacing decisions are logged so the behavior can be confirmed from logs alone:
+a rate limit emits `feed rate limited` (Warn) with the host, status,
+`retry_after` and `next_poll_at`; each poll pass emits a `poll cycle` (Info)
+line with `fetched`, `new_items`, `rate_limited`, `paced` and `next_wake`; and
+per-host skip/spacing decisions emit `host cooling, skipping`, `host paced,
+skipping`, `host spaced` and `next wake from paced host` at Debug
+(`NF_LOG_LEVEL=debug`). Plugin-host limits log `plugin rate limited` and
+`plugin request refused: host cooling`, which is the shared cooldown in action.
+
+### Reddit feed URLs are canonicalized
+
+Reddit's anonymous `.rss` sits behind a ~1 request/IP/minute limit, and each
+redirect hop spends one of those requests. `store.CanonicalFeedURL` therefore
+rewrites every stored reddit URL to the shape reddit answers **without a
+redirect**: the `www.reddit.com` host and the `/user/{name}` path. `/u/{name}`
+is rewritten to `/user/{name}` (reddit 301s the short form), and a user's bare
+feed becomes the posts-only `/user/{name}/submitted.rss`. This runs on feed
+create and edit, on a startup pass, and via `nanoflux fix reddit-urls`.
+
 ### Detecting a limit and how long to wait
 
 `feedparse` recognizes `429`, or `503` carrying a retry hint, and derives the
@@ -120,7 +139,8 @@ group). Three rules keep a host from being hammered:
   bursting a single site.
 - **Default spacing.** Even a host that has never rate-limited the poller is
   spaced: after fetching one of its feeds, the next same-host fetch waits
-  `NF_POLL_HOST_SPACING` (default **30 seconds**). This stops a domain with many
+  `NF_POLL_HOST_SPACING` (default **60 seconds**, matching reddit's anonymous
+  per-IP window, the tightest host we know of). This stops a domain with many
   due feeds from firing them all in one cycle, which is what tends to trigger
   the first `429`. A single-feed host is never delayed, and a host's last
   waiting feed is fetched promptly once the window clears. Set the variable to
@@ -262,7 +282,7 @@ backfill.
 | --- | --- | --- |
 | `NF_POLL_INTERVAL` | `15m` | The poller's base wake interval (a ceiling; dynamic wakes can be sooner) |
 | `NF_POLL_WORKERS` | `4` | Concurrent fetches across *distinct hosts*; a single host's feeds are serial |
-| `NF_POLL_HOST_SPACING` | `30s` | Minimum spacing between two fetches to the same host, even before it rate-limits. `0s` disables; floored at 30s by the wake floor |
+| `NF_POLL_HOST_SPACING` | `60s` | Minimum spacing between two fetches to the same host, even before it rate-limits. `0s` disables; floored at 30s by the wake floor |
 | `NF_USER_AGENT` | `nanoflux (<repo URL>)` | Outbound User-Agent for fetching and discovery; set a contact URL for a large instance |
 
 Per-feed interval and adaptive polling are set in the feed edit form, not by env
