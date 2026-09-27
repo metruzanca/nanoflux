@@ -36,47 +36,51 @@ templ topbar(u store.User) {
 		if u.ID != 0 {
 			{{ nc := navCountsFrom(ctx) }}
 			<nav id="top-nav">
-				<form class="top-search" action="/search" method="get" role="search">
-					<input id="search-input" name="q" type="search" placeholder="search…" autocomplete="off"/>
-				</form>
-				<a id="nav-unread" href="/unread">
-					unread
-					if nc.Unread > 0 {
-						<span id="nav-unread-count" class="nav-count">({ nc.Unread })</span>
-					}
-				</a>
-				<a id="nav-authors" href="/authors">
-					authors
-					if nc.AuthorsWithUnread > 0 {
-						<span id="nav-authors-count" class="nav-count">({ nc.AuthorsWithUnread })</span>
-					}
-				</a>
-				<a href="/collections">collections</a>
-				<a href="/lists">lists</a>
-				<div class="add-menu">
-					<button type="button" class="add-primary" data-action="addFeed">+ add feed</button>
-					<button type="button" class="add-caret" id="add-menu-btn" aria-haspopup="true" aria-expanded="false" title="more add actions" onclick="toggleAddMenu(event)">@web.Lucide("chevron-down")</button>
-					<div id="add-menu-pop" class="menu-pop" role="menu" hidden>
-						<button type="button" class="link menu-item" role="menuitem" data-action="savePage">save url for later</button>
-						<button type="button" class="link menu-item" role="menuitem" data-action="addCollection">add collection</button>
-						<button type="button" class="link menu-item" role="menuitem" data-action="addList">add list</button>
-					</div>
+				<div class="top-nav-center">
+					<a id="nav-unread" href="/unread">
+						unread
+						if nc.Unread > 0 {
+							<span id="nav-unread-count" class="nav-count">({ nc.Unread })</span>
+						}
+					</a>
+					<a id="nav-authors" href="/authors">
+						authors
+						if nc.AuthorsWithUnread > 0 {
+							<span id="nav-authors-count" class="nav-count">({ nc.AuthorsWithUnread })</span>
+						}
+					</a>
+					<a href="/collections">collections</a>
+					<a href="/lists">lists</a>
 				</div>
-				<div class="user-menu">
-					<button type="button" id="user-menu-btn" class="avatar-btn" aria-haspopup="true" aria-expanded="false" title={ u.Username } onclick="toggleUserMenu(event)">
-						if u.HasAvatar {
-							<img class="avatar avatar-sm" src={ templ.URL("/avatar") } alt={ u.Username }/>
-						} else {
-							<span class="avatar avatar-sm avatar-default">{ web.Initial(u.Username) }</span>
-						}
-					</button>
+				<div class="top-nav-right">
+					<form class="top-search" action="/search" method="get" role="search">
+						<input id="search-input" name="q" type="search" placeholder="search…" autocomplete="off"/>
+					</form>
+					<div class="add-menu">
+						<button type="button" class="add-primary" data-action="addFeed">+ add feed</button>
+						<button type="button" class="add-caret" id="add-menu-btn" aria-haspopup="true" aria-expanded="false" title="more add actions" onclick="toggleAddMenu(event)">@web.Lucide("chevron-down")</button>
+						<div id="add-menu-pop" class="menu-pop" role="menu" hidden>
+							<button type="button" class="link menu-item" role="menuitem" data-action="savePage">save url for later</button>
+							<button type="button" class="link menu-item" role="menuitem" data-action="addCollection">add collection</button>
+							<button type="button" class="link menu-item" role="menuitem" data-action="addList">add list</button>
+						</div>
+					</div>
+					<div class="user-menu">
+						<button type="button" id="user-menu-btn" class="avatar-btn" aria-haspopup="true" aria-expanded="false" title={ u.Username } onclick="toggleUserMenu(event)">
+							if u.HasAvatar {
+								<img class="avatar avatar-sm" src={ templ.URL("/avatar") } alt={ u.Username }/>
+							} else {
+								<span class="avatar avatar-sm avatar-default">{ web.Initial(u.Username) }</span>
+							}
+						</button>
 <div id="user-menu" class="user-menu-pop" role="menu" hidden>
-						<a href="/read" role="menuitem">history</a>
-						if u.IsAdmin {
-							<a href="/admin" role="menuitem">admin</a>
-						}
-						<a href="/settings" role="menuitem">settings</a>
-						<form action="/logout" method="post"><button class="link menu-item" type="submit">log out</button></form>
+							<a href="/read" role="menuitem">history</a>
+							if u.IsAdmin {
+								<a href="/admin" role="menuitem">admin</a>
+							}
+							<a href="/settings" role="menuitem">settings</a>
+							<form action="/logout" method="post"><button class="link menu-item" type="submit">log out</button></form>
+						</div>
 					</div>
 				</div>
 			</nav>
