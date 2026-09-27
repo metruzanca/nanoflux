@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/feedparse"
@@ -688,6 +691,75 @@ func TestPollOneRateLimitBacksOff(t *testing.T) {
 	if due, _ := st.Feeds.ListDue(db.Now()); len(due) != 0 {
 		t.Fatalf("rate-limited feed should not be due, got %d", len(due))
 	}
+}
+
+// TestPollLogsRateLimitAndCycle asserts the log lines that let an operator
+// confirm pacing from logs alone: a distinct Warn on the rate limit (with the
+// action taken) and a per-cycle summary that counts the limit and the paced
+// host.
+func TestPollLogsRateLimitAndCycle(t *testing.T) {
+	var buf syncBuffer
+	log.SetOutput(&buf)
+	log.SetLevel(log.DebugLevel)
+	t.Cleanup(func() {
+		log.SetOutput(os.Stderr)
+		log.SetLevel(log.InfoLevel)
+	})
+
+	st := newPollerStore(t)
+	u, _ := st.Users.ByUsername("alice")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	srv := rateLimitedServer(t)
+	defer srv.Close()
+
+	// Two feeds on the same host: the first 429s, the second is then paced.
+	st.Feeds.Create(u.ID, a.ID, "R1", srv.URL+"/limited.rss", "", "", 900)
+	st.Feeds.Create(u.ID, a.ID, "R2", srv.URL+"/limited2.rss", "", "", 900)
+
+	p := New(st, time.Minute, 1)
+	if _, _, err := p.pollDue(context.Background()); err != nil {
+		t.Fatalf("pollDue: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "feed rate limited") {
+		t.Errorf("missing distinct rate-limit log line:\n%s", out)
+	}
+	if !strings.Contains(out, "host=127.0.0.1") && !strings.Contains(out, "host=") {
+		t.Errorf("rate-limit log should carry the host:\n%s", out)
+	}
+	if !strings.Contains(out, "next_poll_at=") {
+		t.Errorf("rate-limit log should carry next_poll_at:\n%s", out)
+	}
+	if !strings.Contains(out, "poll cycle") {
+		t.Errorf("missing per-cycle summary:\n%s", out)
+	}
+	if !strings.Contains(out, "rate_limited=1") {
+		t.Errorf("cycle summary should count the rate limit:\n%s", out)
+	}
+	if !strings.Contains(out, "paced=1") {
+		t.Errorf("cycle summary should count the paced feed:\n%s", out)
+	}
+}
+
+// syncBuffer is a goroutine-safe bytes.Buffer for capturing log output written
+// from the poller's worker goroutines.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // A successful poll clears a previously recorded rate-limit backoff.

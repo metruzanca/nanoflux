@@ -36,10 +36,11 @@ const (
 	// defaultHostSpacing is the spacing the poller enforces between two
 	// requests to the same registrable host even when the host has never
 	// rate-limited it. It stops a domain with many due feeds from bursting all
-	// of them in one cycle, which is what tends to trigger the first 429. A
+	// of them in one cycle, which is what tends to trigger the first 429. 60s
+	// matches reddit's anonymous per-IP window, the tightest host we know of. A
 	// learned rate-limit window overrides it when larger. Configured via
 	// NF_POLL_HOST_SPACING; 0 disables the default spacing.
-	defaultHostSpacing = 30 * time.Second
+	defaultHostSpacing = 60 * time.Second
 )
 
 // hostCooler is the rate-limit cooldown the poller consults, satisfied by
@@ -118,6 +119,11 @@ func (p *Poller) Run(ctx context.Context) {
 			log.Error("poll due", "err", err)
 		}
 		delay := wake.Sub(time.Now())
+		// A paced host can pull the next wake in sooner than the base interval;
+		// record why, so logs show the rotation rather than a bare sleep.
+		if !wake.IsZero() && delay > 0 && delay <= p.interval {
+			log.Debug("next wake from paced host", "delay", delay.Round(time.Second), "at", wake.Round(time.Second))
+		}
 		if delay <= 0 || delay > p.interval {
 			delay = p.interval
 		}
@@ -162,11 +168,11 @@ func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
 	groups := groupByHost(feeds)
 
 	var (
-		wg    sync.WaitGroup
-		sem   = make(chan struct{}, p.workers)
-		mu    sync.Mutex
-		total int
-		wake  time.Time // earliest paced-host next-hit across groups
+		wg   sync.WaitGroup
+		sem  = make(chan struct{}, p.workers)
+		mu   sync.Mutex
+		sum  cycleSummary
+		wake time.Time // earliest paced-host next-hit across groups
 	)
 	for _, group := range groups {
 		wg.Add(1)
@@ -174,53 +180,111 @@ func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
 		go func(group []store.Feed) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			n, gWake := p.pollGroup(ctx, group)
+			res := p.pollGroup(ctx, group)
 			mu.Lock()
-			total += n
-			if !gWake.IsZero() && (wake.IsZero() || gWake.Before(wake)) {
-				wake = gWake
+			sum.merge(res)
+			if !res.wake.IsZero() && (wake.IsZero() || res.wake.Before(wake)) {
+				wake = res.wake
 			}
 			mu.Unlock()
 		}(group)
 	}
 	wg.Wait()
-	if total > 0 {
-		log.Info("poller finished", "new_items", total, "feeds", len(feeds), "hosts", len(groups))
-	}
-	return total, wake, nil
+	// One line per cycle, regardless of whether new items arrived, so logs alone
+	// show how many feeds ran, how many were paced, and what the next wake is.
+	log.Info("poll cycle",
+		"feeds", len(feeds),
+		"hosts", len(groups),
+		"fetched", sum.fetched,
+		"new_items", sum.newItems,
+		"rate_limited", sum.rateLimited,
+		"paced", sum.paced,
+		"next_wake", wakeString(wake),
+	)
+	return sum.newItems, wake, nil
+}
+
+// cycleSummary aggregates one poll cycle across host groups for the cycle log.
+type cycleSummary struct {
+	fetched     int // feeds attempted (a rate-limited feed still made a request)
+	newItems    int // new items stored
+	rateLimited int // feeds that returned a rate limit
+	paced       int // feeds skipped because their host was paced
+}
+
+func (s *cycleSummary) merge(o cycleResult) {
+	s.fetched += o.fetched
+	s.newItems += o.newItems
+	s.rateLimited += o.rateLimited
+	s.paced += o.paced
+}
+
+// cycleResult is what one host group contributed to the cycle summary.
+type cycleResult struct {
+	fetched     int
+	newItems    int
+	rateLimited int
+	paced       int
+	wake        time.Time
 }
 
 // pollGroup processes one host's due feeds, oldest-polled first, pacing the host
-// when it has a learned rate-limit window. It returns the new-item count and the
-// earliest time this host may next be hit (zero when it was not paced).
-func (p *Poller) pollGroup(ctx context.Context, group []store.Feed) (int, time.Time) {
+// when it has a learned rate-limit window. It returns this group's contribution
+// to the cycle summary and the earliest time this host may next be hit (zero
+// when it was not paced).
+func (p *Poller) pollGroup(ctx context.Context, group []store.Feed) cycleResult {
 	// Fair rotation: least-recently-polled first, so every feed takes a turn.
 	sort.SliceStable(group, func(i, j int) bool {
 		return group[i].LastPolledAt < group[j].LastPolledAt
 	})
 
 	host := store.RegistrableDomain(group[0].FeedURL)
-	n := 0
+	var res cycleResult
 	for i, f := range group {
 		if ctx.Err() != nil {
-			return n, time.Time{}
+			return res
 		}
 		// A host cooling from a rate limit — learned by the poller or by a
 		// plugin — is not hit; its feeds stay due until the window clears.
 		if p.cool != nil && p.cool.Cooling(f.FeedURL) {
 			if until, ok := p.cool.Until(f.FeedURL); ok {
-				return n, until
+				remaining := len(group) - i
+				res.paced += remaining
+				res.wake = until
+				log.Debug("host cooling, skipping",
+					"host", host, "until", until.Round(time.Second),
+					"remaining_sec", int(time.Until(until).Round(time.Second).Seconds()),
+					"skipped", remaining,
+				)
+				return res
 			}
 		}
 		if host != "" && !p.hostReady(host, time.Now()) {
 			// The host is inside its pacing window: leave the remaining feeds
 			// due and wake when it clears.
-			return n, p.hostNextHitTime(host)
+			until := p.hostNextHitTime(host)
+			remaining := len(group) - i
+			res.paced += remaining
+			res.wake = until
+			log.Debug("host paced, skipping",
+				"host", host, "until", until.Round(time.Second),
+				"remaining_sec", int(time.Until(until).Round(time.Second).Seconds()),
+				"skipped", remaining,
+			)
+			return res
 		}
 		got, err := p.PollOne(ctx, f)
-		n += got
+		res.fetched++
+		res.newItems += got
 		if err != nil {
-			log.Error("poll feed", "feed_id", f.ID, "url", f.FeedURL, "err", err)
+			// A rate limit is already logged distinctly by PollOne; only log
+			// other failures here, and count limits for the cycle summary.
+			var rl *feedparse.RateLimitError
+			if errors.As(err, &rl) {
+				res.rateLimited++
+			} else {
+				log.Error("poll feed", "feed_id", f.ID, "url", f.FeedURL, "err", err)
+			}
 		}
 		// Space the host's next request (learned rate-limit window wins over
 		// the default spacing). Only stop early when another feed is waiting:
@@ -230,11 +294,18 @@ func (p *Poller) pollGroup(ctx context.Context, group []store.Feed) (int, time.T
 			if w := p.effectiveSpacing(host); w > 0 {
 				next := time.Now().Add(w)
 				p.setHostNextHit(host, next)
-				return n, next
+				res.paced += len(group) - i - 1
+				res.wake = next
+				log.Debug("host spaced",
+					"host", host, "spacing", w.Round(time.Second),
+					"until", next.Round(time.Second),
+					"skipped", len(group)-i-1,
+				)
+				return res
 			}
 		}
 	}
-	return n, time.Time{}
+	return res
 }
 
 // effectiveSpacing returns the spacing to enforce before a host's next request:
@@ -337,7 +408,8 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 		if errors.As(err, &rl) {
 			until := time.Now().Add(rl.RetryAfter)
 			p.store.Feeds.SetNextPollAt(f.ID, db.FormatTime(until))
-			if host := store.RegistrableDomain(f.FeedURL); host != "" {
+			host := store.RegistrableDomain(f.FeedURL)
+			if host != "" {
 				p.learnWindow(host, rl.RetryAfter)
 			}
 			// Refuse plugin requests to the same host for the same window.
@@ -345,6 +417,17 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 				p.cool.Cool(f.FeedURL, until)
 			}
 			p.store.Feeds.SetPollMeta(f.ID, "", "", fetched, truncateError(err.Error()))
+			// Rate limiting is pacing, not failure: log it distinctly (Warn,
+			// not Error) with the action taken, so logs alone show that the
+			// host window and shared cooldown were set.
+			log.Warn("feed rate limited",
+				"feed_id", f.ID,
+				"host", host,
+				"url", f.FeedURL,
+				"status", rl.Status,
+				"retry_after", rl.RetryAfter.Round(time.Second),
+				"next_poll_at", db.FormatTime(until),
+			)
 			return 0, err
 		}
 		p.store.Feeds.SetPollMeta(f.ID, "", "", fetched, truncateError(err.Error()))
@@ -519,6 +602,15 @@ func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter
 		}
 	}
 	return newItems, nil
+}
+
+// wakeString renders the earliest paced-host next-hit for a log line, or "" so
+// a cycle with no paced host is unambiguous.
+func wakeString(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 // truncateError caps the stored failure text so a runaway error message can't

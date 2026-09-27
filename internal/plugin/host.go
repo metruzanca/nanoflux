@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/feedparse"
+	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
@@ -60,6 +61,8 @@ func (h *Host) Do(ctx context.Context, req pluginapi.HTTPRequest) (pluginapi.HTT
 	// Refuse to hit a host that is currently cooling from a rate limit. Return it
 	// inline (not as an error) so the signal survives the gRPC boundary.
 	if h.cool != nil && h.cool.Cooling(req.URL) {
+		log.Debug("plugin request refused: host cooling",
+			"plugin", h.name, "host", store.RegistrableDomain(req.URL), "url", req.URL)
 		return pluginapi.HTTPResponse{Status: http.StatusTooManyRequests, RateLimited: true, RetryAfter: time.Minute}, nil
 	}
 
@@ -74,9 +77,16 @@ func (h *Host) Do(ctx context.Context, req pluginapi.HTTPRequest) (pluginapi.HTT
 	}
 	if feedparse.IsRateLimited(resp) {
 		backoff := feedparse.RateLimitBackoff(resp)
+		host := store.RegistrableDomain(req.URL)
 		if h.cool != nil {
 			h.cool.Cool(req.URL, time.Now().Add(backoff))
 		}
+		// Surface the limit at the shared-cooldown chokepoint, so logs show a
+		// plugin limit pacing the same host the poller uses.
+		log.Warn("plugin rate limited",
+			"plugin", h.name, "host", host, "url", req.URL,
+			"status", resp.StatusCode, "backoff", backoff.Round(time.Second),
+		)
 		// The host cools the request host, but still returns the raw response to
 		// the plugin (marked RateLimited) so the plugin may recover from its own
 		// cache. If it cannot, it returns a RateLimit and the feed is parked.
