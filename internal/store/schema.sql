@@ -224,13 +224,3 @@ CREATE TABLE author_links (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_author_links_author ON author_links(author_id);
-
-CREATE TABLE url_mappings (
-    id         INTEGER PRIMARY KEY,
-    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    pattern    TEXT NOT NULL,
-    template   TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(user_id, pattern)
-);
-CREATE INDEX idx_url_mappings_user ON url_mappings(user_id);

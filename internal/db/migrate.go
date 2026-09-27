@@ -49,6 +49,7 @@ var migrations = []migration{
 	{36, schemaV36},
 	{37, schemaV37},
 	{38, schemaV38},
+	{39, schemaV39},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -588,6 +589,14 @@ CREATE TABLE item_feeds (
 );
 CREATE INDEX idx_item_feeds_feed ON item_feeds(feed_id);
 INSERT INTO item_feeds(item_id, feed_id) SELECT id, feed_id FROM items;
+`
+
+// schemaV39 drops url_mappings. Per-user "url pattern -> feed url" transforms
+// are gone: site-specific fetching is handled by plugins, which match URLs in
+// code rather than by a user-authored pattern. schemaV19 still creates the
+// table so an already-migrated database and a fresh one converge.
+const schemaV39 = `
+DROP TABLE IF EXISTS url_mappings;
 `
 
 // Migrate applies any pending migrations in order, recording each in
