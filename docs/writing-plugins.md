@@ -185,6 +185,19 @@ safe to re-run; a pair that only appears after the feed's next poll merges on th
 following run. The repair keys on link + published time, not GUID, so it does not
 matter whether the new identity has been polled yet.
 
+### Media duration (`DurationSec`)
+
+Set `Item.DurationSec` to a media entry's runtime in **seconds** when the site
+reports one (a video's length). The host stores it (as `items.duration_sec`) and
+renders it as a pill on the item card. Leave it `0` when unknown: a live stream,
+a text post, a site that does not expose it. It is part of the item snapshot, so
+a later re-poll can fill it in on an existing row without changing identity or
+read state.
+
+The native YouTube plugin is the reference: its channel RSS carries no duration,
+so it fetches through YouTube's browse API, which returns the runtime alongside
+each entry.
+
 ### Repairing duplicate items
 
 A GUID-scheme change stores the same entry under two rows. The host provides a

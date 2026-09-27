@@ -1,15 +1,16 @@
 -- name: UpsertItem :execresult
 -- dedup_key is the stable per-feed identity (the plugin's Identity, else the
 -- GUID); guid is the display identity and may legitimately change shape.
-INSERT INTO items (feed_id, guid, dedup_key, title, link, summary, categories, image_url, published_at, fetched_at, read, read_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO items (feed_id, guid, dedup_key, title, link, summary, categories, image_url, duration_sec, published_at, fetched_at, read, read_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (feed_id, dedup_key) DO NOTHING;
 
 -- name: UpdateItemSnapshot :exec
 -- Refresh the content snapshot of an existing item (summary, categories,
--- thumbnail) on poll. Identity, published_at and read state are left untouched.
+-- thumbnail, duration) on poll. Identity, published_at and read state are left
+-- untouched.
 UPDATE items
-SET summary = ?, categories = ?, image_url = ?
+SET summary = ?, categories = ?, image_url = ?, duration_sec = ?
 WHERE feed_id = ? AND dedup_key = ?;
 
 -- name: CountItemsMissingYouTubeThumbnail :one
@@ -25,7 +26,7 @@ SET image_url = 'https://i.ytimg.com/vi/' || substr(guid, length('yt:video:') + 
 WHERE image_url IS NULL AND guid LIKE 'yt:video:%';
 
 -- name: ListItems :many
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -51,7 +52,7 @@ ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
 LIMIT sqlc.arg('limit');
 
 -- name: ListItemsAsc :many
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -76,14 +77,14 @@ ORDER BY COALESCE(i.published_at, i.fetched_at) ASC, i.id ASC
 LIMIT sqlc.arg('limit');
 
 -- name: GetItem :one
-SELECT i.id, i.feed_id, i.guid, i.dedup_key, i.title, i.link, i.summary, i.categories, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.dedup_key, i.title, i.link, i.summary, i.categories, i.duration_sec, i.image_url,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
 WHERE i.id = ? AND f.user_id = ?;
 
 -- name: GetItemWithFeed :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -94,7 +95,7 @@ LEFT JOIN authors a ON a.id = f.author_id
 WHERE i.id = ? AND f.user_id = ?;
 
 -- name: GetItemWithFeedAny :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,

@@ -841,8 +841,9 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "bigboxSWE", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "yt:video:H0KAi8AWsnM", Title: "Video",
-		Link:     "https://www.youtube.com/watch?v=H0KAi8AWsnM",
-		ImageURL: "https://i.ytimg.com/vi/H0KAi8AWsnM/hq720.jpg", FetchedAt: db.Now(),
+		Link:        "https://www.youtube.com/watch?v=H0KAi8AWsnM",
+		ImageURL:    "https://i.ytimg.com/vi/H0KAi8AWsnM/hq720.jpg",
+		DurationSec: 5*60 + 41, FetchedAt: db.Now(),
 	})
 	s.store.Items.Upsert(f.ID, store.Item{
 		GUID: "p1", Title: "Post", Link: "https://example.com/1",
@@ -874,6 +875,9 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	}
 	if !strings.Contains(body, `src="https://i.ytimg.com/vi/H0KAi8AWsnM/hq720.jpg"`) {
 		t.Fatalf("video card missing thumbnail: %s", body)
+	}
+	if !strings.Contains(body, `class="thumb-duration"`) || !strings.Contains(body, `>5:41</span>`) {
+		t.Fatalf("video card missing the duration badge: %s", body)
 	}
 	if !strings.Contains(body, `id="item-2" class="text-card"`) {
 		t.Fatalf("text item should render a text-card: %s", body)

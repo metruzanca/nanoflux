@@ -262,7 +262,7 @@ func (q *Queries) GetAuthorItemStats(ctx context.Context, arg GetAuthorItemStats
 }
 
 const getItem = `-- name: GetItem :one
-SELECT i.id, i.feed_id, i.guid, i.dedup_key, i.title, i.link, i.summary, i.categories, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.dedup_key, i.title, i.link, i.summary, i.categories, i.duration_sec, i.image_url,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -286,6 +286,7 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 		&i.Link,
 		&i.Summary,
 		&i.Categories,
+		&i.DurationSec,
 		&i.ImageUrl,
 		&i.PublishedAt,
 		&i.FetchedAt,
@@ -316,7 +317,7 @@ func (q *Queries) GetItemByDedupKey(ctx context.Context, arg GetItemByDedupKeyPa
 }
 
 const getItemWithFeed = `-- name: GetItemWithFeed :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -340,6 +341,7 @@ type GetItemWithFeedRow struct {
 	Link         string         `json:"link"`
 	Summary      string         `json:"summary"`
 	ImageUrl     sql.NullString `json:"image_url"`
+	DurationSec  sql.NullInt64  `json:"duration_sec"`
 	PublishedAt  sql.NullString `json:"published_at"`
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
@@ -364,6 +366,7 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 		&i.Link,
 		&i.Summary,
 		&i.ImageUrl,
+		&i.DurationSec,
 		&i.PublishedAt,
 		&i.FetchedAt,
 		&i.Read,
@@ -380,7 +383,7 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 }
 
 const getItemWithFeedAny = `-- name: GetItemWithFeedAny :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -399,6 +402,7 @@ type GetItemWithFeedAnyRow struct {
 	Link         string         `json:"link"`
 	Summary      string         `json:"summary"`
 	ImageUrl     sql.NullString `json:"image_url"`
+	DurationSec  sql.NullInt64  `json:"duration_sec"`
 	PublishedAt  sql.NullString `json:"published_at"`
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
@@ -423,6 +427,7 @@ func (q *Queries) GetItemWithFeedAny(ctx context.Context, id int64) (GetItemWith
 		&i.Link,
 		&i.Summary,
 		&i.ImageUrl,
+		&i.DurationSec,
 		&i.PublishedAt,
 		&i.FetchedAt,
 		&i.Read,
@@ -549,7 +554,7 @@ func (q *Queries) ListEnclosures(ctx context.Context, itemID int64) ([]ListEnclo
 }
 
 const listItems = `-- name: ListItems :many
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -595,6 +600,7 @@ type ListItemsRow struct {
 	Link         string         `json:"link"`
 	Summary      string         `json:"summary"`
 	ImageUrl     sql.NullString `json:"image_url"`
+	DurationSec  sql.NullInt64  `json:"duration_sec"`
 	PublishedAt  sql.NullString `json:"published_at"`
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
@@ -635,6 +641,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 			&i.Link,
 			&i.Summary,
 			&i.ImageUrl,
+			&i.DurationSec,
 			&i.PublishedAt,
 			&i.FetchedAt,
 			&i.Read,
@@ -661,7 +668,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 }
 
 const listItemsAsc = `-- name: ListItemsAsc :many
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -706,6 +713,7 @@ type ListItemsAscRow struct {
 	Link         string         `json:"link"`
 	Summary      string         `json:"summary"`
 	ImageUrl     sql.NullString `json:"image_url"`
+	DurationSec  sql.NullInt64  `json:"duration_sec"`
 	PublishedAt  sql.NullString `json:"published_at"`
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
@@ -746,6 +754,7 @@ func (q *Queries) ListItemsAsc(ctx context.Context, arg ListItemsAscParams) ([]L
 			&i.Link,
 			&i.Summary,
 			&i.ImageUrl,
+			&i.DurationSec,
 			&i.PublishedAt,
 			&i.FetchedAt,
 			&i.Read,
@@ -1029,25 +1038,28 @@ func (q *Queries) SetItemRead(ctx context.Context, arg SetItemReadParams) (sql.R
 
 const updateItemSnapshot = `-- name: UpdateItemSnapshot :exec
 UPDATE items
-SET summary = ?, categories = ?, image_url = ?
+SET summary = ?, categories = ?, image_url = ?, duration_sec = ?
 WHERE feed_id = ? AND dedup_key = ?
 `
 
 type UpdateItemSnapshotParams struct {
-	Summary    string         `json:"summary"`
-	Categories string         `json:"categories"`
-	ImageUrl   sql.NullString `json:"image_url"`
-	FeedID     int64          `json:"feed_id"`
-	DedupKey   string         `json:"dedup_key"`
+	Summary     string         `json:"summary"`
+	Categories  string         `json:"categories"`
+	ImageUrl    sql.NullString `json:"image_url"`
+	DurationSec sql.NullInt64  `json:"duration_sec"`
+	FeedID      int64          `json:"feed_id"`
+	DedupKey    string         `json:"dedup_key"`
 }
 
 // Refresh the content snapshot of an existing item (summary, categories,
-// thumbnail) on poll. Identity, published_at and read state are left untouched.
+// thumbnail, duration) on poll. Identity, published_at and read state are left
+// untouched.
 func (q *Queries) UpdateItemSnapshot(ctx context.Context, arg UpdateItemSnapshotParams) error {
 	_, err := q.db.ExecContext(ctx, updateItemSnapshot,
 		arg.Summary,
 		arg.Categories,
 		arg.ImageUrl,
+		arg.DurationSec,
 		arg.FeedID,
 		arg.DedupKey,
 	)
@@ -1055,8 +1067,8 @@ func (q *Queries) UpdateItemSnapshot(ctx context.Context, arg UpdateItemSnapshot
 }
 
 const upsertItem = `-- name: UpsertItem :execresult
-INSERT INTO items (feed_id, guid, dedup_key, title, link, summary, categories, image_url, published_at, fetched_at, read, read_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO items (feed_id, guid, dedup_key, title, link, summary, categories, image_url, duration_sec, published_at, fetched_at, read, read_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (feed_id, dedup_key) DO NOTHING
 `
 
@@ -1069,6 +1081,7 @@ type UpsertItemParams struct {
 	Summary     string         `json:"summary"`
 	Categories  string         `json:"categories"`
 	ImageUrl    sql.NullString `json:"image_url"`
+	DurationSec sql.NullInt64  `json:"duration_sec"`
 	PublishedAt sql.NullString `json:"published_at"`
 	FetchedAt   string         `json:"fetched_at"`
 	Read        bool           `json:"read"`
@@ -1087,6 +1100,7 @@ func (q *Queries) UpsertItem(ctx context.Context, arg UpsertItemParams) (sql.Res
 		arg.Summary,
 		arg.Categories,
 		arg.ImageUrl,
+		arg.DurationSec,
 		arg.PublishedAt,
 		arg.FetchedAt,
 		arg.Read,

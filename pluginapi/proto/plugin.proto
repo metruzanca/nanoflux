@@ -91,6 +91,8 @@ message Item {
   // Stable per-feed dedup key. Empty means "use guid". Set it when guid may
   // change shape for the same entry over time.
   string identity = 8;
+  // Media runtime in seconds (a video's length). 0 means unknown.
+  int32 duration_sec = 9;
 }
 
 message Feed {

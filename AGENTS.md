@@ -148,6 +148,27 @@ feed, so lists, favorites, FTS search and share pages all work unchanged.
 - See `docs/fetching.md` (how fetching works) and
   `docs/writing-plugins.md` (author guide).
 
+### The native YouTube plugin
+
+- The plugin fetches a channel's recent videos through YouTube's internal
+  browse API (`youtubei/v1/browse`), not the channel RSS. The RSS carries no
+  video duration; browse returns duration (and views) for every entry in the
+  same request. Browse reports publish times only as relative text ("3 days
+  ago"), which the plugin converts to an absolute UTC timestamp at fetch time,
+  so a stored item never shows a frozen relative date.
+- The plugin derives the browse origin from the feed URL's host, so it talks to
+  the same origin the feed names and a test can point it at a mock host with no
+  env plumbing.
+
+### Item media duration
+
+- `items.duration_sec` (schemaV37) is a media item's runtime in seconds, NULL
+  when unknown. `pluginapi.Item.DurationSec` carries it across native and gRPC
+  plugin boundaries; `store.Item.DurationSec` and `poller.ingest` pass it through.
+- It is part of the upsert snapshot, so re-polling refreshes it on an existing
+  row (`UpdateItemSnapshot`). Cards show it as a bottom-right pill
+  (`web.FormatDuration`); 0/unknown renders nothing.
+
 ### Item identity and dedup
 
 - Items are deduplicated on `(feed_id, dedup_key)` (schemaV35). `dedup_key` is

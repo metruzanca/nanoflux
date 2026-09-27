@@ -82,6 +82,7 @@ func toItem(m sqlcgen.Item) Item {
 		Summary:     m.Summary,
 		Categories:  splitCategories(m.Categories),
 		ImageURL:    m.ImageUrl.String,
+		DurationSec: int(m.DurationSec.Int64),
 		PublishedAt: m.PublishedAt.String,
 		FetchedAt:   m.FetchedAt,
 		Read:        m.Read,
@@ -91,7 +92,8 @@ func toItem(m sqlcgen.Item) Item {
 }
 
 func toItemWithFeed(id, feedID int64, guid, title, link, summary string,
-	imageURL, publishedAt sql.NullString, fetchedAt string, read, favorite bool,
+	imageURL sql.NullString, durationSec sql.NullInt64, publishedAt sql.NullString,
+	fetchedAt string, read, favorite bool,
 	readAt sql.NullString, feedTitle, feedURL string, feedHomeURL sql.NullString,
 	feedIsSystem int64, authorID sql.NullInt64, authorName sql.NullString,
 ) ItemWithFeed {
@@ -104,6 +106,7 @@ func toItemWithFeed(id, feedID int64, guid, title, link, summary string,
 			Link:        link,
 			Summary:     summary,
 			ImageURL:    imageURL.String,
+			DurationSec: int(durationSec.Int64),
 			PublishedAt: publishedAt.String,
 			FetchedAt:   fetchedAt,
 			Read:        read,

@@ -18,12 +18,14 @@ type Item struct {
 	GUID   string
 	// Identity is the stable per-feed dedup key (a plugin's Item.Identity).
 	// Empty means "use GUID". Stored as items.dedup_key.
-	Identity    string
-	Title       string
-	Link        string
-	Summary     string
-	Categories  []string
-	ImageURL    string
+	Identity   string
+	Title      string
+	Link       string
+	Summary    string
+	Categories []string
+	ImageURL   string
+	// DurationSec is a media item's runtime in seconds. 0 means unknown.
+	DurationSec int
 	PublishedAt string
 	FetchedAt   string
 	Read        bool
@@ -121,6 +123,7 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 		Summary:     it.Summary,
 		Categories:  joinCategories(it.Categories),
 		ImageUrl:    ns(it.ImageURL),
+		DurationSec: ni(int64(it.DurationSec)),
 		PublishedAt: ns(it.PublishedAt),
 		FetchedAt:   it.FetchedAt,
 		Read:        it.Read,
@@ -137,11 +140,12 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 		return true, nil
 	}
 	if err := s.q.UpdateItemSnapshot(context.Background(), sqlcgen.UpdateItemSnapshotParams{
-		Summary:    it.Summary,
-		Categories: joinCategories(it.Categories),
-		ImageUrl:   ns(it.ImageURL),
-		FeedID:     feedID,
-		DedupKey:   key,
+		Summary:     it.Summary,
+		Categories:  joinCategories(it.Categories),
+		ImageUrl:    ns(it.ImageURL),
+		DurationSec: ni(int64(it.DurationSec)),
+		FeedID:      feedID,
+		DedupKey:    key,
 	}); err != nil {
 		return false, fmt.Errorf("refresh item snapshot: %w", err)
 	}
@@ -185,7 +189,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 		out := make([]ItemWithFeed, 0, len(rows))
 		for _, r := range rows {
 			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
-				r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 		}
 		return out, hasMore, nil
@@ -211,7 +215,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	out := make([]ItemWithFeed, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
-			r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	return out, hasMore, nil
@@ -258,7 +262,7 @@ func (s *ItemStore) SearchPage(userID int64, query string, f ItemFilter) ([]Item
 	if limit <= 0 {
 		limit = searchPageLimit
 	}
-	const sql = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url,
+	const sql = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -288,12 +292,12 @@ LIMIT ?7`
 	for rows.Next() {
 		var r sqlcgen.ListItemsRow
 		if err := rows.Scan(&r.ID, &r.FeedID, &r.Guid, &r.Title, &r.Link, &r.Summary,
-			&r.ImageUrl, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.ReadAt,
+			&r.ImageUrl, &r.DurationSec, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.ReadAt,
 			&r.FeedTitle, &r.FeedUrl, &r.FeedHomeUrl, &r.FeedIsSystem, &r.AuthorID, &r.AuthorName); err != nil {
 			return nil, false, err
 		}
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary,
-			r.ImageUrl, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	if err := rows.Err(); err != nil {
@@ -457,7 +461,7 @@ func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 		return ItemWithFeed{}, err
 	}
 	return toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary,
-		it.ImageUrl, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
+		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
 		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName), nil
 }
 
@@ -472,7 +476,7 @@ func (s *ItemStore) OneWithFeedAny(itemID int64) (ItemWithFeed, error) {
 		return ItemWithFeed{}, err
 	}
 	return toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary,
-		it.ImageUrl, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
+		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
 		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName), nil
 }
 

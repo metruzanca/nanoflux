@@ -424,6 +424,7 @@ type itemViewData struct {
 	PublishedAt  string
 	Summary      string
 	ImageURL     string
+	DurationSec  int
 	Link         string
 	Body         template.HTML
 	EmbedURL     string
@@ -468,6 +469,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		PublishedAt:  it.PublishedAt,
 		Summary:      it.Summary,
 		ImageURL:     it.ImageURL,
+		DurationSec:  it.DurationSec,
 		Link:         it.Link,
 		Body:         template.HTML(it.Summary),
 		EmbedURL:     web.YoutubeEmbedURL(it.Link),
@@ -572,6 +574,7 @@ func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
 		PublishedAt: it.PublishedAt,
 		Summary:     it.Summary,
 		ImageURL:    it.ImageURL,
+		DurationSec: it.DurationSec,
 		Link:        it.Link,
 		Body:        template.HTML(it.Summary),
 		EmbedURL:    web.YoutubeEmbedURL(it.Link),

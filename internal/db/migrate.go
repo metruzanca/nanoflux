@@ -47,6 +47,7 @@ var migrations = []migration{
 	{34, schemaV34},
 	{35, schemaV35},
 	{36, schemaV36},
+	{37, schemaV37},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -553,6 +554,14 @@ CREATE UNIQUE INDEX idx_items_dedup ON items(feed_id, dedup_key);
 // categories are only read at ingest time.
 const schemaV36 = `
 ALTER TABLE items ADD COLUMN categories TEXT NOT NULL DEFAULT '';
+`
+
+// schemaV37 adds items.duration_sec: a media item's runtime in seconds (a
+// YouTube video's length), denormalized so a card can show it without a
+// view-time lookup. NULL means unknown; the YouTube plugin fills it from the
+// browse API, whose channel RSS carries no duration.
+const schemaV37 = `
+ALTER TABLE items ADD COLUMN duration_sec INTEGER;
 `
 
 // Migrate applies any pending migrations in order, recording each in
