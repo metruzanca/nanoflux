@@ -54,7 +54,6 @@ type settingsData struct {
 	Opml      settingsOpmlData
 	Extension settingsExtensionData
 	Icons     []settingsIconRow
-	Mappings  []settingsMappingRow
 }
 
 // autoReadOption is one radio choice in the auto-read card. Value is the form
@@ -178,7 +177,6 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		Sessions:           s.settingsSessionsData(u, auth.Token(r)),
 		Extension:          settingsExtensionData{ServerURL: requestBaseURL(r)},
 		Icons:              s.settingsIconRows(u.ID, u.Timezone),
-		Mappings:           s.settingsMappingRows(u.ID),
 	})))
 }
 

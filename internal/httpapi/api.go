@@ -156,22 +156,10 @@ func (s *Server) apiDiscover(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url required"})
 		return
 	}
-	// Apply the user's url mappings first; fall back to the original when the
-	// mapped url yields nothing.
-	feedURL := req.URL
-	if mapped, ok := s.mappedFeedURL(u.ID, req.URL); ok {
-		feedURL = mapped
-	}
-	candidates, err := s.discoverer.Discover(r.Context(), feedURL)
+	candidates, err := s.discoverer.Discover(r.Context(), req.URL)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": feedPreviewError(err)})
 		return
-	}
-	if len(candidates) == 0 && feedURL != req.URL {
-		if candidates, err = s.discoverer.Discover(r.Context(), req.URL); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": feedPreviewError(err)})
-			return
-		}
 	}
 	saved := s.savedFeedsFor(u.ID)
 	type apiCandidate struct {

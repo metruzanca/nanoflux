@@ -31,7 +31,6 @@ type Store struct {
 	Filters     *FilterStore
 	Shares      *ShareStore
 	Lists       *ListStore
-	UrlMappings *UrlMappingStore
 	AuthorLinks *AuthorLinkStore
 	ViewPrefs   *ViewPrefStore
 }
@@ -52,7 +51,6 @@ func New(sqldb *sql.DB) *Store {
 		Filters:     &FilterStore{q: q},
 		Shares:      &ShareStore{q: q},
 		Lists:       &ListStore{q: q},
-		UrlMappings: &UrlMappingStore{q: q},
 		AuthorLinks: &AuthorLinkStore{q: q},
 		ViewPrefs:   &ViewPrefStore{q: q},
 	}

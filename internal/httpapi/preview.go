@@ -69,11 +69,6 @@ type noFeedFoundData struct {
 // author + feed form. When the URL yields several feeds, it renders a dropdown
 // first; the chosen feed re-posts here with feed_url set and renders a single
 // form.
-//
-// The user's url mappings are applied first: if a pattern matches the entered
-// url, the mapped feed url is inspected instead and the original url becomes
-// the feed's home page. When the mapped url yields nothing, discovery falls
-// back to the original url so a stale mapping never blocks adding a feed.
 func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	pageURL := normalizeURL(r.FormValue("url"))
@@ -101,7 +96,7 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 		previewTarget = "#author-feed-preview"
 	}
 
-	candidates, err := s.discoverCandidates(r.Context(), u.ID, pageURL)
+	candidates, err := s.discoverCandidates(r.Context(), pageURL)
 	if len(candidates) == 0 {
 		// Surface the underlying failure when there is one (e.g. a rate limit)
 		// so the user can tell "no feed here" from "couldn't check right now".
@@ -133,8 +128,7 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 // previewHome returns the home page to pre-fill for a candidate: a direct or
 // derived feed URL carries its own home (a derived reddit feed's canonical
 // page, not the possibly-old./np. URL the user entered), while a feed found on
-// a page keeps the page the user entered as home (so a stale mapping never
-// changes it).
+// a page keeps the page the user entered as home.
 func previewHome(c discover.Candidate, pageURL string) string {
 	if c.Strategy == "direct" || c.Strategy == "derived" {
 		return c.HomeURL
@@ -215,15 +209,9 @@ func fillCandidate(c discover.Candidate, feedTitle, pageURL string) discover.Can
 	return c
 }
 
-// discoverCandidates resolves the feeds for a page URL: the user's url mappings
-// are applied first (the original url becomes the home page), the direct URL is
-// tried as a feed, then discovery runs, falling back to the original url when a
-// mapping yields nothing so a stale mapping never blocks adding a feed.
-func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL string) ([]discover.Candidate, error) {
-	feedURL := pageURL
-	if mapped, ok := s.mappedFeedURL(userID, pageURL); ok {
-		feedURL = mapped
-	}
+// discoverCandidates resolves the feeds for a page URL: the direct URL is tried
+// as a feed, then discovery runs.
+func (s *Server) discoverCandidates(ctx context.Context, pageURL string) ([]discover.Candidate, error) {
 	// Plugin discovery (native + external) runs first and contributes candidates
 	// with their own preview metadata. It is independent of the generic page
 	// crawl, so a page that cannot be fetched (or a host the plugin knows
@@ -234,7 +222,7 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 	// name/avatar in favour of the page's generic SEO metadata.
 	var pluginCandidates []discover.Candidate
 	if s.plugins != nil && !s.plugins.Empty() {
-		if pcs := s.plugins.Discover(ctx, feedURL, s.pluginHosts.For); len(pcs) > 0 {
+		if pcs := s.plugins.Discover(ctx, pageURL, s.pluginHosts.For); len(pcs) > 0 {
 			pluginCandidates = toDiscoverCandidates(pcs)
 		}
 	}
@@ -242,7 +230,7 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 	// Hosts with a known, fixed feed shape are derived without a request. Reddit
 	// is the case that matters: probing its .rss would spend the host's tight
 	// anonymous rate limit on discovery, so the candidate is built from the URL.
-	if c, ok := discover.Derive(feedURL); ok {
+	if c, ok := discover.Derive(pageURL); ok {
 		return []discover.Candidate{c}, nil
 	}
 
@@ -250,39 +238,30 @@ func (s *Server) discoverCandidates(ctx context.Context, userID int64, pageURL s
 	// The URL itself may already be a feed; if so we can also derive the home page.
 	// Remember the fetch error so a rate limit / server error can be surfaced
 	// when discovery ultimately finds nothing.
-	if res, err := feedparse.Fetch(ctx, feedURL, s.client, "", ""); err == nil {
+	if res, err := feedparse.Fetch(ctx, pageURL, s.client, "", ""); err == nil {
 		// When a plugin both serves the URL as a feed and describes it, its
 		// preview metadata wins over the generic page metadata the direct
 		// branch would otherwise fall back to.
-		if pc := candidateForURL(pluginCandidates, feedURL); pc != nil {
+		if pc := candidateForURL(pluginCandidates, pageURL); pc != nil {
 			return []discover.Candidate{fillCandidate(*pc, res.Feed.Title, pageURL)}, nil
 		}
 		home := res.Feed.HomeURL
-		if home == "" || feedURL != pageURL {
+		if home == "" {
 			home = pageURL
 		}
-		return []discover.Candidate{{FeedURL: feedURL, Title: res.Feed.Title, HomeURL: home, Strategy: "direct"}}, nil
+		return []discover.Candidate{{FeedURL: pageURL, Title: res.Feed.Title, HomeURL: home, Strategy: "direct"}}, nil
 	} else {
 		directErr = err
 	}
 
-	candidates, err := s.discoverer.Discover(ctx, feedURL)
+	candidates, err := s.discoverer.Discover(ctx, pageURL)
 	if err != nil {
 		log.Error("feed preview discover", "err", err)
-		if feedURL == pageURL && len(pluginCandidates) == 0 {
+		if len(pluginCandidates) == 0 {
 			return nil, err
 		}
 	}
 	candidates = mergeCandidates(pluginCandidates, candidates)
-	if len(candidates) == 0 && feedURL != pageURL {
-		// A mapping transformed the url but its feed is gone or the page is
-		// not a feed; fall back to the original input.
-		candidates, err = s.discoverer.Discover(ctx, pageURL)
-		if err != nil {
-			log.Error("feed preview discover fallback", "err", err)
-			return nil, err
-		}
-	}
 	if len(candidates) == 0 {
 		// Nothing found: prefer Discover's error, else the direct-fetch one.
 		// Only a real fetch error (an HTTP status) is worth surfacing — a plain
