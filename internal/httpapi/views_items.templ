@@ -314,7 +314,7 @@ templ scopedItemsInner(d scopedItemsData) {
 		}
 	</div>
 	if d.View == "feeds" {
-		@CollectionFeedCards(d.Feeds)
+		@CollectionFeedCards(d.Feeds, false)
 	} else {
 		@ItemsListPage(d.Items, d.More, d.HideAuthor, d.Mode)
 	}

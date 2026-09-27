@@ -164,19 +164,22 @@ templ collectionEditPage(u store.User, d collectionData) {
 // CollectionFeedCards lists a collection's feeds as cards for the collection
 // page's "feeds" tab. Each card names the feed's author and shows its unread
 // count, so a collection's sources can be scanned without opening each feed.
-templ CollectionFeedCards(rows []feedRow) {
+// showEdit adds a per-card edit link to the feed's edit page. The collection
+// feeds tab keeps it off; the author edit page turns it on so a user who opened
+// author edit meaning to edit a feed can get there in one click.
+templ CollectionFeedCards(rows []feedRow, showEdit bool) {
 	if len(rows) == 0 {
 		<p class="muted">no feeds in this collection</p>
 		return
 	}
 	<ul class="plain" id="collection-feeds-list">
 		for _, r := range rows {
-			@CollectionFeedCard(r)
+			@CollectionFeedCard(r, showEdit)
 		}
 	</ul>
 }
 
-templ CollectionFeedCard(r feedRow) {
+templ CollectionFeedCard(r feedRow, showEdit bool) {
 	<li id={ "collection-feed-" + strconv.FormatInt(r.ID, 10) }>
 		<div class="card">
 			<div class="row">
@@ -188,6 +191,11 @@ templ CollectionFeedCard(r feedRow) {
 						</strong>
 					</a>
 				</div>
+				if showEdit {
+					<div class="row-actions">
+						<a class="small" title="edit" href={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit" }>@web.EditIcon()</a>
+					</div>
+				}
 			</div>
 			<div class="item-meta">
 				if r.AuthorName != "" {

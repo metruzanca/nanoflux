@@ -76,6 +76,12 @@ templ authorEditPage(u store.User, d authorsData) {
 			<button type="submit" class="danger">delete</button>
 		</form>
 	</section>
+	if len(d.Feeds) > 0 {
+		<div class="author-feeds">
+			<h2>feeds</h2>
+			@CollectionFeedCards(d.Feeds, true)
+		</div>
+	}
 }
 
 // authorAvatarFields renders the avatar section inside the edit form: the
