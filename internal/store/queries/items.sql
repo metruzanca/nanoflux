@@ -275,6 +275,10 @@ WHERE f.user_id = ? AND i.read = 0 AND f.author_id = ?;
 SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
 WHERE f.user_id = ? AND i.read = 1 AND f.author_id = ?;
 
+-- name: CountFavoriteItemsByAuthor :one
+SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
+WHERE f.user_id = ? AND i.favorite = 1 AND f.author_id = ?;
+
 -- name: CountUnreadItemsByCollection :one
 SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
 WHERE f.user_id = ? AND i.read = 0

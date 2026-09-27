@@ -1087,6 +1087,44 @@ func TestFavoritesPage(t *testing.T) {
 	}
 }
 
+func TestAuthorFavoritesTab(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Fav", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "Plain", Link: "https://b.dev/2", FetchedAt: db.Now()})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	var favID int64
+	for _, it := range items {
+		if it.Link == "https://b.dev/1" {
+			favID = it.ID
+		}
+	}
+	if favID == 0 {
+		t.Fatal("test item not found")
+	}
+	s.store.Items.SetFavorite(u.ID, favID, true)
+
+	// The author page shows a favorites tab with the count.
+	page := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if !strings.Contains(page, "favorites (1)") {
+		t.Fatalf("author page should show a favorites tab: %s", page)
+	}
+
+	// The tab fragment lists only favorited items.
+	body := doGet(h, "/authors/"+itoa(a.ID)+"/items?view=favorites", cookie).Body.String()
+	if !strings.Contains(body, `data-item-link="https://b.dev/1"`) {
+		t.Fatalf("favorited item missing from author favorites: %s", body)
+	}
+	if strings.Contains(body, `data-item-link="https://b.dev/2"`) {
+		t.Fatalf("unfavorited item should not appear in author favorites: %s", body)
+	}
+}
+
 func TestItemView(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

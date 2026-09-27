@@ -63,6 +63,23 @@ func (q *Queries) CountFavoriteItems(ctx context.Context, arg CountFavoriteItems
 	return count, err
 }
 
+const countFavoriteItemsByAuthor = `-- name: CountFavoriteItemsByAuthor :one
+SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id
+WHERE f.user_id = ? AND i.favorite = 1 AND f.author_id = ?
+`
+
+type CountFavoriteItemsByAuthorParams struct {
+	UserID   int64 `json:"user_id"`
+	AuthorID int64 `json:"author_id"`
+}
+
+func (q *Queries) CountFavoriteItemsByAuthor(ctx context.Context, arg CountFavoriteItemsByAuthorParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countFavoriteItemsByAuthor, arg.UserID, arg.AuthorID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countItemsMissingYouTubeThumbnail = `-- name: CountItemsMissingYouTubeThumbnail :one
 SELECT COUNT(*) FROM items
 WHERE image_url IS NULL AND guid LIKE 'yt:video:%'

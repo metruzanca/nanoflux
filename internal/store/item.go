@@ -651,6 +651,15 @@ func (s *ItemStore) CountReadAuthor(userID, authorID int64) (int, error) {
 	return int(n), err
 }
 
+// CountFavoritesAuthor counts favorited items across an author's feeds.
+func (s *ItemStore) CountFavoritesAuthor(userID, authorID int64) (int, error) {
+	n, err := s.q.CountFavoriteItemsByAuthor(context.Background(), sqlcgen.CountFavoriteItemsByAuthorParams{
+		UserID:   userID,
+		AuthorID: authorID,
+	})
+	return int(n), err
+}
+
 // CountUnreadCollection counts unread items across a collection's feeds.
 func (s *ItemStore) CountUnreadCollection(userID, collectionID int64) (int, error) {
 	n, err := s.q.CountUnreadItemsByCollection(context.Background(), sqlcgen.CountUnreadItemsByCollectionParams{
