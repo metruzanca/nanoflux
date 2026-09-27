@@ -1,4 +1,4 @@
-// Package filestore stores blobs (avatars, custom icons) in S3-compatible
+// Package filestore stores blobs (avatars, feed icons) in S3-compatible
 // object storage. When no S3 endpoint is configured it defaults to a local
 // SeaweedFS S3 gateway (http://localhost:8333), which runs in Allow-All mode
 // without credentials.

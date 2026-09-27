@@ -10,7 +10,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 )
 
-// SourceIcon is a user-configured brand icon for a domain. The icon bytes live
+// SourceIcon is an auto-fetched brand icon for a domain. The icon bytes live
 // in object storage; IconKey points at them.
 type SourceIcon struct {
 	ID            int64
@@ -24,37 +24,12 @@ type SourceIcon struct {
 
 type SourceIconStore struct{ q *sqlcgen.Queries }
 
-// List returns the user's custom source icons.
-func (s *SourceIconStore) List(userID int64) ([]SourceIcon, error) {
-	rows, err := s.q.ListSourceIcons(context.Background(), userID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]SourceIcon, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, toSourceIcon(r.ID, r.UserID, r.Domain, r.IconUrl, r.IconKey, r.LastFetchedAt, r.CreatedAt))
-	}
-	return out, nil
-}
-
 // ByDomain returns the user's icon for a domain, or ErrNotFound.
 func (s *SourceIconStore) ByDomain(userID int64, domain string) (SourceIcon, error) {
 	ic, err := s.q.GetSourceIconByDomain(context.Background(), sqlcgen.GetSourceIconByDomainParams{
 		UserID: userID,
 		Domain: domain,
 	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return SourceIcon{}, ErrNotFound
-	}
-	if err != nil {
-		return SourceIcon{}, err
-	}
-	return toSourceIcon(ic.ID, ic.UserID, ic.Domain, ic.IconUrl, ic.IconKey, ic.LastFetchedAt, ic.CreatedAt), nil
-}
-
-// ByID returns a user's icon by id, scoped to the user.
-func (s *SourceIconStore) ByID(userID, id int64) (SourceIcon, error) {
-	ic, err := s.q.GetSourceIcon(context.Background(), sqlcgen.GetSourceIconParams{ID: id, UserID: userID})
 	if errors.Is(err, sql.ErrNoRows) {
 		return SourceIcon{}, ErrNotFound
 	}
@@ -89,11 +64,6 @@ func (s *SourceIconStore) SetIconKey(userID, id int64, key, fetchedAt string) er
 		ID:            id,
 		UserID:        userID,
 	})
-}
-
-// Delete removes a user's icon mapping.
-func (s *SourceIconStore) Delete(userID, id int64) error {
-	return s.q.DeleteSourceIcon(context.Background(), sqlcgen.DeleteSourceIconParams{ID: id, UserID: userID})
 }
 
 func isUniqueViolation(err error) bool {

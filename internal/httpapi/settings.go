@@ -53,7 +53,6 @@ type settingsData struct {
 	Sessions  settingsSessionsData
 	Opml      settingsOpmlData
 	Extension settingsExtensionData
-	Icons     []settingsIconRow
 }
 
 // autoReadOption is one radio choice in the auto-read card. Value is the form
@@ -159,12 +158,6 @@ type settingsAccentData struct {
 	Error  string
 }
 
-type settingsIconRow struct {
-	store.SourceIcon
-	Flash    string
-	Timezone string
-}
-
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	web.Render(w, r, basePage("settings", u, settingsPage(u, settingsData{
@@ -176,7 +169,6 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		Accent:             settingsAccentData{Accent: u.AccentColor},
 		Sessions:           s.settingsSessionsData(u, auth.Token(r)),
 		Extension:          settingsExtensionData{ServerURL: requestBaseURL(r)},
-		Icons:              s.settingsIconRows(u.ID, u.Timezone),
 	})))
 }
 
@@ -442,108 +434,8 @@ func (s *Server) avatarImage(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-// settingsIconAdd registers a domain->icon mapping and caches the icon.
-func (s *Server) settingsIconAdd(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	domain := normalizeDomain(r.FormValue("domain"))
-	iconURL := strings.TrimSpace(r.FormValue("icon_url"))
-
-	if domain == "" {
-		writeFormError(w, r, "settings-icons-error", "enter a valid domain")
-		return
-	}
-	if iconURL == "" {
-		writeFormError(w, r, "settings-icons-error", "enter an icon url")
-		return
-	}
-	if parsed, err := url.Parse(iconURL); err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		writeFormError(w, r, "settings-icons-error", "enter a valid image url")
-		return
-	}
-
-	ic, err := s.store.SourceIcons.Create(u.ID, domain, iconURL)
-	if errors.Is(err, store.ErrExists) {
-		writeFormError(w, r, "settings-icons-error", "an icon for that domain already exists")
-		return
-	}
-	if err != nil {
-		log.Error("create source icon", "err", err)
-		writeFormError(w, r, "settings-icons-error", "could not add icon")
-		return
-	}
-	// Cache it now; failure is non-fatal (row renders with a "not cached"
-	// note and the user can refresh).
-	if err := s.fetchAndCacheIcon(r.Context(), ic); err != nil {
-		log.Error("cache source icon", "domain", domain, "err", err)
-	}
-	ic, _ = s.store.SourceIcons.ByID(u.ID, ic.ID)
-	web.Render(w, r, SettingsIconRow(settingsIconRow{SourceIcon: ic, Timezone: u.Timezone}))
-}
-
-// settingsIconRefresh re-fetches and re-caches an icon.
-func (s *Server) settingsIconRefresh(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	ic, err := s.store.SourceIcons.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if err := s.fetchAndCacheIcon(r.Context(), ic); err != nil {
-		log.Error("refresh source icon", "domain", ic.Domain, "err", err)
-		w.WriteHeader(http.StatusBadRequest)
-		web.Render(w, r, SettingsIconRow(settingsIconRow{SourceIcon: ic, Flash: "could not refresh icon", Timezone: u.Timezone}))
-		return
-	}
-	ic, _ = s.store.SourceIcons.ByID(u.ID, id)
-	web.Render(w, r, SettingsIconRow(settingsIconRow{SourceIcon: ic, Timezone: u.Timezone}))
-}
-
-// settingsIconDelete removes a domain->icon mapping and its stored object.
-func (s *Server) settingsIconDelete(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	ic, err := s.store.SourceIcons.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if err := s.store.SourceIcons.Delete(u.ID, id); err != nil {
-		log.Error("delete source icon", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	if ic.IconKey != "" {
-		if err := s.files.Delete(r.Context(), ic.IconKey); err != nil {
-			log.Error("delete source icon object", "key", ic.IconKey, "err", err)
-		}
-	}
-	s.renderSettingsIconList(w, r, u.ID, u.Timezone)
-}
-
-func (s *Server) settingsIconRows(userID int64, tz string) []settingsIconRow {
-	icons, _ := s.store.SourceIcons.List(userID)
-	rows := make([]settingsIconRow, 0, len(icons))
-	for _, ic := range icons {
-		rows = append(rows, settingsIconRow{SourceIcon: ic, Timezone: tz})
-	}
-	return rows
-}
-
-func (s *Server) renderSettingsIconList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
-	web.Render(w, r, SettingsIconsList(s.settingsIconRows(userID, tz)))
-}
-
 // serveSourceIcon resolves a feed's icon for the current user: their cached
-// custom icon for the domain, else the built-in X/YouTube/globe icon.
+// auto-fetched icon for the domain, else the built-in X/YouTube/globe icon.
 func (s *Server) serveSourceIcon(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	domain := strings.ToLower(r.PathValue("domain"))
@@ -569,7 +461,7 @@ func (s *Server) serveSourceIcon(w http.ResponseWriter, r *http.Request) {
 // domain, so the /icons/{domain} handler serves a real brand icon instead of
 // the globe. It only runs when a home url was supplied (the add-feed form
 // fills it from page metadata). Failures are non-fatal: the built-in globe is
-// shown and the user can add a custom icon in settings.
+// shown.
 func (s *Server) autoCacheFeedIcon(ctx context.Context, userID int64, homeURL string) {
 	domain := normalizeDomain(homeURL)
 	if domain == "" {
@@ -578,9 +470,6 @@ func (s *Server) autoCacheFeedIcon(ctx context.Context, userID int64, homeURL st
 	// Keep the built-in X/YouTube brand icons; a favicon adds nothing there.
 	if builtinIcon(domain) != builtinIcons["globe"] {
 		return
-	}
-	if _, err := s.store.SourceIcons.ByDomain(userID, domain); err == nil {
-		return // user already configured a custom icon for this domain
 	}
 	meta, err := s.discoverer.PageMeta(ctx, homeURL)
 	if err != nil || meta.IconURL == "" {

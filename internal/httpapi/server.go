@@ -210,9 +210,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /settings/extension.zip", s.auth.Require(http.HandlerFunc(s.settingsExtensionZip)))
 	mux.Handle("POST /settings/opml", s.auth.Require(http.HandlerFunc(s.opmlImport)))
 	mux.Handle("GET /avatar", s.auth.Require(http.HandlerFunc(s.avatarImage)))
-	mux.Handle("POST /settings/icons", s.auth.Require(http.HandlerFunc(s.settingsIconAdd)))
-	mux.Handle("POST /settings/icons/{id}/refresh", s.auth.Require(http.HandlerFunc(s.settingsIconRefresh)))
-	mux.Handle("POST /settings/icons/{id}/delete", s.auth.Require(http.HandlerFunc(s.settingsIconDelete)))
 	mux.Handle("GET /icons/{domain}", s.auth.Require(http.HandlerFunc(s.serveSourceIcon)))
 
 	// JSON API (for the browser extension).

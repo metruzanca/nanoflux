@@ -218,7 +218,7 @@ func userDeleteCmd(st *store.Store, files func() (filestore.Store, error), out, 
 	return cmd
 }
 
-// purgeUserObjects removes the user's avatar and custom-icon blobs from object
+// purgeUserObjects removes the user's avatar and feed-icon blobs from object
 // storage. Failures are warnings, never fatal: the DB row is the source of
 // truth and deleting the user must not be blocked by a flaky store.
 func purgeUserObjects(cmd *cobra.Command, st *store.Store, files func() (filestore.Store, error), userID int64, errOut io.Writer) error {

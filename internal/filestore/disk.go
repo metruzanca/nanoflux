@@ -11,7 +11,7 @@ import (
 )
 
 // diskStore stores blobs as plain files under a root directory. It is the
-// default when no S3 endpoint is configured, so avatars and custom icons work
+// default when no S3 endpoint is configured, so avatars and feed icons work
 // out of the box without any object-storage service.
 type diskStore struct {
 	root string

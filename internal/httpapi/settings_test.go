@@ -25,7 +25,6 @@ func TestSettingsPage(t *testing.T) {
 	body := doGet(h, "/settings", cookie).Body.String()
 	for _, want := range []string{
 		`hx-post="/settings/avatar"`,
-		`hx-post="/settings/icons"`,
 		`hx-post="/settings/timezone"`,
 		`hx-post="/settings/theme"`,
 		`hx-post="/settings/auto-read"`,
@@ -37,8 +36,6 @@ func TestSettingsPage(t *testing.T) {
 		`class="site-foot"`,
 		`https://nanoflux.app`,
 		`https://github.com/metruzanca/nanoflux`,
-		`name="domain"`,
-		"custom source icons",
 		"profile picture",
 		"timezone",
 		"keyboard shortcuts",
@@ -439,9 +436,9 @@ func TestFeedCreateAutoFavicon(t *testing.T) {
 	}
 
 	domain := normalizeDomain(base)
-	icons, _ := s.store.SourceIcons.List(u.ID)
-	if len(icons) != 1 || icons[0].Domain != domain || icons[0].IconKey == "" {
-		t.Fatalf("expected one cached icon for %q: %+v", domain, icons)
+	icon, err := s.store.SourceIcons.ByDomain(u.ID, domain)
+	if err != nil || icon.IconKey == "" {
+		t.Fatalf("expected one cached icon for %q: %+v", domain, err)
 	}
 
 	// The icon is served at /icons/{domain}.
@@ -563,101 +560,6 @@ func TestOpmlImport(t *testing.T) {
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `role="alert"`) {
 		t.Fatalf("invalid opml: %d %s", rr.Code, rr.Body.String())
 	}
-}
-
-func iconServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
-		w.Write([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a})
-	}))
-}
-
-func TestSettingsIconsFlow(t *testing.T) {
-	_, h := newTestServer(t)
-	cookie := sessionCookie(t, h)
-	iconSrv := iconServer(t)
-	defer iconSrv.Close()
-
-	// Add a custom icon for a domain (with the scheme, so normalization is exercised).
-	rr := doForm(h, "POST", "/settings/icons", url.Values{
-		"domain": {"https://GitHub.com"}, "icon_url": {iconSrv.URL + "/icon.png"},
-	}, cookie)
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `id="settings-icon-`) {
-		t.Fatalf("add icon: %d %s", rr.Code, rr.Body.String())
-	}
-	if !strings.Contains(rr.Body.String(), "cached") {
-		t.Fatalf("icon should be cached on add: %s", rr.Body.String())
-	}
-
-	// /icons/<domain> serves the cached custom bytes, not a built-in SVG.
-	body := doGet(h, "/icons/github.com", cookie).Body.String()
-	if body != string([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}) {
-		t.Fatalf("custom icon bytes not served: %q", body)
-	}
-
-	// Built-in icons still work for unknown domains and brands.
-	webIcon := doGet(h, "/icons/example.com", cookie)
-	if webIcon.Code != http.StatusOK || !strings.Contains(webIcon.Body.String(), "<svg") {
-		t.Fatalf("builtin globe: %d", webIcon.Code)
-	}
-	xIcon := doGet(h, "/icons/x.com", cookie)
-	if xIcon.Code != http.StatusOK || !strings.Contains(xIcon.Body.String(), "<svg") {
-		t.Fatalf("builtin x icon: %d", xIcon.Code)
-	}
-	youtubeIcon := doGet(h, "/icons/www.youtube.com", cookie)
-	if youtubeIcon.Code != http.StatusOK || !strings.Contains(youtubeIcon.Body.String(), "<svg") {
-		t.Fatalf("builtin youtube icon: %d", youtubeIcon.Code)
-	}
-
-	// Duplicate domain -> 400 with a visible error.
-	rr = doForm(h, "POST", "/settings/icons", url.Values{
-		"domain": {"github.com"}, "icon_url": {iconSrv.URL + "/icon.png"},
-	}, cookie)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "already exists") {
-		t.Fatalf("duplicate icon: %d %s", rr.Code, rr.Body.String())
-	}
-
-	// Delete -> list is empty, /icons falls back to built-in.
-	ids, err := listIconIDs(t, h, cookie)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rr = doForm(h, "POST", "/settings/icons/"+ids[0]+"/delete", url.Values{}, cookie)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("delete icon: %d %s", rr.Code, rr.Body.String())
-	}
-	body = doGet(h, "/icons/github.com", cookie).Body.String()
-	if !strings.Contains(body, "<svg") {
-		t.Fatalf("expected builtin fallback after delete: %q", body)
-	}
-}
-
-func listIconIDs(t *testing.T, h http.Handler, cookie *http.Cookie) ([]string, error) {
-	t.Helper()
-	body := doGet(h, "/settings", cookie).Body.String()
-	var ids []string
-	for _, part := range strings.Split(body, `id="settings-icon-`) {
-		if i := strings.IndexByte(part, '"'); i > 0 {
-			id := part[:i]
-			if id != "" && isAllDigits(id) {
-				ids = append(ids, id)
-			}
-		}
-	}
-	if len(ids) == 0 {
-		t.Fatalf("no icon rows found in %q", body)
-	}
-	return ids, nil
-}
-
-func isAllDigits(s string) bool {
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func TestSettingsChangePassword(t *testing.T) {
