@@ -3,6 +3,7 @@ package instagram
 import (
 	"context"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,14 +90,31 @@ func TestFetchProfile(t *testing.T) {
 	if it.GUID != "instagram:2100351958167220547" {
 		t.Errorf("guid = %q", it.GUID)
 	}
-	if it.Title != "my caption" || it.Summary != "my caption" {
-		t.Errorf("item = %+v", it)
+	if it.Title != "my caption" {
+		t.Errorf("title = %q", it.Title)
+	}
+	if !hasPrefix(it.Summary, `<img src="https://www.instagram.com/p/`) ||
+		!strings.Contains(it.Summary, "my caption") {
+		t.Errorf("summary should carry the image and caption, got %q", it.Summary)
 	}
 	if !hasPrefix(it.Link, "https://www.instagram.com/reel/") {
 		t.Errorf("clip link = %q", it.Link)
 	}
 	if it.ImageURL == "" {
 		t.Error("image should be the stable media endpoint")
+	}
+}
+
+func TestSummaryHTMLEscapesCaption(t *testing.T) {
+	got := summaryHTML("https://example.com/i.jpg", "a <b> & c")
+	if !strings.Contains(got, `src="https://example.com/i.jpg"`) {
+		t.Errorf("summary should hold the image: %q", got)
+	}
+	if !strings.Contains(got, "a &lt;b&gt; &amp; c") || strings.Contains(got, "<b>") {
+		t.Errorf("caption should be escaped: %q", got)
+	}
+	if noImg := summaryHTML("", "just text"); noImg != "<p>just text</p>" {
+		t.Errorf("summary without an image = %q", noImg)
 	}
 }
 

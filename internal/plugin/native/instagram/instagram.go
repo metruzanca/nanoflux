@@ -229,20 +229,39 @@ func itemFor(n node) pluginapi.Item {
 		caption = n.Caption.Text
 	}
 	it := pluginapi.Item{
-		GUID:    "instagram:" + n.PK,
-		Title:   postTitle(caption),
-		Link:    link,
-		Summary: caption,
+		GUID:  "instagram:" + n.PK,
+		Title: postTitle(caption),
+		Link:  link,
 	}
 	if t := mediaTime(n.PK); !t.IsZero() {
 		it.PublishedAt = t.UTC().Format("2006-01-02 15:04:05")
 	}
 	// The cdn thumbnail URLs are signed and expire, so store the stable media
-	// endpoint instead; it redirects to a fresh signed URL on load.
+	// endpoint instead; it redirects to a fresh signed URL on load. The image
+	// also goes into the body: the grid markup has no caption/thumbnail split,
+	// so without it the item modal would show only the caption text.
 	if code != "" {
 		it.ImageURL = "https://www.instagram.com/p/" + code + "/media/?size=l"
 	}
+	it.Summary = summaryHTML(it.ImageURL, caption)
 	return it
+}
+
+// summaryHTML renders an item's body: its image (when there is one) followed by
+// the escaped caption, so the item modal shows the picture, not just hashtags.
+func summaryHTML(imageURL, caption string) string {
+	var b strings.Builder
+	if imageURL != "" {
+		b.WriteString(`<img src="`)
+		b.WriteString(html.EscapeString(imageURL))
+		b.WriteString(`" alt="">`)
+	}
+	if caption != "" {
+		b.WriteString(`<p>`)
+		b.WriteString(strings.ReplaceAll(html.EscapeString(caption), "\n", "<br>"))
+		b.WriteString(`</p>`)
+	}
+	return b.String()
 }
 
 // shortcode encodes a media id into Instagram's URL shortcode. "" for an

@@ -339,18 +339,61 @@ func isImageHref(href string) bool {
 	return false
 }
 
+// ProxiedImageURL routes an absolute http(s) image URL through the app's /img
+// proxy. Some hosts (Instagram's CDN) answer with
+// Cross-Origin-Resource-Policy: same-origin, which blocks a direct browser
+// hotlink; fetching server-side and re-serving from our own origin avoids it.
+// Non-http(s) sources (data: URIs, relative paths) are returned unchanged, as
+// are URLs that cannot be parsed.
+func ProxiedImageURL(rawurl string) string {
+	if rawurl == "" {
+		return ""
+	}
+	u, err := url.Parse(rawurl)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return rawurl
+	}
+	return "/img?u=" + url.QueryEscape(rawurl)
+}
+
 // UpgradeImageSrcs rewrites an item body so that every <img> wrapped in an
 // <a href> pointing at an image uses that href as its src. Many sites (e.g.
 // Blogger) show a downscaled <img> inside a link to the full-size original;
 // rendering the linked image inline lets users see the full quality without
 // opening the post. Non-image links and bare <img>s are left untouched.
 func UpgradeImageSrcs(htmlBody string) string {
+	return rewriteImageSrcs(htmlBody, nil)
+}
+
+// ProxyImageSrcs rewrites every <img> in an item body through the /img proxy
+// (in addition to the link upgrade UpgradeImageSrcs performs), so bodies whose
+// images block cross-origin hotlinking still render.
+func ProxyImageSrcs(htmlBody string) string {
+	return rewriteImageSrcs(htmlBody, ProxiedImageURL)
+}
+
+// rewriteImageSrcs is the shared body walker behind UpgradeImageSrcs and
+// ProxyImageSrcs. A nil proxy leaves srcs as-is; otherwise it is applied to the
+// upgraded src so both the link upgrade and proxying compose.
+func rewriteImageSrcs(htmlBody string, proxy func(string) string) string {
 	if !strings.Contains(htmlBody, "<") {
 		return htmlBody
 	}
 	doc, err := html.Parse(strings.NewReader(htmlBody))
 	if err != nil {
 		return htmlBody
+	}
+	setSrc := func(img *html.Node, val string) {
+		if proxy != nil {
+			val = proxy(val)
+		}
+		for i := range img.Attr {
+			if img.Attr[i].Key == "src" {
+				img.Attr[i].Val = val
+				return
+			}
+		}
+		img.Attr = append(img.Attr, html.Attribute{Key: "src", Val: val})
 	}
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
@@ -365,12 +408,18 @@ func UpgradeImageSrcs(htmlBody string) string {
 			if isImageHref(href) {
 				for c := n.FirstChild; c != nil; c = c.NextSibling {
 					if c.Type == html.ElementNode && c.Data == "img" {
-						for i := range c.Attr {
-							if c.Attr[i].Key == "src" {
-								c.Attr[i].Val = href
-							}
-						}
+						setSrc(c, href)
 					}
+				}
+			}
+		}
+		if n.Type == html.ElementNode && n.Data == "img" && proxy != nil {
+			// A bare <img> (or an image under a non-image link) still gets
+			// proxied; its existing src is upgraded in place.
+			for _, a := range n.Attr {
+				if a.Key == "src" {
+					setSrc(n, a.Val)
+					break
 				}
 			}
 		}
