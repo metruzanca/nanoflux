@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
@@ -55,6 +56,33 @@ type fakeRenderer struct {
 
 func (f fakeRenderer) Render(context.Context, pluginapi.RenderRequest, pluginapi.Host) (pluginapi.Media, error) {
 	return f.media, f.err
+}
+
+// TestFetchPluginCarriesCategories guards the plugin -> feedparse bridge: a
+// plugin-set Item.Categories must reach feedparse.Item.Categories, which the
+// poller stores and filters on.
+func TestFetchPluginCarriesCategories(t *testing.T) {
+	hosts := func(pluginapi.Fetcher) pluginapi.Host { return nil }
+	reg := NewRegistry()
+	reg.RegisterNative(fakeFetcher{
+		name: "c", result: pluginapi.Result{Items: []pluginapi.Item{
+			{GUID: "g1", Categories: []string{"reblog"}},
+			{GUID: "g2"},
+		}},
+	})
+	res, err := NewDispatcher(reg, hosts).FetchPlugin(context.Background(), feedparse.FetchRequest{URL: "https://x.example/feed"})
+	if err != nil {
+		t.Fatalf("FetchPlugin: %v", err)
+	}
+	if len(res.Items) != 2 {
+		t.Fatalf("items = %d, want 2", len(res.Items))
+	}
+	if got := res.Items[0].Categories; len(got) != 1 || got[0] != "reblog" {
+		t.Fatalf("categories = %v, want [reblog]", got)
+	}
+	if len(res.Items[1].Categories) != 0 {
+		t.Fatalf("uncategorized item = %v, want none", res.Items[1].Categories)
+	}
 }
 
 // TestRegistryRenderItem covers the view-time rendering dispatch: a matching

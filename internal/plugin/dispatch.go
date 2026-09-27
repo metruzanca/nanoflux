@@ -77,6 +77,7 @@ func toFeedparseResult(res pluginapi.Result) feedparse.Result {
 			Title:       it.Title,
 			Link:        it.Link,
 			Summary:     it.Summary,
+			Categories:  it.Categories,
 			ImageURL:    it.ImageURL,
 			PublishedAt: it.PublishedAt,
 			DurationSec: it.DurationSec,

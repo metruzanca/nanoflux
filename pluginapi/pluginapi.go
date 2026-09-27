@@ -89,7 +89,13 @@ type Item struct {
 	// DurationSec is the media's runtime in seconds (a video's length). 0 means
 	// unknown. Stored so a card can show it without a view-time lookup.
 	DurationSec int
-	Enclosures  []Enclosure
+	// Categories are feed-provided labels the host stores (items.categories) and
+	// matches filter rules against (field = "category"). Set them when the site
+	// carries context worth filtering on, e.g. a subreddit, an author, or a
+	// reblog marker. The generic RSS/Atom parser fills the equivalent from
+	// <category> values; a plugin that reads a site's own API sets them directly.
+	Categories []string
+	Enclosures []Enclosure
 }
 
 // Feed carries feed-level metadata.

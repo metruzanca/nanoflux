@@ -77,8 +77,10 @@ category.
 
 - `feedparse.normalizeItem` maps an entry's `<category>` values plus its author
   name(s) into `Item.Categories` (leading `/` stripped, deduped). This is the
-  generic parser path reddit uses; plugin-fetched items do not carry categories
-  yet (`pluginapi.Item` has no field for them).
+  generic parser path reddit uses. Plugin-fetched items set `pluginapi.Item.
+  Categories` directly; `plugin/dispatch.go` copies them into `feedparse.Item`,
+  so both paths reach the same store and filter (a plugin can mark a post kind,
+  e.g. a reblog, with a single label).
 - `items.categories` (schemaV36) stores them newline-joined (denormalized);
   `Upsert`/`UpdateItemSnapshot` write them, so an already-stored item gains
   categories on re-poll without a re-fetch. `poller.ingest` copies them through.

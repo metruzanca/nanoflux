@@ -269,6 +269,7 @@ func toPBItems(items []Item) []*pb.Item {
 			Guid: it.GUID, Identity: it.Identity, Title: it.Title, Link: it.Link,
 			Summary: it.Summary, ImageUrl: it.ImageURL, PublishedAt: it.PublishedAt,
 			DurationSec: int32(it.DurationSec),
+			Categories:  it.Categories,
 			Enclosures:  encs,
 		})
 	}
@@ -286,6 +287,7 @@ func fromPBItems(items []*pb.Item) []Item {
 			GUID: it.Guid, Identity: it.Identity, Title: it.Title, Link: it.Link,
 			Summary: it.Summary, ImageURL: it.ImageUrl, PublishedAt: it.PublishedAt,
 			DurationSec: int(it.DurationSec),
+			Categories:  it.Categories,
 			Enclosures:  encs,
 		})
 	}
