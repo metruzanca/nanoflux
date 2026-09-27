@@ -146,41 +146,48 @@ func (s *Server) apiExtSave(w http.ResponseWriter, r *http.Request) {
 		web.Render(w, r, extError("could not add that feed"))
 		return
 	}
-	web.Render(w, r, extSaved(f.Title))
+	web.Render(w, r, extSaved(f.Title, f.AuthorID))
 }
 
 // savedFeeds holds the normalized feed URLs a user already has (mapped to the
-// saved feed's id), so apiDiscover can report which discovered candidates are
-// already saved and link back to them. Only the candidate's own feed URL
-// counts — matching the page URL against a saved feed's home/feed URL would
-// falsely mark unrelated feeds on the page as saved.
+// saved feed's id and author id), so apiDiscover can report which discovered
+// candidates are already saved and link back to them. Only the candidate's own
+// feed URL counts — matching the page URL against a saved feed's home/feed URL
+// would falsely mark unrelated feeds on the page as saved.
 type savedFeeds struct {
-	feedURLs map[string]int64
+	feeds map[string]savedFeedRef
 }
 
-// savedFeedsFor builds the normalized feed-url -> id map of the user's feeds.
+// savedFeedRef is a saved feed's id and the id of the author that owns it.
+type savedFeedRef struct {
+	FeedID   int64
+	AuthorID int64
+}
+
+// savedFeedsFor builds the normalized feed-url -> {feed, author} map of the
+// user's feeds.
 func (s *Server) savedFeedsFor(userID int64) *savedFeeds {
 	feeds, _ := s.store.Feeds.List(userID)
-	sf := &savedFeeds{feedURLs: map[string]int64{}}
+	sf := &savedFeeds{feeds: map[string]savedFeedRef{}}
 	for _, f := range feeds {
 		if f.FeedURL != "" {
-			sf.feedURLs[normExtKey(f.FeedURL)] = f.ID
+			sf.feeds[normExtKey(f.FeedURL)] = savedFeedRef{FeedID: f.ID, AuthorID: f.AuthorID}
 		}
 	}
 	return sf
 }
 
-// saved returns the id of the user's feed matching feedURL, or 0 when it isn't
-// saved.
-func (sf *savedFeeds) saved(feedURL string) int64 {
-	return sf.feedURLs[normExtKey(feedURL)]
+// saved returns the saved feed matching feedURL, or the zero value when it
+// isn't saved.
+func (sf *savedFeeds) saved(feedURL string) savedFeedRef {
+	return sf.feeds[normExtKey(feedURL)]
 }
 
 // feedURLExists reports whether the user already has a feed with this exact
 // feed URL (normalized). It is the duplicate check for adding a feed: two feeds
 // may share a title or home URL, but not their feed URL.
 func (s *Server) feedURLExists(userID int64, feedURL string) bool {
-	return s.savedFeedsFor(userID).saved(feedURL) != 0
+	return s.savedFeedsFor(userID).saved(feedURL).FeedID != 0
 }
 
 // normExtKey normalizes a URL for "already saved" matching: lowercase host

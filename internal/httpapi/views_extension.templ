@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"strconv"
+
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -23,8 +25,15 @@ templ extFeedForm(feedURL, homeURL, title string, authors []store.Author) {
 }
 
 // extSaved is the success fragment shown after saving a feed from the extension.
-templ extSaved(title string) {
+// It links to the author the feed now belongs to (which may be one the user just
+// created), so the popup never auto-navigates but offers a way there.
+templ extSaved(title string, authorID int64) {
 	<div class="ext-ok" role="status">saved <strong>{ title }</strong> @web.Lucide("check")</div>
+	if authorID != 0 {
+		<div class="ext-links">
+			<a href={ templ.URL("/authors/" + strconv.FormatInt(authorID, 10)) } target="_blank" rel="noopener">open this author in nanoflux</a>
+		</div>
+	}
 }
 
 // extPageForm is the save-page form the browser extension loads into its popup
@@ -56,13 +65,20 @@ templ extPageForm(pageURL, title, selectedList string, lists []comboItem) {
 	<div id="ext-result"></div>
 }
 
-// extPageSaved is the success fragment shown after saving a page.
-templ extPageSaved(title, list string) {
+// extPageSaved is the success fragment shown after saving a page. It deep-links
+// to the saved item's modal (#item-<id>), which opens from the id alone even
+// when the item is not on the current page.
+templ extPageSaved(itemID int64, title, list string) {
 	<div class="ext-ok" role="status">saved <strong>{ title }</strong>
 		if list != "" {
 			<span class="muted">to { list }</span>
 		}
 		@web.Lucide("check")</div>
+	if itemID != 0 {
+		<div class="ext-links">
+			<a href={ templ.URL("/#item-" + strconv.FormatInt(itemID, 10)) } target="_blank" rel="noopener">open this page in nanoflux</a>
+		</div>
+	}
 }
 
 // savePageForm is the in-app "save url for later" form, fetched into the shared
@@ -102,14 +118,17 @@ templ savePageForm(selectedList string, lists []comboItem) {
 }
 
 // savePageSaved is the success fragment shown in the dialog after saving a page
-// in-app.
-templ savePageSaved(title, list string) {
+// in-app, with a deep link to the saved item.
+templ savePageSaved(itemID int64, title, list string) {
 	<div class="ext-ok" role="status">saved <strong>{ title }</strong>
 		if list != "" {
 			<span class="muted">to { list }</span>
 		}
 		@web.Lucide("check")</div>
 	<div class="row">
+		if itemID != 0 {
+			<a href={ templ.URL("/#item-" + strconv.FormatInt(itemID, 10)) }>open this page</a>
+		}
 		<button type="button" onclick="this.closest('dialog').close()">close</button>
 	</div>
 }

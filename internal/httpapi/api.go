@@ -176,13 +176,19 @@ func (s *Server) apiDiscover(w http.ResponseWriter, r *http.Request) {
 	saved := s.savedFeedsFor(u.ID)
 	type apiCandidate struct {
 		discover.Candidate
-		Saved       bool  `json:"saved"`
-		SavedFeedID int64 `json:"saved_feed_id,omitempty"`
+		Saved         bool  `json:"saved"`
+		SavedFeedID   int64 `json:"saved_feed_id,omitempty"`
+		SavedAuthorID int64 `json:"saved_author_id,omitempty"`
 	}
 	out := make([]apiCandidate, 0, len(candidates))
 	for _, c := range candidates {
-		id := saved.saved(c.FeedURL)
-		out = append(out, apiCandidate{Candidate: c, Saved: id != 0, SavedFeedID: id})
+		ref := saved.saved(c.FeedURL)
+		out = append(out, apiCandidate{
+			Candidate:     c,
+			Saved:         ref.FeedID != 0,
+			SavedFeedID:   ref.FeedID,
+			SavedAuthorID: ref.AuthorID,
+		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"url": req.URL, "accent": u.AccentColor, "candidates": out})
 }

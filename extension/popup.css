@@ -57,6 +57,8 @@ button {
 
 .ext-ok { color: var(--ok); font-weight: 600; }
 
+.ext-links { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.5rem; }
+
 button.link, .link {
   background: none;
   border: none;
