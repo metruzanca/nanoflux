@@ -305,6 +305,13 @@ templ scopedItemsInner(d scopedItemsData) {
 					<a href={ d.Path + "?view=feeds" } hx-get={ d.ItemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=feeds" }>feeds ({ d.FeedCount })</a>
 				}
 			}
+			if d.FavTab {
+				if d.View == "favorites" {
+					<a class="active" href={ d.Path + "?view=favorites&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=favorites&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=favorites&dir=" + d.Dir }>favorites ({ d.FavCount })</a>
+				} else {
+					<a href={ d.Path + "?view=favorites&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=favorites&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=favorites&dir=" + d.Dir }>favorites ({ d.FavCount })</a>
+				}
+			}
 		</nav>
 		if d.View != "feeds" {
 			<div class="row-actions">

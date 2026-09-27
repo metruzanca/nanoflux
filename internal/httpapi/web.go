@@ -168,6 +168,8 @@ type scopedItemsData struct {
 	FeedsTab    bool          // collection scope only: render the "feeds" tab
 	FeedCount   int           // feeds in the collection, for the "feeds (N)" tab
 	Feeds       []feedRow     // feed cards for the "feeds" view
+	FavTab      bool          // author scope only: render the "favorites" tab
+	FavCount    int           // favorited items in scope, for the "favorites (N)" tab
 }
 
 // itemsAsc reports whether the item list should be ordered oldest-first from
@@ -218,6 +220,8 @@ func scopedFilter(view string, cursor int64, asc bool, feedID, authorID, collect
 	}
 	if view == "read" {
 		f.ReadOnly = true
+	} else if view == "favorites" {
+		f.FavoritesOnly = true
 	} else {
 		f.UnreadOnly = true
 	}
@@ -1420,7 +1424,7 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, id)
-	scoped := s.authorScopedItems(u.ID, id, itemsView(r), u.Timezone, itemsAsc(r))
+	scoped := s.authorScopedItems(u.ID, id, authorView(r), u.Timezone, itemsAsc(r))
 	stats, _ := s.store.Items.StatsAuthor(u.ID, id)
 	frequency := ""
 	if times, err := s.store.Items.AuthorRecentTimes(u.ID, id, 30); err == nil {
@@ -1500,19 +1504,20 @@ func (s *Server) reconcileAuthorLinks(userID, authorID int64, r *http.Request) {
 	}
 }
 
-// authorScopedItems loads one read/unread item list for an author plus the
-// counts that drive the tabs.
+// authorScopedItems loads one item list (unread/read/favorites) for an author
+// plus the counts that drive the tabs.
 func (s *Server) authorScopedItems(userID, authorID int64, view, tz string, asc bool) scopedItemsData {
 	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, 0, asc, 0, authorID, 0))
 	unread, _ := s.store.Items.CountUnreadAuthor(userID, authorID)
 	read, _ := s.store.Items.CountReadAuthor(userID, authorID)
+	favs, _ := s.store.Items.CountFavoritesAuthor(userID, authorID)
 	base := "/authors/" + strconv.FormatInt(authorID, 10)
 	itemsBase := base + "/items?view=" + view + "&dir=" + dirParam(asc)
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Dir: dirParam(asc),
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
 		More: pageCursor(itemsBase, items, more, asc), HideAuthor: true,
-		Mode: s.store.ViewPrefs.Mode(userID, base),
+		Mode: s.store.ViewPrefs.Mode(userID, base), FavTab: favs > 0 || view == "favorites", FavCount: favs,
 	}
 }
 
@@ -1523,7 +1528,7 @@ func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	view := itemsView(r)
+	view := authorView(r)
 	asc := itemsAsc(r)
 	if cursor := cursorID(r, asc); cursor > 0 {
 		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, cursor, asc, 0, id, 0))
@@ -2051,6 +2056,19 @@ func collectionView(r *http.Request) string {
 func normalizeCollectionView(v string) string {
 	if v == "feeds" {
 		return "feeds"
+	}
+	return normalizeItemsView(v)
+}
+
+// authorView reads the author page's ?view= param. It understands the
+// author-only "favorites" tab in addition to the shared unread/read views.
+func authorView(r *http.Request) string {
+	return normalizeAuthorView(r.URL.Query().Get("view"))
+}
+
+func normalizeAuthorView(v string) string {
+	if v == "favorites" {
+		return "favorites"
 	}
 	return normalizeItemsView(v)
 }
