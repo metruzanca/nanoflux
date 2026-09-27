@@ -16,6 +16,7 @@ type Config struct {
 	Keep         int           // archives to retain; <= 0 keeps everything
 	FileStore    string        // local file-store dir; included when IncludeFiles
 	IncludeFiles bool          // false when blobs live in object storage
+	Version      string        // app version embedded in archive names
 }
 
 // Status is the outcome of the most recent run.
@@ -89,7 +90,7 @@ func (r *Runner) Snapshot(ctx context.Context) (string, error) {
 	r.runMu.Lock()
 	defer r.runMu.Unlock()
 
-	name := ArchiveName(r.now())
+	name := ArchiveName(r.cfg.Version, r.now())
 
 	var buf bytes.Buffer
 	if err := WriteArchive(ctx, r.db, r.cfg.FileStore, r.cfg.IncludeFiles, &buf); err != nil {

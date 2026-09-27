@@ -25,7 +25,7 @@ import (
 // local disk, the file store (filestore/). The layout matches `make backup` so
 // CLI and compose archives are interchangeable. S3-backed stores are the
 // provider's responsibility; the database is always included.
-func backupCmd(st *store.Store, env Env, out, errOut io.Writer) *cobra.Command {
+func backupCmd(st *store.Store, env Env, version string, out, errOut io.Writer) *cobra.Command {
 	var dir string
 	cmd := &cobra.Command{
 		Use:   "backup",
@@ -35,8 +35,7 @@ func backupCmd(st *store.Store, env Env, out, errOut io.Writer) *cobra.Command {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return err
 			}
-			ts := time.Now().UTC().Format("20060102-150405")
-			archive := filepath.Join(dir, "nanoflux-"+ts+".tar.gz")
+			archive := filepath.Join(dir, backup.ArchiveName(version, time.Now()))
 
 			f, err := os.Create(archive)
 			if err != nil {

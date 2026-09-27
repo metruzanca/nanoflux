@@ -107,7 +107,7 @@ func runServer() {
 
 	go p.Run(ctx)
 
-	backupRunner := newBackupRunner(ctx, cfg, sqldb)
+	backupRunner := newBackupRunner(ctx, cfg, sqldb, version)
 	if backupRunner != nil {
 		go backupRunner.Run(ctx)
 	}
@@ -162,7 +162,7 @@ func newFileStore(cfg config.Config) (filestore.Store, error) {
 // nil when automatic backups are disabled. It selects the destination (local
 // directory or S3) and includes the local file store only when blobs are not in
 // object storage (S3 objects are the provider's job).
-func newBackupRunner(ctx context.Context, cfg config.Config, sqldb *sql.DB) *backup.Runner {
+func newBackupRunner(ctx context.Context, cfg config.Config, sqldb *sql.DB, version string) *backup.Runner {
 	bc := cfg.Backup
 	if !bc.Enabled() {
 		return nil
@@ -194,6 +194,7 @@ func newBackupRunner(ctx context.Context, cfg config.Config, sqldb *sql.DB) *bac
 		Keep:         bc.Keep,
 		FileStore:    cfg.FileStoreDir,
 		IncludeFiles: includeFiles,
+		Version:      version,
 	}, dest)
 }
 

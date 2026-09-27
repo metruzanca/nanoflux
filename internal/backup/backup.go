@@ -20,10 +20,26 @@ import (
 	"time"
 )
 
-// ArchiveName returns the canonical name for a snapshot taken at t (UTC).
-// Names sort chronologically, which retention relies on.
-func ArchiveName(t time.Time) string {
-	return "nanoflux-" + t.UTC().Format("20060102-150405") + ".tar.gz"
+// ArchiveName returns the canonical name for a snapshot taken at t (UTC) by
+// the given app version. The timestamp leads so names sort chronologically,
+// which retention relies on; the version trails so a backup is identifiable by
+// the build that produced it.
+func ArchiveName(version string, t time.Time) string {
+	name := "nanoflux-" + t.UTC().Format("20060102-150405")
+	if v := sanitizeVersion(version); v != "" {
+		name += "-" + v
+	}
+	return name + ".tar.gz"
+}
+
+// sanitizeVersion makes a version safe to embed in a filename: it trims
+// surrounding space and replaces path separators and spaces, which would
+// otherwise create directories or break the name. An empty result means the
+// segment is omitted.
+func sanitizeVersion(version string) string {
+	v := strings.TrimSpace(version)
+	v = strings.NewReplacer("/", "_", "\\", "_", " ", "_").Replace(v)
+	return v
 }
 
 // WriteArchive writes a consistent backup archive to w: data/rss.db (a

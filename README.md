@@ -82,8 +82,8 @@ nanoflux user delete <username>             # prompts to confirm; use --yes to s
 nanoflux feed list                          # every feed across users (no item content)
 nanoflux item backfill-thumbs               # fill missing YouTube thumbnails (no network)
 nanoflux user --help
-nanoflux backup                # writes backups/nanoflux-<timestamp>.tar.gz
-nanoflux restore backups/nanoflux-20260921-120000.tar.gz   # refuses while the server is running
+nanoflux backup                # writes backups/nanoflux-<timestamp>-<version>.tar.gz
+nanoflux restore backups/nanoflux-20260921-120000-1.0.0.tar.gz   # refuses while the server is running
 ```
 
 ### Configuration
@@ -99,7 +99,7 @@ descriptions. Copy it to `.env` and edit as needed.
 ```bash
 make backup
 ls backups/
-make restore ARCHIVE=backups/nanoflux-20260921-120000.tar.gz
+make restore ARCHIVE=backups/nanoflux-20260921-120000-1.0.0.tar.gz
 ```
 
 ## Browser extension
