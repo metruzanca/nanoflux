@@ -160,7 +160,7 @@ func settingsHomeCard(d settingsHomeData) templ.Component {
 			}
 		}
 		if len(d.Collections) > 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<form class=\"stack\" hx-post=\"/settings/home\" hx-target=\"#settings-home-card\" hx-swap=\"outerHTML\"><input type=\"hidden\" name=\"action\" value=\"add\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<form class=\"pin-row\" hx-post=\"/settings/home\" hx-target=\"#settings-home-card\" hx-swap=\"outerHTML\"><input type=\"hidden\" name=\"action\" value=\"add\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -168,7 +168,7 @@ func settingsHomeCard(d settingsHomeData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<button type=\"submit\">pin</button></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<button type=\"submit\" class=\"small\">pin</button></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

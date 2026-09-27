@@ -122,6 +122,50 @@ func TestSettingsAvatar(t *testing.T) {
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "choose a picture") {
 		t.Fatalf("missing upload: %d %s", rr.Code, rr.Body.String())
 	}
+
+	// The profile card has no save button: the file input uploads on change, the
+	// avatar is a drop target, and a pencil badge opens the picker.
+	body = doGet(h, "/settings", cookie).Body.String()
+	for _, want := range []string{
+		`onchange="submitAvatar(this.form)"`,
+		`data-avatar-drop`,
+		`class="avatar-pencil"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("profile card missing %q: %s", want, body)
+		}
+	}
+}
+
+// TestSettingsInstantControls asserts the timezone picker is a searchable combo
+// box of timezones and that theme, timezone, and accent apply on change with no
+// save button.
+func TestSettingsInstantControls(t *testing.T) {
+	_, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	body := doGet(h, "/settings", cookie).Body.String()
+	if !strings.Contains(body, `vaadin-combo-box id="timezone"`) {
+		t.Fatalf("timezone should be a combo box: %s", body)
+	}
+	if !strings.Contains(body, `America/New_York`) {
+		t.Fatalf("timezone picker should offer IANA zones: %s", body)
+	}
+	for _, want := range []string{
+		`hx-post="/settings/timezone" hx-trigger="change"`,
+		`hx-post="/settings/theme" hx-trigger="change"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("settings page missing %q", want)
+		}
+	}
+	if strings.Contains(body, `hx-post="/settings/theme" hx-trigger="change" hx-target="#settings-theme-card" hx-swap="outerHTML">`+"\n\t\t\t<button") {
+		t.Fatal("theme card should not have a save button")
+	}
+	// The change-password form lives in a dialog now, not inline.
+	if !strings.Contains(body, `id="password-dialog"`) {
+		t.Fatalf("settings page should render the password dialog: %s", body)
+	}
 }
 
 func TestTopbarUserMenu(t *testing.T) {
