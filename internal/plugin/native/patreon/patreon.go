@@ -6,6 +6,7 @@ package patreon
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,11 @@ import (
 
 // Name is the plugin's stable identifier.
 const Name = "patreon"
+
+// readme is the plugin's Markdown documentation, shown in the app's docs modal.
+//
+//go:embed readme.md
+var readme string
 
 // apiBase is the base URL for Patreon's public web API. A var so tests can point
 // it at a mock server.
@@ -49,8 +55,15 @@ type Plugin struct{}
 var _ pluginapi.Fetcher = Plugin{}
 
 func (Plugin) Meta() pluginapi.Meta {
-	return pluginapi.Meta{Name: Name, APIVersion: pluginapi.APIVersion}
+	return pluginapi.Meta{
+		Name:       Name,
+		APIVersion: pluginapi.APIVersion,
+		Summary:    "Patreon creators: reads public posts through Patreon's web API",
+	}
 }
+
+// Docs returns this plugin's Markdown documentation.
+func (Plugin) Docs() string { return readme }
 
 // Match handles both discover and fetch: creator pages, and the derived
 // campaign-posts API URL (the stored feed URL / pagination cursor).

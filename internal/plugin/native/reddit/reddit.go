@@ -12,6 +12,7 @@ package reddit
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"net/url"
 	"path"
 	"regexp"
@@ -28,6 +29,13 @@ import (
 
 // Name is the plugin's stable identifier.
 const Name = "reddit"
+
+// readme is the plugin's Markdown documentation, shown from the admin plugin
+// card and from a feed's edit page (next to the filter rules, whose "category"
+// field matches the categories this plugin surfaces).
+//
+//go:embed readme.md
+var readme string
 
 // RSSBaseURL is the origin used for subreddit RSS lookups. A var so tests can
 // point it at a mock host.
@@ -55,16 +63,31 @@ var (
 )
 
 func (*Plugin) Meta() pluginapi.Meta {
-	return pluginapi.Meta{Name: Name, APIVersion: pluginapi.APIVersion, UserAgent: oembed.BrowserUserAgent}
+	return pluginapi.Meta{
+		Name:       Name,
+		APIVersion: pluginapi.APIVersion,
+		UserAgent:  oembed.BrowserUserAgent,
+		Summary:    "reddit: resolves post media, and labels items with their subreddit and author for filtering",
+	}
 }
 
-// Match handles view-time rendering for reddit post permalinks. It does not
-// claim fetch or discover: reddit's .rss feeds are standard feeds.
+// Docs returns this plugin's Markdown documentation.
+func (*Plugin) Docs() string { return readme }
+
+// Match handles view-time rendering for reddit post permalinks and documents
+// reddit URLs. It does not claim fetch or discover: reddit's .rss feeds are
+// standard feeds, so a reddit feed has no owning plugin and reaches these docs
+// through CapDocs.
 func (*Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
-	if cap != pluginapi.CapRender || u == nil {
+	if u == nil {
 		return false
 	}
-	return isRedditHost(u.Hostname())
+	switch cap {
+	case pluginapi.CapRender, pluginapi.CapDocs:
+		return isRedditHost(u.Hostname())
+	default:
+		return false
+	}
 }
 
 // Discover is unsupported: reddit's feeds are plain RSS derived from the URL.

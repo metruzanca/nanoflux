@@ -10,6 +10,8 @@ import (
 var (
 	errNotAFetcher = errors.New("plugin does not implement Fetcher")
 	errNoName      = errors.New("plugin reported an empty name")
+	// ErrNotFound is returned when a named plugin is not loaded.
+	ErrNotFound = errors.New("plugin not found")
 )
 
 func errIncompatibleAPI(got string) error {

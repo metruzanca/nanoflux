@@ -32,29 +32,35 @@ templ AdminPluginsCard(rows []adminPluginRow, domains []adminPluginDomain) {
 		if len(rows) == 0 {
 			<p class="muted small">no plugins loaded.</p>
 		} else {
-			<ul class="plain" id="admin-plugins-list">
+			<div class="plugin-grid" id="admin-plugins-list">
 				for _, r := range rows {
-					<li>
-						<div class="row">
-							<div>
-								<strong>{ r.Name }</strong>
-								<span class="badge">{ r.Kind }</span>
-								if r.RawNet {
-									<span class="badge warn" title="plugin uses its own HTTP client and surfaces rate limits itself">raw network</span>
-								}
-								<div class="item-meta muted">
-									api { r.Version }
-									if r.UserAgent != "" {
-										· user-agent: { r.UserAgent }
-									} else {
-										· user-agent: app default
-									}
-								</div>
-							</div>
+					<div class="plugin-card">
+						<div class="plugin-card-head">
+							<strong>{ r.Name }</strong>
+							<span class="badge">{ r.Kind }</span>
+							if r.RawNet {
+								<span class="badge warn" title="plugin uses its own HTTP client and surfaces rate limits itself">raw network</span>
+							}
 						</div>
-					</li>
+						if r.Summary != "" {
+							<p class="plugin-summary muted small">{ r.Summary }</p>
+						}
+						<div class="plugin-card-foot">
+							<span class="item-meta muted">
+								api { r.Version }
+								if r.UserAgent != "" {
+									· user-agent: { r.UserAgent }
+								} else {
+									· user-agent: app default
+								}
+							</span>
+							if r.HasDocs {
+								<button type="button" class="link" data-plugin={ r.Name } title="read this plugin's documentation" onclick="openPluginDocs(this.dataset.plugin)">docs</button>
+							}
+						</div>
+					</div>
 				}
-			</ul>
+			</div>
 		}
 		<div id="admin-plugins-error" class="error"></div>
 		if len(domains) > 0 {

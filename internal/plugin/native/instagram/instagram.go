@@ -7,6 +7,7 @@ package instagram
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -22,6 +23,11 @@ import (
 
 // Name is the plugin's stable identifier.
 const Name = "instagram"
+
+// readme is the plugin's Markdown documentation, shown in the app's docs modal.
+//
+//go:embed readme.md
+var readme string
 
 // userAgent is the crawler identity Instagram serves the logged-out post grid
 // to. A normal browser user-agent gets a login wall with no posts. It is
@@ -62,8 +68,16 @@ type Plugin struct{}
 var _ pluginapi.Fetcher = Plugin{}
 
 func (Plugin) Meta() pluginapi.Meta {
-	return pluginapi.Meta{Name: Name, APIVersion: pluginapi.APIVersion, UserAgent: userAgent}
+	return pluginapi.Meta{
+		Name:       Name,
+		APIVersion: pluginapi.APIVersion,
+		UserAgent:  userAgent,
+		Summary:    "Instagram profiles: best-effort fetch of the recent post grid",
+	}
 }
+
+// Docs returns this plugin's Markdown documentation.
+func (Plugin) Docs() string { return readme }
 
 func (Plugin) Match(u *url.URL, _ pluginapi.Capability) bool {
 	return isProfileURL(u)

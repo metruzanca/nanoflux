@@ -161,6 +161,8 @@ type Info struct {
 	Version   string // plugin API version the plugin reported
 	RawNet    bool   // plugin opted out of host-mediated HTTP
 	UserAgent string // per-plugin User-Agent override, "" for the app default
+	Summary   string // one-line description, "" when the plugin gave none
+	HasDocs   bool   // plugin implements Docser (offers a readme)
 }
 
 // Infos returns a description of every loaded plugin: native first, then
@@ -178,11 +180,62 @@ func (r *Registry) Infos() []Info {
 
 func info(f pluginapi.Fetcher, kind string) Info {
 	m := f.Meta()
+	// Trust the reported HasDocs. For an external plugin that value arrives over
+	// the wire from the real implementation; the gRPC client wrapper always
+	// satisfies Docser, so asserting on f would report docs for every external
+	// plugin. Only a native plugin needs the type assertion, since its authored
+	// Meta does not fill HasDocs.
+	hasDocs := m.HasDocs
+	if !hasDocs && kind == "native" {
+		_, hasDocs = f.(pluginapi.Docser)
+	}
 	return Info{
 		Name:      m.Name,
 		Kind:      kind,
 		Version:   m.APIVersion,
 		RawNet:    m.RawNetwork,
 		UserAgent: m.UserAgent,
+		Summary:   m.Summary,
+		HasDocs:   hasDocs,
 	}
+}
+
+// ByName returns the loaded plugin with the given name, or nil. Native
+// plugins are searched first (they win URL matches).
+func (r *Registry) ByName(name string) pluginapi.Fetcher {
+	if name == "" {
+		return nil
+	}
+	for _, f := range r.all() {
+		if f.Meta().Name == name {
+			return f
+		}
+	}
+	return nil
+}
+
+// Docs returns the Markdown documentation a plugin publishes. It returns
+// ErrNotFound for an unknown plugin and ErrUnsupportedCapability when the
+// plugin has no docs, so a caller can distinguish "no such plugin" from
+// "nothing to show".
+func (r *Registry) Docs(name string) (string, error) {
+	f := r.ByName(name)
+	if f == nil {
+		return "", ErrNotFound
+	}
+	d, ok := f.(pluginapi.Docser)
+	if !ok {
+		return "", pluginapi.ErrUnsupportedCapability
+	}
+	return d.Docs(), nil
+}
+
+// MatchDocs returns the name of the first plugin that documents u, or "" when
+// none does. It is how a docs affordance is found for a URL a plugin does not
+// own the fetch of (a reddit feed).
+func (r *Registry) MatchDocs(u *url.URL) string {
+	if f := r.Match(u, pluginapi.CapDocs); f != nil {
+		return f.Meta().Name
+	}
+	return ""
 }

@@ -20,6 +20,7 @@ package bluesky
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +35,12 @@ import (
 
 // Name is the plugin's stable identifier (stored in feeds.plugin_name).
 const Name = "bluesky"
+
+// readme is the plugin's Markdown documentation, shown from the admin plugin
+// card and from a feed's edit page.
+//
+//go:embed readme.md
+var readme string
 
 // listLimit is how many post records are requested per fetch. The repository is
 // newest-first, so this is the recent window; a profile that posts heavily may
@@ -67,8 +74,15 @@ type Plugin struct{}
 var _ pluginapi.Fetcher = Plugin{}
 
 func (Plugin) Meta() pluginapi.Meta {
-	return pluginapi.Meta{Name: Name, APIVersion: pluginapi.APIVersion}
+	return pluginapi.Meta{
+		Name:       Name,
+		APIVersion: pluginapi.APIVersion,
+		Summary:    "Bluesky profiles: reads posts from the AT Protocol with titles, images, video and link cards",
+	}
 }
+
+// Docs returns this plugin's Markdown documentation.
+func (Plugin) Docs() string { return readme }
 
 // Match handles discovery on a profile page, and fetch for the stored /rss
 // feed URL. Fetch deliberately does not claim the bare profile page: generic

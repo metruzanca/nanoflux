@@ -332,7 +332,7 @@ func topbar(u store.User) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</button></div><div id=\"item-dialog-body\" class=\"item-view\" tabindex=\"0\"></div></dialog><!-- Shared add-to-list picker; the item's \"⋯\" menu fetches its content into\n\t     this dialog (itemListsDialogInner) before showing it. --><dialog id=\"item-lists-dialog\" class=\"modal\"></dialog><!-- Save-page dialog; the nav \"add\" menu fetches its content (savePageForm)\n\t     into this dialog before showing it. --><dialog id=\"save-page-dialog\" class=\"modal\"></dialog><!-- Command palette (ctrl/cmd+p) and unified entity search\n\t     (ctrl/cmd+shift+p). Both are filled client-side by app.js. --><dialog id=\"command-palette\" class=\"palette\"><input id=\"command-input\" type=\"text\" placeholder=\"run a command…\" autocomplete=\"off\" spellcheck=\"false\"><ul id=\"command-results\" class=\"palette-results\" role=\"listbox\"></ul></dialog> <dialog id=\"entity-palette\" class=\"palette\"><input id=\"entity-input\" type=\"text\" placeholder=\"search… @ authors  # collections  ! feeds\" autocomplete=\"off\" spellcheck=\"false\"><ul id=\"entity-results\" class=\"palette-results\" role=\"listbox\"></ul></dialog> <dialog id=\"shortcuts-dialog\" class=\"modal\"><div class=\"row\"><h2 class=\"muted\">keyboard shortcuts</h2><button type=\"button\" class=\"link\" onclick=\"document.getElementById('shortcuts-dialog').close()\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</button></div><div id=\"item-dialog-body\" class=\"item-view\" tabindex=\"0\"></div></dialog><!-- Shared add-to-list picker; the item's \"⋯\" menu fetches its content into\n\t     this dialog (itemListsDialogInner) before showing it. --><dialog id=\"item-lists-dialog\" class=\"modal\"></dialog><!-- Save-page dialog; the nav \"add\" menu fetches its content (savePageForm)\n\t     into this dialog before showing it. --><dialog id=\"save-page-dialog\" class=\"modal\"></dialog><!-- Plugin docs dialog; the admin plugin card and the feed edit page fetch\n\t     a plugin's documentation (plugin-docs-dialog) into it before showing. --><dialog id=\"plugin-docs-dialog\" class=\"modal wide\"></dialog><!-- Command palette (ctrl/cmd+p) and unified entity search\n\t     (ctrl/cmd+shift+p). Both are filled client-side by app.js. --><dialog id=\"command-palette\" class=\"palette\"><input id=\"command-input\" type=\"text\" placeholder=\"run a command…\" autocomplete=\"off\" spellcheck=\"false\"><ul id=\"command-results\" class=\"palette-results\" role=\"listbox\"></ul></dialog> <dialog id=\"entity-palette\" class=\"palette\"><input id=\"entity-input\" type=\"text\" placeholder=\"search… @ authors  # collections  ! feeds\" autocomplete=\"off\" spellcheck=\"false\"><ul id=\"entity-results\" class=\"palette-results\" role=\"listbox\"></ul></dialog> <dialog id=\"shortcuts-dialog\" class=\"modal\"><div class=\"row\"><h2 class=\"muted\">keyboard shortcuts</h2><button type=\"button\" class=\"link\" onclick=\"document.getElementById('shortcuts-dialog').close()\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -420,7 +420,7 @@ func basePage(title string, u store.User, content templ.Component) templ.Compone
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(u.Theme)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 154, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 158, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 		if templ_7745c5c3_Err != nil {
@@ -438,7 +438,7 @@ func basePage(title string, u store.User, content templ.Component) templ.Compone
 			var templ_7745c5c3_Var21 string
 			templ_7745c5c3_Var21, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues("--accent: " + u.AccentColor)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 156, Col: 39}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 160, Col: 39}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 			if templ_7745c5c3_Err != nil {
@@ -464,7 +464,7 @@ func basePage(title string, u store.User, content templ.Component) templ.Compone
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatBool(u.IsAdmin))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 161, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 165, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 		if templ_7745c5c3_Err != nil {
@@ -523,7 +523,7 @@ func FormError(msg string) templ.Component {
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(msg)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 172, Col: 38}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 176, Col: 38}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
@@ -567,7 +567,7 @@ func FormErrorOOB(target, msg string) templ.Component {
 		var templ_7745c5c3_Var26 string
 		templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(target)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 178, Col: 17}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 182, Col: 17}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 		if templ_7745c5c3_Err != nil {
@@ -580,7 +580,7 @@ func FormErrorOOB(target, msg string) templ.Component {
 		var templ_7745c5c3_Var27 string
 		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinStringErrs(msg)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 179, Col: 39}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_layout.templ`, Line: 183, Col: 39}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {

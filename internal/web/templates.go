@@ -1,8 +1,10 @@
 package web
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
+	"html/template"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -13,11 +15,72 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
 	"golang.org/x/net/html"
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
+
+// markdown renders plugin documentation. Raw HTML is left disabled (goldmark's
+// default), so an external plugin's readme cannot inject markup; the output is
+// safe to render as HTML. Tables, strikethrough, task lists and autolinks are
+// enabled because a readme may reasonably use them.
+var markdown = goldmark.New(
+	goldmark.WithExtensions(extension.GFM),
+	goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+)
+
+// Markdown renders src as HTML, for plugin documentation set in Markdown.
+//
+// Anchors are marked as external (class, target, rel, and the project's ↗ via
+// a.external), matching how every other outbound link in the app renders.
+// Goldmark escapes raw HTML, so the result is safe for template.HTML.
+func Markdown(src string) template.HTML {
+	if strings.TrimSpace(src) == "" {
+		return ""
+	}
+	var buf bytes.Buffer
+	if err := markdown.Convert([]byte(src), &buf); err != nil {
+		return ""
+	}
+	doc, err := html.Parse(&buf)
+	if err != nil {
+		return template.HTML(buf.String())
+	}
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "a" {
+			setAttr(n, "class", "external")
+			setAttr(n, "target", "_blank")
+			setAttr(n, "rel", "noopener noreferrer")
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(doc)
+	var out bytes.Buffer
+	for c := doc.FirstChild; c != nil; c = c.NextSibling {
+		if err := html.Render(&out, c); err != nil {
+			return template.HTML(buf.String())
+		}
+	}
+	return template.HTML(out.String())
+}
+
+// setAttr sets an attribute on n, replacing any existing value.
+func setAttr(n *html.Node, key, val string) {
+	for i := range n.Attr {
+		if n.Attr[i].Key == key {
+			n.Attr[i].Val = val
+			return
+		}
+	}
+	n.Attr = append(n.Attr, html.Attribute{Key: key, Val: val})
+}
 
 //go:embed static/*
 var staticFS embed.FS

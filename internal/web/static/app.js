@@ -680,6 +680,24 @@ function openSavePage() {
     .catch(function () { d.innerHTML = '<p class="error">could not load the form</p>'; });
 }
 
+// openPluginDocs fetches a plugin's documentation into the shared
+// #plugin-docs-dialog and shows it. The admin plugin card and the feed edit
+// page (next to the filter rules) both open it this way.
+function openPluginDocs(name) {
+  var d = document.getElementById('plugin-docs-dialog');
+  if (!d) return;
+  d.innerHTML = '<p class="muted">loading…</p>';
+  d.showModal();
+  fetch('/fragments/plugin-docs?plugin=' + encodeURIComponent(name), { credentials: 'same-origin' })
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      d.innerHTML = html;
+      htmx.process(d);
+      if (window.nanofluxReinitVaadin) window.nanofluxReinitVaadin(d);
+    })
+    .catch(function () { d.innerHTML = '<p class="error">could not load the documentation</p>'; });
+}
+
 // ACTIONS is the single source of truth for the "add" actions shared by the
 // command palette and the nav "add" dropdown. Server-rendered buttons invoke
 // them through data-action (see the delegated click handler below); palette

@@ -1,7 +1,9 @@
 package pluginapi
 
 import (
+	"context"
 	"errors"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -38,6 +40,47 @@ func TestErrorRoundTrip(t *testing.T) {
 	if toPBError(nil) != nil {
 		t.Fatal("toPBError(nil) should be nil")
 	}
+}
+
+func TestMetaDocsRoundTrip(t *testing.T) {
+	// A Fetcher that also documents itself.
+	p := &metaDocPlugin{}
+	_, hasDocs := interface{}(p).(Docser)
+	if !hasDocs {
+		t.Fatal("metaDocPlugin should implement Docser")
+	}
+	if got := p.Docs(); got != "# hi" {
+		t.Fatalf("Docs() = %q", got)
+	}
+	// A Fetcher without Docs is not a Docser.
+	if _, ok := interface{}(plainPlugin{}).(Docser); ok {
+		t.Fatal("plainPlugin should not implement Docser")
+	}
+}
+
+type metaDocPlugin struct{}
+
+func (metaDocPlugin) Meta() Meta { return Meta{Name: "d", APIVersion: APIVersion} }
+func (metaDocPlugin) Match(*url.URL, Capability) bool {
+	return false
+}
+func (metaDocPlugin) Discover(context.Context, string, Host) ([]Candidate, error) {
+	return nil, ErrUnsupportedCapability
+}
+func (metaDocPlugin) Fetch(context.Context, FetchRequest, Host) (Result, error) {
+	return Result{}, nil
+}
+func (metaDocPlugin) Docs() string { return "# hi" }
+
+type plainPlugin struct{}
+
+func (plainPlugin) Meta() Meta                      { return Meta{Name: "p", APIVersion: APIVersion} }
+func (plainPlugin) Match(*url.URL, Capability) bool { return false }
+func (plainPlugin) Discover(context.Context, string, Host) ([]Candidate, error) {
+	return nil, ErrUnsupportedCapability
+}
+func (plainPlugin) Fetch(context.Context, FetchRequest, Host) (Result, error) {
+	return Result{}, nil
 }
 
 func TestItemRoundTrip(t *testing.T) {
