@@ -26,10 +26,10 @@ func fixCmd(st *store.Store, out io.Writer) *cobra.Command {
 }
 
 // fixRedditURLsCmd normalizes every stored reddit feed URL to its canonical
-// form via store.CanonicalFeedURL: old./np./m. hosts collapse to reddit.com,
-// /user/{name} becomes /u/{name}, and a user's bare feed (both the
-// /u/{name}.rss and /u/{name}/.rss forms) becomes the posts-only
-// /u/{name}/submitted.rss. It reports by default; --apply performs the
+// form via store.CanonicalFeedURL: old./np./m. and bare hosts collapse to
+// www.reddit.com, /u/{name} becomes /user/{name}, and a user's bare feed (both
+// the /user/{name}.rss and /user/{name}/.rss forms) becomes the posts-only
+// /user/{name}/submitted.rss. It reports by default; --apply performs the
 // rewrite. Idempotent.
 func fixRedditURLsCmd(st *store.Store, out io.Writer) *cobra.Command {
 	var apply bool
@@ -37,9 +37,9 @@ func fixRedditURLsCmd(st *store.Store, out io.Writer) *cobra.Command {
 		Use:   "reddit-urls",
 		Short: "Normalize stored reddit feed urls",
 		Long: "Rewrite every stored reddit feed url to its canonical form:\n" +
-			"old./np./m. hosts -> reddit.com, /user/{name} -> /u/{name}, and a\n" +
-			"user's bare feed -> the posts-only /u/{name}/submitted.rss. Runs as a\n" +
-			"report unless --apply is given.",
+			"old./np./m. and bare hosts -> www.reddit.com, /u/{name} ->\n" +
+			"/user/{name}, and a user's bare feed -> the posts-only\n" +
+			"/user/{name}/submitted.rss. Runs as a report unless --apply is given.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			feeds, err := st.Feeds.ListAll()

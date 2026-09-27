@@ -170,6 +170,7 @@ func (s *FeedStore) ListByAuthorWithUnread(userID, authorID int64) ([]FeedWithUn
 }
 
 func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int, pollIntervalAuto bool, enabled bool) error {
+	feedURL = CanonicalFeedURL(feedURL)
 	res, err := s.q.UpdateFeed(context.Background(), sqlcgen.UpdateFeedParams{
 		AuthorID:         authorID,
 		Title:            title,

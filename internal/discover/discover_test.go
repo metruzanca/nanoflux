@@ -183,11 +183,11 @@ func TestDiscoverRedditDerived(t *testing.T) {
 		feedURL string
 		homeURL string
 	}{
-		{"https://www.reddit.com/r/golang/", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang"},
-		{"https://old.reddit.com/r/golang/top/", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang"},
-		{"https://www.reddit.com/user/spez", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez"},
-		{"https://www.reddit.com/u/spez/", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez"},
-		{"https://m.reddit.com/r/golang/", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang"},
+		{"https://www.reddit.com/r/golang/", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang"},
+		{"https://old.reddit.com/r/golang/top/", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang"},
+		{"https://www.reddit.com/user/spez", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez"},
+		{"https://www.reddit.com/u/spez/", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez"},
+		{"https://m.reddit.com/r/golang/", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang"},
 	}
 	for _, c := range cases {
 		cs, err := d.Discover(context.Background(), c.page)
@@ -270,15 +270,15 @@ func TestDerive(t *testing.T) {
 		authorName string
 		ok         bool
 	}{
-		{"https://www.reddit.com/r/golang/", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang", "r/golang", "r/golang", true},
-		{"https://reddit.com/r/golang", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang", "r/golang", "r/golang", true},
-		{"https://old.reddit.com/r/golang/top/?t=week", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang", "r/golang", "r/golang", true},
-		{"https://np.reddit.com/r/golang/.rss", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang", "r/golang", "r/golang", true},
-		{"https://www.reddit.com/r/golang.rss", "https://reddit.com/r/golang.rss", "https://reddit.com/r/golang", "r/golang", "r/golang", true},
-		{"https://www.reddit.com/user/spez", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
-		{"https://www.reddit.com/u/spez/", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
-		{"https://m.reddit.com/user/spez/comments", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
-		{"https://old.reddit.com/u/spez.rss", "https://reddit.com/u/spez/submitted.rss", "https://reddit.com/u/spez", "u/spez", "spez", true},
+		{"https://www.reddit.com/r/golang/", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
+		{"https://www.reddit.com/r/golang", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
+		{"https://old.reddit.com/r/golang/top/?t=week", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
+		{"https://np.reddit.com/r/golang/.rss", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
+		{"https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
+		{"https://www.reddit.com/user/spez", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
+		{"https://www.reddit.com/u/spez/", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
+		{"https://m.reddit.com/user/spez/comments", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
+		{"https://old.reddit.com/u/spez.rss", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
 		{"https://www.reddit.com/", "", "", "", "", false},
 		{"https://www.reddit.com/r/", "", "", "", "", false},
 		{"https://www.reddit.com/user/", "", "", "", "", false},
@@ -490,14 +490,14 @@ func TestPageMetaYouTubeAvatar(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Write([]byte(`<html><head>
-		  <title>Think Before You Sleep</title>
+		  <title>Gopher Hour</title>
 		  <meta property="og:image" content="https://yt3.googleusercontent.com/abc=s900-c-k-c0x00ffffff-no-rj">
 		  <link rel="shortcut icon" href="https://www.youtube.com/s/desktop/hash/img/favicon.ico">
 		</head><body>hi</body></html>`))
 	}))
 	defer srv.Close()
 
-	meta, err := New(clientTo(srv)).PageMeta(context.Background(), "https://www.youtube.com/@ThinkBeforeYouSleepYT")
+	meta, err := New(clientTo(srv)).PageMeta(context.Background(), "https://www.youtube.com/@GopherHourYT")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,7 +566,7 @@ func TestStripCDATA(t *testing.T) {
 
 func TestPageTitleYouTube(t *testing.T) {
 	cases := []struct{ page, title, want string }{
-		{"https://youtube.com/@EddyBurback", "Eddy Burback - YouTube", "Eddy Burback"},
+		{"https://youtube.com/@GopherDev", "Gopher Dev - YouTube", "Gopher Dev"},
 		{"https://www.youtube.com/channel/UCx", "Some Channel - YouTube", "Some Channel"},
 		{"https://youtube.com/@x", "Just A Name", "Just A Name"},
 		{"https://example.com", "Example - Home", "Example - Home"},

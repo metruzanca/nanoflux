@@ -1132,16 +1132,16 @@ func TestListDueNextPollAtOverridesInterval(t *testing.T) {
 
 func TestCanonicalFeedURL(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"https://old.reddit.com/u/Dominan-t.rss", "https://reddit.com/u/Dominan-t/submitted.rss"},
-		{"https://www.reddit.com/user/foo.rss", "https://reddit.com/u/foo/submitted.rss"},
-		{"https://reddit.com/u/foo.rss", "https://reddit.com/u/foo/submitted.rss"},
-		{"https://www.reddit.com/u/foo/.rss", "https://reddit.com/u/foo/submitted.rss"},
-		{"https://old.reddit.com/u/foo/.rss", "https://reddit.com/u/foo/submitted.rss"},
-		{"https://www.reddit.com/u/foo/submitted.rss", "https://reddit.com/u/foo/submitted.rss"},
-		{"https://www.reddit.com/u/foo/comments.rss", "https://reddit.com/u/foo/comments.rss"},
-		{"https://www.reddit.com/r/golang/.rss", "https://reddit.com/r/golang/.rss"},
-		{"https://np.reddit.com/user/foo.rss", "https://reddit.com/u/foo/submitted.rss"},
-		{"https://m.reddit.com/r/golang.rss", "https://reddit.com/r/golang.rss"},
+		{"https://old.reddit.com/u/gopherfan.rss", "https://www.reddit.com/user/gopherfan/submitted.rss"},
+		{"https://www.reddit.com/user/foo.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://reddit.com/u/foo.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://www.reddit.com/u/foo/.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://old.reddit.com/u/foo/.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://www.reddit.com/u/foo/submitted.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://www.reddit.com/u/foo/comments.rss", "https://www.reddit.com/user/foo/comments.rss"},
+		{"https://www.reddit.com/r/golang/.rss", "https://www.reddit.com/r/golang/.rss"},
+		{"https://np.reddit.com/user/foo.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://m.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang.rss"},
 		{"https://example.com/feed.xml", "https://example.com/feed.xml"},
 		{"not a url", "not a url"},
 	}
@@ -1149,6 +1149,22 @@ func TestCanonicalFeedURL(t *testing.T) {
 		if got := CanonicalFeedURL(c.in); got != c.want {
 			t.Errorf("CanonicalFeedURL(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// TestUpdateCanonicalizesFeedURL asserts the edit path applies the same reddit
+// URL normalization as create, so a user can't reintroduce a redirecting shape.
+func TestUpdateCanonicalizesFeedURL(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "A", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "feed", "https://example.com/x", "", "", 900)
+	if err := s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://old.reddit.com/u/foo.rss", "", "", 900, true, true); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Feeds.ByID(u.ID, f.ID)
+	if got.FeedURL != "https://www.reddit.com/user/foo/submitted.rss" {
+		t.Fatalf("FeedURL = %q, want the canonical www/user/submitted shape", got.FeedURL)
 	}
 }
 
@@ -1171,7 +1187,7 @@ func TestCanonicalizeFeedURLs(t *testing.T) {
 		t.Fatalf("CanonicalizeFeedURLs = %d, %v", n, err)
 	}
 	got, _ := s.Feeds.ByID(u.ID, f.ID)
-	if got.FeedURL != "https://reddit.com/u/foo/submitted.rss" {
+	if got.FeedURL != "https://www.reddit.com/user/foo/submitted.rss" {
 		t.Fatalf("FeedURL = %q", got.FeedURL)
 	}
 }
