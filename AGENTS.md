@@ -160,6 +160,40 @@ feed, so lists, favorites, FTS search and share pages all work unchanged.
   the same origin the feed names and a test can point it at a mock host with no
   env plumbing.
 
+### The native Bluesky plugin
+
+- The plugin (`internal/plugin/native/bluesky`) replaces the profile RSS feed
+  (`bsky.app/profile/{handle}/rss`), which is text-only: no item titles, no
+  media, no author, and it drops an image/video post down to its caption. It
+  reads the raw `app.bsky.feed.post` records through `com.atproto.repo.listRecords`
+  and rebuilds entries from them. The stored feed URL stays the `/rss` shape
+  (what discovery has always produced) and is never parsed; its handle/DID only
+  selects the repository to read.
+- Two origins are involved and they are **not** interchangeable:
+  `public.api.bsky.app` answers `app.bsky.actor.getProfile` but returns **501**
+  for `com.atproto.repo.listRecords`; `bsky.social` answers `listRecords` and
+  `com.atproto.sync.getBlob` but **401**s `getProfile`. The plugin's `apiBase`,
+  `repoBase`, `syncBase`, `imgBase` and `videoBase` vars encode this so a test
+  can point them at a mock host.
+- Media: images use `cdn.bsky.app/img/feed_fullsize/plain/{did}/{cid}` (direct,
+  cacheable). Video is attached as a `video/mp4` enclosure via
+  `com.atproto.sync.getBlob?did={did}&cid={cid}` (redirects to the account's PDS;
+  returns the whole MP4 and ignores `Range`, so seeking is limited until cached),
+  with its poster frame (`video.bsky.app/watch/.../thumbnail.jpg`) as the
+  thumbnail. An HLS alternative (`video.cdn.bsky.app` playlists, Range-capable,
+  needs a frontend player) is documented in a comment on `blobURL` in case the
+  MP4 enclosure proves too limiting.
+- Replies are skipped, matching the RSS feed's original-posts-only behavior.
+  Quotes are rendered as a link to the quoted post (not expanded: hydrating each
+  quoted record would cost one request per quote). Facets (mentions, links,
+  tags) are rendered as anchors from the record's byte offsets.
+- Existing stored bsky feeds are adopted by `ReconcileFeeds` at startup (the URL
+  shape matches), and `poller.ingest` now stores enclosures on **every** poll
+  (not only on insert), so an already-stored feed gains its media on the next
+  poll. The generic `discover.hostSpecificURLs` bsky rule was removed so
+  discovery no longer spends an extra `/rss` fetch; the plugin's `Discover`
+  supplies the candidate and its preview metadata.
+
 ### Item media duration
 
 - `items.duration_sec` (schemaV37) is a media item's runtime in seconds, NULL

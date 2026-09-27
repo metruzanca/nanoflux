@@ -223,8 +223,7 @@ func TestHostSpecificURLs(t *testing.T) {
 		want   []string
 		titles map[string]string
 	}{
-		{"https://bsk.app/profile/metru.dev", []string{"https://bsk.app/profile/metru.dev/rss"}, nil},
-		{"https://bsky.app/profile/metru.dev.bsky.social", []string{"https://bsky.app/profile/metru.dev.bsky.social/rss"}, nil},
+		{"https://bsky.app/profile/metru.dev", nil, nil}, // owned by the native bluesky plugin
 		{"https://github.com/metru", []string{"https://github.com/metru.atom"}, map[string]string{"https://github.com/metru.atom": "metru's Github activity"}},
 		{"https://github.com/spf13/cobra", []string{
 			"https://github.com/spf13/cobra/releases.atom",

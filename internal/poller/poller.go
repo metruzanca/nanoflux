@@ -595,10 +595,14 @@ func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter
 		}
 		if inserted {
 			newItems++
-			if len(it.Enclosures) > 0 {
-				if err := p.storeEnclosures(f, it); err != nil {
-					log.Error("store enclosures", "feed_id", f.ID, "guid", it.GUID, "err", err)
-				}
+		}
+		// Enclosures are stored whenever the item carries them, not only when it
+		// is new: a feed polled before its parser learned to expose media (the
+		// native Bluesky plugin, say) gains its attachments on the next poll.
+		// ReplaceEnclosures is delete-then-insert, so this keeps them current.
+		if len(it.Enclosures) > 0 {
+			if err := p.storeEnclosures(f, it); err != nil {
+				log.Error("store enclosures", "feed_id", f.ID, "guid", it.GUID, "err", err)
 			}
 		}
 	}
