@@ -50,6 +50,7 @@ var migrations = []migration{
 	{37, schemaV37},
 	{38, schemaV38},
 	{39, schemaV39},
+	{40, schemaV40},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -597,6 +598,13 @@ INSERT INTO item_feeds(item_id, feed_id) SELECT id, feed_id FROM items;
 // table so an already-migrated database and a fresh one converge.
 const schemaV39 = `
 DROP TABLE IF EXISTS url_mappings;
+`
+
+// schemaV40 renames the "hide" ingest-filter action to "delete", matching what
+// it now does: retroactively remove matching items rather than skip them at
+// ingest. action is free text, so only existing rows need rewriting.
+const schemaV40 = `
+UPDATE filters SET action = 'delete' WHERE action = 'hide';
 `
 
 // Migrate applies any pending migrations in order, recording each in

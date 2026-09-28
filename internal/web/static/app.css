@@ -778,6 +778,32 @@ dialog.modal {
 dialog.modal::backdrop { background: rgba(0, 0, 0, 0.55); }
 dialog.modal h2 { margin: 0; }
 
+/* Filter preview: wide but content-height, with keep vs delete columns. */
+dialog.filter-preview-dialog {
+  width: min(56rem, calc(100vw - 2rem));
+}
+.filter-preview-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 0.75rem 0;
+}
+.filter-preview-cols h3 { margin: 0.25rem 0; }
+.filter-preview-cols > section {
+  min-width: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.filter-preview-items { margin: 0; }
+.filter-preview-items li {
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.filter-preview-items a { display: block; }
+@media (max-width: 640px) {
+  .filter-preview-cols { grid-template-columns: 1fr; }
+}
+
 /* Lock the page behind any open modal so wheel/touch/keyboard scroll can't
    reach elements underneath it. */
 body:has(dialog.modal[open]),

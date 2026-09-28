@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/metruzanca/nanoflux/internal/filtermatch"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -189,10 +190,10 @@ templ feedRulesSection(d feedRulesData) {
 				<button type="button" class="link" data-plugin={ d.DocsPlugin } title="read this feed's plugin documentation" onclick="openPluginDocs(this.dataset.plugin)">plugin docs</button>
 			}
 		</div>
-		<p class="muted small">Rules run against new items when the feed is polled. "hide" drops the item; "mark read" stores it as already read. The "category" field matches any feed-provided category, e.g. <code>r/golang</code> or <code>u/someuser</code>.</p>
-		<form class="stack" hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters" } hx-target="#feed-rules" hx-swap="outerHTML">
+		<p class="muted small">Rules run against new items when the feed is polled and are applied to this feed's existing items when added. "delete" removes matching items from this feed; "mark read" stores them as already read. The "category" field matches any feed-provided category, e.g. <code>r/golang</code> or <code>u/someuser</code>.</p>
+		<form class="stack" hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters/preview" } hx-target="#filter-preview-dialog" hx-swap="innerHTML" hx-on::after-request="document.getElementById('filter-preview-dialog').showModal()">
 			<div class="row">
-				@comboSelect("action", "hide", "action", "", filterActionItems, nil)
+				@comboSelect("action", "delete", "action", "", filterActionItems, nil)
 				@comboSelect("field", "title", "field", "", filterFieldItems, nil)
 				<label>
 					pattern
@@ -204,7 +205,92 @@ templ feedRulesSection(d feedRulesData) {
 			<button type="submit">add rule</button>
 		</form>
 		@FilterList(d.FeedID, d.Rows)
+		<!-- The preview dialog lives inside the section so saving a rule (which
+		     swaps #feed-rules outerHTML) removes the open dialog with it. -->
+		<dialog id="filter-preview-dialog" class="modal filter-preview-dialog"></dialog>
 	</section>
+}
+
+// filterPreviewData is the preview modal's content: the pending rule, the items
+// it would keep, and the items it would affect (deleted or marked read),
+// truncated to PageSize per section (counts are the true totals).
+type filterPreviewData struct {
+	FeedID   int64
+	Rule     filterRuleInput
+	Keep     []store.ItemWithFeed
+	Affected []store.ItemWithFeed
+	PageSize int
+}
+
+func filterPreviewAffectedTitle(action string) string {
+	if action == filtermatch.ActionMarkRead {
+		return "mark read"
+	}
+	return "delete"
+}
+
+// filterPreview is the confirmation modal shown when a rule is added: it lists
+// what stays and what changes before anything is saved. The rule's hidden fields
+// are posted to /feeds/{id}/filters by the save button; cancel and Esc abort.
+templ filterPreview(d filterPreviewData) {
+	<div class="row">
+		<h2>add filter: { d.Rule.Action } { d.Rule.Field } <code>{ d.Rule.Pattern }</code></h2>
+		<button type="button" class="link" title="close" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+	</div>
+	<p class="muted small">applies to this feed's existing items now, and to new items when polled.</p>
+	<div class="filter-preview-cols">
+		<section>
+			<h3>keep ({ len(d.Keep) })</h3>
+			@previewItems(d.Keep, d.PageSize)
+		</section>
+		<section>
+			<h3>{ filterPreviewAffectedTitle(d.Rule.Action) } ({ len(d.Affected) })</h3>
+			@previewItems(d.Affected, d.PageSize)
+		</section>
+	</div>
+	<div class="row-actions">
+		<button type="button" class="link" autofocus onclick="this.closest('dialog').close()">cancel</button>
+		<form hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters" } hx-target="#feed-rules" hx-swap="outerHTML">
+			<input type="hidden" name="action" value={ d.Rule.Action }/>
+			<input type="hidden" name="field" value={ d.Rule.Field }/>
+			<input type="hidden" name="pattern" value={ d.Rule.Pattern }/>
+			if d.Rule.IsRegex {
+				<input type="hidden" name="is_regex" value="1"/>
+			}
+			<button type="submit">save filter</button>
+		</form>
+	</div>
+}
+
+// previewItems renders a preview column's items as a plain list, capped at
+// pageSize, with a "showing X of Y" note when truncated. Rows are simplified
+// (no favorite/read/⋯ controls, whose htmx targets assume a live list) and link
+// to the item modal in a new tab so the pending rule form is not lost.
+templ previewItems(items []store.ItemWithFeed, pageSize int) {
+	if len(items) == 0 {
+		<p class="muted small">none</p>
+	} else {
+		<ul class="plain filter-preview-items">
+			for i, it := range items {
+				if i >= pageSize {
+					break
+				}
+				<li>
+					<a href={ templ.URL("/#item-" + strconv.FormatInt(it.ID, 10)) } target="_blank" rel="noopener">{ it.Title }</a>
+					<div class="item-meta">
+						@web.SourceIcon(itemIconURL(it))
+						<span>{ it.FeedTitle }</span>
+						if it.PublishedAt != "" {
+							· { web.TimeFmt(it.Timezone, it.PublishedAt) }
+						}
+					</div>
+				</li>
+			}
+		</ul>
+		if len(items) > pageSize {
+			<p class="muted small">showing { pageSize } of { len(items) }</p>
+		}
+	}
 }
 
 templ FilterList(feedID int64, rows []store.Filter) {

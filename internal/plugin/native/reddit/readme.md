@@ -25,19 +25,19 @@ by where they posted.
 
 ### Examples
 
-Hide everything from a user in a subreddit you otherwise follow:
+Delete everything from a user in a subreddit you otherwise follow:
 
-- action: `hide`
+- action: `delete`
 - field: `category`
 - pattern: `u/thatguy`
 
-Keep a user feed focused on one subreddit, hiding the rest:
+Keep a user feed focused on one subreddit, deleting the rest:
 
-- action: `hide`
+- action: `delete`
 - field: `category`
 - pattern: `r/politics`
 
-A rule hides (or marks read) when its pattern matches, so to keep only certain
-subs, add one `hide` rule per unwanted sub. To filter by title or body text
-instead, use the `title` or `summary` field. The same `category` field works on
-any feed type whose parser provides categories, not just reddit.
+A rule acts when its pattern matches, so to keep only certain subs, add one
+`delete` rule per unwanted sub. To filter by title or body text instead, use the
+`title` or `summary` field. The same `category` field works on any feed type
+whose parser provides categories, not just reddit.

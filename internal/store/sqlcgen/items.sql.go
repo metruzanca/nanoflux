@@ -246,6 +246,37 @@ func (q *Queries) DeleteEnclosures(ctx context.Context, itemID int64) error {
 	return err
 }
 
+const deleteOrphanOwnedItems = `-- name: DeleteOrphanOwnedItems :exec
+DELETE FROM items
+WHERE items.feed_id = ?1
+  AND items.id IN (/*SLICE:itemIDs*/?)
+  AND NOT EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = items.id)
+`
+
+type DeleteOrphanOwnedItemsParams struct {
+	FeedID  int64   `json:"feedID"`
+	ItemIDs []int64 `json:"itemIDs"`
+}
+
+// Delete affected items owned by a feed that no longer belong to any feed
+// (their last membership was removed). Cascades enclosures, list items, shares
+// and the FTS trigger. Scoped to itemIDs.
+func (q *Queries) DeleteOrphanOwnedItems(ctx context.Context, arg DeleteOrphanOwnedItemsParams) error {
+	query := deleteOrphanOwnedItems
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.FeedID)
+	if len(arg.ItemIDs) > 0 {
+		for _, v := range arg.ItemIDs {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", strings.Repeat(",?", len(arg.ItemIDs))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
+}
+
 const deleteSavedItem = `-- name: DeleteSavedItem :execresult
 DELETE FROM items
 WHERE items.id = ?1
@@ -632,6 +663,91 @@ func (q *Queries) ListEnclosures(ctx context.Context, itemID int64) ([]ListEnclo
 			&i.MimeType,
 			&i.Size,
 			&i.Sort,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeedItemsForFilter = `-- name: ListFeedItemsForFilter :many
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+JOIN item_feeds mf ON mf.item_id = i.id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE mf.feed_id = ?1
+ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
+`
+
+type ListFeedItemsForFilterRow struct {
+	ID           int64          `json:"id"`
+	FeedID       int64          `json:"feed_id"`
+	Guid         string         `json:"guid"`
+	Title        string         `json:"title"`
+	Link         string         `json:"link"`
+	Summary      string         `json:"summary"`
+	Categories   string         `json:"categories"`
+	ImageUrl     sql.NullString `json:"image_url"`
+	DurationSec  sql.NullInt64  `json:"duration_sec"`
+	PublishedAt  sql.NullString `json:"published_at"`
+	FetchedAt    string         `json:"fetched_at"`
+	Read         bool           `json:"read"`
+	Favorite     bool           `json:"favorite"`
+	ReadAt       sql.NullString `json:"read_at"`
+	FeedTitle    string         `json:"feed_title"`
+	FeedUrl      string         `json:"feed_url"`
+	FeedHomeUrl  sql.NullString `json:"feed_home_url"`
+	FeedIsSystem int64          `json:"feed_is_system"`
+	AuthorID     sql.NullInt64  `json:"author_id"`
+	AuthorName   sql.NullString `json:"author_name"`
+}
+
+// Every item that is a member of a feed, with the same shape as ListItems, for
+// retroactively applying an ingest filter rule to already-stored items. Unlike
+// ListItems it is not limited and does not exclude the system feed, but the
+// caller scopes it to a regular feed.
+func (q *Queries) ListFeedItemsForFilter(ctx context.Context, feedid int64) ([]ListFeedItemsForFilterRow, error) {
+	rows, err := q.db.QueryContext(ctx, listFeedItemsForFilter, feedid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFeedItemsForFilterRow
+	for rows.Next() {
+		var i ListFeedItemsForFilterRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FeedID,
+			&i.Guid,
+			&i.Title,
+			&i.Link,
+			&i.Summary,
+			&i.Categories,
+			&i.ImageUrl,
+			&i.DurationSec,
+			&i.PublishedAt,
+			&i.FetchedAt,
+			&i.Read,
+			&i.Favorite,
+			&i.ReadAt,
+			&i.FeedTitle,
+			&i.FeedUrl,
+			&i.FeedHomeUrl,
+			&i.FeedIsSystem,
+			&i.AuthorID,
+			&i.AuthorName,
 		); err != nil {
 			return nil, err
 		}
@@ -1208,6 +1324,70 @@ func (q *Queries) MarkItemsOlderThanRead(ctx context.Context, arg MarkItemsOlder
 	return q.db.ExecContext(ctx, markItemsOlderThanRead, arg.ReadAt, arg.Cutoff, arg.UserID)
 }
 
+const rehomeOwnedItems = `-- name: RehomeOwnedItems :exec
+UPDATE items
+SET feed_id = (
+    SELECT mf.feed_id FROM item_feeds mf
+    WHERE mf.item_id = items.id
+    ORDER BY mf.feed_id LIMIT 1
+)
+WHERE items.feed_id = ?1
+  AND items.id IN (/*SLICE:itemIDs*/?)
+  AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = items.id)
+`
+
+type RehomeOwnedItemsParams struct {
+	FeedID  int64   `json:"feedID"`
+	ItemIDs []int64 `json:"itemIDs"`
+}
+
+// Re-home affected items owned by a feed to one of their remaining memberships,
+// so a row still reachable through another feed survives the owner's removal.
+// Scoped to itemIDs so untouched items keep their owner feed.
+func (q *Queries) RehomeOwnedItems(ctx context.Context, arg RehomeOwnedItemsParams) error {
+	query := rehomeOwnedItems
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.FeedID)
+	if len(arg.ItemIDs) > 0 {
+		for _, v := range arg.ItemIDs {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", strings.Repeat(",?", len(arg.ItemIDs))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
+}
+
+const removeItemFeedMemberships = `-- name: RemoveItemFeedMemberships :exec
+DELETE FROM item_feeds
+WHERE feed_id = ?1 AND item_id IN (/*SLICE:itemIDs*/?)
+`
+
+type RemoveItemFeedMembershipsParams struct {
+	FeedID  int64   `json:"feedID"`
+	ItemIDs []int64 `json:"itemIDs"`
+}
+
+// Drop a set of items from one feed's membership set (retroactive delete). The
+// items themselves are re-homed or deleted separately.
+func (q *Queries) RemoveItemFeedMemberships(ctx context.Context, arg RemoveItemFeedMembershipsParams) error {
+	query := removeItemFeedMemberships
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.FeedID)
+	if len(arg.ItemIDs) > 0 {
+		for _, v := range arg.ItemIDs {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", strings.Repeat(",?", len(arg.ItemIDs))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
+}
+
 const setItemCrossKey = `-- name: SetItemCrossKey :exec
 UPDATE items
 SET cross_key = ?
@@ -1263,6 +1443,37 @@ func (q *Queries) SetItemRead(ctx context.Context, arg SetItemReadParams) (sql.R
 		arg.ID,
 		arg.UserID,
 	)
+}
+
+const setItemsReadByIDs = `-- name: SetItemsReadByIDs :exec
+UPDATE items
+SET read = 1, read_at = ?1
+WHERE user_id = ?2 AND id IN (/*SLICE:itemIDs*/?)
+`
+
+type SetItemsReadByIDsParams struct {
+	ReadAt  sql.NullString `json:"readAt"`
+	UserID  int64          `json:"userID"`
+	ItemIDs []int64        `json:"itemIDs"`
+}
+
+// Mark a set of a user's items read, recording the time (retroactive
+// mark_read). Scoped by user so ids cannot cross accounts.
+func (q *Queries) SetItemsReadByIDs(ctx context.Context, arg SetItemsReadByIDsParams) error {
+	query := setItemsReadByIDs
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.ReadAt)
+	queryParams = append(queryParams, arg.UserID)
+	if len(arg.ItemIDs) > 0 {
+		for _, v := range arg.ItemIDs {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", strings.Repeat(",?", len(arg.ItemIDs))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
 }
 
 const updateItemSnapshotByID = `-- name: UpdateItemSnapshotByID :exec
