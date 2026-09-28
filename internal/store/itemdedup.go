@@ -144,14 +144,15 @@ func (s *ItemStore) mergeDedupGroup(g DedupGroup) error {
 	ctx := context.Background()
 
 	for _, loser := range g.Losers {
-		// Carry read/favorite state onto the survivor (never un-read or
-		// un-favorite something).
+		// Carry read/favorite/bookmark state onto the survivor (never un-read,
+		// un-favorite or un-bookmark something).
 		if err := exec(ctx, tx, `
 			UPDATE items
 			SET read = MAX(read, (SELECT read FROM items WHERE id = ?)),
 			    favorite = MAX(favorite, (SELECT favorite FROM items WHERE id = ?)),
+			    bookmark = MAX(bookmark, (SELECT bookmark FROM items WHERE id = ?)),
 			    read_at = COALESCE(read_at, (SELECT read_at FROM items WHERE id = ?))
-			WHERE id = ?`, loser, loser, loser, g.Survivor); err != nil {
+			WHERE id = ?`, loser, loser, loser, loser, g.Survivor); err != nil {
 			return err
 		}
 		// Fold the loser's feed memberships into the survivor, then repoint

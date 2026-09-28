@@ -511,9 +511,8 @@ func TestAPIExtSaveDerivesAuthorAvatar(t *testing.T) {
 	}
 }
 
-// A page that is not a feed can be saved from the extension into a list,
-// defaulting to "watch later" and appearing in that list but not the unread
-// stream.
+// A page that is not a feed can be saved from the extension, defaulting to the
+// native bookmarks list (no user list needed).
 func TestAPIExtSavePage(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
@@ -530,7 +529,7 @@ func TestAPIExtSavePage(t *testing.T) {
 	}))
 	defer pageSrv.Close()
 
-	// The save form creates the default list on demand.
+	// The save form defaults to the native bookmarks list.
 	rr := doForm(h, "POST", "/api/ext/page-form", url.Values{
 		"url": {pageSrv.URL}, "title": {"The Article"},
 	}, cookie)
@@ -540,11 +539,11 @@ func TestAPIExtSavePage(t *testing.T) {
 	body := rr.Body.String()
 	if !strings.Contains(body, `hx-post="/api/ext/page-save"`) ||
 		!strings.Contains(body, `name="list_id"`) ||
-		!strings.Contains(body, "watch later") {
-		t.Fatalf("page-form should render the save form with the default list: %s", body)
+		!strings.Contains(body, `value="bookmarks" selected`) {
+		t.Fatalf("page-form should render the save form with bookmarks selected: %s", body)
 	}
 
-	// Save with the default list (no list_id posted).
+	// Save with the default (no list_id posted).
 	rr = doForm(h, "POST", "/api/ext/page-save", url.Values{
 		"url": {pageSrv.URL}, "title": {"The Article"},
 	}, cookie)
@@ -552,22 +551,24 @@ func TestAPIExtSavePage(t *testing.T) {
 		!strings.Contains(rr.Body.String(), "The Article") {
 		t.Fatalf("page-save: %d %s", rr.Code, rr.Body.String())
 	}
-	// The success fragment deep-links to the saved item's modal.
-	if !strings.Contains(rr.Body.String(), "/#item-") || !strings.Contains(rr.Body.String(), "open this page") {
+	// The success fragment names the bookmarks destination and deep-links to the
+	// saved item's modal.
+	if !strings.Contains(rr.Body.String(), "bookmarks") ||
+		!strings.Contains(rr.Body.String(), "/#item-") || !strings.Contains(rr.Body.String(), "open this page") {
 		t.Fatalf("page-save should link to the saved item: %s", rr.Body.String())
 	}
 
-	// The default list now holds the page, with fetched metadata.
+	// No user list is created: the page lands in bookmarks.
 	lists, _ := s.store.Lists.List(u.ID)
-	if len(lists) != 1 || lists[0].Name != "watch later" || lists[0].ItemCount != 1 {
-		t.Fatalf("lists after save: %+v", lists)
+	if len(lists) != 0 {
+		t.Fatalf("default save must not create a list: %+v", lists)
 	}
-	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false, store.ListItemFilter{})
-	if len(items) != 1 || items[0].Title != "The Article" || !items[0].FeedIsSystem {
-		t.Fatalf("list items after save: %+v", items)
+	bookmarks, _, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{BookmarksOnly: true, Limit: 10})
+	if len(bookmarks) != 1 || bookmarks[0].Title != "The Article" || !bookmarks[0].FeedIsSystem {
+		t.Fatalf("bookmarks after save: %+v", bookmarks)
 	}
-	if items[0].Summary != "A good read" || items[0].ImageURL != "https://example.com/cover.png" {
-		t.Fatalf("saved page should carry fetched metadata: %+v", items[0])
+	if bookmarks[0].Summary != "A good read" || bookmarks[0].ImageURL != "https://example.com/cover.png" {
+		t.Fatalf("saved page should carry fetched metadata: %+v", bookmarks[0])
 	}
 
 	// It is absent from the unread stream.
@@ -584,14 +585,14 @@ func TestAPIExtSavePage(t *testing.T) {
 		t.Fatalf("page-save to new list: %d %s", rr.Code, rr.Body.String())
 	}
 	lists, _ = s.store.Lists.List(u.ID)
-	if len(lists) != 2 {
-		t.Fatalf("expected two lists, got %+v", lists)
+	if len(lists) != 1 || lists[0].Name != "later maybe" {
+		t.Fatalf("expected one named list, got %+v", lists)
 	}
 }
 
 // The in-app "save url for later" dialog reuses the extension save logic: the
-// form fragment creates the default list on demand, and the POST stores the page
-// in the chosen list.
+// form fragment defaults to the native bookmarks list, and the POST stores the
+// page as a bookmark.
 func TestSavePageWebFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
@@ -605,7 +606,7 @@ func TestSavePageWebFlow(t *testing.T) {
 	}))
 	defer pageSrv.Close()
 
-	// The form fragment renders with the default list selected.
+	// The form fragment renders with bookmarks selected.
 	rr := doGet(h, "/fragments/save-page", cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("save-page fragment: %d %s", rr.Code, rr.Body.String())
@@ -613,8 +614,8 @@ func TestSavePageWebFlow(t *testing.T) {
 	body := rr.Body.String()
 	if !strings.Contains(body, `hx-post="/save-page"`) ||
 		!strings.Contains(body, `name="list_id"`) ||
-		!strings.Contains(body, "watch later") {
-		t.Fatalf("save-page fragment should render the form with the default list: %s", body)
+		!strings.Contains(body, `value="bookmarks" selected`) {
+		t.Fatalf("save-page fragment should render the form with bookmarks selected: %s", body)
 	}
 
 	// Missing url is a form error, kept in the dialog.
@@ -623,7 +624,7 @@ func TestSavePageWebFlow(t *testing.T) {
 		t.Fatalf("save-page without url: %d %s", rr.Code, rr.Body.String())
 	}
 
-	// A valid save stores the page in the default list with fetched metadata.
+	// A valid save stores the page as a bookmark with fetched metadata.
 	rr = doForm(h, "POST", "/save-page", url.Values{
 		"url": {pageSrv.URL}, "title": {"The Article"},
 	}, cookie)
@@ -636,12 +637,12 @@ func TestSavePageWebFlow(t *testing.T) {
 		t.Fatalf("save-page should link to the saved item: %s", rr.Body.String())
 	}
 	lists, _ := s.store.Lists.List(u.ID)
-	if len(lists) != 1 || lists[0].Name != "watch later" || lists[0].ItemCount != 1 {
-		t.Fatalf("lists after save: %+v", lists)
+	if len(lists) != 0 {
+		t.Fatalf("default save must not create a list: %+v", lists)
 	}
-	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false, store.ListItemFilter{})
-	if len(items) != 1 || items[0].Title != "The Article" || items[0].Summary != "A good read" {
-		t.Fatalf("list items after save: %+v", items)
+	bookmarks, _, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{BookmarksOnly: true, Limit: 10})
+	if len(bookmarks) != 1 || bookmarks[0].Title != "The Article" || bookmarks[0].Summary != "A good read" {
+		t.Fatalf("bookmarks after save: %+v", bookmarks)
 	}
 }
 
@@ -665,12 +666,11 @@ func TestDeleteSavedPageEndpoint(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("save-page: %d %s", rr.Code, rr.Body.String())
 	}
-	lists, _ := s.store.Lists.List(u.ID)
-	items, _, _ := s.store.Lists.ItemList(u.ID, lists[0].ID, 0, 10, false, store.ListItemFilter{})
-	if len(items) != 1 {
-		t.Fatalf("saved items: %+v", items)
+	bookmarks, _, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{BookmarksOnly: true, Limit: 10})
+	if len(bookmarks) != 1 {
+		t.Fatalf("saved items: %+v", bookmarks)
 	}
-	savedID := items[0].ID
+	savedID := bookmarks[0].ID
 
 	a, _ := s.store.Authors.Create(u.ID, "Blog", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Feed", "https://x.dev/rss.xml", "", "", 900)

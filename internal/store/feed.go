@@ -31,7 +31,18 @@ type Feed struct {
 	DisabledReason   string // why the feed is disabled (e.g. its plugin is missing); "" when enabled or user-paused
 	Enabled          bool
 	IsSystem         bool // hidden feed holding saved pages; never listed or polled
-	CreatedAt        string
+	// Rank is the user's manual lever for the magic sort: -1 lowered, 0 neutral,
+	// +1 raised. It dominates the favorite-count tier.
+	Rank      int
+	CreatedAt string
+}
+
+// FeedWithFavorites joins a feed with its author name and its owner-feed
+// favorite count (the magic sort's taste signal).
+type FeedWithFavorites struct {
+	Feed
+	AuthorName    string
+	FavoriteCount int
 }
 
 // FeedWithUnread joins a feed with its author's name and unread item count.
@@ -173,6 +184,42 @@ func (s *FeedStore) ListByAuthorWithUnread(userID, authorID int64) ([]FeedWithUn
 		out = append(out, toFeedByAuthorWithUnread(f))
 	}
 	return out, nil
+}
+
+// ListWithFavorites returns a user's feeds with their owner-feed favorite
+// counts, most favorited first, for the magic-sort algorithm editor.
+func (s *FeedStore) ListWithFavorites(userID int64) ([]FeedWithFavorites, error) {
+	rows, err := s.q.ListFeedsWithFavoriteCounts(context.Background(), userID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FeedWithFavorites, 0, len(rows))
+	for _, f := range rows {
+		out = append(out, toFeedWithFavorites(f))
+	}
+	return out, nil
+}
+
+// SetRank sets a feed's manual magic-sort lever (-1 lowered, 0 neutral,
+// +1 raised), verifying the feed belongs to the user.
+func (s *FeedStore) SetRank(userID, id int64, rank int) error {
+	if rank < -1 {
+		rank = -1
+	} else if rank > 1 {
+		rank = 1
+	}
+	res, err := s.q.SetFeedRank(context.Background(), sqlcgen.SetFeedRankParams{
+		Rank:   int64(rank),
+		ID:     id,
+		UserID: userID,
+	})
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int, pollIntervalAuto bool, enabled bool) error {
@@ -433,7 +480,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

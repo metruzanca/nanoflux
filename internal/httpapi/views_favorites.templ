@@ -1,0 +1,93 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+// algorithmData drives the magic-sort editor: every feed with its favorite
+// count (the taste signal) and its manual rank lever.
+type algorithmData struct {
+	Rows []store.FeedWithFavorites
+}
+
+// favoritesAlgorithmPage is the "edit algorithm" sub-page of /favorites. It
+// makes the magic sort transparent: feeds are listed most-favorited first, and
+// each can be manually raised or lowered. The two levers together decide the
+// ranking (see store.ListItemsMagic).
+templ favoritesAlgorithmPage(u store.User, d algorithmData) {
+	<div class="row">
+		<h1>favorites algorithm</h1>
+		<div class="row-actions">
+			<a class="small" href="/favorites">back to favorites</a>
+		</div>
+	</div>
+	<p class="muted small">
+		The magic sort orders items by feed. Your favorites are the signal: feeds you
+		favorite more rank higher. The manual lever overrides that: a raised feed always
+		outranks a neutral one, a lowered feed always ranks below. Ties break by newest.
+	</p>
+	if len(d.Rows) == 0 {
+		<p class="muted">no feeds yet — add a feed and favorite some posts to teach the algorithm.</p>
+	} else {
+		<ul class="plain algorithm-list" id="algorithm-list">
+			for _, r := range d.Rows {
+				<li>
+					<div class="row">
+						<div>
+							<a href={ templ.URL("/feeds/" + strconv.FormatInt(r.ID, 10)) }><strong>{ r.Title }</strong></a>
+							if r.AuthorName != "" {
+								<span class="muted small"> · { r.AuthorName }</span>
+							}
+						</div>
+						<div class="row-actions">
+							<span class="item-meta">{ r.FavoriteCount } favorites</span>
+							@rankControl(r.ID, r.Rank)
+						</div>
+					</div>
+				</li>
+			}
+		</ul>
+	}
+}
+
+// rankControl is a feed's three-state manual lever for the magic sort. Each
+// state is a button that posts to /feeds/{id}/rank and swaps this control in
+// place. The active state is highlighted; raised is matte green, lowered matte
+// red, neutral is the default.
+templ rankControl(feedID int64, rank int) {
+	<div class="rank-control" id={ "feed-rank-" + strconv.FormatInt(feedID, 10) } data-rank={ strconv.Itoa(rank) }>
+		<button
+			type="button"
+			class={ "rank-btn", templ.KV("active", rank > 0) }
+			title="raise this feed in the magic sort"
+			aria-pressed={ strconv.FormatBool(rank > 0) }
+			hx-post={ "/feeds/" + strconv.FormatInt(feedID, 10) + "/rank" }
+			hx-vals='{"rank":"1"}'
+			hx-target={ "#feed-rank-" + strconv.FormatInt(feedID, 10) }
+			hx-swap="outerHTML"
+		>@web.Lucide("arrow-up")</button>
+		<button
+			type="button"
+			class={ "rank-btn", templ.KV("active", rank == 0) }
+			title="neutral (let favorites decide)"
+			aria-pressed={ strconv.FormatBool(rank == 0) }
+			hx-post={ "/feeds/" + strconv.FormatInt(feedID, 10) + "/rank" }
+			hx-vals='{"rank":"0"}'
+			hx-target={ "#feed-rank-" + strconv.FormatInt(feedID, 10) }
+			hx-swap="outerHTML"
+		>@web.Lucide("arrow-up-down")</button>
+		<button
+			type="button"
+			class={ "rank-btn", templ.KV("active", rank < 0) }
+			title="lower this feed in the magic sort"
+			aria-pressed={ strconv.FormatBool(rank < 0) }
+			hx-post={ "/feeds/" + strconv.FormatInt(feedID, 10) + "/rank" }
+			hx-vals='{"rank":"-1"}'
+			hx-target={ "#feed-rank-" + strconv.FormatInt(feedID, 10) }
+			hx-swap="outerHTML"
+		>@web.Lucide("arrow-down")</button>
+	</div>
+}

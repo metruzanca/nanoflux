@@ -1,6 +1,10 @@
 package httpapi
 
-import "strconv"
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/web"
+)
 
 templ loginPage(errMsg string, allowSignup bool, next string) {
 	<section class="card login">
@@ -82,7 +86,7 @@ templ homePage(d homeData) {
 	<div class="row">
 		<h1>unread ({ d.UnreadCount })</h1>
 		<div class="row-actions">
-			@SortDirControl(d.Dir, "/unread?dir=desc", "/unread?dir=asc")
+			@SimpleSortControl("/unread", d.Sort)
 			@DisplayModeControl("/unread", d.Mode)
 		</div>
 	</div>
@@ -93,7 +97,7 @@ templ readPage(d readData) {
 	<div class="row">
 		<h1>history ({ d.ReadCount })</h1>
 		<div class="row-actions">
-			@SortDirControl(d.Dir, "/read?dir=desc", "/read?dir=asc")
+			@SimpleSortControl("/read", d.Sort)
 			@DisplayModeControl("/read", d.Mode)
 			if d.ReadCount > 0 {
 				<button hx-post="/items/unread-all" hx-target="#items-section" hx-swap="outerHTML">mark all unread</button>
@@ -107,12 +111,25 @@ templ favoritesPage(d favoritesData) {
 	<div class="row">
 		<h1>favorites ({ d.FavCount })</h1>
 		<div class="row-actions">
-			@SortDirControl(d.Dir, "/favorites?dir=desc", "/favorites?dir=asc")
+			@SimpleSortControl("/favorites", d.Sort)
 			@DisplayModeControl("/favorites", d.Mode)
+			<a class="small" title="edit algorithm" href="/favorites/algorithm">@web.EditIcon() algorithm</a>
 			@favoritesShareControl(d.ShareToken)
 		</div>
 	</div>
 	@ItemsListPage(d.Favorites, d.More, false, d.Mode)
+}
+
+templ bookmarksPage(d bookmarksData) {
+	<div class="row">
+		<h1>bookmarks ({ d.BookCount })</h1>
+		<div class="row-actions">
+			@SimpleSortControl("/bookmarks", d.Sort)
+			@DisplayModeControl("/bookmarks", d.Mode)
+			@bookmarksShareControl(d.ShareToken)
+		</div>
+	</div>
+	@ItemsListPage(d.Bookmarks, d.More, false, d.Mode)
 }
 
 templ searchResultsPage(d searchData) {

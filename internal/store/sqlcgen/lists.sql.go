@@ -117,6 +117,17 @@ func (q *Queries) DeleteList(ctx context.Context, arg DeleteListParams) (sql.Res
 	return q.db.ExecContext(ctx, deleteList, arg.ID, arg.UserID)
 }
 
+const getBookmarksShareToken = `-- name: GetBookmarksShareToken :one
+SELECT bookmarks_share_token FROM users WHERE id = ?1
+`
+
+func (q *Queries) GetBookmarksShareToken(ctx context.Context, userid int64) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getBookmarksShareToken, userid)
+	var bookmarks_share_token sql.NullString
+	err := row.Scan(&bookmarks_share_token)
+	return bookmarks_share_token, err
+}
+
 const getFavoritesShareToken = `-- name: GetFavoritesShareToken :one
 SELECT favorites_share_token FROM users WHERE id = ?1
 `
@@ -196,6 +207,43 @@ func (q *Queries) GetListByToken(ctx context.Context, token sql.NullString) (Lis
 	return i, err
 }
 
+const getUserByBookmarksShareToken = `-- name: GetUserByBookmarksShareToken :one
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, created_at
+FROM users
+WHERE bookmarks_share_token = ?1
+`
+
+type GetUserByBookmarksShareTokenRow struct {
+	ID                int64          `json:"id"`
+	Username          string         `json:"username"`
+	PasswordHash      string         `json:"password_hash"`
+	IsAdmin           bool           `json:"is_admin"`
+	AvatarKey         sql.NullString `json:"avatar_key"`
+	Timezone          sql.NullString `json:"timezone"`
+	Theme             string         `json:"theme"`
+	AccentColor       string         `json:"accent_color"`
+	AutoReadAfterDays int64          `json:"auto_read_after_days"`
+	CreatedAt         string         `json:"created_at"`
+}
+
+func (q *Queries) GetUserByBookmarksShareToken(ctx context.Context, token sql.NullString) (GetUserByBookmarksShareTokenRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserByBookmarksShareToken, token)
+	var i GetUserByBookmarksShareTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.IsAdmin,
+		&i.AvatarKey,
+		&i.Timezone,
+		&i.Theme,
+		&i.AccentColor,
+		&i.AutoReadAfterDays,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getUserByFavoritesShareToken = `-- name: GetUserByFavoritesShareToken :one
 SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, created_at
 FROM users
@@ -270,7 +318,7 @@ func (q *Queries) ListIDsForItem(ctx context.Context, arg ListIDsForItemParams) 
 
 const listItemsInList = `-- name: ListItemsInList :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -310,6 +358,7 @@ type ListItemsInListRow struct {
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
 	Favorite     bool           `json:"favorite"`
+	Bookmark     bool           `json:"bookmark"`
 	ReadAt       sql.NullString `json:"read_at"`
 	FeedTitle    string         `json:"feed_title"`
 	FeedUrl      string         `json:"feed_url"`
@@ -349,6 +398,7 @@ func (q *Queries) ListItemsInList(ctx context.Context, arg ListItemsInListParams
 			&i.FetchedAt,
 			&i.Read,
 			&i.Favorite,
+			&i.Bookmark,
 			&i.ReadAt,
 			&i.FeedTitle,
 			&i.FeedUrl,
@@ -372,7 +422,7 @@ func (q *Queries) ListItemsInList(ctx context.Context, arg ListItemsInListParams
 
 const listItemsInListAsc = `-- name: ListItemsInListAsc :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -412,6 +462,7 @@ type ListItemsInListAscRow struct {
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
 	Favorite     bool           `json:"favorite"`
+	Bookmark     bool           `json:"bookmark"`
 	ReadAt       sql.NullString `json:"read_at"`
 	FeedTitle    string         `json:"feed_title"`
 	FeedUrl      string         `json:"feed_url"`
@@ -451,6 +502,7 @@ func (q *Queries) ListItemsInListAsc(ctx context.Context, arg ListItemsInListAsc
 			&i.FetchedAt,
 			&i.Read,
 			&i.Favorite,
+			&i.Bookmark,
 			&i.ReadAt,
 			&i.FeedTitle,
 			&i.FeedUrl,
@@ -474,7 +526,7 @@ func (q *Queries) ListItemsInListAsc(ctx context.Context, arg ListItemsInListAsc
 
 const listItemsInListPublic = `-- name: ListItemsInListPublic :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -509,6 +561,7 @@ type ListItemsInListPublicRow struct {
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
 	Favorite     bool           `json:"favorite"`
+	Bookmark     bool           `json:"bookmark"`
 	ReadAt       sql.NullString `json:"read_at"`
 	FeedTitle    string         `json:"feed_title"`
 	FeedUrl      string         `json:"feed_url"`
@@ -541,6 +594,7 @@ func (q *Queries) ListItemsInListPublic(ctx context.Context, arg ListItemsInList
 			&i.FetchedAt,
 			&i.Read,
 			&i.Favorite,
+			&i.Bookmark,
 			&i.ReadAt,
 			&i.FeedTitle,
 			&i.FeedUrl,
@@ -643,6 +697,22 @@ type RenameListParams struct {
 
 func (q *Queries) RenameList(ctx context.Context, arg RenameListParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, renameList, arg.Name, arg.ID, arg.UserID)
+}
+
+const setBookmarksShareToken = `-- name: SetBookmarksShareToken :exec
+UPDATE users
+SET bookmarks_share_token = ?1
+WHERE id = ?2
+`
+
+type SetBookmarksShareTokenParams struct {
+	Token  sql.NullString `json:"token"`
+	UserID int64          `json:"userID"`
+}
+
+func (q *Queries) SetBookmarksShareToken(ctx context.Context, arg SetBookmarksShareTokenParams) error {
+	_, err := q.db.ExecContext(ctx, setBookmarksShareToken, arg.Token, arg.UserID)
+	return err
 }
 
 const setFavoritesShareToken = `-- name: SetFavoritesShareToken :exec

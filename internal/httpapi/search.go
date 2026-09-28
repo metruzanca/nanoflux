@@ -126,7 +126,7 @@ type searchData struct {
 func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	before := cursorID(r, false)
+	before := cursorID(r, sortNewest)
 
 	if q == "" {
 		web.Render(w, r, basePage("search", u, searchResultsPage(searchData{})))

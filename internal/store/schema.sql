@@ -17,9 +17,11 @@ CREATE TABLE users (
     home_config   TEXT,
     auto_read_after_days INTEGER NOT NULL DEFAULT 30,
     favorites_share_token TEXT,
+    bookmarks_share_token TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE UNIQUE INDEX idx_users_favorites_share_token ON users(favorites_share_token);
+CREATE UNIQUE INDEX idx_users_bookmarks_share_token ON users(bookmarks_share_token);
 
 CREATE TABLE sessions (
     id         INTEGER PRIMARY KEY,
@@ -79,6 +81,7 @@ CREATE TABLE feeds (
     disabled_reason   TEXT,
     enabled           INTEGER NOT NULL DEFAULT 1,
     is_system         INTEGER NOT NULL DEFAULT 0,
+    rank              INTEGER NOT NULL DEFAULT 0,
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_feeds_user ON feeds(user_id);
@@ -104,6 +107,7 @@ CREATE TABLE items (
     read         INTEGER NOT NULL DEFAULT 0,
     read_at      TEXT,
     favorite     INTEGER NOT NULL DEFAULT 0,
+    bookmark     INTEGER NOT NULL DEFAULT 0,
     UNIQUE(feed_id, guid)
 );
 CREATE INDEX idx_items_feed ON items(feed_id);
@@ -181,8 +185,9 @@ CREATE TABLE shared_items (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- User-defined lists of items. Favorites is the special list (items.favorite),
--- not a row here; share_token is set when a list is shared publicly.
+-- User-defined lists of items. Favorites (items.favorite) and bookmarks
+-- (items.bookmark) are native special lists, not rows here; share_token is set
+-- when a list is shared publicly.
 CREATE TABLE lists (
     id          INTEGER PRIMARY KEY,
     user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

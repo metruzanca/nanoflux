@@ -79,7 +79,7 @@ WHERE image_url IS NULL AND guid LIKE 'yt:video:%';
 -- filters match membership (item_feeds), so an item seen through two feeds
 -- appears in both streams but as one row.
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -98,9 +98,10 @@ WHERE i.user_id = sqlc.arg('userID')
   AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
-  -- Saved pages (system feed items) surface only in favorites and search, not
-  -- in the unread/read/feed/author/collection streams.
-  AND (f.is_system = 0 OR CAST(sqlc.arg('favorites') AS INTEGER) = 1)
+  AND (CAST(sqlc.arg('bookmarks') AS INTEGER) = 0 OR i.bookmark = 1)
+  -- Saved pages (system feed items) surface only in favorites, bookmarks and
+  -- search, not in the unread/read/feed/author/collection streams.
+  AND (f.is_system = 0 OR CAST(sqlc.arg('favorites') AS INTEGER) = 1 OR CAST(sqlc.arg('bookmarks') AS INTEGER) = 1)
   AND (CAST(sqlc.arg('beforeID') AS INTEGER) = 0 OR
        (COALESCE(i.published_at, i.fetched_at), i.id) <
        (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(sqlc.arg('beforeID') AS INTEGER)))
@@ -109,7 +110,7 @@ LIMIT sqlc.arg('limit');
 
 -- name: ListItemsAsc :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -128,23 +129,64 @@ WHERE i.user_id = sqlc.arg('userID')
   AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
-  -- Saved pages (system feed items) surface only in favorites and search.
-  AND (f.is_system = 0 OR CAST(sqlc.arg('favorites') AS INTEGER) = 1)
+  AND (CAST(sqlc.arg('bookmarks') AS INTEGER) = 0 OR i.bookmark = 1)
+  -- Saved pages surface only in favorites, bookmarks and search.
+  AND (f.is_system = 0 OR CAST(sqlc.arg('favorites') AS INTEGER) = 1 OR CAST(sqlc.arg('bookmarks') AS INTEGER) = 1)
   AND (CAST(sqlc.arg('afterID') AS INTEGER) = 0 OR
        (COALESCE(i.published_at, i.fetched_at), i.id) >
        (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(sqlc.arg('afterID') AS INTEGER)))
 ORDER BY COALESCE(i.published_at, i.fetched_at) ASC, i.id ASC
 LIMIT sqlc.arg('limit');
 
+-- name: ListItemsMagic :many
+-- The magic sort: rank feeds by the user's taste instead of strict time. Manual
+-- raise/lower dominates in hard tiers (raised before neutral before lowered);
+-- within a tier, feeds with more favorites rank first; within a feed, newest
+-- items first. The favorite count is the owner feed's (i.feed_id), matching the
+-- feed a card names. Offset-paged (no keyset cursor).
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN (
+  SELECT feed_id, COUNT(*) AS fav_count
+  FROM items
+  WHERE items.user_id = sqlc.arg('userID') AND favorite = 1
+  GROUP BY feed_id
+) fc ON fc.feed_id = i.feed_id
+WHERE i.user_id = sqlc.arg('userID')
+  AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(sqlc.arg('feedID') AS INTEGER)))
+  AND (CAST(sqlc.arg('authorID') AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
+        WHERE mf.item_id = i.id AND mf2.author_id = CAST(sqlc.arg('authorID') AS INTEGER)))
+  AND (CAST(sqlc.arg('collectionID') AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (
+          SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(sqlc.arg('collectionID') AS INTEGER))))
+  AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
+  AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
+  AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
+  AND (CAST(sqlc.arg('bookmarks') AS INTEGER) = 0 OR i.bookmark = 1)
+  AND (f.is_system = 0 OR CAST(sqlc.arg('favorites') AS INTEGER) = 1 OR CAST(sqlc.arg('bookmarks') AS INTEGER) = 1)
+ORDER BY
+  CASE WHEN f.rank > 0 THEN 0 WHEN f.rank < 0 THEN 2 ELSE 1 END ASC,
+  COALESCE(fc.fav_count, 0) DESC,
+  COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
 -- name: GetItem :one
 SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url,
-       i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
+       i.published_at, i.fetched_at, i.read, i.read_at, i.favorite, i.bookmark
 FROM items i
 WHERE i.id = ? AND i.user_id = ?;
 
 -- name: GetItemWithFeed :one
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -155,7 +197,7 @@ WHERE i.id = ? AND i.user_id = ?;
 
 -- name: GetItemWithFeedAny :one
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -172,6 +214,11 @@ WHERE items.id = ? AND items.user_id = ?;
 -- name: SetItemFavorite :execresult
 UPDATE items
 SET favorite = ?
+WHERE items.id = ? AND items.user_id = ?;
+
+-- name: SetItemBookmark :execresult
+UPDATE items
+SET bookmark = ?
 WHERE items.id = ? AND items.user_id = ?;
 
 -- name: MarkAllItemsRead :exec
@@ -369,6 +416,12 @@ WHERE i.user_id = sqlc.arg('userID') AND i.favorite = 1
   AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR i.id IN (
         SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(sqlc.arg('feedID') AS INTEGER)));
 
+-- name: CountBookmarkItems :one
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = sqlc.arg('userID') AND i.bookmark = 1
+  AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR i.id IN (
+        SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(sqlc.arg('feedID') AS INTEGER)));
+
 -- name: CountUnreadItemsByAuthor :one
 SELECT COUNT(*) FROM items i
 WHERE i.user_id = sqlc.arg('userID') AND i.read = 0
@@ -386,6 +439,13 @@ WHERE i.user_id = sqlc.arg('userID') AND i.read = 1
 -- name: CountFavoriteItemsByAuthor :one
 SELECT COUNT(*) FROM items i
 WHERE i.user_id = sqlc.arg('userID') AND i.favorite = 1
+  AND i.id IN (
+    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = sqlc.arg('userID') AND f.author_id = sqlc.arg('authorID'));
+
+-- name: CountBookmarkItemsByAuthor :one
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = sqlc.arg('userID') AND i.bookmark = 1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
     WHERE f.user_id = sqlc.arg('userID') AND f.author_id = sqlc.arg('authorID'));
@@ -435,7 +495,7 @@ SELECT COUNT(*) FROM items WHERE read = 0;
 -- ListItems it is not limited and does not exclude the system feed, but the
 -- caller scopes it to a regular feed.
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name

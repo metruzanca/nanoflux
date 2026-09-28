@@ -263,3 +263,54 @@ func (s *UserStore) ByFavoritesShareToken(token string) (User, error) {
 	}
 	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.AutoReadAfterDays, u.CreatedAt), nil
 }
+
+// BookmarksShareToken returns the user's public bookmarks share token, or ""
+// when the bookmarks list is not shared.
+func (s *UserStore) BookmarksShareToken(userID int64) (string, error) {
+	token, err := s.q.GetBookmarksShareToken(context.Background(), userID)
+	if err != nil {
+		return "", err
+	}
+	return token.String, nil
+}
+
+// SetBookmarksShareToken stores (or, with an empty token, clears) the user's
+// public bookmarks share token.
+func (s *UserStore) SetBookmarksShareToken(userID int64, token string) error {
+	return s.q.SetBookmarksShareToken(context.Background(), sqlcgen.SetBookmarksShareTokenParams{
+		Token:  ns(token),
+		UserID: userID,
+	})
+}
+
+// ShareBookmarks creates a public share token for the bookmarks list, reusing an
+// existing one when the list is already shared.
+func (s *UserStore) ShareBookmarks(userID int64) (string, error) {
+	tok, err := s.BookmarksShareToken(userID)
+	if err != nil {
+		return "", err
+	}
+	if tok != "" {
+		return tok, nil
+	}
+	tok, err = newToken()
+	if err != nil {
+		return "", err
+	}
+	if err := s.SetBookmarksShareToken(userID, tok); err != nil {
+		return "", err
+	}
+	return tok, nil
+}
+
+// ByBookmarksShareToken resolves the owner of a public bookmarks share link.
+func (s *UserStore) ByBookmarksShareToken(token string) (User, error) {
+	u, err := s.q.GetUserByBookmarksShareToken(context.Background(), ns(token))
+	if errors.Is(err, sql.ErrNoRows) {
+		return User{}, ErrNotFound
+	}
+	if err != nil {
+		return User{}, err
+	}
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.AutoReadAfterDays, u.CreatedAt), nil
+}

@@ -62,6 +62,45 @@ func (q *Queries) CountAllUnreadItems(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countBookmarkItems = `-- name: CountBookmarkItems :one
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = ?1 AND i.bookmark = 1
+  AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
+        SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(?2 AS INTEGER)))
+`
+
+type CountBookmarkItemsParams struct {
+	UserID int64 `json:"userID"`
+	FeedID int64 `json:"feedID"`
+}
+
+func (q *Queries) CountBookmarkItems(ctx context.Context, arg CountBookmarkItemsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countBookmarkItems, arg.UserID, arg.FeedID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countBookmarkItemsByAuthor = `-- name: CountBookmarkItemsByAuthor :one
+SELECT COUNT(*) FROM items i
+WHERE i.user_id = ?1 AND i.bookmark = 1
+  AND i.id IN (
+    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND f.author_id = ?2)
+`
+
+type CountBookmarkItemsByAuthorParams struct {
+	UserID   int64 `json:"userID"`
+	AuthorID int64 `json:"authorID"`
+}
+
+func (q *Queries) CountBookmarkItemsByAuthor(ctx context.Context, arg CountBookmarkItemsByAuthorParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countBookmarkItemsByAuthor, arg.UserID, arg.AuthorID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countFavoriteItems = `-- name: CountFavoriteItems :one
 SELECT COUNT(*) FROM items i
 WHERE i.user_id = ?1 AND i.favorite = 1
@@ -361,7 +400,7 @@ func (q *Queries) GetAuthorItemStats(ctx context.Context, arg GetAuthorItemStats
 
 const getItem = `-- name: GetItem :one
 SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url,
-       i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
+       i.published_at, i.fetched_at, i.read, i.read_at, i.favorite, i.bookmark
 FROM items i
 WHERE i.id = ? AND i.user_id = ?
 `
@@ -393,6 +432,7 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 		&i.Read,
 		&i.ReadAt,
 		&i.Favorite,
+		&i.Bookmark,
 	)
 	return i, err
 }
@@ -450,7 +490,7 @@ func (q *Queries) GetItemContent(ctx context.Context, id int64) (string, error) 
 
 const getItemWithFeed = `-- name: GetItemWithFeed :one
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -480,6 +520,7 @@ type GetItemWithFeedRow struct {
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
 	Favorite     bool           `json:"favorite"`
+	Bookmark     bool           `json:"bookmark"`
 	ReadAt       sql.NullString `json:"read_at"`
 	FeedTitle    string         `json:"feed_title"`
 	FeedUrl      string         `json:"feed_url"`
@@ -507,6 +548,7 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 		&i.FetchedAt,
 		&i.Read,
 		&i.Favorite,
+		&i.Bookmark,
 		&i.ReadAt,
 		&i.FeedTitle,
 		&i.FeedUrl,
@@ -520,7 +562,7 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 
 const getItemWithFeedAny = `-- name: GetItemWithFeedAny :one
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -545,6 +587,7 @@ type GetItemWithFeedAnyRow struct {
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
 	Favorite     bool           `json:"favorite"`
+	Bookmark     bool           `json:"bookmark"`
 	ReadAt       sql.NullString `json:"read_at"`
 	FeedTitle    string         `json:"feed_title"`
 	FeedUrl      string         `json:"feed_url"`
@@ -572,6 +615,7 @@ func (q *Queries) GetItemWithFeedAny(ctx context.Context, id int64) (GetItemWith
 		&i.FetchedAt,
 		&i.Read,
 		&i.Favorite,
+		&i.Bookmark,
 		&i.ReadAt,
 		&i.FeedTitle,
 		&i.FeedUrl,
@@ -697,7 +741,7 @@ func (q *Queries) ListEnclosures(ctx context.Context, itemID int64) ([]ListEnclo
 
 const listFeedItemsForFilter = `-- name: ListFeedItemsForFilter :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -723,6 +767,7 @@ type ListFeedItemsForFilterRow struct {
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
 	Favorite     bool           `json:"favorite"`
+	Bookmark     bool           `json:"bookmark"`
 	ReadAt       sql.NullString `json:"read_at"`
 	FeedTitle    string         `json:"feed_title"`
 	FeedUrl      string         `json:"feed_url"`
@@ -759,6 +804,7 @@ func (q *Queries) ListFeedItemsForFilter(ctx context.Context, feedid int64) ([]L
 			&i.FetchedAt,
 			&i.Read,
 			&i.Favorite,
+			&i.Bookmark,
 			&i.ReadAt,
 			&i.FeedTitle,
 			&i.FeedUrl,
@@ -848,7 +894,7 @@ func (q *Queries) ListItemSourcesForItems(ctx context.Context, itemids []int64) 
 
 const listItems = `-- name: ListItems :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -867,14 +913,15 @@ WHERE i.user_id = ?1
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(?7 AS INTEGER) = 0 OR i.favorite = 1)
-  -- Saved pages (system feed items) surface only in favorites and search, not
-  -- in the unread/read/feed/author/collection streams.
-  AND (f.is_system = 0 OR CAST(?7 AS INTEGER) = 1)
-  AND (CAST(?8 AS INTEGER) = 0 OR
+  AND (CAST(?8 AS INTEGER) = 0 OR i.bookmark = 1)
+  -- Saved pages (system feed items) surface only in favorites, bookmarks and
+  -- search, not in the unread/read/feed/author/collection streams.
+  AND (f.is_system = 0 OR CAST(?7 AS INTEGER) = 1 OR CAST(?8 AS INTEGER) = 1)
+  AND (CAST(?9 AS INTEGER) = 0 OR
        (COALESCE(i.published_at, i.fetched_at), i.id) <
-       (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(?8 AS INTEGER)))
+       (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(?9 AS INTEGER)))
 ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
-LIMIT ?9
+LIMIT ?10
 `
 
 type ListItemsParams struct {
@@ -885,6 +932,7 @@ type ListItemsParams struct {
 	Unread       int64 `json:"unread"`
 	Read         int64 `json:"read"`
 	Favorites    int64 `json:"favorites"`
+	Bookmarks    int64 `json:"bookmarks"`
 	BeforeID     int64 `json:"beforeID"`
 	Limit        int64 `json:"limit"`
 }
@@ -903,6 +951,7 @@ type ListItemsRow struct {
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
 	Favorite     bool           `json:"favorite"`
+	Bookmark     bool           `json:"bookmark"`
 	ReadAt       sql.NullString `json:"read_at"`
 	FeedTitle    string         `json:"feed_title"`
 	FeedUrl      string         `json:"feed_url"`
@@ -924,6 +973,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 		arg.Unread,
 		arg.Read,
 		arg.Favorites,
+		arg.Bookmarks,
 		arg.BeforeID,
 		arg.Limit,
 	)
@@ -948,6 +998,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 			&i.FetchedAt,
 			&i.Read,
 			&i.Favorite,
+			&i.Bookmark,
 			&i.ReadAt,
 			&i.FeedTitle,
 			&i.FeedUrl,
@@ -971,7 +1022,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 
 const listItemsAsc = `-- name: ListItemsAsc :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -990,13 +1041,14 @@ WHERE i.user_id = ?1
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(?7 AS INTEGER) = 0 OR i.favorite = 1)
-  -- Saved pages (system feed items) surface only in favorites and search.
-  AND (f.is_system = 0 OR CAST(?7 AS INTEGER) = 1)
-  AND (CAST(?8 AS INTEGER) = 0 OR
+  AND (CAST(?8 AS INTEGER) = 0 OR i.bookmark = 1)
+  -- Saved pages surface only in favorites, bookmarks and search.
+  AND (f.is_system = 0 OR CAST(?7 AS INTEGER) = 1 OR CAST(?8 AS INTEGER) = 1)
+  AND (CAST(?9 AS INTEGER) = 0 OR
        (COALESCE(i.published_at, i.fetched_at), i.id) >
-       (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(?8 AS INTEGER)))
+       (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(?9 AS INTEGER)))
 ORDER BY COALESCE(i.published_at, i.fetched_at) ASC, i.id ASC
-LIMIT ?9
+LIMIT ?10
 `
 
 type ListItemsAscParams struct {
@@ -1007,6 +1059,7 @@ type ListItemsAscParams struct {
 	Unread       int64 `json:"unread"`
 	Read         int64 `json:"read"`
 	Favorites    int64 `json:"favorites"`
+	Bookmarks    int64 `json:"bookmarks"`
 	AfterID      int64 `json:"afterID"`
 	Limit        int64 `json:"limit"`
 }
@@ -1025,6 +1078,7 @@ type ListItemsAscRow struct {
 	FetchedAt    string         `json:"fetched_at"`
 	Read         bool           `json:"read"`
 	Favorite     bool           `json:"favorite"`
+	Bookmark     bool           `json:"bookmark"`
 	ReadAt       sql.NullString `json:"read_at"`
 	FeedTitle    string         `json:"feed_title"`
 	FeedUrl      string         `json:"feed_url"`
@@ -1043,6 +1097,7 @@ func (q *Queries) ListItemsAsc(ctx context.Context, arg ListItemsAscParams) ([]L
 		arg.Unread,
 		arg.Read,
 		arg.Favorites,
+		arg.Bookmarks,
 		arg.AfterID,
 		arg.Limit,
 	)
@@ -1067,6 +1122,141 @@ func (q *Queries) ListItemsAsc(ctx context.Context, arg ListItemsAscParams) ([]L
 			&i.FetchedAt,
 			&i.Read,
 			&i.Favorite,
+			&i.Bookmark,
+			&i.ReadAt,
+			&i.FeedTitle,
+			&i.FeedUrl,
+			&i.FeedHomeUrl,
+			&i.FeedIsSystem,
+			&i.AuthorID,
+			&i.AuthorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listItemsMagic = `-- name: ListItemsMagic :many
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN (
+  SELECT feed_id, COUNT(*) AS fav_count
+  FROM items
+  WHERE items.user_id = ?1 AND favorite = 1
+  GROUP BY feed_id
+) fc ON fc.feed_id = i.feed_id
+WHERE i.user_id = ?1
+  AND (CAST(?2 AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?2 AS INTEGER)))
+  AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
+        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?3 AS INTEGER)))
+  AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (
+          SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(?4 AS INTEGER))))
+  AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
+  AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
+  AND (CAST(?7 AS INTEGER) = 0 OR i.favorite = 1)
+  AND (CAST(?8 AS INTEGER) = 0 OR i.bookmark = 1)
+  AND (f.is_system = 0 OR CAST(?7 AS INTEGER) = 1 OR CAST(?8 AS INTEGER) = 1)
+ORDER BY
+  CASE WHEN f.rank > 0 THEN 0 WHEN f.rank < 0 THEN 2 ELSE 1 END ASC,
+  COALESCE(fc.fav_count, 0) DESC,
+  COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
+LIMIT ?10 OFFSET ?9
+`
+
+type ListItemsMagicParams struct {
+	UserID       int64 `json:"userID"`
+	FeedID       int64 `json:"feedID"`
+	AuthorID     int64 `json:"authorID"`
+	CollectionID int64 `json:"collectionID"`
+	Unread       int64 `json:"unread"`
+	Read         int64 `json:"read"`
+	Favorites    int64 `json:"favorites"`
+	Bookmarks    int64 `json:"bookmarks"`
+	Offset       int64 `json:"offset"`
+	Limit        int64 `json:"limit"`
+}
+
+type ListItemsMagicRow struct {
+	ID           int64          `json:"id"`
+	FeedID       int64          `json:"feed_id"`
+	Guid         string         `json:"guid"`
+	Title        string         `json:"title"`
+	Link         string         `json:"link"`
+	Summary      string         `json:"summary"`
+	Categories   string         `json:"categories"`
+	ImageUrl     sql.NullString `json:"image_url"`
+	DurationSec  sql.NullInt64  `json:"duration_sec"`
+	PublishedAt  sql.NullString `json:"published_at"`
+	FetchedAt    string         `json:"fetched_at"`
+	Read         bool           `json:"read"`
+	Favorite     bool           `json:"favorite"`
+	Bookmark     bool           `json:"bookmark"`
+	ReadAt       sql.NullString `json:"read_at"`
+	FeedTitle    string         `json:"feed_title"`
+	FeedUrl      string         `json:"feed_url"`
+	FeedHomeUrl  sql.NullString `json:"feed_home_url"`
+	FeedIsSystem int64          `json:"feed_is_system"`
+	AuthorID     sql.NullInt64  `json:"author_id"`
+	AuthorName   sql.NullString `json:"author_name"`
+}
+
+// The magic sort: rank feeds by the user's taste instead of strict time. Manual
+// raise/lower dominates in hard tiers (raised before neutral before lowered);
+// within a tier, feeds with more favorites rank first; within a feed, newest
+// items first. The favorite count is the owner feed's (i.feed_id), matching the
+// feed a card names. Offset-paged (no keyset cursor).
+func (q *Queries) ListItemsMagic(ctx context.Context, arg ListItemsMagicParams) ([]ListItemsMagicRow, error) {
+	rows, err := q.db.QueryContext(ctx, listItemsMagic,
+		arg.UserID,
+		arg.FeedID,
+		arg.AuthorID,
+		arg.CollectionID,
+		arg.Unread,
+		arg.Read,
+		arg.Favorites,
+		arg.Bookmarks,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListItemsMagicRow
+	for rows.Next() {
+		var i ListItemsMagicRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FeedID,
+			&i.Guid,
+			&i.Title,
+			&i.Link,
+			&i.Summary,
+			&i.Categories,
+			&i.ImageUrl,
+			&i.DurationSec,
+			&i.PublishedAt,
+			&i.FetchedAt,
+			&i.Read,
+			&i.Favorite,
+			&i.Bookmark,
 			&i.ReadAt,
 			&i.FeedTitle,
 			&i.FeedUrl,
@@ -1410,6 +1600,22 @@ func (q *Queries) RemoveItemFeedMemberships(ctx context.Context, arg RemoveItemF
 	}
 	_, err := q.db.ExecContext(ctx, query, queryParams...)
 	return err
+}
+
+const setItemBookmark = `-- name: SetItemBookmark :execresult
+UPDATE items
+SET bookmark = ?
+WHERE items.id = ? AND items.user_id = ?
+`
+
+type SetItemBookmarkParams struct {
+	Bookmark bool  `json:"bookmark"`
+	ID       int64 `json:"id"`
+	UserID   int64 `json:"user_id"`
+}
+
+func (q *Queries) SetItemBookmark(ctx context.Context, arg SetItemBookmarkParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, setItemBookmark, arg.Bookmark, arg.ID, arg.UserID)
 }
 
 const setItemContent = `-- name: SetItemContent :exec

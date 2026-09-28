@@ -170,7 +170,7 @@ func extSaved(title string, authorID int64) templ.Component {
 // extPageForm is the save-page form the browser extension loads into its popup
 // when the current page is not a feed. The page URL is fixed; the title is
 // prefilled from the tab and editable, and the page is saved into the selected
-// list (defaulting to "watch later") or a new list typed in the name field.
+// destination (bookmarks by default) or a new list typed in the name field.
 func extPageForm(pageURL, title, selectedList string, lists []comboItem) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -389,7 +389,7 @@ func extPageSaved(itemID int64, title, list string) templ.Component {
 // savePageForm is the in-app "save url for later" form, fetched into the shared
 // #save-page-dialog by the nav "add" menu. Unlike the extension variant the URL
 // is not fixed by the current tab, so it is an editable field. The page is saved
-// into the selected list (defaulting to "watch later") or a new list typed in
+// into the selected destination (bookmarks by default) or a new list typed in
 // the name field.
 func savePageForm(selectedList string, lists []comboItem) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {

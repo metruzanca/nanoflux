@@ -16,7 +16,8 @@ storage.
 - **Multi-user** — username/password accounts, per-user data, simple signup page. (no emails)
 - **Multi-user** — Admin panel and admin cli.
 - **Browser Extension** — for quickly adding a new feed, or saving the current page to a list when it has no feed.
-- **Lists & saved pages** — group items into named lists (favorites is built in), and keep arbitrary pages as "watch later" entries that live in your lists and search without cluttering the unread stream.
+- **Lists & saved pages** — group items into named lists (bookmarks and favorites are built in), and keep arbitrary pages as bookmarks that live in your lists and search without cluttering the unread stream.
+- **Magic sort** — order any list by feed taste instead of time: favorites rank feeds up, and you can raise or lower a feed manually from the algorithm editor.
 - **Optional S3 support** — Nanoflux uses local file storage by default, but supports S3.
 - **Backups** — Configurable Automatic backup every 1 day, keeping the 7 most recent or trigger them manually.
 - **Polite fetching** — per-feed adaptive intervals, conditional GET, and per-host rate-limit backoff, so a throttled site never starves the rest of your feeds. See [`docs/fetching.md`](docs/fetching.md).
@@ -109,11 +110,11 @@ You can install it by loading the `extension` directory as an "unpacked extensio
 OR by downloading the unpacked extension from the user settings page.
 
 When the current page has no feed, the extension offers to **save the page**
-instead. A saved page is stored as a list item ("watch later" by default, or any
-other list you pick or name) with its title, description and thumbnail fetched
-from the page. It appears in your lists, favorites and search, but not in the
+instead. A saved page is stored as a **bookmark** by default (or any list you
+pick or name) with its title, description and thumbnail fetched from the page.
+It appears in your lists, bookmarks, favorites and search, but not in the
 unread/read streams or home, so it stays out of your reading flow until you open
-it. Favorites is the special built-in list; create others from `/lists`.
+it. Bookmarks and favorites are the built-in lists; create others from `/lists`.
 
 ## Installable PWA
 

@@ -134,39 +134,75 @@ category.
   unread items older than it (by `COALESCE(published_at, fetched_at)`) are
   marked read. `0` = off; default 30. Set via the settings auto-read card
   (`POST /settings/auto-read`, options 3/7/30/60/off).
-- `ItemStore.MarkOlderThanRead(userID, days)` is the sweep. It ignores favorites
-  and is user-scoped through `feeds.user_id`. `days <= 0` is a no-op.
+- `ItemStore.MarkOlderThanRead(userID, days)` is the sweep. It ignores favorite
+  and bookmark state (both are swept) and is user-scoped through `feeds.user_id`.
+  `days <= 0` is a no-op.
 - `maintenance.Sweeper` runs it at startup and every 24h
   (`maintenance.DefaultInterval`), started in `cmd/server/main.go`; the settings
   handler also sweeps that user immediately on save so the change is visible.
 - The sweep only flips `read`/`read_at` — nothing is deleted, so it is
   reversible with "mark all unread".
 
+## Bookmarks and favorites
+
+Two native per-item lists, each a boolean column plus a `users.*_share_token`
+(mirroring each other), with distinct meanings:
+
+- **Bookmarks** (`items.bookmark`, schemaV42) are save-for-later: the extension
+  and the in-app "save url for later" dialog default to them. `POST
+  /bookmarks/share`, public `GET /b/{token}`, pinned on `/lists`, and a tab on
+  author pages. No backfill: bookmarks start empty.
+- **Favorites** (`items.favorite`) are the taste signal for the magic sort below.
+  `users.favorites_share_token`, public `GET /f/{token}`.
+
+Both are toggled from the item row/modal (`favToggle`/`bookmarkToggle`) and the
+add-to-list picker (`listsCombo` pseudo-values `favorites`/`bookmarks`).
+
+## Magic sort
+
+Item lists can sort by feed taste instead of time. `ItemFilter.Magic` dispatches
+to `ListItemsMagic` (offset-paged, no keyset cursor; `?sort=magic`).
+
+- Ranking is hard-tiered and transparent: the manual rank dominates, then the
+  feed's owner-feed favorite count, then item time. `CASE WHEN f.rank > 0 THEN 0
+  WHEN f.rank < 0 THEN 2 ELSE 1 END`, then `fav_count DESC`, then
+  `COALESCE(published_at, fetched_at) DESC`.
+- `feeds.rank` (schemaV42) is the per-feed manual lever: -1 lowered, 0 neutral,
+  +1 raised. `FeedStore.SetRank` clamps to that range.
+- `GET /favorites/algorithm` is the editor (`favoritesAlgorithmPage`): feeds
+  listed by favorite count with a three-state `rankControl`; `POST
+  /feeds/{id}/rank` swaps the control. `FeedStore.ListWithFavorites` backs it.
+- The sort picker (`SortControl`/`SimpleSortControl`) replaces the old two-way
+  `?dir=` control on every item list. `itemSortOf` still reads legacy `?dir=asc`
+  as `oldest`.
+
 ## Saved pages
 
 The extension can save an arbitrary page ("watch later") when the current page
 has no feed. A saved page is a normal `items` row under a hidden per-user system
-feed, so lists, favorites, FTS search and share pages all work unchanged.
+feed, so lists, favorites, bookmarks, FTS search and share pages all work
+unchanged.
 
 - `authors.is_system` / `feeds.is_system` (schemaV34) mark the hidden pair.
   `Store.EnsureSystemFeed`/`EnsureSystemAuthor` create them lazily;
   `Store.SavePage` upserts by `guid` (`page:<normalized-url>`, so re-saving is
-  idempotent) and adds list membership.
+  idempotent) and adds list membership (a `listID` of 0 skips membership).
 - The system feed is `enabled = 0`, never polled, and excluded from every feed
   and author listing (`ListFeeds*`, `ListAuthors*`, `ListAllFeeds`, collections,
   OPML, plugin reconcile). `FeedStore.ByID`/`AuthorStore.ByID` return
   `ErrNotFound` for them, so their pages 404 instead of rendering.
-- Saved pages surface **only** in lists, favorites and search. The `ListItems`
-  queries keep them out of the unread/read/feed/author/collection streams
-  (`AND (f.is_system = 0 OR favorites = 1)`); `CountUnread`/`MarkAllItemsRead`/
-  `MarkAllItemsUnread` exclude them. They stay favoriteable, searchable and
-  subject to the auto-read sweep.
+- Saved pages surface **only** in lists, favorites, bookmarks and search. The
+  `ListItems` queries keep them out of the unread/read/feed/author/collection
+  streams (`AND (f.is_system = 0 OR favorites = 1 OR bookmarks = 1)`);
+  `CountUnread`/`MarkAllItemsRead`/`MarkAllItemsUnread` exclude them. They stay
+  favoriteable, bookmarket, searchable and subject to the auto-read sweep.
 - `ItemWithFeed.FeedIsSystem` drives rendering: the row/modal show "saved" as
   plain text (no link to the hidden feed/author) and `dedupItems` never merges a
   saved page into a feed item.
-- Default list is "watch later", created on demand by
-  `Server.defaultSavedListID`; the extension form can pick another list or type
-  a new name. Routes: `POST /api/ext/page-form` and `/api/ext/page-save`.
+- The extension/in-app save defaults to the native **bookmarks** list
+  (`saveTargetBookmarks`), creating no user list; the picker can pick a real list
+  or type a new name. Routes: `POST /api/ext/page-form` and
+  `POST /api/ext/page-save`.
 
 ## Plugins
 

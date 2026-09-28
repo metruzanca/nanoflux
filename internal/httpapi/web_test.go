@@ -2478,13 +2478,13 @@ func TestItemListSortDirection(t *testing.T) {
 	if strings.Index(body, "New") > strings.Index(body, "Old") {
 		t.Fatalf("default should list newest first: %s", body)
 	}
-	// Ascending: oldest first with the asc sort control and after= links.
+	// Ascending: oldest first with the sort picker and sort=oldest links.
 	body = doGet(h, "/?dir=asc", cookie).Body.String()
 	if strings.Index(body, "Old") > strings.Index(body, "New") {
 		t.Fatalf("ascending should list oldest first: %s", body)
 	}
-	if !strings.Contains(body, `data-picker="dir"`) || !strings.Contains(body, "dir=asc") {
-		t.Fatalf("ascending page should carry the sort-direction picker: %s", body)
+	if !strings.Contains(body, `data-picker="sort"`) || !strings.Contains(body, "sort=oldest") {
+		t.Fatalf("ascending page should carry the sort picker: %s", body)
 	}
 }
 

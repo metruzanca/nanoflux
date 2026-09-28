@@ -15,6 +15,8 @@ import (
 type listsPageData struct {
 	FavoritesCount    int
 	FavoritesShareTok string
+	BookmarksCount    int
+	BookmarksShareTok string
 	Lists             []store.ListWithCount
 }
 
@@ -38,9 +40,13 @@ func (s *Server) listsPage(w http.ResponseWriter, r *http.Request) {
 	rows, _ := s.store.Lists.List(u.ID)
 	favCount, _ := s.store.Items.CountFavorites(u.ID, 0)
 	favTok, _ := s.store.Users.FavoritesShareToken(u.ID)
+	bookCount, _ := s.store.Items.CountBookmarks(u.ID, 0)
+	bookTok, _ := s.store.Users.BookmarksShareToken(u.ID)
 	web.Render(w, r, basePage("lists", u, listsPage(u, listsPageData{
 		FavoritesCount:    favCount,
 		FavoritesShareTok: favTok,
+		BookmarksCount:    bookCount,
+		BookmarksShareTok: bookTok,
 		Lists:             rows,
 	})))
 }
@@ -75,13 +81,16 @@ func (s *Server) listPage(w http.ResponseWriter, r *http.Request) {
 	}
 	web.Render(w, r, basePage(l.Name, u, listPage(u, listPageData{
 		List:   l,
-		Scoped: s.listScopedItems(u.ID, id, itemsView(r), u.Timezone, itemsAsc(r)),
+		Scoped: s.listScopedItems(u.ID, id, itemsView(r), itemSortOf(r), u.Timezone),
 	})))
 }
 
 // listScopedItems loads one read/unread item list for a list plus the counts
-// that drive the tabs. Unlike feeds, a list's items keep their added order.
-func (s *Server) listScopedItems(userID, listID int64, view, tz string, asc bool) scopedItemsData {
+// that drive the tabs. Unlike feeds, a list's items keep their added order, so
+// only the oldest/newest (added-time) direction applies; a magic request falls
+// back to newest.
+func (s *Server) listScopedItems(userID, listID int64, view string, sort itemSort, tz string) scopedItemsData {
+	asc := sort.asc()
 	f := store.ListItemFilter{UnreadOnly: view != "read"}
 	items, more, _ := s.store.Lists.ItemList(userID, listID, 0, pageSize, asc, f)
 	unread, _ := s.store.Lists.CountUnread(userID, listID)
@@ -89,7 +98,7 @@ func (s *Server) listScopedItems(userID, listID int64, view, tz string, asc bool
 	base := "/lists/" + strconv.FormatInt(listID, 10)
 	itemsBase := base + "/items?view=" + view + "&dir=" + dirParam(asc)
 	return scopedItemsData{
-		Path: base, ItemsPath: base + "/items", View: view, Dir: dirParam(asc),
+		Path: base, ItemsPath: base + "/items", View: view, Sort: sort, NoMagic: true,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
 		More: pageCursor(itemsBase, items, more, asc),
 		Mode: s.store.ViewPrefs.Mode(userID, base),
@@ -106,8 +115,9 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := itemsView(r)
-	asc := itemsAsc(r)
-	if cursor := cursorID(r, asc); cursor > 0 {
+	sort := itemSortOf(r)
+	asc := sort.asc()
+	if cursor := cursorID(r, sort); cursor > 0 {
 		f := store.ListItemFilter{UnreadOnly: view != "read"}
 		items, more, err := s.store.Lists.ItemList(u.ID, id, cursor, pageSize, asc, f)
 		if err != nil {
@@ -119,7 +129,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more, asc), false))
 		return
 	}
-	web.Render(w, r, ScopedItems(s.listScopedItems(u.ID, id, view, u.Timezone, asc)))
+	web.Render(w, r, ScopedItems(s.listScopedItems(u.ID, id, view, sort, u.Timezone)))
 }
 
 // listEdit renders a list's edit form (rename + delete).
@@ -238,6 +248,28 @@ func (s *Server) favoritesRevoke(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, favoritesShareControl(""))
 }
 
+// bookmarksShare creates a public share link for the native bookmarks list.
+func (s *Server) bookmarksShare(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	token, err := s.store.Users.ShareBookmarks(u.ID)
+	if err != nil {
+		log.Error("share bookmarks", "err", err)
+		http.Error(w, "share failed", http.StatusInternalServerError)
+		return
+	}
+	web.Render(w, r, bookmarksShareControl(token))
+}
+
+func (s *Server) bookmarksRevoke(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	if err := s.store.Users.SetBookmarksShareToken(u.ID, ""); err != nil {
+		log.Error("revoke bookmarks share", "err", err)
+		http.Error(w, "revoke failed", http.StatusInternalServerError)
+		return
+	}
+	web.Render(w, r, bookmarksShareControl(""))
+}
+
 // itemLists renders the add-to-list picker for a single item, as a fragment
 // injected into the shared dialog. The card/modal "add to list" menu entries
 // fetch this before showing the dialog.
@@ -255,7 +287,7 @@ func (s *Server) itemLists(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, _ := s.store.Lists.List(u.ID)
 	ids, _ := s.store.Lists.ItemListIDs(u.ID, id)
-	items, selected := listsCombo(it.Favorite, rows, ids)
+	items, selected := listsCombo(it.Favorite, it.Bookmark, rows, ids)
 	web.Render(w, r, itemListsDialogInner(id, items, selected))
 }
 
@@ -286,6 +318,13 @@ func (s *Server) itemListsUpdate(w http.ResponseWriter, r *http.Request) {
 	if want["favorites"] != it.Favorite {
 		if err := s.store.Items.SetFavorite(u.ID, id, want["favorites"]); err != nil {
 			log.Error("set favorite", "item_id", id, "err", err)
+			writeFormError(w, r, "item-lists-error", "could not update lists")
+			return
+		}
+	}
+	if want["bookmarks"] != it.Bookmark {
+		if err := s.store.Items.SetBookmark(u.ID, id, want["bookmarks"]); err != nil {
+			log.Error("set bookmark", "item_id", id, "err", err)
 			writeFormError(w, r, "item-lists-error", "could not update lists")
 			return
 		}
@@ -329,23 +368,29 @@ func (s *Server) itemListsUpdate(w http.ResponseWriter, r *http.Request) {
 	// (removing any inline close handler first). Signal the close from the
 	// server with HX-Trigger instead; app.js listens on body.
 	w.Header().Set("HX-Trigger", "item-lists-saved")
-	items, selected := listsCombo(it.Favorite, rows, freshIDs)
+	items, selected := listsCombo(it.Favorite, it.Bookmark, rows, freshIDs)
 	web.Render(w, r, itemListsDialogInner(id, items, selected))
 }
 
 // listsCombo builds the add-to-list picker's combo items and selected values.
-// Favorites is the first item, value "favorites" (matching the checkbox it
-// replaced); the user's lists follow by id.
-func listsCombo(favorite bool, rows []store.ListWithCount, listIDs []int64) ([]comboItem, []string) {
-	selected := make([]string, 0, len(listIDs)+1)
+// Favorites and bookmarks are the two native pseudo-lists, value "favorites"
+// and "bookmarks"; the user's lists follow by id.
+func listsCombo(favorite, bookmark bool, rows []store.ListWithCount, listIDs []int64) ([]comboItem, []string) {
+	selected := make([]string, 0, len(listIDs)+2)
 	if favorite {
 		selected = append(selected, "favorites")
+	}
+	if bookmark {
+		selected = append(selected, "bookmarks")
 	}
 	for _, id := range listIDs {
 		selected = append(selected, strconv.FormatInt(id, 10))
 	}
-	items := make([]comboItem, 0, len(rows)+1)
-	items = append(items, comboItem{Value: "favorites", Label: "favorites"})
+	items := make([]comboItem, 0, len(rows)+2)
+	items = append(items,
+		comboItem{Value: "favorites", Label: "favorites"},
+		comboItem{Value: "bookmarks", Label: "bookmarks"},
+	)
 	for _, r := range rows {
 		items = append(items, comboItem{Value: strconv.FormatInt(r.ID, 10), Label: r.Name})
 	}
@@ -360,7 +405,7 @@ func (s *Server) sharedListPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	items, more, err := s.store.Lists.ItemListPublic(l.ID, cursorID(r, false), pageSize)
+	items, more, err := s.store.Lists.ItemListPublic(l.ID, cursorID(r, sortNewest), pageSize)
 	if err != nil {
 		log.Error("shared list items", "list_id", l.ID, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -382,7 +427,7 @@ func (s *Server) sharedFavoritesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	items, more, err := s.store.Items.ListPage(u.ID, store.ItemFilter{
-		FavoritesOnly: true, BeforeID: cursorID(r, false), Limit: pageSize,
+		FavoritesOnly: true, BeforeID: cursorID(r, sortNewest), Limit: pageSize,
 	})
 	if err != nil {
 		log.Error("shared favorites items", "err", err)
@@ -390,6 +435,29 @@ func (s *Server) sharedFavoritesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := sharedListData{Path: "/f/" + r.PathValue("token"), Name: "favorites", Items: items}
+	if more && len(items) > 0 {
+		d.More = items[len(items)-1].ID
+	}
+	web.Render(w, r, sharedListPage(d))
+}
+
+// sharedBookmarksPage serves a user's bookmarks list publicly by its share
+// token, the sibling of sharedFavoritesPage.
+func (s *Server) sharedBookmarksPage(w http.ResponseWriter, r *http.Request) {
+	u, err := s.store.Users.ByBookmarksShareToken(r.PathValue("token"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	items, more, err := s.store.Items.ListPage(u.ID, store.ItemFilter{
+		BookmarksOnly: true, BeforeID: cursorID(r, sortNewest), Limit: pageSize,
+	})
+	if err != nil {
+		log.Error("shared bookmarks items", "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	d := sharedListData{Path: "/b/" + r.PathValue("token"), Name: "bookmarks", Items: items}
 	if more && len(items) > 0 {
 		d.More = items[len(items)-1].ID
 	}
