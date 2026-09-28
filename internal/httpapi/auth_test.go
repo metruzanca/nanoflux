@@ -103,12 +103,20 @@ func TestLoginRejectsBadPassword(t *testing.T) {
 
 func TestUnauthenticatedRedirects(t *testing.T) {
 	_, h := newTestServer(t)
+	// The exact root is public now: an anonymous visitor gets the landing page,
+	// not a redirect to /login. Protected paths still redirect.
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
-	// GET redirects carry the requested path so login returns to it.
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "mkt-hero") {
+		t.Fatalf("unauthenticated GET / should render the landing page: got %d", rr.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/unread", nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusFound || !strings.HasPrefix(rr.Header().Get("Location"), "/login") {
-		t.Fatalf("unauthenticated GET /: got %d %q", rr.Code, rr.Header().Get("Location"))
+		t.Fatalf("unauthenticated GET /unread: got %d %q", rr.Code, rr.Header().Get("Location"))
 	}
 }
 

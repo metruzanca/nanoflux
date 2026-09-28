@@ -21,6 +21,18 @@ func (q *Queries) CountAllFeeds(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countUserFeeds = `-- name: CountUserFeeds :one
+SELECT COUNT(*) FROM feeds WHERE user_id = ? AND is_system = 0
+`
+
+// A user's non-system feeds, for the demo mode add-feed cap.
+func (q *Queries) CountUserFeeds(ctx context.Context, userID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUserFeeds, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createFeed = `-- name: CreateFeed :one
 INSERT INTO feeds (user_id, author_id, title, feed_url, home_url, description, poll_interval_sec, plugin_name)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)

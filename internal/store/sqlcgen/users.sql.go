@@ -21,6 +21,19 @@ func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countPersistentUsers = `-- name: CountPersistentUsers :one
+SELECT COUNT(*) FROM users WHERE is_ephemeral = 0
+`
+
+// Real (non-ephemeral) users. Demo installs must not let throwaway demo accounts
+// satisfy the "first account" bootstrap, and the admin user list hides them.
+func (q *Queries) CountPersistentUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPersistentUsers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT COUNT(*) FROM users
 `
@@ -193,6 +206,25 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 	return i, err
 }
 
+const getUserEphemeralStatus = `-- name: GetUserEphemeralStatus :one
+SELECT is_ephemeral, expires_at FROM users WHERE id = ?
+`
+
+type GetUserEphemeralStatusRow struct {
+	IsEphemeral int64          `json:"is_ephemeral"`
+	ExpiresAt   sql.NullString `json:"expires_at"`
+}
+
+// Whether a user is an ephemeral demo account and when it expires (NULL when it
+// never does). Used on every session resolve in demo mode to reject an expired
+// demo, so it is a single indexed point lookup.
+func (q *Queries) GetUserEphemeralStatus(ctx context.Context, id int64) (GetUserEphemeralStatusRow, error) {
+	row := q.db.QueryRowContext(ctx, getUserEphemeralStatus, id)
+	var i GetUserEphemeralStatusRow
+	err := row.Scan(&i.IsEphemeral, &i.ExpiresAt)
+	return i, err
+}
+
 const getUserSignupBannerDismissed = `-- name: GetUserSignupBannerDismissed :one
 SELECT signup_banner_dismissed FROM users WHERE id = ?
 `
@@ -202,6 +234,38 @@ func (q *Queries) GetUserSignupBannerDismissed(ctx context.Context, id int64) (b
 	var signup_banner_dismissed bool
 	err := row.Scan(&signup_banner_dismissed)
 	return signup_banner_dismissed, err
+}
+
+const listExpiredEphemeralUsers = `-- name: ListExpiredEphemeralUsers :many
+SELECT id FROM users
+WHERE is_ephemeral = 1
+  AND (expires_at IS NULL OR expires_at <= CAST(?1 AS TEXT))
+ORDER BY id
+`
+
+// Ephemeral demo accounts whose absolute expiry has passed. A NULL/empty
+// expires_at on an ephemeral row counts as expired.
+func (q *Queries) ListExpiredEphemeralUsers(ctx context.Context, now string) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listExpiredEphemeralUsers, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUserIconKeys = `-- name: ListUserIconKeys :many
@@ -234,6 +298,7 @@ func (q *Queries) ListUserIconKeys(ctx context.Context, userID int64) ([]sql.Nul
 const listUsers = `-- name: ListUsers :many
 SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
+WHERE is_ephemeral = 0
 ORDER BY username
 `
 

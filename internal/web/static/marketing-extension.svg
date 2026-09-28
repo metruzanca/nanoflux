@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 360" role="img" aria-label="browser extension popup">
+  <rect width="560" height="360" rx="14" fill="#111318"/>
+  <rect x="0.5" y="0.5" width="559" height="359" rx="13.5" fill="none" stroke="#2a3040"/>
+  <rect x="24" y="22" width="512" height="42" rx="10" fill="#181b23" stroke="#2a3040"/>
+  <circle cx="48" cy="43" r="6" fill="#ff6b8a"/>
+  <circle cx="68" cy="43" r="6" fill="#ffb454"/>
+  <circle cx="88" cy="43" r="6" fill="#3ddc97"/>
+  <rect x="120" y="36" width="260" height="14" rx="7" fill="#0d0f14" stroke="#2a3040"/>
+  <rect x="140" y="39" width="140" height="8" rx="4" fill="#9aa3b2" opacity="0.5"/>
+  <rect x="24" y="84" width="512" height="72" rx="10" fill="#181b23" stroke="#2a3040"/>
+  <rect x="44" y="104" width="200" height="12" rx="6" fill="#e8ebf2" opacity="0.85"/>
+  <rect x="44" y="126" width="300" height="9" rx="4.5" fill="#9aa3b2" opacity="0.5"/>
+  <g>
+    <rect x="392" y="196" width="144" height="140" rx="12" fill="#181b23" stroke="#5b8cff"/>
+    <rect x="410" y="214" width="60" height="10" rx="5" fill="#9aa3b2" opacity="0.6"/>
+    <rect x="410" y="236" width="108" height="30" rx="8" fill="#0d0f14" stroke="#2a3040"/>
+    <rect x="422" y="246" width="80" height="10" rx="5" fill="#9aa3b2" opacity="0.5"/>
+    <rect x="410" y="278" width="108" height="30" rx="8" fill="#5b8cff" opacity="0.85"/>
+    <rect x="440" y="288" width="48" height="10" rx="5" fill="#111318"/>
+    <rect x="410" y="318" width="80" height="9" rx="4.5" fill="#9aa3b2" opacity="0.4"/>
+  </g>
+  <rect x="24" y="196" width="340" height="140" rx="10" fill="#181b23" stroke="#2a3040"/>
+  <rect x="44" y="216" width="140" height="12" rx="6" fill="#e8ebf2" opacity="0.75"/>
+  <rect x="44" y="240" width="300" height="9" rx="4.5" fill="#9aa3b2" opacity="0.5"/>
+  <rect x="44" y="260" width="260" height="9" rx="4.5" fill="#9aa3b2" opacity="0.45"/>
+  <rect x="44" y="280" width="280" height="9" rx="4.5" fill="#9aa3b2" opacity="0.4"/>
+  <rect x="44" y="300" width="220" height="9" rx="4.5" fill="#9aa3b2" opacity="0.35"/>
+</svg>

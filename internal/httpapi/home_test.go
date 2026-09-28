@@ -260,7 +260,13 @@ func TestSettingsHomeReorder(t *testing.T) {
 
 func TestHomeRequiresAuth(t *testing.T) {
 	_, h := newTestServer(t)
-	if rr := doGet(h, "/", nil); rr.Code != http.StatusFound {
-		t.Fatalf("unauthenticated home should redirect to login, got %d", rr.Code)
+	// "/" is the public landing page for anonymous visitors; the authenticated
+	// home lives at the same path but requires a session. A protected path
+	// redirects to login.
+	if rr := doGet(h, "/", nil); rr.Code != http.StatusOK {
+		t.Fatalf("anonymous home should render the landing page, got %d", rr.Code)
+	}
+	if rr := doGet(h, "/unread", nil); rr.Code != http.StatusFound {
+		t.Fatalf("unauthenticated unread should redirect to login, got %d", rr.Code)
 	}
 }

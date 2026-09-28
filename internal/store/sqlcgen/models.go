@@ -186,6 +186,8 @@ type User struct {
 	HideUnreadCounts      bool           `json:"hide_unread_counts"`
 	HideUnreadNav         bool           `json:"hide_unread_nav"`
 	GridMaxColumns        int64          `json:"grid_max_columns"`
+	IsEphemeral           int64          `json:"is_ephemeral"`
+	ExpiresAt             sql.NullString `json:"expires_at"`
 	FavoritesShareToken   sql.NullString `json:"favorites_share_token"`
 	BookmarksShareToken   sql.NullString `json:"bookmarks_share_token"`
 	CreatedAt             string         `json:"created_at"`

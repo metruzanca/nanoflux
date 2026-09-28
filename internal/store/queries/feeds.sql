@@ -196,6 +196,10 @@ ORDER BY u.username, f.title;
 -- name: CountAllFeeds :one
 SELECT COUNT(*) FROM feeds WHERE is_system = 0;
 
+-- name: CountUserFeeds :one
+-- A user's non-system feeds, for the demo mode add-feed cap.
+SELECT COUNT(*) FROM feeds WHERE user_id = ? AND is_system = 0;
+
 -- name: SetFeedRank :execresult
 -- Set a feed's manual magic-sort lever (-1 lowered, 0 neutral, +1 raised).
 UPDATE feeds

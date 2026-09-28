@@ -994,6 +994,10 @@ func (s *Server) itemDeleteSaved(w http.ResponseWriter, r *http.Request) {
 func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 
+	if s.demoFeedLimitReached(u.ID) {
+		writeFormError(w, r, "add-feed-error", demoAddFeedMessage())
+		return
+	}
 	if errMsg := validateFeedFields(r); errMsg != "" {
 		writeFormError(w, r, "add-feed-error", errMsg)
 		return
@@ -1044,6 +1048,10 @@ func (s *Server) authorFeedCreate(w http.ResponseWriter, r *http.Request) {
 	author, err := s.store.Authors.ByID(u.ID, authorID)
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	if s.demoFeedLimitReached(u.ID) {
+		writeFormError(w, r, "add-feed-error", demoAddFeedMessage())
 		return
 	}
 	if errMsg := validateFeedFields(r); errMsg != "" {

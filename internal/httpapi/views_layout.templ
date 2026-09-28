@@ -54,6 +54,11 @@ templ topbar(u store.User) {
 					</a>
 					<a href="/collections">collections</a>
 					<a href="/lists">lists</a>
+					if d := demoFrom(ctx); d.Active {
+						<div class="demo-badge" id="demo-countdown" data-expires={ d.ExpiresAt } title="this demo account is temporary">
+							<span class="demo-badge-dot"></span>demo · <span id="demo-countdown-time">--:--</span>
+						</div>
+					}
 				</div>
 				<div class="top-nav-right">
 					<form class="top-search" action="/search" method="get" role="search">

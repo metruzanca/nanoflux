@@ -22,7 +22,21 @@ type Config struct {
 	BootstrapPass   string
 	PluginsDir      string
 	Backup          BackupConfig
+	Demo            DemoConfig
 }
+
+// DemoConfig turns on ephemeral demo sessions for public "marketing" deployments.
+// NF_DEMO_MODE shows the landing page CTA and enables POST /demo; the other
+// fields tune how a demo account is provisioned.
+type DemoConfig struct {
+	Mode     bool          // NF_DEMO_MODE: enable ephemeral demo sessions
+	User     string        // NF_DEMO_USER: username of the admin seed user to clone
+	TTL      time.Duration // NF_DEMO_TTL: lifetime of an ephemeral session
+	MaxFeeds int           // NF_DEMO_MAX_FEEDS: extra feeds a demo user may add
+}
+
+// Enabled reports whether demo mode is on and a seed user is configured.
+func (d DemoConfig) Enabled() bool { return d.Mode && d.User != "" }
 
 // BackupConfig configures automatic instance backups. It is disabled unless a
 // destination (Dir or S3) and an interval are set.
@@ -81,6 +95,12 @@ func Load() Config {
 				Prefix:    os.Getenv("NF_BACKUP_S3_PREFIX"),
 			},
 		},
+		Demo: DemoConfig{
+			Mode:     boolEnv("NF_DEMO_MODE", false),
+			User:     os.Getenv("NF_DEMO_USER"),
+			TTL:      durationEnv("NF_DEMO_TTL", 2*time.Hour),
+			MaxFeeds: intEnv("NF_DEMO_MAX_FEEDS", 5),
+		},
 	}
 }
 
@@ -107,4 +127,17 @@ func intEnv(key string, def int) int {
 		}
 	}
 	return def
+}
+
+// boolEnv parses a boolean env var. An unset or unparseable value yields def.
+func boolEnv(key string, def bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return def
+	}
+	return b
 }

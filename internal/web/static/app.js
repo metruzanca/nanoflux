@@ -1225,3 +1225,36 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     });
   });
 }
+
+// Demo countdown: the topbar badge carries the account's absolute expiry. Tick
+// it down each second; at zero the server has already expired the session, so
+// send the visitor back to the landing page where they can start a fresh demo.
+(function () {
+  var el = document.getElementById('demo-countdown');
+  if (!el) return;
+  var out = document.getElementById('demo-countdown-time');
+  var expires = Date.parse(el.getAttribute('data-expires') || '');
+  if (isNaN(expires)) return;
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  function tick() {
+    var left = expires - Date.now();
+    if (left <= 0) {
+      if (out) out.textContent = '0:00';
+      window.location.href = '/';
+      return;
+    }
+    var totalSec = Math.floor(left / 1000);
+    var h = Math.floor(totalSec / 3600);
+    var m = Math.floor((totalSec % 3600) / 60);
+    var s = totalSec % 60;
+    if (h > 0) {
+      if (out) out.textContent = h + ':' + pad(m) + ':' + pad(s);
+    } else {
+      if (out) out.textContent = m + ':' + pad(s);
+    }
+    setTimeout(tick, 1000);
+  }
+  tick();
+})();

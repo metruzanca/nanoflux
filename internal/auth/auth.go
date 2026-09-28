@@ -24,21 +24,33 @@ const (
 // database; the web UI sends them as an httpOnly cookie and the browser
 // extension sends the same token as `Authorization: Bearer <token>`.
 type Authenticator struct {
-	store *store.Store
+	store    *store.Store
+	demoMode bool
 }
 
 func New(st *store.Store) *Authenticator {
 	return &Authenticator{store: st}
 }
 
+// SetDemoMode turns on ephemeral-session handling: a demo account's absolute
+// expiry is enforced on every resolve and its session is never slid. Off, this
+// is a no-op and session behaviour is unchanged.
+func (a *Authenticator) SetDemoMode(on bool) { a.demoMode = on }
+
 // CreateSession mints a new token for the user and stores it.
 func (a *Authenticator) CreateSession(userID int64) (string, error) {
+	return a.CreateSessionTTL(userID, SessionTTL)
+}
+
+// CreateSessionTTL mints a session that expires after ttl. It is used by demo
+// mode so a visitor's session ends exactly when their ephemeral account does.
+func (a *Authenticator) CreateSessionTTL(userID int64, ttl time.Duration) (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
 	token := hex.EncodeToString(buf)
-	expires := db.FormatTime(time.Now().Add(SessionTTL))
+	expires := db.FormatTime(time.Now().Add(ttl))
 	if err := a.store.Sessions.Create(userID, token, expires); err != nil {
 		return "", err
 	}
@@ -51,6 +63,12 @@ func (a *Authenticator) CreateSession(userID int64) (string, error) {
 // (X-Forwarded-Proto/X-Forwarded-Ssl). Plain-HTTP LAN and dev installs keep a
 // non-Secure cookie.
 func (a *Authenticator) SetCookie(w http.ResponseWriter, r *http.Request, token string) {
+	a.SetCookieTTL(w, r, token, SessionTTL)
+}
+
+// SetCookieTTL sets the session cookie with an explicit lifetime. Demo sessions
+// use it so the cookie expires with the ephemeral account.
+func (a *Authenticator) SetCookieTTL(w http.ResponseWriter, r *http.Request, token string, ttl time.Duration) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookieName,
 		Value:    token,
@@ -58,8 +76,8 @@ func (a *Authenticator) SetCookie(w http.ResponseWriter, r *http.Request, token 
 		HttpOnly: true,
 		Secure:   SecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(SessionTTL.Seconds()),
-		Expires:  time.Now().Add(SessionTTL),
+		MaxAge:   int(ttl.Seconds()),
+		Expires:  time.Now().Add(ttl),
 	})
 }
 
@@ -109,6 +127,20 @@ func (a *Authenticator) User(r *http.Request) (store.User, error) {
 	u, err := a.store.Sessions.UserByToken(token)
 	if err != nil {
 		return store.User{}, err
+	}
+	// Demo mode: an ephemeral account's absolute expiry ends its session
+	// immediately, and the session is never slid — otherwise activity during
+	// the demo would keep extending it past the account's own deadline.
+	if a.demoMode {
+		ephemeral, expiresAt, err := a.store.Users.EphemeralStatus(u.ID)
+		if err == nil && ephemeral {
+			exp, perr := db.ParseTime(expiresAt)
+			if expiresAt == "" || perr != nil || !exp.After(time.Now()) {
+				a.store.Sessions.Delete(token)
+				return store.User{}, store.ErrNotFound
+			}
+			return u, nil
+		}
 	}
 	// Sliding session: extend expiry, ignore errors.
 	a.store.Sessions.Touch(token, db.FormatTime(time.Now().Add(SessionTTL)))

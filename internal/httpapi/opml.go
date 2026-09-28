@@ -160,12 +160,19 @@ func (s *Server) opmlImport(w http.ResponseWriter, r *http.Request) {
 
 	client := s.client
 	var imported, skipped, failed int
+	demoLimited := false
 	authorsByName := map[string]int64{}
 	for _, e := range entries {
 		feedURL := strings.TrimSpace(e.outline.XMLURL)
 		if feedURL == "" || existing[normalizeFeedKey(feedURL)] {
 			skipped++
 			continue
+		}
+		// A demo user may not import past their add-feed cap; stop cleanly rather
+		// than failing each remaining entry.
+		if s.demoFeedLimitReached(u.ID) {
+			demoLimited = true
+			break
 		}
 		title := strings.TrimSpace(e.outline.Title)
 		homeURL := strings.TrimSpace(e.outline.HTMLURL)
@@ -226,9 +233,11 @@ func (s *Server) opmlImport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	web.Render(w, r, settingsOpml(settingsOpmlData{
-		Message: "imported " + strconv.Itoa(imported) + " · skipped " + strconv.Itoa(skipped) + " · failed " + strconv.Itoa(failed),
-	}))
+	msg := "imported " + strconv.Itoa(imported) + " · skipped " + strconv.Itoa(skipped) + " · failed " + strconv.Itoa(failed)
+	if demoLimited {
+		msg += " · " + demoAddFeedMessage()
+	}
+	web.Render(w, r, settingsOpml(settingsOpmlData{Message: msg}))
 }
 
 // mustFeeds lists the user's feeds, tolerating errors (empty on failure).

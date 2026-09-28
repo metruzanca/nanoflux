@@ -230,6 +230,55 @@ unchanged.
   or type a new name. Routes: `POST /api/ext/page-form` and
   `POST /api/ext/page-save`.
 
+## Demo mode (public marketing deployment)
+
+`NF_DEMO_MODE=1` turns the app into its own marketing site while keeping one
+codebase. Logged-out `/` always renders a landing page (demo or not); only the
+CTA differs. The demo is a real temporary account, not a shared sandbox.
+
+- The landing page (`views_marketing.templ`, `Server.landing`) is a bespoke
+  document (its own nav/footer, no app topbar). It is served by `Server.root`
+  for anonymous `/`; a signed-in visitor still gets `Server.home`.
+- `POST /demo` (`Server.demoStart`) provisions an ephemeral account and signs
+  the visitor in. A visitor holding any valid session is redirected to `/`
+  instead of given a second account. Creation (not use) is limited to **one demo
+  per client IP** by `demoThrottle` (in-memory, keyed on `clientIP`, which is
+  `RemoteAddr` only — behind a proxy that collapses to one demo site-wide; this
+  is a deliberate anti-bot measure, not an identity check). A throttled request
+  redirects to `/?demo=busy`, which renders a notice.
+- Provisioning clones the admin seed named by `NF_DEMO_USER`
+  (`store.CloneUser`). The clone gets a random adjective-animal username
+  (`<adjective>-<animal>`), `is_admin=0`, a random unusable password, fresh NULL
+  share tokens, and `is_ephemeral=1`/`expires_at` (schemaV44). `NF_DEMO_TTL`
+  (default 2h) is both the account expiry and the session lifetime.
+- **Every cloned feed is created `enabled = 0`** so a new visitor never
+  triggers outbound fetches; poll bookkeeping (etag/last-polled/next-page/
+  next-poll-at) is reset. The seed's own feeds stay enabled so the showcase
+  refreshes normally. Do not "helpfully" copy `enabled`; pausing is the point.
+- `home_config` pinned collection sections are remapped to the cloned collection
+  ids; items keep read/favorite/bookmark state and feed memberships; collections,
+  lists, filters, author links, source icons (URLs only) and view prefs are
+  copied. Blobs (`avatar_key`, `icon_key`) are **not** shared, so deleting one
+  account's objects can never reach the other's.
+- `auth.Authenticator.SetDemoMode(true)` makes session resolution enforce the
+  account's absolute expiry and **skip the sliding `Touch`**, so activity cannot
+  extend a demo past its deadline. `CreateSessionTTL`/`SetCookieTTL` mint the
+  shorter-lived session.
+- `demo.Manager.Run` purges expired ephemeral users every 10m (object keys first,
+  best-effort), deletes the row, and drops lapsed sessions. `ExpiredEphemeral`
+  treats a NULL/empty `expires_at` as expired.
+- The add-feed cap applies only to ephemeral users:
+  `Server.demoFeedLimitReached` is checked before every feed-create path
+  (`feedCreate`, `authorFeedCreate`, `apiSave`, extension `saveFeed`, OPML
+  import). The allowance is `seedFeedCount + NF_DEMO_MAX_FEEDS` (default 5), read
+  live so editing the seed changes it without a restart.
+- `users.List`/`CountPersistent` exclude ephemeral accounts, so the admin user
+  list and the "first account" bootstrap ignore demo users. `Server.allowSignup`
+  returns false in demo mode; the seed admin logs in normally.
+- `views_layout.templ`'s topbar renders a `#demo-countdown` badge when the
+  request carries a demo status (`demoFrom` context); `app.js` ticks it and
+  sends the visitor to `/` at zero. Do not put it on the landing page.
+
 ## Plugins
 
 - `feeds.plugin_name` (schemaV31) records which plugin owns a feed; empty means
