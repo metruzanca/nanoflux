@@ -62,6 +62,52 @@ var redditHosts = map[string]bool{
 // budget. The canonical shape must therefore be the one with no redirect.
 const redditCanonicalHost = "www.reddit.com"
 
+// RedditFeedToken derives the "r/<sub>" or "u/<name>" token a reddit feed URL
+// represents, lowercased, or "" when the URL is not a reddit feed. The token is
+// the same string reddit puts in an entry's <category> (and so in a stored
+// item's Categories), which lets the token map back to the subscribed feed. It
+// is derived from the URL, not the feed title, so a renamed feed or author
+// still resolves correctly.
+func RedditFeedToken(feedURL string) string {
+	u, err := url.Parse(strings.TrimSpace(feedURL))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	if !redditHosts[strings.ToLower(u.Hostname())] {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	name := strings.TrimSuffix(parts[1], ".rss")
+	if name == "" {
+		return ""
+	}
+	switch parts[0] {
+	case "r":
+		return "r/" + strings.ToLower(name)
+	case "user", "u":
+		return "u/" + strings.ToLower(name)
+	}
+	return ""
+}
+
+// redditCategoryToken normalizes an item category into a reddit token the
+// subscription resolver understands ("r/cats" or "u/sam", lowercased, leading
+// slash dropped), or "" when the category is not one. It mirrors the parser's
+// token shape so the two always agree on what a reddit category looks like.
+func redditCategoryToken(category string) string {
+	c := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(category), "/"))
+	switch {
+	case strings.HasPrefix(c, "r/"):
+		return c
+	case strings.HasPrefix(c, "u/"):
+		return c
+	}
+	return ""
+}
+
 // CanonicalFeedURL rewrites a feed URL to the form nanoflux prefers, for hosts
 // where it knows the canonical shape. It leaves other URLs untouched.
 //

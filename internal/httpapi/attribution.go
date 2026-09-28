@@ -69,6 +69,12 @@ func subLink(it store.ItemWithFeed, sub string) string {
 	if feedTitleEqual(it.FeedTitle, sub) {
 		return "/feeds/" + strconv.FormatInt(it.FeedID, 10)
 	}
+	if link, ok := redditLink(it, sub); ok {
+		if link.AuthorID != 0 {
+			return "/authors/" + strconv.FormatInt(link.AuthorID, 10)
+		}
+		return "/feeds/" + strconv.FormatInt(link.FeedID, 10)
+	}
 	for _, src := range it.Sources {
 		if authorEqual(src.AuthorName, sub) {
 			return "/authors/" + strconv.FormatInt(src.AuthorID, 10)
@@ -88,12 +94,28 @@ func userLink(it store.ItemWithFeed, user string) string {
 	if authorEqual(it.AuthorName, user) {
 		return "/authors/" + strconv.FormatInt(it.AuthorID, 10)
 	}
+	if link, ok := redditLink(it, user); ok && link.AuthorID != 0 {
+		return "/authors/" + strconv.FormatInt(link.AuthorID, 10)
+	}
 	for _, src := range it.Sources {
 		if authorEqual(src.AuthorName, user) {
 			return "/authors/" + strconv.FormatInt(src.AuthorID, 10)
 		}
 	}
 	return ""
+}
+
+// redditLink finds the subscribed reddit feed a token resolves to, among the
+// item's RedditLinks (populated from the user's subscription list). It lets a
+// poster link internally even when the post's user feed has not polled it yet.
+func redditLink(it store.ItemWithFeed, token string) (store.RedditLink, bool) {
+	t := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(token), "/"))
+	for _, link := range it.RedditLinks {
+		if link.Token == t {
+			return link, true
+		}
+	}
+	return store.RedditLink{}, false
 }
 
 // authorEqual compares an author name to a reddit "r/x" or "u/x" token,
