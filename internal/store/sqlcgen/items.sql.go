@@ -360,7 +360,7 @@ func (q *Queries) GetAuthorItemStats(ctx context.Context, arg GetAuthorItemStats
 }
 
 const getItem = `-- name: GetItem :one
-SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.categories, i.duration_sec, i.image_url,
+SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
 FROM items i
 WHERE i.id = ? AND i.user_id = ?
@@ -384,6 +384,7 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 		&i.Title,
 		&i.Link,
 		&i.Summary,
+		&i.Content,
 		&i.Categories,
 		&i.DurationSec,
 		&i.ImageUrl,
@@ -434,8 +435,21 @@ func (q *Queries) GetItemByUserCrossKey(ctx context.Context, arg GetItemByUserCr
 	return id, err
 }
 
+const getItemContent = `-- name: GetItemContent :one
+SELECT content FROM items WHERE id = ?
+`
+
+// An item's enriched body, to skip re-enriching at ingest. Empty means the
+// plugin has not enriched it yet.
+func (q *Queries) GetItemContent(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRowContext(ctx, getItemContent, id)
+	var content string
+	err := row.Scan(&content)
+	return content, err
+}
+
 const getItemWithFeed = `-- name: GetItemWithFeed :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -458,6 +472,7 @@ type GetItemWithFeedRow struct {
 	Title        string         `json:"title"`
 	Link         string         `json:"link"`
 	Summary      string         `json:"summary"`
+	Content      string         `json:"content"`
 	Categories   string         `json:"categories"`
 	ImageUrl     sql.NullString `json:"image_url"`
 	DurationSec  sql.NullInt64  `json:"duration_sec"`
@@ -484,6 +499,7 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 		&i.Title,
 		&i.Link,
 		&i.Summary,
+		&i.Content,
 		&i.Categories,
 		&i.ImageUrl,
 		&i.DurationSec,
@@ -503,7 +519,7 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 }
 
 const getItemWithFeedAny = `-- name: GetItemWithFeedAny :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -521,6 +537,7 @@ type GetItemWithFeedAnyRow struct {
 	Title        string         `json:"title"`
 	Link         string         `json:"link"`
 	Summary      string         `json:"summary"`
+	Content      string         `json:"content"`
 	Categories   string         `json:"categories"`
 	ImageUrl     sql.NullString `json:"image_url"`
 	DurationSec  sql.NullInt64  `json:"duration_sec"`
@@ -547,6 +564,7 @@ func (q *Queries) GetItemWithFeedAny(ctx context.Context, id int64) (GetItemWith
 		&i.Title,
 		&i.Link,
 		&i.Summary,
+		&i.Content,
 		&i.Categories,
 		&i.ImageUrl,
 		&i.DurationSec,
@@ -1391,6 +1409,26 @@ func (q *Queries) RemoveItemFeedMemberships(ctx context.Context, arg RemoveItemF
 		query = strings.Replace(query, "/*SLICE:itemIDs*/?", "NULL", 1)
 	}
 	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
+}
+
+const setItemContent = `-- name: SetItemContent :exec
+UPDATE items
+SET content = ?
+WHERE id = ? AND user_id = ?
+`
+
+type SetItemContentParams struct {
+	Content string `json:"content"`
+	ID      int64  `json:"id"`
+	UserID  int64  `json:"user_id"`
+}
+
+// Store an Enricher's resolved body on an item. Written once, keyed by id, and
+// never touched by the poll snapshot refresh, so an enriched body survives
+// re-polling. Scoped to the user so an id cannot cross accounts.
+func (q *Queries) SetItemContent(ctx context.Context, arg SetItemContentParams) error {
+	_, err := q.db.ExecContext(ctx, setItemContent, arg.Content, arg.ID, arg.UserID)
 	return err
 }
 

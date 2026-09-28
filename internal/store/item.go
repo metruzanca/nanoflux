@@ -29,10 +29,14 @@ type Item struct {
 	// reddit post); empty when the item cannot be shared between feeds. Stored
 	// as items.cross_key and unique per user. Populated on read; Upsert derives
 	// it from SharedKey.
-	CrossKey   string
-	Title      string
-	Link       string
-	Summary    string
+	CrossKey string
+	Title    string
+	Link     string
+	Summary  string
+	// Content is a plugin-enriched body (full text, translation, transcript),
+	// separate from Summary so a re-poll's snapshot refresh does not clobber it.
+	// Empty means "no enrichment; render Summary".
+	Content    string
 	Categories []string
 	ImageURL   string
 	// DurationSec is a media item's runtime in seconds. 0 means unknown.
@@ -703,6 +707,7 @@ func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 	slice := []ItemWithFeed{toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary, it.Categories,
 		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
 		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName)}
+	slice[0].Content = it.Content
 	if err := s.attachSources(userID, slice); err != nil {
 		return ItemWithFeed{}, err
 	}
@@ -719,9 +724,11 @@ func (s *ItemStore) OneWithFeedAny(itemID int64) (ItemWithFeed, error) {
 	if err != nil {
 		return ItemWithFeed{}, err
 	}
-	return toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary, it.Categories,
+	itw := toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary, it.Categories,
 		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
-		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName), nil
+		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName)
+	itw.Content = it.Content
+	return itw, nil
 }
 
 // attachSources populates each item's Sources from its item_feeds memberships
@@ -871,6 +878,23 @@ func anyTokens(raw map[int64]RawDecoration) bool {
 		}
 	}
 	return false
+}
+
+// SetContent stores a plugin-enriched body on an item, scoped to its owner. It
+// is written once (the poll snapshot refresh never touches items.content), so an
+// enriched body survives re-polling.
+func (s *ItemStore) SetContent(userID, itemID int64, content string) error {
+	return s.q.SetItemContent(context.Background(), sqlcgen.SetItemContentParams{
+		Content: content,
+		ID:      itemID,
+		UserID:  userID,
+	})
+}
+
+// Content returns an item's enriched body, or "" when it has not been enriched.
+// Used to skip re-enriching an item the plugin already resolved.
+func (s *ItemStore) Content(itemID int64) (string, error) {
+	return s.q.GetItemContent(context.Background(), itemID)
 }
 
 // SetRead marks an item read/unread, verifying it belongs to the user. When an

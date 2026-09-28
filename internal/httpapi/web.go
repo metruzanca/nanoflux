@@ -460,6 +460,16 @@ func (d itemViewData) imgSrc(u string) string {
 	return u
 }
 
+// itemBody returns the HTML an item's modal renders: a plugin-enriched body
+// when present, else the feed's own summary. Classification (image posts) still
+// uses the stored summary, so enrichment never changes a card's kind.
+func itemBody(it store.ItemWithFeed) string {
+	if it.Content != "" {
+		return it.Content
+	}
+	return it.Summary
+}
+
 // bodyHTML returns the item body ready for rendering, proxying its images when
 // the view may use /img.
 func (d itemViewData) bodyHTML() string {
@@ -502,7 +512,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		Kind:         it.Kind,
 		DurationSec:  it.DurationSec,
 		Link:         it.Link,
-		Body:         template.HTML(it.Summary),
+		Body:         template.HTML(itemBody(it)),
 		EmbedURL:     web.YoutubeEmbedURL(it.Link),
 		Timezone:     u.Timezone,
 		Favorite:     it.Favorite,
@@ -610,7 +620,7 @@ func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
 		Kind:        it.Kind,
 		DurationSec: it.DurationSec,
 		Link:        it.Link,
-		Body:        template.HTML(it.Summary),
+		Body:        template.HTML(itemBody(it)),
 		EmbedURL:    web.YoutubeEmbedURL(it.Link),
 	}
 	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)

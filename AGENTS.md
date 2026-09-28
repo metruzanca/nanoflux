@@ -88,6 +88,15 @@ fetched by the generic parser, so `feeds.plugin_name` stays empty:
   resolving each token to the user's subscribed feed via the URL policy's
   `FeedToken` (internal link) or the part's URL (external). This replaces the
   deleted `httpapi.attribution.go` and `store.attachRedditLinks`/`RedditLink`.
+- **`Enricher`** (`CapEnrich`): `Enrich` produces an item body (full text,
+  translation, transcript), matched per item link. It runs in the poller on
+  **newly stored** items only (`poller.enrichStored`, wired via
+  `Poller.SetItemEnricher` to the `Dispatcher`), best-effort: an error logs and
+  skips rather than failing the poll, and an item already carrying content is not
+  re-enriched. The body is stored as `items.content` (schemaV41), separate from
+  `items.summary` because `UpdateItemSnapshotByID` refreshes the summary every
+  poll; `httpapi.itemBody` renders content when present, else the summary.
+  `examples/plugin-enrich` is the reference.
 
 The reddit plugin (`internal/plugin/native/reddit`) is the reference for all of
 these: `Match` returns true for `CapSharedKey`, `CapDecorate`, `CapURLPolicy`,

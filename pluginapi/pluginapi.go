@@ -53,6 +53,15 @@ const (
 	// live in the plugin instead of the core (reddit is the case that matters:
 	// its .rss sits behind a tight rate limit, so discovery must not probe it).
 	CapURLPolicy
+	// CapEnrich asks whether the plugin can enrich an item's body at ingest
+	// time: full-text extraction, a translation, a transcript. It runs on newly
+	// stored items after either fetch path, matched on the item's link, and may
+	// use Host.Do for a live fetch. The enriched body is stored separately from
+	// the feed's own summary, so it survives re-polling.
+	//
+	// Capabilities are transmitted as integers across the gRPC boundary, so new
+	// ones are appended: never insert one between existing values.
+	CapEnrich
 )
 
 // Meta describes a plugin to the host.
@@ -280,6 +289,36 @@ type SharedKeyRequest struct {
 type ItemSharedKey struct {
 	Index     int
 	SharedKey string
+}
+
+// Enricher is an optional capability a plugin may implement to enrich an item's
+// body at ingest time: full-text extraction, a translation, a transcript. It
+// runs on newly stored items (not on every poll) and is matched on the item's
+// link via CapEnrich, so a plugin can enrich items from a feed it does not
+// fetch. It may use Host.Do for a live fetch (the page, a translation API).
+//
+// Enrich must not change an item's identity; it only produces a body. The host
+// stores it as items.content, separate from the feed's own summary, so a
+// re-poll's snapshot refresh never clobbers it. An empty Content means "no
+// enrichment" (the item keeps rendering its summary).
+type Enricher interface {
+	// Enrich returns the enriched body for each item, addressed by its index in
+	// the request. Returning fewer entries than items is fine.
+	Enrich(ctx context.Context, req EnrichRequest, h Host) ([]Enriched, error)
+}
+
+// EnrichRequest is a batch of newly stored items offered for enrichment.
+type EnrichRequest struct {
+	Items []Item
+}
+
+// Enriched is one item's enrichment, addressed by its position in
+// EnrichRequest.Items.
+type Enriched struct {
+	Index int
+	// Content is the enriched body (HTML). Empty leaves the item's summary in
+	// place.
+	Content string
 }
 
 // URLPolicy is an optional capability a plugin may implement to own a site's

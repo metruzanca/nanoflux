@@ -87,6 +87,7 @@ type Item struct {
 	Title       string         `json:"title"`
 	Link        string         `json:"link"`
 	Summary     string         `json:"summary"`
+	Content     string         `json:"content"`
 	Categories  string         `json:"categories"`
 	DurationSec sql.NullInt64  `json:"duration_sec"`
 	ImageUrl    sql.NullString `json:"image_url"`
