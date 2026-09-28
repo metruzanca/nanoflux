@@ -119,7 +119,20 @@ type ItemWithFeed struct {
 	AuthorID     int64
 	AuthorName   string
 	Sources      []ItemSource // additional feeds this item appears in (view-time dedup)
-	Timezone     string       // user's IANA timezone, for relative timestamps in templates
+	// RedditLinks maps an item's reddit category tokens ("r/cats", "u/sam") to
+	// the user's subscribed feed for them, resolved against the subscription
+	// list rather than the item's memberships. A cross-feed post seen through
+	// the subreddit feed links its poster internally even before the user feed
+	// has polled it (and so before an item_feeds membership exists).
+	RedditLinks []RedditLink
+	Timezone    string // user's IANA timezone, for relative timestamps in templates
+}
+
+// RedditLink is a reddit category token resolved to the user's subscribed feed.
+type RedditLink struct {
+	Token    string // lowercased "r/cats" or "u/sam"
+	FeedID   int64
+	AuthorID int64 // 0 when the subscribed feed has no author
 }
 
 // ItemSource is one alternate feed an item is a member of, besides the owner
@@ -313,7 +326,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 		}
-		if err := s.attachSources(out); err != nil {
+		if err := s.attachSources(userID, out); err != nil {
 			return nil, false, err
 		}
 		return out, hasMore, nil
@@ -342,7 +355,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
-	if err := s.attachSources(out); err != nil {
+	if err := s.attachSources(userID, out); err != nil {
 		return nil, false, err
 	}
 	return out, hasMore, nil
@@ -467,7 +480,7 @@ LIMIT ?7`
 	if hasMore {
 		out = out[:limit]
 	}
-	if err := s.attachSources(out); err != nil {
+	if err := s.attachSources(userID, out); err != nil {
 		return nil, false, err
 	}
 	return out, hasMore, nil
@@ -706,7 +719,7 @@ func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 	slice := []ItemWithFeed{toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary, it.Categories,
 		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
 		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName)}
-	if err := s.attachSources(slice); err != nil {
+	if err := s.attachSources(userID, slice); err != nil {
 		return ItemWithFeed{}, err
 	}
 	return slice[0], nil
@@ -728,16 +741,18 @@ func (s *ItemStore) OneWithFeedAny(itemID int64) (ItemWithFeed, error) {
 }
 
 // attachSources populates each item's Sources from its item_feeds memberships
-// other than the owner feed, in one query for the whole page. This is the
+// other than the owner feed, in one query for the whole page, and resolves its
+// reddit categories against userID's subscribed reddit feeds. This is the
 // persisted cross-feed membership set, replacing the old title-based view-time
-// collapse for items stored once.
-func (s *ItemStore) attachSources(items []ItemWithFeed) error {
-	return attachSources(s.q, items)
+// collapse for items stored once. userID 0 (a public page) skips the reddit
+// resolution.
+func (s *ItemStore) attachSources(userID int64, items []ItemWithFeed) error {
+	return attachSources(s.q, userID, items)
 }
 
 // attachSources is the query-layer implementation, shared by ItemStore and
 // ListStore (which has no ItemStore handle of its own).
-func attachSources(q *sqlcgen.Queries, items []ItemWithFeed) error {
+func attachSources(q *sqlcgen.Queries, userID int64, items []ItemWithFeed) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -765,10 +780,69 @@ func attachSources(q *sqlcgen.Queries, items []ItemWithFeed) error {
 			AuthorName: r.AuthorName.String,
 		})
 	}
+	if err := attachRedditLinks(q, userID, items); err != nil {
+		return err
+	}
 	return nil
 }
 
-
+// attachRedditLinks resolves each item's reddit category tokens against the
+// user's subscribed reddit feeds, in one query for the whole page. The mapping
+// is by token derived from the subscribed feed's URL, not from the item's
+// memberships, so a post seen through the subreddit feed links its poster
+// internally even before the poster's user feed has polled it.
+func attachRedditLinks(q *sqlcgen.Queries, userID int64, items []ItemWithFeed) error {
+	if userID == 0 {
+		return nil
+	}
+	needs := false
+	for i := range items {
+		for _, c := range items[i].Categories {
+			if tok := redditCategoryToken(c); tok != "" {
+				needs = true
+				break
+			}
+		}
+		if needs {
+			break
+		}
+	}
+	if !needs {
+		return nil
+	}
+	rows, err := q.ListUserRedditFeeds(context.Background(), userID)
+	if err != nil {
+		return err
+	}
+	byToken := make(map[string]RedditLink, len(rows))
+	for _, r := range rows {
+		tok := RedditFeedToken(r.FeedUrl)
+		if tok == "" {
+			continue
+		}
+		if _, ok := byToken[tok]; !ok {
+			byToken[tok] = RedditLink{
+				Token:    tok,
+				FeedID:   r.FeedID,
+				AuthorID: r.AuthorID,
+			}
+		}
+	}
+	for i := range items {
+		seen := map[string]bool{}
+		for _, c := range items[i].Categories {
+			tok := redditCategoryToken(c)
+			if tok == "" || seen[tok] {
+				continue
+			}
+			seen[tok] = true
+			if link, ok := byToken[tok]; ok {
+				items[i].RedditLinks = append(items[i].RedditLinks, link)
+			}
+		}
+	}
+	return nil
+}
 
 // SetRead marks an item read/unread, verifying it belongs to the user. When an
 // item is marked read its read_at timestamp is recorded; unread clears it.

@@ -523,6 +523,36 @@ func TestCrossFeedRedditItem(t *testing.T) {
 	}
 }
 
+// A reddit post seen only through the subreddit feed still links its poster to
+// the internal user feed when the user subscribes to it, even though that feed
+// has not polled the post yet (so no item_feeds membership exists for it). This
+// is the "same feed, same poster, only one linked" bug: attribution resolves
+// the poster against the subscription list, not the item's memberships.
+func TestRedditAttributionLinksUnpolledUserFeed(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	subA, _ := s.store.Authors.Create(u.ID, "r/cats", "", "")
+	userA, _ := s.store.Authors.Create(u.ID, "sam", "", "")
+	subFeed, _ := s.store.Feeds.Create(u.ID, subA.ID, "r/cats", "https://www.reddit.com/r/cats.rss", "", "", 900)
+	// The user feed is subscribed but has not polled this post.
+	s.store.Feeds.Create(u.ID, userA.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
+
+	s.store.Items.Upsert(subFeed.ID, store.Item{
+		GUID: "t3_1abc", Title: "A cat", Link: "https://www.reddit.com/r/cats/comments/1abc/a_cat/",
+		Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now(),
+	})
+
+	body := doGet(h, "/feeds/"+itoa(subFeed.ID), cookie).Body.String()
+	if !strings.Contains(body, `href="/authors/`+itoa(subA.ID)+`">r/cats</a>`) ||
+		!strings.Contains(body, `href="/authors/`+itoa(userA.ID)+`">u/sam</a>`) {
+		t.Fatalf("poster should link internally even before the user feed polls: %s", body)
+	}
+	if strings.Contains(body, "reddit.com/user/sam") {
+		t.Fatalf("subscribed poster must not fall back to the external reddit profile: %s", body)
+	}
+}
+
 func TestCollectionFeedsTab(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

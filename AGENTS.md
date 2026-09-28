@@ -284,6 +284,17 @@ favorite/list/share state is shared and the combined streams count it once.
   author-or-feed source. `ItemWithFeed.Sources` is now populated from
   `item_feeds`; the title-based `httpapi.dedupItems` remains only for non-reddit
   near-duplicate titles and skips reddit items.
+- A poster (or sub) link must not depend on the item's `item_feeds` membership:
+  a cross-feed post seen through the subreddit feed only gains a membership in
+  the poster's user feed once *that* feed has polled the post, so resolving
+  `u/<name>` from `Sources` alone left the poster externally linked until then
+  (the "same feed, same poster, only one linked" bug). `store.attachRedditLinks`
+  resolves each item's reddit categories (`ItemWithFeed.RedditLinks`) against
+  the user's **subscribed** reddit feeds, keyed by `store.RedditFeedToken` (the
+  `r/<sub>` / `u/<name>` token derived from the feed URL, not its title, so a
+  rename still resolves). It runs inside `attachSources` (now user-scoped) on
+  every list/detail path; `httpapi`'s `subLink`/`userLink` consult it before the
+  external fallback. The public list page passes user 0 and skips the lookup.
 
 ## Combo boxes (Vaadin)
 

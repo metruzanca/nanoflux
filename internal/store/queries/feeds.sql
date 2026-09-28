@@ -168,6 +168,17 @@ WHERE enabled = 1 AND is_system = 0
     )
   );
 
+-- name: ListUserRedditFeeds :many
+-- The user's subscribed reddit feeds. Used to resolve an item's "r/<sub>" and
+-- "u/<name>" category tokens to the subscribed feed/author, so attribution can
+-- link a reddit post's sub/poster internally even before the matching feed has
+-- polled the post (and thus before an item_feeds membership exists).
+SELECT f.id AS feed_id, f.feed_url AS feed_url, f.author_id AS author_id
+FROM feeds f
+WHERE f.user_id = ? AND f.is_system = 0
+  AND f.feed_url LIKE '%reddit.com%'
+ORDER BY f.id;
+
 -- name: GetFeedByTitle :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
        etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, created_at

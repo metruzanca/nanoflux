@@ -1157,6 +1157,29 @@ func TestCanonicalFeedURL(t *testing.T) {
 	}
 }
 
+// TestRedditFeedToken maps reddit feed URLs to the category token the same
+// subscription represents, so an item's categories resolve back to the
+// subscribed feed regardless of how the feed was created or renamed.
+func TestRedditFeedToken(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://www.reddit.com/r/cats.rss", "r/cats"},
+		{"https://www.reddit.com/r/cats/.rss", "r/cats"},
+		{"https://old.reddit.com/r/GoLang.rss", "r/golang"},
+		{"https://www.reddit.com/user/sam/submitted.rss", "u/sam"},
+		{"https://www.reddit.com/user/Sam.rss", "u/sam"},
+		{"https://www.reddit.com/u/sam/submitted.rss", "u/sam"},
+		{"https://example.com/r/cats.rss", ""},
+		{"https://www.reddit.com/r/cats/comments/1abc/", "r/cats"},
+		{"", ""},
+		{"not a url", ""},
+	}
+	for _, c := range cases {
+		if got := RedditFeedToken(c.in); got != c.want {
+			t.Errorf("RedditFeedToken(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // TestUpdateCanonicalizesFeedURL asserts the edit path applies the same reddit
 // URL normalization as create, so a user can't reintroduce a redirecting shape.
 func TestUpdateCanonicalizesFeedURL(t *testing.T) {
