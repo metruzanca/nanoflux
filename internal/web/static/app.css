@@ -1155,6 +1155,15 @@ details.feeds-section summary:hover { color: var(--accent); }
   ul.items.masonry { grid-template-columns: 1fr; }
 
   .row { flex-wrap: wrap; }
+
+  /* Stack the tab row's tabs above their sort/display controls so the two
+     groups cannot overflow the viewport. A long tab set still wraps within
+     its own line after stacking. */
+  .tabs-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .tabs { flex-wrap: wrap; }
 }
 
 /* --- Vaadin components (vendored) ------------------------------------------
