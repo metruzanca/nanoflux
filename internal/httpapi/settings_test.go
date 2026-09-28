@@ -29,6 +29,14 @@ func TestSettingsPage(t *testing.T) {
 		`hx-post="/settings/theme"`,
 		`hx-post="/settings/auto-read"`,
 		`hx-post="/settings/accent"`,
+		`hx-post="/settings/appearance/unread-counts"`,
+		`hx-post="/settings/appearance/unread-nav"`,
+		`hx-post="/settings/appearance/grid-columns"`,
+		"appearance",
+		`vaadin-slider`,
+		`hide global unread counts`,
+		`hide unread from nav`,
+		`grid max columns`,
 		`hx-post="/settings/opml"`,
 		`/settings/export.opml`,
 		`/settings/extension.zip`,
@@ -149,12 +157,15 @@ func TestSettingsInstantControls(t *testing.T) {
 	for _, want := range []string{
 		`hx-post="/settings/timezone" hx-trigger="change"`,
 		`hx-post="/settings/theme" hx-trigger="change"`,
+		`hx-post="/settings/appearance/unread-counts" hx-trigger="change"`,
+		`hx-post="/settings/appearance/unread-nav" hx-trigger="change"`,
+		`hx-post="/settings/appearance/grid-columns" hx-trigger="change"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("settings page missing %q", want)
 		}
 	}
-	if strings.Contains(body, `hx-post="/settings/theme" hx-trigger="change" hx-target="#settings-theme-card" hx-swap="outerHTML">`+"\n\t\t\t<button") {
+	if strings.Contains(body, `hx-post="/settings/theme" hx-trigger="change" hx-target="#settings-theme-section" hx-swap="outerHTML">`+"\n\t\t\t<button") {
 		t.Fatal("theme card should not have a save button")
 	}
 	// The change-password form lives in a dialog now, not inline.
@@ -358,7 +369,7 @@ func TestSettingsAccent(t *testing.T) {
 
 	// Default accent is rendered inline on <html>.
 	body := doGet(h, "/", cookie).Body.String()
-	if !strings.Contains(body, `style="--accent: #5b8cff;"`) {
+	if !strings.Contains(body, `--accent: #5b8cff;`) {
 		t.Fatalf("home should render the default accent: %s", body)
 	}
 
@@ -372,7 +383,7 @@ func TestSettingsAccent(t *testing.T) {
 		t.Fatalf("accent not persisted: %q", after.AccentColor)
 	}
 	body = doGet(h, "/", cookie).Body.String()
-	if !strings.Contains(body, `style="--accent: #ff0000;"`) {
+	if !strings.Contains(body, `--accent: #ff0000;`) {
 		t.Fatalf("home should render the custom accent: %s", body)
 	}
 
@@ -397,6 +408,135 @@ func TestSettingsAccent(t *testing.T) {
 	after, _ = s.store.Users.ByID(u.ID)
 	if after.AccentColor != "#5b8cff" {
 		t.Fatalf("accent should reset to default: %q", after.AccentColor)
+	}
+}
+
+func TestSettingsAppearanceUnreadCounts(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// An unread item makes the count non-zero and the badge visible.
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Feed", "https://x.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "i1", Title: "hi", FetchedAt: db.Now()})
+	body := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `class="nav-count">(1)</span>`) {
+		t.Fatalf("expected a visible count with one unread: %s", body)
+	}
+	if strings.Contains(body, `class="hide-counts"`) {
+		t.Fatalf("default should not hide counts: %s", body)
+	}
+
+	// Hide the counts.
+	rr := doForm(h, "POST", "/settings/appearance/unread-counts", url.Values{"hide_unread_counts": {"1"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("hide counts: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ := s.store.Users.ByID(u.ID)
+	if !after.HideUnreadCounts {
+		t.Fatal("hide_unread_counts not persisted")
+	}
+	body = doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `class="hide-counts"`) {
+		t.Fatalf("body should carry hide-counts: %s", body)
+	}
+	if strings.Contains(body, `class="nav-count">(1)</span>`) {
+		t.Fatalf("count should not render when hidden: %s", body)
+	}
+
+	// Turning it back off restores the badge.
+	rr = doForm(h, "POST", "/settings/appearance/unread-counts", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("show counts: %d", rr.Code)
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.HideUnreadCounts {
+		t.Fatal("hide_unread_counts should clear")
+	}
+}
+
+func TestSettingsAppearanceUnreadNav(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// By default the unread link is in the top nav.
+	body := doGet(h, "/", cookie).Body.String()
+	navIdx := strings.Index(body, `id="top-nav"`)
+	menuIdx := strings.Index(body, `id="user-menu"`)
+	unreadIdx := strings.Index(body, `id="nav-unread"`)
+	if navIdx == -1 || menuIdx == -1 || unreadIdx == -1 {
+		t.Fatalf("expected nav, user menu and unread link: %s", body)
+	}
+	if !(navIdx < unreadIdx && unreadIdx < menuIdx) {
+		t.Fatalf("unread link should be in the top nav by default")
+	}
+
+	// Hide it: the response asks htmx for a full refresh.
+	rr := doForm(h, "POST", "/settings/appearance/unread-nav", url.Values{"hide_unread_nav": {"1"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("hide unread nav: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("HX-Refresh") != "true" {
+		t.Fatalf("hiding unread nav should request a refresh, got %q", rr.Header().Get("HX-Refresh"))
+	}
+	after, _ := s.store.Users.ByID(u.ID)
+	if !after.HideUnreadNav {
+		t.Fatal("hide_unread_nav not persisted")
+	}
+
+	// A fresh render moves the link into the user menu.
+	body = doGet(h, "/", cookie).Body.String()
+	navIdx = strings.Index(body, `id="top-nav"`)
+	menuIdx = strings.Index(body, `id="user-menu"`)
+	unreadIdx = strings.Index(body, `id="nav-unread"`)
+	if !(navIdx < menuIdx && menuIdx < unreadIdx) {
+		t.Fatalf("unread link should be inside the user menu: %s", body)
+	}
+}
+
+func TestSettingsAppearanceGridColumns(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// Default is two columns, rendered as a CSS custom property.
+	body := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `--grid-columns: 2`) {
+		t.Fatalf("default grid columns should be 2: %s", body)
+	}
+
+	// The slider is a Vaadin slider bound to the field.
+	settingsBody := doGet(h, "/settings", cookie).Body.String()
+	if !strings.Contains(settingsBody, `name="grid_max_columns" value="2"`) {
+		t.Fatalf("slider mirror should carry the default value: %s", settingsBody)
+	}
+
+	// Set 4.
+	rr := doForm(h, "POST", "/settings/appearance/grid-columns", url.Values{"grid_max_columns": {"4"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set grid columns: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ := s.store.Users.ByID(u.ID)
+	if after.GridMaxColumns != 4 {
+		t.Fatalf("grid_max_columns not persisted: %d", after.GridMaxColumns)
+	}
+	body = doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `--grid-columns: 4`) {
+		t.Fatalf("home should render --grid-columns: 4: %s", body)
+	}
+
+	// Out of range rejected, nothing saved.
+	for _, bad := range []string{"1", "7", "x"} {
+		rr = doForm(h, "POST", "/settings/appearance/grid-columns", url.Values{"grid_max_columns": {bad}}, cookie)
+		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `role="alert"`) {
+			t.Fatalf("value %q should be rejected: %d %s", bad, rr.Code, rr.Body.String())
+		}
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.GridMaxColumns != 4 {
+		t.Fatalf("invalid grid columns should not overwrite: %d", after.GridMaxColumns)
 	}
 }
 

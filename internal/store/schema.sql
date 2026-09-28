@@ -16,6 +16,9 @@ CREATE TABLE users (
     accent_color  TEXT NOT NULL DEFAULT '#5b8cff',
     home_config   TEXT,
     auto_read_after_days INTEGER NOT NULL DEFAULT 30,
+    hide_unread_counts INTEGER NOT NULL DEFAULT 0,
+    hide_unread_nav INTEGER NOT NULL DEFAULT 0,
+    grid_max_columns INTEGER NOT NULL DEFAULT 2,
     favorites_share_token TEXT,
     bookmarks_share_token TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))

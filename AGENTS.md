@@ -128,6 +128,32 @@ category.
   `action: hide, field: category, pattern: r/golang` works. Choices live in
   `filterFieldItems`; `feedRuleCreate` accepts the field.
 
+## Appearance
+
+Per-user display preferences live in the settings "appearance" card and are
+stored on `users` (schemaV43), rendered server-side into the topbar and
+`<html>`:
+
+- `users.hide_unread_counts` hides the numeric unread/authors badges in the
+  topbar. `basePage` adds `class="hide-counts"` to `<body>` when set (CSS hides
+  `.nav-count`), and `app.js`'s `refreshNavCounts` no-ops while that class is
+  present so the client badge refresh cannot recreate a hidden badge.
+  `settingsAppearanceUnreadCounts` (`POST /settings/appearance/unread-counts`).
+- `users.hide_unread_nav` moves the `unread` nav item into the user menu.
+  Because that changes shared topbar markup rather than a settings fragment,
+  `settingsAppearanceUnreadNav` (`POST /settings/appearance/unread-nav`)
+  responds with `HX-Refresh: true` so htmx reloads the page.
+- `users.grid_max_columns` (2..6, default 2) caps grid display columns. It is
+  emitted on `<html>` as `--grid-columns` (both via `basePage`); app.css uses
+  `repeat(var(--grid-columns, 2), ...)`. `store.ClampGridColumns` is the
+  canonical clamp. `settingsAppearanceGridColumns`
+  (`POST /settings/appearance/grid-columns`) rejects out-of-range values.
+- Theme and accent color (`users.theme`, `users.accent_color`) were re-homed
+  into the same appearance card but keep their existing routes
+  (`POST /settings/theme`, `POST /settings/accent`); their handlers render the
+  card's per-control sub-fragments (`appearanceTheme`/`appearanceAccent`).
+  `views_settings.templ` no longer has standalone theme/accent cards.
+
 ## Auto-read
 
 - `users.auto_read_after_days` (schemaV32) is a per-user retention window:

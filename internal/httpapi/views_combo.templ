@@ -1,6 +1,9 @@
 package httpapi
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strconv"
+)
 
 // comboSelect is a single-select Vaadin combo-box. `items` is emitted inline as a
 // JSON attribute (Lit's default converter JSON-parses Array-typed attributes),
@@ -78,6 +81,21 @@ func switchValue(checked bool) string {
 		return "1"
 	}
 	return ""
+}
+
+// sliderField is a Vaadin slider paired with a hidden native mirror. The
+// component is not form-associated, so the mirror carries the field name and
+// any hx-* attributes (spread from attrs); static/vaadin.js keeps it in sync.
+// The mirror fires "change" only when the slider settles, so dragging does not
+// fire a request per pixel.
+templ sliderField(name, label string, value, min, max int, attrs templ.Attributes) {
+	<div class="slider-field" data-vaadin="slider">
+		if label != "" {
+			<label for={ name }>{ label }</label>
+		}
+		<vaadin-slider id={ name } min={ strconv.Itoa(min) } max={ strconv.Itoa(max) } step="1" value={ strconv.Itoa(value) }></vaadin-slider>
+		<input type="hidden" data-vaadin-target name={ name } value={ strconv.Itoa(value) } { attrs... }/>
+	</div>
 }
 
 // comboItemsJSON marshals items for an inline `items` attribute. It cannot fail

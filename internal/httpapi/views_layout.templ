@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
@@ -37,15 +38,17 @@ templ topbar(u store.User) {
 			{{ nc := navCountsFrom(ctx) }}
 			<nav id="top-nav">
 				<div class="top-nav-center">
-					<a id="nav-unread" href="/unread">
-						unread
-						if nc.Unread > 0 {
-							<span id="nav-unread-count" class="nav-count">({ nc.Unread })</span>
-						}
-					</a>
+					if !u.HideUnreadNav {
+						<a id="nav-unread" href="/unread">
+							unread
+							if nc.Unread > 0 && !u.HideUnreadCounts {
+								<span id="nav-unread-count" class="nav-count">({ nc.Unread })</span>
+							}
+						</a>
+					}
 					<a id="nav-authors" href="/authors">
 						authors
-						if nc.AuthorsWithUnread > 0 {
+						if nc.AuthorsWithUnread > 0 && !u.HideUnreadCounts {
 							<span id="nav-authors-count" class="nav-count">({ nc.AuthorsWithUnread })</span>
 						}
 					</a>
@@ -74,6 +77,14 @@ templ topbar(u store.User) {
 							}
 						</button>
 <div id="user-menu" class="user-menu-pop" role="menu" hidden>
+							if u.HideUnreadNav {
+								<a id="nav-unread" href="/unread" role="menuitem">
+									unread
+									if nc.Unread > 0 && !u.HideUnreadCounts {
+										<span id="nav-unread-count" class="nav-count">({ nc.Unread })</span>
+									}
+								</a>
+							}
 							<a href="/read" role="menuitem">history</a>
 							if u.IsAdmin {
 								<a href="/admin" role="menuitem">admin</a>
@@ -160,19 +171,34 @@ templ shortcutsTable() {
 templ basePage(title string, u store.User, content templ.Component) {
 	<!DOCTYPE html>
 	<html lang="en" data-theme={ u.Theme }
-		if u.AccentColor != "" {
-			style={ "--accent: " + u.AccentColor }
+		if s := appearanceStyle(u); s != "" {
+			style={ s }
 		}>
 		<head>
 			@head(title, u.AccentColor)
 		</head>
-		<body data-admin={ strconv.FormatBool(u.IsAdmin) }>
+		<body data-admin={ strconv.FormatBool(u.IsAdmin) } class={ templ.KV("hide-counts", u.HideUnreadCounts) }>
 			@topbar(u)
 			<main>
 				@content
 			</main>
 		</body>
 	</html>
+}
+
+// appearanceStyle builds the inline CSS custom properties on <html>: the
+// per-user accent color (omitted when unset, so the stylesheet default applies,
+// e.g. on anonymous share pages) and the grid column cap.
+func appearanceStyle(u store.User) string {
+	var b strings.Builder
+	if u.AccentColor != "" {
+		b.WriteString("--accent: ")
+		b.WriteString(u.AccentColor)
+		b.WriteString(";")
+	}
+	b.WriteString("--grid-columns: ")
+	b.WriteString(strconv.Itoa(store.ClampGridColumns(u.GridMaxColumns)))
+	return b.String()
 }
 
 // FormError is the shared user-facing error banner (role="alert").

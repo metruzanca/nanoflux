@@ -102,6 +102,9 @@ a.external::after {
 /* Unread badges in the nav: a darker gray than the link text so the count
    reads as secondary metadata rather than another nav item. */
 .nav-count { color: var(--muted); font-weight: 400; font-size: 0.85em; }
+/* Appearance pref "hide global unread counts": the server omits the spans, but
+   the client badge refresh recreates them; this keeps them hidden regardless. */
+body.hide-counts .nav-count { display: none; }
 .top-search { margin: 0; display: inline-flex; }
 .top-search input {
   width: 11rem;
@@ -721,7 +724,7 @@ li.text-card .card-body { flex: 1; min-width: 0; }
    720px keeps cards at a reasonable size. */
 ul.items.masonry {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--grid-columns, 2), minmax(0, 1fr));
   gap: 1rem 1.25rem;
   align-items: start;
 }
@@ -1234,6 +1237,24 @@ vaadin-switch {
   --vaadin-field-default-width: auto;
   --vaadin-switch-label-font-size: 0.9rem;
   --vaadin-switch-gap: 0.5rem;
+}
+
+/* Vaadin slider (grid-columns setting). Full-width like the combos, themed to
+   the app tokens so track/fill/thumb follow the accent and theme. */
+.slider-field { display: flex; flex-direction: column; gap: 0.35rem; }
+.slider-field > label { font-size: 0.85rem; color: var(--muted); }
+vaadin-slider {
+  --vaadin-field-default-width: 100%;
+  --vaadin-slider-track-background: var(--border);
+  --vaadin-slider-track-height: 4px;
+  --vaadin-slider-fill-background: var(--accent);
+  --vaadin-slider-thumb-background: var(--accent);
+  --vaadin-slider-thumb-border-color: var(--accent);
+  --vaadin-slider-thumb-width: 1rem;
+  --vaadin-slider-thumb-height: 1rem;
+  --vaadin-slider-bubble-background: var(--panel);
+  --vaadin-slider-bubble-text-color: var(--fg);
+  --vaadin-slider-bubble-border-color: var(--border);
 }
 
 vaadin-combo-box,

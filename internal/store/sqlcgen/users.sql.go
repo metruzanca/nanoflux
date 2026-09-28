@@ -35,7 +35,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
-RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, created_at
+RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 `
 
 type CreateUserParams struct {
@@ -54,6 +54,9 @@ type CreateUserRow struct {
 	AccentColor       string         `json:"accent_color"`
 	HomeConfig        sql.NullString `json:"home_config"`
 	AutoReadAfterDays int64          `json:"auto_read_after_days"`
+	HideUnreadCounts  bool           `json:"hide_unread_counts"`
+	HideUnreadNav     bool           `json:"hide_unread_nav"`
+	GridMaxColumns    int64          `json:"grid_max_columns"`
 	CreatedAt         string         `json:"created_at"`
 }
 
@@ -71,6 +74,9 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.AccentColor,
 		&i.HomeConfig,
 		&i.AutoReadAfterDays,
+		&i.HideUnreadCounts,
+		&i.HideUnreadNav,
+		&i.GridMaxColumns,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -98,7 +104,7 @@ func (q *Queries) GetUserAvatarKey(ctx context.Context, id int64) (sql.NullStrin
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
 WHERE id = ?
 `
@@ -114,6 +120,9 @@ type GetUserByIDRow struct {
 	AccentColor       string         `json:"accent_color"`
 	HomeConfig        sql.NullString `json:"home_config"`
 	AutoReadAfterDays int64          `json:"auto_read_after_days"`
+	HideUnreadCounts  bool           `json:"hide_unread_counts"`
+	HideUnreadNav     bool           `json:"hide_unread_nav"`
+	GridMaxColumns    int64          `json:"grid_max_columns"`
 	CreatedAt         string         `json:"created_at"`
 }
 
@@ -131,13 +140,16 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, er
 		&i.AccentColor,
 		&i.HomeConfig,
 		&i.AutoReadAfterDays,
+		&i.HideUnreadCounts,
+		&i.HideUnreadNav,
+		&i.GridMaxColumns,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
 WHERE username = ?
 `
@@ -153,6 +165,9 @@ type GetUserByUsernameRow struct {
 	AccentColor       string         `json:"accent_color"`
 	HomeConfig        sql.NullString `json:"home_config"`
 	AutoReadAfterDays int64          `json:"auto_read_after_days"`
+	HideUnreadCounts  bool           `json:"hide_unread_counts"`
+	HideUnreadNav     bool           `json:"hide_unread_nav"`
+	GridMaxColumns    int64          `json:"grid_max_columns"`
 	CreatedAt         string         `json:"created_at"`
 }
 
@@ -170,6 +185,9 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 		&i.AccentColor,
 		&i.HomeConfig,
 		&i.AutoReadAfterDays,
+		&i.HideUnreadCounts,
+		&i.HideUnreadNav,
+		&i.GridMaxColumns,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -214,7 +232,7 @@ func (q *Queries) ListUserIconKeys(ctx context.Context, userID int64) ([]sql.Nul
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
 ORDER BY username
 `
@@ -230,6 +248,9 @@ type ListUsersRow struct {
 	AccentColor       string         `json:"accent_color"`
 	HomeConfig        sql.NullString `json:"home_config"`
 	AutoReadAfterDays int64          `json:"auto_read_after_days"`
+	HideUnreadCounts  bool           `json:"hide_unread_counts"`
+	HideUnreadNav     bool           `json:"hide_unread_nav"`
+	GridMaxColumns    int64          `json:"grid_max_columns"`
 	CreatedAt         string         `json:"created_at"`
 }
 
@@ -253,6 +274,9 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.AccentColor,
 			&i.HomeConfig,
 			&i.AutoReadAfterDays,
+			&i.HideUnreadCounts,
+			&i.HideUnreadNav,
+			&i.GridMaxColumns,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -325,6 +349,51 @@ type SetUserAvatarKeyParams struct {
 
 func (q *Queries) SetUserAvatarKey(ctx context.Context, arg SetUserAvatarKeyParams) error {
 	_, err := q.db.ExecContext(ctx, setUserAvatarKey, arg.AvatarKey, arg.ID)
+	return err
+}
+
+const setUserGridMaxColumns = `-- name: SetUserGridMaxColumns :exec
+UPDATE users SET grid_max_columns = ?
+WHERE id = ?
+`
+
+type SetUserGridMaxColumnsParams struct {
+	GridMaxColumns int64 `json:"grid_max_columns"`
+	ID             int64 `json:"id"`
+}
+
+func (q *Queries) SetUserGridMaxColumns(ctx context.Context, arg SetUserGridMaxColumnsParams) error {
+	_, err := q.db.ExecContext(ctx, setUserGridMaxColumns, arg.GridMaxColumns, arg.ID)
+	return err
+}
+
+const setUserHideUnreadCounts = `-- name: SetUserHideUnreadCounts :exec
+UPDATE users SET hide_unread_counts = ?
+WHERE id = ?
+`
+
+type SetUserHideUnreadCountsParams struct {
+	HideUnreadCounts bool  `json:"hide_unread_counts"`
+	ID               int64 `json:"id"`
+}
+
+func (q *Queries) SetUserHideUnreadCounts(ctx context.Context, arg SetUserHideUnreadCountsParams) error {
+	_, err := q.db.ExecContext(ctx, setUserHideUnreadCounts, arg.HideUnreadCounts, arg.ID)
+	return err
+}
+
+const setUserHideUnreadNav = `-- name: SetUserHideUnreadNav :exec
+UPDATE users SET hide_unread_nav = ?
+WHERE id = ?
+`
+
+type SetUserHideUnreadNavParams struct {
+	HideUnreadNav bool  `json:"hide_unread_nav"`
+	ID            int64 `json:"id"`
+}
+
+func (q *Queries) SetUserHideUnreadNav(ctx context.Context, arg SetUserHideUnreadNavParams) error {
+	_, err := q.db.ExecContext(ctx, setUserHideUnreadNav, arg.HideUnreadNav, arg.ID)
 	return err
 }
 

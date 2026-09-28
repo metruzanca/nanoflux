@@ -36,12 +36,22 @@ function applyTheme(theme) {
 })();
 document.body.addEventListener('htmx:afterRequest', function (e) {
   if (e.detail.path && e.detail.path.indexOf('/settings/theme') !== -1) {
-    var checked = document.querySelector('#settings-theme-card input[name="theme"]');
+    var checked = document.querySelector('#settings-theme-section input[name="theme"]');
     if (checked && checked.value) applyTheme(checked.value);
   }
   if (e.detail.path && e.detail.path.indexOf('/settings/accent') !== -1) {
-    var input = document.querySelector('#settings-accent-card input[name="accent"]');
+    var input = document.querySelector('#settings-accent-section input[name="accent"]');
     if (input && input.value) applyAccent(input.value);
+  }
+  if (e.detail.path && e.detail.path.indexOf('/settings/appearance/unread-counts') !== -1) {
+    var hide = document.querySelector('#settings-unread-counts-section input[name="hide_unread_counts"]');
+    document.body.classList.toggle('hide-counts', !!hide && hide.value === '1');
+  }
+  if (e.detail.path && e.detail.path.indexOf('/settings/appearance/grid-columns') !== -1) {
+    var cols = document.querySelector('#settings-grid-columns-section input[name="grid_max_columns"]');
+    if (cols && cols.value) {
+      document.documentElement.style.setProperty('--grid-columns', cols.value);
+    }
   }
 });
 
@@ -89,7 +99,7 @@ function applyAccent(color) {
 document.addEventListener('click', function (e) {
   var swatch = e.target.closest('.accent-swatch');
   if (!swatch) return;
-  var card = document.getElementById('settings-accent-card');
+  var card = document.getElementById('settings-accent-section');
   if (!card) return;
   var input = card.querySelector('input[name="accent"]');
   var form = card.querySelector('form');
@@ -899,6 +909,8 @@ if (entityPalette) {
 // palette will refetch on its next open.
 var NAV_COUNTS = null;
 function refreshNavCounts() {
+  // The appearance pref hides every badge; do not recreate them client-side.
+  if (document.body.classList.contains('hide-counts')) return;
   fetch('/api/nav-counts', { credentials: 'same-origin' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (d) {

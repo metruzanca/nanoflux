@@ -22,3 +22,7 @@ sql:
             go_type: "bool"
           - column: "users.signup_banner_dismissed"
             go_type: "bool"
+          - column: "users.hide_unread_counts"
+            go_type: "bool"
+          - column: "users.hide_unread_nav"
+            go_type: "bool"
