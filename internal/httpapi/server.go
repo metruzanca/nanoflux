@@ -185,6 +185,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /fragments/feed-preview", s.auth.Require(http.HandlerFunc(s.feedPreview)))
 	mux.Handle("POST /fragments/manual-feed", s.auth.Require(http.HandlerFunc(s.manualFeedForm)))
 	mux.Handle("GET /fragments/save-page", s.auth.Require(http.HandlerFunc(s.savePageFormFragment)))
+	// Provisioning: create a feed on a remote service (a newsletter inbox) from
+	// the add-feed flow, without leaving nanoflux.
+	mux.Handle("POST /fragments/provision-form", s.auth.Require(http.HandlerFunc(s.provisionFormFragment)))
+	mux.Handle("POST /feeds/provision", s.auth.Require(http.HandlerFunc(s.feedProvision)))
+	// Remote management (settings, delete) for a plugin-owned feed.
+	mux.Handle("POST /feeds/{id}/plugin-admin", s.auth.Require(http.HandlerFunc(s.pluginAdminAction)))
 	// Plugin docs are available to every signed-in user: the feed edit page
 	// offers them next to the filter rules, not just the admin plugin card.
 	mux.Handle("GET /fragments/plugin-docs", s.auth.Require(http.HandlerFunc(s.pluginDocsFragment)))

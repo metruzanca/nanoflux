@@ -17,7 +17,7 @@ import (
 
 // APIVersion is the plugin API version. The host refuses a plugin whose
 // Meta().APIVersion differs.
-const APIVersion = "0.3"
+const APIVersion = "0.4"
 
 // Capability selects which operation a Match call is about. A Fetcher may
 // support either or both.
@@ -62,6 +62,15 @@ const (
 	// Capabilities are transmitted as integers across the gRPC boundary, so new
 	// ones are appended: never insert one between existing values.
 	CapEnrich
+	// CapProvision asks whether the plugin can create a new feed on the remote
+	// service on the user's behalf (a Kill the Newsletter inbox, say), returning
+	// its feed URL plus display-only fields. There is no URL to match on: the
+	// registry offers a plugin whose Meta.ProvisionLabel is non-empty.
+	CapProvision
+	// CapFeedAdmin asks whether the plugin can manage an already-subscribed
+	// feed's remote settings and lifecycle (sync a title, delete it upstream).
+	// It is matched on the feed URL, like the other URL-gated capabilities.
+	CapFeedAdmin
 )
 
 // Meta describes a plugin to the host.
@@ -87,6 +96,16 @@ type Meta struct {
 	// external ones) — a plugin does not set it. It lets a UI offer a docs
 	// button without calling Docs() just to find out there is nothing.
 	HasDocs bool
+	// ProvisionLabel, when non-empty, advertises the plugin in the add-feed
+	// flow's "create" menu: the label is the menu entry ("newsletter (Kill the
+	// Newsletter)"). A plugin that implements Provisioner but leaves this empty
+	// is never offered as a create option, so provisioning stays opt-in.
+	ProvisionLabel string
+	// HasFeedAdmin reports whether the plugin implements FeedAdmin. It is filled
+	// in by the host (from a type assertion for native plugins, or from the wire
+	// for external ones) — a plugin does not set it. Like HasDocs, it exists so
+	// a UI can advertise remote feed management without probing.
+	HasFeedAdmin bool
 }
 
 // Candidate is one feed a plugin discovered on a page. Title/IconURL/HomeURL are
@@ -427,4 +446,87 @@ type Media struct {
 	// Gallery is a list of full-res image URLs to render instead of the single
 	// stored thumbnail.
 	Gallery []string
+}
+
+// Field is one display-only key/value a plugin surfaces for a feed it manages,
+// e.g. the inbox address a newsletter feed is subscribed with. It is rendered
+// read-only so a user can copy it; a plugin that wants an editable value
+// describes it in FeedAdmin.Settings and reads it back from the action's
+// Fields.
+type Field struct {
+	Name  string // stable key, e.g. "email"
+	Label string // human label, e.g. "subscribe this address"
+	Value string
+	// Kind hints the widget: "text" (default), "url", or "email". The host may
+	// ignore it and render plain text.
+	Kind string
+}
+
+// Provisioner is an optional capability a plugin may implement to create a feed
+// on the remote service on the user's behalf. It is advertised by a non-empty
+// Meta.ProvisionLabel (there is no URL to match), and runs when a user picks the
+// plugin from the add-feed create menu.
+type Provisioner interface {
+	// Provision creates a remote feed and returns its feed URL and metadata.
+	// It may use Host.Do for the create request. The host then stores the feed
+	// with the generic parser reading the returned FeedURL.
+	Provision(ctx context.Context, req ProvisionRequest, h Host) (Provisioned, error)
+}
+
+// ProvisionRequest is the input to Provision.
+type ProvisionRequest struct {
+	// Title is the user-supplied feed title. A plugin may send it to the site
+	// as the remote feed's title and/or use it locally.
+	Title string
+}
+
+// Provisioned is a newly created remote feed.
+type Provisioned struct {
+	// FeedURL is the URL the host stores and polls (fetched by the generic
+	// parser unless the plugin also claims CapFetch).
+	FeedURL string
+	// Title overrides the user's title when the site returns its own.
+	Title string
+	// HomeURL is the feed's web page, when it has one.
+	HomeURL string
+	// Fields are display-only values to show after creation (the inbox address).
+	Fields []Field
+}
+
+// FeedAdmin is an optional capability a plugin may implement to manage an
+// already-subscribed feed's remote settings and lifecycle. It is gated by
+// CapFeedAdmin and matched on the feed URL.
+//
+// Settings must be pure (no network I/O): it is called while rendering the
+// feed's page. Action runs on a user's explicit request and may use Host.Do.
+type FeedAdmin interface {
+	// Settings returns the display-only fields for a feed URL, or nil when the
+	// URL is not one the plugin manages. It must not perform network I/O.
+	Settings(feedURL string) []Field
+	// Action performs a remote management action and returns a message and any
+	// refreshed fields. Deleted reports that the remote feed was deleted, so
+	// the host can drop the local feed too when the user asked for it.
+	Action(ctx context.Context, req FeedActionRequest, h Host) (FeedActionResult, error)
+}
+
+// FeedActionRequest is one management action on a feed.
+type FeedActionRequest struct {
+	FeedURL string
+	// Action is the requested operation. The host sends "save" (sync the local
+	// title/icon to the site) and "delete" (remove the remote feed). A plugin
+	// may define more.
+	Action string
+	// Fields carries the submitted values, keyed by Field.Name.
+	Fields map[string]string
+}
+
+// FeedActionResult is a completed management action.
+type FeedActionResult struct {
+	// Message is a short user-facing confirmation ("feed deleted on Kill the
+	// Newsletter").
+	Message string
+	// Deleted reports that the remote feed no longer exists.
+	Deleted bool
+	// Fields, when non-empty, replaces the feed's displayed fields.
+	Fields []Field
 }

@@ -176,6 +176,12 @@ templ feedEditPage(u store.User, d feedsData) {
 			<button type="submit">save</button>
 		</form>
 		<form class="stack delete-form" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } onsubmit="return confirm('delete this feed?')">
+			if d.Managed {
+				<label class="check">
+					<input type="checkbox" name="delete_remote" value="1"/>
+					also delete it on the remote service
+				</label>
+			}
 			<button type="submit" class="danger">delete</button>
 		</form>
 	</section>
@@ -408,6 +414,9 @@ templ feedPage(u store.User, d feedPageData) {
 			@feedOlderControl(d.Row)
 		}
 	</section>
+	if d.Panel != nil {
+		@feedPluginPanel(*d.Panel)
+	}
 	<h2>items</h2>
 	@ScopedItems(d.Scoped)
 }

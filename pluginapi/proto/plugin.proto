@@ -55,6 +55,16 @@ service Fetcher {
   // feed token), so site-specific handling lives in the plugin.
   rpc CanonicalizeFeedURL(CanonicalizeFeedURLRequest) returns (CanonicalizeFeedURLResponse);
   rpc FeedToken(FeedTokenRequest) returns (FeedTokenResponse);
+  // Provision is optional: create a feed on the remote service on the user's
+  // behalf (a Kill the Newsletter inbox). Advertised by a non-empty
+  // Meta.provision_label.
+  rpc Provision(ProvisionRequest) returns (ProvisionResponse);
+  // FeedSettings is optional: the display-only fields for an already-subscribed
+  // feed (the inbox address), pure and without network I/O.
+  rpc FeedSettings(FeedSettingsRequest) returns (FeedSettingsResponse);
+  // FeedAction is optional: manage an already-subscribed feed's remote settings
+  // and lifecycle (sync a title, delete it upstream).
+  rpc FeedAction(FeedActionRequest) returns (FeedActionResponse);
 }
 
 message MetaRequest {}
@@ -67,6 +77,10 @@ message MetaResponse {
   string summary = 5;
   // Whether the plugin implements Docser. Filled by the host, not authored.
   bool has_docs = 6;
+  // Non-empty advertises the plugin as a create option in the add-feed menu.
+  string provision_label = 7;
+  // Whether the plugin implements FeedAdmin. Filled by the host, not authored.
+  bool has_feed_admin = 8;
 }
 
 message MatchRequest {
@@ -253,4 +267,54 @@ message PluginError {
   bool rate_limited = 3;
   bool unsupported = 4;
   string message = 5;
+}
+
+// Provision creates a feed on the remote service on the user's behalf.
+
+message ProvisionRequest {
+  uint32 host_server = 1;
+  string title = 2;
+}
+message Field {
+  string name = 1;
+  string label = 2;
+  string value = 3;
+  string kind = 4;
+}
+message Provisioned {
+  string feed_url = 1;
+  string title = 2;
+  string home_url = 3;
+  repeated Field fields = 4;
+}
+message ProvisionResponse {
+  Provisioned provisioned = 1;
+  PluginError error = 2;
+}
+
+// FeedSettings returns the display-only fields for an already-subscribed feed.
+// It is pure: no host is dialed.
+
+message FeedSettingsRequest { string feed_url = 1; }
+message FeedSettingsResponse {
+  repeated Field fields = 1;
+  PluginError error = 2;
+}
+
+// FeedAction manages an already-subscribed feed's remote settings and lifecycle.
+
+message FeedActionRequest {
+  uint32 host_server = 1;
+  string feed_url = 2;
+  string action = 3;
+  map<string, string> fields = 4;
+}
+message FeedActionResult {
+  string message = 1;
+  bool deleted = 2;
+  repeated Field fields = 3;
+}
+message FeedActionResponse {
+  FeedActionResult result = 1;
+  PluginError error = 2;
 }

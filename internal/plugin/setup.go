@@ -8,6 +8,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/plugin/native/bluesky"
 	"github.com/metruzanca/nanoflux/internal/plugin/native/instagram"
+	"github.com/metruzanca/nanoflux/internal/plugin/native/killthenewsletter"
 	"github.com/metruzanca/nanoflux/internal/plugin/native/patreon"
 	"github.com/metruzanca/nanoflux/internal/plugin/native/reddit"
 	"github.com/metruzanca/nanoflux/internal/plugin/native/youtube"
@@ -139,4 +140,5 @@ func registerNative(reg *Registry) {
 	reg.RegisterNative(instagram.Plugin{})
 	reg.RegisterNative(patreon.Plugin{})
 	reg.RegisterNative(&reddit.Plugin{})
+	reg.RegisterNative(killthenewsletter.Plugin{})
 }

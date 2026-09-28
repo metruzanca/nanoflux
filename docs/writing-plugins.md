@@ -101,10 +101,11 @@ forwarded to nanoflux's logs prefixed with the plugin name.
 ## The capabilities
 
 A plugin implements `Fetcher`; it may also implement the optional `Renderer`,
-`SharedKeyer`, `Enricher`, `Decoration`, `URLPolicy` and `Docser` interfaces.
-`Match` tells the host which URL shapes (and which capability) each applies to. A
-plugin may own a site's whole shape (fetch + discover + shared keys + enrich +
-render + URL rules) or decorate a feed it does not fetch at all.
+`SharedKeyer`, `Enricher`, `Decoration`, `URLPolicy`, `Docser`, `Provisioner`
+and `FeedAdmin` interfaces. `Match` tells the host which URL shapes (and which
+capability) each applies to. A plugin may own a site's whole shape (fetch +
+discover + shared keys + enrich + render + URL rules) or decorate a feed it does
+not fetch at all.
 
 - **`Fetch` (required)** — given a feed URL, return its `Feed` metadata and
   `[]Item`s. Runs in the poller and on manual refresh.
@@ -127,6 +128,15 @@ render + URL rules) or decorate a feed it does not fetch at all.
 - **`Docs` (optional)** — return Markdown describing the plugin, shown from the
   admin plugin card and from a feed's edit page. `Match(u, CapDocs)` decides
   which URLs it documents.
+- **`Provision` (optional)** — create a feed on the remote service on the user's
+  behalf, so a user never leaves nanoflux (the native Kill the Newsletter
+  plugin creates a newsletter inbox). Advertised by a non-empty
+  `Meta.ProvisionLabel`, which is the add-feed "create a …" menu entry; there is
+  no URL to match.
+- **`FeedAdmin` (optional)** — read a feed's display-only fields and perform
+  remote management actions (sync a title, delete the remote feed). `Settings`
+  is pure (view-time, no network I/O); `Action` may use `Host.Do`. `Match(u,
+  CapFeedAdmin)` decides which feed URLs it manages.
 
 ```go
 func (AppC) Discover(ctx context.Context, pageURL string, h pluginapi.Host) ([]pluginapi.Candidate, error) {
@@ -280,6 +290,75 @@ Two things make `Docs` different from the other optional capabilities:
 
 `Meta().Summary` is a separate one-line description shown on the plugin's card;
 keep it short.
+
+### Creating a feed server-side (`Provision`)
+
+Some services let you create the thing you subscribe to: a newsletter inbox, a
+search feed, a monitored page. `Provisioner` creates it for the user so they
+never visit the site:
+
+```go
+func (AppC) Provision(ctx context.Context, req pluginapi.ProvisionRequest, h pluginapi.Host) (pluginapi.Provisioned, error) {
+	resp, err := h.Do(ctx, pluginapi.HTTPRequest{
+		Method:  "POST",
+		URL:     "https://appc.com/feeds",
+		Headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
+		Body:    []byte("title=" + url.QueryEscape(req.Title)),
+	})
+	if err != nil {
+		return pluginapi.Provisioned{}, err
+	}
+	return pluginapi.Provisioned{
+		FeedURL: "https://appc.com/feeds/abc.xml",
+		Title:   req.Title,
+		HomeURL: "https://appc.com/feeds/abc",
+		// Display-only values to show the user after creation, each read-only
+		// with a copy control (the inbox address, an API token, ...).
+		Fields: []pluginapi.Field{{Name: "email", Label: "subscribe this address", Value: "abc@appc.com", Kind: "email"}},
+	}, nil
+}
+```
+
+A plugin that implements `Provisioner` is offered in the add-feed flow's
+"create a …" menu only when `Meta().ProvisionLabel` is non-empty; set it to the
+menu entry (`"newsletter (Kill the Newsletter)"`). The host stores the returned
+`FeedURL` and polls it with the generic parser, so a plugin that does not also
+claim `CapFetch` needs no fetch code.
+
+`FeedURL` is the only required field; the host normalizes it and rejects a
+duplicate. Return a `RateLimit` (or a `StatusError`) to have the create failure
+surfaced with the same message as a fetch failure.
+
+### Managing an existing feed (`FeedAdmin`)
+
+A `FeedAdmin` plugin manages a feed the user already subscribed to: it surfaces
+the feed's remote identity (an inbox address) and can sync or delete the remote
+feed.
+
+```go
+func (AppC) Settings(feedURL string) []pluginapi.Field {
+	return []pluginapi.Field{{Name: "email", Label: "subscribe this address", Value: "abc@appc.com", Kind: "email"}}
+}
+
+func (AppC) Action(ctx context.Context, req pluginapi.FeedActionRequest, h pluginapi.Host) (pluginapi.FeedActionResult, error) {
+	switch req.Action {
+	case "save":
+		// req.Fields has the host's current title/icon; push them to the site.
+	case "delete":
+		return pluginapi.FeedActionResult{Message: "feed deleted on AppC", Deleted: true}, nil
+	}
+	return pluginapi.FeedActionResult{}, nil
+}
+```
+
+`Settings` is **pure** (no network I/O): the host calls it while rendering the
+feed's page. `Action` runs on an explicit user request. The host sends `"save"`
+with `Fields{"title", "icon"}` and `"delete"`; a plugin may define more actions
+and read them from `req.Action`. Return `Deleted: true` when the remote feed no
+longer exists, and the host removes the local feed too.
+
+The native Kill the Newsletter plugin (`internal/plugin/native/killthenewsletter`)
+is the reference for both capabilities.
 
 ### Item identity (`Identity`)
 

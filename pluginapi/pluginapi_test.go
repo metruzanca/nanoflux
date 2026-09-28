@@ -100,6 +100,47 @@ func TestItemRoundTrip(t *testing.T) {
 	}
 }
 
+// TestControlPlaneConversions asserts the provisioning/feed-admin display
+// fields round-trip across the gRPC helpers, so a native and an external plugin
+// surface identical values.
+func TestControlPlaneConversions(t *testing.T) {
+	in := []Field{{Name: "email", Label: "subscribe", Value: "a1@h", Kind: "email"}}
+	out := fromPBFields(toPBFields(in))
+	if len(out) != 1 || out[0] != in[0] {
+		t.Fatalf("field round trip = %+v", out)
+	}
+	if fromPBFields(toPBFields(nil)) == nil {
+		// nil in -> empty non-nil out is fine, but must not panic.
+		_ = out
+	}
+	var p Provisioner = provisionPlugin{}
+	got, err := p.Provision(context.Background(), ProvisionRequest{Title: "t"}, nil)
+	if err != nil || got.FeedURL != "https://h/feeds/1.xml" || len(got.Fields) != 1 {
+		t.Fatalf("provision = %+v, %v", got, err)
+	}
+}
+
+// provisionPlugin is a minimal Provisioner + FeedAdmin for the conversion test.
+type provisionPlugin struct{}
+
+func (provisionPlugin) Meta() Meta {
+	return Meta{Name: "pp", APIVersion: APIVersion, ProvisionLabel: "newsletter"}
+}
+func (provisionPlugin) Match(*url.URL, Capability) bool { return false }
+func (provisionPlugin) Discover(context.Context, string, Host) ([]Candidate, error) {
+	return nil, ErrUnsupportedCapability
+}
+func (provisionPlugin) Fetch(context.Context, FetchRequest, Host) (Result, error) {
+	return Result{}, nil
+}
+func (provisionPlugin) Provision(context.Context, ProvisionRequest, Host) (Provisioned, error) {
+	return Provisioned{FeedURL: "https://h/feeds/1.xml", Fields: []Field{{Name: "email", Value: "a1@h"}}}, nil
+}
+func (provisionPlugin) Settings(string) []Field { return nil }
+func (provisionPlugin) Action(context.Context, FeedActionRequest, Host) (FeedActionResult, error) {
+	return FeedActionResult{Deleted: true}, nil
+}
+
 // TestEnrichConversions asserts an enricher's items convert across the gRPC
 // helpers and that an Enriched entry addresses an item by index.
 func TestEnrichConversions(t *testing.T) {
