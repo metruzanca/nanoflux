@@ -1489,6 +1489,62 @@ body.marketing .site-foot { margin-top: 0; }
 .mkt-feature-copy p { margin: 0; color: var(--muted); max-width: 32rem; }
 .mkt-feature-art img { width: 100%; height: auto; display: block; }
 
+/* Dedicated extensibility block: copy + capability chips beside an SVG mock and
+   a small Go sketch. */
+.mkt-plugins {
+  border-top: 1px solid var(--border);
+  padding: 3rem 0 1rem;
+}
+.mkt-plugins h2 { margin: 0.2rem 0 0.75rem; font-size: clamp(1.6rem, 3.5vw, 2.2rem); }
+.mkt-plugins-lede { margin: 0 0 2rem; color: var(--muted); max-width: 44rem; }
+.mkt-plugins-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem;
+  align-items: start;
+}
+/* Grid items default to min-width:auto, which lets the wide <pre> and the SVG
+   blow the column past its track; allow them to shrink and scroll instead. */
+.mkt-plugins-grid > * { min-width: 0; }
+.mkt-cap-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+}
+.mkt-cap {
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  color: var(--fg);
+  background: var(--panel);
+}
+.mkt-plugins-note { margin: 0 0 1.25rem; color: var(--muted); font-size: 0.95rem; }
+.mkt-docs { font-size: 0.95rem; }
+
+.mkt-plugins-art img { width: 100%; height: auto; display: block; margin-bottom: 1rem; }
+.mkt-code {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-x: auto;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--fg);
+}
+.mkt-code code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  white-space: pre;
+}
+
 .mkt-final {
   text-align: center;
   border-top: 1px solid var(--border);
@@ -1500,7 +1556,8 @@ body.marketing .site-foot { margin-top: 0; }
 
 @media (max-width: 760px) {
   .mkt-hero,
-  .mkt-feature { grid-template-columns: 1fr; gap: 1.75rem; }
+  .mkt-feature,
+  .mkt-plugins-grid { grid-template-columns: 1fr; gap: 1.75rem; }
   .mkt-feature-reverse .mkt-feature-copy { order: 0; }
   .mkt-hero { padding: 2rem 0 2.5rem; }
   .mkt-hero-art { order: -1; }

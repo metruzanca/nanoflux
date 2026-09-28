@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 300" role="img" aria-label="a site API feeding a plugin, which feeds the nanoflux timeline">
+  <rect width="560" height="300" rx="14" fill="#111318"/>
+  <rect x="0.5" y="0.5" width="559" height="299" rx="13.5" fill="none" stroke="#2a3040"/>
+
+  <!-- Source site / API -->
+  <g>
+    <rect x="24" y="96" width="140" height="108" rx="10" fill="#181b23" stroke="#2a3040"/>
+    <rect x="40" y="112" width="60" height="10" rx="5" fill="#e8ebf2" opacity="0.8"/>
+    <rect x="40" y="134" width="108" height="8" rx="4" fill="#9aa3b2" opacity="0.5"/>
+    <rect x="40" y="152" width="90" height="8" rx="4" fill="#9aa3b2" opacity="0.4"/>
+    <rect x="40" y="176" width="72" height="14" rx="7" fill="#ff4500" opacity="0.35"/>
+  </g>
+
+  <!-- Arrow source -> plugin -->
+  <g stroke="#5b8cff" stroke-width="2" fill="none" opacity="0.8">
+    <path d="M168 150 H206"/>
+    <path d="M198 144 l8 6 -8 6"/>
+  </g>
+
+  <!-- Plugin box -->
+  <g>
+    <rect x="210" y="104" width="132" height="92" rx="10" fill="#181b23" stroke="#5b8cff"/>
+    <rect x="226" y="120" width="54" height="10" rx="5" fill="#5b8cff" opacity="0.9"/>
+    <rect x="226" y="142" width="100" height="8" rx="4" fill="#9aa3b2" opacity="0.5"/>
+    <rect x="226" y="160" width="84" height="8" rx="4" fill="#9aa3b2" opacity="0.4"/>
+    <rect x="226" y="178" width="66" height="8" rx="4" fill="#9aa3b2" opacity="0.3"/>
+  </g>
+
+  <!-- Arrow plugin -> timeline -->
+  <g stroke="#5b8cff" stroke-width="2" fill="none" opacity="0.8">
+    <path d="M346 150 H384"/>
+    <path d="M376 144 l8 6 -8 6"/>
+  </g>
+
+  <!-- Timeline -->
+  <g>
+    <rect x="388" y="56" width="148" height="188" rx="10" fill="#181b23" stroke="#2a3040"/>
+    <rect x="404" y="74" width="70" height="9" rx="4.5" fill="#e8ebf2" opacity="0.85"/>
+    <rect x="404" y="94" width="116" height="22" rx="6" fill="#0d0f14" stroke="#2a3040"/>
+    <rect x="414" y="102" width="80" height="7" rx="3.5" fill="#9aa3b2" opacity="0.5"/>
+    <rect x="404" y="124" width="116" height="22" rx="6" fill="#0d0f14" stroke="#2a3040"/>
+    <rect x="414" y="132" width="64" height="7" rx="3.5" fill="#9aa3b2" opacity="0.5"/>
+    <rect x="404" y="154" width="116" height="22" rx="6" fill="#0d0f14" stroke="#2a3040"/>
+    <rect x="414" y="162" width="90" height="7" rx="3.5" fill="#9aa3b2" opacity="0.5"/>
+    <rect x="404" y="184" width="116" height="22" rx="6" fill="#0d0f14" stroke="#2a3040"/>
+    <rect x="414" y="192" width="72" height="7" rx="3.5" fill="#9aa3b2" opacity="0.45"/>
+    <rect x="404" y="214" width="116" height="18" rx="6" fill="#0d0f14" stroke="#2a3040"/>
+    <rect x="414" y="220" width="60" height="7" rx="3.5" fill="#9aa3b2" opacity="0.4"/>
+  </g>
+</svg>

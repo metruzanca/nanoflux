@@ -140,22 +140,35 @@ func landingPage(d landingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</section><section class=\"mkt-final\"><h2>quietly yours.</h2><p>open source, self-hostable, and yours to shape.</p><div class=\"mkt-cta\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</section><section class=\"mkt-plugins\"><p class=\"mkt-eyebrow\">extensible by design</p><h2>no feed? build one.</h2><p class=\"mkt-plugins-lede\">most sites speak RSS or Atom and need nothing from you. when one doesn't, a plugin fills the gap: read its private API, scrape the page, or create the feed on your behalf, a newsletter inbox, a saved search, a page you want watched. one small executable dropped into the plugins directory, no changes to nanoflux.</p><div class=\"mkt-plugins-grid\"><div class=\"mkt-plugins-copy\"><ul class=\"mkt-cap-list\"><li class=\"mkt-cap\">fetch</li><li class=\"mkt-cap\">discover</li><li class=\"mkt-cap\">enrich</li><li class=\"mkt-cap\">media</li><li class=\"mkt-cap\">provision</li><li class=\"mkt-cap\">manage</li></ul><p class=\"mkt-plugins-note\">plugins fetch through the host, so your User-Agent, timeouts and per-host rate limiting still apply. a broken plugin is skipped, never crashes the app.</p><a class=\"mkt-docs external\" href=\"https://github.com/metruzanca/nanoflux/blob/main/docs/writing-plugins.md\" target=\"_blank\" rel=\"noopener noreferrer\" referrerpolicy=\"no-referrer\">read the plugin guide ↗</a></div><div class=\"mkt-plugins-art\"><img src=\"/static/marketing-plugins-build.svg\" alt=\"a site API feeding a plugin, which feeds the nanoflux timeline\" loading=\"lazy\"><pre class=\"mkt-code\"><code>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var3 string
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(pluginSnippet)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 133, Col: 50}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</code></pre></div></div></section><section class=\"mkt-final\"><h2>quietly yours.</h2><p>open source, self-hostable, and yours to shape.</p><div class=\"mkt-cta\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if d.Demo {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<form method=\"post\" action=\"/demo\"><button type=\"submit\" class=\"mkt-primary\">try the demo</button></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<form method=\"post\" action=\"/demo\"><button type=\"submit\" class=\"mkt-primary\">try the demo</button></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<a class=\"mkt-primary\" href=\"/login\">log in</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<a class=\"mkt-primary\" href=\"/login\">log in</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<a class=\"mkt-secondary external\" href=\"https://github.com/metruzanca/nanoflux\" target=\"_blank\" rel=\"noopener noreferrer\" referrerpolicy=\"no-referrer\">view source ↗</a></div></section></main>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<a class=\"mkt-secondary external\" href=\"https://github.com/metruzanca/nanoflux\" target=\"_blank\" rel=\"noopener noreferrer\" referrerpolicy=\"no-referrer\">view source ↗</a></div></section></main>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -163,13 +176,44 @@ func landingPage(d landingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		return nil
 	})
 }
+
+// pluginSnippet is a short Go sketch shown in the landing page's plugin section.
+// It mirrors the shape of a minimal pluginapi Fetcher (see
+// docs/writing-plugins.md) without pulling in the real types. Kept as a Go
+// constant so the templ stays markup-only; templ escapes it as text.
+const pluginSnippet = `type AppC struct{}
+
+func (AppC) Meta() pluginapi.Meta {
+	return pluginapi.Meta{Name: "appc", APIVersion: pluginapi.APIVersion}
+}
+
+func (AppC) Match(u *url.URL, cap pluginapi.Capability) bool {
+	return cap == pluginapi.Fetch && u.Hostname() == "appc.com"
+}
+
+func (AppC) Fetch(ctx context.Context, req pluginapi.FetchRequest, h pluginapi.Host) (pluginapi.Result, error) {
+	resp, err := h.Do(ctx, pluginapi.HTTPRequest{URL: "https://api.appc.com/blog"})
+	if err != nil {
+		return pluginapi.Result{}, err
+	}
+	feed, items := parse(resp.Body)
+	return pluginapi.Result{Feed: feed, Items: items}, nil
+}
+
+func main() {
+	goplugin.Serve(&goplugin.ServeConfig{
+		HandshakeConfig: pluginapi.Handshake,
+		Plugins:         pluginapi.PluginSet(&AppC{}),
+		GRPCServer:      goplugin.DefaultGRPCServer,
+	})
+}`
 
 // feature is one row of the marketing feature list: copy paired with a visual.
 type feature struct {
@@ -196,82 +240,82 @@ func mktFeature(f feature) templ.Component {
 			}()
 		}
 		ctx = templ.InitializeContext(ctx)
-		templ_7745c5c3_Var3 := templ.GetChildren(ctx)
-		if templ_7745c5c3_Var3 == nil {
-			templ_7745c5c3_Var3 = templ.NopComponent
+		templ_7745c5c3_Var4 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var4 == nil {
+			templ_7745c5c3_Var4 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		var templ_7745c5c3_Var4 = []any{"mkt-feature", templ.KV("mkt-feature-reverse", f.Reverse)}
-		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var4...)
+		var templ_7745c5c3_Var5 = []any{"mkt-feature", templ.KV("mkt-feature-reverse", f.Reverse)}
+		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var5...)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<section class=\"")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var5 string
-		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var4).String())
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 1, Col: 0}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\"><div class=\"mkt-feature-copy\"><h3>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<section class=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
-		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(f.Title)
+		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var5).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 137, Col: 16}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 1, Col: 0}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "</h3><p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\"><div class=\"mkt-feature-copy\"><h3>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var7 string
-		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(f.Body)
+		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(f.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 138, Col: 14}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 202, Col: 16}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</p></div><div class=\"mkt-feature-art\"><img src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</h3><p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.URL(f.Image))
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(f.Body)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 141, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 203, Col: 14}
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\" alt=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</p></div><div class=\"mkt-feature-art\"><img src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var9 string
-		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(f.Alt)
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.URL(f.Image))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 141, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 206, Col: 32}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" loading=\"lazy\"></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" alt=\"")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		var templ_7745c5c3_Var10 string
+		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(f.Alt)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 206, Col: 46}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\" loading=\"lazy\"></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

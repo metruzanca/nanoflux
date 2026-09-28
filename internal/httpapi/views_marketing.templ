@@ -101,6 +101,40 @@ templ landingPage(d landingData) {
 					})
 				</section>
 
+				<section class="mkt-plugins">
+					<p class="mkt-eyebrow">extensible by design</p>
+					<h2>no feed? build one.</h2>
+					<p class="mkt-plugins-lede">
+						most sites speak RSS or Atom and need nothing from you. when one
+						doesn't, a plugin fills the gap: read its private API, scrape the
+						page, or create the feed on your behalf, a newsletter inbox, a saved
+						search, a page you want watched. one small executable dropped into
+						the plugins directory, no changes to nanoflux.
+					</p>
+					<div class="mkt-plugins-grid">
+						<div class="mkt-plugins-copy">
+							<ul class="mkt-cap-list">
+								<li class="mkt-cap">fetch</li>
+								<li class="mkt-cap">discover</li>
+								<li class="mkt-cap">enrich</li>
+								<li class="mkt-cap">media</li>
+								<li class="mkt-cap">provision</li>
+								<li class="mkt-cap">manage</li>
+							</ul>
+							<p class="mkt-plugins-note">
+								plugins fetch through the host, so your User-Agent, timeouts and
+								per-host rate limiting still apply. a broken plugin is skipped,
+								never crashes the app.
+							</p>
+							<a class="mkt-docs external" href="https://github.com/metruzanca/nanoflux/blob/main/docs/writing-plugins.md" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">read the plugin guide ↗</a>
+						</div>
+						<div class="mkt-plugins-art">
+							<img src="/static/marketing-plugins-build.svg" alt="a site API feeding a plugin, which feeds the nanoflux timeline" loading="lazy"/>
+							<pre class="mkt-code"><code>{ pluginSnippet }</code></pre>
+						</div>
+					</div>
+				</section>
+
 				<section class="mkt-final">
 					<h2>quietly yours.</h2>
 					<p>open source, self-hostable, and yours to shape.</p>
@@ -121,6 +155,37 @@ templ landingPage(d landingData) {
 		</body>
 	</html>
 }
+
+// pluginSnippet is a short Go sketch shown in the landing page's plugin section.
+// It mirrors the shape of a minimal pluginapi Fetcher (see
+// docs/writing-plugins.md) without pulling in the real types. Kept as a Go
+// constant so the templ stays markup-only; templ escapes it as text.
+const pluginSnippet = `type AppC struct{}
+
+func (AppC) Meta() pluginapi.Meta {
+	return pluginapi.Meta{Name: "appc", APIVersion: pluginapi.APIVersion}
+}
+
+func (AppC) Match(u *url.URL, cap pluginapi.Capability) bool {
+	return cap == pluginapi.Fetch && u.Hostname() == "appc.com"
+}
+
+func (AppC) Fetch(ctx context.Context, req pluginapi.FetchRequest, h pluginapi.Host) (pluginapi.Result, error) {
+	resp, err := h.Do(ctx, pluginapi.HTTPRequest{URL: "https://api.appc.com/blog"})
+	if err != nil {
+		return pluginapi.Result{}, err
+	}
+	feed, items := parse(resp.Body)
+	return pluginapi.Result{Feed: feed, Items: items}, nil
+}
+
+func main() {
+	goplugin.Serve(&goplugin.ServeConfig{
+		HandshakeConfig: pluginapi.Handshake,
+		Plugins:         pluginapi.PluginSet(&AppC{}),
+		GRPCServer:      goplugin.DefaultGRPCServer,
+	})
+}`
 
 // feature is one row of the marketing feature list: copy paired with a visual.
 type feature struct {
