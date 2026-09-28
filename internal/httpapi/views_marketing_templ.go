@@ -41,14 +41,14 @@ func landingPage(d landingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</head><body class=\"marketing\"><header class=\"mkt-nav\"><a class=\"brand\" href=\"/\"><img class=\"brand-logo\" src=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/nord.min.css\"><script src=\"https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js\" defer></script><script src=\"https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/go.min.js\" defer></script><script defer>document.addEventListener('DOMContentLoaded', function () { if (window.hljs) hljs.highlightAll(); });</script></head><body class=\"marketing\"><header class=\"mkt-nav\"><a class=\"brand\" href=\"/\"><img class=\"brand-logo\" src=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.URL("/logo.svg?c=" + logoColorParam("")))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 16, Col: 81}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 20, Col: 81}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var2)
 		if templ_7745c5c3_Err != nil {
@@ -140,20 +140,20 @@ func landingPage(d landingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</section><section class=\"mkt-plugins\"><p class=\"mkt-eyebrow\">extensible by design</p><h2>no feed? build one.</h2><p class=\"mkt-plugins-lede\">most sites speak RSS or Atom and need nothing from you. when one doesn't, a plugin fills the gap: read its private API, scrape the page, or create the feed on your behalf, a newsletter inbox, a saved search, a page you want watched. one small executable dropped into the plugins directory, no changes to nanoflux.</p><div class=\"mkt-plugins-grid\"><div class=\"mkt-plugins-copy\"><ul class=\"mkt-cap-list\"><li class=\"mkt-cap\">fetch</li><li class=\"mkt-cap\">discover</li><li class=\"mkt-cap\">enrich</li><li class=\"mkt-cap\">media</li><li class=\"mkt-cap\">provision</li><li class=\"mkt-cap\">manage</li></ul><p class=\"mkt-plugins-note\">plugins fetch through the host, so your User-Agent, timeouts and per-host rate limiting still apply. a broken plugin is skipped, never crashes the app.</p><a class=\"mkt-docs external\" href=\"https://github.com/metruzanca/nanoflux/blob/main/docs/writing-plugins.md\" target=\"_blank\" rel=\"noopener noreferrer\" referrerpolicy=\"no-referrer\">read the plugin guide ↗</a></div><div class=\"mkt-plugins-art\"><img src=\"/static/marketing-plugins-build.svg\" alt=\"a site API feeding a plugin, which feeds the nanoflux timeline\" loading=\"lazy\"><pre class=\"mkt-code\"><code>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</section><section class=\"mkt-plugins\"><p class=\"mkt-eyebrow\">extensible by design</p><h2>no feed? build one.</h2><p class=\"mkt-plugins-lede\">most sites speak RSS or Atom and need nothing from you. when one doesn't, a plugin fills the gap: use its API, parse the page, or create the feed on your behalf, a newsletter inbox, a saved search, a page you want watched. one small executable dropped into the plugins directory, no changes to nanoflux.</p><div class=\"mkt-plugins-grid\"><div class=\"mkt-plugins-copy\"><ul class=\"mkt-cap-list\"><li class=\"mkt-cap\">fetch</li><li class=\"mkt-cap\">discover</li><li class=\"mkt-cap\">enrich</li><li class=\"mkt-cap\">media</li><li class=\"mkt-cap\">provision</li><li class=\"mkt-cap\">manage</li></ul><p class=\"mkt-plugins-note\">plugins fetch through the host, so your User-Agent, timeouts and per-host rate limiting still apply. a broken plugin is skipped, never crashes the app.</p><a class=\"mkt-docs external\" href=\"https://github.com/metruzanca/nanoflux/blob/main/docs/writing-plugins.md\" target=\"_blank\" rel=\"noopener noreferrer\" referrerpolicy=\"no-referrer\">read the plugin guide ↗</a></div><div class=\"mkt-plugins-art\"><img src=\"/static/marketing-plugins-build.svg\" alt=\"a site API feeding a plugin, which feeds the nanoflux timeline\" loading=\"lazy\"></div></div><div class=\"mkt-plugins-code\"><p class=\"mkt-code-caption\">the bundled bluesky plugin, which rebuilds each post straight from the AT Protocol</p><pre class=\"mkt-code\"><code class=\"language-go\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(pluginSnippet)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 133, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 141, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</code></pre></div></div></section><section class=\"mkt-final\"><h2>quietly yours.</h2><p>open source, self-hostable, and yours to shape.</p><div class=\"mkt-cta\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</code></pre></div></section><section class=\"mkt-final\"><h2>quietly yours.</h2><p>open source, self-hostable, and yours to shape.</p><div class=\"mkt-cta\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -184,35 +184,35 @@ func landingPage(d landingData) templ.Component {
 	})
 }
 
-// pluginSnippet is a short Go sketch shown in the landing page's plugin section.
-// It mirrors the shape of a minimal pluginapi Fetcher (see
-// docs/writing-plugins.md) without pulling in the real types. Kept as a Go
-// constant so the templ stays markup-only; templ escapes it as text.
-const pluginSnippet = `type AppC struct{}
+// pluginSnippet is a condensed excerpt of the bundled native Bluesky plugin
+// (internal/plugin/native/bluesky). It shows the real shape: the profile RSS
+// feed the plugin replaces is text-only, so the plugin reads app.bsky.feed.post
+// records straight from the AT Protocol repository and rebuilds rich entries.
+// Kept as a Go constant so the templ stays markup-only; highlight.js colors it.
+const pluginSnippet = `// Package bluesky rebuilds Bluesky posts from the AT Protocol, so a profile
+// keeps its titles, images, video and link cards.
+package bluesky
 
-func (AppC) Meta() pluginapi.Meta {
-	return pluginapi.Meta{Name: "appc", APIVersion: pluginapi.APIVersion}
-}
+// Fetch reads a profile's recent posts from its repository: the profile read
+// supplies its DID (used to build media URLs) and display metadata, and
+// listRecords returns the newest app.bsky.feed.post records.
+func (p Plugin) Fetch(ctx context.Context, req pluginapi.FetchRequest, h pluginapi.Host) (pluginapi.Result, error) {
+	u, _ := url.Parse(req.URL)
+	actor, _ := actorFromFeed(u)
+	prof, _ := p.profile(ctx, actor, h)
+	records, _ := p.listRecords(ctx, prof.DID, h)
 
-func (AppC) Match(u *url.URL, cap pluginapi.Capability) bool {
-	return cap == pluginapi.Fetch && u.Hostname() == "appc.com"
-}
-
-func (AppC) Fetch(ctx context.Context, req pluginapi.FetchRequest, h pluginapi.Host) (pluginapi.Result, error) {
-	resp, err := h.Do(ctx, pluginapi.HTTPRequest{URL: "https://api.appc.com/blog"})
-	if err != nil {
-		return pluginapi.Result{}, err
+	res := pluginapi.Result{Feed: pluginapi.Feed{
+		Title:    feedTitle(prof),
+		HomeURL:  "https://bsky.app/profile/" + prof.Handle,
+		ImageURL: prof.Avatar,
+	}}
+	for _, rec := range records {
+		if it, ok := p.itemFromRecord(rec, prof); ok {
+			res.Items = append(res.Items, it)
+		}
 	}
-	feed, items := parse(resp.Body)
-	return pluginapi.Result{Feed: feed, Items: items}, nil
-}
-
-func main() {
-	goplugin.Serve(&goplugin.ServeConfig{
-		HandshakeConfig: pluginapi.Handshake,
-		Plugins:         pluginapi.PluginSet(&AppC{}),
-		GRPCServer:      goplugin.DefaultGRPCServer,
-	})
+	return res, nil
 }`
 
 // feature is one row of the marketing feature list: copy paired with a visual.
@@ -270,7 +270,7 @@ func mktFeature(f feature) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(f.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 202, Col: 16}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 209, Col: 16}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -283,7 +283,7 @@ func mktFeature(f feature) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(f.Body)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 203, Col: 14}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 210, Col: 14}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -296,7 +296,7 @@ func mktFeature(f feature) templ.Component {
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.URL(f.Image))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 206, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 213, Col: 32}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 		if templ_7745c5c3_Err != nil {
@@ -309,7 +309,7 @@ func mktFeature(f feature) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(f.Alt)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 206, Col: 46}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_marketing.templ`, Line: 213, Col: 46}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 		if templ_7745c5c3_Err != nil {

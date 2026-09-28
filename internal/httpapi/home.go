@@ -26,12 +26,20 @@ type homeSection struct {
 	Kind  string `json:"kind"`
 	RefID int64  `json:"ref_id"`
 	Mode  string `json:"mode,omitempty"`
+	Sort  string `json:"sort,omitempty"`
 }
 
 // homeModeList and homeModeGrid are the two per-section render methods.
 const (
 	homeModeList = "list"
 	homeModeGrid = "grid"
+)
+
+// normalization of a pinned section's sort.
+const (
+	homeSortNewest = "newest"
+	homeSortOldest = "oldest"
+	homeSortMagic  = "magic"
 )
 
 // normalizeHomeMode maps any stored/submitted value onto a known render method,
@@ -41,6 +49,31 @@ func normalizeHomeMode(mode string) string {
 		return homeModeGrid
 	}
 	return homeModeList
+}
+
+// normalizeHomeSort maps any stored/submitted value onto a known sort,
+// defaulting to magic (feed taste) — the home screen's default order.
+func normalizeHomeSort(sort string) string {
+	switch strings.TrimSpace(sort) {
+	case homeSortNewest:
+		return homeSortNewest
+	case homeSortOldest:
+		return homeSortOldest
+	default:
+		return homeSortMagic
+	}
+}
+
+// homeSort maps a normalized home sort onto the itemSort the list query uses.
+func homeSort(sort string) itemSort {
+	switch normalizeHomeSort(sort) {
+	case homeSortNewest:
+		return sortNewest
+	case homeSortOldest:
+		return sortOldest
+	default:
+		return sortMagic
+	}
 }
 
 // parseHomeConfig decodes the user's JSON config, dropping anything malformed
@@ -58,6 +91,7 @@ func parseHomeConfig(raw string) []homeSection {
 	for _, s := range sections {
 		if s.Kind == "collection" && s.RefID != 0 {
 			s.Mode = normalizeHomeMode(s.Mode)
+			s.Sort = normalizeHomeSort(s.Sort)
 			out = append(out, s)
 		}
 	}
@@ -82,6 +116,7 @@ type homeSectionData struct {
 	Collection store.Collection
 	Items      []store.ItemWithFeed
 	Mode       string
+	Sort       itemSort
 }
 
 type dashboardData struct {
@@ -121,9 +156,17 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue // collection deleted since it was pinned
 		}
-		items, _, err := s.store.Items.ListPage(u.ID, store.ItemFilter{
+		sort := homeSort(sec.Sort)
+		filter := store.ItemFilter{
 			CollectionID: c.ID, UnreadOnly: true, Limit: homeSectionLimit,
-		})
+		}
+		switch sort {
+		case sortOldest:
+			filter.Ascending = true
+		case sortMagic:
+			filter.Magic = true
+		}
+		items, _, err := s.store.Items.ListPage(u.ID, filter)
 		if err != nil {
 			log.Error("home section", "collection_id", c.ID, "err", err)
 			continue
@@ -131,7 +174,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		if len(items) == 0 {
 			continue // hide sections with no unread
 		}
-		rendered = append(rendered, homeSectionData{Collection: c, Items: withTZ(u.Timezone, items), Mode: normalizeHomeMode(sec.Mode)})
+		rendered = append(rendered, homeSectionData{Collection: c, Items: withTZ(u.Timezone, items), Mode: normalizeHomeMode(sec.Mode), Sort: sort})
 	}
 
 	if len(rendered) == 0 {
@@ -164,19 +207,21 @@ func (s *Server) renderUnread(w http.ResponseWriter, r *http.Request) {
 }
 
 // settingsHomeRow is one pinned collection in the settings card, with its
-// chosen render method.
+// chosen render method and sort.
 type settingsHomeRow struct {
 	Collection store.Collection
 	Mode       string
+	Sort       string
 }
 
 // homeGridItem is one pinned collection as the grid's row data. The grid renders
 // each row by cloning a server template (see views_home.templ), so the row's
-// markup carries its own htmx attributes; only id/name/mode ride in the data.
+// markup carries its own htmx attributes; only id/name/mode/sort ride in the data.
 type homeGridItem struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Mode string `json:"mode"`
+	Sort string `json:"sort"`
 }
 
 // homeGridItems maps the pinned rows to grid items, preserving order.
@@ -187,6 +232,7 @@ func homeGridItems(rows []settingsHomeRow) []homeGridItem {
 			ID:   strconv.FormatInt(r.Collection.ID, 10),
 			Name: r.Collection.Name,
 			Mode: r.Mode,
+			Sort: r.Sort,
 		})
 	}
 	return out
@@ -204,9 +250,10 @@ func homeGridItemsJSON(rows []settingsHomeRow) string {
 
 // settingsHomeData is the home-screen settings card's data.
 type settingsHomeData struct {
-	Rows        []settingsHomeRow
-	Collections []store.Collection // the user's collections (auto included), for the add picker
-	Error       string
+	Rows           []settingsHomeRow
+	Collections    []store.Collection // the user's collections (auto included), for the add picker
+	GridMaxColumns int
+	Error          string
 }
 
 func (s *Server) settingsHomeData(userID int64, errMsg string) settingsHomeData {
@@ -224,10 +271,10 @@ func (s *Server) settingsHomeData(userID int64, errMsg string) settingsHomeData 
 	var rows []settingsHomeRow
 	for _, sec := range parseHomeConfig(u.HomeConfig) {
 		if c, ok := byID[sec.RefID]; ok {
-			rows = append(rows, settingsHomeRow{Collection: c, Mode: normalizeHomeMode(sec.Mode)})
+			rows = append(rows, settingsHomeRow{Collection: c, Mode: normalizeHomeMode(sec.Mode), Sort: normalizeHomeSort(sec.Sort)})
 		}
 	}
-	return settingsHomeData{Rows: rows, Collections: selectable, Error: errMsg}
+	return settingsHomeData{Rows: rows, Collections: selectable, GridMaxColumns: store.ClampGridColumns(u.GridMaxColumns), Error: errMsg}
 }
 
 // settingsHome applies one home-screen card action (add / up / down / remove)
@@ -273,6 +320,14 @@ func (s *Server) settingsHome(w http.ResponseWriter, r *http.Request) {
 		for i := range sections {
 			if sections[i].RefID == id {
 				sections[i].Mode = mode
+			}
+		}
+	case "sort":
+		// Set one pinned section's item sort (newest/oldest/magic).
+		sort := normalizeHomeSort(r.FormValue("sort"))
+		for i := range sections {
+			if sections[i].RefID == id {
+				sections[i].Sort = sort
 			}
 		}
 	}
@@ -327,7 +382,7 @@ func reorderSections(sections []homeSection, order []string, owned func(int64) b
 			continue
 		}
 		seen[n] = true
-		out = append(out, homeSection{Kind: "collection", RefID: n, Mode: modeOf(sections, n)})
+		out = append(out, homeSection{Kind: "collection", RefID: n, Mode: modeOf(sections, n), Sort: sortOf(sections, n)})
 	}
 	for _, s := range sections {
 		if !seen[s.RefID] {
@@ -342,6 +397,16 @@ func modeOf(sections []homeSection, id int64) string {
 	for _, s := range sections {
 		if s.RefID == id {
 			return s.Mode
+		}
+	}
+	return ""
+}
+
+// sortOf returns a pinned section's sort, or "" when it is not pinned.
+func sortOf(sections []homeSection, id int64) string {
+	for _, s := range sections {
+		if s.RefID == id {
+			return s.Sort
 		}
 	}
 	return ""

@@ -9,6 +9,10 @@ templ landingPage(d landingData) {
 	<html lang="en" data-theme="dark">
 		<head>
 			@head("", "")
+			<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/nord.min.css"/>
+			<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js" defer></script>
+			<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/go.min.js" defer></script>
+			<script defer>document.addEventListener('DOMContentLoaded', function () { if (window.hljs) hljs.highlightAll(); });</script>
 		</head>
 		<body class="marketing">
 			<header class="mkt-nav">
@@ -106,7 +110,7 @@ templ landingPage(d landingData) {
 					<h2>no feed? build one.</h2>
 					<p class="mkt-plugins-lede">
 						most sites speak RSS or Atom and need nothing from you. when one
-						doesn't, a plugin fills the gap: read its private API, scrape the
+						doesn't, a plugin fills the gap: use its API, parse the
 						page, or create the feed on your behalf, a newsletter inbox, a saved
 						search, a page you want watched. one small executable dropped into
 						the plugins directory, no changes to nanoflux.
@@ -130,8 +134,11 @@ templ landingPage(d landingData) {
 						</div>
 						<div class="mkt-plugins-art">
 							<img src="/static/marketing-plugins-build.svg" alt="a site API feeding a plugin, which feeds the nanoflux timeline" loading="lazy"/>
-							<pre class="mkt-code"><code>{ pluginSnippet }</code></pre>
 						</div>
+					</div>
+					<div class="mkt-plugins-code">
+						<p class="mkt-code-caption">the bundled bluesky plugin, which rebuilds each post straight from the AT Protocol</p>
+						<pre class="mkt-code"><code class="language-go">{ pluginSnippet }</code></pre>
 					</div>
 				</section>
 
@@ -156,35 +163,35 @@ templ landingPage(d landingData) {
 	</html>
 }
 
-// pluginSnippet is a short Go sketch shown in the landing page's plugin section.
-// It mirrors the shape of a minimal pluginapi Fetcher (see
-// docs/writing-plugins.md) without pulling in the real types. Kept as a Go
-// constant so the templ stays markup-only; templ escapes it as text.
-const pluginSnippet = `type AppC struct{}
+// pluginSnippet is a condensed excerpt of the bundled native Bluesky plugin
+// (internal/plugin/native/bluesky). It shows the real shape: the profile RSS
+// feed the plugin replaces is text-only, so the plugin reads app.bsky.feed.post
+// records straight from the AT Protocol repository and rebuilds rich entries.
+// Kept as a Go constant so the templ stays markup-only; highlight.js colors it.
+const pluginSnippet = `// Package bluesky rebuilds Bluesky posts from the AT Protocol, so a profile
+// keeps its titles, images, video and link cards.
+package bluesky
 
-func (AppC) Meta() pluginapi.Meta {
-	return pluginapi.Meta{Name: "appc", APIVersion: pluginapi.APIVersion}
-}
+// Fetch reads a profile's recent posts from its repository: the profile read
+// supplies its DID (used to build media URLs) and display metadata, and
+// listRecords returns the newest app.bsky.feed.post records.
+func (p Plugin) Fetch(ctx context.Context, req pluginapi.FetchRequest, h pluginapi.Host) (pluginapi.Result, error) {
+	u, _ := url.Parse(req.URL)
+	actor, _ := actorFromFeed(u)
+	prof, _ := p.profile(ctx, actor, h)
+	records, _ := p.listRecords(ctx, prof.DID, h)
 
-func (AppC) Match(u *url.URL, cap pluginapi.Capability) bool {
-	return cap == pluginapi.Fetch && u.Hostname() == "appc.com"
-}
-
-func (AppC) Fetch(ctx context.Context, req pluginapi.FetchRequest, h pluginapi.Host) (pluginapi.Result, error) {
-	resp, err := h.Do(ctx, pluginapi.HTTPRequest{URL: "https://api.appc.com/blog"})
-	if err != nil {
-		return pluginapi.Result{}, err
+	res := pluginapi.Result{Feed: pluginapi.Feed{
+		Title:    feedTitle(prof),
+		HomeURL:  "https://bsky.app/profile/" + prof.Handle,
+		ImageURL: prof.Avatar,
+	}}
+	for _, rec := range records {
+		if it, ok := p.itemFromRecord(rec, prof); ok {
+			res.Items = append(res.Items, it)
+		}
 	}
-	feed, items := parse(resp.Body)
-	return pluginapi.Result{Feed: feed, Items: items}, nil
-}
-
-func main() {
-	goplugin.Serve(&goplugin.ServeConfig{
-		HandshakeConfig: pluginapi.Handshake,
-		Plugins:         pluginapi.PluginSet(&AppC{}),
-		GRPCServer:      goplugin.DefaultGRPCServer,
-	})
+	return res, nil
 }`
 
 // feature is one row of the marketing feature list: copy paired with a visual.

@@ -369,14 +369,14 @@ templ scopedTab(path, itemsPath, view, label, count string, active bool, sort it
 		} else {
 			<a href={ path + "?view=feeds" } hx-get={ itemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ path + "?view=feeds" }>{ label } ({ count })</a>
 		}
-		return
-	}
-	{{ u := scopedTabURL(path, view, sort) }}
-	{{ hu := scopedTabURL(itemsPath, view, sort) }}
-	if active {
-		<a class="active" href={ u } hx-get={ hu } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ u }>{ label } ({ count })</a>
 	} else {
-		<a href={ u } hx-get={ hu } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ u }>{ label } ({ count })</a>
+		{{ u := scopedTabURL(path, view, sort) }}
+		{{ hu := scopedTabURL(itemsPath, view, sort) }}
+		if active {
+			<a class="active" href={ u } hx-get={ hu } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ u }>{ label } ({ count })</a>
+		} else {
+			<a href={ u } hx-get={ hu } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ u }>{ label } ({ count })</a>
+		}
 	}
 }
 

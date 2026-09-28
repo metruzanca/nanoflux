@@ -36,11 +36,11 @@ templ favoritesAlgorithmPage(u store.User, d algorithmData) {
 			for _, r := range d.Rows {
 				<li>
 					<div class="row">
-						<div>
-							<a href={ templ.URL("/feeds/" + strconv.FormatInt(r.ID, 10)) }><strong>{ r.Title }</strong></a>
+						<div class="algorithm-feed">
 							if r.AuthorName != "" {
-								<span class="muted small"> · { r.AuthorName }</span>
+								<a class="muted small" href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.AuthorName }</a>
 							}
+							<a href={ templ.URL("/feeds/" + strconv.FormatInt(r.ID, 10)) }><strong>{ r.Title }</strong></a>
 						</div>
 						<div class="row-actions">
 							<span class="item-meta">{ r.FavoriteCount } favorites</span>
