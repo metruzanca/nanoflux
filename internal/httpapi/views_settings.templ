@@ -10,9 +10,8 @@ templ settingsPage(u store.User, d settingsData) {
 	@settingsAvatar(d.settingsAvatarData)
 	@settingsHomeCard(d.Home)
 	@settingsTimezone(d.Timezone)
-	@settingsTheme(d.Theme)
+	@settingsAppearance(d.Appearance)
 	@settingsAutoRead(d.AutoRead)
-	@settingsAccent(d.Accent)
 	@settingsSessions(d.Sessions)
 	@settingsOpml(d.Opml)
 	@settingsExtension(d.Extension)
@@ -91,14 +90,80 @@ templ settingsTimezone(d settingsTimezoneData) {
 	</section>
 }
 
-templ settingsTheme(d settingsThemeData) {
-	<section class="card" id="settings-theme-card">
-		<h2>theme</h2>
-		<p class="muted small">system follows your device's light/dark preference. Applies immediately.</p>
-		<form class="stack" hx-post="/settings/theme" hx-trigger="change" hx-target="#settings-theme-card" hx-swap="outerHTML">
+// settingsAppearance is the appearance card: theme, accent color, whether the
+// navbar unread badges are shown, whether the "unread" nav item moves into the
+// user menu, and how many columns grid display may use. Each control has its
+// own sub-target so a change re-renders only that control.
+templ settingsAppearance(d settingsAppearanceData) {
+	<section class="card" id="settings-appearance-card">
+		<h2>appearance</h2>
+		<p class="muted small">Make the reader yours. Changes apply immediately.</p>
+		<div class="stack">
+			@appearanceTheme(settingsThemeData{Theme: d.Theme})
+			@appearanceAccent(settingsAccentData{Accent: d.Accent, Error: d.AccentError})
+			@appearanceUnreadCounts(settingsAppearanceData{HideUnreadCounts: d.HideUnreadCounts})
+			@appearanceUnreadNav(settingsAppearanceData{HideUnreadNav: d.HideUnreadNav, HideUnreadCounts: d.HideUnreadCounts})
+			@appearanceGridColumns(settingsAppearanceData{GridMaxColumns: d.GridMaxColumns, GridError: d.GridError})
+		</div>
+	</section>
+}
+
+templ appearanceTheme(d settingsThemeData) {
+	<div id="settings-theme-section">
+		<form class="stack" hx-post="/settings/theme" hx-trigger="change" hx-target="#settings-theme-section" hx-swap="outerHTML">
 			@comboSelect("theme", d.Theme, "theme", "select a theme", themeItems, nil)
 		</form>
-	</section>
+	</div>
+}
+
+templ appearanceAccent(d settingsAccentData) {
+	<div id="settings-accent-section">
+		<form class="stack" hx-post="/settings/accent" hx-target="#settings-accent-section" hx-swap="outerHTML">
+			<label>accent color</label>
+			<p class="muted small">Used across the app for links, buttons, and highlights.</p>
+			<div class="accent-swatches" role="list" aria-label="preset accent colors">
+				for _, c := range accentPresets {
+					<button type="button" class="accent-swatch" data-accent-preset={ c } style={ "background: " + c } title={ c } aria-label={ "use accent " + c }></button>
+				}
+			</div>
+			<label>custom color
+				<input type="color" name="accent" value={ d.Accent } onchange="this.form.requestSubmit()"/>
+			</label>
+			if d.Error != "" {
+				<div class="error" role="alert">{ d.Error }</div>
+			}
+		</form>
+	</div>
+}
+
+templ appearanceUnreadCounts(d settingsAppearanceData) {
+	<div id="settings-unread-counts-section">
+		<form class="stack" hx-post="/settings/appearance/unread-counts" hx-trigger="change" hx-target="#settings-unread-counts-section" hx-swap="outerHTML">
+			@switchField("hide_unread_counts", "hide global unread counts", d.HideUnreadCounts, nil)
+			<p class="muted small">Hide the numbers next to unread and authors in the navbar. Great if they cause anxiety.</p>
+		</form>
+	</div>
+}
+
+templ appearanceUnreadNav(d settingsAppearanceData) {
+	<div id="settings-unread-nav-section">
+		<form class="stack" hx-post="/settings/appearance/unread-nav" hx-trigger="change" hx-target="#settings-unread-nav-section" hx-swap="outerHTML">
+			@switchField("hide_unread_nav", "hide unread from nav", d.HideUnreadNav, nil)
+			<p class="muted small">Move the "unread" link out of the navbar and into the user menu.</p>
+		</form>
+	</div>
+}
+
+templ appearanceGridColumns(d settingsAppearanceData) {
+	<div id="settings-grid-columns-section">
+		<form class="stack" hx-post="/settings/appearance/grid-columns" hx-trigger="change" hx-target="#settings-grid-columns-section" hx-swap="outerHTML">
+			@sliderField("grid_max_columns", "grid max columns", d.GridMaxColumns, 2, 6, nil)
+			<p class="muted small">The most columns grid display may use. Two on narrow screens regardless.</p>
+			if d.GridError != "" {
+				<div class="error" role="alert">{ d.GridError }</div>
+			}
+		</form>
+	</div>
 }
 
 templ settingsAutoRead(d settingsAutoReadData) {
@@ -111,26 +176,6 @@ templ settingsAutoRead(d settingsAutoReadData) {
 				<div class="error" role="alert">{ d.Error }</div>
 			}
 			<button type="submit">save</button>
-		</form>
-	</section>
-}
-
-templ settingsAccent(d settingsAccentData) {
-	<section class="card" id="settings-accent-card">
-		<h2>accent color</h2>
-		<p class="muted small">Used across the app for links, buttons, and highlights. Applies immediately.</p>
-		<form class="stack" hx-post="/settings/accent" hx-target="#settings-accent-card" hx-swap="outerHTML">
-			<div class="accent-swatches" role="list" aria-label="preset accent colors">
-				for _, c := range accentPresets {
-					<button type="button" class="accent-swatch" data-accent-preset={ c } style={ "background: " + c } title={ c } aria-label={ "use accent " + c }></button>
-				}
-			</div>
-			<label>custom color
-				<input type="color" name="accent" value={ d.Accent } onchange="this.form.requestSubmit()"/>
-			</label>
-			if d.Error != "" {
-				<div class="error" role="alert">{ d.Error }</div>
-			}
 		</form>
 	</section>
 }

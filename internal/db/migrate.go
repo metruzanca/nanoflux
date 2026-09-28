@@ -53,6 +53,7 @@ var migrations = []migration{
 	{40, schemaV40},
 	{41, schemaV41},
 	{42, schemaV42},
+	{43, schemaV43},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -635,6 +636,16 @@ ALTER TABLE feeds ADD COLUMN rank INTEGER NOT NULL DEFAULT 0;
 // plugin's Enricher and left alone. Empty means "no enrichment; render summary".
 const schemaV41 = `
 ALTER TABLE items ADD COLUMN content TEXT NOT NULL DEFAULT '';
+`
+
+// schemaV43 adds the appearance preferences shown in the settings "appearance"
+// card. hide_unread_counts hides the numeric unread/authors badges in the top
+// navigation; hide_unread_nav moves the "unread" nav item into the user menu.
+// grid_max_columns is the maximum column count for grid-mode item lists (2..6).
+const schemaV43 = `
+ALTER TABLE users ADD COLUMN hide_unread_counts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN hide_unread_nav INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN grid_max_columns INTEGER NOT NULL DEFAULT 2;
 `
 
 // Migrate applies any pending migrations in order, recording each in

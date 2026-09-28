@@ -1,20 +1,20 @@
 -- name: CreateUser :one
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
-RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, created_at;
+RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at;
 
 -- name: GetUserByID :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
 WHERE id = ?;
 
 -- name: GetUserByUsername :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
 WHERE username = ?;
 
 -- name: ListUsers :many
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
 ORDER BY username;
 
@@ -71,4 +71,16 @@ WHERE id = ?;
 
 -- name: SetUserAutoReadAfterDays :exec
 UPDATE users SET auto_read_after_days = ?
+WHERE id = ?;
+
+-- name: SetUserHideUnreadCounts :exec
+UPDATE users SET hide_unread_counts = ?
+WHERE id = ?;
+
+-- name: SetUserHideUnreadNav :exec
+UPDATE users SET hide_unread_nav = ?
+WHERE id = ?;
+
+-- name: SetUserGridMaxColumns :exec
+UPDATE users SET grid_max_columns = ?
 WHERE id = ?;

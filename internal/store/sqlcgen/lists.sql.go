@@ -208,7 +208,7 @@ func (q *Queries) GetListByToken(ctx context.Context, token sql.NullString) (Lis
 }
 
 const getUserByBookmarksShareToken = `-- name: GetUserByBookmarksShareToken :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
 WHERE bookmarks_share_token = ?1
 `
@@ -223,6 +223,9 @@ type GetUserByBookmarksShareTokenRow struct {
 	Theme             string         `json:"theme"`
 	AccentColor       string         `json:"accent_color"`
 	AutoReadAfterDays int64          `json:"auto_read_after_days"`
+	HideUnreadCounts  bool           `json:"hide_unread_counts"`
+	HideUnreadNav     bool           `json:"hide_unread_nav"`
+	GridMaxColumns    int64          `json:"grid_max_columns"`
 	CreatedAt         string         `json:"created_at"`
 }
 
@@ -239,13 +242,16 @@ func (q *Queries) GetUserByBookmarksShareToken(ctx context.Context, token sql.Nu
 		&i.Theme,
 		&i.AccentColor,
 		&i.AutoReadAfterDays,
+		&i.HideUnreadCounts,
+		&i.HideUnreadNav,
+		&i.GridMaxColumns,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByFavoritesShareToken = `-- name: GetUserByFavoritesShareToken :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
 WHERE favorites_share_token = ?1
 `
@@ -260,6 +266,9 @@ type GetUserByFavoritesShareTokenRow struct {
 	Theme             string         `json:"theme"`
 	AccentColor       string         `json:"accent_color"`
 	AutoReadAfterDays int64          `json:"auto_read_after_days"`
+	HideUnreadCounts  bool           `json:"hide_unread_counts"`
+	HideUnreadNav     bool           `json:"hide_unread_nav"`
+	GridMaxColumns    int64          `json:"grid_max_columns"`
 	CreatedAt         string         `json:"created_at"`
 }
 
@@ -276,6 +285,9 @@ func (q *Queries) GetUserByFavoritesShareToken(ctx context.Context, token sql.Nu
 		&i.Theme,
 		&i.AccentColor,
 		&i.AutoReadAfterDays,
+		&i.HideUnreadCounts,
+		&i.HideUnreadNav,
+		&i.GridMaxColumns,
 		&i.CreatedAt,
 	)
 	return i, err

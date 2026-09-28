@@ -183,6 +183,9 @@ type User struct {
 	AccentColor           string         `json:"accent_color"`
 	HomeConfig            sql.NullString `json:"home_config"`
 	AutoReadAfterDays     int64          `json:"auto_read_after_days"`
+	HideUnreadCounts      bool           `json:"hide_unread_counts"`
+	HideUnreadNav         bool           `json:"hide_unread_nav"`
+	GridMaxColumns        int64          `json:"grid_max_columns"`
 	FavoritesShareToken   sql.NullString `json:"favorites_share_token"`
 	BookmarksShareToken   sql.NullString `json:"bookmarks_share_token"`
 	CreatedAt             string         `json:"created_at"`

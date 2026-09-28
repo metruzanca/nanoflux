@@ -10,7 +10,8 @@ bundle comes from, how to regenerate it, how the server talks to the components,
 and how to add more of them.
 
 Status: Vaadin **25.3.0**, vendored as `vaadin-combo-box`,
-`vaadin-multi-select-combo-box`, `vaadin-switch`, and `vaadin-grid`.
+`vaadin-multi-select-combo-box`, `vaadin-switch`, `vaadin-slider`, and
+`vaadin-grid`.
 
 ## Why vendored, not a bundler
 
@@ -56,6 +57,7 @@ components ship. It currently imports:
 import "@vaadin/combo-box";
 import "@vaadin/multi-select-combo-box";
 import "@vaadin/switch";
+import "@vaadin/slider";
 import "@vaadin/grid";
 ```
 
@@ -69,9 +71,9 @@ a small script wires them up. There are three moving parts.
 
 ### 1. Templ wrappers (`internal/httpapi/views_combo.templ`)
 
-`comboSelect`, `comboMulti`, `comboChips`, and `switchField` render the element
-plus the hidden native mirrors described below. Options are passed as
-`[]comboItem` (`internal/httpapi/combo.go`).
+`comboSelect`, `comboMulti`, `comboChips`, `switchField`, and `sliderField`
+render the element plus the hidden native mirrors described below. Options are
+passed as `[]comboItem` (`internal/httpapi/combo.go`).
 
 `switchField` replaces the plain checkbox on the feed edit form (`enabled`,
 `poll_interval_auto`, `is_regex`). Its label is a string set as the component's
@@ -111,6 +113,10 @@ wrapper pairs the component with hidden native inputs:
   wrapper's `data-remove-url`.
 - **switch**: one mirror `input[data-vaadin-target]` carries `"1"`/`""` and any
   `hx-*` attributes; `checked-changed` updates it.
+- **slider**: one mirror `input[data-vaadin-target]` carries the numeric value;
+  `value-changed` updates it while dragging but `change` (fired when the slider
+  settles) is what fires the mirror's `change`, so an htmx `change` trigger does
+  not fire on every pixel of movement.
 
 The script is idempotent, waits for `customElements.whenDefined`, and re-runs
 after `htmx:afterSwap`. Fragments injected with `fetch` + `innerHTML` (the

@@ -29,7 +29,7 @@ func boolInt(b bool) int64 {
 	return 0
 }
 
-func toUser(id int64, username, passwordHash string, isAdmin bool, avatarKey, timezone sql.NullString, theme, accentColor, homeConfig string, autoReadAfterDays int64, createdAt string) User {
+func toUser(id int64, username, passwordHash string, isAdmin bool, avatarKey, timezone sql.NullString, theme, accentColor, homeConfig string, autoReadAfterDays int64, hideUnreadCounts, hideUnreadNav bool, gridMaxColumns int64, createdAt string) User {
 	return User{
 		ID:                id,
 		Username:          username,
@@ -41,6 +41,9 @@ func toUser(id int64, username, passwordHash string, isAdmin bool, avatarKey, ti
 		AccentColor:       accentColor,
 		HomeConfig:        homeConfig,
 		AutoReadAfterDays: int(autoReadAfterDays),
+		HideUnreadCounts:  hideUnreadCounts,
+		HideUnreadNav:     hideUnreadNav,
+		GridMaxColumns:    int(gridMaxColumns),
 		CreatedAt:         createdAt,
 	}
 }

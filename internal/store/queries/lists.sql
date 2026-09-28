@@ -144,7 +144,7 @@ SET favorites_share_token = sqlc.arg('token')
 WHERE id = sqlc.arg('userID');
 
 -- name: GetUserByFavoritesShareToken :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
 WHERE favorites_share_token = sqlc.arg('token');
 
@@ -157,6 +157,6 @@ SET bookmarks_share_token = sqlc.arg('token')
 WHERE id = sqlc.arg('userID');
 
 -- name: GetUserByBookmarksShareToken :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
 WHERE bookmarks_share_token = sqlc.arg('token');

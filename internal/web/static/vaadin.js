@@ -24,6 +24,7 @@
   var SINGLE = 'vaadin-combo-box';
   var MULTI = 'vaadin-multi-select-combo-box';
   var SWITCH = 'vaadin-switch';
+  var SLIDER = 'vaadin-slider';
 
   function valueOfItem(item) {
     if (item && typeof item === 'object') return String(item.value);
@@ -120,6 +121,24 @@
     sw.addEventListener('checked-changed', apply);
   }
 
+  // initSlider mirrors the component's numeric value into the hidden input
+  // while dragging, but fires "change" only when the slider settles, so an
+  // hx-trigger="change" field does not fire a request per pixel of movement.
+  function initSlider(wrap, slider) {
+    var mirror = wrap.querySelector('input[data-vaadin-target]');
+    if (!mirror) return;
+    var apply = function () {
+      var next = slider.value == null ? '' : String(slider.value);
+      if (mirror.value !== next) mirror.value = next;
+    };
+    apply();
+    slider.addEventListener('value-changed', apply);
+    slider.addEventListener('change', function () {
+      apply();
+      fireChange(mirror);
+    });
+  }
+
   function initOne(wrap) {
     if (wrap.dataset.vaadinReady === '1') return;
     var kind = wrap.dataset.vaadin;
@@ -131,6 +150,10 @@
       var sw = wrap.querySelector(SWITCH);
       if (!sw) return;
       initSwitch(wrap, sw);
+    } else if (kind === 'slider') {
+      var slider = wrap.querySelector(SLIDER);
+      if (!slider) return;
+      initSlider(wrap, slider);
     } else if (kind === 'multi') {
       var mcombo = wrap.querySelector(MULTI);
       if (!mcombo) return;
@@ -157,6 +180,7 @@
       customElements.whenDefined(SINGLE),
       customElements.whenDefined(MULTI),
       customElements.whenDefined(SWITCH),
+      customElements.whenDefined(SLIDER),
     ]).catch(function () {});
   }
 

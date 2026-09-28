@@ -13,4 +13,5 @@
 import "@vaadin/combo-box";
 import "@vaadin/multi-select-combo-box";
 import "@vaadin/switch";
+import "@vaadin/slider";
 import "@vaadin/grid";

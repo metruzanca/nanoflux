@@ -44,15 +44,14 @@ var accentPresets = []string{
 
 type settingsData struct {
 	settingsAvatarData
-	Home      settingsHomeData
-	Timezone  settingsTimezoneData
-	Theme     settingsThemeData
-	AutoRead  settingsAutoReadData
-	Accent    settingsAccentData
-	Password  settingsPasswordData
-	Sessions  settingsSessionsData
-	Opml      settingsOpmlData
-	Extension settingsExtensionData
+	Home       settingsHomeData
+	Timezone   settingsTimezoneData
+	Appearance settingsAppearanceData
+	AutoRead   settingsAutoReadData
+	Password   settingsPasswordData
+	Sessions   settingsSessionsData
+	Opml       settingsOpmlData
+	Extension  settingsExtensionData
 }
 
 // autoReadOption is one radio choice in the auto-read card. Value is the form
@@ -158,15 +157,27 @@ type settingsAccentData struct {
 	Error  string
 }
 
+// settingsAppearanceData drives the appearance card: theme and accent (each
+// with its own htmx sub-target so a change only re-renders that control) plus
+// the unread-visibility toggles and the grid column slider.
+type settingsAppearanceData struct {
+	Theme            string
+	Accent           string
+	AccentError      string
+	HideUnreadCounts bool
+	HideUnreadNav    bool
+	GridMaxColumns   int
+	GridError        string
+}
+
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	web.Render(w, r, basePage("settings", u, settingsPage(u, settingsData{
 		settingsAvatarData: settingsAvatarData{HasAvatar: u.HasAvatar, Username: u.Username},
 		Home:               s.settingsHomeData(u.ID, ""),
 		Timezone:           settingsTimezoneData{Timezone: u.Timezone, Items: timezoneItems()},
-		Theme:              settingsThemeData{Theme: u.Theme},
+		Appearance:         settingsAppearanceData{Theme: u.Theme, Accent: u.AccentColor, HideUnreadCounts: u.HideUnreadCounts, HideUnreadNav: u.HideUnreadNav, GridMaxColumns: store.ClampGridColumns(u.GridMaxColumns)},
 		AutoRead:           settingsAutoReadData{Value: autoReadValue(u.AutoReadAfterDays)},
-		Accent:             settingsAccentData{Accent: u.AccentColor},
 		Sessions:           s.settingsSessionsData(u, auth.Token(r)),
 		Extension:          settingsExtensionData{ServerURL: requestBaseURL(r)},
 	})))
@@ -270,7 +281,7 @@ func (s *Server) settingsTheme(w http.ResponseWriter, r *http.Request) {
 	case "", "dark", "light", "system":
 	default:
 		w.WriteHeader(http.StatusBadRequest)
-		web.Render(w, r, settingsTheme(settingsThemeData{Theme: u.Theme}))
+		web.Render(w, r, appearanceTheme(settingsThemeData{Theme: u.Theme}))
 		return
 	}
 	if theme == "" {
@@ -279,10 +290,10 @@ func (s *Server) settingsTheme(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.Users.SetTheme(u.ID, theme); err != nil {
 		log.Error("set theme", "err", err)
 		w.WriteHeader(http.StatusBadRequest)
-		web.Render(w, r, settingsTheme(settingsThemeData{Theme: u.Theme}))
+		web.Render(w, r, appearanceTheme(settingsThemeData{Theme: u.Theme}))
 		return
 	}
-	web.Render(w, r, settingsTheme(settingsThemeData{Theme: theme}))
+	web.Render(w, r, appearanceTheme(settingsThemeData{Theme: theme}))
 }
 
 // settingsAutoRead stores the user's auto-read window and, when enabled,
@@ -334,16 +345,68 @@ func (s *Server) settingsAccent(w http.ResponseWriter, r *http.Request) {
 	}
 	if !accentRe.MatchString(accent) {
 		w.WriteHeader(http.StatusBadRequest)
-		web.Render(w, r, settingsAccent(settingsAccentData{Accent: u.AccentColor, Error: "enter a hex color like #5b8cff"}))
+		web.Render(w, r, appearanceAccent(settingsAccentData{Accent: u.AccentColor, Error: "enter a hex color like #5b8cff"}))
 		return
 	}
 	if err := s.store.Users.SetAccentColor(u.ID, accent); err != nil {
 		log.Error("set accent color", "err", err)
 		w.WriteHeader(http.StatusBadRequest)
-		web.Render(w, r, settingsAccent(settingsAccentData{Accent: u.AccentColor, Error: "could not save accent color"}))
+		web.Render(w, r, appearanceAccent(settingsAccentData{Accent: u.AccentColor, Error: "could not save accent color"}))
 		return
 	}
-	web.Render(w, r, settingsAccent(settingsAccentData{Accent: accent}))
+	web.Render(w, r, appearanceAccent(settingsAccentData{Accent: accent}))
+}
+
+// settingsAppearanceUnreadCounts toggles the numeric unread/authors badges in
+// the top navigation.
+func (s *Server) settingsAppearanceUnreadCounts(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	hide := r.FormValue("hide_unread_counts") == "1"
+	if err := s.store.Users.SetHideUnreadCounts(u.ID, hide); err != nil {
+		log.Error("set hide unread counts", "err", err)
+		w.WriteHeader(http.StatusBadRequest)
+		web.Render(w, r, appearanceUnreadCounts(settingsAppearanceData{HideUnreadCounts: u.HideUnreadCounts}))
+		return
+	}
+	web.Render(w, r, appearanceUnreadCounts(settingsAppearanceData{HideUnreadCounts: hide}))
+}
+
+// settingsAppearanceUnreadNav toggles whether the "unread" nav item moves from
+// the top navigation into the user menu. Because that changes the shared topbar
+// markup (not a fragment on this page), the response asks htmx for a full page
+// refresh so every rendered navbar is correct.
+func (s *Server) settingsAppearanceUnreadNav(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	hide := r.FormValue("hide_unread_nav") == "1"
+	if err := s.store.Users.SetHideUnreadNav(u.ID, hide); err != nil {
+		log.Error("set hide unread nav", "err", err)
+		w.WriteHeader(http.StatusBadRequest)
+		web.Render(w, r, appearanceUnreadNav(settingsAppearanceData{HideUnreadNav: u.HideUnreadNav}))
+		return
+	}
+	w.Header().Set("HX-Refresh", "true")
+	web.Render(w, r, appearanceUnreadNav(settingsAppearanceData{HideUnreadNav: hide}))
+}
+
+// settingsAppearanceGridColumns stores the maximum column count for grid-mode
+// item lists. The slider offers 2..6; anything else is rejected.
+func (s *Server) settingsAppearanceGridColumns(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	current := store.ClampGridColumns(u.GridMaxColumns)
+	raw := strings.TrimSpace(r.FormValue("grid_max_columns"))
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 2 || n > 6 {
+		w.WriteHeader(http.StatusBadRequest)
+		web.Render(w, r, appearanceGridColumns(settingsAppearanceData{GridMaxColumns: current, GridError: "choose between 2 and 6 columns"}))
+		return
+	}
+	if err := s.store.Users.SetGridMaxColumns(u.ID, n); err != nil {
+		log.Error("set grid max columns", "err", err)
+		w.WriteHeader(http.StatusBadRequest)
+		web.Render(w, r, appearanceGridColumns(settingsAppearanceData{GridMaxColumns: current, GridError: "could not save"}))
+		return
+	}
+	web.Render(w, r, appearanceGridColumns(settingsAppearanceData{GridMaxColumns: n}))
 }
 
 // settingsTimezone stores the user's IANA timezone for relative timestamps.
