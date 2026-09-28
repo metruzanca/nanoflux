@@ -44,6 +44,72 @@ func (d *Dispatcher) MatchFetch(req feedparse.FetchRequest) bool {
 	return d.reg.Match(mustParse(req.URL), pluginapi.CapFetch) != nil
 }
 
+// MatchEnrich reports whether any plugin decorates the feed's parsed items.
+func (d *Dispatcher) MatchEnrich(req feedparse.FetchRequest) bool {
+	if d.reg.Empty() {
+		return false
+	}
+	en, _ := d.reg.MatchEnrich(mustParse(req.URL))
+	return en != nil
+}
+
+// EnrichPlugin runs the matching plugin's enrichment and applies it to the
+// result's items. A plugin that does not implement Enricher, or returns
+// ErrUnsupportedCapability, is a no-op.
+func (d *Dispatcher) EnrichPlugin(ctx context.Context, req feedparse.FetchRequest, res *feedparse.Result) error {
+	en, f := d.reg.MatchEnrich(mustParse(req.URL))
+	if en == nil {
+		return nil
+	}
+	items := make([]pluginapi.Item, 0, len(res.Items))
+	for _, it := range res.Items {
+		items = append(items, fromFeedparseItem(it))
+	}
+	enrichments, err := en.EnrichItems(ctx, pluginapi.EnrichRequest{
+		FeedURL: req.URL,
+		Feed: pluginapi.Feed{
+			Title:       res.Feed.Title,
+			HomeURL:     res.Feed.HomeURL,
+			Description: res.Feed.Description,
+			ImageURL:    res.Feed.ImageURL,
+		},
+		Items: items,
+	}, d.hosts(f))
+	if err != nil {
+		if err == pluginapi.ErrUnsupportedCapability {
+			return nil
+		}
+		return convertError(err)
+	}
+	for _, e := range enrichments {
+		if e.Index < 0 || e.Index >= len(res.Items) {
+			continue
+		}
+		res.Items[e.Index].SharedKey = e.SharedKey
+	}
+	return nil
+}
+
+// fromFeedparseItem converts a feedparse item into the pluginapi model, for the
+// enrich pass (the reverse of toFeedparseResult's item loop).
+func fromFeedparseItem(it feedparse.Item) pluginapi.Item {
+	out := pluginapi.Item{
+		GUID:        it.GUID,
+		Identity:    it.Identity,
+		Title:       it.Title,
+		Link:        it.Link,
+		Summary:     it.Summary,
+		Categories:  it.Categories,
+		ImageURL:    it.ImageURL,
+		PublishedAt: it.PublishedAt,
+		DurationSec: it.DurationSec,
+	}
+	for _, e := range it.Enclosures {
+		out.Enclosures = append(out.Enclosures, pluginapi.Enclosure{URL: e.URL, MIMEType: e.MIMEType, Length: e.Length})
+	}
+	return out
+}
+
 // FetchPlugin runs the matching plugin and converts its result.
 func (d *Dispatcher) FetchPlugin(ctx context.Context, req feedparse.FetchRequest) (feedparse.Result, error) {
 	f := d.reg.Match(mustParse(req.URL), pluginapi.CapFetch)
@@ -74,6 +140,7 @@ func toFeedparseResult(res pluginapi.Result) feedparse.Result {
 		fi := feedparse.Item{
 			GUID:        it.GUID,
 			Identity:    it.Identity,
+			SharedKey:   it.SharedKey,
 			Title:       it.Title,
 			Link:        it.Link,
 			Summary:     it.Summary,

@@ -84,6 +84,23 @@ func (r *Registry) MatchRenderer(u *url.URL) (pluginapi.Renderer, pluginapi.Fetc
 	return nil, nil
 }
 
+// MatchEnrich returns the first plugin that decorates u's parsed items at
+// ingest, along with its Fetcher (for the host factory), or (nil, nil).
+func (r *Registry) MatchEnrich(u *url.URL) (pluginapi.Enricher, pluginapi.Fetcher) {
+	if u == nil {
+		return nil, nil
+	}
+	for _, f := range r.all() {
+		if !f.Match(u, pluginapi.CapEnrich) {
+			continue
+		}
+		if en, ok := f.(pluginapi.Enricher); ok {
+			return en, f
+		}
+	}
+	return nil, nil
+}
+
 // RenderItem runs the plugin that handles view-time rendering for the item's
 // link and returns its media. When no plugin matches (or the match does not
 // implement Renderer), it returns an empty Media so the caller falls back to
@@ -212,6 +229,58 @@ func (r *Registry) ByName(name string) pluginapi.Fetcher {
 		}
 	}
 	return nil
+}
+
+// URLPolicy returns the first plugin that owns URL rules for u, or nil. It is
+// gated by CapURLPolicy and requires the URLPolicy interface.
+func (r *Registry) URLPolicy(u *url.URL) pluginapi.URLPolicy {
+	if u == nil {
+		return nil
+	}
+	for _, f := range r.all() {
+		if !f.Match(u, pluginapi.CapURLPolicy) {
+			continue
+		}
+		if p, ok := f.(pluginapi.URLPolicy); ok {
+			return p
+		}
+	}
+	return nil
+}
+
+// CanonicalizeFeedURL returns the canonical shape of a feed URL under the
+// owning plugin's URL policy, or the input unchanged when no plugin owns it.
+func (r *Registry) CanonicalizeFeedURL(raw string) string {
+	if p := r.URLPolicy(mustParse(raw)); p != nil {
+		return p.CanonicalizeFeedURL(raw)
+	}
+	return raw
+}
+
+// FeedToken returns the site token a feed URL represents ("r/cats", "u/sam")
+// under the owning plugin's URL policy, or "" when no plugin owns it.
+func (r *Registry) FeedToken(feedURL string) string {
+	if p := r.URLPolicy(mustParse(feedURL)); p != nil {
+		return p.FeedToken(feedURL)
+	}
+	return ""
+}
+
+// MatchDecorator returns the first plugin that decorates u's items for display,
+// along with its Fetcher (for the host factory), or (nil, nil).
+func (r *Registry) MatchDecorator(u *url.URL) (pluginapi.Decoration, pluginapi.Fetcher) {
+	if u == nil {
+		return nil, nil
+	}
+	for _, f := range r.all() {
+		if !f.Match(u, pluginapi.CapDecorate) {
+			continue
+		}
+		if d, ok := f.(pluginapi.Decoration); ok {
+			return d, f
+		}
+	}
+	return nil, nil
 }
 
 // Docs returns the Markdown documentation a plugin publishes. It returns

@@ -25,7 +25,11 @@ type ListWithCount struct {
 	ItemCount int
 }
 
-type ListStore struct{ q *sqlcgen.Queries }
+type ListStore struct {
+	q         *sqlcgen.Queries
+	policy    URLPolicy
+	decorator ItemDecorator
+}
 
 func toList(id, userID int64, name string, shareToken sql.NullString, createdAt string) List {
 	return List{
@@ -228,7 +232,7 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 		}
-		if err := attachSources(s.q, userID, out); err != nil {
+		if err := attachSources(s.q, userID, s.policy, s.decorator, out); err != nil {
 			return nil, false, err
 		}
 		return out, hasMore, nil
@@ -254,7 +258,7 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
-	if err := attachSources(s.q, userID, out); err != nil {
+	if err := attachSources(s.q, userID, s.policy, s.decorator, out); err != nil {
 		return nil, false, err
 	}
 	return out, hasMore, nil
@@ -302,7 +306,7 @@ func (s *ListStore) ItemListPublic(listID, before int64, limit int) ([]ItemWithF
 			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
-	if err := attachSources(s.q, 0, out); err != nil {
+	if err := attachSources(s.q, 0, s.policy, s.decorator, out); err != nil {
 		return nil, false, err
 	}
 	return out, hasMore, nil

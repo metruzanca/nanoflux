@@ -763,9 +763,11 @@ func (q *Queries) ListFeedItemsForFilter(ctx context.Context, feedid int64) ([]L
 }
 
 const listItemSourcesForItems = `-- name: ListItemSourcesForItems :many
-SELECT mf.item_id, f.id AS feed_id, f.title AS feed_title,
+SELECT mf.item_id, i.cross_key,
+       f.id AS feed_id, f.title AS feed_title,
        a.id AS author_id, a.name AS author_name
 FROM item_feeds mf
+JOIN items i ON i.id = mf.item_id
 JOIN feeds f ON f.id = mf.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE mf.item_id IN (/*SLICE:itemIDs*/?)
@@ -774,6 +776,7 @@ ORDER BY mf.item_id, f.title
 
 type ListItemSourcesForItemsRow struct {
 	ItemID     int64          `json:"item_id"`
+	CrossKey   string         `json:"cross_key"`
 	FeedID     int64          `json:"feed_id"`
 	FeedTitle  string         `json:"feed_title"`
 	AuthorID   sql.NullInt64  `json:"author_id"`
@@ -782,7 +785,9 @@ type ListItemSourcesForItemsRow struct {
 
 // Every feed membership (including the owner feed) for a set of items, so a
 // page can attach alternate sources without a query per item. The caller drops
-// the row whose feed_id equals the item's owner feed.
+// the row whose feed_id equals the item's owner feed. i.cross_key rides along
+// so the view-time dedup guard can tell a cross-feed post (one row per post)
+// from two distinct rows that merely share a title.
 func (q *Queries) ListItemSourcesForItems(ctx context.Context, itemids []int64) ([]ListItemSourcesForItemsRow, error) {
 	query := listItemSourcesForItems
 	var queryParams []interface{}
@@ -804,6 +809,7 @@ func (q *Queries) ListItemSourcesForItems(ctx context.Context, itemids []int64) 
 		var i ListItemSourcesForItemsRow
 		if err := rows.Scan(
 			&i.ItemID,
+			&i.CrossKey,
 			&i.FeedID,
 			&i.FeedTitle,
 			&i.AuthorID,

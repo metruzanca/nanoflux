@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
-	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
@@ -33,7 +32,7 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 	// and the host's budget is saved for the first poll.
 	pageURL := homeURL // the page the user was on, before the feed-home fallback
 	var derivedAuthor string
-	if c, ok := discover.Derive(feedURL); ok {
+	if c, ok := s.derivedCandidate(ctx, feedURL); ok {
 		feedURL = c.FeedURL
 		derivedAuthor = c.AuthorName
 		if homeURL == "" {
@@ -99,11 +98,11 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 // pageIconURL derives an author avatar URL from the page the user was on when
 // adding the feed — the site favicon, or the channel's og:image on YouTube. It
 // returns "" when no page URL is known or the fetch fails, so a feed added
-// without a page is still created. Reddit pages are skipped: a page fetch shares
-// the host's tight anonymous rate limit with the feed's .rss, so discovery and
-// add stay request-free and the budget is left for polling.
+// without a page is still created. A plugin-owned page is skipped: a page fetch
+// shares the host's request budget with the feed's .rss (reddit's tight
+// anonymous limit), so discovery and add stay request-free.
 func (s *Server) pageIconURL(ctx context.Context, pageURL string) string {
-	if pageURL == "" || discover.IsRedditHost(pageURL) {
+	if pageURL == "" || s.urlPolicyOwned(pageURL) {
 		return ""
 	}
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)

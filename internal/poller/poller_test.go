@@ -544,6 +544,25 @@ func TestPollOneCategoryFilter(t *testing.T) {
 // The same reddit post polled through a subreddit feed and a user feed is
 // stored once and is a member of both; the second poll reports it as new to the
 // second feed (so paging continues) without duplicating the row.
+//
+// fakeCrossEnricher plays the role of the reddit plugin's EnrichItems: it gives
+// every t3_ post the cross-feed SharedKey the store persists as cross_key.
+type fakeCrossEnricher struct{}
+
+func (fakeCrossEnricher) MatchFetch(feedparse.FetchRequest) bool  { return false }
+func (fakeCrossEnricher) MatchEnrich(feedparse.FetchRequest) bool { return true }
+func (fakeCrossEnricher) FetchPlugin(context.Context, feedparse.FetchRequest) (feedparse.Result, error) {
+	return feedparse.Result{}, nil
+}
+func (fakeCrossEnricher) EnrichPlugin(_ context.Context, _ feedparse.FetchRequest, res *feedparse.Result) error {
+	for i, it := range res.Items {
+		if strings.HasPrefix(it.GUID, "t3_") {
+			res.Items[i].SharedKey = "reddit:" + it.GUID
+		}
+	}
+	return nil
+}
+
 func TestPollCrossFeedSharedItem(t *testing.T) {
 	sqldb, err := db.Open(":memory:")
 	if err != nil {
@@ -576,6 +595,13 @@ func TestPollCrossFeedSharedItem(t *testing.T) {
 
 	subFeed, _ := st.Feeds.Create(u.ID, subAuthor.ID, "r/cats", srv.URL, "", "", 900)
 	userFeed, _ := st.Feeds.Create(u.ID, userAuthor.ID, "u/sam", srv.URL, "", "", 900)
+
+	// The cross-feed identity now comes from a plugin's ingest enricher rather
+	// than the store sniffing the GUID. Install a fake that marks t3_ posts the
+	// way the reddit plugin does, so the generic parse still yields one shared
+	// row across the two feeds.
+	feedparse.SetPlugin(fakeCrossEnricher{})
+	defer feedparse.SetPlugin(nil)
 
 	p := New(st, time.Minute, 1)
 	if n, err := p.PollOne(context.Background(), subFeed); err != nil || n != 1 {
@@ -1242,6 +1268,10 @@ type fakeIdentityPlugin struct {
 }
 
 func (fakeIdentityPlugin) MatchFetch(feedparse.FetchRequest) bool { return true }
+func (fakeIdentityPlugin) MatchEnrich(feedparse.FetchRequest) bool { return false }
+func (fakeIdentityPlugin) EnrichPlugin(context.Context, feedparse.FetchRequest, *feedparse.Result) error {
+	return nil
+}
 func (p *fakeIdentityPlugin) FetchPlugin(context.Context, feedparse.FetchRequest) (feedparse.Result, error) {
 	return feedparse.Result{
 		Feed: feedparse.Feed{Title: "Blog", HomeURL: "https://b.dev/"},
@@ -1289,6 +1319,10 @@ func TestPollStoresItemDuration(t *testing.T) {
 type fakeDurationPlugin struct{}
 
 func (fakeDurationPlugin) MatchFetch(feedparse.FetchRequest) bool { return true }
+func (fakeDurationPlugin) MatchEnrich(feedparse.FetchRequest) bool { return false }
+func (fakeDurationPlugin) EnrichPlugin(context.Context, feedparse.FetchRequest, *feedparse.Result) error {
+	return nil
+}
 func (fakeDurationPlugin) FetchPlugin(context.Context, feedparse.FetchRequest) (feedparse.Result, error) {
 	return feedparse.Result{
 		Feed: feedparse.Feed{Title: "Video"},

@@ -22,6 +22,11 @@ Every feed is fetched through the same entry point, `feedparse.Fetch` (via
 2. **The generic parser.** Otherwise nanoflux fetches the URL and parses it as
    RSS / Atom / JSON-feed with `gofeed`.
 
+Both paths end with an **enrich pass**: a plugin that matches the feed URL for
+`CapEnrich` is offered the parsed items and may set each item's `SharedKey`
+(cross-feed identity). reddit uses this to make the same post stored once across
+a subreddit feed and the poster's user feed, without owning the fetch.
+
 Plugins do not do their own networking. Their HTTP calls go back through the
 host (`Host.Do`), so the host owns the User-Agent, the timeout, and rate-limit
 handling for both paths (details below).
@@ -99,15 +104,22 @@ skipping`, `host spaced` and `next wake from paced host` at Debug
 (`NF_LOG_LEVEL=debug`). Plugin-host limits log `plugin rate limited` and
 `plugin request refused: host cooling`, which is the shared cooldown in action.
 
-### Reddit feed URLs are canonicalized
+### Feed URLs are canonicalized by the owning plugin
+
+Some sites have a redirect-free URL shape the reader should store (reddit, for
+example: the `www.reddit.com` host, `/user/{name}`, a user's posts-only
+`/submitted.rss`). `Store.SetURLPolicy` installs the plugin layer's per-URL
+rules, so feed create, feed edit and a startup pass ask the owning plugin for
+the canonical shape via `pluginapi.URLPolicy.CanonicalizeFeedURL`. A site with no
+plugin that owns its URL is left untouched.
 
 Reddit's anonymous `.rss` sits behind a ~1 request/IP/minute limit, and each
-redirect hop spends one of those requests. `store.CanonicalFeedURL` therefore
-rewrites every stored reddit URL to the shape reddit answers **without a
-redirect**: the `www.reddit.com` host and the `/user/{name}` path. `/u/{name}`
-is rewritten to `/user/{name}` (reddit 301s the short form), and a user's bare
-feed becomes the posts-only `/user/{name}/submitted.rss`. This runs on feed
-create and edit, on a startup pass, and via `nanoflux fix reddit-urls`.
+redirect hop spends one of those requests, so the reddit plugin rewrites every
+reddit URL to the shape reddit answers without a redirect: `/u/{name}` becomes
+`/user/{name}` (reddit 301s the short form) and a user's bare feed becomes
+`/user/{name}/submitted.rss`. Because a plugin owns these URLs, discovery never
+probes them either: the plugin derives the feed from the page URL with no
+request (`Candidate.Derived`).
 
 ### Detecting a limit and how long to wait
 
@@ -297,4 +309,6 @@ var.
 | Rate-limit detection, `Retry-After` / `x-ratelimit-reset` parsing | `internal/feedparse/ratelimit.go` |
 | Generic fetch: conditional GET, parse, pagination cursor | `internal/feedparse/feedparse.go` |
 | Host-mediated HTTP + rate-limit cooling for plugins | `internal/plugin/host.go`, `internal/plugin/cooldown.go` |
+| Ingest enrich pass and dispatch to plugins | `internal/plugin/dispatch.go`, `internal/feedparse/feedparse.go` |
+| Per-URL site rules (canonical shape, feed token) from plugins | `internal/plugin/urlpolicy.go`, `internal/store/domain.go` |
 | `next_poll_at` storage and `ListFeedsDue` | `internal/store/feed.go`, `internal/store/queries/feeds.sql` |

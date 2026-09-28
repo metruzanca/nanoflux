@@ -85,13 +85,13 @@ func (plainPlugin) Fetch(context.Context, FetchRequest, Host) (Result, error) {
 
 func TestItemRoundTrip(t *testing.T) {
 	in := []Item{{
-		GUID: "g", Identity: "id-1", Title: "t", Link: "l", Summary: "s", ImageURL: "i",
+		GUID: "g", Identity: "id-1", SharedKey: "reddit:t3_1", Title: "t", Link: "l", Summary: "s", ImageURL: "i",
 		PublishedAt: "2026-01-01 00:00:00",
 		Categories:  []string{"reblog"},
 		Enclosures:  []Enclosure{{URL: "u", MIMEType: "audio/mpeg", Length: 42}},
 	}}
 	out := fromPBItems(toPBItems(in))
-	if len(out) != 1 || out[0].GUID != "g" || out[0].Identity != "id-1" ||
+	if len(out) != 1 || out[0].GUID != "g" || out[0].Identity != "id-1" || out[0].SharedKey != "reddit:t3_1" ||
 		len(out[0].Enclosures) != 1 || out[0].Enclosures[0].Length != 42 {
 		t.Fatalf("item round trip = %+v", out)
 	}

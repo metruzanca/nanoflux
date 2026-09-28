@@ -199,13 +199,14 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Confirm the URL is a real feed before saving, unless it is derived from a
-	// known URL shape (reddit), whose .rss sits behind a tight anonymous rate
-	// limit — the candidate supplies the metadata without spending a request.
+	// Confirm the URL is a real feed before saving, unless a plugin derives it
+	// from the URL shape alone (reddit), whose .rss sits behind a tight
+	// anonymous rate limit — the candidate supplies the metadata without
+	// spending a request.
 	title := req.Title
 	homeURL := req.HomeURL
 	var derivedAuthor string
-	if c, ok := discover.Derive(req.FeedURL); ok {
+	if c, ok := s.derivedCandidate(r.Context(), req.FeedURL); ok {
 		req.FeedURL = c.FeedURL
 		derivedAuthor = c.AuthorName
 		if homeURL == "" {

@@ -119,6 +119,7 @@ func (c *countingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 func TestFeedPreviewRedditDerived(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
+	useRedditPlugin(t, s)
 
 	ct := &countingTransport{}
 	client := &http.Client{Transport: ct}

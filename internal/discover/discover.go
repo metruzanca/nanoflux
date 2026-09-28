@@ -1,10 +1,9 @@
 // Package discover finds the RSS/Atom/JSON-feed for a web page. It tries, in
-// order: deriving the feed from a known URL shape (Reddit), parsing the URL
-// itself, scanning the page's HTML for feed <link>s, host-specific rules
-// (YouTube, GitHub), and common feed paths. Candidates are only returned after
-// they are fetched and parsed, except for derived ones, which need no request.
-// Sites with a native plugin (Bluesky) are not listed here: the plugin's own
-// Discover supplies their candidates.
+// order: parsing the URL itself, host-specific rules (YouTube, GitHub), scanning
+// the page's HTML for feed <link>s, and common feed paths. Candidates are only
+// returned after they are fetched and parsed. Sites with a native plugin
+// (reddit, Bluesky, Instagram, …) supply their candidates from the plugin's own
+// Discover instead, so none of their URL shapes live here.
 package discover
 
 import (
@@ -35,6 +34,10 @@ type Candidate struct {
 	// site suggests one that differs from the feed title (reddit users: "spez"
 	// rather than "u/spez"). Empty means fall back to Title.
 	AuthorName string `json:"author_name,omitempty"`
+	// Derived marks a candidate whose feed URL follows from the page URL alone
+	// (a plugin's site rules), so the host must not fetch the page to validate
+	// it or gather its metadata.
+	Derived bool `json:"derived,omitempty"`
 }
 
 // Discoverer finds feeds for URLs.
@@ -57,13 +60,6 @@ func (d *Discoverer) Discover(ctx context.Context, pageURL string) ([]Candidate,
 	}
 	if base.Scheme == "" || base.Host == "" {
 		return nil, errors.New("invalid url")
-	}
-
-	// 0. Hosts with a known, fixed feed shape are derived without a request.
-	// Reddit's .rss sits behind a tight anonymous rate limit, so probing it
-	// would spend the host's budget on discovery; the URL alone is enough.
-	if c, ok := Derive(pageURL); ok {
-		return []Candidate{c}, nil
 	}
 
 	// 1. The URL itself might already be a feed.

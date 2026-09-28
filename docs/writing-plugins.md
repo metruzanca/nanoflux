@@ -98,16 +98,26 @@ forwarded to nanoflux's logs prefixed with the plugin name.
 
 ## The capabilities
 
-A plugin implements `Fetcher`; it may also implement the optional `Renderer`
-interface. `Match` tells the host which URL shapes (and which capability) each
-applies to.
+A plugin implements `Fetcher`; it may also implement the optional `Renderer`,
+`Enricher`, `Decoration`, `URLPolicy` and `Docser` interfaces. `Match` tells the
+host which URL shapes (and which capability) each applies to. A plugin may own a
+site's whole shape (fetch + discover + enrich + render + URL rules) or decorate a
+feed it does not fetch at all.
 
 - **`Fetch` (required)** — given a feed URL, return its `Feed` metadata and
   `[]Item`s. Runs in the poller and on manual refresh.
 - **`Discover` (optional)** — given a page URL, return `[]Candidate`s (feeds
-  found on that page). Runs in the add-feed "find feed" flow.
+  found on that page). Runs in the add-feed "find feed" flow. Set
+  `Candidate.Derived` when the feed URL follows from the page URL alone, so the
+  host skips the validation page fetch.
 - **`Render` (optional)** — given an item, resolve view-time media that a
   stored item cannot carry. Runs when the item modal opens.
+- **`Enrich` (optional)** — given a feed's freshly parsed items, set each item's
+  `SharedKey` (cross-feed identity). Runs at ingest after either fetch path.
+- **`Decorate` (optional)** — given a page's stored items, return each item's
+  source attribution and card kind. Runs at view time; must not do network I/O.
+- **`URLPolicy` (optional)** — pure site URL rules: the canonical feed shape
+  (`CanonicalizeFeedURL`) and the token a feed URL represents (`FeedToken`).
 - **`Docs` (optional)** — return Markdown describing the plugin, shown from the
   admin plugin card and from a feed's edit page. `Match(u, CapDocs)` decides
   which URLs it documents.
@@ -125,8 +135,48 @@ func (AppC) Discover(ctx context.Context, pageURL string, h pluginapi.Host) ([]p
 
 A candidate's `Title`/`IconURL`/`HomeURL` are the **preview metadata** shown in
 the add form; when set, they take precedence over nanoflux's generic page
-metadata (`PageMeta`). This is how a plugin keeps a site's real author name and
-avatar instead of a generic favicon.
+metadata (`PageMeta`). `AuthorName` overrides the new-author prefill when the
+site suggests a cleaner name than the feed title. This is how a plugin keeps a
+site's real author name and avatar instead of a generic favicon.
+
+### URL rules (`URLPolicy`)
+
+A site whose feed URL has a known shape — and whose endpoints are rate-limited —
+should own those rules, so the host never probes the site during discovery. The
+reddit plugin is the reference: `Match` returns true for `CapURLPolicy` on reddit
+hosts, `CanonicalizeFeedURL` rewrites every stored reddit URL to the shape reddit
+answers without a redirect, `FeedToken` maps a feed URL to the `r/<sub>` /
+`u/<name>` token its items carry, and `Discover` derives the feed from the page
+URL with no request (`Candidate.Derived`).
+
+```go
+func (AppC) CanonicalizeFeedURL(raw string) string { /* redirect-free shape */ }
+func (AppC) FeedToken(feedURL string) string        { /* "r/cats" | "u/sam" | "" */ }
+```
+
+`CanonicalizeFeedURL` runs on feed create/edit and on a startup pass.
+`FeedToken` is matched against an item's categories/decoration tokens to link an
+item to the user's subscribed feed for it, even before that feed has polled the
+item.
+
+### Ingest enrichment (`Enrich`)
+
+`EnrichItems` runs on a feed's parsed items — whether the plugin fetched them or
+the generic parser did — and returns per-item `SharedKey` (addressed by index, so
+items are never reordered or dropped). The host stores one item per
+`(user, SharedKey)`, so the same entry seen through two subscriptions shares
+read/favorite/list state. reddit uses it for the post fullname `t3_<id>`.
+
+### View-time decoration (`Decoration`)
+
+`Decorate` runs on a page's stored items and returns each item's source
+attribution and card kind. The parts carry tokens; the host resolves a token to
+the user's subscribed feed (via the same plugin's `FeedToken`) for the internal
+link, falling back to the part's URL (the external site). That is how reddit
+renders "r/cats by u/sam": the sub and the poster link internally when
+subscribed, else to reddit. `Kind` picks the row card
+(`KindText`/`KindImage`/`KindGallery`/`KindLink`/`KindVideo`/`KindAudio`), and
+`ThumbURL` overrides the row thumbnail (a gallery's full-res first image).
 
 ### View-time rendering (`Render`)
 
@@ -289,25 +339,28 @@ future polls will match) is kept; the others' read/favorite state, enclosures,
 list memberships and share links carry over. Run it inside the container
 (`make shell`) or on the host against the same `NF_DB`.
 
-### Cross-feed items (`Identity` shared across feeds)
+### Cross-feed items (`SharedKey` across feeds)
 
 Identity dedup is per feed: two subscriptions that both see the same post store
-two rows even when `Identity` matches. The host additionally collapses a post
-seen through a user's feeds when it can derive a **cross-feed key** from the
-GUID. Today that applies to reddit only: the Atom GUID is the post fullname
-`t3_<id>`, identical in a subreddit feed and the user feed, so the host stores
-one row that both feeds are members of (shared read/favorite/list/share state).
+two rows even when `Identity` matches. A plugin's `Enricher` can collapse a post
+seen through a user's feeds by setting `Item.SharedKey` (an `Enrichment` return
+addressed by index) to an identity the feeds share. reddit sets it to the post
+fullname `reddit:t3_<id>`, identical in a subreddit feed and the user feed, so
+the host stores one row both feeds are members of (shared read/favorite/list/
+share state).
 
-A plugin that fetches reddit-like content and can set `Item.GUID` to a stable
-per-post fullname of the form `t3_<base36>` gets this for free through the
-generic path; other shapes are not cross-deduped. `nanoflux item cross-dedup`
-reports/merges any rows stored before this, and the server runs the same merge at
-startup. See the "Cross-feed items" note in `AGENTS.md`.
+`SharedKey` is the plugin-owned generalization of the old core "cross-feed key":
+the plugin decides what a shared identity is, and the host only deduplicates on
+it. `nanoflux item cross-dedup` reports/merges any rows stored before this (and
+the server runs the same merge at startup, deriving the reddit key for legacy
+rows). See the "Cross-feed items" note in `AGENTS.md`.
 
 `Render` runs in the item-view path with a 4-second timeout, once per modal
 open. Use `h.Do` for any lookup (oEmbed discovery, an embed page) so the host
-still paces and inspects the requests. The native reddit plugin
-(`internal/plugin/native/reddit`) is the reference implementation.
+still paces and inspects the requests. `Decorate` is view-time and pure: it must
+not use `h.Do`. The native reddit plugin
+(`internal/plugin/native/reddit`) is the reference implementation for all of
+these.
 
 ## HTTP: `Host.Do` vs `RawNetwork`
 

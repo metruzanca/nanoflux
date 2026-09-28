@@ -576,6 +576,7 @@ func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter
 		item := store.Item{
 			GUID:        it.GUID,
 			Identity:    it.Identity,
+			SharedKey:   it.SharedKey,
 			Title:       it.Title,
 			Link:        it.Link,
 			Summary:     it.Summary,
@@ -637,7 +638,7 @@ func (p *Poller) storeEnclosures(f store.Feed, it feedparse.Item) error {
 	if identity == "" {
 		identity = it.GUID
 	}
-	itemID, err := p.store.Items.IngestItemID(f.UserID, f.ID, identity, store.CrossFeedKey(it.GUID))
+	itemID, err := p.store.Items.IngestItemID(f.UserID, f.ID, identity, store.CrossFeedKey(it.SharedKey))
 	if err != nil {
 		return err
 	}

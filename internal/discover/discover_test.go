@@ -165,49 +165,6 @@ func TestDiscoverSurfacesHostRuleRateLimit(t *testing.T) {
 	}
 }
 
-// TestDiscoverRedditDerived asserts that reddit pages resolve to their .rss
-// feed purely from the URL, without any request: discovery must not spend the
-// host's tight anonymous rate limit. It covers the /r/, /user/ and /u/ forms
-// and the old./m. hosts.
-func TestDiscoverRedditDerived(t *testing.T) {
-	var hits int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits++
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-	defer srv.Close()
-
-	d := New(clientTo(srv))
-	cases := []struct {
-		page    string
-		feedURL string
-		homeURL string
-	}{
-		{"https://www.reddit.com/r/golang/", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang"},
-		{"https://old.reddit.com/r/golang/top/", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang"},
-		{"https://www.reddit.com/user/spez", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez"},
-		{"https://www.reddit.com/u/spez/", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez"},
-		{"https://m.reddit.com/r/golang/", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang"},
-	}
-	for _, c := range cases {
-		cs, err := d.Discover(context.Background(), c.page)
-		if err != nil {
-			t.Fatalf("%s: %v", c.page, err)
-		}
-		if len(cs) != 1 || cs[0].Strategy != "derived" {
-			t.Fatalf("%s: candidates = %+v", c.page, cs)
-		}
-		if cs[0].FeedURL != c.feedURL {
-			t.Errorf("%s: feed url = %q, want %q", c.page, cs[0].FeedURL, c.feedURL)
-		}
-		if cs[0].HomeURL != c.homeURL {
-			t.Errorf("%s: home url = %q, want %q", c.page, cs[0].HomeURL, c.homeURL)
-		}
-	}
-	if hits != 0 {
-		t.Fatalf("reddit discovery made %d request(s); it must make none", hits)
-	}
-}
 
 func TestHostSpecificURLs(t *testing.T) {
 	u := func(s string) *url.URL {
@@ -254,47 +211,6 @@ func TestHostSpecificURLs(t *testing.T) {
 					t.Errorf("%s[%d]: title = %q, want %q", c.page, i, got[i].Title, want)
 				}
 			}
-		}
-	}
-}
-
-// TestDerive covers the pure URL derivation and normalization for reddit and
-// its negative cases.
-func TestDerive(t *testing.T) {
-	cases := []struct {
-		page       string
-		feedURL    string
-		homeURL    string
-		title      string
-		authorName string
-		ok         bool
-	}{
-		{"https://www.reddit.com/r/golang/", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
-		{"https://www.reddit.com/r/golang", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
-		{"https://old.reddit.com/r/golang/top/?t=week", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
-		{"https://np.reddit.com/r/golang/.rss", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
-		{"https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
-		{"https://www.reddit.com/user/spez", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
-		{"https://www.reddit.com/u/spez/", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
-		{"https://m.reddit.com/user/spez/comments", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
-		{"https://old.reddit.com/u/spez.rss", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
-		{"https://www.reddit.com/", "", "", "", "", false},
-		{"https://www.reddit.com/r/", "", "", "", "", false},
-		{"https://www.reddit.com/user/", "", "", "", "", false},
-		{"https://example.com/r/golang/", "", "", "", "", false},
-		{"not a url", "", "", "", "", false},
-	}
-	for _, c := range cases {
-		got, ok := Derive(c.page)
-		if ok != c.ok {
-			t.Errorf("Derive(%q) ok = %v, want %v", c.page, ok, c.ok)
-			continue
-		}
-		if !ok {
-			continue
-		}
-		if got.FeedURL != c.feedURL || got.HomeURL != c.homeURL || got.Title != c.title || got.AuthorName != c.authorName || got.Strategy != "derived" {
-			t.Errorf("Derive(%q) = %+v, want feed=%q home=%q title=%q author=%q", c.page, got, c.feedURL, c.homeURL, c.title, c.authorName)
 		}
 	}
 }

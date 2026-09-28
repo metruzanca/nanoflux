@@ -11,10 +11,8 @@ import (
 // hostSpecific applies per-site rules for pages that do not expose feed links
 // in their HTML. It returns the candidates it validated, plus the last fetch
 // error when a known rule's feed could not be fetched (so a caller can explain
-// why — e.g. a rate limit — instead of reporting "no feed").
-//
-// Reddit is not here: its feeds are derived without a request (see Derive), so
-// its tight .rss rate limit is never spent on discovery.
+// why — e.g. a rate limit — instead of reporting "no feed"). Sites whose URL
+// shapes a plugin owns (reddit) are handled there, not here.
 func (d *Discoverer) hostSpecific(ctx context.Context, pageURL string) ([]Candidate, error) {
 	u, err := url.Parse(pageURL)
 	if err != nil {

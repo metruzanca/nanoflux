@@ -197,12 +197,16 @@ var Host_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	Fetcher_Meta_FullMethodName     = "/nanoflux.plugin.v1.Fetcher/Meta"
-	Fetcher_Match_FullMethodName    = "/nanoflux.plugin.v1.Fetcher/Match"
-	Fetcher_Discover_FullMethodName = "/nanoflux.plugin.v1.Fetcher/Discover"
-	Fetcher_Fetch_FullMethodName    = "/nanoflux.plugin.v1.Fetcher/Fetch"
-	Fetcher_Render_FullMethodName   = "/nanoflux.plugin.v1.Fetcher/Render"
-	Fetcher_Docs_FullMethodName     = "/nanoflux.plugin.v1.Fetcher/Docs"
+	Fetcher_Meta_FullMethodName                = "/nanoflux.plugin.v1.Fetcher/Meta"
+	Fetcher_Match_FullMethodName               = "/nanoflux.plugin.v1.Fetcher/Match"
+	Fetcher_Discover_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/Discover"
+	Fetcher_Fetch_FullMethodName               = "/nanoflux.plugin.v1.Fetcher/Fetch"
+	Fetcher_Render_FullMethodName              = "/nanoflux.plugin.v1.Fetcher/Render"
+	Fetcher_Docs_FullMethodName                = "/nanoflux.plugin.v1.Fetcher/Docs"
+	Fetcher_Enrich_FullMethodName              = "/nanoflux.plugin.v1.Fetcher/Enrich"
+	Fetcher_Decorate_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/Decorate"
+	Fetcher_CanonicalizeFeedURL_FullMethodName = "/nanoflux.plugin.v1.Fetcher/CanonicalizeFeedURL"
+	Fetcher_FeedToken_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/FeedToken"
 )
 
 // FetcherClient is the client API for Fetcher service.
@@ -217,6 +221,14 @@ type FetcherClient interface {
 	// Docs is optional: a plugin that does not implement Docser answers with an
 	// unsupported PluginError, which the host treats as "no documentation".
 	Docs(ctx context.Context, in *DocsRequest, opts ...grpc.CallOption) (*DocsResponse, error)
+	// Enrich is optional: ingest-time per-item decoration (cross-feed identity).
+	Enrich(ctx context.Context, in *EnrichRequest, opts ...grpc.CallOption) (*EnrichResponse, error)
+	// Decorate is optional: view-time per-item rendering (attribution, kind).
+	Decorate(ctx context.Context, in *DecorateRequest, opts ...grpc.CallOption) (*DecorateResponse, error)
+	// URLPolicy methods are optional: a site's pure URL rules (canonical shape,
+	// feed token), so site-specific handling lives in the plugin.
+	CanonicalizeFeedURL(ctx context.Context, in *CanonicalizeFeedURLRequest, opts ...grpc.CallOption) (*CanonicalizeFeedURLResponse, error)
+	FeedToken(ctx context.Context, in *FeedTokenRequest, opts ...grpc.CallOption) (*FeedTokenResponse, error)
 }
 
 type fetcherClient struct {
@@ -287,6 +299,46 @@ func (c *fetcherClient) Docs(ctx context.Context, in *DocsRequest, opts ...grpc.
 	return out, nil
 }
 
+func (c *fetcherClient) Enrich(ctx context.Context, in *EnrichRequest, opts ...grpc.CallOption) (*EnrichResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EnrichResponse)
+	err := c.cc.Invoke(ctx, Fetcher_Enrich_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fetcherClient) Decorate(ctx context.Context, in *DecorateRequest, opts ...grpc.CallOption) (*DecorateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DecorateResponse)
+	err := c.cc.Invoke(ctx, Fetcher_Decorate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fetcherClient) CanonicalizeFeedURL(ctx context.Context, in *CanonicalizeFeedURLRequest, opts ...grpc.CallOption) (*CanonicalizeFeedURLResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CanonicalizeFeedURLResponse)
+	err := c.cc.Invoke(ctx, Fetcher_CanonicalizeFeedURL_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fetcherClient) FeedToken(ctx context.Context, in *FeedTokenRequest, opts ...grpc.CallOption) (*FeedTokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FeedTokenResponse)
+	err := c.cc.Invoke(ctx, Fetcher_FeedToken_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FetcherServer is the server API for Fetcher service.
 // All implementations must embed UnimplementedFetcherServer
 // for forward compatibility.
@@ -299,6 +351,14 @@ type FetcherServer interface {
 	// Docs is optional: a plugin that does not implement Docser answers with an
 	// unsupported PluginError, which the host treats as "no documentation".
 	Docs(context.Context, *DocsRequest) (*DocsResponse, error)
+	// Enrich is optional: ingest-time per-item decoration (cross-feed identity).
+	Enrich(context.Context, *EnrichRequest) (*EnrichResponse, error)
+	// Decorate is optional: view-time per-item rendering (attribution, kind).
+	Decorate(context.Context, *DecorateRequest) (*DecorateResponse, error)
+	// URLPolicy methods are optional: a site's pure URL rules (canonical shape,
+	// feed token), so site-specific handling lives in the plugin.
+	CanonicalizeFeedURL(context.Context, *CanonicalizeFeedURLRequest) (*CanonicalizeFeedURLResponse, error)
+	FeedToken(context.Context, *FeedTokenRequest) (*FeedTokenResponse, error)
 	mustEmbedUnimplementedFetcherServer()
 }
 
@@ -326,6 +386,18 @@ func (UnimplementedFetcherServer) Render(context.Context, *RenderRequest) (*Rend
 }
 func (UnimplementedFetcherServer) Docs(context.Context, *DocsRequest) (*DocsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Docs not implemented")
+}
+func (UnimplementedFetcherServer) Enrich(context.Context, *EnrichRequest) (*EnrichResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Enrich not implemented")
+}
+func (UnimplementedFetcherServer) Decorate(context.Context, *DecorateRequest) (*DecorateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Decorate not implemented")
+}
+func (UnimplementedFetcherServer) CanonicalizeFeedURL(context.Context, *CanonicalizeFeedURLRequest) (*CanonicalizeFeedURLResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CanonicalizeFeedURL not implemented")
+}
+func (UnimplementedFetcherServer) FeedToken(context.Context, *FeedTokenRequest) (*FeedTokenResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FeedToken not implemented")
 }
 func (UnimplementedFetcherServer) mustEmbedUnimplementedFetcherServer() {}
 func (UnimplementedFetcherServer) testEmbeddedByValue()                 {}
@@ -456,6 +528,78 @@ func _Fetcher_Docs_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fetcher_Enrich_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EnrichRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).Enrich(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_Enrich_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).Enrich(ctx, req.(*EnrichRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Fetcher_Decorate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DecorateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).Decorate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_Decorate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).Decorate(ctx, req.(*DecorateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Fetcher_CanonicalizeFeedURL_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CanonicalizeFeedURLRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).CanonicalizeFeedURL(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_CanonicalizeFeedURL_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).CanonicalizeFeedURL(ctx, req.(*CanonicalizeFeedURLRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Fetcher_FeedToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FeedTokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).FeedToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_FeedToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).FeedToken(ctx, req.(*FeedTokenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Fetcher_ServiceDesc is the grpc.ServiceDesc for Fetcher service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -486,6 +630,22 @@ var Fetcher_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Docs",
 			Handler:    _Fetcher_Docs_Handler,
+		},
+		{
+			MethodName: "Enrich",
+			Handler:    _Fetcher_Enrich_Handler,
+		},
+		{
+			MethodName: "Decorate",
+			Handler:    _Fetcher_Decorate_Handler,
+		},
+		{
+			MethodName: "CanonicalizeFeedURL",
+			Handler:    _Fetcher_CanonicalizeFeedURL_Handler,
+		},
+		{
+			MethodName: "FeedToken",
+			Handler:    _Fetcher_FeedToken_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

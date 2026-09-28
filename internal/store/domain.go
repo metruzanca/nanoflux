@@ -49,115 +49,93 @@ func hostname(s string) string {
 	return strings.ToLower(u.Hostname())
 }
 
-// redditHosts are the reddit hostnames whose feeds nanoflux normalizes.
-var redditHosts = map[string]bool{
-	"reddit.com": true, "www.reddit.com": true,
-	"old.reddit.com": true, "np.reddit.com": true,
-	"m.reddit.com": true,
+// URLPolicy is the host's per-URL site rules, supplied by the plugin layer so
+// site-specific URL handling lives in a plugin instead of the store. It is
+// dispatched by URL (the plugin layer matches the URL to the owning plugin), so
+// the store holds one value that already knows every loaded site's rules.
+type URLPolicy interface {
+	// CanonicalizeFeedURL returns the preferred stored shape of a feed URL
+	// (reddit: www host, /user/{name}, posts-only /submitted.rss). It returns
+	// the input unchanged when no plugin has a rule for it.
+	CanonicalizeFeedURL(raw string) string
+	// FeedToken returns the token a feed URL represents ("r/cats", "u/sam"),
+	// used to match an item's tokens back to the user's subscribed feed, or ""
+	// when no plugin claims the URL.
+	FeedToken(feedURL string) string
 }
 
-// redditCanonicalHost is the reddit host nanoflux rewrites feed URLs to. The
-// www host serves a feed in one request; the bare host 301-redirects to it, and
-// that extra hop spends a request from reddit's tight anonymous rate-limit
-// budget. The canonical shape must therefore be the one with no redirect.
-const redditCanonicalHost = "www.reddit.com"
+// identityPolicy is the no-plugin policy: it leaves every URL untouched and
+// yields no tokens. It is the default until the plugin layer installs one.
+type identityPolicy struct{}
 
-// RedditFeedToken derives the "r/<sub>" or "u/<name>" token a reddit feed URL
-// represents, lowercased, or "" when the URL is not a reddit feed. The token is
-// the same string reddit puts in an entry's <category> (and so in a stored
-// item's Categories), which lets the token map back to the subscribed feed. It
-// is derived from the URL, not the feed title, so a renamed feed or author
-// still resolves correctly.
-func RedditFeedToken(feedURL string) string {
-	u, err := url.Parse(strings.TrimSpace(feedURL))
-	if err != nil || u.Host == "" {
-		return ""
-	}
-	if !redditHosts[strings.ToLower(u.Hostname())] {
-		return ""
-	}
-	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) < 2 {
-		return ""
-	}
-	name := strings.TrimSuffix(parts[1], ".rss")
-	if name == "" {
-		return ""
-	}
-	switch parts[0] {
-	case "r":
-		return "r/" + strings.ToLower(name)
-	case "user", "u":
-		return "u/" + strings.ToLower(name)
-	}
-	return ""
-}
+func (identityPolicy) CanonicalizeFeedURL(raw string) string { return raw }
+func (identityPolicy) FeedToken(string) string               { return "" }
 
-// redditCategoryToken normalizes an item category into a reddit token the
-// subscription resolver understands ("r/cats" or "u/sam", lowercased, leading
-// slash dropped), or "" when the category is not one. It mirrors the parser's
-// token shape so the two always agree on what a reddit category looks like.
-func redditCategoryToken(category string) string {
-	c := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(category), "/"))
-	switch {
-	case strings.HasPrefix(c, "r/"):
-		return c
-	case strings.HasPrefix(c, "u/"):
-		return c
-	}
-	return ""
-}
-
-// CanonicalFeedURL rewrites a feed URL to the form nanoflux prefers, for hosts
-// where it knows the canonical shape. It leaves other URLs untouched.
+// ItemDecorator supplies view-time decoration for stored items (source
+// attribution, card kind, thumbnail), computed by the plugin layer. It is
+// injected by the plugin layer and called in one batch per page load. A nil
+// decorator leaves every item with its stored author/feed rendering.
 //
-// Reddit: all of reddit.com/www./old./np./m. collapse to the www.reddit.com
-// origin (old./np. redirect .rss to a login wall), the /u/{name} short form is
-// rewritten to /user/{name}, and a user's bare feed is rewritten to the
-// posts-only /submitted.rss (their overview feed mixes posts and comments).
-// Reddit serves the same feeds at www.reddit.com with no redirect, and the
-// /user/ form avoids reddit's /u/ -> /user/ redirect; both matter because each
-// redirect hop consumes a request from the host's ~1/minute anonymous budget.
-// An explicit /comments.rss or /submitted.rss is left as-is.
-func CanonicalFeedURL(raw string) string {
-	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Host == "" {
-		return raw
-	}
-	host := strings.ToLower(u.Hostname())
-	if !redditHosts[host] {
-		return raw
-	}
-	// Canonical host: www.reddit.com, keeping any port.
-	u.Scheme = "https"
-	if port := u.Port(); port != "" {
-		u.Host = redditCanonicalHost + ":" + port
-	} else {
-		u.Host = redditCanonicalHost
-	}
-	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	// /u/{name} -> /user/{name}: reddit 301-redirects the short form, and the
-	// extra hop costs a request from the host's tight anonymous budget.
-	if len(parts) >= 2 && parts[0] == "u" {
-		parts[0] = "user"
-	}
-	// A user's bare feed -> the posts-only /submitted.rss. Both bare forms are
-	// handled: the ".rss" suffix on the name (/user/{name}.rss) and a trailing
-	// ".rss" segment (/user/{name}/.rss). Explicit /submitted.rss and
-	// /comments.rss are preserved.
-	if len(parts) >= 2 && parts[0] == "user" {
-		if name, ok := strings.CutSuffix(parts[1], ".rss"); ok {
-			parts = append([]string{parts[0], name}, parts[2:]...)
-		}
-		if len(parts) >= 3 && parts[2] == ".rss" {
-			parts = append([]string{parts[0], parts[1]}, parts[3:]...)
-		}
-		if len(parts) == 2 {
-			parts = append(parts, "submitted.rss")
-		}
-	}
-	if len(parts) >= 1 && parts[0] != "" {
-		u.Path = "/" + strings.Join(parts, "/")
-	}
-	return u.String()
+// The decorator returns raw parts (with tokens), not resolved links: the store
+// resolves each token to the user's subscribed feed (it owns the DB and the URL
+// policy), so no site-specific link logic lives in the core.
+type ItemDecorator interface {
+	// Decorate returns decoration keyed by item id. An item absent from the map
+	// keeps its stored rendering.
+	Decorate(items []ItemWithFeed) (map[int64]RawDecoration, error)
+}
+
+// ItemKind classifies an item's primary content for card rendering and media.
+type ItemKind int
+
+const (
+	// KindText is the default: a text post, or an item no plugin classified.
+	KindText ItemKind = iota
+	// KindImage is a single-image post.
+	KindImage
+	// KindGallery is a multi-image post.
+	KindGallery
+	// KindLink is a post whose primary content is an external site.
+	KindLink
+	// KindVideo is a video post.
+	KindVideo
+	// KindAudio is an audio/podcast post.
+	KindAudio
+)
+
+// RawDecoration is a plugin's view-time decoration for an item, with its
+// attribution tokens unresolved. The store turns it into an ItemDecoration by
+// resolving tokens against the user's subscriptions.
+type RawDecoration struct {
+	Kind        ItemKind
+	Attribution []RawAttributionPart
+	ThumbURL    string
+}
+
+// RawAttributionPart is one unresolved piece of a source line.
+type RawAttributionPart struct {
+	// Text is the display text ("r/cats", "by", "u/sam").
+	Text string
+	// Token, when set, is resolved to the user's subscribed feed (internal
+	// link); when it does not resolve, URL is used (external).
+	Token string
+	// URL is the external destination when Token has no subscription. Empty
+	// with no Token means plain text ("by").
+	URL string
+}
+
+// AttributionPart is one resolved piece of an item's source line ("r/cats",
+// "by", "u/sam"). URL is always the final destination (internal or external).
+type AttributionPart struct {
+	Text     string
+	URL      string
+	External bool
+}
+
+// ItemDecoration is an item's view-time decoration, already resolved by the
+// store (no further lookups needed).
+type ItemDecoration struct {
+	Kind        ItemKind
+	Attribution []AttributionPart
+	ThumbURL    string
 }

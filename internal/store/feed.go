@@ -44,6 +44,9 @@ type FeedWithUnread struct {
 type FeedStore struct {
 	q  *sqlcgen.Queries
 	db *sql.DB // for the transactional re-home on delete
+	// policy is the host's per-URL site rules (from the plugin layer). It is
+	// always non-nil; the zero identityPolicy leaves URLs untouched.
+	policy URLPolicy
 }
 
 func (s *FeedStore) Create(userID, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int) (Feed, error) {
@@ -53,7 +56,7 @@ func (s *FeedStore) Create(userID, authorID int64, title, feedURL, homeURL, desc
 // CreateWithPlugin is Create with the owning plugin name recorded. An empty
 // pluginName means the generic feed parser owns it.
 func (s *FeedStore) CreateWithPlugin(userID, authorID int64, title, feedURL, homeURL, description, pluginName string, pollIntervalSec int) (Feed, error) {
-	feedURL = CanonicalFeedURL(feedURL)
+	feedURL = s.policy.CanonicalizeFeedURL(feedURL)
 	f, err := s.q.CreateFeed(context.Background(), sqlcgen.CreateFeedParams{
 		UserID:          userID,
 		AuthorID:        authorID,
@@ -173,7 +176,7 @@ func (s *FeedStore) ListByAuthorWithUnread(userID, authorID int64) ([]FeedWithUn
 }
 
 func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int, pollIntervalAuto bool, enabled bool) error {
-	feedURL = CanonicalFeedURL(feedURL)
+	feedURL = s.policy.CanonicalizeFeedURL(feedURL)
 	res, err := s.q.UpdateFeed(context.Background(), sqlcgen.UpdateFeedParams{
 		AuthorID:         authorID,
 		Title:            title,
@@ -295,9 +298,10 @@ func (s *FeedStore) SetLastItemAt(id int64, t string) error {
 	})
 }
 
-// CanonicalizeFeedURLs rewrites stored feed URLs to their canonical form where
-// known (see CanonicalFeedURL). It is idempotent and runs once at startup so
-// feeds added before canonicalization start working.
+// CanonicalizeFeedURLs rewrites stored feed URLs to their canonical form via the
+// installed URL policy (the plugin layer's per-URL site rules, e.g. reddit's
+// redirect-free shape). It is idempotent and runs once at startup so feeds added
+// before canonicalization start working.
 func (s *FeedStore) CanonicalizeFeedURLs() (int, error) {
 	feeds, err := s.ListAll()
 	if err != nil {
@@ -305,7 +309,7 @@ func (s *FeedStore) CanonicalizeFeedURLs() (int, error) {
 	}
 	changed := 0
 	for _, f := range feeds {
-		canonical := CanonicalFeedURL(f.FeedURL)
+		canonical := s.policy.CanonicalizeFeedURL(f.FeedURL)
 		if canonical == f.FeedURL {
 			continue
 		}

@@ -168,15 +168,14 @@ WHERE enabled = 1 AND is_system = 0
     )
   );
 
--- name: ListUserRedditFeeds :many
--- The user's subscribed reddit feeds. Used to resolve an item's "r/<sub>" and
--- "u/<name>" category tokens to the subscribed feed/author, so attribution can
--- link a reddit post's sub/poster internally even before the matching feed has
--- polled the post (and thus before an item_feeds membership exists).
+-- name: ListUserFeeds :many
+-- The user's subscribed feeds (id, url, author). Used with the URL policy's
+-- FeedToken to resolve an item's category tokens to the subscribed feed for
+-- them, so source attribution can link internally even before a matching feed
+-- has polled the item (and thus before an item_feeds membership exists).
 SELECT f.id AS feed_id, f.feed_url AS feed_url, f.author_id AS author_id
 FROM feeds f
 WHERE f.user_id = ? AND f.is_system = 0
-  AND f.feed_url LIKE '%reddit.com%'
 ORDER BY f.id;
 
 -- name: GetFeedByTitle :one

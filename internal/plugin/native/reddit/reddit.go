@@ -1,12 +1,21 @@
 // Package reddit is the native plugin for reddit subreddits and user profiles.
 //
-// Reddit's .rss feeds are public and are handled by the generic feed parser;
-// their URLs are derived from the page URL by discover.Derive (no request), so
-// this plugin does not fetch feeds. What it owns is
-// the *view-time* media resolution for a post: reddit marks a post's real
-// content in its feed HTML with a "[link]" anchor, and that content — an
-// external destination, an oEmbed player, or a multi-image gallery — cannot be
-// represented on a stored item, so it is resolved when the item modal opens.
+// Reddit's .rss feeds are public and are handled by the generic feed parser, so
+// this plugin does not own the fetch. It owns every reddit-specific behavior
+// through URL-matched capabilities:
+//
+//   - URL policy: the redirect-free canonical feed shape and the r/<sub> /
+//     u/<name> token (urlpolicy.go), plus a derived feed candidate with no
+//     request (Discover).
+//   - Ingest enrichment: each post gets the cross-feed SharedKey from its
+//     t3_<id> GUID, so a post seen through the subreddit feed and the poster's
+//     user feed is stored once.
+//   - View-time decoration: the "r/cats by u/sam" source line (turned into
+//     internal links by the host) and the card kind.
+//   - View-time media: reddit marks a post's real content in its feed HTML with
+//     a "[link]" anchor, and that content — an external destination, an oEmbed
+//     player, or a multi-image gallery — cannot be represented on a stored item,
+//     so it is resolved when the item modal opens.
 package reddit
 
 import (
@@ -47,7 +56,7 @@ var RSSBaseURL = "https://www.reddit.com"
 var EmbedBaseURL = "https://embed.reddit.com"
 
 // redditHosts are the hosts this plugin recognizes.
-var redditHosts = []string{"reddit.com", "www.reddit.com", "old.reddit.com", "np.reddit.com"}
+var redditHosts = []string{"reddit.com", "www.reddit.com", "old.reddit.com", "np.reddit.com", "m.reddit.com"}
 
 // Plugin implements the reddit view-time renderer. Its caches persist across
 // item opens (nanoflux keeps the plugin alive).
@@ -58,8 +67,11 @@ type Plugin struct {
 }
 
 var (
-	_ pluginapi.Fetcher  = (*Plugin)(nil)
-	_ pluginapi.Renderer = (*Plugin)(nil)
+	_ pluginapi.Fetcher    = (*Plugin)(nil)
+	_ pluginapi.Renderer   = (*Plugin)(nil)
+	_ pluginapi.Enricher   = (*Plugin)(nil)
+	_ pluginapi.URLPolicy  = (*Plugin)(nil)
+	_ pluginapi.Decoration = (*Plugin)(nil)
 )
 
 func (*Plugin) Meta() pluginapi.Meta {
@@ -74,30 +86,147 @@ func (*Plugin) Meta() pluginapi.Meta {
 // Docs returns this plugin's Markdown documentation.
 func (*Plugin) Docs() string { return readme }
 
-// Match handles view-time rendering for reddit post permalinks and documents
-// reddit URLs. It does not claim fetch or discover: reddit's .rss feeds are
-// standard feeds, so a reddit feed has no owning plugin and reaches these docs
-// through CapDocs.
+// Match handles reddit URLs for view-time rendering, ingest enrichment
+// (cross-feed identity), URL policy (canonicalization, feed tokens, derivation)
+// and documentation. It does not claim fetch: reddit's .rss feeds are standard
+// feeds fetched by the generic parser (so a reddit feed's plugin_name is empty),
+// and this plugin decorates them through the URL-matched capabilities.
 func (*Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
 	if u == nil {
 		return false
 	}
 	switch cap {
-	case pluginapi.CapRender, pluginapi.CapDocs:
+	case pluginapi.CapRender, pluginapi.CapDocs, pluginapi.CapEnrich, pluginapi.CapURLPolicy, pluginapi.CapDiscover, pluginapi.CapDecorate:
 		return isRedditHost(u.Hostname())
 	default:
 		return false
 	}
 }
 
-// Discover is unsupported: reddit's feeds are plain RSS derived from the URL.
-func (*Plugin) Discover(context.Context, string, pluginapi.Host) ([]pluginapi.Candidate, error) {
-	return nil, pluginapi.ErrUnsupportedCapability
+// Discover derives a reddit feed from a page URL with no request, so its tight
+// anonymous .rss rate limit is never spent on discovery. The candidate is
+// marked Derived so the host does not fetch the page either.
+func (*Plugin) Discover(_ context.Context, pageURL string, _ pluginapi.Host) ([]pluginapi.Candidate, error) {
+	c, ok := deriveFeed(pageURL)
+	if !ok {
+		return nil, pluginapi.ErrUnsupportedCapability
+	}
+	return []pluginapi.Candidate{c}, nil
 }
 
 // Fetch is unsupported: the generic parser handles reddit's .rss feeds.
 func (*Plugin) Fetch(context.Context, pluginapi.FetchRequest, pluginapi.Host) (pluginapi.Result, error) {
 	return pluginapi.Result{}, pluginapi.ErrUnsupportedCapability
+}
+
+// CanonicalizeFeedURL rewrites a reddit feed URL to the shape reddit answers
+// without a redirect: the www.reddit.com host, the /user/{name} path, and a
+// user's posts-only /submitted.rss. Each redirect hop spends a request from
+// reddit's ~1/minute anonymous per-IP budget, so the canonical shape matters.
+// An explicit /comments.rss or /submitted.rss is left alone.
+func (*Plugin) CanonicalizeFeedURL(raw string) string {
+	return canonicalFeedURL(raw)
+}
+
+// FeedToken returns the "r/<sub>" or "u/<name>" token a reddit feed URL
+// represents, so the host can match an item's categories back to the user's
+// subscribed feed for it.
+func (*Plugin) FeedToken(feedURL string) string {
+	return feedToken(feedURL)
+}
+
+// EnrichItems gives every reddit post a cross-feed SharedKey from its GUID, the
+// post fullname "t3_<id>" that reddit's Atom sets identically in a subreddit
+// feed and in the poster's user feed. The host stores one item per
+// (user, SharedKey), so the same post seen through both subscriptions shares
+// read/favorite/list state. Non-post entries (t1_ comments, t2_ accounts) have
+// no shared identity and are left alone.
+func (*Plugin) EnrichItems(_ context.Context, req pluginapi.EnrichRequest, _ pluginapi.Host) ([]pluginapi.Enrichment, error) {
+	var out []pluginapi.Enrichment
+	for i, it := range req.Items {
+		if key := sharedKey(it.GUID); key != "" {
+			out = append(out, pluginapi.Enrichment{Index: i, SharedKey: key})
+		}
+	}
+	return out, nil
+}
+
+// sharedKey returns the cross-feed identity for a reddit GUID, or "" when the
+// GUID is not a post fullname. "t3_" then a base36 id; t1_ (comments) and t2_
+// (accounts) are not post identities.
+func sharedKey(guid string) string {
+	const prefix = "t3_"
+	if !strings.HasPrefix(guid, prefix) {
+		return ""
+	}
+	id := guid[len(prefix):]
+	if id == "" {
+		return ""
+	}
+	for _, r := range id {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return ""
+		}
+	}
+	return "reddit:" + guid
+}
+
+// Decorate builds the "r/cats by u/sam" source line for each reddit item from
+// its categories, plus the card kind. The parts carry tokens ("r/cats",
+// "u/sam"); the host resolves a token to the user's subscribed feed for the
+// internal link and the part's URL is the external reddit fallback.
+func (*Plugin) Decorate(_ context.Context, req pluginapi.DecorateRequest) ([]pluginapi.Decorated, error) {
+	out := make([]pluginapi.Decorated, 0, len(req.Items))
+	for i, it := range req.Items {
+		kind := itemKind(it)
+		d := pluginapi.Decorated{Index: i, Kind: kind, ThumbURL: kindThumb(kind, it.ImageURL)}
+		// Attribution needs both the subreddit and the poster categories; a
+		// reddit item without them (e.g. a comment) keeps its author/feed line
+		// but still gets its card kind.
+		if sub, user := categoryPair(it.Categories); sub != "" && user != "" {
+			d.Attribution = []pluginapi.SourcePart{
+				{Text: sub, Token: sub, URL: "https://www.reddit.com/" + sub + "/"},
+				{Text: "by"},
+				{Text: user, Token: user, URL: "https://www.reddit.com/user/" + strings.TrimPrefix(user, "u/") + "/"},
+			}
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// categoryPair extracts the r/<sub> and u/<user> category tokens from an item's
+// categories. Either may be empty.
+func categoryPair(categories []string) (sub, user string) {
+	for _, c := range categories {
+		lc := strings.ToLower(c)
+		switch {
+		case strings.HasPrefix(lc, "r/"):
+			if sub == "" {
+				sub = c
+			}
+		case strings.HasPrefix(lc, "u/"):
+			if user == "" {
+				user = c
+			}
+		}
+	}
+	return sub, user
+}
+
+// itemKind classifies a reddit item from its stored thumbnail and content. It is
+// the plugin-owned replacement for the core's reddit URL-sniffing classifiers.
+func itemKind(it pluginapi.Item) pluginapi.ItemKind {
+	if isLinkThumb(it.ImageURL) {
+		return pluginapi.KindLink
+	}
+	if isGalleryThumb(it.ImageURL) {
+		return pluginapi.KindGallery
+	}
+	if isImagePost(it.Summary, it.ImageURL, it.Title) {
+		return pluginapi.KindImage
+	}
+	return pluginapi.KindText
 }
 
 // Render resolves a reddit post's view-time media: an embeddable player for a

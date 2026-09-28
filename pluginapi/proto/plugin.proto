@@ -44,6 +44,14 @@ service Fetcher {
   // Docs is optional: a plugin that does not implement Docser answers with an
   // unsupported PluginError, which the host treats as "no documentation".
   rpc Docs(DocsRequest) returns (DocsResponse);
+  // Enrich is optional: ingest-time per-item decoration (cross-feed identity).
+  rpc Enrich(EnrichRequest) returns (EnrichResponse);
+  // Decorate is optional: view-time per-item rendering (attribution, kind).
+  rpc Decorate(DecorateRequest) returns (DecorateResponse);
+  // URLPolicy methods are optional: a site's pure URL rules (canonical shape,
+  // feed token), so site-specific handling lives in the plugin.
+  rpc CanonicalizeFeedURL(CanonicalizeFeedURLRequest) returns (CanonicalizeFeedURLResponse);
+  rpc FeedToken(FeedTokenRequest) returns (FeedTokenResponse);
 }
 
 message MetaRequest {}
@@ -60,7 +68,8 @@ message MetaResponse {
 
 message MatchRequest {
   string url = 1;
-  // 0 = discover, 1 = fetch, 2 = render, 3 = docs
+  // 0 = discover, 1 = fetch, 2 = render, 3 = docs, 4 = enrich, 5 = decorate,
+  // 6 = url policy
   int32 capability = 2;
 }
 message MatchResponse { bool match = 1; }
@@ -70,6 +79,12 @@ message Candidate {
   string title = 2;
   string icon_url = 3;
   string home_url = 4;
+  // Preferred new-author name when the site suggests one different from the
+  // feed title (reddit users: "spez" rather than "u/spez").
+  string author_name = 5;
+  // The feed URL follows from the page URL alone; the host must not fetch the
+  // page to validate the feed or gather its metadata (reddit's tight limit).
+  bool derived = 6;
 }
 
 message DiscoverRequest {
@@ -102,6 +117,9 @@ message Item {
   int32 duration_sec = 9;
   // Feed-provided labels the host stores and matches filter rules against.
   repeated string categories = 10;
+  // Identity shared across a user's feeds (set by an Enricher; e.g.
+  // "reddit:t3_<id>"). Empty means not cross-deduplicated.
+  string shared_key = 11;
 }
 
 message Feed {
@@ -150,6 +168,60 @@ message RenderResponse {
 message DocsRequest {}
 message DocsResponse {
   string docs = 1;
+  PluginError error = 2;
+}
+
+// Enrich is the optional ingest-time hook: the host offers a feed's parsed
+// items and the plugin returns per-item SharedKey (cross-feed identity).
+
+message EnrichRequest {
+  uint32 host_server = 1;
+  string feed_url = 2;
+  Feed feed = 3;
+  repeated Item items = 4;
+}
+message Enrichment {
+  int32 index = 1;
+  string shared_key = 2;
+}
+message EnrichResponse {
+  repeated Enrichment enrichments = 1;
+  PluginError error = 2;
+}
+
+// Decorate is the optional view-time hook: the host offers a page's stored
+// items and the plugin returns per-item rendering (attribution parts and kind).
+
+message SourcePart {
+  string text = 1;
+  string token = 2;
+  string url = 3;
+}
+message Decorated {
+  int32 index = 1;
+  // 0 = text, 1 = image, 2 = gallery, 3 = link, 4 = video, 5 = audio
+  int32 kind = 2;
+  repeated SourcePart attribution = 3;
+  string thumb_url = 4;
+}
+message DecorateRequest {
+  repeated Item items = 1;
+}
+message DecorateResponse {
+  repeated Decorated decorations = 1;
+  PluginError error = 2;
+}
+
+// URLPolicy methods are optional: pure site URL rules.
+
+message CanonicalizeFeedURLRequest { string url = 1; }
+message CanonicalizeFeedURLResponse {
+  string url = 1;
+  PluginError error = 2;
+}
+message FeedTokenRequest { string feed_url = 1; }
+message FeedTokenResponse {
+  string token = 1;
   PluginError error = 2;
 }
 

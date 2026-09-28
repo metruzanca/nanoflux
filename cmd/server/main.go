@@ -71,15 +71,6 @@ func runServer() {
 		log.Fatal("migrate legacy files", "err", err)
 	}
 
-	// Rewrite stored feed URLs to their canonical form (e.g. old.reddit.com and
-	// bare reddit.com -> www.reddit.com, /u/ -> /user/, a user's bare feed ->
-	// /submitted.rss). Idempotent; fixes feeds added before canonicalization.
-	if n, err := st.Feeds.CanonicalizeFeedURLs(); err != nil {
-		log.Error("canonicalize feed urls", "err", err)
-	} else if n > 0 {
-		log.Info("canonicalized feed urls", "changed", n)
-	}
-
 	// Merge the same reddit post stored once per subscription (a subreddit feed
 	// and a user feed) into one item with shared read/favorite state, then
 	// create the cross-feed unique index. Idempotent; a no-op after the first
@@ -104,6 +95,21 @@ func runServer() {
 	// would fail to parse and record a spurious "last poll failed".
 	plugins := plugin.Setup(ctx, st, p.Client(), cfg.PluginsDir, cooldown)
 	defer plugins.Close()
+
+	// With the plugins loaded, hand the store their per-URL site rules so feed
+	// create/edit and the canonicalize pass defer site-specific URL handling to
+	// the owning plugin (e.g. reddit's redirect-free shape), and their view-time
+	// item decoration so lists render plugin-owned attribution and card kinds.
+	st.SetURLPolicy(plugin.NewStoreURLPolicy(plugins.Registry))
+	st.SetItemDecorator(plugin.NewStoreDecorator(plugins.Registry))
+	// Rewrite stored feed URLs to their canonical form (e.g. old.reddit.com and
+	// bare reddit.com -> www.reddit.com, /u/ -> /user/, a user's bare feed ->
+	// /submitted.rss). Idempotent; fixes feeds added before canonicalization.
+	if n, err := st.Feeds.CanonicalizeFeedURLs(); err != nil {
+		log.Error("canonicalize feed urls", "err", err)
+	} else if n > 0 {
+		log.Info("canonicalized feed urls", "changed", n)
+	}
 
 	go p.Run(ctx)
 

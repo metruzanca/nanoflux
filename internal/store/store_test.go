@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -1135,77 +1136,50 @@ func TestListDueNextPollAtOverridesInterval(t *testing.T) {
 	}
 }
 
-func TestCanonicalFeedURL(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"https://old.reddit.com/u/gopherfan.rss", "https://www.reddit.com/user/gopherfan/submitted.rss"},
-		{"https://www.reddit.com/user/foo.rss", "https://www.reddit.com/user/foo/submitted.rss"},
-		{"https://reddit.com/u/foo.rss", "https://www.reddit.com/user/foo/submitted.rss"},
-		{"https://www.reddit.com/u/foo/.rss", "https://www.reddit.com/user/foo/submitted.rss"},
-		{"https://old.reddit.com/u/foo/.rss", "https://www.reddit.com/user/foo/submitted.rss"},
-		{"https://www.reddit.com/u/foo/submitted.rss", "https://www.reddit.com/user/foo/submitted.rss"},
-		{"https://www.reddit.com/u/foo/comments.rss", "https://www.reddit.com/user/foo/comments.rss"},
-		{"https://www.reddit.com/r/golang/.rss", "https://www.reddit.com/r/golang/.rss"},
-		{"https://np.reddit.com/user/foo.rss", "https://www.reddit.com/user/foo/submitted.rss"},
-		{"https://m.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang.rss"},
-		{"https://example.com/feed.xml", "https://example.com/feed.xml"},
-		{"not a url", "not a url"},
-	}
-	for _, c := range cases {
-		if got := CanonicalFeedURL(c.in); got != c.want {
-			t.Errorf("CanonicalFeedURL(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
+// fakeURLPolicy is a store.URLPolicy stub for the tests: it rewrites one known
+// host and yields one token, standing in for a loaded plugin.
+type fakeURLPolicy struct{}
+
+func (fakeURLPolicy) CanonicalizeFeedURL(raw string) string {
+	return strings.Replace(raw, "https://legacy.example/u/", "https://canonical.example/user/", 1)
 }
 
-// TestRedditFeedToken maps reddit feed URLs to the category token the same
-// subscription represents, so an item's categories resolve back to the
-// subscribed feed regardless of how the feed was created or renamed.
-func TestRedditFeedToken(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"https://www.reddit.com/r/cats.rss", "r/cats"},
-		{"https://www.reddit.com/r/cats/.rss", "r/cats"},
-		{"https://old.reddit.com/r/GoLang.rss", "r/golang"},
-		{"https://www.reddit.com/user/sam/submitted.rss", "u/sam"},
-		{"https://www.reddit.com/user/Sam.rss", "u/sam"},
-		{"https://www.reddit.com/u/sam/submitted.rss", "u/sam"},
-		{"https://example.com/r/cats.rss", ""},
-		{"https://www.reddit.com/r/cats/comments/1abc/", "r/cats"},
-		{"", ""},
-		{"not a url", ""},
+func (fakeURLPolicy) FeedToken(feedURL string) string {
+	if strings.Contains(feedURL, "canonical.example/r/") {
+		return "r/frompolicy"
 	}
-	for _, c := range cases {
-		if got := RedditFeedToken(c.in); got != c.want {
-			t.Errorf("RedditFeedToken(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
+	return ""
 }
 
-// TestUpdateCanonicalizesFeedURL asserts the edit path applies the same reddit
-// URL normalization as create, so a user can't reintroduce a redirecting shape.
-func TestUpdateCanonicalizesFeedURL(t *testing.T) {
+// TestURLPolicyApplied asserts create, edit and the startup canonicalize pass
+// all defer site URL rules to the installed policy (the plugin layer), and that
+// a feed with no policy keeps its URL unchanged.
+func TestURLPolicyApplied(t *testing.T) {
 	s := newTestStore(t)
+	s.SetURLPolicy(fakeURLPolicy{})
 	u := mustUser(t, s, "alice")
 	a, _ := s.Authors.Create(u.ID, "A", "", "")
-	f, _ := s.Feeds.Create(u.ID, a.ID, "feed", "https://example.com/x", "", "", 900)
-	if err := s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://old.reddit.com/u/foo.rss", "", "", 900, true, true); err != nil {
+
+	f, err := s.Feeds.Create(u.ID, a.ID, "feed", "https://legacy.example/u/foo", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.FeedURL != "https://canonical.example/user/foo" {
+		t.Fatalf("create FeedURL = %q, want the policy-canonical shape", f.FeedURL)
+	}
+
+	if err := s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://legacy.example/u/bar", "", "", 900, true, true); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.Feeds.ByID(u.ID, f.ID)
-	if got.FeedURL != "https://www.reddit.com/user/foo/submitted.rss" {
-		t.Fatalf("FeedURL = %q, want the canonical www/user/submitted shape", got.FeedURL)
+	if got.FeedURL != "https://canonical.example/user/bar" {
+		t.Fatalf("update FeedURL = %q, want the policy-canonical shape", got.FeedURL)
 	}
-}
 
-// TestCanonicalizeFeedURLs rewrites stored reddit feeds in place.
-func TestCanonicalizeFeedURLs(t *testing.T) {
-	s := newTestStore(t)
-	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "A", "", "")
-	// CanonicalFeedURL runs on Create, so insert the non-canonical form directly
-	// to model a feed added before canonicalization.
-	f, _ := s.Feeds.Create(u.ID, a.ID, "feed", "https://example.com/x", "", "", 900)
+	// A feed inserted non-canonically (as an older build would have) is fixed by
+	// the startup pass.
 	if err := s.q.SetFeedFeedURL(context.Background(), sqlcgen.SetFeedFeedURLParams{
-		FeedUrl: "https://old.reddit.com/u/foo.rss",
+		FeedUrl: "https://legacy.example/u/baz",
 		ID:      f.ID,
 	}); err != nil {
 		t.Fatal(err)
@@ -1214,9 +1188,21 @@ func TestCanonicalizeFeedURLs(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("CanonicalizeFeedURLs = %d, %v", n, err)
 	}
-	got, _ := s.Feeds.ByID(u.ID, f.ID)
-	if got.FeedURL != "https://www.reddit.com/user/foo/submitted.rss" {
-		t.Fatalf("FeedURL = %q", got.FeedURL)
+	got, _ = s.Feeds.ByID(u.ID, f.ID)
+	if got.FeedURL != "https://canonical.example/user/baz" {
+		t.Fatalf("canonicalize FeedURL = %q", got.FeedURL)
+	}
+}
+
+// TestNoURLPolicyLeavesURLsAlone asserts the default (no plugin policy) does not
+// rewrite any URL.
+func TestNoURLPolicyLeavesURLsAlone(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "A", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "feed", "https://legacy.example/u/foo", "", "", 900)
+	if f.FeedURL != "https://legacy.example/u/foo" {
+		t.Fatalf("FeedURL = %q, want unchanged", f.FeedURL)
 	}
 }
 

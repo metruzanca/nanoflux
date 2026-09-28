@@ -482,6 +482,7 @@ func TestCollectionPageDedups(t *testing.T) {
 func TestCrossFeedRedditItem(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
+	useRedditPlugin(t, s)
 	u, _ := s.store.Users.ByUsername("alice")
 	subA, _ := s.store.Authors.Create(u.ID, "r/cats", "", "")
 	userA, _ := s.store.Authors.Create(u.ID, "sam", "", "")
@@ -489,7 +490,8 @@ func TestCrossFeedRedditItem(t *testing.T) {
 	userFeed, _ := s.store.Feeds.Create(u.ID, userA.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
 
 	post := store.Item{
-		GUID: "t3_1abc", Title: "A cat", Link: "https://www.reddit.com/r/cats/comments/1abc/a_cat/",
+		GUID: "t3_1abc", SharedKey: "reddit:t3_1abc", Title: "A cat",
+		Link:       "https://www.reddit.com/r/cats/comments/1abc/a_cat/",
 		Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now(),
 	}
 	s.store.Items.Upsert(subFeed.ID, post)
@@ -531,6 +533,7 @@ func TestCrossFeedRedditItem(t *testing.T) {
 func TestRedditAttributionLinksUnpolledUserFeed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
+	useRedditPlugin(t, s)
 	u, _ := s.store.Users.ByUsername("alice")
 	subA, _ := s.store.Authors.Create(u.ID, "r/cats", "", "")
 	userA, _ := s.store.Authors.Create(u.ID, "sam", "", "")
@@ -539,7 +542,8 @@ func TestRedditAttributionLinksUnpolledUserFeed(t *testing.T) {
 	s.store.Feeds.Create(u.ID, userA.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
 
 	s.store.Items.Upsert(subFeed.ID, store.Item{
-		GUID: "t3_1abc", Title: "A cat", Link: "https://www.reddit.com/r/cats/comments/1abc/a_cat/",
+		GUID: "t3_1abc", SharedKey: "reddit:t3_1abc", Title: "A cat",
+		Link:       "https://www.reddit.com/r/cats/comments/1abc/a_cat/",
 		Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now(),
 	})
 
@@ -993,6 +997,7 @@ func TestItemViewYouTubeEmbed(t *testing.T) {
 func TestItemCardsRenderThumbnails(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
+	useRedditPlugin(t, s)
 
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "bigboxSWE", "", "")
