@@ -84,18 +84,19 @@ func (r *Registry) MatchRenderer(u *url.URL) (pluginapi.Renderer, pluginapi.Fetc
 	return nil, nil
 }
 
-// MatchEnrich returns the first plugin that decorates u's parsed items at
-// ingest, along with its Fetcher (for the host factory), or (nil, nil).
-func (r *Registry) MatchEnrich(u *url.URL) (pluginapi.Enricher, pluginapi.Fetcher) {
+// MatchSharedKeyer returns the first plugin that assigns cross-feed keys to u's
+// parsed items at ingest, along with its Fetcher (for the host factory), or
+// (nil, nil).
+func (r *Registry) MatchSharedKeyer(u *url.URL) (pluginapi.SharedKeyer, pluginapi.Fetcher) {
 	if u == nil {
 		return nil, nil
 	}
 	for _, f := range r.all() {
-		if !f.Match(u, pluginapi.CapEnrich) {
+		if !f.Match(u, pluginapi.CapSharedKey) {
 			continue
 		}
-		if en, ok := f.(pluginapi.Enricher); ok {
-			return en, f
+		if sk, ok := f.(pluginapi.SharedKeyer); ok {
+			return sk, f
 		}
 	}
 	return nil, nil

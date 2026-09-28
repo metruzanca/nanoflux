@@ -99,10 +99,10 @@ forwarded to nanoflux's logs prefixed with the plugin name.
 ## The capabilities
 
 A plugin implements `Fetcher`; it may also implement the optional `Renderer`,
-`Enricher`, `Decoration`, `URLPolicy` and `Docser` interfaces. `Match` tells the
-host which URL shapes (and which capability) each applies to. A plugin may own a
-site's whole shape (fetch + discover + enrich + render + URL rules) or decorate a
-feed it does not fetch at all.
+`SharedKeyer`, `Decoration`, `URLPolicy` and `Docser` interfaces. `Match` tells
+the host which URL shapes (and which capability) each applies to. A plugin may
+own a site's whole shape (fetch + discover + shared keys + render + URL rules) or
+decorate a feed it does not fetch at all.
 
 - **`Fetch` (required)** — given a feed URL, return its `Feed` metadata and
   `[]Item`s. Runs in the poller and on manual refresh.
@@ -112,8 +112,9 @@ feed it does not fetch at all.
   host skips the validation page fetch.
 - **`Render` (optional)** — given an item, resolve view-time media that a
   stored item cannot carry. Runs when the item modal opens.
-- **`Enrich` (optional)** — given a feed's freshly parsed items, set each item's
-  `SharedKey` (cross-feed identity). Runs at ingest after either fetch path.
+- **`SharedKeys` (optional)** — given a feed's freshly parsed items, return each
+  item's `SharedKey` (cross-feed identity). Runs at ingest after either fetch
+  path.
 - **`Decorate` (optional)** — given a page's stored items, return each item's
   source attribution and card kind. Runs at view time; must not do network I/O.
 - **`URLPolicy` (optional)** — pure site URL rules: the canonical feed shape
@@ -159,13 +160,16 @@ func (AppC) FeedToken(feedURL string) string        { /* "r/cats" | "u/sam" | ""
 item to the user's subscribed feed for it, even before that feed has polled the
 item.
 
-### Ingest enrichment (`Enrich`)
+### Ingest cross-feed keys (`SharedKeys`)
 
-`EnrichItems` runs on a feed's parsed items — whether the plugin fetched them or
-the generic parser did — and returns per-item `SharedKey` (addressed by index, so
-items are never reordered or dropped). The host stores one item per
-`(user, SharedKey)`, so the same entry seen through two subscriptions shares
-read/favorite/list state. reddit uses it for the post fullname `t3_<id>`.
+`SharedKeys` runs on a feed's parsed items — whether the plugin fetched them or
+the generic parser did — and returns the `SharedKey` for the items it can resolve
+(each addressed by index, so items are never reordered or dropped). The host
+stores one item per `(user, SharedKey)`, so the same entry seen through two
+subscriptions shares read/favorite/list state. reddit uses it for the post
+fullname `t3_<id>`. This is separate from a content transform (full text,
+translation): those enrich an item's body, whereas `SharedKeys` only assigns
+identity.
 
 ### View-time decoration (`Decoration`)
 
@@ -342,9 +346,9 @@ list memberships and share links carry over. Run it inside the container
 ### Cross-feed items (`SharedKey` across feeds)
 
 Identity dedup is per feed: two subscriptions that both see the same post store
-two rows even when `Identity` matches. A plugin's `Enricher` can collapse a post
-seen through a user's feeds by setting `Item.SharedKey` (an `Enrichment` return
-addressed by index) to an identity the feeds share. reddit sets it to the post
+two rows even when `Identity` matches. A plugin's `SharedKeyer` can collapse a
+post seen through a user's feeds by returning an `ItemSharedKey` (addressed by
+index) whose `SharedKey` the feeds share. reddit sets it to the post
 fullname `reddit:t3_<id>`, identical in a subreddit feed and the user feed, so
 the host stores one row both feeds are members of (shared read/favorite/list/
 share state).

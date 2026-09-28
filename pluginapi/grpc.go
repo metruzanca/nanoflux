@@ -121,28 +121,28 @@ func (s *grpcFetcherServer) Docs(context.Context, *pb.DocsRequest) (*pb.DocsResp
 	return &pb.DocsResponse{Docs: d.Docs()}, nil
 }
 
-func (s *grpcFetcherServer) Enrich(ctx context.Context, req *pb.EnrichRequest) (*pb.EnrichResponse, error) {
-	en, ok := s.impl.(Enricher)
+func (s *grpcFetcherServer) SharedKeys(ctx context.Context, req *pb.SharedKeyRequest) (*pb.SharedKeyResponse, error) {
+	sk, ok := s.impl.(SharedKeyer)
 	if !ok {
-		return &pb.EnrichResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+		return &pb.SharedKeyResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
 	}
 	host, err := s.dialHost(req.HostServer)
 	if err != nil {
-		return &pb.EnrichResponse{Error: toPBError(err)}, nil
+		return &pb.SharedKeyResponse{Error: toPBError(err)}, nil
 	}
-	enrichments, err := en.EnrichItems(ctx, EnrichRequest{
+	entries, err := sk.SharedKeys(ctx, SharedKeyRequest{
 		FeedURL: req.FeedUrl,
 		Feed:    fromPBFeed(req.Feed),
 		Items:   fromPBItems(req.Items),
 	}, host)
 	if err != nil {
-		return &pb.EnrichResponse{Error: toPBError(err)}, nil
+		return &pb.SharedKeyResponse{Error: toPBError(err)}, nil
 	}
-	out := make([]*pb.Enrichment, 0, len(enrichments))
-	for _, e := range enrichments {
-		out = append(out, &pb.Enrichment{Index: int32(e.Index), SharedKey: e.SharedKey})
+	out := make([]*pb.ItemSharedKey, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, &pb.ItemSharedKey{Index: int32(e.Index), SharedKey: e.SharedKey})
 	}
-	return &pb.EnrichResponse{Enrichments: out}, nil
+	return &pb.SharedKeyResponse{Entries: out}, nil
 }
 
 func (s *grpcFetcherServer) Decorate(_ context.Context, req *pb.DecorateRequest) (*pb.DecorateResponse, error) {
@@ -296,10 +296,10 @@ func (c *grpcFetcherClient) Docs() string {
 	return resp.Docs
 }
 
-func (c *grpcFetcherClient) EnrichItems(ctx context.Context, req EnrichRequest, h Host) ([]Enrichment, error) {
+func (c *grpcFetcherClient) SharedKeys(ctx context.Context, req SharedKeyRequest, h Host) ([]ItemSharedKey, error) {
 	id, stop := c.serveHost(h)
 	defer stop()
-	resp, err := c.client.Enrich(ctx, &pb.EnrichRequest{
+	resp, err := c.client.SharedKeys(ctx, &pb.SharedKeyRequest{
 		HostServer: id, FeedUrl: req.FeedURL, Feed: toPBFeed(req.Feed), Items: toPBItems(req.Items),
 	})
 	if err != nil {
@@ -308,9 +308,9 @@ func (c *grpcFetcherClient) EnrichItems(ctx context.Context, req EnrichRequest, 
 	if resp.Error != nil {
 		return nil, fromPBError(resp.Error)
 	}
-	out := make([]Enrichment, 0, len(resp.Enrichments))
-	for _, e := range resp.Enrichments {
-		out = append(out, Enrichment{Index: int(e.Index), SharedKey: e.SharedKey})
+	out := make([]ItemSharedKey, 0, len(resp.Entries))
+	for _, e := range resp.Entries {
+		out = append(out, ItemSharedKey{Index: int(e.Index), SharedKey: e.SharedKey})
 	}
 	return out, nil
 }
@@ -351,12 +351,12 @@ func (c *grpcFetcherClient) FeedToken(feedURL string) string {
 }
 
 var (
-	_ Fetcher    = (*grpcFetcherClient)(nil)
-	_ Renderer   = (*grpcFetcherClient)(nil)
-	_ Docser     = (*grpcFetcherClient)(nil)
-	_ Enricher   = (*grpcFetcherClient)(nil)
-	_ Decoration = (*grpcFetcherClient)(nil)
-	_ URLPolicy  = (*grpcFetcherClient)(nil)
+	_ Fetcher     = (*grpcFetcherClient)(nil)
+	_ Renderer    = (*grpcFetcherClient)(nil)
+	_ Docser      = (*grpcFetcherClient)(nil)
+	_ SharedKeyer = (*grpcFetcherClient)(nil)
+	_ Decoration  = (*grpcFetcherClient)(nil)
+	_ URLPolicy   = (*grpcFetcherClient)(nil)
 )
 
 // ---- conversions ----

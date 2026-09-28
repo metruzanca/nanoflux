@@ -44,8 +44,8 @@ service Fetcher {
   // Docs is optional: a plugin that does not implement Docser answers with an
   // unsupported PluginError, which the host treats as "no documentation".
   rpc Docs(DocsRequest) returns (DocsResponse);
-  // Enrich is optional: ingest-time per-item decoration (cross-feed identity).
-  rpc Enrich(EnrichRequest) returns (EnrichResponse);
+  // SharedKeys is optional: ingest-time per-item cross-feed identity.
+  rpc SharedKeys(SharedKeyRequest) returns (SharedKeyResponse);
   // Decorate is optional: view-time per-item rendering (attribution, kind).
   rpc Decorate(DecorateRequest) returns (DecorateResponse);
   // URLPolicy methods are optional: a site's pure URL rules (canonical shape,
@@ -68,7 +68,7 @@ message MetaResponse {
 
 message MatchRequest {
   string url = 1;
-  // 0 = discover, 1 = fetch, 2 = render, 3 = docs, 4 = enrich, 5 = decorate,
+  // 0 = discover, 1 = fetch, 2 = render, 3 = docs, 4 = shared keys, 5 = decorate,
   // 6 = url policy
   int32 capability = 2;
 }
@@ -117,7 +117,7 @@ message Item {
   int32 duration_sec = 9;
   // Feed-provided labels the host stores and matches filter rules against.
   repeated string categories = 10;
-  // Identity shared across a user's feeds (set by an Enricher; e.g.
+  // Identity shared across a user's feeds (set by a SharedKeyer; e.g.
   // "reddit:t3_<id>"). Empty means not cross-deduplicated.
   string shared_key = 11;
 }
@@ -171,21 +171,21 @@ message DocsResponse {
   PluginError error = 2;
 }
 
-// Enrich is the optional ingest-time hook: the host offers a feed's parsed
-// items and the plugin returns per-item SharedKey (cross-feed identity).
+// SharedKeys is the optional ingest-time hook: the host offers a feed's parsed
+// items and the plugin returns each item's cross-feed SharedKey (or none).
 
-message EnrichRequest {
+message SharedKeyRequest {
   uint32 host_server = 1;
   string feed_url = 2;
   Feed feed = 3;
   repeated Item items = 4;
 }
-message Enrichment {
+message ItemSharedKey {
   int32 index = 1;
   string shared_key = 2;
 }
-message EnrichResponse {
-  repeated Enrichment enrichments = 1;
+message SharedKeyResponse {
+  repeated ItemSharedKey entries = 1;
   PluginError error = 2;
 }
 

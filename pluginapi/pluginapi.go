@@ -37,11 +37,12 @@ const (
 	// fetched by the generic parser (so feeds.plugin_name is empty), yet the
 	// reddit plugin still documents its category filters for reddit URLs.
 	CapDocs
-	// CapEnrich asks whether the plugin decorates a feed's freshly parsed items
-	// at ingest time. It runs after either fetch path (plugin or generic
-	// parser), so a plugin can add per-item identity to items it does not fetch
-	// — reddit sets the cross-feed SharedKey on the generic parser's items.
-	CapEnrich
+	// CapSharedKey asks whether the plugin assigns a cross-feed SharedKey to a
+	// feed's freshly parsed items at ingest time. It runs after either fetch
+	// path (plugin or generic parser), so a plugin can give items it does not
+	// fetch an identity shared across a user's feeds — reddit sets
+	// "reddit:t3_<id>" on the generic parser's items.
+	CapSharedKey
 	// CapDecorate asks whether the plugin decorates stored items for display
 	// (source attribution, card kind, thumbnail). It is view-time and batched,
 	// and may not perform network I/O.
@@ -120,7 +121,7 @@ type Item struct {
 	Identity string
 	// SharedKey is the identity an item shares across a user's feeds, so the
 	// same entry seen through two subscriptions is stored once with shared
-	// read/favorite/list state. It is set by an Enricher (not authored on a
+	// read/favorite/list state. It is set by a SharedKeyer (not authored on a
 	// fetched Item), e.g. reddit's post fullname "reddit:t3_<id>". Empty means
 	// the item is not cross-deduplicated.
 	SharedKey   string
@@ -245,26 +246,26 @@ type Docser interface {
 	Docs() string
 }
 
-// Enricher is an optional capability a plugin may implement to decorate a
-// feed's freshly parsed items at ingest time. It runs after either fetch path
-// (the plugin's own Fetch, or the generic parser for a feed the plugin does not
-// own), matched on the feed URL via CapEnrich. It lets a plugin attach per-item
-// identity to items it does not fetch: reddit sets each post's cross-feed
-// SharedKey so the same post seen through a subreddit feed and the poster's
-// user feed is stored once.
+// SharedKeyer is an optional capability a plugin may implement to assign a
+// cross-feed SharedKey to a feed's freshly parsed items at ingest time. It runs
+// after either fetch path (the plugin's own Fetch, or the generic parser for a
+// feed the plugin does not own), matched on the feed URL via CapSharedKey. It
+// lets a plugin give per-item identity to items it does not fetch: reddit sets
+// each post's cross-feed key so the same post seen through a subreddit feed and
+// the poster's user feed is stored once.
 //
-// EnrichItems must be pure with respect to the items it returns and must not
-// reorder or drop them: it returns Enrichments addressed by Index, and the host
-// leaves any item without an Enrichment untouched. It may use Host.Do, but a
-// pure function of the parsed items is strongly preferred since it runs on
-// every poll.
-type Enricher interface {
-	// EnrichItems returns per-item enrichment for a feed's parsed items.
-	EnrichItems(ctx context.Context, req EnrichRequest, h Host) ([]Enrichment, error)
+// SharedKeys must be pure with respect to the items it returns and must not
+// reorder or drop them: it returns entries addressed by Index, and the host
+// leaves any item without an entry untouched. It may use Host.Do, but a pure
+// function of the parsed items is strongly preferred since it runs on every poll.
+type SharedKeyer interface {
+	// SharedKeys returns the cross-feed key for the items it can resolve, each
+	// addressed by its index in the request.
+	SharedKeys(ctx context.Context, req SharedKeyRequest, h Host) ([]ItemSharedKey, error)
 }
 
-// EnrichRequest is one feed's parsed output, offered for enrichment.
-type EnrichRequest struct {
+// SharedKeyRequest is one feed's parsed output, offered to a SharedKeyer.
+type SharedKeyRequest struct {
 	// FeedURL is the feed the items came from.
 	FeedURL string
 	// Feed is the feed-level metadata.
@@ -273,9 +274,10 @@ type EnrichRequest struct {
 	Items []Item
 }
 
-// Enrichment is enrichment for one item in an EnrichRequest, addressed by its
-// position in EnrichRequest.Items.
-type Enrichment struct {
+// ItemSharedKey is a cross-feed key for one item in a SharedKeyRequest,
+// addressed by its position in SharedKeyRequest.Items. An empty SharedKey means
+// "no shared identity" (the host leaves the item as-is).
+type ItemSharedKey struct {
 	Index     int
 	SharedKey string
 }

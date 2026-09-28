@@ -22,10 +22,11 @@ Every feed is fetched through the same entry point, `feedparse.Fetch` (via
 2. **The generic parser.** Otherwise nanoflux fetches the URL and parses it as
    RSS / Atom / JSON-feed with `gofeed`.
 
-Both paths end with an **enrich pass**: a plugin that matches the feed URL for
-`CapEnrich` is offered the parsed items and may set each item's `SharedKey`
-(cross-feed identity). reddit uses this to make the same post stored once across
-a subreddit feed and the poster's user feed, without owning the fetch.
+Both paths end with a **cross-feed key pass**: a plugin that matches the feed URL
+for `CapSharedKey` is offered the parsed items and may return each item's
+`SharedKey` (cross-feed identity). reddit uses this to make the same post stored
+once across a subreddit feed and the poster's user feed, without owning the
+fetch.
 
 Plugins do not do their own networking. Their HTTP calls go back through the
 host (`Host.Do`), so the host owns the User-Agent, the timeout, and rate-limit
@@ -309,6 +310,6 @@ var.
 | Rate-limit detection, `Retry-After` / `x-ratelimit-reset` parsing | `internal/feedparse/ratelimit.go` |
 | Generic fetch: conditional GET, parse, pagination cursor | `internal/feedparse/feedparse.go` |
 | Host-mediated HTTP + rate-limit cooling for plugins | `internal/plugin/host.go`, `internal/plugin/cooldown.go` |
-| Ingest enrich pass and dispatch to plugins | `internal/plugin/dispatch.go`, `internal/feedparse/feedparse.go` |
+| Ingest cross-feed key pass and dispatch to plugins | `internal/plugin/dispatch.go`, `internal/feedparse/feedparse.go` |
 | Per-URL site rules (canonical shape, feed token) from plugins | `internal/plugin/urlpolicy.go`, `internal/store/domain.go` |
 | `next_poll_at` storage and `ListFeedsDue` | `internal/store/feed.go`, `internal/store/queries/feeds.sql` |
