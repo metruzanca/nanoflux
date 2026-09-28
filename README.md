@@ -145,8 +145,8 @@ the most useful thing you can send — though coffee is a close second:
 
 ## License
 
-License: PolyForm Perimeter 1.0.1
-Source-available. Free to self-host. Commercial hosted offerings require permission.
+License: MIT
+Open source under the MIT License. Free to use, modify, and self-host.
 
 - Website: https://nanoflux.app
 - Source: https://github.com/metruzanca/nanoflux
