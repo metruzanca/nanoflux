@@ -208,6 +208,9 @@ const (
 	Fetcher_Decorate_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/Decorate"
 	Fetcher_CanonicalizeFeedURL_FullMethodName = "/nanoflux.plugin.v1.Fetcher/CanonicalizeFeedURL"
 	Fetcher_FeedToken_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/FeedToken"
+	Fetcher_Provision_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/Provision"
+	Fetcher_FeedSettings_FullMethodName        = "/nanoflux.plugin.v1.Fetcher/FeedSettings"
+	Fetcher_FeedAction_FullMethodName          = "/nanoflux.plugin.v1.Fetcher/FeedAction"
 )
 
 // FetcherClient is the client API for Fetcher service.
@@ -233,6 +236,16 @@ type FetcherClient interface {
 	// feed token), so site-specific handling lives in the plugin.
 	CanonicalizeFeedURL(ctx context.Context, in *CanonicalizeFeedURLRequest, opts ...grpc.CallOption) (*CanonicalizeFeedURLResponse, error)
 	FeedToken(ctx context.Context, in *FeedTokenRequest, opts ...grpc.CallOption) (*FeedTokenResponse, error)
+	// Provision is optional: create a feed on the remote service on the user's
+	// behalf (a Kill the Newsletter inbox). Advertised by a non-empty
+	// Meta.provision_label.
+	Provision(ctx context.Context, in *ProvisionRequest, opts ...grpc.CallOption) (*ProvisionResponse, error)
+	// FeedSettings is optional: the display-only fields for an already-subscribed
+	// feed (the inbox address), pure and without network I/O.
+	FeedSettings(ctx context.Context, in *FeedSettingsRequest, opts ...grpc.CallOption) (*FeedSettingsResponse, error)
+	// FeedAction is optional: manage an already-subscribed feed's remote settings
+	// and lifecycle (sync a title, delete it upstream).
+	FeedAction(ctx context.Context, in *FeedActionRequest, opts ...grpc.CallOption) (*FeedActionResponse, error)
 }
 
 type fetcherClient struct {
@@ -353,6 +366,36 @@ func (c *fetcherClient) FeedToken(ctx context.Context, in *FeedTokenRequest, opt
 	return out, nil
 }
 
+func (c *fetcherClient) Provision(ctx context.Context, in *ProvisionRequest, opts ...grpc.CallOption) (*ProvisionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProvisionResponse)
+	err := c.cc.Invoke(ctx, Fetcher_Provision_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fetcherClient) FeedSettings(ctx context.Context, in *FeedSettingsRequest, opts ...grpc.CallOption) (*FeedSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FeedSettingsResponse)
+	err := c.cc.Invoke(ctx, Fetcher_FeedSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fetcherClient) FeedAction(ctx context.Context, in *FeedActionRequest, opts ...grpc.CallOption) (*FeedActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FeedActionResponse)
+	err := c.cc.Invoke(ctx, Fetcher_FeedAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FetcherServer is the server API for Fetcher service.
 // All implementations must embed UnimplementedFetcherServer
 // for forward compatibility.
@@ -376,6 +419,16 @@ type FetcherServer interface {
 	// feed token), so site-specific handling lives in the plugin.
 	CanonicalizeFeedURL(context.Context, *CanonicalizeFeedURLRequest) (*CanonicalizeFeedURLResponse, error)
 	FeedToken(context.Context, *FeedTokenRequest) (*FeedTokenResponse, error)
+	// Provision is optional: create a feed on the remote service on the user's
+	// behalf (a Kill the Newsletter inbox). Advertised by a non-empty
+	// Meta.provision_label.
+	Provision(context.Context, *ProvisionRequest) (*ProvisionResponse, error)
+	// FeedSettings is optional: the display-only fields for an already-subscribed
+	// feed (the inbox address), pure and without network I/O.
+	FeedSettings(context.Context, *FeedSettingsRequest) (*FeedSettingsResponse, error)
+	// FeedAction is optional: manage an already-subscribed feed's remote settings
+	// and lifecycle (sync a title, delete it upstream).
+	FeedAction(context.Context, *FeedActionRequest) (*FeedActionResponse, error)
 	mustEmbedUnimplementedFetcherServer()
 }
 
@@ -418,6 +471,15 @@ func (UnimplementedFetcherServer) CanonicalizeFeedURL(context.Context, *Canonica
 }
 func (UnimplementedFetcherServer) FeedToken(context.Context, *FeedTokenRequest) (*FeedTokenResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FeedToken not implemented")
+}
+func (UnimplementedFetcherServer) Provision(context.Context, *ProvisionRequest) (*ProvisionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Provision not implemented")
+}
+func (UnimplementedFetcherServer) FeedSettings(context.Context, *FeedSettingsRequest) (*FeedSettingsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FeedSettings not implemented")
+}
+func (UnimplementedFetcherServer) FeedAction(context.Context, *FeedActionRequest) (*FeedActionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FeedAction not implemented")
 }
 func (UnimplementedFetcherServer) mustEmbedUnimplementedFetcherServer() {}
 func (UnimplementedFetcherServer) testEmbeddedByValue()                 {}
@@ -638,6 +700,60 @@ func _Fetcher_FeedToken_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fetcher_Provision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProvisionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).Provision(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_Provision_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).Provision(ctx, req.(*ProvisionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Fetcher_FeedSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FeedSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).FeedSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_FeedSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).FeedSettings(ctx, req.(*FeedSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Fetcher_FeedAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FeedActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).FeedAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_FeedAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).FeedAction(ctx, req.(*FeedActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Fetcher_ServiceDesc is the grpc.ServiceDesc for Fetcher service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -688,6 +804,18 @@ var Fetcher_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FeedToken",
 			Handler:    _Fetcher_FeedToken_Handler,
+		},
+		{
+			MethodName: "Provision",
+			Handler:    _Fetcher_Provision_Handler,
+		},
+		{
+			MethodName: "FeedSettings",
+			Handler:    _Fetcher_FeedSettings_Handler,
+		},
+		{
+			MethodName: "FeedAction",
+			Handler:    _Fetcher_FeedAction_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

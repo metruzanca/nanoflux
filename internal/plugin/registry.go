@@ -199,6 +199,12 @@ type Info struct {
 	UserAgent string // per-plugin User-Agent override, "" for the app default
 	Summary   string // one-line description, "" when the plugin gave none
 	HasDocs   bool   // plugin implements Docser (offers a readme)
+	// ProvisionLabel is the create-menu entry when the plugin can create remote
+	// feeds; "" when it cannot (or does not advertise it).
+	ProvisionLabel string
+	// CanManageFeeds reports whether the plugin manages already-subscribed
+	// feeds' remote settings and lifecycle (implements FeedAdmin).
+	CanManageFeeds bool
 }
 
 // Infos returns a description of every loaded plugin: native first, then
@@ -222,17 +228,25 @@ func info(f pluginapi.Fetcher, kind string) Info {
 	// plugin. Only a native plugin needs the type assertion, since its authored
 	// Meta does not fill HasDocs.
 	hasDocs := m.HasDocs
-	if !hasDocs && kind == "native" {
-		_, hasDocs = f.(pluginapi.Docser)
+	hasFeedAdmin := m.HasFeedAdmin
+	if kind == "native" {
+		if !hasDocs {
+			_, hasDocs = f.(pluginapi.Docser)
+		}
+		if !hasFeedAdmin {
+			_, hasFeedAdmin = f.(pluginapi.FeedAdmin)
+		}
 	}
 	return Info{
-		Name:      m.Name,
-		Kind:      kind,
-		Version:   m.APIVersion,
-		RawNet:    m.RawNetwork,
-		UserAgent: m.UserAgent,
-		Summary:   m.Summary,
-		HasDocs:   hasDocs,
+		Name:           m.Name,
+		Kind:           kind,
+		Version:        m.APIVersion,
+		RawNet:         m.RawNetwork,
+		UserAgent:      m.UserAgent,
+		Summary:        m.Summary,
+		HasDocs:        hasDocs,
+		ProvisionLabel: m.ProvisionLabel,
+		CanManageFeeds: hasFeedAdmin,
 	}
 }
 
@@ -283,6 +297,73 @@ func (r *Registry) FeedToken(feedURL string) string {
 		return p.FeedToken(feedURL)
 	}
 	return ""
+}
+
+// MatchFeedAdmin returns the first plugin that manages feeds like u (remote
+// settings and lifecycle), along with its Fetcher (for the host factory), or
+// (nil, nil). It is gated by CapFeedAdmin and requires the FeedAdmin interface.
+func (r *Registry) MatchFeedAdmin(u *url.URL) (pluginapi.FeedAdmin, pluginapi.Fetcher) {
+	if u == nil {
+		return nil, nil
+	}
+	for _, f := range r.all() {
+		if !f.Match(u, pluginapi.CapFeedAdmin) {
+			continue
+		}
+		if fa, ok := f.(pluginapi.FeedAdmin); ok {
+			return fa, f
+		}
+	}
+	return nil, nil
+}
+
+// FeedAdminSettings returns the display-only fields a plugin publishes for a
+// feed URL (the inbox address), or nil when no loaded plugin manages it. It is
+// pure: the plugin implementing FeedAdmin must not perform network I/O.
+func (r *Registry) FeedAdminSettings(feedURL string) []pluginapi.Field {
+	fa, _ := r.MatchFeedAdmin(mustParse(feedURL))
+	if fa == nil {
+		return nil
+	}
+	return fa.Settings(feedURL)
+}
+
+// Provisioner is a plugin that can create a feed on a remote service, paired
+// with its Fetcher (for the host factory). Label is the create-menu entry.
+type Provisioner struct {
+	Label string
+	P     pluginapi.Provisioner
+	F     pluginapi.Fetcher
+}
+
+// Provisioners returns the loaded plugins that advertise a create option,
+// native first then external, in registration order.
+func (r *Registry) Provisioners() []Provisioner {
+	var out []Provisioner
+	for _, f := range r.all() {
+		label := f.Meta().ProvisionLabel
+		if label == "" {
+			continue
+		}
+		p, ok := f.(pluginapi.Provisioner)
+		if !ok {
+			continue
+		}
+		out = append(out, Provisioner{Label: label, P: p, F: f})
+	}
+	return out
+}
+
+// ProvisionerByName returns the create-capable plugin with the given name, or
+// (nil, nil) when no loaded plugin advertises that name. Names are unique in
+// the registry, so this is the form used to honor a create-menu selection.
+func (r *Registry) ProvisionerByName(name string) (pluginapi.Provisioner, pluginapi.Fetcher) {
+	for _, p := range r.Provisioners() {
+		if p.F.Meta().Name == name {
+			return p.P, p.F
+		}
+	}
+	return nil, nil
 }
 
 // MatchDecorator returns the first plugin that decorates u's items for display,

@@ -1,0 +1,106 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/plugin"
+	"github.com/metruzanca/nanoflux/pluginapi"
+)
+
+// provisionButtons renders one "create a …" button per provisioning plugin,
+// shown beside "add manually" in the add-feed dialog. Each opens the plugin's
+// create form in the dialog's preview container. The scoped author fields (when
+// present) ride along, so the create form on an author page is fixed to that
+// author, exactly like the manual-feed button.
+templ provisionButtons(ps []plugin.Provisioner, target string) {
+	for _, p := range ps {
+		<button type="button" hx-post="/fragments/provision-form" hx-vals={ "{\"plugin\": " + strconv.Quote(p.F.Meta().Name) + "}" } hx-target={ target } hx-swap="innerHTML" hx-include="#feed-author-id, #feed-author-scoped, #feed-redirect">create a { p.F.Meta().ProvisionLabel }</button>
+	}
+}
+
+// provisionFormFields is the create form for one provisioning plugin: the same
+// author handling as the URL flow, plus a title the remote feed is created with.
+// A create swaps the created panel into d.Target; a validation error is an
+// out-of-band swap into #add-feed-error, so the form stays put.
+templ provisionFormFields(d provisionFormData) {
+	<form class="stack" hx-post="/feeds/provision" hx-target={ d.Target } hx-swap="innerHTML">
+		<input type="hidden" name="plugin" value={ d.Plugin }/>
+		if d.Redirect {
+			<input type="hidden" name="redirect" value="1"/>
+		}
+		<p class="muted small">nanoflux will create a { d.Label } and show you the address to subscribe with.</p>
+		<label>
+			title
+			<input name="title" type="text" placeholder="e.g. My Newsletter" autofocus required/>
+		</label>
+		if d.FixedAuthor != nil {
+			<input type="hidden" name="author_id" value={ strconv.FormatInt(d.FixedAuthor.ID, 10) }/>
+			<p class="muted small">author · { d.FixedAuthor.Name }</p>
+		} else {
+			@comboSelect("author_id", authorValue(d.SelectedAuthorID), "author", "search authors", authorItems(d.Authors), nil)
+			<div id="new-author">
+				if d.SelectedAuthorID == 0 {
+					@authorCreateFields(authorPreviewForm{Optional: true})
+				}
+			</div>
+		}
+		<div id="add-feed-error" class="error"></div>
+		<button type="submit">create feed</button>
+	</form>
+}
+
+// provisionCreated is shown after a remote feed is created: the feed URL plus
+// the display fields the plugin returned (the subscribe address), each with a
+// copy control, and a deep link to the new feed.
+templ provisionCreated(feedID int64, title string, fields []pluginapi.Field) {
+	<div class="stack">
+		<p><strong>{ title }</strong> was created.</p>
+		if len(fields) > 0 {
+			<p class="muted small">subscribe a newsletter with this address. it is the only credential — anyone with it can read the feed or unsubscribe you, so do not share it.</p>
+			for _, f := range fields {
+				<div class="copy-field">
+					<span class="muted small">{ f.Label }</span>
+					<input type="text" value={ f.Value } readonly onclick="this.select()"/>
+					<button type="button" class="link" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">copy</button>
+				</div>
+			}
+		}
+		<a class="button" href={ "/feeds/" + strconv.FormatInt(feedID, 10) }>open the feed</a>
+	</div>
+}
+
+// feedPluginPanel is the "managed by a plugin" card on a feed's page: the
+// plugin's display fields (the subscribe address), a title-sync action, and a
+// remote-delete action. Actions post to /feeds/{id}/plugin-admin and re-render
+// this card.
+templ feedPluginPanel(d feedPanelData) {
+	<section class="card" id={ "feed-plugin-panel-" + strconv.FormatInt(d.FeedID, 10) }>
+		<div class="row">
+			<h2>managed feed</h2>
+		</div>
+		if d.Message != "" {
+			<div class="notice">{ d.Message }</div>
+		}
+		<div id={ pluginPanelErrorID(d.FeedID) } class="error"></div>
+		if len(d.Fields) > 0 {
+			for _, f := range d.Fields {
+				<div class="copy-field">
+					<span class="muted small">{ f.Label }</span>
+					<input type="text" value={ f.Value } readonly onclick="this.select()"/>
+					<button type="button" class="link" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">copy</button>
+				</div>
+			}
+		}
+		<p class="muted small">sync the feed title to the remote service, or delete it there. deleting remotely is permanent.</p>
+		<div class="row-actions">
+			<form hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/plugin-admin" } hx-target={ "#feed-plugin-panel-" + strconv.FormatInt(d.FeedID, 10) } hx-swap="outerHTML">
+				<input type="hidden" name="action" value="save"/>
+				<button type="submit" class="small">sync title</button>
+			</form>
+			<form hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/plugin-admin" } hx-target={ "#feed-plugin-panel-" + strconv.FormatInt(d.FeedID, 10) } hx-swap="outerHTML" hx-confirm="delete this feed on the remote service? this cannot be undone.">
+				<input type="hidden" name="action" value="delete"/>
+				<button type="submit" class="link danger">delete remotely</button>
+			</form>
+		</div>
+	</section>
+}

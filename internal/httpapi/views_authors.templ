@@ -33,6 +33,7 @@ templ authorsPage(u store.User, d authorsData) {
 			<div class="row">
 				<button type="submit">find feed</button>
 				@manualFeedButton("#author-preview")
+				@provisionButtons(d.Provisioners, "#author-preview")
 			</div>
 		</form>
 		<div id="author-preview"></div>
@@ -221,6 +222,7 @@ templ authorPage(u store.User, d authorData) {
 			<div class="row">
 				<button type="submit">find feed</button>
 				@manualFeedButton("#author-feed-preview")
+				@provisionButtons(d.Provisioners, "#author-feed-preview")
 			</div>
 		</form>
 		<div id="author-feed-preview"></div>
@@ -230,7 +232,7 @@ templ authorPage(u store.User, d authorData) {
 templ authorCreateFields(d authorPreviewForm) {
 	<div class="new-author">
 		<label>new author name
-			<input name="author_name" type="text" value={ d.Name } required/>
+			<input name="author_name" type="text" value={ d.Name } required?={ !d.Optional }/>
 		</label>
 		<label>avatar url
 			<input name="avatar_url" type="url" value={ d.AvatarURL }/>

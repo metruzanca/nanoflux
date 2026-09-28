@@ -19,6 +19,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/filtermatch"
+	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 	"github.com/metruzanca/nanoflux/pluginapi"
@@ -93,6 +94,9 @@ type feedsData struct {
 	Collections []store.Collection
 	Form        feedForm
 	Rules       feedRulesData
+	// Managed reports that a plugin manages the edited feed on the remote side,
+	// so the delete form offers an opt-in remote delete.
+	Managed bool
 }
 
 // feedRulesData drives the filter-rule section on the feed edit page.
@@ -124,6 +128,9 @@ type authorsData struct {
 	Links      []store.AuthorLink   // edit page: the author's external links, editable
 	Feeds      []feedRow            // edit page: the author's feeds, shown as a UX assist
 	AvatarCard authorAvatarCardData // edit page avatar cache card
+	// Provisioners are the loaded plugins that can create a remote feed, shown
+	// as "create a …" entries in the add-feed dialog.
+	Provisioners []plugin.Provisioner
 }
 
 type authorData struct {
@@ -135,12 +142,18 @@ type authorData struct {
 	Frequency string // approximate posting cadence, "" when unknown
 	Timezone  string
 	MarkAll   markAllReadData
+	// Provisioners are the loaded plugins that can create a remote feed, shown
+	// as "create a …" entries in the author's add-feed dialog.
+	Provisioners []plugin.Provisioner
 }
 
 type feedPageData struct {
 	Row     feedRow
 	Scoped  scopedItemsData
 	MarkAll markAllReadData
+	// Panel is the "managed feed" card for a feed owned by a plugin that can
+	// manage it remotely (a Kill the Newsletter inbox), when one matches.
+	Panel *feedPanelData
 }
 
 // markAllReadData drives the "mark all as read" control on a feed or author
@@ -1214,9 +1227,10 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 
 	rules := s.feedRules(u.ID, f.ID)
 	rules.DocsPlugin = s.pluginDocNameFor(f.FeedURL)
+	fa, _ := s.feedAdmin(f.FeedURL)
 	web.Render(w, r, basePage("edit "+f.Title, u, feedEditPage(u, feedsData{
 		Authors: authors, Collections: collections, Form: form,
-		Rules: rules,
+		Rules: rules, Managed: fa != nil,
 	})))
 }
 
@@ -1605,6 +1619,18 @@ func (s *Server) feedDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		return
 	}
+	// When the user opted in and a plugin manages this feed, delete the remote
+	// feed too. Best-effort, after the local delete: a remote failure must not
+	// block removing the feed from nanoflux, so it is only logged.
+	if deleteRemoteRequested(r) {
+		if fa, pf := s.feedAdmin(f.FeedURL); fa != nil {
+			if _, err := fa.Action(r.Context(), pluginapi.FeedActionRequest{
+				FeedURL: f.FeedURL, Action: "delete",
+			}, s.pluginHosts.For(pf)); err != nil {
+				log.Error("delete remote feed", "feed_id", id, "err", err)
+			}
+		}
+	}
 	http.Redirect(w, r, "/authors/"+strconv.FormatInt(f.AuthorID, 10), http.StatusSeeOther)
 }
 
@@ -1769,7 +1795,7 @@ func (s *Server) authors(w http.ResponseWriter, r *http.Request) {
 		}
 		return rows[i].Name < rows[j].Name
 	})
-	web.Render(w, r, basePage("authors", u, authorsPage(u, authorsData{Rows: rows})))
+	web.Render(w, r, basePage("authors", u, authorsPage(u, authorsData{Rows: rows, Provisioners: s.provisioners()})))
 }
 
 func (s *Server) authorRows(userID int64) []authorRow {
@@ -1831,6 +1857,7 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
 		Author: a, Rows: rows, Links: links, Scoped: scoped,
 		Stats: stats, Frequency: frequency, Timezone: u.Timezone,
+		Provisioners: s.provisioners(),
 		MarkAll: markAllReadData{
 			Action: "/authors/" + strconv.FormatInt(id, 10) + "/read-all",
 			Unread: stats.Unread,
@@ -1959,8 +1986,13 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	scoped := s.feedScopedItems(u.ID, id, itemsView(r), itemSortOf(r), u.Timezone)
+	var panel *feedPanelData
+	if p, ok := s.feedPanel(feed, ""); ok {
+		panel = &p
+	}
 	web.Render(w, r, basePage(feed.Title, u, feedPage(u, feedPageData{
 		Row: feedRow{Feed: feed, AuthorName: authorName, Unread: unread, Timezone: u.Timezone}, Scoped: scoped,
+		Panel: panel,
 		MarkAll: markAllReadData{
 			Action: "/feeds/" + strconv.FormatInt(id, 10) + "/read-all",
 			Unread: unread,
@@ -2065,10 +2097,11 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
 	feeds, _ := s.feedRowsForAuthor(u.ID, a.ID, u.Timezone)
 	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
-		Form:       authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
-		Links:      links,
-		Feeds:      feeds,
-		AvatarCard: s.authorAvatarCardData(a, u.Timezone, ""),
+		Form:         authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
+		Links:        links,
+		Feeds:        feeds,
+		AvatarCard:   s.authorAvatarCardData(a, u.Timezone, ""),
+		Provisioners: s.provisioners(),
 	})))
 }
 

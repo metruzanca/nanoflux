@@ -112,6 +112,77 @@ func TestRegistryDocs(t *testing.T) {
 	}
 }
 
+// fakeProvisioner is a fakeFetcher that also implements Provisioner and
+// FeedAdmin, for the control-plane registry tests.
+type fakeProvisioner struct {
+	fakeFetcher
+	label   string
+	fields  []pluginapi.Field
+	deleted bool
+}
+
+func (f fakeProvisioner) Meta() pluginapi.Meta {
+	return pluginapi.Meta{Name: f.name, APIVersion: pluginapi.APIVersion, ProvisionLabel: f.label}
+}
+
+func (f fakeProvisioner) Provision(context.Context, pluginapi.ProvisionRequest, pluginapi.Host) (pluginapi.Provisioned, error) {
+	return pluginapi.Provisioned{FeedURL: "https://site.example/feeds/abc.xml", Fields: f.fields}, nil
+}
+
+func (f fakeProvisioner) Settings(string) []pluginapi.Field { return f.fields }
+
+func (f fakeProvisioner) Action(context.Context, pluginapi.FeedActionRequest, pluginapi.Host) (pluginapi.FeedActionResult, error) {
+	return pluginapi.FeedActionResult{Deleted: f.deleted}, nil
+}
+
+// TestRegistryProvisionersAndFeedAdmin covers the control-plane capabilities: a
+// plugin advertising a ProvisionLabel is offered as a create option, one that
+// implements FeedAdmin is matched by URL and reported in Info, and a plugin
+// without either is not.
+func TestRegistryProvisionersAndFeedAdmin(t *testing.T) {
+	reg := NewRegistry()
+	reg.RegisterNative(fakeProvisioner{
+		fakeFetcher: fakeFetcher{name: "p", match: func(u *url.URL, cap pluginapi.Capability) bool {
+			return u.Hostname() == "site.example"
+		}},
+		label:  "newsletter",
+		fields: []pluginapi.Field{{Name: "email", Value: "abc@site.example"}},
+	})
+	reg.RegisterNative(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
+
+	ps := reg.Provisioners()
+	if len(ps) != 1 || ps[0].Label != "newsletter" || ps[0].F.Meta().Name != "p" {
+		t.Fatalf("Provisioners = %+v", ps)
+	}
+	if p, f := reg.ProvisionerByName("p"); p == nil || f == nil {
+		t.Fatal("ProvisionerByName(p) returned nil")
+	}
+	if p, _ := reg.ProvisionerByName("plain"); p != nil {
+		t.Fatal("plain should not be a provisioner")
+	}
+
+	u, _ := url.Parse("https://site.example/feeds/abc.xml")
+	fa, _ := reg.MatchFeedAdmin(u)
+	if fa == nil {
+		t.Fatal("MatchFeedAdmin returned nil")
+	}
+	if got := reg.FeedAdminSettings("https://site.example/feeds/abc.xml"); len(got) != 1 || got[0].Value != "abc@site.example" {
+		t.Fatalf("FeedAdminSettings = %+v", got)
+	}
+	other, _ := url.Parse("https://elsewhere.example/")
+	if fa, _ := reg.MatchFeedAdmin(other); fa != nil {
+		t.Fatal("MatchFeedAdmin matched an unrelated host")
+	}
+
+	infos := reg.Infos()
+	if infos[0].Name != "p" || infos[0].ProvisionLabel != "newsletter" || !infos[0].CanManageFeeds {
+		t.Fatalf("info[0] = %+v", infos[0])
+	}
+	if infos[1].ProvisionLabel != "" || infos[1].CanManageFeeds {
+		t.Fatalf("info[1] = %+v", infos[1])
+	}
+}
+
 // TestFetchPluginCarriesCategories guards the plugin -> feedparse bridge: a
 // plugin-set Item.Categories must reach feedparse.Item.Categories, which the
 // poller stores and filters on.

@@ -300,6 +300,35 @@ CTA differs. The demo is a real temporary account, not a shared sandbox.
 - See `docs/fetching.md` (how fetching works) and
   `docs/writing-plugins.md` (author guide).
 
+### Plugin control plane (create and manage remote feeds)
+
+The plugin API is not only pull: a plugin can create a feed on a remote service
+and manage one the user already subscribed to. Both are URL-matched capabilities
+(`pluginapi.CapProvision`, `CapFeedAdmin`), added in APIVersion 0.4.
+
+- **`Provisioner`** (`CapProvision`) creates a remote feed. There is no URL to
+  match, so the host advertises the plugin only when `Meta.ProvisionLabel` is
+  non-empty; the label is the add-feed "create a …" menu entry. The returned
+  `Provisioned.FeedURL` is stored and polled by the generic parser unless the
+  plugin also claims `CapFetch`. `Provisioned.Fields` are display-only values
+  (the inbox address) rendered read-only with a copy control.
+- **`FeedAdmin`** (`CapFeedAdmin`) manages an existing feed: `Settings(feedURL)`
+  is **pure** (view-time, no network I/O) and returns the display-only fields;
+  `Action` performs `"save"` (the host passes the current `title`/`icon`) and
+  `"delete"` (`Deleted: true` drops the local feed too).
+- Host wiring: `Registry.Provisioners()` / `ProvisionerByName(name)` and
+  `Registry.MatchFeedAdmin(u)` / `FeedAdminSettings(feedURL)`. `Info` gained
+  `ProvisionLabel` and `CanManageFeeds` (host-filled, like `HasDocs`).
+- UI: `POST /fragments/provision-form` and `POST /feeds/provision` (add flow,
+  `views_pluginprovision.templ`), and `POST /feeds/{id}/plugin-admin` for a
+  feed's "managed feed" card (`feedPluginPanel`). Feed delete offers an opt-in
+  "also delete it on the remote service" checkbox; the panel's own delete is
+  explicit.
+- Reference: `internal/plugin/native/killthenewsletter`. It does **not** claim
+  `CapFetch` (its Atom feeds are read by the generic parser), so
+  `feeds.plugin_name` stays empty and `ReconcileFeeds` is untouched — the same
+  pattern reddit uses. Its host is configurable with `NF_KTN_HOST`.
+
 ### Plugin docs
 
 - A plugin may implement `pluginapi.Docser` (`Docs() string`, Markdown) to

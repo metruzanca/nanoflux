@@ -41,9 +41,11 @@ type grpcFetcherServer struct {
 func (s *grpcFetcherServer) Meta(context.Context, *pb.MetaRequest) (*pb.MetaResponse, error) {
 	m := s.impl.Meta()
 	_, hasDocs := s.impl.(Docser)
+	_, hasFeedAdmin := s.impl.(FeedAdmin)
 	return &pb.MetaResponse{
 		Name: m.Name, ApiVersion: m.APIVersion, RawNetwork: m.RawNetwork,
 		UserAgent: m.UserAgent, Summary: m.Summary, HasDocs: hasDocs,
+		ProvisionLabel: m.ProvisionLabel, HasFeedAdmin: hasFeedAdmin,
 	}, nil
 }
 
@@ -202,6 +204,69 @@ func (s *grpcFetcherServer) FeedToken(_ context.Context, req *pb.FeedTokenReques
 	return &pb.FeedTokenResponse{Token: p.FeedToken(req.FeedUrl)}, nil
 }
 
+func (s *grpcFetcherServer) Provision(ctx context.Context, req *pb.ProvisionRequest) (*pb.ProvisionResponse, error) {
+	pr, ok := s.impl.(Provisioner)
+	if !ok {
+		return &pb.ProvisionResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	host, err := s.dialHost(req.HostServer)
+	if err != nil {
+		return &pb.ProvisionResponse{Error: toPBError(err)}, nil
+	}
+	got, err := pr.Provision(ctx, ProvisionRequest{Title: req.Title}, host)
+	if err != nil {
+		return &pb.ProvisionResponse{Error: toPBError(err)}, nil
+	}
+	return &pb.ProvisionResponse{Provisioned: &pb.Provisioned{
+		FeedUrl: got.FeedURL, Title: got.Title, HomeUrl: got.HomeURL, Fields: toPBFields(got.Fields),
+	}}, nil
+}
+
+func (s *grpcFetcherServer) FeedSettings(_ context.Context, req *pb.FeedSettingsRequest) (*pb.FeedSettingsResponse, error) {
+	fa, ok := s.impl.(FeedAdmin)
+	if !ok {
+		return &pb.FeedSettingsResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	return &pb.FeedSettingsResponse{Fields: toPBFields(fa.Settings(req.FeedUrl))}, nil
+}
+
+func (s *grpcFetcherServer) FeedAction(ctx context.Context, req *pb.FeedActionRequest) (*pb.FeedActionResponse, error) {
+	fa, ok := s.impl.(FeedAdmin)
+	if !ok {
+		return &pb.FeedActionResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	host, err := s.dialHost(req.HostServer)
+	if err != nil {
+		return &pb.FeedActionResponse{Error: toPBError(err)}, nil
+	}
+	res, err := fa.Action(ctx, FeedActionRequest{
+		FeedURL: req.FeedUrl, Action: req.Action, Fields: req.Fields,
+	}, host)
+	if err != nil {
+		return &pb.FeedActionResponse{Error: toPBError(err)}, nil
+	}
+	return &pb.FeedActionResponse{Result: &pb.FeedActionResult{
+		Message: res.Message, Deleted: res.Deleted, Fields: toPBFields(res.Fields),
+	}}, nil
+}
+
+// toPBFields converts display fields to the wire form.
+func toPBFields(fields []Field) []*pb.Field {
+	out := make([]*pb.Field, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, &pb.Field{Name: f.Name, Label: f.Label, Value: f.Value, Kind: f.Kind})
+	}
+	return out
+}
+
+func fromPBFields(fields []*pb.Field) []Field {
+	out := make([]Field, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, Field{Name: f.Name, Label: f.Label, Value: f.Value, Kind: f.Kind})
+	}
+	return out
+}
+
 // dialHost connects back to the host's Host service over the broker.
 func (s *grpcFetcherServer) dialHost(id uint32) (Host, error) {
 	conn, err := s.broker.Dial(id)
@@ -226,6 +291,7 @@ func (c *grpcFetcherClient) Meta() Meta {
 	return Meta{
 		Name: resp.Name, APIVersion: resp.ApiVersion, RawNetwork: resp.RawNetwork,
 		UserAgent: resp.UserAgent, Summary: resp.Summary, HasDocs: resp.HasDocs,
+		ProvisionLabel: resp.ProvisionLabel, HasFeedAdmin: resp.HasFeedAdmin,
 	}
 }
 
@@ -387,6 +453,52 @@ func (c *grpcFetcherClient) FeedToken(feedURL string) string {
 	return resp.Token
 }
 
+func (c *grpcFetcherClient) Provision(ctx context.Context, req ProvisionRequest, h Host) (Provisioned, error) {
+	id, stop := c.serveHost(h)
+	defer stop()
+	resp, err := c.client.Provision(ctx, &pb.ProvisionRequest{HostServer: id, Title: req.Title})
+	if err != nil {
+		return Provisioned{}, err
+	}
+	if resp.Error != nil {
+		return Provisioned{}, fromPBError(resp.Error)
+	}
+	p := resp.Provisioned
+	if p == nil {
+		return Provisioned{}, nil
+	}
+	return Provisioned{
+		FeedURL: p.FeedUrl, Title: p.Title, HomeURL: p.HomeUrl, Fields: fromPBFields(p.Fields),
+	}, nil
+}
+
+func (c *grpcFetcherClient) Settings(feedURL string) []Field {
+	resp, err := c.client.FeedSettings(context.Background(), &pb.FeedSettingsRequest{FeedUrl: feedURL})
+	if err != nil || resp.Error != nil {
+		return nil
+	}
+	return fromPBFields(resp.Fields)
+}
+
+func (c *grpcFetcherClient) Action(ctx context.Context, req FeedActionRequest, h Host) (FeedActionResult, error) {
+	id, stop := c.serveHost(h)
+	defer stop()
+	resp, err := c.client.FeedAction(ctx, &pb.FeedActionRequest{
+		HostServer: id, FeedUrl: req.FeedURL, Action: req.Action, Fields: req.Fields,
+	})
+	if err != nil {
+		return FeedActionResult{}, err
+	}
+	if resp.Error != nil {
+		return FeedActionResult{}, fromPBError(resp.Error)
+	}
+	r := resp.Result
+	if r == nil {
+		return FeedActionResult{}, nil
+	}
+	return FeedActionResult{Message: r.Message, Deleted: r.Deleted, Fields: fromPBFields(r.Fields)}, nil
+}
+
 var (
 	_ Fetcher     = (*grpcFetcherClient)(nil)
 	_ Renderer    = (*grpcFetcherClient)(nil)
@@ -395,6 +507,8 @@ var (
 	_ Enricher    = (*grpcFetcherClient)(nil)
 	_ Decoration  = (*grpcFetcherClient)(nil)
 	_ URLPolicy   = (*grpcFetcherClient)(nil)
+	_ Provisioner = (*grpcFetcherClient)(nil)
+	_ FeedAdmin   = (*grpcFetcherClient)(nil)
 )
 
 // ---- conversions ----

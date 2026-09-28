@@ -42,6 +42,12 @@ templ AdminPluginsCard(rows []adminPluginRow, domains []adminPluginDomain) {
 							if r.RawNet {
 								<span class="badge warn" title="plugin uses its own HTTP client and surfaces rate limits itself">raw network</span>
 							}
+							if r.ProvisionLabel != "" {
+								<span class="badge" title={"can create a feed for you: " + r.ProvisionLabel}>creates feeds</span>
+							}
+							if r.CanManageFeeds {
+								<span class="badge" title="can manage your subscribed feeds on the site (sync, delete)">manages feeds</span>
+							}
 						</div>
 						if r.Summary != "" || r.HasDocs {
 							<p class="plugin-summary muted small">

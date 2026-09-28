@@ -35,6 +35,12 @@ type adminPluginRow struct {
 	UserAgent string
 	Summary   string
 	HasDocs   bool
+	// ProvisionLabel is the add-feed create-menu entry when the plugin can
+	// create remote feeds; "" when it cannot.
+	ProvisionLabel string
+	// CanManageFeeds reports whether the plugin manages existing feeds' remote
+	// settings and lifecycle.
+	CanManageFeeds bool
 }
 
 // adminPluginDomain is one registrable domain owned by a plugin, with the number
@@ -215,13 +221,15 @@ func (s *Server) adminPluginRows() []adminPluginRow {
 	rows := make([]adminPluginRow, 0, len(infos))
 	for _, in := range infos {
 		rows = append(rows, adminPluginRow{
-			Name:      in.Name,
-			Kind:      in.Kind,
-			Version:   in.Version,
-			RawNet:    in.RawNet,
-			UserAgent: in.UserAgent,
-			Summary:   in.Summary,
-			HasDocs:   in.HasDocs,
+			Name:           in.Name,
+			Kind:           in.Kind,
+			Version:        in.Version,
+			RawNet:         in.RawNet,
+			UserAgent:      in.UserAgent,
+			Summary:        in.Summary,
+			HasDocs:        in.HasDocs,
+			ProvisionLabel: in.ProvisionLabel,
+			CanManageFeeds: in.CanManageFeeds,
 		})
 	}
 	return rows
