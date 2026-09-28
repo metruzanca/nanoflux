@@ -1,0 +1,144 @@
+package httpapi
+
+// landingPage is the public marketing page shown at "/" to anonymous visitors.
+// It is a bespoke document (no app topbar or dialogs) so it can carry its own
+// hero and feature layout. Its primary call to action is "try the demo" in demo
+// mode; on an ordinary install it points at login/signup instead.
+templ landingPage(d landingData) {
+	<!DOCTYPE html>
+	<html lang="en" data-theme="dark">
+		<head>
+			@head("", "")
+		</head>
+		<body class="marketing">
+			<header class="mkt-nav">
+				<a class="brand" href="/">
+					<img class="brand-logo" src={ templ.URL("/logo.svg?c=" + logoColorParam("")) } alt="" width="20" height="20"/>
+					<span>nanoflux</span>
+				</a>
+				<div class="mkt-nav-right">
+					<a href="https://github.com/metruzanca/nanoflux" class="external" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">github ↗</a>
+					<a href="/login">log in</a>
+				</div>
+			</header>
+
+			<main class="mkt-main">
+				<section class="mkt-hero">
+					<div class="mkt-hero-copy">
+						<p class="mkt-eyebrow">a feed reader for the way you actually read</p>
+						<h1>all your feeds. one quiet place.</h1>
+						<p class="mkt-lede">
+							nanoflux pulls youtube, reddit, bluesky, blogs and more into a single
+							fast timeline. favorites, collections, lists, full-text search and a
+							browser extension come built in. self-host it, or bring your own.
+						</p>
+						<div class="mkt-cta">
+							if d.Demo {
+								<form method="post" action="/demo">
+									<button type="submit" class="mkt-primary">try the demo</button>
+								</form>
+								<a class="mkt-secondary" href="/login">log in</a>
+							} else {
+								<a class="mkt-primary" href="/login">log in</a>
+								if d.AllowSignup {
+									<a class="mkt-secondary" href="/signup">create an account</a>
+								}
+							}
+						</div>
+						if d.Busy {
+							<p class="mkt-notice" role="alert">
+								a demo is already active from this network. finish that one, or
+								come back once it expires.
+							</p>
+						}
+						if d.Demo {
+							<p class="mkt-fineprint">
+								the demo is a real, temporary account: add feeds, favorite posts,
+								make lists. it disappears after a couple of hours.
+							</p>
+						}
+					</div>
+					<div class="mkt-hero-art">
+						<img src="/static/marketing-hero.svg" alt="the nanoflux reading list" loading="eager"/>
+					</div>
+				</section>
+
+				<section class="mkt-features">
+					<h2 class="mkt-section-title">what you get</h2>
+
+					@mktFeature(feature{
+						Title: "read it your way",
+						Body: "A keyboard-driven reading flow with unread, history and search. " +
+							"Favorites are a taste signal that feeds a magic sort; bookmarks are your " +
+							"save-for-later pile. Both get their own public share link.",
+						Image: "/static/marketing-features.svg",
+						Alt:   "item list with favorite and read controls",
+					})
+					@mktFeature(feature{
+						Title: "every source, one timeline",
+						Body: "Site-specific plugins rebuild rich entries where the plain feed falls " +
+							"short: YouTube durations, Bluesky images, video and quotes, reddit posts " +
+							"shared once across every feed you follow them in.",
+						Image: "/static/marketing-plugins.svg",
+						Alt:   "cards from youtube, bluesky and reddit side by side",
+						Reverse: true,
+					})
+					@mktFeature(feature{
+						Title: "organize without fiddling",
+						Body: "Authors group feeds, collections group authors, lists group posts. " +
+							"Pin the ones you care about to your home screen. Everything is searchable " +
+							"the moment it arrives.",
+						Image: "/static/marketing-organize.svg",
+						Alt:   "collections and lists sidebar",
+					})
+					@mktFeature(feature{
+						Title: "take it everywhere",
+						Body: "Install it as a PWA, and add a browser extension that saves a feed — " +
+							"or any page for later — from wherever you are.",
+						Image: "/static/marketing-extension.svg",
+						Alt:   "browser extension popup saving a page",
+						Reverse: true,
+					})
+				</section>
+
+				<section class="mkt-final">
+					<h2>quietly yours.</h2>
+					<p>open source, self-hostable, and yours to shape.</p>
+					<div class="mkt-cta">
+						if d.Demo {
+							<form method="post" action="/demo">
+								<button type="submit" class="mkt-primary">try the demo</button>
+							</form>
+						} else {
+							<a class="mkt-primary" href="/login">log in</a>
+						}
+						<a class="mkt-secondary external" href="https://github.com/metruzanca/nanoflux" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">view source ↗</a>
+					</div>
+				</section>
+			</main>
+
+			@footer()
+		</body>
+	</html>
+}
+
+// feature is one row of the marketing feature list: copy paired with a visual.
+type feature struct {
+	Title   string
+	Body    string
+	Image   string
+	Alt     string
+	Reverse bool
+}
+
+templ mktFeature(f feature) {
+	<section class={ "mkt-feature", templ.KV("mkt-feature-reverse", f.Reverse) }>
+		<div class="mkt-feature-copy">
+			<h3>{ f.Title }</h3>
+			<p>{ f.Body }</p>
+		</div>
+		<div class="mkt-feature-art">
+			<img src={ templ.URL(f.Image) } alt={ f.Alt } loading="lazy"/>
+		</div>
+	</section>
+}

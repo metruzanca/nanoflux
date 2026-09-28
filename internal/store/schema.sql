@@ -19,12 +19,15 @@ CREATE TABLE users (
     hide_unread_counts INTEGER NOT NULL DEFAULT 0,
     hide_unread_nav INTEGER NOT NULL DEFAULT 0,
     grid_max_columns INTEGER NOT NULL DEFAULT 2,
+    is_ephemeral  INTEGER NOT NULL DEFAULT 0,
+    expires_at    TEXT,
     favorites_share_token TEXT,
     bookmarks_share_token TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE UNIQUE INDEX idx_users_favorites_share_token ON users(favorites_share_token);
 CREATE UNIQUE INDEX idx_users_bookmarks_share_token ON users(bookmarks_share_token);
+CREATE INDEX idx_users_ephemeral ON users(expires_at) WHERE is_ephemeral = 1;
 
 CREATE TABLE sessions (
     id         INTEGER PRIMARY KEY,

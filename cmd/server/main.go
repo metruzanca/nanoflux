@@ -17,6 +17,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/cli"
 	"github.com/metruzanca/nanoflux/internal/config"
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/demo"
 	"github.com/metruzanca/nanoflux/internal/filestore"
 	"github.com/metruzanca/nanoflux/internal/httpapi"
 	"github.com/metruzanca/nanoflux/internal/maintenance"
@@ -57,6 +58,7 @@ func runServer() {
 	st := store.New(sqldb)
 	bootstrapUser(st, cfg)
 	a := auth.New(st)
+	a.SetDemoMode(cfg.Demo.Enabled())
 
 	files, err := newFileStore(cfg)
 	if err != nil {
@@ -124,6 +126,26 @@ func runServer() {
 	// Mark stale unread items read for users who opted in to auto-read.
 	go maintenance.New(st, maintenance.DefaultInterval).Run(ctx)
 
+	// Demo mode: clone a curated seed account for each visitor and purge expired
+	// ones in the background. Built before the server closure so its manager can
+	// be attached to the handler.
+	var demoMgr *demo.Manager
+	if cfg.Demo.Mode && cfg.Demo.User == "" {
+		log.Fatal("NF_DEMO_MODE is on but NF_DEMO_USER is not set")
+	}
+	if cfg.Demo.Enabled() {
+		seed, err := st.Users.ByUsername(cfg.Demo.User)
+		if err != nil {
+			log.Fatal("demo seed user not found", "user", cfg.Demo.User, "err", err)
+		}
+		if !seed.IsAdmin {
+			log.Warn("demo seed user is not an admin; it will still be cloned", "user", cfg.Demo.User)
+		}
+		demoMgr = demo.New(st, files, seed.ID, seed.Username, cfg.Demo.TTL, cfg.Demo.MaxFeeds)
+		go demoMgr.Run(ctx)
+		log.Info("demo mode enabled", "seed", cfg.Demo.User, "ttl", cfg.Demo.TTL, "max_extra_feeds", cfg.Demo.MaxFeeds)
+	}
+
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: func() http.Handler {
@@ -131,6 +153,7 @@ func runServer() {
 			h.SetPoller(p)
 			h.SetBackupRunner(backupRunner)
 			h.SetPlugins(plugins.Registry, plugins.Hosts)
+			h.SetDemo(demoMgr)
 			return h.Handler()
 		}(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -227,7 +250,7 @@ func setLogLevel(level string) {
 // account so a fresh instance is immediately usable; the signup page lets
 // other users register.
 func bootstrapUser(st *store.Store, cfg config.Config) {
-	n, err := st.Users.Count()
+	n, err := st.Users.CountPersistent()
 	if err != nil {
 		log.Fatal("count users", "err", err)
 	}

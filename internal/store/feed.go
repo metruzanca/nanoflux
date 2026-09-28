@@ -492,3 +492,10 @@ func (s *FeedStore) Count() (int, error) {
 	n, err := s.q.CountAllFeeds(context.Background())
 	return int(n), err
 }
+
+// CountForUser returns how many non-system feeds a user has, for the demo mode
+// add-feed cap.
+func (s *FeedStore) CountForUser(userID int64) (int, error) {
+	n, err := s.q.CountUserFeeds(context.Background(), userID)
+	return int(n), err
+}

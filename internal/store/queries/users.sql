@@ -16,10 +16,16 @@ WHERE username = ?;
 -- name: ListUsers :many
 SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
 FROM users
+WHERE is_ephemeral = 0
 ORDER BY username;
 
 -- name: CountUsers :one
 SELECT COUNT(*) FROM users;
+
+-- name: CountPersistentUsers :one
+-- Real (non-ephemeral) users. Demo installs must not let throwaway demo accounts
+-- satisfy the "first account" bootstrap, and the admin user list hides them.
+SELECT COUNT(*) FROM users WHERE is_ephemeral = 0;
 
 -- name: CountAdmins :one
 SELECT COUNT(*) FROM users WHERE is_admin = 1;
@@ -84,3 +90,17 @@ WHERE id = ?;
 -- name: SetUserGridMaxColumns :exec
 UPDATE users SET grid_max_columns = ?
 WHERE id = ?;
+
+-- name: GetUserEphemeralStatus :one
+-- Whether a user is an ephemeral demo account and when it expires (NULL when it
+-- never does). Used on every session resolve in demo mode to reject an expired
+-- demo, so it is a single indexed point lookup.
+SELECT is_ephemeral, expires_at FROM users WHERE id = ?;
+
+-- name: ListExpiredEphemeralUsers :many
+-- Ephemeral demo accounts whose absolute expiry has passed. A NULL/empty
+-- expires_at on an ephemeral row counts as expired.
+SELECT id FROM users
+WHERE is_ephemeral = 1
+  AND (expires_at IS NULL OR expires_at <= CAST(sqlc.arg('now') AS TEXT))
+ORDER BY id;

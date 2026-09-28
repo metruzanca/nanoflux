@@ -54,6 +54,7 @@ var migrations = []migration{
 	{41, schemaV41},
 	{42, schemaV42},
 	{43, schemaV43},
+	{44, schemaV44},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -646,6 +647,18 @@ const schemaV43 = `
 ALTER TABLE users ADD COLUMN hide_unread_counts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN hide_unread_nav INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN grid_max_columns INTEGER NOT NULL DEFAULT 2;
+`
+
+// schemaV44 marks ephemeral demo accounts and their absolute expiry. An
+// ephemeral user is a throwaway clone of the demo seed account (NF_DEMO_USER)
+// created for a public visitor: it is not an admin, has no usable password, and
+// when expires_at passes the session is rejected and a sweeper deletes the
+// account and its data. A zero/NULL expires_at on an ephemeral row is treated as
+// already expired. The partial index keeps the expiry sweep cheap.
+const schemaV44 = `
+ALTER TABLE users ADD COLUMN is_ephemeral INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN expires_at TEXT;
+CREATE INDEX idx_users_ephemeral ON users(expires_at) WHERE is_ephemeral = 1;
 `
 
 // Migrate applies any pending migrations in order, recording each in

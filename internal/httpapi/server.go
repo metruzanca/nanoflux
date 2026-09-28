@@ -7,6 +7,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/backup"
 	"github.com/metruzanca/nanoflux/internal/config"
+	"github.com/metruzanca/nanoflux/internal/demo"
 	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/filestore"
 	"github.com/metruzanca/nanoflux/internal/oembed"
@@ -31,6 +32,8 @@ type Server struct {
 	files        filestore.Store
 	oembed       *oembed.Resolver
 	loginLimiter *loginLimiter
+	demo         *demo.Manager
+	demoThrottle *demoThrottle
 }
 
 func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore.Store) *Server {
@@ -44,6 +47,7 @@ func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore
 		files:        fs,
 		oembed:       oembed.New(client, 5*time.Minute, 30*time.Second, 2000),
 		loginLimiter: newLoginLimiter(),
+		demoThrottle: newDemoThrottle(),
 	}
 }
 
@@ -85,8 +89,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /signup", s.signup)
 	mux.Handle("POST /logout", s.auth.Require(http.HandlerFunc(s.logout)))
 
+	// Public landing page for anonymous visitors; demo mode adds the CTA that
+	// provisions an ephemeral account.
+	mux.HandleFunc("POST /demo", s.demoStart)
+
 	// Items.
-	mux.Handle("GET /{$}", s.auth.Require(http.HandlerFunc(s.home)))
+	mux.HandleFunc("GET /{$}", s.root)
 	mux.Handle("GET /unread", s.auth.Require(http.HandlerFunc(s.unread)))
 	mux.Handle("GET /items", s.auth.Require(http.HandlerFunc(s.itemsFragment)))
 	mux.Handle("GET /search", s.auth.Require(http.HandlerFunc(s.searchPage)))

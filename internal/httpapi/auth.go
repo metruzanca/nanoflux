@@ -70,8 +70,13 @@ func redirectTarget(next string) string {
 }
 
 // allowSignup reports the global signup setting, defaulting to open when the
-// setting cannot be read so an error never locks everyone out.
+// setting cannot be read so an error never locks everyone out. Demo mode forces
+// it off: a public marketing deployment should not mint durable accounts, only
+// ephemeral demos.
 func (s *Server) allowSignup() bool {
+	if s.demoEnabled() {
+		return false
+	}
 	allow, err := s.store.Settings.AllowSignup()
 	if err != nil {
 		log.Error("read allow_signup", "err", err)

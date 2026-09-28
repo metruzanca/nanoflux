@@ -97,6 +97,8 @@ a.external::after {
   display: flex;
   align-items: center;
   gap: 1rem;
+  min-width: 0;
+  flex-wrap: nowrap;
 }
 .hamburger { grid-column: 3; justify-self: end; }
 /* Unread badges in the nav: a darker gray than the link text so the count
@@ -1368,3 +1370,138 @@ vaadin-multi-select-combo-box-overlay {
 }
 .prose table { border-collapse: collapse; margin: 0.75rem 0; }
 .prose th, .prose td { border: 1px solid var(--border); padding: 0.35rem 0.6rem; text-align: left; }
+
+/* --- Demo countdown badge --- */
+.demo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+  flex: none;
+}
+.demo-badge-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: #ffb454;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #ffb454 20%, transparent);
+}
+/* Keep the add-feed split button's label on one line even when the bar is tight. */
+.add-menu .add-primary { white-space: nowrap; }
+/* Below this width the demo badge would crowd the nav; the title attribute still
+   explains the account, and the badge returns as space allows. */
+@media (max-width: 1080px) {
+  .demo-badge { display: none; }
+}
+
+/* --- Marketing landing page --- */
+body.marketing { background: var(--bg); }
+body.marketing .site-foot { margin-top: 0; }
+.mkt-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem;
+}
+.mkt-nav-right { display: flex; align-items: center; gap: 1rem; font-size: 0.9rem; }
+.mkt-main { max-width: 64rem; margin: 0 auto; padding: 0 1.25rem 3rem; }
+
+.mkt-hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem;
+  align-items: center;
+  padding: 3rem 0 4rem;
+}
+.mkt-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  color: var(--accent);
+  margin: 0 0 0.75rem;
+}
+.mkt-hero h1 {
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  line-height: 1.05;
+  margin: 0 0 1rem;
+}
+.mkt-lede { font-size: 1.05rem; color: var(--muted); margin: 0 0 1.5rem; max-width: 34rem; }
+.mkt-hero-art img { width: 100%; height: auto; display: block; }
+
+.mkt-cta { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.mkt-cta form { margin: 0; }
+.mkt-primary {
+  display: inline-block;
+  padding: 0.65rem 1.4rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.mkt-primary:hover { filter: brightness(1.08); text-decoration: none; }
+.mkt-secondary {
+  display: inline-block;
+  padding: 0.65rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+}
+.mkt-secondary:hover { border-color: var(--accent); text-decoration: none; }
+.mkt-notice {
+  margin: 1rem 0 0;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid color-mix(in srgb, #ffb454 45%, var(--border));
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.mkt-fineprint { margin: 1.25rem 0 0; font-size: 0.85rem; color: var(--muted); }
+
+.mkt-section-title {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+  margin: 0 0 1rem;
+}
+.mkt-feature {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem;
+  align-items: center;
+  padding: 1.5rem 0;
+}
+.mkt-feature-reverse .mkt-feature-copy { order: 2; }
+.mkt-feature-copy h3 { margin: 0 0 0.5rem; font-size: 1.35rem; }
+.mkt-feature-copy p { margin: 0; color: var(--muted); max-width: 32rem; }
+.mkt-feature-art img { width: 100%; height: auto; display: block; }
+
+.mkt-final {
+  text-align: center;
+  border-top: 1px solid var(--border);
+  padding: 3rem 0 1rem;
+}
+.mkt-final h2 { margin: 0 0 0.4rem; font-size: 1.6rem; }
+.mkt-final p { margin: 0 0 1.5rem; color: var(--muted); }
+.mkt-final .mkt-cta { justify-content: center; }
+
+@media (max-width: 760px) {
+  .mkt-hero,
+  .mkt-feature { grid-template-columns: 1fr; gap: 1.75rem; }
+  .mkt-feature-reverse .mkt-feature-copy { order: 0; }
+  .mkt-hero { padding: 2rem 0 2.5rem; }
+  .mkt-hero-art { order: -1; }
+}
