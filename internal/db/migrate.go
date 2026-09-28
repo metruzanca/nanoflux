@@ -52,6 +52,7 @@ var migrations = []migration{
 	{39, schemaV39},
 	{40, schemaV40},
 	{41, schemaV41},
+	{42, schemaV42},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -606,6 +607,25 @@ DROP TABLE IF EXISTS url_mappings;
 // ingest. action is free text, so only existing rows need rewriting.
 const schemaV40 = `
 UPDATE filters SET action = 'delete' WHERE action = 'hide';
+`
+
+// schemaV42 introduces bookmarks as a native list (mirroring favorites) and a
+// per-feed manual ranking lever for the magic sort.
+//
+// items.bookmark is the boolean membership of the special bookmarks list, like
+// items.favorite. Deliberately NOT backfilled from favorite: the two now mean
+// different things (save-for-later vs. taste signal), so existing favorites stay
+// only in favorites and bookmarks starts empty. users.bookmarks_share_token is
+// the public share link for the special bookmarks list, mirroring
+// users.favorites_share_token.
+//
+// feeds.rank is the user's manual raise/lower for a feed in the magic sort:
+// -1 lowered, 0 neutral, +1 raised.
+const schemaV42 = `
+ALTER TABLE items ADD COLUMN bookmark INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN bookmarks_share_token TEXT;
+CREATE UNIQUE INDEX idx_users_bookmarks_share_token ON users(bookmarks_share_token);
+ALTER TABLE feeds ADD COLUMN rank INTEGER NOT NULL DEFAULT 0;
 `
 
 // schemaV41 adds items.content: a plugin-enriched body kept separate from

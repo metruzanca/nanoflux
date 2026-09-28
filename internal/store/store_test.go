@@ -555,6 +555,138 @@ func TestItemFavorites(t *testing.T) {
 	}
 }
 
+// Bookmarks are an independent native list: setting a bookmark does not change
+// favorite state, and each has its own count and filtered list.
+func TestItemBookmarks(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+
+	s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "One", Link: "https://metru.dev/1", FetchedAt: db.Now()})
+	s.Items.Upsert(f.ID, Item{GUID: "g2", Title: "Two", Link: "https://metru.dev/2", FetchedAt: db.Now()})
+
+	items, _ := s.Items.List(u.ID, ItemFilter{})
+	if err := s.Items.SetBookmark(u.ID, items[0].ID, true); err != nil {
+		t.Fatalf("SetBookmark: %v", err)
+	}
+	bm, err := s.Items.List(u.ID, ItemFilter{BookmarksOnly: true})
+	if err != nil || len(bm) != 1 {
+		t.Fatalf("BookmarksOnly List: %v %d", err, len(bm))
+	}
+	if !bm[0].Bookmark || bm[0].ID != items[0].ID {
+		t.Fatalf("wrong bookmark row: %+v", bm[0])
+	}
+	// Favoriting is unaffected.
+	if bm[0].Favorite {
+		t.Fatalf("bookmark must not imply favorite: %+v", bm[0])
+	}
+	if n, _ := s.Items.CountBookmarks(u.ID, 0); n != 1 {
+		t.Fatalf("CountBookmarks: %d, want 1", n)
+	}
+	if n, _ := s.Items.CountFavorites(u.ID, 0); n != 0 {
+		t.Fatalf("CountFavorites after bookmark: %d, want 0", n)
+	}
+	// Toggle off.
+	if err := s.Items.SetBookmark(u.ID, items[0].ID, false); err != nil {
+		t.Fatalf("SetBookmark off: %v", err)
+	}
+	if n, _ := s.Items.CountBookmarks(u.ID, 0); n != 0 {
+		t.Fatalf("CountBookmarks after off: %d, want 0", n)
+	}
+}
+
+// The magic sort tiers feeds by the manual rank lever (raised beats neutral
+// beats lowered), then by favorite count, then by item time.
+func TestMagicSort(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	mk := func(name string) Feed {
+		a, _ := s.Authors.Create(u.ID, name, "", "")
+		f, _ := s.Feeds.Create(u.ID, a.ID, name, "https://"+name+".dev/rss.xml", "", "", 900)
+		return f
+	}
+	// Three feeds: a raised low-favorite feed, a neutral high-favorite feed, and
+	// a lowered feed with the newest item.
+	raised := mk("raised")
+	neutral := mk("neutral")
+	lowered := mk("lowered")
+	old := "2026-01-01 00:00:00"
+	s.Items.Upsert(raised.ID, Item{GUID: "r1", Title: "raised post", PublishedAt: old, FetchedAt: db.Now()})
+	s.Items.Upsert(neutral.ID, Item{GUID: "n1", Title: "neutral post", PublishedAt: old, FetchedAt: db.Now()})
+	s.Items.Upsert(lowered.ID, Item{GUID: "l1", Title: "lowered post", PublishedAt: "2026-06-01 00:00:00", FetchedAt: db.Now()})
+
+	// The neutral feed earns two favorites (the taste signal).
+	nid, _ := s.Items.ByFeedIdentity(neutral.ID, "n1")
+	s.Items.SetFavorite(u.ID, nid, true)
+	s.Items.Upsert(neutral.ID, Item{GUID: "n2", Title: "neutral post 2", PublishedAt: old, FetchedAt: db.Now()})
+	n2id, _ := s.Items.ByFeedIdentity(neutral.ID, "n2")
+	s.Items.SetFavorite(u.ID, n2id, true)
+
+	if err := s.Feeds.SetRank(u.ID, raised.ID, 1); err != nil {
+		t.Fatalf("SetRank raised: %v", err)
+	}
+	if err := s.Feeds.SetRank(u.ID, lowered.ID, -1); err != nil {
+		t.Fatalf("SetRank lowered: %v", err)
+	}
+
+	items, _, err := s.Items.ListPage(u.ID, ItemFilter{Magic: true, Limit: 10})
+	if err != nil {
+		t.Fatalf("magic ListPage: %v", err)
+	}
+	if len(items) != 4 {
+		t.Fatalf("magic returned %d items: %+v", len(items), items)
+	}
+	// Raised tier first, then neutral (both of its posts, newest-ish), then
+	// lowered, even though lowered has the newest item.
+	if items[0].FeedID != raised.ID {
+		t.Fatalf("magic first item should be the raised feed: %+v", items[0])
+	}
+	if items[1].FeedID != neutral.ID || items[2].FeedID != neutral.ID {
+		t.Fatalf("magic should rank the favorited neutral feed next: %+v", items)
+	}
+	if items[3].FeedID != lowered.ID {
+		t.Fatalf("magic should rank the lowered feed last: %+v", items)
+	}
+
+	// Offset pagination.
+	page2, _, err := s.Items.ListPage(u.ID, ItemFilter{Magic: true, Limit: 2, Offset: 2})
+	if err != nil {
+		t.Fatalf("magic page 2: %v", err)
+	}
+	if len(page2) != 2 || page2[0].FeedID != neutral.ID || page2[1].FeedID != lowered.ID {
+		t.Fatalf("magic page 2: %+v", page2)
+	}
+}
+
+// SetRank clamps to {-1, 0, 1} and is user-scoped.
+func TestFeedRank(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	bob := mustUser(t, s, "bob")
+	a, _ := s.Authors.Create(alice.ID, "Blog", "", "")
+	f, _ := s.Feeds.Create(alice.ID, a.ID, "Blog", "https://x.dev/rss.xml", "", "", 900)
+
+	if err := s.Feeds.SetRank(alice.ID, f.ID, 5); err != nil {
+		t.Fatalf("SetRank clamp high: %v", err)
+	}
+	got, _ := s.Feeds.ByID(alice.ID, f.ID)
+	if got.Rank != 1 {
+		t.Fatalf("rank should clamp to 1, got %d", got.Rank)
+	}
+	if err := s.Feeds.SetRank(alice.ID, f.ID, -9); err != nil {
+		t.Fatalf("SetRank clamp low: %v", err)
+	}
+	got, _ = s.Feeds.ByID(alice.ID, f.ID)
+	if got.Rank != -1 {
+		t.Fatalf("rank should clamp to -1, got %d", got.Rank)
+	}
+	// Another user cannot rank alice's feed.
+	if err := s.Feeds.SetRank(bob.ID, f.ID, 1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-user SetRank should be ErrNotFound, got %v", err)
+	}
+}
+
 func TestItemScopedCounts(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

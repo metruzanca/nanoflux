@@ -104,7 +104,7 @@ templ settingsTheme(d settingsThemeData) {
 templ settingsAutoRead(d settingsAutoReadData) {
 	<section class="card" id="settings-auto-read-card">
 		<h2>auto-read old items</h2>
-		<p class="muted small">Unread items older than this are marked read automatically, including favorites. Off leaves everything as is. Marking read is reversible with "mark all unread".</p>
+		<p class="muted small">Unread items older than this are marked read automatically, including favorites and bookmarks. Off leaves everything as is. Marking read is reversible with "mark all unread".</p>
 		<form class="stack" hx-post="/settings/auto-read" hx-target="#settings-auto-read-card" hx-swap="outerHTML">
 			@comboSelect("auto_read_after_days", d.Value, "mark items read after", "select a window", autoReadItems, nil)
 			if d.Error != "" {

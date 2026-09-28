@@ -385,6 +385,40 @@ func TestFavoritesShareToken(t *testing.T) {
 	}
 }
 
+func TestBookmarksShareToken(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+
+	tok, err := s.Users.ShareBookmarks(u.ID)
+	if err != nil {
+		t.Fatalf("ShareBookmarks: %v", err)
+	}
+	if tok == "" {
+		t.Fatal("ShareBookmarks returned empty token")
+	}
+	if got, _ := s.Users.BookmarksShareToken(u.ID); got != tok {
+		t.Fatalf("BookmarksShareToken: %q, want %q", got, tok)
+	}
+	// Idempotent.
+	if again, _ := s.Users.ShareBookmarks(u.ID); again != tok {
+		t.Fatalf("ShareBookmarks not idempotent: %q vs %q", again, tok)
+	}
+	owner, err := s.Users.ByBookmarksShareToken(tok)
+	if err != nil || owner.ID != u.ID {
+		t.Fatalf("ByBookmarksShareToken: %v %+v", err, owner)
+	}
+	// The favorites and bookmarks share tokens are independent.
+	if fav, _ := s.Users.FavoritesShareToken(u.ID); fav != "" {
+		t.Fatalf("bookmarks share must not set the favorites token: %q", fav)
+	}
+	if err := s.Users.SetBookmarksShareToken(u.ID, ""); err != nil {
+		t.Fatalf("clear bookmarks share: %v", err)
+	}
+	if got, _ := s.Users.BookmarksShareToken(u.ID); got != "" {
+		t.Fatalf("BookmarksShareToken after clear: %q", got)
+	}
+}
+
 // An item stored under a stable Identity is not duplicated when its GUID later
 // changes shape (a GUID-scheme change), while a distinct Identity still
 // inserts a new row.

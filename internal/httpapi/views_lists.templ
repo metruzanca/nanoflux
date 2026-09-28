@@ -29,11 +29,12 @@ templ listsPage(u store.User, d listsPageData) {
 	</dialog>
 }
 
-// ListsList is the index list: the special favorites list pinned first, then
-// every user-created list.
+// ListsList is the index list: the special favorites and bookmarks lists pinned
+// first, then every user-created list.
 templ ListsList(d listsPageData) {
 	<ul class="plain" id="lists-list">
 		@FavoritesListRow(d)
+		@BookmarksListRow(d)
 		for _, l := range d.Lists {
 			@ListRow(l)
 		}
@@ -49,6 +50,22 @@ templ FavoritesListRow(d listsPageData) {
 			</div>
 			<div class="row-actions">
 				@favoritesShareControl(d.FavoritesShareTok)
+			</div>
+		</div>
+	</li>
+}
+
+// BookmarksListRow pins the native bookmarks list (save-for-later) next to
+// favorites on the lists index.
+templ BookmarksListRow(d listsPageData) {
+	<li id="bookmarks-list">
+		<div class="row">
+			<div>
+				<a href="/bookmarks"><strong>bookmarks</strong></a>
+				<span class="muted">({ d.BookmarksCount })</span>
+			</div>
+			<div class="row-actions">
+				@bookmarksShareControl(d.BookmarksShareTok)
 			</div>
 		</div>
 	</li>
@@ -89,6 +106,18 @@ templ favoritesShareControl(token string) {
 			<button class="link danger" hx-post="/favorites/revoke" hx-target="#favorites-share" hx-swap="outerHTML">stop sharing</button>
 		} else {
 			<button class="link" hx-post="/favorites/share" hx-target="#favorites-share" hx-swap="outerHTML">share</button>
+		}
+	</span>
+}
+
+// bookmarksShareControl toggles the native bookmarks list's public share link.
+templ bookmarksShareControl(token string) {
+	<span id="bookmarks-share" class="item-meta">
+		if token != "" {
+			<span>shared · <a href={ "/b/" + token } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">link</a></span>
+			<button class="link danger" hx-post="/bookmarks/revoke" hx-target="#bookmarks-share" hx-swap="outerHTML">stop sharing</button>
+		} else {
+			<button class="link" hx-post="/bookmarks/share" hx-target="#bookmarks-share" hx-swap="outerHTML">share</button>
 		}
 	</span>
 }

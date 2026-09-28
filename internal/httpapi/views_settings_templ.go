@@ -392,7 +392,7 @@ func settingsAutoRead(d settingsAutoReadData) templ.Component {
 			templ_7745c5c3_Var12 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<section class=\"card\" id=\"settings-auto-read-card\"><h2>auto-read old items</h2><p class=\"muted small\">Unread items older than this are marked read automatically, including favorites. Off leaves everything as is. Marking read is reversible with \"mark all unread\".</p><form class=\"stack\" hx-post=\"/settings/auto-read\" hx-target=\"#settings-auto-read-card\" hx-swap=\"outerHTML\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<section class=\"card\" id=\"settings-auto-read-card\"><h2>auto-read old items</h2><p class=\"muted small\">Unread items older than this are marked read automatically, including favorites and bookmarks. Off leaves everything as is. Marking read is reversible with \"mark all unread\".</p><form class=\"stack\" hx-post=\"/settings/auto-read\" hx-target=\"#settings-auto-read-card\" hx-swap=\"outerHTML\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -46,6 +46,9 @@ type Item struct {
 	Read        bool
 	ReadAt      string
 	Favorite    bool
+	// Bookmark is membership of the special bookmarks list (save-for-later),
+	// native like Favorite but a distinct signal: favorites feed the magic sort.
+	Bookmark bool
 }
 
 // joinCategories encodes an item's categories for the denormalized
@@ -132,13 +135,19 @@ type ItemFilter struct {
 	UnreadOnly    bool
 	ReadOnly      bool
 	FavoritesOnly bool
+	BookmarksOnly bool
 	FeedID        int64 // 0 = all
 	AuthorID      int64 // 0 = all
 	CollectionID  int64 // 0 = all
 	BeforeID      int64 // keyset cursor (descending): only items ordered before this id
 	AfterID       int64 // keyset cursor (ascending): only items ordered after this id
 	Ascending     bool  // oldest first (default false = newest first)
-	Limit         int
+	// Magic sorts by feed taste instead of time: raised feeds first, then
+	// neutral, then lowered; within a tier, feeds with more favorites first,
+	// then by item time. It uses Offset rather than the keyset cursors.
+	Magic  bool
+	Offset int // magic-sort page offset (ignored when Magic is false)
+	Limit  int
 }
 
 type ItemStore struct {
@@ -283,11 +292,43 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 // so callers can render a "load more" button. Items are ordered newest first
 // (oldest first when f.Ascending); pass the last returned id as f.BeforeID (desc)
 // or f.AfterID (asc) to page further. One extra row is fetched to detect the
-// next page.
+// next page. When f.Magic is set, items instead sort by feed taste (see
+// ListItemsMagic) and page by f.Offset.
 func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, error) {
 	limit := f.Limit
 	if limit <= 0 || limit > 500 {
 		limit = 100
+	}
+	if f.Magic {
+		rows, err := s.q.ListItemsMagic(context.Background(), sqlcgen.ListItemsMagicParams{
+			UserID:       userID,
+			FeedID:       f.FeedID,
+			AuthorID:     f.AuthorID,
+			CollectionID: f.CollectionID,
+			Unread:       boolInt(f.UnreadOnly),
+			Read:         boolInt(f.ReadOnly),
+			Favorites:    boolInt(f.FavoritesOnly),
+			Bookmarks:    boolInt(f.BookmarksOnly),
+			Limit:        int64(limit) + 1,
+			Offset:       int64(f.Offset),
+		})
+		if err != nil {
+			return nil, false, err
+		}
+		hasMore := len(rows) > limit
+		if hasMore {
+			rows = rows[:limit]
+		}
+		out := make([]ItemWithFeed, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
+				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
+				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
+		}
+		if err := s.attachSources(userID, out); err != nil {
+			return nil, false, err
+		}
+		return out, hasMore, nil
 	}
 	if f.Ascending {
 		rows, err := s.q.ListItemsAsc(context.Background(), sqlcgen.ListItemsAscParams{
@@ -298,6 +339,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 			Unread:       boolInt(f.UnreadOnly),
 			Read:         boolInt(f.ReadOnly),
 			Favorites:    boolInt(f.FavoritesOnly),
+			Bookmarks:    boolInt(f.BookmarksOnly),
 			AfterID:      f.AfterID,
 			Limit:        int64(limit) + 1,
 		})
@@ -311,7 +353,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 		out := make([]ItemWithFeed, 0, len(rows))
 		for _, r := range rows {
 			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 		}
 		if err := s.attachSources(userID, out); err != nil {
@@ -327,6 +369,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 		Unread:       boolInt(f.UnreadOnly),
 		Read:         boolInt(f.ReadOnly),
 		Favorites:    boolInt(f.FavoritesOnly),
+		Bookmarks:    boolInt(f.BookmarksOnly),
 		BeforeID:     f.BeforeID,
 		Limit:        int64(limit) + 1,
 	})
@@ -340,7 +383,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	out := make([]ItemWithFeed, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	if err := s.attachSources(userID, out); err != nil {
@@ -421,7 +464,7 @@ func (s *ItemStore) SearchPage(userID int64, query string, f ItemFilter) ([]Item
 		limit = searchPageLimit
 	}
 	const sql = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -453,12 +496,12 @@ LIMIT ?7`
 	for rows.Next() {
 		var r sqlcgen.ListItemsRow
 		if err := rows.Scan(&r.ID, &r.FeedID, &r.Guid, &r.Title, &r.Link, &r.Summary, &r.Categories,
-			&r.ImageUrl, &r.DurationSec, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.ReadAt,
+			&r.ImageUrl, &r.DurationSec, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.Bookmark, &r.ReadAt,
 			&r.FeedTitle, &r.FeedUrl, &r.FeedHomeUrl, &r.FeedIsSystem, &r.AuthorID, &r.AuthorName); err != nil {
 			return nil, false, err
 		}
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	if err := rows.Err(); err != nil {
@@ -627,7 +670,7 @@ func (s *ItemStore) ListFeedItemsForFilter(feedID int64) ([]ItemWithFeed, error)
 	out := make([]ItemWithFeed, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	return out, nil
@@ -705,7 +748,7 @@ func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 		return ItemWithFeed{}, err
 	}
 	slice := []ItemWithFeed{toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary, it.Categories,
-		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
+		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.Bookmark, it.ReadAt,
 		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName)}
 	slice[0].Content = it.Content
 	if err := s.attachSources(userID, slice); err != nil {
@@ -725,7 +768,7 @@ func (s *ItemStore) OneWithFeedAny(itemID int64) (ItemWithFeed, error) {
 		return ItemWithFeed{}, err
 	}
 	itw := toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary, it.Categories,
-		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.ReadAt,
+		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.Bookmark, it.ReadAt,
 		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName)
 	itw.Content = it.Content
 	return itw, nil
@@ -980,6 +1023,23 @@ func (s *ItemStore) SetFavorite(userID, itemID int64, fav bool) error {
 	return nil
 }
 
+// SetBookmark marks an item as bookmarked (save-for-later) or not, verifying it
+// belongs to the user.
+func (s *ItemStore) SetBookmark(userID, itemID int64, bookmark bool) error {
+	res, err := s.q.SetItemBookmark(context.Background(), sqlcgen.SetItemBookmarkParams{
+		Bookmark: bookmark,
+		ID:       itemID,
+		UserID:   userID,
+	})
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // MarkAllRead marks every item read for a user; pass feedID 0 for all feeds.
 func (s *ItemStore) MarkAllRead(userID, feedID int64) error {
 	return s.q.MarkAllItemsRead(context.Background(), sqlcgen.MarkAllItemsReadParams{
@@ -1054,6 +1114,15 @@ func (s *ItemStore) CountFavorites(userID, feedID int64) (int, error) {
 	return int(n), err
 }
 
+// CountBookmarks counts bookmarked items for a user; feedID 0 means all feeds.
+func (s *ItemStore) CountBookmarks(userID, feedID int64) (int, error) {
+	n, err := s.q.CountBookmarkItems(context.Background(), sqlcgen.CountBookmarkItemsParams{
+		UserID: userID,
+		FeedID: feedID,
+	})
+	return int(n), err
+}
+
 // CountUnreadAuthor counts unread items across an author's feeds.
 func (s *ItemStore) CountUnreadAuthor(userID, authorID int64) (int, error) {
 	n, err := s.q.CountUnreadItemsByAuthor(context.Background(), sqlcgen.CountUnreadItemsByAuthorParams{
@@ -1075,6 +1144,15 @@ func (s *ItemStore) CountReadAuthor(userID, authorID int64) (int, error) {
 // CountFavoritesAuthor counts favorited items across an author's feeds.
 func (s *ItemStore) CountFavoritesAuthor(userID, authorID int64) (int, error) {
 	n, err := s.q.CountFavoriteItemsByAuthor(context.Background(), sqlcgen.CountFavoriteItemsByAuthorParams{
+		UserID:   userID,
+		AuthorID: authorID,
+	})
+	return int(n), err
+}
+
+// CountBookmarksAuthor counts bookmarked items across an author's feeds.
+func (s *ItemStore) CountBookmarksAuthor(userID, authorID int64) (int, error) {
+	n, err := s.q.CountBookmarkItemsByAuthor(context.Background(), sqlcgen.CountBookmarkItemsByAuthorParams{
 		UserID:   userID,
 		AuthorID: authorID,
 	})

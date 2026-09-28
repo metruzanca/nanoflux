@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
@@ -228,7 +229,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 					}
 				</div>
 				<div class="row-actions">
-					@itemToggleButtons(it.ID, it.Favorite, it.Read, false, hideAuthor)
+					@itemToggleButtons(it.ID, it.Favorite, it.Bookmark, it.Read, false, hideAuthor)
 					@itemMenuFullSys(it.ID, it.FeedID, "", "", false, it.FeedIsSystem)
 				</div>
 			</div>
@@ -236,14 +237,15 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 	</li>
 }
 
-// itemToggleButtons renders the favorite and read/unread toggles for one item,
-// shared by the item row and the modal header. inView selects the surface:
-// true means the modal (swap target is the controls container and the handler
-// answers with just the fresh toggles); false means the row (swap target is the
-// row itself and the handler answers with the fresh row). hideAuthor carries
-// the author-scoped flag a swapped row needs to stay consistent.
-templ itemToggleButtons(itemID int64, favorite, read, inView, hideAuthor bool) {
+// itemToggleButtons renders the favorite, bookmark and read/unread toggles for
+// one item, shared by the item row and the modal header. inView selects the
+// surface: true means the modal (swap target is the controls container and the
+// handler answers with just the fresh toggles); false means the row (swap target
+// is the row itself and the handler answers with the fresh row). hideAuthor
+// carries the author-scoped flag a swapped row needs to stay consistent.
+templ itemToggleButtons(itemID int64, favorite, bookmark, read, inView, hideAuthor bool) {
 	@favToggle(itemID, favorite, toggleTarget(itemID, inView), toggleVals(inView, hideAuthor))
+	@bookmarkToggle(itemID, bookmark, toggleTarget(itemID, inView), toggleVals(inView, hideAuthor))
 	@readToggle(itemID, read, toggleTarget(itemID, inView), toggleVals(inView, false))
 }
 
@@ -270,9 +272,9 @@ func toggleVals(inView, hideAuthor bool) string {
 
 // itemViewControls is the modal header's toggle container, swapped in place when
 // a toggle is used from the modal.
-templ itemViewControls(itemID int64, favorite, read bool) {
+templ itemViewControls(itemID int64, favorite, bookmark, read bool) {
 	<div class="item-controls" id="item-view-controls">
-		@itemToggleButtons(itemID, favorite, read, true, false)
+		@itemToggleButtons(itemID, favorite, bookmark, read, true, false)
 	</div>
 }
 
@@ -287,6 +289,20 @@ templ favToggle(itemID int64, favorite bool, target, vals string) {
 		hx-vals={ vals }
 	>
 		@web.FavIcon(favorite)
+	</button>
+}
+
+// bookmarkToggle is the bookmark button (save-for-later), beside the star.
+templ bookmarkToggle(itemID int64, bookmark bool, target, vals string) {
+	<button
+		class="link bookmark-btn"
+		title={ bookmarkTitle(bookmark) }
+		hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/bookmark" }
+		hx-target={ target }
+		hx-swap="outerHTML"
+		hx-vals={ vals }
+	>
+		@web.BookmarkIcon(bookmark)
 	</button>
 }
 
@@ -315,11 +331,23 @@ func favTitle(favorite bool) string {
 	return "favorite"
 }
 
+func bookmarkTitle(bookmark bool) string {
+	if bookmark {
+		return "remove bookmark"
+	}
+	return "bookmark"
+}
+
 func readTitle(read bool) string {
 	if read {
 		return "mark unread"
 	}
 	return "mark read"
+}
+
+// scopedTabURL builds a tab link carrying the active sort.
+func scopedTabURL(path, view string, sort itemSort) string {
+	return path + "?view=" + view + "&sort=" + sort.param()
 }
 
 templ ScopedItems(d scopedItemsData) {
@@ -334,37 +362,42 @@ templ ScopedItems(d scopedItemsData) {
 	}
 }
 
+templ scopedTab(path, itemsPath, view, label, count string, active bool, sort itemSort) {
+	if view == "feeds" {
+		if active {
+			<a class="active" href={ path + "?view=feeds" } hx-get={ itemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ path + "?view=feeds" }>{ label } ({ count })</a>
+		} else {
+			<a href={ path + "?view=feeds" } hx-get={ itemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ path + "?view=feeds" }>{ label } ({ count })</a>
+		}
+		return
+	}
+	{{ u := scopedTabURL(path, view, sort) }}
+	{{ hu := scopedTabURL(itemsPath, view, sort) }}
+	if active {
+		<a class="active" href={ u } hx-get={ hu } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ u }>{ label } ({ count })</a>
+	} else {
+		<a href={ u } hx-get={ hu } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ u }>{ label } ({ count })</a>
+	}
+}
+
 templ scopedItemsInner(d scopedItemsData) {
 	<div class="tabs-row">
 		<nav class="tabs">
-			if d.View == "unread" {
-				<a class="active" href={ d.Path + "?view=unread&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=unread&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=unread&dir=" + d.Dir }>unread ({ d.UnreadCount })</a>
-			} else {
-				<a href={ d.Path + "?view=unread&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=unread&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=unread&dir=" + d.Dir }>unread ({ d.UnreadCount })</a>
-			}
-			if d.View == "read" {
-				<a class="active" href={ d.Path + "?view=read&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=read&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read&dir=" + d.Dir }>read ({ d.ReadCount })</a>
-			} else {
-				<a href={ d.Path + "?view=read&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=read&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=read&dir=" + d.Dir }>read ({ d.ReadCount })</a>
-			}
+			@scopedTab(d.Path, d.ItemsPath, "unread", "unread", strconv.Itoa(d.UnreadCount), d.View == "unread", d.Sort)
+			@scopedTab(d.Path, d.ItemsPath, "read", "read", strconv.Itoa(d.ReadCount), d.View == "read", d.Sort)
 			if d.FeedsTab {
-				if d.View == "feeds" {
-					<a class="active" href={ d.Path + "?view=feeds" } hx-get={ d.ItemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=feeds" }>feeds ({ d.FeedCount })</a>
-				} else {
-					<a href={ d.Path + "?view=feeds" } hx-get={ d.ItemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=feeds" }>feeds ({ d.FeedCount })</a>
-				}
+				@scopedTab(d.Path, d.ItemsPath, "feeds", "feeds", strconv.Itoa(d.FeedCount), d.View == "feeds", d.Sort)
 			}
 			if d.FavTab {
-				if d.View == "favorites" {
-					<a class="active" href={ d.Path + "?view=favorites&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=favorites&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=favorites&dir=" + d.Dir }>favorites ({ d.FavCount })</a>
-				} else {
-					<a href={ d.Path + "?view=favorites&dir=" + d.Dir } hx-get={ d.ItemsPath + "?view=favorites&dir=" + d.Dir } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ d.Path + "?view=favorites&dir=" + d.Dir }>favorites ({ d.FavCount })</a>
-				}
+				@scopedTab(d.Path, d.ItemsPath, "favorites", "favorites", strconv.Itoa(d.FavCount), d.View == "favorites", d.Sort)
+			}
+			if d.BookmarkTab {
+				@scopedTab(d.Path, d.ItemsPath, "bookmarks", "bookmarks", strconv.Itoa(d.BookCount), d.View == "bookmarks", d.Sort)
 			}
 		</nav>
 		if d.View != "feeds" {
 			<div class="row-actions">
-				@SortDirControl(d.Dir, d.Path+"?view="+d.View+"&dir=desc", d.Path+"?view="+d.View+"&dir=asc")
+				@sortPicker(d.Path, d.View, d.Sort, d.NoMagic)
 				@DisplayModeControl(d.Path, d.Mode)
 			</div>
 		}
@@ -493,13 +526,41 @@ templ AuthorSortControl() {
 	})
 }
 
-// SortDirControl is the asc/desc picker for item lists. Server-side: each
-// option is a link that reloads the page with ?dir=.
-templ SortDirControl(dir, descHref, ascHref string) {
-	@PickerControl("dir", "sort order", dir, "", []pickerOption{
-		{Value: "desc", Label: "newest", Icon: "desc", Href: descHref},
-		{Value: "asc", Label: "oldest", Icon: "asc", Href: ascHref},
-	})
+// SortControl is the item sort picker: newest/oldest by time, or magic (feed
+// taste). Server-side: each option is a link that reloads the page with
+// ?sort=. basePath and view build the target URL; the list fragment is reloaded
+// in place by app.js on navigation.
+templ SortControl(basePath, view string, current itemSort) {
+	@sortPicker(basePath, view, current, false)
+}
+
+// sortPicker renders the sort options, omitting magic when noMagic is set (a
+// list orders by membership time, so feed taste does not apply).
+templ sortPicker(basePath, view string, current itemSort, noMagic bool) {
+	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, "?view="+view+"&", current, noMagic))
+}
+
+// SimpleSortControl is SortControl for a page whose list is not scoped (a plain
+// query-string base such as "/unread" or "/favorites").
+templ SimpleSortControl(basePath string, current itemSort) {
+	{{ sep := "?" }}
+	if strings.Contains(basePath, "?") {
+		{{ sep = "&" }}
+	}
+	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, sep, current, false))
+}
+
+// sortOptions builds the newest/oldest/magic picker options for a base URL. The
+// magic option is dropped when noMagic is set.
+func sortOptions(basePath, sep string, current itemSort, noMagic bool) []pickerOption {
+	opts := []pickerOption{
+		{Value: string(sortNewest), Label: "newest", Icon: "desc", Href: basePath + sep + "sort=newest"},
+		{Value: string(sortOldest), Label: "oldest", Icon: "asc", Href: basePath + sep + "sort=oldest"},
+	}
+	if !noMagic {
+		opts = append(opts, pickerOption{Value: string(sortMagic), Label: "magic", Icon: "magic", Href: basePath + sep + "sort=magic"})
+	}
+	return opts
 }
 
 // ModeIcon renders the small Lucide icon for a picker option.
@@ -513,6 +574,8 @@ templ ModeIcon(name string) {
 			@web.Lucide("arrow-down")
 		case "asc":
 			@web.Lucide("arrow-up")
+		case "magic":
+			@web.Lucide("sparkles")
 	}
 }
 
@@ -528,7 +591,7 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 		<div id="item-dialog-controls-src">
 			<h1>{ d.Title }</h1>
 			<div class="item-controls">
-				@itemViewControls(d.ID, d.Favorite, d.Read)
+				@itemViewControls(d.ID, d.Favorite, d.Bookmark, d.Read)
 				@itemMenuFullSys(d.ID, d.FeedID, d.SourceURL, d.ShareToken, true, d.FeedIsSystem)
 			</div>
 		</div>

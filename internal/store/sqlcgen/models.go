@@ -63,6 +63,7 @@ type Feed struct {
 	DisabledReason   sql.NullString `json:"disabled_reason"`
 	Enabled          bool           `json:"enabled"`
 	IsSystem         int64          `json:"is_system"`
+	Rank             int64          `json:"rank"`
 	CreatedAt        string         `json:"created_at"`
 }
 
@@ -96,6 +97,7 @@ type Item struct {
 	Read        bool           `json:"read"`
 	ReadAt      sql.NullString `json:"read_at"`
 	Favorite    bool           `json:"favorite"`
+	Bookmark    bool           `json:"bookmark"`
 }
 
 type ItemEnclosure struct {
@@ -182,6 +184,7 @@ type User struct {
 	HomeConfig            sql.NullString `json:"home_config"`
 	AutoReadAfterDays     int64          `json:"auto_read_after_days"`
 	FavoritesShareToken   sql.NullString `json:"favorites_share_token"`
+	BookmarksShareToken   sql.NullString `json:"bookmarks_share_token"`
 	CreatedAt             string         `json:"created_at"`
 }
 

@@ -73,7 +73,7 @@ WHERE li.item_id = sqlc.arg('itemID') AND l.user_id = sqlc.arg('userID');
 
 -- name: ListItemsInList :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -91,7 +91,7 @@ LIMIT sqlc.arg('limit');
 
 -- name: ListItemsInListAsc :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -121,7 +121,7 @@ WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID') AND i.r
 
 -- name: ListItemsInListPublic :many
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
@@ -147,3 +147,16 @@ WHERE id = sqlc.arg('userID');
 SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, created_at
 FROM users
 WHERE favorites_share_token = sqlc.arg('token');
+
+-- name: GetBookmarksShareToken :one
+SELECT bookmarks_share_token FROM users WHERE id = sqlc.arg('userID');
+
+-- name: SetBookmarksShareToken :exec
+UPDATE users
+SET bookmarks_share_token = sqlc.arg('token')
+WHERE id = sqlc.arg('userID');
+
+-- name: GetUserByBookmarksShareToken :one
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, created_at
+FROM users
+WHERE bookmarks_share_token = sqlc.arg('token');

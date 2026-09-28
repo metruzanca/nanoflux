@@ -767,6 +767,41 @@ ul.items.masonry .item-summary { -webkit-line-clamp: 3; line-clamp: 3; }
 .star.on { color: #ffcf4d; }
 .fav-btn svg { display: block; }
 
+/* Bookmark toggle: same shape as the star, tinted with the accent when set. */
+.bookmark {
+  width: 16px;
+  height: 16px;
+  vertical-align: -0.125em;
+  color: var(--muted);
+}
+.bookmark.on { color: var(--accent); }
+.bookmark-btn svg { display: block; }
+
+/* Magic-sort algorithm editor: one manual raise/neutral/lower lever per feed. */
+.algorithm-list li {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.algorithm-list li:last-child { border-bottom: none; }
+.rank-control { display: inline-flex; align-items: center; gap: 0.15rem; }
+.rank-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.rank-btn svg { width: 16px; height: 16px; display: block; }
+.rank-btn:hover { border-color: var(--border); color: var(--fg); }
+/* Matte green raise, matte red lower, neutral default (data-rank scopes it). */
+.rank-control .rank-btn.active { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.rank-control[data-rank="1"] .rank-btn.active { color: #6aa84f; border-color: color-mix(in srgb, #6aa84f 40%, transparent); }
+.rank-control[data-rank="-1"] .rank-btn.active { color: #b45f5f; border-color: color-mix(in srgb, #b45f5f 40%, transparent); }
+
 dialog.modal {
   width: min(28rem, calc(100vw - 2rem));
   border: 1px solid var(--border);

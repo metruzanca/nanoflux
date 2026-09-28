@@ -259,3 +259,126 @@ func TestFavoritesShareFlow(t *testing.T) {
 		t.Fatalf("revoked favorites token should 404, got %d", got.Code)
 	}
 }
+
+func TestBookmarksFlow(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, item := setupListsItem(t, s)
+
+	// The item row and modal offer a bookmark toggle beside the star.
+	row := doGet(h, "/unread", cookie).Body.String()
+	if !strings.Contains(row, "/items/"+itoa(item.ID)+"/bookmark") {
+		t.Fatalf("item row should offer a bookmark toggle: %s", row)
+	}
+	modal := doGet(h, "/items/"+itoa(item.ID)+"/view", cookie).Body.String()
+	if !strings.Contains(modal, "/items/"+itoa(item.ID)+"/bookmark") {
+		t.Fatalf("item modal should offer a bookmark toggle: %s", modal)
+	}
+
+	// Toggling from the row swaps the row and marks the item bookmarked.
+	rr := doForm(h, "POST", "/items/"+itoa(item.ID)+"/bookmark", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("bookmark: %d %s", rr.Code, rr.Body.String())
+	}
+	got, _ := s.store.Items.ByID(u.ID, item.ID)
+	if !got.Bookmark {
+		t.Fatal("item should be bookmarked")
+	}
+	if got.Favorite {
+		t.Fatal("bookmarking must not favorite")
+	}
+
+	// The bookmarks page lists it, with its own count and share control.
+	body := doGet(h, "/bookmarks", cookie).Body.String()
+	if !strings.Contains(body, "bookmarks (1)") || !strings.Contains(body, "Listable post") {
+		t.Fatalf("bookmarks page should list the item: %s", body)
+	}
+	if !strings.Contains(body, `hx-post="/bookmarks/share"`) {
+		t.Fatalf("bookmarks page should offer sharing: %s", body)
+	}
+
+	// The lists index pins bookmarks next to favorites.
+	idx := doGet(h, "/lists", cookie).Body.String()
+	if !strings.Contains(idx, `href="/bookmarks"`) || !strings.Contains(idx, `id="bookmarks-list"`) {
+		t.Fatalf("lists index should pin bookmarks: %s", idx)
+	}
+
+	// The add-to-list picker offers bookmarks as a native option.
+	picker := doGet(h, "/items/"+itoa(item.ID)+"/lists", cookie).Body.String()
+	if !strings.Contains(picker, "bookmarks") {
+		t.Fatalf("picker should offer bookmarks: %s", picker)
+	}
+
+	// Public sharing of the bookmarks list, mirroring favorites.
+	rr = doForm(h, "POST", "/bookmarks/share", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("share bookmarks: %d %s", rr.Code, rr.Body.String())
+	}
+	tok, _ := s.store.Users.BookmarksShareToken(u.ID)
+	if tok == "" {
+		t.Fatal("bookmarks share token missing")
+	}
+	pub := doGetRaw(h, "/b/"+tok)
+	if pub.Code != http.StatusOK || !strings.Contains(pub.Body.String(), "Listable post") {
+		t.Fatalf("public bookmarks page: %d %s", pub.Code, pub.Body.String())
+	}
+	if strings.Contains(pub.Body.String(), `href="/authors/`) || strings.Contains(pub.Body.String(), `href="/feeds/`) {
+		t.Fatalf("public bookmarks page should not expose internal links: %s", pub.Body.String())
+	}
+	doForm(h, "POST", "/bookmarks/revoke", url.Values{}, cookie)
+	if got := doGetRaw(h, "/b/"+tok); got.Code != http.StatusNotFound {
+		t.Fatalf("revoked bookmarks token should 404, got %d", got.Code)
+	}
+
+	// Toggling off removes it.
+	doForm(h, "POST", "/items/"+itoa(item.ID)+"/bookmark", url.Values{}, cookie)
+	if got, _ := s.store.Items.ByID(u.ID, item.ID); got.Bookmark {
+		t.Fatal("item should be un-bookmarked")
+	}
+}
+
+// The favorites algorithm editor lists feeds by favorite count and sets a feed's
+// manual rank lever.
+func TestFavoritesAlgorithm(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, item := setupListsItem(t, s)
+
+	// Favorite the item so its feed shows a count.
+	doForm(h, "POST", "/items/"+itoa(item.ID)+"/favorite", url.Values{}, cookie)
+
+	body := doGet(h, "/favorites/algorithm", cookie).Body.String()
+	if !strings.Contains(body, "favorites algorithm") || !strings.Contains(body, "Blog") {
+		t.Fatalf("algorithm page should list the feed: %s", body)
+	}
+	if !strings.Contains(body, "1 favorites") {
+		t.Fatalf("algorithm page should show the favorite count: %s", body)
+	}
+	// The favorites page links to the editor.
+	if fav := doGet(h, "/favorites", cookie).Body.String(); !strings.Contains(fav, "/favorites/algorithm") {
+		t.Fatalf("favorites page should link to the algorithm editor: %s", fav)
+	}
+
+	feedID := item.FeedID
+	rr := doForm(h, "POST", "/feeds/"+itoa(feedID)+"/rank", url.Values{"rank": {"1"}}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `data-rank="1"`) {
+		t.Fatalf("rank up: %d %s", rr.Code, rr.Body.String())
+	}
+	f, _ := s.store.Feeds.ByID(u.ID, feedID)
+	if f.Rank != 1 {
+		t.Fatalf("feed rank should be 1, got %d", f.Rank)
+	}
+	rr = doForm(h, "POST", "/feeds/"+itoa(feedID)+"/rank", url.Values{"rank": {"-1"}}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `data-rank="-1"`) {
+		t.Fatalf("rank down: %d %s", rr.Code, rr.Body.String())
+	}
+
+	// The magic sort is offered on the unread page and returns a ranked list.
+	home := doGet(h, "/unread", cookie).Body.String()
+	if !strings.Contains(home, "sort=magic") {
+		t.Fatalf("unread page should offer the magic sort: %s", home)
+	}
+	if got := doGet(h, "/unread?sort=magic", cookie); got.Code != http.StatusOK {
+		t.Fatalf("magic unread page: %d", got.Code)
+	}
+}

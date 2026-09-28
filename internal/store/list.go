@@ -77,7 +77,7 @@ func (s *ListStore) ByName(userID int64, name string) (List, error) {
 }
 
 // Ensure returns the user's list named name, creating it when absent. Used to
-// materialize a default list (e.g. "watch later") on demand.
+// materialize a list a user names while saving a page.
 func (s *ListStore) Ensure(userID int64, name string) (List, error) {
 	l, err := s.ByName(userID, name)
 	if err == nil {
@@ -229,7 +229,7 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 		out := make([]ItemWithFeed, 0, len(rows))
 		for _, r := range rows {
 			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 		}
 		if err := attachSources(s.q, userID, s.policy, s.decorator, out); err != nil {
@@ -255,7 +255,7 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 	out := make([]ItemWithFeed, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	if err := attachSources(s.q, userID, s.policy, s.decorator, out); err != nil {
@@ -303,7 +303,7 @@ func (s *ListStore) ItemListPublic(listID, before int64, limit int) ([]ItemWithF
 	out := make([]ItemWithFeed, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.ReadAt,
+			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	if err := attachSources(s.q, 0, s.policy, s.decorator, out); err != nil {

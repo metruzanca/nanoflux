@@ -152,12 +152,13 @@ func (s *Server) unread(w http.ResponseWriter, r *http.Request) {
 // "/unread".
 func (s *Server) renderUnread(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	asc := itemsAsc(r)
-	items, more, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Ascending: asc, Limit: pageSize})
+	sort := itemSortOf(r)
+	items, more, _ := s.store.Items.ListPage(u.ID, scopedFilter("unread", sort, cursorID(r, sort), 0, 0, 0))
 	unread, _ := s.store.Items.CountUnread(u.ID, 0)
+	base := "/items?sort=" + sort.param()
 	web.Render(w, r, basePage("unread", u, homePage(homeData{
-		Unread: withTZ(u.Timezone, items), UnreadCount: unread, Dir: dirParam(asc),
-		More: pageCursor("/items?dir="+dirParam(asc), items, more, asc),
+		Unread: withTZ(u.Timezone, items), UnreadCount: unread, Sort: sort,
+		More: pageCursorFor(base, items, more, sort, int(cursorID(r, sort))),
 		Mode: s.store.ViewPrefs.Mode(u.ID, "/unread"),
 	})))
 }
