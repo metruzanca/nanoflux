@@ -447,8 +447,8 @@ func TestPollOneAppliesFilters(t *testing.T) {
 	defer srv.Close()
 
 	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL, "", "", 900)
-	if _, err := st.Filters.Create(u.ID, f.ID, "hide", "title", "hide me", false); err != nil {
-		t.Fatalf("create hide rule: %v", err)
+	if _, err := st.Filters.Create(u.ID, f.ID, "delete", "title", "hide me", false); err != nil {
+		t.Fatalf("create delete rule: %v", err)
 	}
 	if _, err := st.Filters.Create(u.ID, f.ID, "mark_read", "title", "^spoiler", true); err != nil {
 		t.Fatalf("create mark_read rule: %v", err)
@@ -523,7 +523,7 @@ func TestPollOneCategoryFilter(t *testing.T) {
 	defer srv.Close()
 
 	f, _ := st.Feeds.Create(u.ID, a.ID, "sub", srv.URL, "", "", 900)
-	if _, err := st.Filters.Create(u.ID, f.ID, "hide", "category", "r/rust", false); err != nil {
+	if _, err := st.Filters.Create(u.ID, f.ID, "delete", "category", "r/rust", false); err != nil {
 		t.Fatalf("create category rule: %v", err)
 	}
 

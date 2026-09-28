@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/metruzanca/nanoflux/internal/discover"
+	"github.com/metruzanca/nanoflux/internal/filtermatch"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -99,8 +100,8 @@ func extAuthorItems(authors []store.Author) []comboItem {
 // filterActionItems and filterFieldItems are the fixed choices for a feed
 // filter rule (action and field).
 var filterActionItems = []comboItem{
-	{Value: "hide", Label: "hide"},
-	{Value: "mark_read", Label: "mark read"},
+	{Value: filtermatch.ActionDelete, Label: "delete"},
+	{Value: filtermatch.ActionMarkRead, Label: "mark read"},
 }
 
 var filterFieldItems = []comboItem{

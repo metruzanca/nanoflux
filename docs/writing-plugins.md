@@ -245,9 +245,9 @@ Set `Item.Categories` to feed-provided labels when the site carries context
 worth filtering on: a subreddit, an author, a post kind. The host stores them
 (`items.categories`) and matches a filter rule's `field = "category"` against
 **any one** category (contains, case-insensitive; regex per category). So a
-plugin that marks, say, reblogs with a single `"reblog"` label lets the user hide
-them all with one rule (`action: hide, field: category, pattern: reblog`) without
-any site-specific host code.
+plugin that marks, say, reblogs with a single `"reblog"` label lets the user
+delete them all with one rule (`action: delete, field: category, pattern:
+reblog`) without any site-specific host code.
 
 The generic RSS/Atom parser fills the equivalent from an entry's `<category>`
 values and author names, which is how reddit's `r/<sub>` and `u/<name>` work.

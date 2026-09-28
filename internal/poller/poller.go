@@ -7,9 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +15,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/feedparse"
+	"github.com/metruzanca/nanoflux/internal/filtermatch"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -564,13 +563,14 @@ func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter
 	newItems := 0
 	for _, it := range res.Items {
 		action := ""
+		fields := filtermatch.FieldsFromFeedItem(it)
 		for _, rule := range rules {
-			if m, err := matchFilter(rule, it); err == nil && m {
+			if m, err := filtermatch.Match(rule, fields); err == nil && m {
 				action = rule.Action
 				break
 			}
 		}
-		if action == "hide" {
+		if action == filtermatch.ActionDelete {
 			continue
 		}
 		item := store.Item{
@@ -585,7 +585,7 @@ func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter
 			PublishedAt: it.PublishedAt,
 			FetchedAt:   fetched,
 		}
-		if action == "mark_read" {
+		if action == filtermatch.ActionMarkRead {
 			item.Read = true
 			item.ReadAt = db.Now()
 		}
@@ -626,48 +626,6 @@ func truncateError(msg string) string {
 		return msg[:maxErrLen] + "…"
 	}
 	return msg
-}
-
-// matchFilter reports whether a rule's pattern matches an item's selected
-// field. Summary matching uses the visible text, not the raw HTML. Category
-// matching succeeds when any one of the item's feed-provided categories
-// matches, so a rule need not know how categories are joined.
-func matchFilter(rule store.Filter, it feedparse.Item) (bool, error) {
-	if rule.Field == "category" {
-		for _, c := range it.Categories {
-			if m, err := matchText(rule, c); err != nil {
-				return false, err
-			} else if m {
-				return true, nil
-			}
-		}
-		return false, nil
-	}
-	var text string
-	switch rule.Field {
-	case "title":
-		text = it.Title
-	case "link":
-		text = it.Link
-	case "summary":
-		text = feedparse.PlainText(it.Summary)
-	default:
-		return false, nil
-	}
-	return matchText(rule, text)
-}
-
-// matchText applies a single rule's pattern to one string: a regex match when
-// IsRegex is set, otherwise a case-insensitive substring test.
-func matchText(rule store.Filter, text string) (bool, error) {
-	if rule.IsRegex {
-		re, err := regexp.Compile(rule.Pattern)
-		if err != nil {
-			return false, err
-		}
-		return re.MatchString(text), nil
-	}
-	return strings.Contains(strings.ToLower(text), strings.ToLower(rule.Pattern)), nil
 }
 
 // storeEnclosures copies a newly inserted item's media attachments into the

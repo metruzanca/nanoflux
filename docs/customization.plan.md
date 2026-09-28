@@ -96,10 +96,13 @@ plugins list + per-domain reset (`internal/httpapi/admin.go:100`).
 
 ### Filters / search / tags
 
-- Ingest filters (`filters` table, `schema.sql:131`): `action` hide/mark_read,
-  `field` title/summary/link, `pattern`, `is_regex`. Applied at poll time
-  (`poller.go:294`). UI is per-feed only (`web.go:855`); `feed_id NULL`
-  (all-feeds) rules work in the store but have **no UI**.
+- Ingest filters (`filters` table, `schema.sql:163`): `action` delete/mark_read,
+  `field` title/summary/link/category, `pattern`, `is_regex`. Applied at poll
+  time and **retroactively** to a feed's stored items when a rule is added
+  (with a keep/delete preview modal). A `delete` rule removes the item from that
+  feed (deleting the row when no other feed holds it); `mark_read` marks it read.
+  UI is per-feed only; `feed_id NULL` (all-feeds) rules work in the store but
+  have **no UI** and are not applied retroactively.
 - Search is stateless FTS5 (`items_fts`, schemaV10) with `title:`, `author:`,
   `feed:`, `unread:` qualifiers (`search.go:73`). No saved searches.
 - Tags: only collection name pills on feed rows. No item tags/labels.
@@ -128,7 +131,8 @@ swipe gestures, deep-link item modal, load-more.
 
 - No font size/family/density/reader-width preference; no serif variants.
 - List/grid and authors-sort are per-browser, not per-account (`todo.md:6`).
-- No global (all-feeds) rule UI; rules limited to hide/mark_read.
+- No global (all-feeds) rule UI, and no retroactive application for them; rules
+  are per-feed and limited to delete/mark_read.
 - No tags/labels; no saved searches.
 - No unread-count badges across all scopes.
 - No tracking-param stripping / referrer policy / media proxy.

@@ -19,6 +19,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/discover"
+	"github.com/metruzanca/nanoflux/internal/filtermatch"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 	"github.com/metruzanca/nanoflux/pluginapi"
@@ -1075,22 +1076,24 @@ func (s *Server) feedRules(userID, feedID int64) feedRulesData {
 	return feedRulesData{FeedID: feedID, Rows: rows}
 }
 
-// feedRuleCreate adds a filter rule from the feed edit page.
-func (s *Server) feedRuleCreate(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
+// filterRuleInput is a validated ingest filter rule from the feed edit form.
+type filterRuleInput struct {
+	Action  string
+	Field   string
+	Pattern string
+	IsRegex bool
+}
+
+// parseFilterRule validates a filter rule from the form, returning the rule and
+// an empty error string, or a user-facing message when invalid.
+func parseFilterRule(r *http.Request) (filterRuleInput, string) {
 	pattern := strings.TrimSpace(r.FormValue("pattern"))
 	if pattern == "" {
-		writeFormError(w, r, "feed-rules-error", "a pattern is required")
-		return
+		return filterRuleInput{}, "a pattern is required"
 	}
 	action := r.FormValue("action")
-	if action != "hide" && action != "mark_read" {
-		action = "hide"
+	if action != filtermatch.ActionDelete && action != filtermatch.ActionMarkRead {
+		action = filtermatch.ActionDelete
 	}
 	field := r.FormValue("field")
 	switch field {
@@ -1101,19 +1104,147 @@ func (s *Server) feedRuleCreate(w http.ResponseWriter, r *http.Request) {
 	isRegex := r.FormValue("is_regex") == "1"
 	if isRegex {
 		if _, err := regexp.Compile(pattern); err != nil {
-			writeFormError(w, r, "feed-rules-error", "invalid regex")
-			return
+			return filterRuleInput{}, "invalid regex"
 		}
 	}
-	if _, err := s.store.Filters.Create(u.ID, id, action, field, pattern, isRegex); err != nil {
+	return filterRuleInput{Action: action, Field: field, Pattern: pattern, IsRegex: isRegex}, ""
+}
+
+// applyFilterRetroactively runs a just-added rule over the feed's stored items:
+// a delete rule removes the matching items from the feed, a mark_read rule marks
+// them read. Best-effort with respect to the rule already being saved; the
+// caller logs and surfaces failures.
+func (s *Server) applyFilterRetroactively(userID, feedID int64, rule filterRuleInput) (int, error) {
+	items, err := s.store.Items.ListFeedItemsForFilter(feedID)
+	if err != nil {
+		return 0, err
+	}
+	match := store.Filter{
+		Action:  rule.Action,
+		Field:   rule.Field,
+		Pattern: rule.Pattern,
+		IsRegex: rule.IsRegex,
+	}
+	ids := make([]int64, 0, len(items))
+	for _, it := range items {
+		ok, err := filtermatch.Match(match, filtermatch.Fields{
+			Title:      it.Title,
+			Link:       it.Link,
+			Summary:    it.Summary,
+			Categories: it.Categories,
+		})
+		if err != nil {
+			return 0, err
+		}
+		if ok {
+			ids = append(ids, it.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if rule.Action == filtermatch.ActionMarkRead {
+		if err := s.store.Items.SetItemsReadBulk(userID, ids); err != nil {
+			return 0, err
+		}
+		return len(ids), nil
+	}
+	return s.store.Items.RemoveFeedMemberships(userID, feedID, ids)
+}
+
+// feedRuleCreate adds a filter rule from the feed edit page and applies it to
+// the feed's existing items.
+func (s *Server) feedRuleCreate(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	rule, msg := parseFilterRule(r)
+	if msg != "" {
+		writeFormError(w, r, "feed-rules-error", msg)
+		return
+	}
+	if _, err := s.store.Filters.Create(u.ID, id, rule.Action, rule.Field, rule.Pattern, rule.IsRegex); err != nil {
 		log.Error("create filter", "err", err)
 		writeFormError(w, r, "feed-rules-error", "could not add rule")
+		return
+	}
+	if _, err := s.applyFilterRetroactively(u.ID, id, rule); err != nil {
+		log.Error("apply filter retroactively", "feed_id", id, "err", err)
+		writeFormError(w, r, "feed-rules-error", "rule saved, but applying it to existing items failed")
 		return
 	}
 	web.Render(w, r, feedRulesSection(s.feedRules(u.ID, id)))
 }
 
-// filterDelete removes a filter rule and re-renders the list.
+// feedRulePreview validates a rule and renders a modal showing which of the
+// feed's stored items it would keep and which it would delete (or mark read).
+// The rule is not saved; the dialog's save button posts to feedRuleCreate.
+func (s *Server) feedRulePreview(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.Feeds.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	rule, msg := parseFilterRule(r)
+	if msg != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		web.Render(w, r, FormError(msg))
+		return
+	}
+	items, err := s.store.Items.ListFeedItemsForFilter(id)
+	if err != nil {
+		log.Error("filter preview list items", "feed_id", id, "err", err)
+		renderError(w, r, "could not preview this rule")
+		return
+	}
+	match := store.Filter{
+		Action:  rule.Action,
+		Field:   rule.Field,
+		Pattern: rule.Pattern,
+		IsRegex: rule.IsRegex,
+	}
+	var keep, affected []store.ItemWithFeed
+	for _, it := range items {
+		ok, err := filtermatch.Match(match, filtermatch.Fields{
+			Title:      it.Title,
+			Link:       it.Link,
+			Summary:    it.Summary,
+			Categories: it.Categories,
+		})
+		if err != nil {
+			renderError(w, r, "could not preview this rule")
+			return
+		}
+		if ok {
+			affected = append(affected, it)
+		} else {
+			keep = append(keep, it)
+		}
+	}
+	web.Render(w, r, filterPreview(filterPreviewData{
+		FeedID:   id,
+		Rule:     rule,
+		Keep:     withTZ(u.Timezone, keep),
+		Affected: withTZ(u.Timezone, affected),
+		PageSize: filterPreviewPageSize,
+	}))
+}
+
+// filterPreviewPageSize caps how many items each section of the preview modal
+// renders; the counts always report the true totals.
+const filterPreviewPageSize = 20
+
+// filterDelete removes a filter rule and re-renders the list. Removal is not
+// retroactive: items a delete rule has already removed are gone for good, and
+// future polls simply re-evaluate the remaining rules.
 func (s *Server) filterDelete(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	fid, err := parseID(r)

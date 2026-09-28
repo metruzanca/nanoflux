@@ -329,21 +329,21 @@ func TestFeedFilterRulesFlow(t *testing.T) {
 		t.Fatalf("edit page should include the filters section: %s", edit)
 	}
 
-	// Add a hide rule via the edit form.
+	// Add a delete rule via the edit form.
 	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters", url.Values{
-		"action": {"hide"}, "field": {"title"}, "pattern": {"sponsored"},
+		"action": {"delete"}, "field": {"title"}, "pattern": {"sponsored"},
 	}, cookie)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "sponsored") {
 		t.Fatalf("add rule: %d %s", rr.Code, rr.Body.String())
 	}
 	rules, _ := s.store.Filters.ListByFeed(u.ID, f.ID)
-	if len(rules) != 1 || rules[0].Pattern != "sponsored" || rules[0].Action != "hide" {
+	if len(rules) != 1 || rules[0].Pattern != "sponsored" || rules[0].Action != "delete" {
 		t.Fatalf("stored rule mismatch: %+v", rules)
 	}
 
 	// A category rule (e.g. reddit's r/golang) is accepted and persisted.
 	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters", url.Values{
-		"action": {"hide"}, "field": {"category"}, "pattern": {"r/golang"},
+		"action": {"delete"}, "field": {"category"}, "pattern": {"r/golang"},
 	}, cookie)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "r/golang") {
 		t.Fatalf("add category rule: %d %s", rr.Code, rr.Body.String())
@@ -368,7 +368,7 @@ func TestFeedFilterRulesFlow(t *testing.T) {
 
 	// Invalid regex -> 400 with a visible error, nothing saved.
 	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters", url.Values{
-		"action": {"hide"}, "field": {"title"}, "pattern": {"("}, "is_regex": {"1"},
+		"action": {"delete"}, "field": {"title"}, "pattern": {"("}, "is_regex": {"1"},
 	}, cookie)
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `role="alert"`) {
 		t.Fatalf("invalid regex: %d %s", rr.Code, rr.Body.String())
@@ -382,6 +382,68 @@ func TestFeedFilterRulesFlow(t *testing.T) {
 	rules, _ = s.store.Filters.ListByFeed(u.ID, f.ID)
 	if len(rules) != 0 {
 		t.Fatalf("expected no rules after delete, got %d", len(rules))
+	}
+}
+
+// Adding a filter previews the change (keep vs delete counts) and, on save,
+// applies the delete retroactively to the feed's stored items.
+func TestFeedFilterPreviewAndRetroactiveDelete(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "1", Title: "A reblog", Categories: []string{"reblog"}, FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "2", Title: "Normal post", FetchedAt: db.Now()})
+
+	// Preview lists the two sections and does not save anything.
+	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters/preview", url.Values{
+		"action": {"delete"}, "field": {"category"}, "pattern": {"reblog"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, want := range []string{"keep (1)", "delete (1)", "A reblog", "Normal post", "save filter"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("preview missing %q: %s", want, body)
+		}
+	}
+	if rules, _ := s.store.Filters.ListByFeed(u.ID, f.ID); len(rules) != 0 {
+		t.Fatalf("preview must not save a rule, got %d", len(rules))
+	}
+
+	// Saving applies the rule: the reblog is gone, the normal post stays.
+	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters", url.Values{
+		"action": {"delete"}, "field": {"category"}, "pattern": {"reblog"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", rr.Code, rr.Body.String())
+	}
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{FeedID: f.ID, Limit: 10})
+	if len(items) != 1 || items[0].Title != "Normal post" {
+		t.Fatalf("retroactive delete should leave only the normal post: %+v", items)
+	}
+}
+
+// A mark_read filter previews and applies by marking stored items read.
+func TestFeedFilterRetroactiveMarkRead(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "1", Title: "spoiler alert", FetchedAt: db.Now()})
+
+	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters", url.Values{
+		"action": {"mark_read"}, "field": {"title"}, "pattern": {"spoiler"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", rr.Code, rr.Body.String())
+	}
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{FeedID: f.ID, Limit: 10})
+	if len(items) != 1 || !items[0].Read {
+		t.Fatalf("item should be marked read: %+v", items)
 	}
 }
 

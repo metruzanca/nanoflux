@@ -411,3 +411,56 @@ SELECT COUNT(*) FROM items;
 
 -- name: CountAllUnreadItems :one
 SELECT COUNT(*) FROM items WHERE read = 0;
+
+-- name: ListFeedItemsForFilter :many
+-- Every item that is a member of a feed, with the same shape as ListItems, for
+-- retroactively applying an ingest filter rule to already-stored items. Unlike
+-- ListItems it is not limited and does not exclude the system feed, but the
+-- caller scopes it to a regular feed.
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+JOIN item_feeds mf ON mf.item_id = i.id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE mf.feed_id = sqlc.arg('feedID')
+ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC;
+
+-- name: RemoveItemFeedMemberships :exec
+-- Drop a set of items from one feed's membership set (retroactive delete). The
+-- items themselves are re-homed or deleted separately.
+DELETE FROM item_feeds
+WHERE feed_id = sqlc.arg('feedID') AND item_id IN (sqlc.slice('itemIDs'));
+
+-- name: RehomeOwnedItems :exec
+-- Re-home affected items owned by a feed to one of their remaining memberships,
+-- so a row still reachable through another feed survives the owner's removal.
+-- Scoped to itemIDs so untouched items keep their owner feed.
+UPDATE items
+SET feed_id = (
+    SELECT mf.feed_id FROM item_feeds mf
+    WHERE mf.item_id = items.id
+    ORDER BY mf.feed_id LIMIT 1
+)
+WHERE items.feed_id = sqlc.arg('feedID')
+  AND items.id IN (sqlc.slice('itemIDs'))
+  AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = items.id);
+
+-- name: DeleteOrphanOwnedItems :exec
+-- Delete affected items owned by a feed that no longer belong to any feed
+-- (their last membership was removed). Cascades enclosures, list items, shares
+-- and the FTS trigger. Scoped to itemIDs.
+DELETE FROM items
+WHERE items.feed_id = sqlc.arg('feedID')
+  AND items.id IN (sqlc.slice('itemIDs'))
+  AND NOT EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = items.id);
+
+-- name: SetItemsReadByIDs :exec
+-- Mark a set of a user's items read, recording the time (retroactive
+-- mark_read). Scoped by user so ids cannot cross accounts.
+UPDATE items
+SET read = 1, read_at = sqlc.arg('readAt')
+WHERE user_id = sqlc.arg('userID') AND id IN (sqlc.slice('itemIDs'));
