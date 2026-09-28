@@ -216,8 +216,51 @@ func TestSettingsHomeRenderMode(t *testing.T) {
 	}
 }
 
-// TestSettingsHomeReorder covers the drag-and-drop reorder action: the client
-// posts the full ordered id list and the stored config follows it. Ids that are
+// TestSettingsHomeSort covers the per-section sort picker: the settings card
+// offers newest/oldest/magic (magic default), and a chosen sort is stored and
+// used when the home page loads that section.
+func TestSettingsHomeSort(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, cats, _ := homeFixture(t, s)
+	s.store.Users.SetHomeConfig(u.ID, `[{"kind":"collection","ref_id":`+itoa(cats.ID)+`}]`)
+
+	// The picker defaults to magic and offers all three options.
+	body := doGet(h, "/settings", cookie).Body.String()
+	if !strings.Contains(body, `data-picker="sort-`+itoa(cats.ID)+`"`) {
+		t.Fatalf("settings home card should offer a sort picker: %s", body)
+	}
+	if !strings.Contains(body, `data-mode="magic"`) {
+		t.Fatalf("sort picker should default to magic: %s", body)
+	}
+
+	// Newest by default: an older item with a higher id (fetched later) would
+	// otherwise sort first under magic. Set oldest and confirm it persists.
+	rr := doForm(h, "POST", "/settings/home", url.Values{
+		"action": {"sort"}, "collection_id": {itoa(cats.ID)}, "sort": {"oldest"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set sort: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ := s.store.Users.ByID(u.ID)
+	if !strings.Contains(after.HomeConfig, `"sort":"oldest"`) {
+		t.Fatalf("home config should record the oldest sort: %q", after.HomeConfig)
+	}
+
+	// An unknown sort falls back to magic.
+	rr = doForm(h, "POST", "/settings/home", url.Values{
+		"action": {"sort"}, "collection_id": {itoa(cats.ID)}, "sort": {"bogus"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set sort: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if !strings.Contains(after.HomeConfig, `"sort":"magic"`) {
+		t.Fatalf("unknown sort should normalize to magic: %q", after.HomeConfig)
+	}
+}
+
+// TestSettingsHomeReorder covers the drag-and-drop reorder action: the client// posts the full ordered id list and the stored config follows it. Ids that are
 // not pinned/owned are ignored, and an omitted pin is preserved.
 func TestSettingsHomeReorder(t *testing.T) {
 	s, h := newTestServer(t)

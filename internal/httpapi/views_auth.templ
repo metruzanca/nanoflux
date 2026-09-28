@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"strconv"
-
-	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 templ loginPage(errMsg string, allowSignup bool, next string) {
@@ -64,7 +62,6 @@ templ signupDisabledPage() {
 // sections are dropped before render. Each section renders as a list or a grid
 // depending on its configured mode.
 templ dashboardPage(d dashboardData) {
-	<h1>home</h1>
 	<div id="home-sections">
 		for _, sec := range d.Sections {
 			<section class="home-section">
@@ -113,7 +110,7 @@ templ favoritesPage(d favoritesData) {
 		<div class="row-actions">
 			@SimpleSortControl("/favorites", d.Sort)
 			@DisplayModeControl("/favorites", d.Mode)
-			<a class="small" title="edit algorithm" href="/favorites/algorithm">@web.EditIcon() algorithm</a>
+			<a class="button small" title="edit the magic sort" href="/favorites/algorithm">edit algorithm</a>
 			@favoritesShareControl(d.ShareToken)
 		</div>
 	</div>

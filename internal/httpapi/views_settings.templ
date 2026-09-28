@@ -103,7 +103,6 @@ templ settingsAppearance(d settingsAppearanceData) {
 			@appearanceAccent(settingsAccentData{Accent: d.Accent, Error: d.AccentError})
 			@appearanceUnreadCounts(settingsAppearanceData{HideUnreadCounts: d.HideUnreadCounts})
 			@appearanceUnreadNav(settingsAppearanceData{HideUnreadNav: d.HideUnreadNav, HideUnreadCounts: d.HideUnreadCounts})
-			@appearanceGridColumns(settingsAppearanceData{GridMaxColumns: d.GridMaxColumns, GridError: d.GridError})
 		</div>
 	</section>
 }
@@ -157,8 +156,8 @@ templ appearanceUnreadNav(d settingsAppearanceData) {
 templ appearanceGridColumns(d settingsAppearanceData) {
 	<div id="settings-grid-columns-section">
 		<form class="stack" hx-post="/settings/appearance/grid-columns" hx-trigger="change" hx-target="#settings-grid-columns-section" hx-swap="outerHTML">
-			@sliderField("grid_max_columns", "grid max columns", d.GridMaxColumns, 2, 6, nil)
-			<p class="muted small">The most columns grid display may use. Two on narrow screens regardless.</p>
+			@sliderField("grid_max_columns", "home grid max columns", d.GridMaxColumns, 2, 6, nil)
+			<p class="muted small">The most columns the home page grid may use. Other grid lists stay at two, and narrow screens drop to one.</p>
 			if d.GridError != "" {
 				<div class="error" role="alert">{ d.GridError }</div>
 			}
@@ -170,12 +169,11 @@ templ settingsAutoRead(d settingsAutoReadData) {
 	<section class="card" id="settings-auto-read-card">
 		<h2>auto-read old items</h2>
 		<p class="muted small">Unread items older than this are marked read automatically, including favorites and bookmarks. Off leaves everything as is. Marking read is reversible with "mark all unread".</p>
-		<form class="stack" hx-post="/settings/auto-read" hx-target="#settings-auto-read-card" hx-swap="outerHTML">
+		<form class="stack" hx-post="/settings/auto-read" hx-trigger="change" hx-target="#settings-auto-read-card" hx-swap="outerHTML">
 			@comboSelect("auto_read_after_days", d.Value, "mark items read after", "select a window", autoReadItems, nil)
 			if d.Error != "" {
 				<div class="error" role="alert">{ d.Error }</div>
 			}
-			<button type="submit">save</button>
 		</form>
 	</section>
 }

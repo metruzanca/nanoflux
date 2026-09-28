@@ -268,6 +268,15 @@ body.hide-counts .nav-count { display: none; }
 
 main { max-width: 46rem; margin: 1.5rem auto; padding: 0 1.25rem; }
 
+/* The home dashboard can show up to six grid columns (a home-screen
+   preference). Its content area scales with the chosen column count: the
+   default two columns keep the old reading width (46rem), and each extra
+   column adds another 23rem so six columns is ~3x wider. Capped at the
+   viewport so it never overflows. */
+main:has(#home-sections) {
+  max-width: min(100%, calc(46rem + (var(--grid-columns, 2) - 2) * 23rem));
+}
+
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -726,9 +735,15 @@ li.text-card .card-body { flex: 1; min-width: 0; }
    720px keeps cards at a reasonable size. */
 ul.items.masonry {
   display: grid;
-  grid-template-columns: repeat(var(--grid-columns, 2), minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem 1.25rem;
   align-items: start;
+}
+/* The grid-column cap is a home-screen preference, so it only widens the
+   pinned home sections (see the "home screen" settings). Every other grid
+   list keeps two columns. */
+#home-sections ul.items.masonry {
+  grid-template-columns: repeat(var(--grid-columns, 2), minmax(0, 1fr));
 }
 ul.items.masonry li {
   display: block;
@@ -788,6 +803,16 @@ ul.items.masonry .item-summary { -webkit-line-clamp: 3; line-clamp: 3; }
   border-bottom: 1px solid var(--border);
 }
 .algorithm-list li:last-child { border-bottom: none; }
+/* Stack the author above the feed name: both can be long, and laying them out
+   inline wrapped awkwardly against the rank controls. */
+.algorithm-feed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.algorithm-feed a { overflow-wrap: anywhere; }
 .rank-control { display: inline-flex; align-items: center; gap: 0.15rem; }
 .rank-btn {
   display: inline-flex;
@@ -969,6 +994,7 @@ dialog.palette input:focus { outline: none; }
    collection picker rather than under it. */
 .pin-row { display: flex; align-items: flex-end; gap: 0.5rem; max-width: 26rem; }
 .pin-row .combo-field { flex: 1; min-width: 0; }
+.home-grid-columns { margin-top: 1rem; max-width: 26rem; }
 
 .accent-swatches { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .accent-swatch {
@@ -986,6 +1012,7 @@ input[type="color"] {
   width: min(8rem, 100%);
   height: 2.2rem;
   cursor: pointer;
+  margin-bottom: 0.75rem;
 }
 
 dialog.modal.wide[open] {
@@ -1193,6 +1220,7 @@ details.feeds-section summary:hover { color: var(--accent); }
 
   /* Narrow screens get a single grid column so cards keep a usable size. */
   ul.items.masonry { grid-template-columns: 1fr; }
+  #home-sections ul.items.masonry { grid-template-columns: 1fr; }
 
   .row { flex-wrap: wrap; }
 
@@ -1525,10 +1553,15 @@ body.marketing .site-foot { margin-top: 0; }
 .mkt-plugins-note { margin: 0 0 1.25rem; color: var(--muted); font-size: 0.95rem; }
 .mkt-docs { font-size: 0.95rem; }
 
-.mkt-plugins-art img { width: 100%; height: auto; display: block; margin-bottom: 1rem; }
+.mkt-plugins-art img { width: 100%; height: auto; display: block; }
+
+/* The plugin code sample spans the full section width, below the two-column
+   copy/art row, so a real source excerpt has room to breathe. */
+.mkt-plugins-code { margin-top: 2.5rem; }
+.mkt-code-caption { margin: 0 0 0.6rem; color: var(--muted); font-size: 0.9rem; }
 .mkt-code {
   margin: 0;
-  padding: 0.85rem 1rem;
+  padding: 1rem 1.15rem;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 10px;
