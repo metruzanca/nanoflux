@@ -1933,3 +1933,42 @@ func TestListPageAscending(t *testing.T) {
 		t.Fatalf("asc next page: %+v", next)
 	}
 }
+
+// TestItemContentSurvivesRepoll asserts an enriched body is stored separately
+// from the summary and is not clobbered when the feed's snapshot is refreshed.
+func TestItemContentSurvivesRepoll(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+
+	if _, err := s.Items.Upsert(f.ID, Item{
+		GUID: "g1", Title: "Post", Link: "https://metru.dev/1",
+		Summary: "feed summary", FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	itemID, _ := s.Items.ByFeedIdentity(f.ID, "g1")
+	if err := s.Items.SetContent(u.ID, itemID, "<p>extracted full text</p>"); err != nil {
+		t.Fatalf("SetContent: %v", err)
+	}
+	got, _ := s.Items.OneWithFeed(u.ID, itemID)
+	if got.Content != "<p>extracted full text</p>" {
+		t.Fatalf("content = %q", got.Content)
+	}
+
+	// A re-poll refreshes the summary; the enriched content is untouched.
+	if _, err := s.Items.Upsert(f.ID, Item{
+		GUID: "g1", Title: "Post", Link: "https://metru.dev/1",
+		Summary: "feed summary v2", FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatalf("upsert again: %v", err)
+	}
+	got, _ = s.Items.OneWithFeed(u.ID, itemID)
+	if got.Summary != "feed summary v2" {
+		t.Fatalf("summary should refresh: %q", got.Summary)
+	}
+	if got.Content != "<p>extracted full text</p>" {
+		t.Fatalf("content must survive a re-poll: %q", got.Content)
+	}
+}

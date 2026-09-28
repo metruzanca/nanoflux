@@ -28,6 +28,13 @@ for `CapSharedKey` is offered the parsed items and may return each item's
 once across a subreddit feed and the poster's user feed, without owning the
 fetch.
 
+Newly stored items are then offered to any **content enricher** (`CapEnrich`)
+matching each item's link: a plugin may resolve a body (full text, translation,
+transcript) with `Host.Do`. It is best-effort and runs only on new items, so a
+failure never fails the poll and re-polling never re-fetches an article. The body
+is stored as `items.content`, separate from `items.summary` (which the poll
+refreshes), and the item modal renders it instead.
+
 Plugins do not do their own networking. Their HTTP calls go back through the
 host (`Host.Do`), so the host owns the User-Agent, the timeout, and rate-limit
 handling for both paths (details below).

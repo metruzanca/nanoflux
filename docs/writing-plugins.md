@@ -14,7 +14,9 @@ A working example ships in `examples/`: `plugin-youtube` serves nanoflux's nativ
 over gRPC and is deliberately **identical** to the native plugin
 (`internal/plugin/native/youtube`) — it imports that very package rather than
 copying it, so the native and external forms cannot drift. At the time of
-writing they are the same code; only the packaging differs.
+writing they are the same code; only the packaging differs. `plugin-render` and
+`plugin-enrich` are minimal single-capability examples (view-time `Render` and
+ingest-time `Enrich`).
 
 ## Where plugins live
 
@@ -99,10 +101,10 @@ forwarded to nanoflux's logs prefixed with the plugin name.
 ## The capabilities
 
 A plugin implements `Fetcher`; it may also implement the optional `Renderer`,
-`SharedKeyer`, `Decoration`, `URLPolicy` and `Docser` interfaces. `Match` tells
-the host which URL shapes (and which capability) each applies to. A plugin may
-own a site's whole shape (fetch + discover + shared keys + render + URL rules) or
-decorate a feed it does not fetch at all.
+`SharedKeyer`, `Enricher`, `Decoration`, `URLPolicy` and `Docser` interfaces.
+`Match` tells the host which URL shapes (and which capability) each applies to. A
+plugin may own a site's whole shape (fetch + discover + shared keys + enrich +
+render + URL rules) or decorate a feed it does not fetch at all.
 
 - **`Fetch` (required)** — given a feed URL, return its `Feed` metadata and
   `[]Item`s. Runs in the poller and on manual refresh.
@@ -115,6 +117,9 @@ decorate a feed it does not fetch at all.
 - **`SharedKeys` (optional)** — given a feed's freshly parsed items, return each
   item's `SharedKey` (cross-feed identity). Runs at ingest after either fetch
   path.
+- **`Enrich` (optional)** — given a feed's newly stored items, return an enriched
+  body for each (full text, translation, transcript). Runs at ingest on new
+  items only, after either fetch path.
 - **`Decorate` (optional)** — given a page's stored items, return each item's
   source attribution and card kind. Runs at view time; must not do network I/O.
 - **`URLPolicy` (optional)** — pure site URL rules: the canonical feed shape
@@ -167,9 +172,42 @@ the generic parser did — and returns the `SharedKey` for the items it can reso
 (each addressed by index, so items are never reordered or dropped). The host
 stores one item per `(user, SharedKey)`, so the same entry seen through two
 subscriptions shares read/favorite/list state. reddit uses it for the post
-fullname `t3_<id>`. This is separate from a content transform (full text,
-translation): those enrich an item's body, whereas `SharedKeys` only assigns
-identity.
+fullname `t3_<id>`. This is separate from `Enrich` (full text, translation): an
+`Enricher` produces a body, whereas `SharedKeys` only assigns identity.
+
+### Ingest content enrichment (`Enrich`)
+
+`Enrich` runs on a feed's **newly stored** items — whether the plugin fetched
+them or the generic parser did — and returns a body for each item it can resolve
+(each addressed by index). It is matched on each item's link via `CapEnrich`, so
+a plugin can enrich items from a feed it does not fetch. Use `h.Do` for a live
+fetch (the article page, a translation API); the host still owns the User-Agent,
+timeout, and rate limiting.
+
+```go
+func (AppC) Enrich(ctx context.Context, req pluginapi.EnrichRequest, h pluginapi.Host) ([]pluginapi.Enriched, error) {
+	var out []pluginapi.Enriched
+	for i, it := range req.Items {
+		resp, err := h.Do(ctx, pluginapi.HTTPRequest{Method: "GET", URL: it.Link})
+		if err != nil || resp.Status >= 400 {
+			continue
+		}
+		out = append(out, pluginapi.Enriched{Index: i, Content: extract(string(resp.Body))})
+	}
+	return out, nil
+}
+```
+
+The host stores the body as `items.content`, **separate from the feed's own
+summary**: the summary is refreshed on every poll, so an enriched body stored
+there would be clobbered. `content` is written once and left alone; the item
+modal renders it instead of the summary. Empty content means "no enrichment".
+
+Enrichment is **best-effort**: it runs only for new items (an item already
+carrying content is skipped), a plugin error is logged and skipped rather than
+failing the poll, and an item no plugin matches keeps its stored summary. This is
+distinct from `SharedKeys`: `SharedKeys` assigns identity, `Enrich` produces a
+body. `examples/plugin-enrich` is a minimal reference.
 
 ### View-time decoration (`Decoration`)
 

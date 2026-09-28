@@ -145,6 +145,26 @@ func (s *grpcFetcherServer) SharedKeys(ctx context.Context, req *pb.SharedKeyReq
 	return &pb.SharedKeyResponse{Entries: out}, nil
 }
 
+func (s *grpcFetcherServer) Enrich(ctx context.Context, req *pb.EnrichRequest) (*pb.EnrichResponse, error) {
+	en, ok := s.impl.(Enricher)
+	if !ok {
+		return &pb.EnrichResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	host, err := s.dialHost(req.HostServer)
+	if err != nil {
+		return &pb.EnrichResponse{Error: toPBError(err)}, nil
+	}
+	enriched, err := en.Enrich(ctx, EnrichRequest{Items: fromPBItems(req.Items)}, host)
+	if err != nil {
+		return &pb.EnrichResponse{Error: toPBError(err)}, nil
+	}
+	out := make([]*pb.Enriched, 0, len(enriched))
+	for _, e := range enriched {
+		out = append(out, &pb.Enriched{Index: int32(e.Index), Content: e.Content})
+	}
+	return &pb.EnrichResponse{Enriched: out}, nil
+}
+
 func (s *grpcFetcherServer) Decorate(_ context.Context, req *pb.DecorateRequest) (*pb.DecorateResponse, error) {
 	dec, ok := s.impl.(Decoration)
 	if !ok {
@@ -315,6 +335,23 @@ func (c *grpcFetcherClient) SharedKeys(ctx context.Context, req SharedKeyRequest
 	return out, nil
 }
 
+func (c *grpcFetcherClient) Enrich(ctx context.Context, req EnrichRequest, h Host) ([]Enriched, error) {
+	id, stop := c.serveHost(h)
+	defer stop()
+	resp, err := c.client.Enrich(ctx, &pb.EnrichRequest{HostServer: id, Items: toPBItems(req.Items)})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fromPBError(resp.Error)
+	}
+	out := make([]Enriched, 0, len(resp.Enriched))
+	for _, e := range resp.Enriched {
+		out = append(out, Enriched{Index: int(e.Index), Content: e.Content})
+	}
+	return out, nil
+}
+
 func (c *grpcFetcherClient) Decorate(ctx context.Context, req DecorateRequest) ([]Decorated, error) {
 	resp, err := c.client.Decorate(ctx, &pb.DecorateRequest{Items: toPBItems(req.Items)})
 	if err != nil {
@@ -355,6 +392,7 @@ var (
 	_ Renderer    = (*grpcFetcherClient)(nil)
 	_ Docser      = (*grpcFetcherClient)(nil)
 	_ SharedKeyer = (*grpcFetcherClient)(nil)
+	_ Enricher    = (*grpcFetcherClient)(nil)
 	_ Decoration  = (*grpcFetcherClient)(nil)
 	_ URLPolicy   = (*grpcFetcherClient)(nil)
 )

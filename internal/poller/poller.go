@@ -52,6 +52,14 @@ type hostCooler interface {
 	Until(rawURL string) (time.Time, bool)
 }
 
+// itemEnricher resolves plugin-enriched bodies for freshly stored items, grouped
+// by the plugin that matches each item's link. It is satisfied by
+// *plugin.Dispatcher; kept as a local interface so the poller does not import
+// the plugin package. Enrichment is best-effort and never fails a poll.
+type itemEnricher interface {
+	Enrich(ctx context.Context, items []store.Item) (map[int64]string, error)
+}
+
 // Poller fetches due feeds on an interval. Per-feed schedules come from each
 // feed's poll_interval_sec; the ticker just wakes the loop.
 type Poller struct {
@@ -61,6 +69,7 @@ type Poller struct {
 	workers     int
 	hostSpacing time.Duration
 	cool        hostCooler
+	enricher    itemEnricher
 
 	// hostWindow records, per registrable host, the minimum spacing the host
 	// has asked for after a rate limit (learned from Retry-After /
@@ -100,6 +109,11 @@ func (p *Poller) SetHostCooler(c hostCooler) {
 		p.cool = c
 	}
 }
+
+// SetItemEnricher attaches the plugin-backed body enricher (satisfied by
+// *plugin.Dispatcher), so newly stored items are offered to matching plugins.
+// A nil enricher disables enrichment.
+func (p *Poller) SetItemEnricher(e itemEnricher) { p.enricher = e }
 
 // Client returns the HTTP client the poller uses, so the plugin host can share
 // the same transport and timeout policy.
@@ -558,9 +572,11 @@ func (p *Poller) PollOlder(ctx context.Context, f store.Feed) (newItems int, exh
 
 // ingest stores a fetched page's items for a feed, applying the feed's filter
 // rules and copying enclosures for newly inserted items. It returns how many
-// items were new.
+// items were new. Newly stored items are then offered to the body enricher
+// (best-effort; a failure never fails the poll).
 func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter, fetched string) (int, error) {
 	newItems := 0
+	var stored []store.Item
 	for _, it := range res.Items {
 		action := ""
 		fields := filtermatch.FieldsFromFeedItem(it)
@@ -606,8 +622,60 @@ func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter
 				log.Error("store enclosures", "feed_id", f.ID, "guid", it.GUID, "err", err)
 			}
 		}
+		// Enrich only newly inserted items, and only in the owner feed (a
+		// cross-feed member already enriched by the other feed is skipped below).
+		if inserted && p.enricher != nil {
+			if id, err := p.store.Items.IngestItemID(f.UserID, f.ID, dedupIdentity(it), store.CrossFeedKey(it.SharedKey)); err == nil && id != 0 {
+				item.ID = id
+				item.UserID = f.UserID
+				stored = append(stored, item)
+			}
+		}
 	}
+	p.enrichStored(f.UserID, stored)
 	return newItems, nil
+}
+
+// enrichStored offers newly stored items to the body enricher and writes the
+// resolved content. Items already carrying content are skipped (a cross-feed
+// member enriched through another feed), and a failure is logged, not returned:
+// enrichment is a best-effort enhancement, never a poll failure.
+func (p *Poller) enrichStored(userID int64, items []store.Item) {
+	if p.enricher == nil || len(items) == 0 {
+		return
+	}
+	var pending []store.Item
+	for _, it := range items {
+		if content, err := p.store.Items.Content(it.ID); err != nil || content != "" {
+			continue
+		}
+		pending = append(pending, it)
+	}
+	if len(pending) == 0 {
+		return
+	}
+	contents, err := p.enricher.Enrich(context.Background(), pending)
+	if err != nil {
+		log.Error("enrich items", "count", len(pending), "err", err)
+		return
+	}
+	for _, it := range pending {
+		content, ok := contents[it.ID]
+		if !ok || content == "" {
+			continue
+		}
+		if err := p.store.Items.SetContent(userID, it.ID, content); err != nil {
+			log.Error("store enriched content", "item_id", it.ID, "err", err)
+		}
+	}
+}
+
+// dedupIdentity is an item's stable per-feed dedup key: its Identity, else GUID.
+func dedupIdentity(it feedparse.Item) string {
+	if it.Identity != "" {
+		return it.Identity
+	}
+	return it.GUID
 }
 
 // wakeString renders the earliest paced-host next-hit for a log line, or "" so

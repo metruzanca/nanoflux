@@ -6,6 +6,14 @@ INSERT INTO items (feed_id, user_id, guid, dedup_key, cross_key, title, link, su
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (feed_id, dedup_key) DO NOTHING;
 
+-- name: SetItemContent :exec
+-- Store an Enricher's resolved body on an item. Written once, keyed by id, and
+-- never touched by the poll snapshot refresh, so an enriched body survives
+-- re-polling. Scoped to the user so an id cannot cross accounts.
+UPDATE items
+SET content = ?
+WHERE id = ? AND user_id = ?;
+
 -- name: UpdateItemSnapshotByID :exec
 -- Refresh the content snapshot of an existing item (summary, categories,
 -- thumbnail, duration) on poll. Identity, published_at and read state are left
@@ -129,13 +137,13 @@ ORDER BY COALESCE(i.published_at, i.fetched_at) ASC, i.id ASC
 LIMIT sqlc.arg('limit');
 
 -- name: GetItem :one
-SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.categories, i.duration_sec, i.image_url,
+SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite
 FROM items i
 WHERE i.id = ? AND i.user_id = ?;
 
 -- name: GetItemWithFeed :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -146,7 +154,7 @@ LEFT JOIN authors a ON a.id = f.author_id
 WHERE i.id = ? AND i.user_id = ?;
 
 -- name: GetItemWithFeedAny :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -281,6 +289,11 @@ WHERE read = 0
       ))
   AND (COALESCE(items.published_at, items.fetched_at), items.id) <
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = sqlc.arg('itemID'));
+
+-- name: GetItemContent :one
+-- An item's enriched body, to skip re-enriching at ingest. Empty means the
+-- plugin has not enriched it yet.
+SELECT content FROM items WHERE id = ?;
 
 -- name: GetItemByDedupKey :one
 -- Look an item up by its stable per-feed identity (dedup_key), not its display

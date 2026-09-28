@@ -95,6 +95,7 @@ CREATE TABLE items (
     title        TEXT NOT NULL DEFAULT '',
     link         TEXT NOT NULL DEFAULT '',
     summary      TEXT NOT NULL DEFAULT '',
+    content      TEXT NOT NULL DEFAULT '',
     categories   TEXT NOT NULL DEFAULT '',
     duration_sec INTEGER,
     image_url    TEXT,

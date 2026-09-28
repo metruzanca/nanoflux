@@ -51,6 +51,7 @@ var migrations = []migration{
 	{38, schemaV38},
 	{39, schemaV39},
 	{40, schemaV40},
+	{41, schemaV41},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -605,6 +606,15 @@ DROP TABLE IF EXISTS url_mappings;
 // ingest. action is free text, so only existing rows need rewriting.
 const schemaV40 = `
 UPDATE filters SET action = 'delete' WHERE action = 'hide';
+`
+
+// schemaV41 adds items.content: a plugin-enriched body kept separate from
+// items.summary. summary is the feed's own snapshot and is refreshed on every
+// poll, so an enriched body (full text, a translation, a transcript) stored
+// there would be clobbered by the next poll; content is written once by a
+// plugin's Enricher and left alone. Empty means "no enrichment; render summary".
+const schemaV41 = `
+ALTER TABLE items ADD COLUMN content TEXT NOT NULL DEFAULT '';
 `
 
 // Migrate applies any pending migrations in order, recording each in

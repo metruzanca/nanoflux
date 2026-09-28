@@ -102,6 +102,9 @@ func runServer() {
 	// item decoration so lists render plugin-owned attribution and card kinds.
 	st.SetURLPolicy(plugin.NewStoreURLPolicy(plugins.Registry))
 	st.SetItemDecorator(plugin.NewStoreDecorator(plugins.Registry))
+	// A plugin may enrich a newly stored item's body (full text, translation,
+	// transcript). The dispatcher groups a poll's items by matching plugin.
+	p.SetItemEnricher(plugin.NewDispatcher(plugins.Registry, plugins.Hosts.For))
 	// Rewrite stored feed URLs to their canonical form (e.g. old.reddit.com and
 	// bare reddit.com -> www.reddit.com, /u/ -> /user/, a user's bare feed ->
 	// /submitted.rss). Idempotent; fixes feeds added before canonicalization.

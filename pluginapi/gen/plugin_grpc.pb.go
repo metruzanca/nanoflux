@@ -204,6 +204,7 @@ const (
 	Fetcher_Render_FullMethodName              = "/nanoflux.plugin.v1.Fetcher/Render"
 	Fetcher_Docs_FullMethodName                = "/nanoflux.plugin.v1.Fetcher/Docs"
 	Fetcher_SharedKeys_FullMethodName          = "/nanoflux.plugin.v1.Fetcher/SharedKeys"
+	Fetcher_Enrich_FullMethodName              = "/nanoflux.plugin.v1.Fetcher/Enrich"
 	Fetcher_Decorate_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/Decorate"
 	Fetcher_CanonicalizeFeedURL_FullMethodName = "/nanoflux.plugin.v1.Fetcher/CanonicalizeFeedURL"
 	Fetcher_FeedToken_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/FeedToken"
@@ -223,6 +224,9 @@ type FetcherClient interface {
 	Docs(ctx context.Context, in *DocsRequest, opts ...grpc.CallOption) (*DocsResponse, error)
 	// SharedKeys is optional: ingest-time per-item cross-feed identity.
 	SharedKeys(ctx context.Context, in *SharedKeyRequest, opts ...grpc.CallOption) (*SharedKeyResponse, error)
+	// Enrich is optional: ingest-time per-item body enrichment (full text,
+	// translation, transcript).
+	Enrich(ctx context.Context, in *EnrichRequest, opts ...grpc.CallOption) (*EnrichResponse, error)
 	// Decorate is optional: view-time per-item rendering (attribution, kind).
 	Decorate(ctx context.Context, in *DecorateRequest, opts ...grpc.CallOption) (*DecorateResponse, error)
 	// URLPolicy methods are optional: a site's pure URL rules (canonical shape,
@@ -309,6 +313,16 @@ func (c *fetcherClient) SharedKeys(ctx context.Context, in *SharedKeyRequest, op
 	return out, nil
 }
 
+func (c *fetcherClient) Enrich(ctx context.Context, in *EnrichRequest, opts ...grpc.CallOption) (*EnrichResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EnrichResponse)
+	err := c.cc.Invoke(ctx, Fetcher_Enrich_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *fetcherClient) Decorate(ctx context.Context, in *DecorateRequest, opts ...grpc.CallOption) (*DecorateResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DecorateResponse)
@@ -353,6 +367,9 @@ type FetcherServer interface {
 	Docs(context.Context, *DocsRequest) (*DocsResponse, error)
 	// SharedKeys is optional: ingest-time per-item cross-feed identity.
 	SharedKeys(context.Context, *SharedKeyRequest) (*SharedKeyResponse, error)
+	// Enrich is optional: ingest-time per-item body enrichment (full text,
+	// translation, transcript).
+	Enrich(context.Context, *EnrichRequest) (*EnrichResponse, error)
 	// Decorate is optional: view-time per-item rendering (attribution, kind).
 	Decorate(context.Context, *DecorateRequest) (*DecorateResponse, error)
 	// URLPolicy methods are optional: a site's pure URL rules (canonical shape,
@@ -389,6 +406,9 @@ func (UnimplementedFetcherServer) Docs(context.Context, *DocsRequest) (*DocsResp
 }
 func (UnimplementedFetcherServer) SharedKeys(context.Context, *SharedKeyRequest) (*SharedKeyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SharedKeys not implemented")
+}
+func (UnimplementedFetcherServer) Enrich(context.Context, *EnrichRequest) (*EnrichResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Enrich not implemented")
 }
 func (UnimplementedFetcherServer) Decorate(context.Context, *DecorateRequest) (*DecorateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Decorate not implemented")
@@ -546,6 +566,24 @@ func _Fetcher_SharedKeys_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fetcher_Enrich_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EnrichRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).Enrich(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_Enrich_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).Enrich(ctx, req.(*EnrichRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Fetcher_Decorate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DecorateRequest)
 	if err := dec(in); err != nil {
@@ -634,6 +672,10 @@ var Fetcher_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SharedKeys",
 			Handler:    _Fetcher_SharedKeys_Handler,
+		},
+		{
+			MethodName: "Enrich",
+			Handler:    _Fetcher_Enrich_Handler,
 		},
 		{
 			MethodName: "Decorate",

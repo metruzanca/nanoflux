@@ -1374,3 +1374,77 @@ func TestPollIdentityPreventGuidSchemeDuplicates(t *testing.T) {
 		t.Fatalf("stored GUID = %q, want the first-seen %q", items[0].GUID, "https://b.dev/post/1")
 	}
 }
+
+// fakeEnricher is a poller itemEnricher that "extracts" a fixed body for every
+// item it is offered, and records how many items it was called with.
+type fakeEnricher struct {
+	calls int
+	last  int
+}
+
+func (e *fakeEnricher) Enrich(_ context.Context, items []store.Item) (map[int64]string, error) {
+	e.calls++
+	e.last = len(items)
+	out := map[int64]string{}
+	for _, it := range items {
+		out[it.ID] = "<p>full text of " + it.Link + "</p>"
+	}
+	return out, nil
+}
+
+// TestPollEnrichesNewItems asserts a plugin enricher's body is stored as
+// items.content for a newly ingested item, and that a later poll does not
+// re-enrich it (the content is already present).
+func TestPollEnrichesNewItems(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title>
+<item><guid>g1</guid><title>One</title><link>https://b.dev/1</link></item>
+</channel></rss>`))
+	}))
+	defer srv.Close()
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL, "", "", 900)
+
+	en := &fakeEnricher{}
+	p := New(st, time.Minute, 1)
+	p.SetItemEnricher(en)
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("poll: %v", err)
+	}
+	if en.calls != 1 || en.last != 1 {
+		t.Fatalf("enricher calls=%d last=%d, want 1 call with 1 item", en.calls, en.last)
+	}
+	items, _ := st.Items.List(u.ID, store.ItemFilter{FeedID: f.ID, Limit: 10})
+	if len(items) != 1 {
+		t.Fatalf("want one item, got %d", len(items))
+	}
+	got, _ := st.Items.OneWithFeed(u.ID, items[0].ID)
+	if got.Content != "<p>full text of https://b.dev/1</p>" {
+		t.Fatalf("content = %q, want the enriched body", got.Content)
+	}
+
+	// A second poll finds the item already stored, so the enricher is not
+	// called again and the content is preserved.
+	before := en.calls
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("second poll: %v", err)
+	}
+	if en.calls != before {
+		t.Fatalf("enricher called again on re-poll: %d -> %d", before, en.calls)
+	}
+	got, _ = st.Items.OneWithFeed(u.ID, items[0].ID)
+	if got.Content != "<p>full text of https://b.dev/1</p>" {
+		t.Fatalf("content changed on re-poll: %q", got.Content)
+	}
+}

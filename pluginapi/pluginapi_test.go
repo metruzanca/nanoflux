@@ -99,3 +99,19 @@ func TestItemRoundTrip(t *testing.T) {
 		t.Fatalf("categories round trip = %+v", out[0].Categories)
 	}
 }
+
+// TestEnrichConversions asserts an enricher's items convert across the gRPC
+// helpers and that an Enriched entry addresses an item by index.
+func TestEnrichConversions(t *testing.T) {
+	// Items offered to an enricher convert to the pluginapi model.
+	items := fromPBItems(toPBItems([]Item{{GUID: "g", Link: "https://x/1", Title: "t"}}))
+	if len(items) != 1 || items[0].Link != "https://x/1" {
+		t.Fatalf("items round trip = %+v", items)
+	}
+	// An Enriched addresses the item it describes by index; the host keys the
+	// result back to that request item.
+	enriched := []Enriched{{Index: 1, Content: "<p>a</p>"}, {Index: 0, Content: "<p>b</p>"}}
+	if enriched[0].Index != 1 || enriched[0].Content != "<p>a</p>" || enriched[1].Index != 0 {
+		t.Fatalf("enriched = %+v", enriched)
+	}
+}
