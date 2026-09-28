@@ -432,7 +432,8 @@ func TestCrossFeedItemShared(t *testing.T) {
 	userFeed, _ := s.Feeds.Create(u.ID, userAuthor.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
 
 	post := Item{
-		GUID: "t3_1abc", Title: "A cat", Link: "https://www.reddit.com/r/cats/comments/1abc/a_cat/",
+		GUID: "t3_1abc", SharedKey: "reddit:t3_1abc", Title: "A cat",
+		Link:       "https://www.reddit.com/r/cats/comments/1abc/a_cat/",
 		Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now(),
 	}
 	if ins, err := s.Items.Upsert(subFeed.ID, post); err != nil || !ins {
@@ -477,7 +478,7 @@ func TestFeedDeleteRehomesSharedItem(t *testing.T) {
 	subFeed, _ := s.Feeds.Create(u.ID, a1.ID, "r/cats", "https://www.reddit.com/r/cats.rss", "", "", 900)
 	userFeed, _ := s.Feeds.Create(u.ID, a2.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
 
-	post := Item{GUID: "t3_1abc", Title: "A cat", Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now()}
+	post := Item{GUID: "t3_1abc", SharedKey: "reddit:t3_1abc", Title: "A cat", Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now()}
 	s.Items.Upsert(subFeed.ID, post)
 	s.Items.Upsert(userFeed.ID, post)
 
@@ -504,7 +505,7 @@ func TestRemoveFeedMemberships(t *testing.T) {
 	userFeed, _ := s.Feeds.Create(u.ID, a2.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
 
 	// A shared post: member of both feeds, owned by the sub feed.
-	shared := Item{GUID: "t3_1abc", Title: "A cat", Categories: []string{"r/cats"}, FetchedAt: db.Now()}
+	shared := Item{GUID: "t3_1abc", SharedKey: "reddit:t3_1abc", Title: "A cat", Categories: []string{"r/cats"}, FetchedAt: db.Now()}
 	s.Items.Upsert(subFeed.ID, shared)
 	s.Items.Upsert(userFeed.ID, shared)
 	sharedID, _ := s.Items.ByFeedIdentity(subFeed.ID, "t3_1abc")

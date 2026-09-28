@@ -23,10 +23,10 @@ func dedupItems(items []store.ItemWithFeed) []store.ItemWithFeed {
 		key := normalizeTitle(it.Title)
 		// A saved page (hidden system feed) is never merged into a feed item:
 		// it is deliberate, user-held content, not a duplicate to collapse.
-		// A reddit post is deduplicated in storage (one row per post), so two
-		// reddit rows that merely share a title are distinct posts: collapsing
+		// A cross-feed post is deduplicated in storage (one row per post), so
+		// two such rows that merely share a title are distinct posts: collapsing
 		// them by title here would be wrong.
-		if key == "" || it.FeedIsSystem || store.CrossFeedKey(it.GUID) != "" {
+		if key == "" || it.FeedIsSystem || it.CrossKey != "" {
 			out = append(out, it)
 			continue
 		}

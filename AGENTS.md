@@ -53,19 +53,49 @@ polling with 429. The app treats this as pacing, not failure:
 - `discover` surfaces the host's fetch error when a rule's probe fails, so
   adding a reddit feed at limit says "rate-limiting requests (HTTP 429)" rather
   than a bare "no feed found".
-- `store.CanonicalFeedURL` rewrites reddit feed URLs on create and edit (and via
-  a startup pass): every host collapses to `www.reddit.com`, `/u/{name}` →
-  `/user/{name}`, and a user's bare feed → `/user/{name}/submitted.rss` (posts
-  only; the bare overview mixes posts and comments). Both bare shapes are
-  normalized: `/user/{name}.rss` and `/user/{name}/.rss`. An explicit
-  `/comments.rss` or `/submitted.rss` is left alone. The canonical shape is the
-  one reddit answers **without a redirect** (the `www` host and the `/user/`
-  form); each redirect hop spends a request from reddit's ~1/minute anonymous
-  per-IP budget, and the `/u/` → `/user/` hop was deterministically 429ing every
-  user feed. `discover.Derive` produces the same shapes, and `stripWWW` exempts
-  reddit so the preview form keeps the `www` host. The temporary `nanoflux fix
-  reddit-urls` command reports/rewrites every stored reddit feed URL (removed
-  before v1.0.0).
+
+## Plugins own site-specific behavior
+
+Site-specific logic lives in a plugin, not the core, through URL-matched
+capabilities (`pluginapi.Capability`, added additively over the single `Fetcher`
+gRPC service and `APIVersion`-gated). A site whose feed URL shape is known and
+rate-limited (reddit) owns its rules in its plugin while its `.rss` is still
+fetched by the generic parser, so `feeds.plugin_name` stays empty:
+
+- **`URLPolicy`** (`CapURLPolicy`): `CanonicalizeFeedURL(raw)` returns the
+  redirect-free stored shape, and `FeedToken(feedURL)` the `r/<sub>` / `u/<name>`
+  token its items carry. `cmd/server/main.go` installs the registry's
+  `StoreURLPolicy` on the store (`Store.SetURLPolicy`); `FeedStore` create/edit
+  and `CanonicalizeFeedURLs` call it, and the preview form's `stripWWW` is
+  skipped for a URL a plugin owns (`Server.urlPolicyOwned`). The reddit plugin
+  holds the former `store.CanonicalFeedURL` logic (`urlpolicy.go`).
+- **`Discover` derived candidates** (`Candidate.Derived`): the plugin derives the
+  feed from the page URL with no request. The add/discovery flows return it
+  without fetching the page (`Server.derivedCandidate`, `preview.go`), replacing
+  the deleted `discover.Derive`. A plugin-owned page also skips the icon/avatar
+  page fetch (`pageIconURL`, `createFeed`, `Server.urlPolicyOwned`).
+- **`Enricher`** (`CapEnrich`): `EnrichItems` decorates a feed's freshly parsed
+  items after either fetch path, returning per-item `SharedKey` (index-addressed).
+  `feedparse.FetchFeed` runs it via `enrichResult`; `poller.ingest` copies
+  `SharedKey` into `store.Item.SharedKey`, and `Upsert` stores it as
+  `cross_key` (`crossFeedKey` now just trims the plugin-supplied key). reddit
+  sets `reddit:t3_<id>`; `MergeCrossFeedDuplicates` remains as the one-time
+  legacy backfill.
+- **`Decoration`** (`CapDecorate`): `Decorate` returns each item's source
+  attribution parts (with tokens) and card `Kind`. It is view-time and pure (no
+  network). `cmd/server/main.go` installs the registry's `StoreDecorator`
+  (`Store.SetItemDecorator`); the store's `attachSources` calls `decorate`,
+  resolving each token to the user's subscribed feed via the URL policy's
+  `FeedToken` (internal link) or the part's URL (external). This replaces the
+  deleted `httpapi.attribution.go` and `store.attachRedditLinks`/`RedditLink`.
+
+The reddit plugin (`internal/plugin/native/reddit`) is the reference for all of
+these: `Match` returns true for `CapEnrich`, `CapDecorate`, `CapURLPolicy`,
+`CapDiscover`, `CapRender` and `CapDocs` on reddit hosts; it does **not** claim
+`CapFetch`. `ItemWithFeed.Kind` drives the row card (`KindText` default,
+`KindImage`, `KindGallery`, `KindLink`, `KindVideo`, `KindAudio`); a generic
+single-image baseline (`web.IsSingleImagePost`) still applies when no plugin
+classified the item, and `ThumbURL` overrides the row thumbnail.
 
 ## Item categories (ingest filters)
 
@@ -160,7 +190,8 @@ feed, so lists, favorites, FTS search and share pages all work unchanged.
   does not own a feed's fetch can still document it. reddit is the reason:
   reddit `.rss` feeds are fetched by the generic parser (`plugin_name` empty),
   yet reddit's plugin documents the subreddit/author categories its parser
-  adds. Its `Match` returns true for `CapDocs` on reddit hosts.
+  adds. The same URL-matched pattern carries `CapEnrich`, `CapDecorate`,
+  `CapURLPolicy` and `CapDiscover` (see "Plugins own site-specific behavior").
 - `Registry.Docs(name)` / `Registry.MatchDocs(url)` / `Registry.ByName(name)`
   back it; `Registry.ErrNotFound` distinguishes "no such plugin" from
   "plugin has no docs" (`pluginapi.ErrUnsupportedCapability`).
@@ -258,10 +289,10 @@ favorite/list/share state is shared and the combined streams count it once.
   `items.feed_id` remains the owner/display feed. `item_feeds(item_id, feed_id)`
   is the membership set; feeds list items through it, while the display join
   still uses the owner feed.
-- `store.crossFeedKey` derives the key from a reddit post fullname (`t3_<id>`),
-  the GUID reddit's Atom sets identically in both feeds. Nothing else is
-  cross-deduped: outside a same-domain identity like reddit's, two feeds sharing
-  a link or title is too weak to merge.
+- `store.crossFeedKey` normalizes the plugin-supplied `SharedKey` into the stored
+  key (it now just trims). The identity is the plugin's: reddit's `Enricher` sets
+  the post fullname `reddit:t3_<id>`, identical in both feeds. Nothing else is
+  cross-deduped unless a plugin supplies a `SharedKey`.
 - `ItemStore.Upsert` resolves by `(user_id, cross_key)` first: a post already
   stored through another feed gains a membership (and its snapshot is refreshed)
   instead of a second row. Its `inserted` return means "new to this feed" (new
@@ -277,24 +308,21 @@ favorite/list/share state is shared and the combined streams count it once.
 - `FeedStore.Delete` re-homes items the deleted feed owns that are also members
   of another feed, so deleting the sub feed does not delete a post still
   reachable via the user feed.
-- Attribution: `httpapi.itemAttribution` renders a reddit post as "r/cats by
-  u/sam", linking the sub to the subscribed sub feed's author page (else its
-  feed page, else reddit) and the poster to an internal author when that user
-  feed is subscribed (else the reddit profile). Non-reddit items keep the
-  author-or-feed source. `ItemWithFeed.Sources` is now populated from
+- Attribution comes from the plugin's `Decoration` (see "Plugins own
+  site-specific behavior"): `itemAttribution`/`redditAttribution` are gone, and
+  the row/modal render `ItemWithFeed.Attribution` (already resolved by the store
+  from the decoration's tokens). `ItemWithFeed.Sources` is populated from
   `item_feeds`; the title-based `httpapi.dedupItems` remains only for non-reddit
-  near-duplicate titles and skips reddit items.
+  near-duplicate titles and skips items with a `CrossKey`.
 - A poster (or sub) link must not depend on the item's `item_feeds` membership:
   a cross-feed post seen through the subreddit feed only gains a membership in
-  the poster's user feed once *that* feed has polled the post, so resolving
-  `u/<name>` from `Sources` alone left the poster externally linked until then
-  (the "same feed, same poster, only one linked" bug). `store.attachRedditLinks`
-  resolves each item's reddit categories (`ItemWithFeed.RedditLinks`) against
-  the user's **subscribed** reddit feeds, keyed by `store.RedditFeedToken` (the
-  `r/<sub>` / `u/<name>` token derived from the feed URL, not its title, so a
-  rename still resolves). It runs inside `attachSources` (now user-scoped) on
-  every list/detail path; `httpapi`'s `subLink`/`userLink` consult it before the
-  external fallback. The public list page passes user 0 and skips the lookup.
+  the poster's user feed once *that* feed has polled the post, so resolving the
+  poster from `Sources` alone left it externally linked until then (the "same
+  feed, same poster, only one linked" bug). The store's `decorate` resolves each
+  decoration token against the user's **subscribed** feeds via the URL policy's
+  `FeedToken` (derived from the feed URL, not its title, so a rename still
+  resolves). It runs inside `attachSources` (user-scoped) on every list/detail
+  path; the public list page passes user 0 and skips the resolution.
 
 ## Combo boxes (Vaadin)
 

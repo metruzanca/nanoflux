@@ -17,7 +17,7 @@ import (
 
 // APIVersion is the plugin API version. The host refuses a plugin whose
 // Meta().APIVersion differs.
-const APIVersion = "0.2"
+const APIVersion = "0.3"
 
 // Capability selects which operation a Match call is about. A Fetcher may
 // support either or both.
@@ -37,6 +37,21 @@ const (
 	// fetched by the generic parser (so feeds.plugin_name is empty), yet the
 	// reddit plugin still documents its category filters for reddit URLs.
 	CapDocs
+	// CapEnrich asks whether the plugin decorates a feed's freshly parsed items
+	// at ingest time. It runs after either fetch path (plugin or generic
+	// parser), so a plugin can add per-item identity to items it does not fetch
+	// — reddit sets the cross-feed SharedKey on the generic parser's items.
+	CapEnrich
+	// CapDecorate asks whether the plugin decorates stored items for display
+	// (source attribution, card kind, thumbnail). It is view-time and batched,
+	// and may not perform network I/O.
+	CapDecorate
+	// CapURLPolicy asks whether the plugin knows URL rules for a site: the
+	// canonical feed shape, the token a feed URL represents, and a feed
+	// derivable from a page URL with no request. It lets a site's URL handling
+	// live in the plugin instead of the core (reddit is the case that matters:
+	// its .rss sits behind a tight rate limit, so discovery must not probe it).
+	CapURLPolicy
 )
 
 // Meta describes a plugin to the host.
@@ -72,6 +87,15 @@ type Candidate struct {
 	Title   string // feed display title
 	IconURL string // author avatar / site icon, resolved to an absolute URL
 	HomeURL string
+	// AuthorName is the preferred name for a newly created author when the site
+	// suggests one that differs from the feed title (reddit users: "spez"
+	// rather than "u/spez"). Empty means the host falls back to Title.
+	AuthorName string
+	// Derived means the feed URL follows from the page URL alone, so the host
+	// must not fetch the page to validate the feed or gather its metadata.
+	// reddit is the case: its .rss sits behind a tight anonymous rate limit,
+	// and probing it would spend the host's request budget on discovery.
+	Derived bool
 }
 
 // Enclosure is one media attachment on an item.
@@ -93,7 +117,13 @@ type Item struct {
 	// the display/feed identity and may be regenerated; Identity is the durable
 	// one. For a site with numeric post ids, Identity is that id (or a stable
 	// prefix like "post:<id>"), never the URL.
-	Identity    string
+	Identity string
+	// SharedKey is the identity an item shares across a user's feeds, so the
+	// same entry seen through two subscriptions is stored once with shared
+	// read/favorite/list state. It is set by an Enricher (not authored on a
+	// fetched Item), e.g. reddit's post fullname "reddit:t3_<id>". Empty means
+	// the item is not cross-deduplicated.
+	SharedKey   string
 	Title       string
 	Link        string
 	Summary     string
@@ -214,6 +244,124 @@ type Renderer interface {
 type Docser interface {
 	Docs() string
 }
+
+// Enricher is an optional capability a plugin may implement to decorate a
+// feed's freshly parsed items at ingest time. It runs after either fetch path
+// (the plugin's own Fetch, or the generic parser for a feed the plugin does not
+// own), matched on the feed URL via CapEnrich. It lets a plugin attach per-item
+// identity to items it does not fetch: reddit sets each post's cross-feed
+// SharedKey so the same post seen through a subreddit feed and the poster's
+// user feed is stored once.
+//
+// EnrichItems must be pure with respect to the items it returns and must not
+// reorder or drop them: it returns Enrichments addressed by Index, and the host
+// leaves any item without an Enrichment untouched. It may use Host.Do, but a
+// pure function of the parsed items is strongly preferred since it runs on
+// every poll.
+type Enricher interface {
+	// EnrichItems returns per-item enrichment for a feed's parsed items.
+	EnrichItems(ctx context.Context, req EnrichRequest, h Host) ([]Enrichment, error)
+}
+
+// EnrichRequest is one feed's parsed output, offered for enrichment.
+type EnrichRequest struct {
+	// FeedURL is the feed the items came from.
+	FeedURL string
+	// Feed is the feed-level metadata.
+	Feed Feed
+	// Items are the freshly parsed items, in order.
+	Items []Item
+}
+
+// Enrichment is enrichment for one item in an EnrichRequest, addressed by its
+// position in EnrichRequest.Items.
+type Enrichment struct {
+	Index     int
+	SharedKey string
+}
+
+// URLPolicy is an optional capability a plugin may implement to own a site's
+// URL rules, so site-specific URL handling lives in the plugin instead of the
+// core. It is gated by CapURLPolicy and matched on the URL in question, and none
+// of its methods may perform network I/O.
+type URLPolicy interface {
+	// CanonicalizeFeedURL returns the preferred stored shape of a feed URL
+	// (reddit: the www host, /user/{name}, a user's bare feed -> /submitted.rss).
+	// It is idempotent and returns the input unchanged when it has no rule.
+	CanonicalizeFeedURL(raw string) string
+	// FeedToken returns the token a feed URL represents ("r/cats" for
+	// /r/cats.rss, "u/sam" for /user/sam/submitted.rss), or "" when the URL is
+	// not one of the plugin's feeds. The host matches it against an item's
+	// Tokens to link an item to the user's subscribed feed for it.
+	FeedToken(feedURL string) string
+}
+
+// Decoration is an optional capability a plugin may implement to render a
+// stored item's source attribution at view time (reddit's "r/cats by u/sam").
+// It is gated by CapDecorate and matched on the item's link, is batched per
+// page, and must not perform network I/O.
+//
+// The plugin returns the parts and their tokens; the host resolves a token to
+// the user's subscribed feed (via URLPolicy.FeedToken) and supplies the internal
+// link, falling back to the part's URL (an external site) when unsubscribed. So
+// no site-specific link logic lives in the core.
+type Decoration interface {
+	// Decorate returns the source attribution for each item, addressed by its
+	// index in DecorateRequest.Items. An item with no Decoration keeps its
+	// author/feed source line.
+	Decorate(ctx context.Context, req DecorateRequest) ([]Decorated, error)
+}
+
+// DecorateRequest is a batch of stored items offered for view-time decoration.
+type DecorateRequest struct {
+	Items []Item
+}
+
+// Decorated is one item's view-time decoration, addressed by Index.
+type Decorated struct {
+	Index int
+	// Kind is the item's display classification (see ItemKind). KindText (0) is
+	// the safe default and leaves the stored rendering in place.
+	Kind ItemKind
+	// Attribution is the ordered source line ("r/cats", "by", "u/sam"). Empty
+	// keeps the item's author/feed source.
+	Attribution []SourcePart
+	// ThumbURL overrides the row thumbnail when the stored ImageURL is not the
+	// right one to show (e.g. a gallery's cover is a tiny crop). Empty keeps the
+	// stored ImageURL.
+	ThumbURL string
+}
+
+// SourcePart is one piece of a source attribution line.
+type SourcePart struct {
+	// Text is the display text ("r/cats", "by", "u/sam").
+	Text string
+	// Token, when set, is a site token ("r/cats") the host resolves to the
+	// user's subscribed feed via URLPolicy.FeedToken. When it resolves, the part
+	// links internally; otherwise the host uses URL.
+	Token string
+	// URL is the external destination when Token has no matching subscription
+	// (a site profile page). Empty means the part is plain text ("by").
+	URL string
+}
+
+// ItemKind classifies an item's primary content for card rendering and media.
+type ItemKind int
+
+const (
+	// KindText is the default: a text post, or an item no plugin classified.
+	KindText ItemKind = iota
+	// KindImage is a single-image post (rendered as a thumbnail card).
+	KindImage
+	// KindGallery is a multi-image post (thumbnail is its first image).
+	KindGallery
+	// KindLink is a post whose primary content is an external site.
+	KindLink
+	// KindVideo is a video post with a playable embed.
+	KindVideo
+	// KindAudio is an audio/podcast post.
+	KindAudio
+)
 
 // RenderRequest describes the item whose view-time media is being resolved.
 type RenderRequest struct {

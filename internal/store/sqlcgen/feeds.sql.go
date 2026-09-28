@@ -728,33 +728,32 @@ func (q *Queries) ListFeedsWithUnread(ctx context.Context, userID int64) ([]List
 	return items, nil
 }
 
-const listUserRedditFeeds = `-- name: ListUserRedditFeeds :many
+const listUserFeeds = `-- name: ListUserFeeds :many
 SELECT f.id AS feed_id, f.feed_url AS feed_url, f.author_id AS author_id
 FROM feeds f
 WHERE f.user_id = ? AND f.is_system = 0
-  AND f.feed_url LIKE '%reddit.com%'
 ORDER BY f.id
 `
 
-type ListUserRedditFeedsRow struct {
+type ListUserFeedsRow struct {
 	FeedID   int64  `json:"feed_id"`
 	FeedUrl  string `json:"feed_url"`
 	AuthorID int64  `json:"author_id"`
 }
 
-// The user's subscribed reddit feeds. Used to resolve an item's "r/<sub>" and
-// "u/<name>" category tokens to the subscribed feed/author, so attribution can
-// link a reddit post's sub/poster internally even before the matching feed has
-// polled the post (and thus before an item_feeds membership exists).
-func (q *Queries) ListUserRedditFeeds(ctx context.Context, userID int64) ([]ListUserRedditFeedsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listUserRedditFeeds, userID)
+// The user's subscribed feeds (id, url, author). Used with the URL policy's
+// FeedToken to resolve an item's category tokens to the subscribed feed for
+// them, so source attribution can link internally even before a matching feed
+// has polled the item (and thus before an item_feeds membership exists).
+func (q *Queries) ListUserFeeds(ctx context.Context, userID int64) ([]ListUserFeedsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUserFeeds, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListUserRedditFeedsRow
+	var items []ListUserFeedsRow
 	for rows.Next() {
-		var i ListUserRedditFeedsRow
+		var i ListUserFeedsRow
 		if err := rows.Scan(&i.FeedID, &i.FeedUrl, &i.AuthorID); err != nil {
 			return nil, err
 		}

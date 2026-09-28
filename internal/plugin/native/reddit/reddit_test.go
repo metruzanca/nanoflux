@@ -115,12 +115,44 @@ func TestMatch(t *testing.T) {
 		if !p.Match(parsed, pluginapi.CapRender) {
 			t.Errorf("Match(%q, CapRender) = false", u)
 		}
-		if p.Match(parsed, pluginapi.CapFetch) || p.Match(parsed, pluginapi.CapDiscover) {
-			t.Errorf("reddit should not claim fetch/discover for %q", u)
+		if !p.Match(parsed, pluginapi.CapEnrich) {
+			t.Errorf("Match(%q, CapEnrich) = false", u)
+		}
+		if !p.Match(parsed, pluginapi.CapDiscover) {
+			t.Errorf("Match(%q, CapDiscover) = false", u)
+		}
+		if p.Match(parsed, pluginapi.CapFetch) {
+			t.Errorf("reddit should not claim fetch for %q", u)
 		}
 	}
 	if p.Match(mustURL(t, "https://example.com/r/x/comments/1a/"), pluginapi.CapRender) {
 		t.Error("non-reddit host should not match")
+	}
+}
+
+// EnrichItems gives only post fullnames (t3_<id>) a cross-feed SharedKey,
+// leaving comments (t1_) and accounts (t2_) without one.
+func TestEnrichItems(t *testing.T) {
+	p := &Plugin{}
+	req := pluginapi.EnrichRequest{Items: []pluginapi.Item{
+		{GUID: "t3_1abcde"},
+		{GUID: "t1_pb71vsb"},
+		{GUID: "t2_someone"},
+		{GUID: "t3_9Z"}, // base36 is case-insensitive
+		{GUID: "t3_"},
+	}}
+	got, err := p.EnrichItems(context.Background(), req, hostFunc(nil))
+	if err != nil {
+		t.Fatalf("EnrichItems: %v", err)
+	}
+	want := map[int]string{0: "reddit:t3_1abcde", 3: "reddit:t3_9Z"}
+	if len(got) != len(want) {
+		t.Fatalf("enrichments = %+v, want %d", got, len(want))
+	}
+	for _, e := range got {
+		if want[e.Index] != e.SharedKey {
+			t.Errorf("item %d shared key = %q, want %q", e.Index, e.SharedKey, want[e.Index])
+		}
 	}
 }
 
@@ -129,7 +161,7 @@ func TestRenderUnsupported(t *testing.T) {
 	if _, err := p.Fetch(context.Background(), pluginapi.FetchRequest{}, hostFunc(nil)); err != pluginapi.ErrUnsupportedCapability {
 		t.Errorf("Fetch err = %v, want ErrUnsupportedCapability", err)
 	}
-	if _, err := p.Discover(context.Background(), "https://www.reddit.com/r/cats/", hostFunc(nil)); err != pluginapi.ErrUnsupportedCapability {
+	if cs, err := p.Discover(context.Background(), "https://example.com/page", hostFunc(nil)); err != pluginapi.ErrUnsupportedCapability || cs != nil {
 		t.Errorf("Discover err = %v, want ErrUnsupportedCapability", err)
 	}
 }
@@ -185,4 +217,163 @@ func mustURL(t *testing.T, s string) *url.URL {
 		t.Fatal(err)
 	}
 	return u
+}
+
+// Derive covers the pure URL derivation and normalization for reddit and its
+// negative cases. It is the plugin-owned replacement for the former
+// discover.Derive.
+func TestDiscoverDerive(t *testing.T) {
+	cases := []struct {
+		page       string
+		feedURL    string
+		homeURL    string
+		title      string
+		authorName string
+		ok         bool
+	}{
+		{"https://www.reddit.com/r/golang/", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
+		{"https://www.reddit.com/r/golang", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
+		{"https://old.reddit.com/r/golang/top/?t=week", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
+		{"https://np.reddit.com/r/golang/.rss", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
+		{"https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang", "r/golang", "r/golang", true},
+		{"https://www.reddit.com/user/spez", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
+		{"https://www.reddit.com/u/spez/", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
+		{"https://m.reddit.com/user/spez/comments", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
+		{"https://old.reddit.com/u/spez.rss", "https://www.reddit.com/user/spez/submitted.rss", "https://www.reddit.com/user/spez", "u/spez", "spez", true},
+		{"https://www.reddit.com/", "", "", "", "", false},
+		{"https://www.reddit.com/r/", "", "", "", "", false},
+		{"https://www.reddit.com/user/", "", "", "", "", false},
+		{"https://example.com/r/golang/", "", "", "", "", false},
+		{"not a url", "", "", "", "", false},
+	}
+	p := &Plugin{}
+	for _, c := range cases {
+		cs, err := p.Discover(context.Background(), c.page, hostFunc(nil))
+		got := pluginapi.Candidate{}
+		if len(cs) == 1 {
+			got = cs[0]
+		}
+		ok := err == nil && len(cs) == 1
+		if ok != c.ok {
+			t.Errorf("Discover(%q) ok = %v, want %v", c.page, ok, c.ok)
+			continue
+		}
+		if !ok {
+			if err != nil && err != pluginapi.ErrUnsupportedCapability {
+				t.Errorf("Discover(%q) err = %v", c.page, err)
+			}
+			continue
+		}
+		if got.FeedURL != c.feedURL || got.HomeURL != c.homeURL || got.Title != c.title || got.AuthorName != c.authorName || !got.Derived {
+			t.Errorf("Discover(%q) = %+v, want feed=%q home=%q title=%q author=%q", c.page, got, c.feedURL, c.homeURL, c.title, c.authorName)
+		}
+	}
+}
+
+// TestCanonicalFeedURL covers the redirect-free canonical shape.
+func TestCanonicalFeedURL(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://old.reddit.com/u/gopherfan.rss", "https://www.reddit.com/user/gopherfan/submitted.rss"},
+		{"https://www.reddit.com/user/foo.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://reddit.com/u/foo.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://www.reddit.com/u/foo/.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://old.reddit.com/u/foo/.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://www.reddit.com/u/foo/submitted.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://www.reddit.com/u/foo/comments.rss", "https://www.reddit.com/user/foo/comments.rss"},
+		{"https://www.reddit.com/r/golang/.rss", "https://www.reddit.com/r/golang/.rss"},
+		{"https://np.reddit.com/user/foo.rss", "https://www.reddit.com/user/foo/submitted.rss"},
+		{"https://m.reddit.com/r/golang.rss", "https://www.reddit.com/r/golang.rss"},
+		{"https://example.com/feed.xml", "https://example.com/feed.xml"},
+		{"not a url", "not a url"},
+	}
+	p := &Plugin{}
+	for _, c := range cases {
+		if got := p.CanonicalizeFeedURL(c.in); got != c.want {
+			t.Errorf("CanonicalizeFeedURL(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestFeedToken maps reddit feed URLs to the category token the same
+// subscription represents.
+func TestFeedToken(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://www.reddit.com/r/cats.rss", "r/cats"},
+		{"https://www.reddit.com/r/cats/.rss", "r/cats"},
+		{"https://old.reddit.com/r/GoLang.rss", "r/golang"},
+		{"https://www.reddit.com/user/sam/submitted.rss", "u/sam"},
+		{"https://www.reddit.com/user/Sam.rss", "u/sam"},
+		{"https://www.reddit.com/u/sam/submitted.rss", "u/sam"},
+		{"https://example.com/r/cats.rss", ""},
+		{"https://www.reddit.com/r/cats/comments/1abc/", "r/cats"},
+		{"", ""},
+		{"not a url", ""},
+	}
+	p := &Plugin{}
+	for _, c := range cases {
+		if got := p.FeedToken(c.in); got != c.want {
+			t.Errorf("FeedToken(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// Decorate builds "r/cats by u/sam" for a post with both categories, carrying
+// tokens the host resolves, and classifies the card kind.
+func TestDecorate(t *testing.T) {
+	p := &Plugin{}
+	req := pluginapi.DecorateRequest{Items: []pluginapi.Item{
+		{Categories: []string{"r/cats", "u/sam"}, Link: "https://www.reddit.com/r/cats/comments/1a/x/"},
+		{Categories: []string{"reblog"}}, // not reddit-shaped
+	}}
+	got, err := p.Decorate(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Decorate: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("decorations = %+v", got)
+	}
+	// The reddit-shaped item gets attribution; the non-reddit one gets a kind
+	// but no attribution.
+	if len(got[0].Attribution) == 0 {
+		t.Fatalf("first item should have attribution: %+v", got[0])
+	}
+	if len(got[1].Attribution) != 0 {
+		t.Fatalf("second (non-reddit) item should have no attribution: %+v", got[1])
+	}
+	d := got[0]
+	if d.Kind != pluginapi.KindText {
+		t.Errorf("kind = %v, want KindText", d.Kind)
+	}
+	if len(d.Attribution) != 3 {
+		t.Fatalf("attribution = %+v", d.Attribution)
+	}
+	if d.Attribution[0].Token != "r/cats" || d.Attribution[0].Text != "r/cats" || d.Attribution[0].URL == "" {
+		t.Errorf("sub part = %+v", d.Attribution[0])
+	}
+	if d.Attribution[1].Text != "by" || d.Attribution[1].Token != "" || d.Attribution[1].URL != "" {
+		t.Errorf("separator = %+v", d.Attribution[1])
+	}
+	if d.Attribution[2].Token != "u/sam" || d.Attribution[2].URL != "https://www.reddit.com/user/sam/" {
+		t.Errorf("user part = %+v", d.Attribution[2])
+	}
+}
+
+// Decorate classifies a gallery (square crop) as KindGallery and overrides the
+// row thumbnail with the full-res first image.
+func TestDecorateGalleryThumb(t *testing.T) {
+	p := &Plugin{}
+	req := pluginapi.DecorateRequest{Items: []pluginapi.Item{{
+		Categories: []string{"r/cats", "u/sam"},
+		ImageURL:   "https://preview.redd.it/abc123.jpeg?width=140&height=140&crop=1:1,smart&s=x",
+	}}}
+	got, err := p.Decorate(context.Background(), req)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Decorate = %+v, %v", got, err)
+	}
+	if got[0].Kind != pluginapi.KindGallery {
+		t.Errorf("kind = %v, want KindGallery", got[0].Kind)
+	}
+	if got[0].ThumbURL != "https://i.redd.it/abc123.jpg" {
+		t.Errorf("thumb = %q", got[0].ThumbURL)
+	}
 }

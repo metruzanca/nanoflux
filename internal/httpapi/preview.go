@@ -125,12 +125,35 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, feedChooser(feedChoose{URL: pageURL, Target: previewTarget, Candidates: candidates, Redirect: fixedAuthor == nil}))
 }
 
+// derivedCandidate returns the first plugin candidate for pageURL marked
+// Derived: a feed URL that follows from the page URL alone, so the add flow must
+// not fetch the page (reddit is the case: its .rss shares a tight anonymous rate
+// limit with the page). Returns (zero, false) when no plugin derives one.
+func (s *Server) derivedCandidate(ctx context.Context, pageURL string) (discover.Candidate, bool) {
+	if s.plugins == nil || s.plugins.Empty() {
+		return discover.Candidate{}, false
+	}
+	for _, pc := range s.plugins.Discover(ctx, pageURL, s.pluginHosts.For) {
+		if pc.Derived {
+			return discover.Candidate{
+				FeedURL:    pc.FeedURL,
+				Title:      pc.Title,
+				IconURL:    pc.IconURL,
+				HomeURL:    pc.HomeURL,
+				AuthorName: pc.AuthorName,
+				Derived:    true,
+			}, true
+		}
+	}
+	return discover.Candidate{}, false
+}
+
 // previewHome returns the home page to pre-fill for a candidate: a direct or
 // derived feed URL carries its own home (a derived reddit feed's canonical
 // page, not the possibly-old./np. URL the user entered), while a feed found on
 // a page keeps the page the user entered as home.
 func previewHome(c discover.Candidate, pageURL string) string {
-	if c.Strategy == "direct" || c.Strategy == "derived" {
+	if c.Strategy == "direct" || c.Derived {
 		return c.HomeURL
 	}
 	return pageURL
@@ -147,11 +170,13 @@ func toDiscoverCandidates(cs []pluginapi.Candidate) []discover.Candidate {
 		}
 		seen[c.FeedURL] = true
 		out = append(out, discover.Candidate{
-			FeedURL:  c.FeedURL,
-			Title:    c.Title,
-			IconURL:  c.IconURL,
-			HomeURL:  c.HomeURL,
-			Strategy: "plugin",
+			FeedURL:    c.FeedURL,
+			Title:      c.Title,
+			IconURL:    c.IconURL,
+			HomeURL:    c.HomeURL,
+			Strategy:   "plugin",
+			AuthorName: c.AuthorName,
+			Derived:    c.Derived,
 		})
 	}
 	return out
@@ -227,11 +252,14 @@ func (s *Server) discoverCandidates(ctx context.Context, pageURL string) ([]disc
 		}
 	}
 
-	// Hosts with a known, fixed feed shape are derived without a request. Reddit
-	// is the case that matters: probing its .rss would spend the host's tight
-	// anonymous rate limit on discovery, so the candidate is built from the URL.
-	if c, ok := discover.Derive(pageURL); ok {
-		return []discover.Candidate{c}, nil
+	// A plugin candidate marked Derived follows from the page URL alone (reddit,
+	// whose .rss sits behind a tight anonymous rate limit). Return it without
+	// fetching the page: the URL is enough and the host's budget is left for
+	// polling.
+	for _, c := range pluginCandidates {
+		if c.Derived {
+			return []discover.Candidate{c}, nil
+		}
 	}
 
 	var directErr error
@@ -321,7 +349,7 @@ func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c
 	// and the page must not be fetched: that request shares the host's tight
 	// anonymous rate limit with the feed's .rss (which the immediate poll needs).
 	var meta discover.PageMeta
-	if c.Strategy != "derived" {
+	if !c.Derived {
 		meta, _ = s.discoverer.PageMeta(r.Context(), pageURL)
 	}
 	// A plugin-discovered candidate carries its own preview metadata, which wins
@@ -329,7 +357,7 @@ func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c
 	// title, so only use it as a fallback (below), never over the page title.
 	name := meta.Title
 	avatar := meta.IconURL
-	if c.Strategy == "plugin" || c.Strategy == "derived" {
+	if c.Strategy == "plugin" || c.Derived {
 		if c.Title != "" {
 			name = c.Title
 		}
@@ -346,12 +374,12 @@ func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c
 		name = c.Title
 	}
 	if name == "" {
-		if u, err := url.Parse(stripWWW(pageURL)); err == nil && u.Host != "" {
+		if u, err := url.Parse(s.stripWWW(pageURL)); err == nil && u.Host != "" {
 			name = u.Host
 		}
 	}
 	form := feedPreviewForm{
-		Title: c.Title, FeedURL: stripWWW(c.FeedURL), HomeURL: stripWWW(homeURL), Authors: authors,
+		Title: c.Title, FeedURL: s.stripWWW(c.FeedURL), HomeURL: s.stripWWW(homeURL), Authors: authors,
 		SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor, Redirect: fixedAuthor == nil,
 		NewAuthorName: name, NewAuthorAvatar: avatar,
 	}
@@ -407,9 +435,9 @@ func (s *Server) manualFeedForm(w http.ResponseWriter, r *http.Request) {
 	// round-trip. The new-author name falls back to the url's host and the user
 	// fills in the rest.
 	form := feedPreviewForm{
-		FeedURL: stripWWW(pageURL), HomeURL: stripWWW(pageURL), Authors: authors,
+		FeedURL: s.stripWWW(pageURL), HomeURL: s.stripWWW(pageURL), Authors: authors,
 		SelectedAuthorID: selectedAuthor, FixedAuthor: fixedAuthor, Redirect: fixedAuthor == nil,
-		NewAuthorName: authorNameFallback(pageURL),
+		NewAuthorName: authorNameFallback(s, pageURL),
 	}
 	if fixedAuthor != nil {
 		form.Action = "/authors/" + strconv.FormatInt(fixedAuthor.ID, 10) + "/feeds"
@@ -434,8 +462,8 @@ func pageURLFromForm(r *http.Request) string {
 
 // authorNameFallback derives a default new-author name from a page url's host,
 // for flows that must not fetch the page. Returns "" when the url has no host.
-func authorNameFallback(pageURL string) string {
-	if u, err := url.Parse(stripWWW(pageURL)); err == nil && u.Host != "" {
+func authorNameFallback(s *Server, pageURL string) string {
+	if u, err := url.Parse(s.stripWWW(pageURL)); err == nil && u.Host != "" {
 		return u.Host
 	}
 	return ""

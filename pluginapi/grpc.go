@@ -121,6 +121,67 @@ func (s *grpcFetcherServer) Docs(context.Context, *pb.DocsRequest) (*pb.DocsResp
 	return &pb.DocsResponse{Docs: d.Docs()}, nil
 }
 
+func (s *grpcFetcherServer) Enrich(ctx context.Context, req *pb.EnrichRequest) (*pb.EnrichResponse, error) {
+	en, ok := s.impl.(Enricher)
+	if !ok {
+		return &pb.EnrichResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	host, err := s.dialHost(req.HostServer)
+	if err != nil {
+		return &pb.EnrichResponse{Error: toPBError(err)}, nil
+	}
+	enrichments, err := en.EnrichItems(ctx, EnrichRequest{
+		FeedURL: req.FeedUrl,
+		Feed:    fromPBFeed(req.Feed),
+		Items:   fromPBItems(req.Items),
+	}, host)
+	if err != nil {
+		return &pb.EnrichResponse{Error: toPBError(err)}, nil
+	}
+	out := make([]*pb.Enrichment, 0, len(enrichments))
+	for _, e := range enrichments {
+		out = append(out, &pb.Enrichment{Index: int32(e.Index), SharedKey: e.SharedKey})
+	}
+	return &pb.EnrichResponse{Enrichments: out}, nil
+}
+
+func (s *grpcFetcherServer) Decorate(_ context.Context, req *pb.DecorateRequest) (*pb.DecorateResponse, error) {
+	dec, ok := s.impl.(Decoration)
+	if !ok {
+		return &pb.DecorateResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	// Decorate is view-time and must not do network I/O, so no Host is dialed.
+	decs, err := dec.Decorate(context.Background(), DecorateRequest{Items: fromPBItems(req.Items)})
+	if err != nil {
+		return &pb.DecorateResponse{Error: toPBError(err)}, nil
+	}
+	out := make([]*pb.Decorated, 0, len(decs))
+	for _, d := range decs {
+		parts := make([]*pb.SourcePart, 0, len(d.Attribution))
+		for _, p := range d.Attribution {
+			parts = append(parts, &pb.SourcePart{Text: p.Text, Token: p.Token, Url: p.URL})
+		}
+		out = append(out, &pb.Decorated{Index: int32(d.Index), Kind: int32(d.Kind), Attribution: parts, ThumbUrl: d.ThumbURL})
+	}
+	return &pb.DecorateResponse{Decorations: out}, nil
+}
+
+func (s *grpcFetcherServer) CanonicalizeFeedURL(_ context.Context, req *pb.CanonicalizeFeedURLRequest) (*pb.CanonicalizeFeedURLResponse, error) {
+	p, ok := s.impl.(URLPolicy)
+	if !ok {
+		return &pb.CanonicalizeFeedURLResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	return &pb.CanonicalizeFeedURLResponse{Url: p.CanonicalizeFeedURL(req.Url)}, nil
+}
+
+func (s *grpcFetcherServer) FeedToken(_ context.Context, req *pb.FeedTokenRequest) (*pb.FeedTokenResponse, error) {
+	p, ok := s.impl.(URLPolicy)
+	if !ok {
+		return &pb.FeedTokenResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	return &pb.FeedTokenResponse{Token: p.FeedToken(req.FeedUrl)}, nil
+}
+
 // dialHost connects back to the host's Host service over the broker.
 func (s *grpcFetcherServer) dialHost(id uint32) (Host, error) {
 	conn, err := s.broker.Dial(id)
@@ -235,10 +296,67 @@ func (c *grpcFetcherClient) Docs() string {
 	return resp.Docs
 }
 
+func (c *grpcFetcherClient) EnrichItems(ctx context.Context, req EnrichRequest, h Host) ([]Enrichment, error) {
+	id, stop := c.serveHost(h)
+	defer stop()
+	resp, err := c.client.Enrich(ctx, &pb.EnrichRequest{
+		HostServer: id, FeedUrl: req.FeedURL, Feed: toPBFeed(req.Feed), Items: toPBItems(req.Items),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fromPBError(resp.Error)
+	}
+	out := make([]Enrichment, 0, len(resp.Enrichments))
+	for _, e := range resp.Enrichments {
+		out = append(out, Enrichment{Index: int(e.Index), SharedKey: e.SharedKey})
+	}
+	return out, nil
+}
+
+func (c *grpcFetcherClient) Decorate(ctx context.Context, req DecorateRequest) ([]Decorated, error) {
+	resp, err := c.client.Decorate(ctx, &pb.DecorateRequest{Items: toPBItems(req.Items)})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fromPBError(resp.Error)
+	}
+	out := make([]Decorated, 0, len(resp.Decorations))
+	for _, d := range resp.Decorations {
+		parts := make([]SourcePart, 0, len(d.Attribution))
+		for _, p := range d.Attribution {
+			parts = append(parts, SourcePart{Text: p.Text, Token: p.Token, URL: p.Url})
+		}
+		out = append(out, Decorated{Index: int(d.Index), Kind: ItemKind(d.Kind), Attribution: parts, ThumbURL: d.ThumbUrl})
+	}
+	return out, nil
+}
+
+func (c *grpcFetcherClient) CanonicalizeFeedURL(raw string) string {
+	resp, err := c.client.CanonicalizeFeedURL(context.Background(), &pb.CanonicalizeFeedURLRequest{Url: raw})
+	if err != nil || resp.Error != nil {
+		return raw
+	}
+	return resp.Url
+}
+
+func (c *grpcFetcherClient) FeedToken(feedURL string) string {
+	resp, err := c.client.FeedToken(context.Background(), &pb.FeedTokenRequest{FeedUrl: feedURL})
+	if err != nil || resp.Error != nil {
+		return ""
+	}
+	return resp.Token
+}
+
 var (
-	_ Fetcher  = (*grpcFetcherClient)(nil)
-	_ Renderer = (*grpcFetcherClient)(nil)
-	_ Docser   = (*grpcFetcherClient)(nil)
+	_ Fetcher    = (*grpcFetcherClient)(nil)
+	_ Renderer   = (*grpcFetcherClient)(nil)
+	_ Docser     = (*grpcFetcherClient)(nil)
+	_ Enricher   = (*grpcFetcherClient)(nil)
+	_ Decoration = (*grpcFetcherClient)(nil)
+	_ URLPolicy  = (*grpcFetcherClient)(nil)
 )
 
 // ---- conversions ----
@@ -297,7 +415,7 @@ func toPBItems(items []Item) []*pb.Item {
 			encs = append(encs, &pb.Enclosure{Url: e.URL, MimeType: e.MIMEType, Length: e.Length})
 		}
 		out = append(out, &pb.Item{
-			Guid: it.GUID, Identity: it.Identity, Title: it.Title, Link: it.Link,
+			Guid: it.GUID, Identity: it.Identity, SharedKey: it.SharedKey, Title: it.Title, Link: it.Link,
 			Summary: it.Summary, ImageUrl: it.ImageURL, PublishedAt: it.PublishedAt,
 			DurationSec: int32(it.DurationSec),
 			Categories:  it.Categories,
@@ -315,7 +433,7 @@ func fromPBItems(items []*pb.Item) []Item {
 			encs = append(encs, Enclosure{URL: e.Url, MIMEType: e.MimeType, Length: e.Length})
 		}
 		out = append(out, Item{
-			GUID: it.Guid, Identity: it.Identity, Title: it.Title, Link: it.Link,
+			GUID: it.Guid, Identity: it.Identity, SharedKey: it.SharedKey, Title: it.Title, Link: it.Link,
 			Summary: it.Summary, ImageURL: it.ImageUrl, PublishedAt: it.PublishedAt,
 			DurationSec: int(it.DurationSec),
 			Categories:  it.Categories,

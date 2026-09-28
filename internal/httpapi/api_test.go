@@ -253,6 +253,7 @@ func TestAPIExtSaveHomeURL(t *testing.T) {
 func TestAPIExtSaveRedditDerived(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
+	useRedditPlugin(t, s)
 	u, _ := s.store.Users.ByUsername("alice")
 
 	ct := &countingTransport{}

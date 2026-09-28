@@ -58,7 +58,11 @@ type Item struct {
 	// Identity is the stable per-feed dedup key (see pluginapi.Item.Identity).
 	// Empty means "use GUID". Generic feeds have no distinct identity, so it
 	// stays empty there.
-	Identity    string
+	Identity string
+	// SharedKey is the identity an item shares across a user's feeds (see
+	// pluginapi.Item.SharedKey). It is filled in by the installed plugin's
+	// EnrichItems pass after parsing; empty means not cross-deduplicated.
+	SharedKey   string
 	Title       string
 	Link        string
 	Summary     string
@@ -88,12 +92,17 @@ type Result struct {
 }
 
 // Plugin is a feed integration installed by the plugin host. When set, Fetch
-// defers to it for feeds it matches, before the generic parser.
+// defers to it for feeds it matches, before the generic parser, and decorates
+// every parsed result with plugin enrichment.
 type Plugin interface {
 	// MatchFetch reports whether the plugin handles the request's feed.
 	MatchFetch(req FetchRequest) bool
 	// FetchPlugin fetches the feed via the plugin.
 	FetchPlugin(ctx context.Context, req FetchRequest) (Result, error)
+	// MatchEnrich reports whether the plugin decorates a feed's parsed items.
+	MatchEnrich(req FetchRequest) bool
+	// EnrichPlugin decorates the result's items in place (e.g. sets SharedKey).
+	EnrichPlugin(ctx context.Context, req FetchRequest, res *Result) error
 }
 
 // FetchRequest is one feed fetch: the URL and conditional-GET validators.
@@ -121,7 +130,11 @@ func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastM
 // FetchFeed fetches a feed described by req, routing to a matching plugin first.
 func FetchFeed(ctx context.Context, req FetchRequest, client *http.Client) (Result, error) {
 	if installedPlugin != nil && installedPlugin.MatchFetch(req) {
-		return installedPlugin.FetchPlugin(ctx, req)
+		res, err := installedPlugin.FetchPlugin(ctx, req)
+		if err != nil {
+			return Result{}, err
+		}
+		return enrichResult(ctx, req, res)
 	}
 	feedURL, etag, lastModified := req.URL, req.ETag, req.LastModified
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
@@ -183,6 +196,20 @@ func FetchFeed(ctx context.Context, req FetchRequest, client *http.Client) (Resu
 	}
 	for _, it := range parsed.Items {
 		res.Items = append(res.Items, normalizeItem(it))
+	}
+	return enrichResult(ctx, req, res)
+}
+
+// enrichResult runs the installed plugin's ingest enrichment over a parsed
+// result when one matches the feed URL. A plugin error is returned so the
+// caller records it as a poll failure rather than storing half-enriched items;
+// a no-op when no plugin matches.
+func enrichResult(ctx context.Context, req FetchRequest, res Result) (Result, error) {
+	if installedPlugin == nil || !installedPlugin.MatchEnrich(req) {
+		return res, nil
+	}
+	if err := installedPlugin.EnrichPlugin(ctx, req, &res); err != nil {
+		return Result{}, err
 	}
 	return res, nil
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,9 +21,14 @@ type Item struct {
 	// Identity is the stable per-feed dedup key (a plugin's Item.Identity).
 	// Empty means "use GUID". Stored as items.dedup_key.
 	Identity string
+	// SharedKey is the cross-feed identity a plugin's Enricher supplied for the
+	// item (e.g. "reddit:t3_<id>"). It is the input Upsert turns into the stored
+	// items.cross_key; on a read it is empty (CrossKey carries the stored value).
+	SharedKey string
 	// CrossKey is the per-user cross-feed identity ("reddit:t3_<id>" for a
 	// reddit post); empty when the item cannot be shared between feeds. Stored
-	// as items.cross_key and unique per user. Set by Upsert, never by callers.
+	// as items.cross_key and unique per user. Populated on read; Upsert derives
+	// it from SharedKey.
 	CrossKey   string
 	Title      string
 	Link       string
@@ -73,41 +79,17 @@ func dedupKey(it Item) string {
 	return it.GUID
 }
 
-// crossFeedKey derives an item's per-user cross-feed identity from its GUID, or
-// "" when the item cannot be shared between feeds. Reddit's Atom entries carry
-// the post fullname "t3_<id>" as their GUID, identical in a subreddit feed and
-// the user feed the same post reaches, so that value identifies one post across
-// subscriptions. Nothing else is cross-deduped: outside a same-domain identity
-// like reddit's, two feeds sharing a link or title is too weak to merge safely.
-func crossFeedKey(guid string) string {
-	if isRedditPostGUID(guid) {
-		return "reddit:" + guid
-	}
-	return ""
+// crossFeedKey normalizes an item's plugin-supplied SharedKey into the stored
+// items.cross_key, or "" when the item is not cross-deduplicated. The plugin
+// owns what a shared key looks like (e.g. reddit's "reddit:t3_<id>"); the store
+// only trims it and treats an empty value as "not shared".
+func crossFeedKey(sharedKey string) string {
+	return strings.TrimSpace(sharedKey)
 }
 
 // CrossFeedKey is the exported crossFeedKey, for callers that resolve an item
 // without going through Upsert (e.g. enclosure attachment in the poller).
-func CrossFeedKey(guid string) string { return crossFeedKey(guid) }
-
-// isRedditPostGUID reports whether guid is a reddit post fullname: "t3_" then a
-// base36 id. t1_ (comments) and t2_ (accounts) are not post identities.
-func isRedditPostGUID(guid string) bool {
-	const prefix = "t3_"
-	if !strings.HasPrefix(guid, prefix) {
-		return false
-	}
-	id := guid[len(prefix):]
-	if id == "" {
-		return false
-	}
-	for _, r := range id {
-		if (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
-			return false
-		}
-	}
-	return true
-}
+func CrossFeedKey(sharedKey string) string { return crossFeedKey(sharedKey) }
 
 // ItemWithFeed joins an item with its feed and author for display.
 type ItemWithFeed struct {
@@ -119,20 +101,16 @@ type ItemWithFeed struct {
 	AuthorID     int64
 	AuthorName   string
 	Sources      []ItemSource // additional feeds this item appears in (view-time dedup)
-	// RedditLinks maps an item's reddit category tokens ("r/cats", "u/sam") to
-	// the user's subscribed feed for them, resolved against the subscription
-	// list rather than the item's memberships. A cross-feed post seen through
-	// the subreddit feed links its poster internally even before the user feed
-	// has polled it (and so before an item_feeds membership exists).
-	RedditLinks []RedditLink
-	Timezone    string // user's IANA timezone, for relative timestamps in templates
-}
-
-// RedditLink is a reddit category token resolved to the user's subscribed feed.
-type RedditLink struct {
-	Token    string // lowercased "r/cats" or "u/sam"
-	FeedID   int64
-	AuthorID int64 // 0 when the subscribed feed has no author
+	// Kind is the item's view-time display classification (from the plugin's
+	// decorator). KindText is the default.
+	Kind ItemKind
+	// Attribution is the item's resolved source line ("r/cats by u/sam") from
+	// the plugin's decorator, or nil to keep the author/feed source.
+	Attribution []AttributionPart
+	// ThumbURL is a decorator-supplied row thumbnail override ("" keeps the
+	// stored ImageURL).
+	ThumbURL string
+	Timezone string // user's IANA timezone, for relative timestamps in templates
 }
 
 // ItemSource is one alternate feed an item is a member of, besides the owner
@@ -162,11 +140,17 @@ type ItemFilter struct {
 type ItemStore struct {
 	q  *sqlcgen.Queries
 	db *sql.DB // raw handle for the FTS5 search query sqlc cannot generate
+	// policy is the host's per-URL site rules (from the plugin layer), used to
+	// resolve an item's tokens to the user's subscribed feeds.
+	policy URLPolicy
+	// decorator supplies view-time item decoration (from the plugin layer).
+	decorator ItemDecorator
 }
 
 // Upsert stores an item for feedID, deduplicating within the feed on
 // (feed_id, dedup_key) — the item's stable Identity, or its GUID when none is
-// set. A reddit post additionally carries a per-user cross_key, so the same
+// set. An item whose SharedKey is set (a plugin's Enricher supplied it, e.g. a
+// reddit post's fullname) additionally carries a per-user cross_key, so the same
 // post arriving through two subscriptions (a subreddit feed and a user feed)
 // resolves to one row with two memberships rather than two rows: read/favorite/
 // list/share state is then shared automatically.
@@ -177,7 +161,7 @@ type ItemStore struct {
 // refreshed without touching identity, published_at or read state.
 func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 	key := dedupKey(it)
-	crossKey := crossFeedKey(it.GUID)
+	crossKey := crossFeedKey(it.SharedKey)
 	ctx := context.Background()
 
 	tx, err := s.db.Begin()
@@ -742,17 +726,16 @@ func (s *ItemStore) OneWithFeedAny(itemID int64) (ItemWithFeed, error) {
 
 // attachSources populates each item's Sources from its item_feeds memberships
 // other than the owner feed, in one query for the whole page, and resolves its
-// reddit categories against userID's subscribed reddit feeds. This is the
-// persisted cross-feed membership set, replacing the old title-based view-time
-// collapse for items stored once. userID 0 (a public page) skips the reddit
-// resolution.
+// category tokens against userID's subscribed feeds. This is the persisted
+// cross-feed membership set, replacing the old title-based view-time collapse
+// for items stored once. userID 0 (a public page) skips the token resolution.
 func (s *ItemStore) attachSources(userID int64, items []ItemWithFeed) error {
-	return attachSources(s.q, userID, items)
+	return attachSources(s.q, userID, s.policy, s.decorator, items)
 }
 
 // attachSources is the query-layer implementation, shared by ItemStore and
 // ListStore (which has no ItemStore handle of its own).
-func attachSources(q *sqlcgen.Queries, userID int64, items []ItemWithFeed) error {
+func attachSources(q *sqlcgen.Queries, userID int64, policy URLPolicy, decorator ItemDecorator, items []ItemWithFeed) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -770,7 +753,15 @@ func attachSources(q *sqlcgen.Queries, userID int64, items []ItemWithFeed) error
 	}
 	for _, r := range rows {
 		idx, ok := byID[r.ItemID]
-		if !ok || r.FeedID == items[idx].FeedID {
+		if !ok {
+			continue
+		}
+		// cross_key rides along on every membership row for the item; capture it
+		// once (the dedup guard needs it without a per-item query).
+		if items[idx].CrossKey == "" {
+			items[idx].CrossKey = r.CrossKey
+		}
+		if r.FeedID == items[idx].FeedID {
 			continue
 		}
 		items[idx].Sources = append(items[idx].Sources, ItemSource{
@@ -780,68 +771,106 @@ func attachSources(q *sqlcgen.Queries, userID int64, items []ItemWithFeed) error
 			AuthorName: r.AuthorName.String,
 		})
 	}
-	if err := attachRedditLinks(q, userID, items); err != nil {
+	if err := decorate(q, userID, policy, decorator, items); err != nil {
 		return err
 	}
 	return nil
 }
 
-// attachRedditLinks resolves each item's reddit category tokens against the
-// user's subscribed reddit feeds, in one query for the whole page. The mapping
-// is by token derived from the subscribed feed's URL, not from the item's
-// memberships, so a post seen through the subreddit feed links its poster
-// internally even before the poster's user feed has polled it.
-func attachRedditLinks(q *sqlcgen.Queries, userID int64, items []ItemWithFeed) error {
-	if userID == 0 {
+// decorate runs the injected item decorator over a page of items and resolves
+// its raw attribution tokens against the user's subscribed feeds. A token is
+// matched to a feed by the URL policy's FeedToken (site rules owned by the
+// plugin), not by the item's memberships, so a post seen through one feed links
+// its other subjects internally even before those feeds have polled it.
+func decorate(q *sqlcgen.Queries, userID int64, policy URLPolicy, decorator ItemDecorator, items []ItemWithFeed) error {
+	if decorator == nil {
 		return nil
 	}
-	needs := false
-	for i := range items {
-		for _, c := range items[i].Categories {
-			if tok := redditCategoryToken(c); tok != "" {
-				needs = true
-				break
-			}
-		}
-		if needs {
-			break
-		}
-	}
-	if !needs {
-		return nil
-	}
-	rows, err := q.ListUserRedditFeeds(context.Background(), userID)
+	raw, err := decorator.Decorate(items)
 	if err != nil {
 		return err
 	}
-	byToken := make(map[string]RedditLink, len(rows))
-	for _, r := range rows {
-		tok := RedditFeedToken(r.FeedUrl)
-		if tok == "" {
-			continue
-		}
-		if _, ok := byToken[tok]; !ok {
-			byToken[tok] = RedditLink{
-				Token:    tok,
-				FeedID:   r.FeedID,
-				AuthorID: r.AuthorID,
-			}
-		}
+	if len(raw) == 0 {
+		return nil
 	}
-	for i := range items {
-		seen := map[string]bool{}
-		for _, c := range items[i].Categories {
-			tok := redditCategoryToken(c)
-			if tok == "" || seen[tok] {
+	// Resolve tokens to subscribed feeds only when there are any and the page is
+	// user-scoped (a public page has no subscriptions to resolve against).
+	byToken := map[string]TokenTarget{}
+	if userID != 0 && policy != nil && anyTokens(raw) {
+		feeds, err := q.ListUserFeeds(context.Background(), userID)
+		if err != nil {
+			return err
+		}
+		for _, f := range feeds {
+			tok := policy.FeedToken(f.FeedUrl)
+			if tok == "" {
 				continue
 			}
-			seen[tok] = true
-			if link, ok := byToken[tok]; ok {
-				items[i].RedditLinks = append(items[i].RedditLinks, link)
+			if _, ok := byToken[tok]; !ok {
+				byToken[tok] = TokenTarget{FeedID: f.FeedID, AuthorID: f.AuthorID}
 			}
 		}
 	}
+	byID := make(map[int64]int, len(items))
+	for i := range items {
+		byID[items[i].ID] = i
+	}
+	for id, d := range raw {
+		i, ok := byID[id]
+		if !ok {
+			continue
+		}
+		items[i].Kind = d.Kind
+		items[i].ThumbURL = d.ThumbURL
+		items[i].Attribution = resolveAttribution(d.Attribution, byToken)
+	}
 	return nil
+}
+
+// TokenTarget is a subscribed feed a token resolved to.
+type TokenTarget struct {
+	FeedID   int64
+	AuthorID int64 // 0 when the subscribed feed has no author
+}
+
+// resolveAttribution turns a decoration's raw parts into final parts: a token
+// that resolves to a subscribed feed links internally (its author page, else
+// its feed page), otherwise the part's external URL is used, and a part with
+// neither is plain text.
+func resolveAttribution(parts []RawAttributionPart, byToken map[string]TokenTarget) []AttributionPart {
+	out := make([]AttributionPart, 0, len(parts))
+	for _, p := range parts {
+		ap := AttributionPart{Text: p.Text}
+		if p.Token != "" {
+			if t, ok := byToken[strings.ToLower(p.Token)]; ok {
+				if t.AuthorID != 0 {
+					ap.URL = "/authors/" + strconv.FormatInt(t.AuthorID, 10)
+				} else {
+					ap.URL = "/feeds/" + strconv.FormatInt(t.FeedID, 10)
+				}
+				out = append(out, ap)
+				continue
+			}
+		}
+		if p.URL != "" {
+			ap.URL = p.URL
+			ap.External = true
+		}
+		out = append(out, ap)
+	}
+	return out
+}
+
+// anyTokens reports whether any decoration carries an unresolvable-needing token.
+func anyTokens(raw map[int64]RawDecoration) bool {
+	for _, d := range raw {
+		for _, p := range d.Attribution {
+			if p.Token != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // SetRead marks an item read/unread, verifying it belongs to the user. When an

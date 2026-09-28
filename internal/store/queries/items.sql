@@ -41,10 +41,14 @@ ON CONFLICT (item_id, feed_id) DO NOTHING;
 -- name: ListItemSourcesForItems :many
 -- Every feed membership (including the owner feed) for a set of items, so a
 -- page can attach alternate sources without a query per item. The caller drops
--- the row whose feed_id equals the item's owner feed.
-SELECT mf.item_id, f.id AS feed_id, f.title AS feed_title,
+-- the row whose feed_id equals the item's owner feed. i.cross_key rides along
+-- so the view-time dedup guard can tell a cross-feed post (one row per post)
+-- from two distinct rows that merely share a title.
+SELECT mf.item_id, i.cross_key,
+       f.id AS feed_id, f.title AS feed_title,
        a.id AS author_id, a.name AS author_name
 FROM item_feeds mf
+JOIN items i ON i.id = mf.item_id
 JOIN feeds f ON f.id = mf.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE mf.item_id IN (sqlc.slice('itemIDs'))

@@ -1,13 +1,24 @@
 # reddit
 
 reddit feeds are plain RSS, so the generic parser fetches them. This plugin adds
-two things on top.
+reddit-specific behavior on top.
 
 ## Post media
 
 A post's real content (an external destination, an embedded player, or a
 multi-image gallery) is marked in reddit's feed HTML in a way a stored item
 cannot carry, so it is resolved when the item modal opens.
+
+## Source attribution
+
+A post is shown as "r/cats by u/sam". Both the subreddit and the poster link to
+your own subscribed feed for them when you have one, so you stay inside
+nanoflux; otherwise they link to reddit.
+
+## Cross-feed dedup
+
+The same post seen through a subreddit feed and through the poster's user feed is
+stored once, so reading it in one leaves it read in the other.
 
 ## Categories (for filtering)
 

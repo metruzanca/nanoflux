@@ -18,7 +18,6 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
-	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/filtermatch"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
@@ -434,15 +433,16 @@ type itemViewData struct {
 	PublishedAt  string
 	Summary      string
 	ImageURL     string
+	Kind         store.ItemKind // plugin-supplied card kind (KindText default)
 	DurationSec  int
 	Link         string
 	Body         template.HTML
 	EmbedURL     string
-	SourceURL    string     // external destination of a reddit link post
-	EmbedSrc     string     // iframe src from the destination's oEmbed
-	Gallery      []string   // full-res images of a reddit gallery post
-	FeedIsSystem bool       // true for a saved page (hidden feed/author, no internal links)
-	Attribution  []attrPart // source line: "r/x by u/y" (reddit) or author/feed
+	SourceURL    string                  // external destination of a reddit link post
+	EmbedSrc     string                  // iframe src from the destination's oEmbed
+	Gallery      []string                // full-res images of a reddit gallery post
+	FeedIsSystem bool                    // true for a saved page (hidden feed/author, no internal links)
+	Attribution  []store.AttributionPart // source line from the item's decoration; author/feed when empty
 	Enclosures   []store.Enclosure
 	ShareToken   string // public share token, "" when the item is not shared
 	Timezone     string // user's IANA timezone, for relative timestamps in templates
@@ -499,6 +499,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		PublishedAt:  it.PublishedAt,
 		Summary:      it.Summary,
 		ImageURL:     it.ImageURL,
+		Kind:         it.Kind,
 		DurationSec:  it.DurationSec,
 		Link:         it.Link,
 		Body:         template.HTML(it.Summary),
@@ -507,7 +508,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		Favorite:     it.Favorite,
 		Read:         it.Read,
 		FeedIsSystem: it.FeedIsSystem,
-		Attribution:  itemAttribution(it),
+		Attribution:  it.Attribution,
 		ProxyImages:  true,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
@@ -606,6 +607,7 @@ func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
 		PublishedAt: it.PublishedAt,
 		Summary:     it.Summary,
 		ImageURL:    it.ImageURL,
+		Kind:        it.Kind,
 		DurationSec: it.DurationSec,
 		Link:        it.Link,
 		Body:        template.HTML(it.Summary),
@@ -963,10 +965,11 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
 	}
 	// Auto-cache the site's favicon when the form supplied a home url. Best
-	// effort and bounded so a slow site can't stall the create response. Reddit
-	// is skipped: a page fetch shares the host's tight anonymous rate limit with
-	// the feed's .rss, and the immediate poll needs that budget more.
-	if homeURL != "" && !discover.IsRedditHost(homeURL) {
+	// effort and bounded so a slow site can't stall the create response. A
+	// plugin-owned page is skipped: a page fetch shares the host's request
+	// budget with the feed's .rss (reddit's tight anonymous limit), and the
+	// immediate poll needs that budget more.
+	if homeURL != "" && !s.urlPolicyOwned(homeURL) {
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		s.autoCacheFeedIcon(ctx, userID, homeURL)
 		cancel()
@@ -1387,14 +1390,40 @@ func normalizeURL(s string) string {
 // rest of the host's case and any port. Auto-filled urls (the find-author
 // preview form's feed/home fields, new-author prefill) are
 // cleaned through this so "https://www.example.com" shows up as
-// "https://example.com". Reddit is exempt: its canonical shape keeps the www
-// host, which serves a feed without a redirect and so does not spend a request
-// from the host's tight anonymous rate limit. Returns s unchanged when it can't
-// be parsed.
-func stripWWW(s string) string {
-	if discover.IsRedditHost(s) {
-		return s
+// "https://example.com". A URL a plugin owns is exempt: its canonical shape
+// (reddit's www host, which serves a feed without a redirect) must be preserved,
+// so rewriting it would spend a request from the host's tight rate-limit budget.
+// Returns s unchanged when it can't be parsed.
+func (s *Server) stripWWW(raw string) string {
+	if s.urlPolicyKeepsHost(raw) {
+		return raw
 	}
+	return stripWWW(raw)
+}
+
+// urlPolicyKeepsHost reports whether a plugin's URL policy keeps the URL's host
+// as-is (its canonical form differs from the generic www-stripping). It is how
+// the preview form knows not to rewrite a plugin-owned URL.
+func (s *Server) urlPolicyKeepsHost(raw string) bool {
+	return s.urlPolicyOwned(raw)
+}
+
+// urlPolicyOwned reports whether a plugin owns URL rules for raw. A plugin-owned
+// page shares its request budget with the feed (reddit's tight anonymous
+// limit), so page metadata fetches for icon/avatar discovery must be skipped.
+func (s *Server) urlPolicyOwned(raw string) bool {
+	if s.plugins == nil || s.plugins.Empty() {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return s.plugins.URLPolicy(u) != nil
+}
+
+// stripWWW is the plugin-agnostic www-stripper (see Server.stripWWW).
+func stripWWW(s string) string {
 	u, err := url.Parse(s)
 	if err != nil {
 		return s

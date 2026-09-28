@@ -7,8 +7,9 @@ import (
 	"github.com/metruzanca/nanoflux/internal/web"
 )
 
-// itemVisuals precomputes an item's rendering classification once per row so
-// the expensive HTML parse in IsImagePost runs a single time.
+// itemVisuals is an item's rendering classification for a row. The plugin's
+// Kind (from the item's decoration) decides when set; otherwise a generic
+// baseline detects a single-image post, and YouTube links render as video.
 type itemVisuals struct {
 	Video   bool
 	Image   bool
@@ -18,11 +19,32 @@ type itemVisuals struct {
 
 func visualsOf(it store.ItemWithFeed) itemVisuals {
 	return itemVisuals{
-		Video:   web.YoutubeEmbedURL(it.Link) != "",
-		Image:   web.IsImagePost(it.Summary, it.ImageURL, it.Title),
-		Link:    web.IsLinkPost(it.ImageURL),
-		Gallery: web.IsGallery(it.ImageURL),
+		Video:   it.Kind == store.KindVideo || web.YoutubeEmbedURL(it.Link) != "",
+		Image:   it.Kind == store.KindImage || (it.Kind == store.KindText && web.IsSingleImagePost(it.Summary, it.ImageURL, it.Title)),
+		Link:    it.Kind == store.KindLink,
+		Gallery: it.Kind == store.KindGallery,
 	}
+}
+
+// visualsFromKind classifies the item modal, which carries Kind plus the item's
+// fields (so the generic single-image baseline still applies when no plugin
+// classified it).
+func visualsFromKind(d itemViewData) itemVisuals {
+	return itemVisuals{
+		Video:   d.Kind == store.KindVideo || web.YoutubeEmbedURL(d.Link) != "",
+		Image:   d.Kind == store.KindImage || (d.Kind == store.KindText && web.IsSingleImagePost(d.Summary, d.ImageURL, d.Title)),
+		Link:    d.Kind == store.KindLink,
+		Gallery: d.Kind == store.KindGallery,
+	}
+}
+
+// rowThumb returns the image a row should show: the decoration's override when
+// set (a gallery's full-res first image), else the stored ImageURL.
+func rowThumb(it store.ItemWithFeed) string {
+	if it.ThumbURL != "" {
+		return it.ThumbURL
+	}
+	return it.ImageURL
 }
 
 func itemCardClass(v itemVisuals) string {
@@ -115,8 +137,9 @@ templ sourcesList(sources []store.ItemSource) {
 }
 
 // attrParts renders an attribution as space-separated parts, linking the ones
-// that have a URL and marking external links.
-templ attrParts(parts []attrPart) {
+// that have a URL and marking external links. The parts come from the item's
+// plugin decoration (store.AttributionPart), already resolved by the store.
+templ attrParts(parts []store.AttributionPart) {
 	for i, p := range parts {
 		if i > 0 {
 			{ " " }
@@ -147,8 +170,8 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 	>
 		if v.Video {
 			<a class="thumb" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
-				if it.ImageURL != "" {
-					<img src={ templ.URL(web.ProxiedImageURL(it.ImageURL)) } alt="" loading="lazy"/>
+				if thumb := rowThumb(it); thumb != "" {
+					<img src={ templ.URL(web.ProxiedImageURL(thumb)) } alt="" loading="lazy"/>
 				} else {
 					<span class="thumb-ph">▶</span>
 				}
@@ -158,11 +181,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 			</a>
 		} else if v.Image || v.Link || v.Gallery {
 			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
-				if gthumb := web.GalleryThumb(it.ImageURL); gthumb != "" {
-					<img src={ templ.URL(web.ProxiedImageURL(gthumb)) } alt="" loading="lazy"/>
-				} else {
-					<img src={ templ.URL(web.ProxiedImageURL(it.ImageURL)) } alt="" loading="lazy"/>
-				}
+				<img src={ templ.URL(web.ProxiedImageURL(rowThumb(it))) } alt="" loading="lazy"/>
 				if v.Link {
 					<span class="thumb-badge" title="content lives on an external site">external</span>
 				}
@@ -188,8 +207,8 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 							// Saved page: its feed/author are hidden, so the
 							// source is plain text, not a navigation link.
 							<span>saved</span><a href={ templ.URL(it.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external"></a>
-						} else if reddit, ok := redditAttribution(it); ok {
-							@attrParts(reddit)
+						} else if len(it.Attribution) > 0 {
+							@attrParts(it.Attribution)
 						} else if it.AuthorName != "" && !hideAuthor {
 							<a href={ "/authors/" + strconv.FormatInt(it.AuthorID, 10) }>{ it.AuthorName }</a>
 							@sourcesList(it.Sources)
@@ -498,14 +517,7 @@ templ ModeIcon(name string) {
 }
 
 templ ItemView(d itemViewData) {
-	@itemViewInner(d, visualsOf(store.ItemWithFeed{
-		Item: store.Item{
-			Link:     d.Link,
-			Summary:  d.Summary,
-			ImageURL: d.ImageURL,
-			Title:    d.Title,
-		},
-	}))
+	@itemViewInner(d, visualsFromKind(d))
 }
 
 templ itemViewInner(d itemViewData, v itemVisuals) {
