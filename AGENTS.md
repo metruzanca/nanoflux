@@ -74,10 +74,10 @@ fetched by the generic parser, so `feeds.plugin_name` stays empty:
   without fetching the page (`Server.derivedCandidate`, `preview.go`), replacing
   the deleted `discover.Derive`. A plugin-owned page also skips the icon/avatar
   page fetch (`pageIconURL`, `createFeed`, `Server.urlPolicyOwned`).
-- **`Enricher`** (`CapEnrich`): `EnrichItems` decorates a feed's freshly parsed
-  items after either fetch path, returning per-item `SharedKey` (index-addressed).
-  `feedparse.FetchFeed` runs it via `enrichResult`; `poller.ingest` copies
-  `SharedKey` into `store.Item.SharedKey`, and `Upsert` stores it as
+- **`SharedKeyer`** (`CapSharedKey`): `SharedKeys` assigns a feed's freshly
+  parsed items a cross-feed `SharedKey` after either fetch path (index-addressed
+  entries). `feedparse.FetchFeed` runs it via `runSharedKeys`; `poller.ingest`
+  copies `SharedKey` into `store.Item.SharedKey`, and `Upsert` stores it as
   `cross_key` (`crossFeedKey` now just trims the plugin-supplied key). reddit
   sets `reddit:t3_<id>`; `MergeCrossFeedDuplicates` remains as the one-time
   legacy backfill.
@@ -90,7 +90,7 @@ fetched by the generic parser, so `feeds.plugin_name` stays empty:
   deleted `httpapi.attribution.go` and `store.attachRedditLinks`/`RedditLink`.
 
 The reddit plugin (`internal/plugin/native/reddit`) is the reference for all of
-these: `Match` returns true for `CapEnrich`, `CapDecorate`, `CapURLPolicy`,
+these: `Match` returns true for `CapSharedKey`, `CapDecorate`, `CapURLPolicy`,
 `CapDiscover`, `CapRender` and `CapDocs` on reddit hosts; it does **not** claim
 `CapFetch`. `ItemWithFeed.Kind` drives the row card (`KindText` default,
 `KindImage`, `KindGallery`, `KindLink`, `KindVideo`, `KindAudio`); a generic
@@ -190,7 +190,7 @@ feed, so lists, favorites, FTS search and share pages all work unchanged.
   does not own a feed's fetch can still document it. reddit is the reason:
   reddit `.rss` feeds are fetched by the generic parser (`plugin_name` empty),
   yet reddit's plugin documents the subreddit/author categories its parser
-  adds. The same URL-matched pattern carries `CapEnrich`, `CapDecorate`,
+  adds. The same URL-matched pattern carries `CapSharedKey`, `CapDecorate`,
   `CapURLPolicy` and `CapDiscover` (see "Plugins own site-specific behavior").
 - `Registry.Docs(name)` / `Registry.MatchDocs(url)` / `Registry.ByName(name)`
   back it; `Registry.ErrNotFound` distinguishes "no such plugin" from
@@ -290,7 +290,7 @@ favorite/list/share state is shared and the combined streams count it once.
   is the membership set; feeds list items through it, while the display join
   still uses the owner feed.
 - `store.crossFeedKey` normalizes the plugin-supplied `SharedKey` into the stored
-  key (it now just trims). The identity is the plugin's: reddit's `Enricher` sets
+  key (it now just trims). The identity is the plugin's: reddit's `SharedKeyer` sets
   the post fullname `reddit:t3_<id>`, identical in both feeds. Nothing else is
   cross-deduped unless a plugin supplies a `SharedKey`.
 - `ItemStore.Upsert` resolves by `(user_id, cross_key)` first: a post already

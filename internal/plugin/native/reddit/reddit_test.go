@@ -115,8 +115,8 @@ func TestMatch(t *testing.T) {
 		if !p.Match(parsed, pluginapi.CapRender) {
 			t.Errorf("Match(%q, CapRender) = false", u)
 		}
-		if !p.Match(parsed, pluginapi.CapEnrich) {
-			t.Errorf("Match(%q, CapEnrich) = false", u)
+		if !p.Match(parsed, pluginapi.CapSharedKey) {
+			t.Errorf("Match(%q, CapSharedKey) = false", u)
 		}
 		if !p.Match(parsed, pluginapi.CapDiscover) {
 			t.Errorf("Match(%q, CapDiscover) = false", u)
@@ -130,24 +130,24 @@ func TestMatch(t *testing.T) {
 	}
 }
 
-// EnrichItems gives only post fullnames (t3_<id>) a cross-feed SharedKey,
+// SharedKeys gives only post fullnames (t3_<id>) a cross-feed SharedKey,
 // leaving comments (t1_) and accounts (t2_) without one.
-func TestEnrichItems(t *testing.T) {
+func TestSharedKeys(t *testing.T) {
 	p := &Plugin{}
-	req := pluginapi.EnrichRequest{Items: []pluginapi.Item{
+	req := pluginapi.SharedKeyRequest{Items: []pluginapi.Item{
 		{GUID: "t3_1abcde"},
 		{GUID: "t1_pb71vsb"},
 		{GUID: "t2_someone"},
 		{GUID: "t3_9Z"}, // base36 is case-insensitive
 		{GUID: "t3_"},
 	}}
-	got, err := p.EnrichItems(context.Background(), req, hostFunc(nil))
+	got, err := p.SharedKeys(context.Background(), req, hostFunc(nil))
 	if err != nil {
-		t.Fatalf("EnrichItems: %v", err)
+		t.Fatalf("SharedKeys: %v", err)
 	}
 	want := map[int]string{0: "reddit:t3_1abcde", 3: "reddit:t3_9Z"}
 	if len(got) != len(want) {
-		t.Fatalf("enrichments = %+v, want %d", got, len(want))
+		t.Fatalf("shared keys = %+v, want %d", got, len(want))
 	}
 	for _, e := range got {
 		if want[e.Index] != e.SharedKey {

@@ -44,28 +44,29 @@ func (d *Dispatcher) MatchFetch(req feedparse.FetchRequest) bool {
 	return d.reg.Match(mustParse(req.URL), pluginapi.CapFetch) != nil
 }
 
-// MatchEnrich reports whether any plugin decorates the feed's parsed items.
-func (d *Dispatcher) MatchEnrich(req feedparse.FetchRequest) bool {
+// MatchSharedKeys reports whether any plugin assigns cross-feed keys to the
+// feed's parsed items.
+func (d *Dispatcher) MatchSharedKeys(req feedparse.FetchRequest) bool {
 	if d.reg.Empty() {
 		return false
 	}
-	en, _ := d.reg.MatchEnrich(mustParse(req.URL))
-	return en != nil
+	sk, _ := d.reg.MatchSharedKeyer(mustParse(req.URL))
+	return sk != nil
 }
 
-// EnrichPlugin runs the matching plugin's enrichment and applies it to the
-// result's items. A plugin that does not implement Enricher, or returns
+// SharedKeysPlugin runs the matching plugin's SharedKeys pass and applies it to
+// the result's items. A plugin that does not implement SharedKeyer, or returns
 // ErrUnsupportedCapability, is a no-op.
-func (d *Dispatcher) EnrichPlugin(ctx context.Context, req feedparse.FetchRequest, res *feedparse.Result) error {
-	en, f := d.reg.MatchEnrich(mustParse(req.URL))
-	if en == nil {
+func (d *Dispatcher) SharedKeysPlugin(ctx context.Context, req feedparse.FetchRequest, res *feedparse.Result) error {
+	sk, f := d.reg.MatchSharedKeyer(mustParse(req.URL))
+	if sk == nil {
 		return nil
 	}
 	items := make([]pluginapi.Item, 0, len(res.Items))
 	for _, it := range res.Items {
 		items = append(items, fromFeedparseItem(it))
 	}
-	enrichments, err := en.EnrichItems(ctx, pluginapi.EnrichRequest{
+	entries, err := sk.SharedKeys(ctx, pluginapi.SharedKeyRequest{
 		FeedURL: req.URL,
 		Feed: pluginapi.Feed{
 			Title:       res.Feed.Title,
@@ -81,7 +82,7 @@ func (d *Dispatcher) EnrichPlugin(ctx context.Context, req feedparse.FetchReques
 		}
 		return convertError(err)
 	}
-	for _, e := range enrichments {
+	for _, e := range entries {
 		if e.Index < 0 || e.Index >= len(res.Items) {
 			continue
 		}
@@ -91,7 +92,7 @@ func (d *Dispatcher) EnrichPlugin(ctx context.Context, req feedparse.FetchReques
 }
 
 // fromFeedparseItem converts a feedparse item into the pluginapi model, for the
-// enrich pass (the reverse of toFeedparseResult's item loop).
+// SharedKeys pass (the reverse of toFeedparseResult's item loop).
 func fromFeedparseItem(it feedparse.Item) pluginapi.Item {
 	out := pluginapi.Item{
 		GUID:        it.GUID,

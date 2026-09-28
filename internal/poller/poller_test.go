@@ -545,16 +545,16 @@ func TestPollOneCategoryFilter(t *testing.T) {
 // stored once and is a member of both; the second poll reports it as new to the
 // second feed (so paging continues) without duplicating the row.
 //
-// fakeCrossEnricher plays the role of the reddit plugin's EnrichItems: it gives
+// fakeSharedKeyer plays the role of the reddit plugin's SharedKeys: it gives
 // every t3_ post the cross-feed SharedKey the store persists as cross_key.
-type fakeCrossEnricher struct{}
+type fakeSharedKeyer struct{}
 
-func (fakeCrossEnricher) MatchFetch(feedparse.FetchRequest) bool  { return false }
-func (fakeCrossEnricher) MatchEnrich(feedparse.FetchRequest) bool { return true }
-func (fakeCrossEnricher) FetchPlugin(context.Context, feedparse.FetchRequest) (feedparse.Result, error) {
+func (fakeSharedKeyer) MatchFetch(feedparse.FetchRequest) bool      { return false }
+func (fakeSharedKeyer) MatchSharedKeys(feedparse.FetchRequest) bool { return true }
+func (fakeSharedKeyer) FetchPlugin(context.Context, feedparse.FetchRequest) (feedparse.Result, error) {
 	return feedparse.Result{}, nil
 }
-func (fakeCrossEnricher) EnrichPlugin(_ context.Context, _ feedparse.FetchRequest, res *feedparse.Result) error {
+func (fakeSharedKeyer) SharedKeysPlugin(_ context.Context, _ feedparse.FetchRequest, res *feedparse.Result) error {
 	for i, it := range res.Items {
 		if strings.HasPrefix(it.GUID, "t3_") {
 			res.Items[i].SharedKey = "reddit:" + it.GUID
@@ -596,11 +596,11 @@ func TestPollCrossFeedSharedItem(t *testing.T) {
 	subFeed, _ := st.Feeds.Create(u.ID, subAuthor.ID, "r/cats", srv.URL, "", "", 900)
 	userFeed, _ := st.Feeds.Create(u.ID, userAuthor.ID, "u/sam", srv.URL, "", "", 900)
 
-	// The cross-feed identity now comes from a plugin's ingest enricher rather
+	// The cross-feed identity now comes from a plugin's SharedKeys pass rather
 	// than the store sniffing the GUID. Install a fake that marks t3_ posts the
 	// way the reddit plugin does, so the generic parse still yields one shared
 	// row across the two feeds.
-	feedparse.SetPlugin(fakeCrossEnricher{})
+	feedparse.SetPlugin(fakeSharedKeyer{})
 	defer feedparse.SetPlugin(nil)
 
 	p := New(st, time.Minute, 1)
@@ -1267,9 +1267,9 @@ type fakeIdentityPlugin struct {
 	guid string
 }
 
-func (fakeIdentityPlugin) MatchFetch(feedparse.FetchRequest) bool { return true }
-func (fakeIdentityPlugin) MatchEnrich(feedparse.FetchRequest) bool { return false }
-func (fakeIdentityPlugin) EnrichPlugin(context.Context, feedparse.FetchRequest, *feedparse.Result) error {
+func (fakeIdentityPlugin) MatchFetch(feedparse.FetchRequest) bool      { return true }
+func (fakeIdentityPlugin) MatchSharedKeys(feedparse.FetchRequest) bool { return false }
+func (fakeIdentityPlugin) SharedKeysPlugin(context.Context, feedparse.FetchRequest, *feedparse.Result) error {
 	return nil
 }
 func (p *fakeIdentityPlugin) FetchPlugin(context.Context, feedparse.FetchRequest) (feedparse.Result, error) {
@@ -1318,9 +1318,9 @@ func TestPollStoresItemDuration(t *testing.T) {
 // fakeDurationPlugin returns one item with a duration, bypassing the network.
 type fakeDurationPlugin struct{}
 
-func (fakeDurationPlugin) MatchFetch(feedparse.FetchRequest) bool { return true }
-func (fakeDurationPlugin) MatchEnrich(feedparse.FetchRequest) bool { return false }
-func (fakeDurationPlugin) EnrichPlugin(context.Context, feedparse.FetchRequest, *feedparse.Result) error {
+func (fakeDurationPlugin) MatchFetch(feedparse.FetchRequest) bool      { return true }
+func (fakeDurationPlugin) MatchSharedKeys(feedparse.FetchRequest) bool { return false }
+func (fakeDurationPlugin) SharedKeysPlugin(context.Context, feedparse.FetchRequest, *feedparse.Result) error {
 	return nil
 }
 func (fakeDurationPlugin) FetchPlugin(context.Context, feedparse.FetchRequest) (feedparse.Result, error) {

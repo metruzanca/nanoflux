@@ -7,7 +7,7 @@
 //   - URL policy: the redirect-free canonical feed shape and the r/<sub> /
 //     u/<name> token (urlpolicy.go), plus a derived feed candidate with no
 //     request (Discover).
-//   - Ingest enrichment: each post gets the cross-feed SharedKey from its
+//   - Ingest cross-feed keys: each post gets the cross-feed SharedKey from its
 //     t3_<id> GUID, so a post seen through the subreddit feed and the poster's
 //     user feed is stored once.
 //   - View-time decoration: the "r/cats by u/sam" source line (turned into
@@ -67,11 +67,11 @@ type Plugin struct {
 }
 
 var (
-	_ pluginapi.Fetcher    = (*Plugin)(nil)
-	_ pluginapi.Renderer   = (*Plugin)(nil)
-	_ pluginapi.Enricher   = (*Plugin)(nil)
-	_ pluginapi.URLPolicy  = (*Plugin)(nil)
-	_ pluginapi.Decoration = (*Plugin)(nil)
+	_ pluginapi.Fetcher     = (*Plugin)(nil)
+	_ pluginapi.Renderer    = (*Plugin)(nil)
+	_ pluginapi.SharedKeyer = (*Plugin)(nil)
+	_ pluginapi.URLPolicy   = (*Plugin)(nil)
+	_ pluginapi.Decoration  = (*Plugin)(nil)
 )
 
 func (*Plugin) Meta() pluginapi.Meta {
@@ -86,17 +86,17 @@ func (*Plugin) Meta() pluginapi.Meta {
 // Docs returns this plugin's Markdown documentation.
 func (*Plugin) Docs() string { return readme }
 
-// Match handles reddit URLs for view-time rendering, ingest enrichment
-// (cross-feed identity), URL policy (canonicalization, feed tokens, derivation)
-// and documentation. It does not claim fetch: reddit's .rss feeds are standard
-// feeds fetched by the generic parser (so a reddit feed's plugin_name is empty),
-// and this plugin decorates them through the URL-matched capabilities.
+// Match handles reddit URLs for view-time rendering, ingest cross-feed keys,
+// URL policy (canonicalization, feed tokens, derivation) and documentation. It
+// does not claim fetch: reddit's .rss feeds are standard feeds fetched by the
+// generic parser (so a reddit feed's plugin_name is empty), and this plugin
+// decorates them through the URL-matched capabilities.
 func (*Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
 	if u == nil {
 		return false
 	}
 	switch cap {
-	case pluginapi.CapRender, pluginapi.CapDocs, pluginapi.CapEnrich, pluginapi.CapURLPolicy, pluginapi.CapDiscover, pluginapi.CapDecorate:
+	case pluginapi.CapRender, pluginapi.CapDocs, pluginapi.CapSharedKey, pluginapi.CapURLPolicy, pluginapi.CapDiscover, pluginapi.CapDecorate:
 		return isRedditHost(u.Hostname())
 	default:
 		return false
@@ -135,17 +135,17 @@ func (*Plugin) FeedToken(feedURL string) string {
 	return feedToken(feedURL)
 }
 
-// EnrichItems gives every reddit post a cross-feed SharedKey from its GUID, the
+// SharedKeys gives every reddit post a cross-feed SharedKey from its GUID, the
 // post fullname "t3_<id>" that reddit's Atom sets identically in a subreddit
 // feed and in the poster's user feed. The host stores one item per
 // (user, SharedKey), so the same post seen through both subscriptions shares
 // read/favorite/list state. Non-post entries (t1_ comments, t2_ accounts) have
 // no shared identity and are left alone.
-func (*Plugin) EnrichItems(_ context.Context, req pluginapi.EnrichRequest, _ pluginapi.Host) ([]pluginapi.Enrichment, error) {
-	var out []pluginapi.Enrichment
+func (*Plugin) SharedKeys(_ context.Context, req pluginapi.SharedKeyRequest, _ pluginapi.Host) ([]pluginapi.ItemSharedKey, error) {
+	var out []pluginapi.ItemSharedKey
 	for i, it := range req.Items {
 		if key := sharedKey(it.GUID); key != "" {
-			out = append(out, pluginapi.Enrichment{Index: i, SharedKey: key})
+			out = append(out, pluginapi.ItemSharedKey{Index: i, SharedKey: key})
 		}
 	}
 	return out, nil

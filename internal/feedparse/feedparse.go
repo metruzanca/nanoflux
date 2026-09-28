@@ -61,7 +61,7 @@ type Item struct {
 	Identity string
 	// SharedKey is the identity an item shares across a user's feeds (see
 	// pluginapi.Item.SharedKey). It is filled in by the installed plugin's
-	// EnrichItems pass after parsing; empty means not cross-deduplicated.
+	// SharedKeys pass after parsing; empty means not cross-deduplicated.
 	SharedKey   string
 	Title       string
 	Link        string
@@ -92,17 +92,18 @@ type Result struct {
 }
 
 // Plugin is a feed integration installed by the plugin host. When set, Fetch
-// defers to it for feeds it matches, before the generic parser, and decorates
-// every parsed result with plugin enrichment.
+// defers to it for feeds it matches, before the generic parser, and runs the
+// plugin's SharedKeys pass over every parsed result.
 type Plugin interface {
 	// MatchFetch reports whether the plugin handles the request's feed.
 	MatchFetch(req FetchRequest) bool
 	// FetchPlugin fetches the feed via the plugin.
 	FetchPlugin(ctx context.Context, req FetchRequest) (Result, error)
-	// MatchEnrich reports whether the plugin decorates a feed's parsed items.
-	MatchEnrich(req FetchRequest) bool
-	// EnrichPlugin decorates the result's items in place (e.g. sets SharedKey).
-	EnrichPlugin(ctx context.Context, req FetchRequest, res *Result) error
+	// MatchSharedKeys reports whether the plugin assigns cross-feed keys to a
+	// feed's parsed items.
+	MatchSharedKeys(req FetchRequest) bool
+	// SharedKeysPlugin assigns each result item's SharedKey in place.
+	SharedKeysPlugin(ctx context.Context, req FetchRequest, res *Result) error
 }
 
 // FetchRequest is one feed fetch: the URL and conditional-GET validators.
@@ -134,7 +135,7 @@ func FetchFeed(ctx context.Context, req FetchRequest, client *http.Client) (Resu
 		if err != nil {
 			return Result{}, err
 		}
-		return enrichResult(ctx, req, res)
+		return runSharedKeys(ctx, req, res)
 	}
 	feedURL, etag, lastModified := req.URL, req.ETag, req.LastModified
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
@@ -197,18 +198,18 @@ func FetchFeed(ctx context.Context, req FetchRequest, client *http.Client) (Resu
 	for _, it := range parsed.Items {
 		res.Items = append(res.Items, normalizeItem(it))
 	}
-	return enrichResult(ctx, req, res)
+	return runSharedKeys(ctx, req, res)
 }
 
-// enrichResult runs the installed plugin's ingest enrichment over a parsed
-// result when one matches the feed URL. A plugin error is returned so the
-// caller records it as a poll failure rather than storing half-enriched items;
-// a no-op when no plugin matches.
-func enrichResult(ctx context.Context, req FetchRequest, res Result) (Result, error) {
-	if installedPlugin == nil || !installedPlugin.MatchEnrich(req) {
+// runSharedKeys runs the installed plugin's SharedKeys pass over a parsed result
+// when one matches the feed URL. A plugin error is returned so the caller
+// records it as a poll failure rather than storing partially-keyed items; a
+// no-op when no plugin matches.
+func runSharedKeys(ctx context.Context, req FetchRequest, res Result) (Result, error) {
+	if installedPlugin == nil || !installedPlugin.MatchSharedKeys(req) {
 		return res, nil
 	}
-	if err := installedPlugin.EnrichPlugin(ctx, req, &res); err != nil {
+	if err := installedPlugin.SharedKeysPlugin(ctx, req, &res); err != nil {
 		return Result{}, err
 	}
 	return res, nil

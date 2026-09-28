@@ -21,7 +21,7 @@ type Item struct {
 	// Identity is the stable per-feed dedup key (a plugin's Item.Identity).
 	// Empty means "use GUID". Stored as items.dedup_key.
 	Identity string
-	// SharedKey is the cross-feed identity a plugin's Enricher supplied for the
+	// SharedKey is the cross-feed identity a plugin's SharedKeyer supplied for the
 	// item (e.g. "reddit:t3_<id>"). It is the input Upsert turns into the stored
 	// items.cross_key; on a read it is empty (CrossKey carries the stored value).
 	SharedKey string
@@ -149,7 +149,7 @@ type ItemStore struct {
 
 // Upsert stores an item for feedID, deduplicating within the feed on
 // (feed_id, dedup_key) — the item's stable Identity, or its GUID when none is
-// set. An item whose SharedKey is set (a plugin's Enricher supplied it, e.g. a
+// set. An item whose SharedKey is set (a plugin's SharedKeyer supplied it, e.g. a
 // reddit post's fullname) additionally carries a per-user cross_key, so the same
 // post arriving through two subscriptions (a subreddit feed and a user feed)
 // resolves to one row with two memberships rather than two rows: read/favorite/

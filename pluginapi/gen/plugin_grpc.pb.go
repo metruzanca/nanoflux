@@ -203,7 +203,7 @@ const (
 	Fetcher_Fetch_FullMethodName               = "/nanoflux.plugin.v1.Fetcher/Fetch"
 	Fetcher_Render_FullMethodName              = "/nanoflux.plugin.v1.Fetcher/Render"
 	Fetcher_Docs_FullMethodName                = "/nanoflux.plugin.v1.Fetcher/Docs"
-	Fetcher_Enrich_FullMethodName              = "/nanoflux.plugin.v1.Fetcher/Enrich"
+	Fetcher_SharedKeys_FullMethodName          = "/nanoflux.plugin.v1.Fetcher/SharedKeys"
 	Fetcher_Decorate_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/Decorate"
 	Fetcher_CanonicalizeFeedURL_FullMethodName = "/nanoflux.plugin.v1.Fetcher/CanonicalizeFeedURL"
 	Fetcher_FeedToken_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/FeedToken"
@@ -221,8 +221,8 @@ type FetcherClient interface {
 	// Docs is optional: a plugin that does not implement Docser answers with an
 	// unsupported PluginError, which the host treats as "no documentation".
 	Docs(ctx context.Context, in *DocsRequest, opts ...grpc.CallOption) (*DocsResponse, error)
-	// Enrich is optional: ingest-time per-item decoration (cross-feed identity).
-	Enrich(ctx context.Context, in *EnrichRequest, opts ...grpc.CallOption) (*EnrichResponse, error)
+	// SharedKeys is optional: ingest-time per-item cross-feed identity.
+	SharedKeys(ctx context.Context, in *SharedKeyRequest, opts ...grpc.CallOption) (*SharedKeyResponse, error)
 	// Decorate is optional: view-time per-item rendering (attribution, kind).
 	Decorate(ctx context.Context, in *DecorateRequest, opts ...grpc.CallOption) (*DecorateResponse, error)
 	// URLPolicy methods are optional: a site's pure URL rules (canonical shape,
@@ -299,10 +299,10 @@ func (c *fetcherClient) Docs(ctx context.Context, in *DocsRequest, opts ...grpc.
 	return out, nil
 }
 
-func (c *fetcherClient) Enrich(ctx context.Context, in *EnrichRequest, opts ...grpc.CallOption) (*EnrichResponse, error) {
+func (c *fetcherClient) SharedKeys(ctx context.Context, in *SharedKeyRequest, opts ...grpc.CallOption) (*SharedKeyResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(EnrichResponse)
-	err := c.cc.Invoke(ctx, Fetcher_Enrich_FullMethodName, in, out, cOpts...)
+	out := new(SharedKeyResponse)
+	err := c.cc.Invoke(ctx, Fetcher_SharedKeys_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -351,8 +351,8 @@ type FetcherServer interface {
 	// Docs is optional: a plugin that does not implement Docser answers with an
 	// unsupported PluginError, which the host treats as "no documentation".
 	Docs(context.Context, *DocsRequest) (*DocsResponse, error)
-	// Enrich is optional: ingest-time per-item decoration (cross-feed identity).
-	Enrich(context.Context, *EnrichRequest) (*EnrichResponse, error)
+	// SharedKeys is optional: ingest-time per-item cross-feed identity.
+	SharedKeys(context.Context, *SharedKeyRequest) (*SharedKeyResponse, error)
 	// Decorate is optional: view-time per-item rendering (attribution, kind).
 	Decorate(context.Context, *DecorateRequest) (*DecorateResponse, error)
 	// URLPolicy methods are optional: a site's pure URL rules (canonical shape,
@@ -387,8 +387,8 @@ func (UnimplementedFetcherServer) Render(context.Context, *RenderRequest) (*Rend
 func (UnimplementedFetcherServer) Docs(context.Context, *DocsRequest) (*DocsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Docs not implemented")
 }
-func (UnimplementedFetcherServer) Enrich(context.Context, *EnrichRequest) (*EnrichResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Enrich not implemented")
+func (UnimplementedFetcherServer) SharedKeys(context.Context, *SharedKeyRequest) (*SharedKeyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SharedKeys not implemented")
 }
 func (UnimplementedFetcherServer) Decorate(context.Context, *DecorateRequest) (*DecorateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Decorate not implemented")
@@ -528,20 +528,20 @@ func _Fetcher_Docs_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Fetcher_Enrich_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EnrichRequest)
+func _Fetcher_SharedKeys_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SharedKeyRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(FetcherServer).Enrich(ctx, in)
+		return srv.(FetcherServer).SharedKeys(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Fetcher_Enrich_FullMethodName,
+		FullMethod: Fetcher_SharedKeys_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FetcherServer).Enrich(ctx, req.(*EnrichRequest))
+		return srv.(FetcherServer).SharedKeys(ctx, req.(*SharedKeyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -632,8 +632,8 @@ var Fetcher_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Fetcher_Docs_Handler,
 		},
 		{
-			MethodName: "Enrich",
-			Handler:    _Fetcher_Enrich_Handler,
+			MethodName: "SharedKeys",
+			Handler:    _Fetcher_SharedKeys_Handler,
 		},
 		{
 			MethodName: "Decorate",
