@@ -604,8 +604,10 @@ type SettingField struct {
 	Name string
 	// Label is the human label shown in the form.
 	Label string
-	// Kind hints the widget: "text" (default), "password", or "url". A
-	// "password" value is write-only in the UI and is never rendered back.
+	// Kind hints the widget: "text" (default), "password", "url", or "bool".
+	// A "password" value is write-only in the UI and is never rendered back.
+	// A "bool" renders as a checkbox and reaches Configure as "1" (on) or "0"
+	// (off), so a plugin gets a stable value whether or not the box was ticked.
 	Kind string
 	// Placeholder is optional example text.
 	Placeholder string

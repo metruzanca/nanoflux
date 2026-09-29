@@ -411,10 +411,11 @@ func (p *AppC) Configure(values map[string]string) {
 }
 ```
 
-`Kind` is `text` (default), `url`, or `password`. A `password` value is
+`Kind` is `text` (default), `url`, `password`, or `bool`. A `password` value is
 write-only: the admin form shows only whether a value is set (never the value),
 and a blank submit leaves the stored one unchanged, so a secret survives a save.
-`Required` rejects an empty value on save.
+A `bool` renders as a checkbox and reaches `Configure` as `"1"` (on) or `"0"`
+(off). `Required` rejects an empty value on save.
 
 Delivery is a **push**: the host calls `Configure` once at load with the stored
 values (so `Match` can rely on configuration — it receives no `Host`) and again

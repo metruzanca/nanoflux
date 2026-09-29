@@ -62,6 +62,7 @@ type adminPluginSetting struct {
 	Required    bool
 	Value       string // empty for a password field
 	Set         bool   // for a password field: a value is stored
+	Checked     bool   // for a bool field: the stored value is on
 }
 
 // adminPluginDomain is one registrable domain owned by a plugin, with the number
@@ -282,6 +283,8 @@ func (s *Server) adminPluginSettings(name string) []adminPluginSetting {
 		}
 		if f.Kind == "password" {
 			row.Set = values[f.Name] != ""
+		} else if f.Kind == "bool" {
+			row.Checked = settingBool(values[f.Name])
 		} else {
 			row.Value = values[f.Name]
 		}
@@ -370,6 +373,16 @@ func (s *Server) adminSavePluginSettings(w http.ResponseWriter, r *http.Request)
 	values := make(map[string]string, len(schema))
 	for _, f := range schema {
 		v := strings.TrimSpace(r.FormValue("setting_" + f.Name))
+		// A bool always stores a definite "1"/"0": an unchecked box submits
+		// nothing, so a missing value means off.
+		if f.Kind == "bool" {
+			if settingBool(v) {
+				values[f.Name] = "1"
+			} else {
+				values[f.Name] = "0"
+			}
+			continue
+		}
 		if f.Required && v == "" {
 			writeFormError(w, r, "admin-plugins-error", f.Label+" is required")
 			return
@@ -401,6 +414,17 @@ func settingNames(schema []pluginapi.SettingField) []string {
 		out = append(out, f.Name)
 	}
 	return out
+}
+
+// settingBool reports whether a stored or submitted setting value is "on". A
+// bool field is stored as "1"/"0"; older or hand-written values may be "on",
+// "true", or "yes".
+func settingBool(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "on", "true", "yes":
+		return true
+	}
+	return false
 }
 
 // adminInstanceData rebuilds the data the instance settings card needs, for

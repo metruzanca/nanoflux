@@ -47,6 +47,10 @@ func deriveFeed(rawurl string) (pluginapi.Candidate, bool) {
 	if !isRedditHost(u.Hostname()) {
 		return pluginapi.Candidate{}, false
 	}
+	// A search page is not a subreddit/user feed; leave it for the search owner.
+	if isSearchURL(u) {
+		return pluginapi.Candidate{}, false
+	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	if len(parts) < 2 {
 		return pluginapi.Candidate{}, false
@@ -100,6 +104,9 @@ func canonicalFeedURL(raw string) string {
 	if !isRedditHost(u.Hostname()) {
 		return raw
 	}
+	if isSearchURL(u) {
+		return raw
+	}
 	// Canonical host: www.reddit.com, keeping any port.
 	u.Scheme = "https"
 	if port := u.Port(); port != "" {
@@ -146,6 +153,9 @@ func feedToken(feedURL string) string {
 		return ""
 	}
 	if !isRedditHost(u.Hostname()) {
+		return ""
+	}
+	if isSearchURL(u) {
 		return ""
 	}
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")

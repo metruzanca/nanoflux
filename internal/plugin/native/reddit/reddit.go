@@ -97,7 +97,19 @@ func (*Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
 	}
 	switch cap {
 	case pluginapi.CapRender, pluginapi.CapDocs, pluginapi.CapSharedKey, pluginapi.CapURLPolicy, pluginapi.CapDiscover, pluginapi.CapDecorate:
-		return isRedditHost(u.Hostname())
+		if !isRedditHost(u.Hostname()) {
+			return false
+		}
+		// A search URL is not a subreddit/user feed: the URL policy would
+		// rewrite it to the .rss origin and discovery would read /r/x/search as
+		// the subreddit r/x. Those URL-matched capabilities are left to a plugin
+		// that owns search; the item-link capabilities (render, decorate) and the
+		// per-post shared key still apply, so search results cross-dedupe with
+		// subscribed feeds and render their normal attribution.
+		if isSearchURL(u) && (cap == pluginapi.CapDiscover || cap == pluginapi.CapURLPolicy || cap == pluginapi.CapDocs) {
+			return false
+		}
+		return true
 	default:
 		return false
 	}
@@ -433,6 +445,22 @@ func isRedditHost(host string) bool {
 	host = strings.ToLower(host)
 	for _, h := range redditHosts {
 		if host == h {
+			return true
+		}
+	}
+	return false
+}
+
+// isSearchURL reports whether a reddit URL is a search page (/search or
+// /r/{sub}/search). Search is not a feed shape this plugin handles; a URL like
+// /r/{sub}/search would otherwise be mistaken for the subreddit's feed by
+// deriveFeed and rewritten to the .rss origin by the URL policy.
+func isSearchURL(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	for _, seg := range strings.Split(strings.Trim(u.Path, "/"), "/") {
+		if strings.EqualFold(seg, "search") {
 			return true
 		}
 	}

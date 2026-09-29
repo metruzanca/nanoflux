@@ -425,3 +425,38 @@ func TestLinkDedupeKey(t *testing.T) {
 		t.Error("author should be lowercased")
 	}
 }
+
+// TestSearchURLNotOwned asserts the reddit plugin leaves search URLs for a
+// search-owning plugin: discovery and the URL policy do not treat /search or
+// /r/{sub}/search as a subreddit feed, while the per-post shared key still
+// applies so search results cross-dedupe with subscribed feeds.
+func TestSearchURLNotOwned(t *testing.T) {
+	p := &Plugin{}
+	search := mustURL(t, "https://old.reddit.com/r/cats/search?q=foo&restrict_sr=on")
+	if p.Match(search, pluginapi.CapDiscover) {
+		t.Error("Match(search, CapDiscover) should be false")
+	}
+	if p.Match(search, pluginapi.CapURLPolicy) {
+		t.Error("Match(search, CapURLPolicy) should be false")
+	}
+	if p.Match(search, pluginapi.CapDocs) {
+		t.Error("Match(search, CapDocs) should be false")
+	}
+	// The post-shared-key capability is feed-URL matched and still applies: the
+	// items are ordinary t3_ posts.
+	if !p.Match(search, pluginapi.CapSharedKey) {
+		t.Error("Match(search, CapSharedKey) should be true")
+	}
+
+	// The URL policy must not rewrite or mis-derive a search URL.
+	raw := "https://old.reddit.com/r/cats/search?q=foo"
+	if got := p.CanonicalizeFeedURL(raw); got != raw {
+		t.Errorf("CanonicalizeFeedURL(%q) = %q, want unchanged", raw, got)
+	}
+	if tok := p.FeedToken(raw); tok != "" {
+		t.Errorf("FeedToken(%q) = %q, want empty", raw, tok)
+	}
+	if cs, err := p.Discover(context.Background(), raw, hostFunc(nil)); err != pluginapi.ErrUnsupportedCapability || cs != nil {
+		t.Errorf("Discover(search) = %v, %v; want ErrUnsupportedCapability", cs, err)
+	}
+}
