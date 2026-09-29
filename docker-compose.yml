@@ -39,7 +39,7 @@ services:
       - ./backups:/backups
       # External feed plugins (see docs/writing-plugins.md).
       - ./plugins:/plugins
-    restart: unless-stopped
+    restart: always
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/healthz"]
       interval: 30s
