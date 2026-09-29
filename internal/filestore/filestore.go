@@ -35,6 +35,9 @@ type Stat struct {
 type Store interface {
 	Put(ctx context.Context, key, contentType string, data []byte) error
 	Get(ctx context.Context, key string) (contentType string, data []byte, err error)
+	// Exists reports whether an object is present, without reading its bytes.
+	// Used to skip re-downloading a blob already cached at a known key.
+	Exists(ctx context.Context, key string) (bool, error)
 	Delete(ctx context.Context, key string) error
 	EnsureBucket(ctx context.Context) error
 	Stat(ctx context.Context) (Stat, error)
@@ -173,6 +176,19 @@ func (s *s3Store) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
+// Exists reports whether the object is present, using a HEAD (StatObject) so no
+// body is transferred.
+func (s *s3Store) Exists(ctx context.Context, key string) (bool, error) {
+	_, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
+	if err != nil {
+		if minio.ToErrorResponse(err).StatusCode == 404 {
+			return false, nil
+		}
+		return false, fmt.Errorf("filestore: stat %s: %w", key, err)
+	}
+	return true, nil
+}
+
 // Stat enumerates the bucket to count objects and total bytes.
 func (s *s3Store) Stat(ctx context.Context) (Stat, error) {
 	var st Stat
@@ -216,6 +232,13 @@ func (m *Memory) Get(_ context.Context, key string) (string, []byte, error) {
 		return "", nil, ErrNotFound
 	}
 	return o.ct, o.data, nil
+}
+
+func (m *Memory) Exists(_ context.Context, key string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.m[key]
+	return ok, nil
 }
 
 func (m *Memory) Delete(_ context.Context, key string) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"sort"
+	"strings"
 
 	"github.com/charmbracelet/log"
 
@@ -459,4 +460,45 @@ func (r *Registry) MatchDocs(u *url.URL) string {
 		return f.Meta().Name
 	}
 	return ""
+}
+
+// CachesImages reports whether any loaded plugin claims host-side image caching
+// for feedURL (its images are served with short-lived signed URLs). A feed whose
+// plugin claims it is forced on: the user cannot disable caching for that feed.
+func (r *Registry) CachesImages(feedURL string) bool {
+	if r.Empty() {
+		return false
+	}
+	return r.Match(mustParse(feedURL), pluginapi.CapImageCache) != nil
+}
+
+// ImageCacheFolder returns the storage folder a feed's cached images live under:
+// the owning plugin's name, or "feeds" for a feed with no plugin (a user-enabled
+// cache on a generic feed). Admins remove a plugin's cache by dropping
+// cache/<folder>/.
+func (r *Registry) ImageCacheFolder(feedURL string) string {
+	if f := r.Match(mustParse(feedURL), pluginapi.CapImageCache); f != nil {
+		if name := f.Meta().Name; name != "" {
+			return sanitizeFolder(name)
+		}
+	}
+	return "feeds"
+}
+
+// sanitizeFolder keeps a plugin name usable as a single storage path segment,
+// mapping anything outside [a-z0-9._-] to '-'.
+func sanitizeFolder(name string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	if b.Len() == 0 {
+		return "feeds"
+	}
+	return b.String()
 }

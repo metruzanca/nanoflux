@@ -399,7 +399,7 @@ func (q *Queries) GetAuthorItemStats(ctx context.Context, arg GetAuthorItemStats
 }
 
 const getItem = `-- name: GetItem :one
-SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url,
+SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url, i.image_cache_key,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite, i.bookmark
 FROM items i
 WHERE i.id = ? AND i.user_id = ?
@@ -427,6 +427,7 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 		&i.Categories,
 		&i.DurationSec,
 		&i.ImageUrl,
+		&i.ImageCacheKey,
 		&i.PublishedAt,
 		&i.FetchedAt,
 		&i.Read,
@@ -489,7 +490,7 @@ func (q *Queries) GetItemContent(ctx context.Context, id int64) (string, error) 
 }
 
 const getItemWithFeed = `-- name: GetItemWithFeed :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -506,28 +507,29 @@ type GetItemWithFeedParams struct {
 }
 
 type GetItemWithFeedRow struct {
-	ID           int64          `json:"id"`
-	FeedID       int64          `json:"feed_id"`
-	Guid         string         `json:"guid"`
-	Title        string         `json:"title"`
-	Link         string         `json:"link"`
-	Summary      string         `json:"summary"`
-	Content      string         `json:"content"`
-	Categories   string         `json:"categories"`
-	ImageUrl     sql.NullString `json:"image_url"`
-	DurationSec  sql.NullInt64  `json:"duration_sec"`
-	PublishedAt  sql.NullString `json:"published_at"`
-	FetchedAt    string         `json:"fetched_at"`
-	Read         bool           `json:"read"`
-	Favorite     bool           `json:"favorite"`
-	Bookmark     bool           `json:"bookmark"`
-	ReadAt       sql.NullString `json:"read_at"`
-	FeedTitle    string         `json:"feed_title"`
-	FeedUrl      string         `json:"feed_url"`
-	FeedHomeUrl  sql.NullString `json:"feed_home_url"`
-	FeedIsSystem int64          `json:"feed_is_system"`
-	AuthorID     sql.NullInt64  `json:"author_id"`
-	AuthorName   sql.NullString `json:"author_name"`
+	ID            int64          `json:"id"`
+	FeedID        int64          `json:"feed_id"`
+	Guid          string         `json:"guid"`
+	Title         string         `json:"title"`
+	Link          string         `json:"link"`
+	Summary       string         `json:"summary"`
+	Content       string         `json:"content"`
+	Categories    string         `json:"categories"`
+	ImageUrl      sql.NullString `json:"image_url"`
+	ImageCacheKey sql.NullString `json:"image_cache_key"`
+	DurationSec   sql.NullInt64  `json:"duration_sec"`
+	PublishedAt   sql.NullString `json:"published_at"`
+	FetchedAt     string         `json:"fetched_at"`
+	Read          bool           `json:"read"`
+	Favorite      bool           `json:"favorite"`
+	Bookmark      bool           `json:"bookmark"`
+	ReadAt        sql.NullString `json:"read_at"`
+	FeedTitle     string         `json:"feed_title"`
+	FeedUrl       string         `json:"feed_url"`
+	FeedHomeUrl   sql.NullString `json:"feed_home_url"`
+	FeedIsSystem  int64          `json:"feed_is_system"`
+	AuthorID      sql.NullInt64  `json:"author_id"`
+	AuthorName    sql.NullString `json:"author_name"`
 }
 
 func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams) (GetItemWithFeedRow, error) {
@@ -543,6 +545,7 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 		&i.Content,
 		&i.Categories,
 		&i.ImageUrl,
+		&i.ImageCacheKey,
 		&i.DurationSec,
 		&i.PublishedAt,
 		&i.FetchedAt,
@@ -561,7 +564,7 @@ func (q *Queries) GetItemWithFeed(ctx context.Context, arg GetItemWithFeedParams
 }
 
 const getItemWithFeedAny = `-- name: GetItemWithFeedAny :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -573,28 +576,29 @@ WHERE i.id = ?
 `
 
 type GetItemWithFeedAnyRow struct {
-	ID           int64          `json:"id"`
-	FeedID       int64          `json:"feed_id"`
-	Guid         string         `json:"guid"`
-	Title        string         `json:"title"`
-	Link         string         `json:"link"`
-	Summary      string         `json:"summary"`
-	Content      string         `json:"content"`
-	Categories   string         `json:"categories"`
-	ImageUrl     sql.NullString `json:"image_url"`
-	DurationSec  sql.NullInt64  `json:"duration_sec"`
-	PublishedAt  sql.NullString `json:"published_at"`
-	FetchedAt    string         `json:"fetched_at"`
-	Read         bool           `json:"read"`
-	Favorite     bool           `json:"favorite"`
-	Bookmark     bool           `json:"bookmark"`
-	ReadAt       sql.NullString `json:"read_at"`
-	FeedTitle    string         `json:"feed_title"`
-	FeedUrl      string         `json:"feed_url"`
-	FeedHomeUrl  sql.NullString `json:"feed_home_url"`
-	FeedIsSystem int64          `json:"feed_is_system"`
-	AuthorID     sql.NullInt64  `json:"author_id"`
-	AuthorName   sql.NullString `json:"author_name"`
+	ID            int64          `json:"id"`
+	FeedID        int64          `json:"feed_id"`
+	Guid          string         `json:"guid"`
+	Title         string         `json:"title"`
+	Link          string         `json:"link"`
+	Summary       string         `json:"summary"`
+	Content       string         `json:"content"`
+	Categories    string         `json:"categories"`
+	ImageUrl      sql.NullString `json:"image_url"`
+	ImageCacheKey sql.NullString `json:"image_cache_key"`
+	DurationSec   sql.NullInt64  `json:"duration_sec"`
+	PublishedAt   sql.NullString `json:"published_at"`
+	FetchedAt     string         `json:"fetched_at"`
+	Read          bool           `json:"read"`
+	Favorite      bool           `json:"favorite"`
+	Bookmark      bool           `json:"bookmark"`
+	ReadAt        sql.NullString `json:"read_at"`
+	FeedTitle     string         `json:"feed_title"`
+	FeedUrl       string         `json:"feed_url"`
+	FeedHomeUrl   sql.NullString `json:"feed_home_url"`
+	FeedIsSystem  int64          `json:"feed_is_system"`
+	AuthorID      sql.NullInt64  `json:"author_id"`
+	AuthorName    sql.NullString `json:"author_name"`
 }
 
 func (q *Queries) GetItemWithFeedAny(ctx context.Context, id int64) (GetItemWithFeedAnyRow, error) {
@@ -610,6 +614,7 @@ func (q *Queries) GetItemWithFeedAny(ctx context.Context, id int64) (GetItemWith
 		&i.Content,
 		&i.Categories,
 		&i.ImageUrl,
+		&i.ImageCacheKey,
 		&i.DurationSec,
 		&i.PublishedAt,
 		&i.FetchedAt,
@@ -628,8 +633,8 @@ func (q *Queries) GetItemWithFeedAny(ctx context.Context, id int64) (GetItemWith
 }
 
 const insertEnclosure = `-- name: InsertEnclosure :exec
-INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort, cache_key)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertEnclosureParams struct {
@@ -639,6 +644,7 @@ type InsertEnclosureParams struct {
 	MimeType sql.NullString `json:"mime_type"`
 	Size     int64          `json:"size"`
 	Sort     int64          `json:"sort"`
+	CacheKey string         `json:"cache_key"`
 }
 
 func (q *Queries) InsertEnclosure(ctx context.Context, arg InsertEnclosureParams) error {
@@ -649,6 +655,7 @@ func (q *Queries) InsertEnclosure(ctx context.Context, arg InsertEnclosureParams
 		arg.MimeType,
 		arg.Size,
 		arg.Sort,
+		arg.CacheKey,
 	)
 	return err
 }
@@ -696,7 +703,7 @@ func (q *Queries) ListAuthorRecentItemTimes(ctx context.Context, arg ListAuthorR
 }
 
 const listEnclosures = `-- name: ListEnclosures :many
-SELECT url, title, mime_type, size, sort
+SELECT url, title, mime_type, size, sort, cache_key
 FROM item_enclosures
 WHERE item_id = ?
 ORDER BY sort
@@ -708,6 +715,7 @@ type ListEnclosuresRow struct {
 	MimeType sql.NullString `json:"mime_type"`
 	Size     int64          `json:"size"`
 	Sort     int64          `json:"sort"`
+	CacheKey string         `json:"cache_key"`
 }
 
 func (q *Queries) ListEnclosures(ctx context.Context, itemID int64) ([]ListEnclosuresRow, error) {
@@ -725,6 +733,7 @@ func (q *Queries) ListEnclosures(ctx context.Context, itemID int64) ([]ListEnclo
 			&i.MimeType,
 			&i.Size,
 			&i.Sort,
+			&i.CacheKey,
 		); err != nil {
 			return nil, err
 		}
@@ -740,7 +749,7 @@ func (q *Queries) ListEnclosures(ctx context.Context, itemID int64) ([]ListEnclo
 }
 
 const listFeedItemsForFilter = `-- name: ListFeedItemsForFilter :many
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -754,27 +763,28 @@ ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
 `
 
 type ListFeedItemsForFilterRow struct {
-	ID           int64          `json:"id"`
-	FeedID       int64          `json:"feed_id"`
-	Guid         string         `json:"guid"`
-	Title        string         `json:"title"`
-	Link         string         `json:"link"`
-	Summary      string         `json:"summary"`
-	Categories   string         `json:"categories"`
-	ImageUrl     sql.NullString `json:"image_url"`
-	DurationSec  sql.NullInt64  `json:"duration_sec"`
-	PublishedAt  sql.NullString `json:"published_at"`
-	FetchedAt    string         `json:"fetched_at"`
-	Read         bool           `json:"read"`
-	Favorite     bool           `json:"favorite"`
-	Bookmark     bool           `json:"bookmark"`
-	ReadAt       sql.NullString `json:"read_at"`
-	FeedTitle    string         `json:"feed_title"`
-	FeedUrl      string         `json:"feed_url"`
-	FeedHomeUrl  sql.NullString `json:"feed_home_url"`
-	FeedIsSystem int64          `json:"feed_is_system"`
-	AuthorID     sql.NullInt64  `json:"author_id"`
-	AuthorName   sql.NullString `json:"author_name"`
+	ID            int64          `json:"id"`
+	FeedID        int64          `json:"feed_id"`
+	Guid          string         `json:"guid"`
+	Title         string         `json:"title"`
+	Link          string         `json:"link"`
+	Summary       string         `json:"summary"`
+	Categories    string         `json:"categories"`
+	ImageUrl      sql.NullString `json:"image_url"`
+	ImageCacheKey sql.NullString `json:"image_cache_key"`
+	DurationSec   sql.NullInt64  `json:"duration_sec"`
+	PublishedAt   sql.NullString `json:"published_at"`
+	FetchedAt     string         `json:"fetched_at"`
+	Read          bool           `json:"read"`
+	Favorite      bool           `json:"favorite"`
+	Bookmark      bool           `json:"bookmark"`
+	ReadAt        sql.NullString `json:"read_at"`
+	FeedTitle     string         `json:"feed_title"`
+	FeedUrl       string         `json:"feed_url"`
+	FeedHomeUrl   sql.NullString `json:"feed_home_url"`
+	FeedIsSystem  int64          `json:"feed_is_system"`
+	AuthorID      sql.NullInt64  `json:"author_id"`
+	AuthorName    sql.NullString `json:"author_name"`
 }
 
 // Every item that is a member of a feed, with the same shape as ListItems, for
@@ -799,6 +809,7 @@ func (q *Queries) ListFeedItemsForFilter(ctx context.Context, feedid int64) ([]L
 			&i.Summary,
 			&i.Categories,
 			&i.ImageUrl,
+			&i.ImageCacheKey,
 			&i.DurationSec,
 			&i.PublishedAt,
 			&i.FetchedAt,
@@ -893,7 +904,7 @@ func (q *Queries) ListItemSourcesForItems(ctx context.Context, itemids []int64) 
 }
 
 const listItems = `-- name: ListItems :many
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -938,27 +949,28 @@ type ListItemsParams struct {
 }
 
 type ListItemsRow struct {
-	ID           int64          `json:"id"`
-	FeedID       int64          `json:"feed_id"`
-	Guid         string         `json:"guid"`
-	Title        string         `json:"title"`
-	Link         string         `json:"link"`
-	Summary      string         `json:"summary"`
-	Categories   string         `json:"categories"`
-	ImageUrl     sql.NullString `json:"image_url"`
-	DurationSec  sql.NullInt64  `json:"duration_sec"`
-	PublishedAt  sql.NullString `json:"published_at"`
-	FetchedAt    string         `json:"fetched_at"`
-	Read         bool           `json:"read"`
-	Favorite     bool           `json:"favorite"`
-	Bookmark     bool           `json:"bookmark"`
-	ReadAt       sql.NullString `json:"read_at"`
-	FeedTitle    string         `json:"feed_title"`
-	FeedUrl      string         `json:"feed_url"`
-	FeedHomeUrl  sql.NullString `json:"feed_home_url"`
-	FeedIsSystem int64          `json:"feed_is_system"`
-	AuthorID     sql.NullInt64  `json:"author_id"`
-	AuthorName   sql.NullString `json:"author_name"`
+	ID            int64          `json:"id"`
+	FeedID        int64          `json:"feed_id"`
+	Guid          string         `json:"guid"`
+	Title         string         `json:"title"`
+	Link          string         `json:"link"`
+	Summary       string         `json:"summary"`
+	Categories    string         `json:"categories"`
+	ImageUrl      sql.NullString `json:"image_url"`
+	ImageCacheKey sql.NullString `json:"image_cache_key"`
+	DurationSec   sql.NullInt64  `json:"duration_sec"`
+	PublishedAt   sql.NullString `json:"published_at"`
+	FetchedAt     string         `json:"fetched_at"`
+	Read          bool           `json:"read"`
+	Favorite      bool           `json:"favorite"`
+	Bookmark      bool           `json:"bookmark"`
+	ReadAt        sql.NullString `json:"read_at"`
+	FeedTitle     string         `json:"feed_title"`
+	FeedUrl       string         `json:"feed_url"`
+	FeedHomeUrl   sql.NullString `json:"feed_home_url"`
+	FeedIsSystem  int64          `json:"feed_is_system"`
+	AuthorID      sql.NullInt64  `json:"author_id"`
+	AuthorName    sql.NullString `json:"author_name"`
 }
 
 // The display feed is the item's owner (i.feed_id); feed/author/collection
@@ -993,6 +1005,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 			&i.Summary,
 			&i.Categories,
 			&i.ImageUrl,
+			&i.ImageCacheKey,
 			&i.DurationSec,
 			&i.PublishedAt,
 			&i.FetchedAt,
@@ -1021,7 +1034,7 @@ func (q *Queries) ListItems(ctx context.Context, arg ListItemsParams) ([]ListIte
 }
 
 const listItemsAsc = `-- name: ListItemsAsc :many
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -1065,27 +1078,28 @@ type ListItemsAscParams struct {
 }
 
 type ListItemsAscRow struct {
-	ID           int64          `json:"id"`
-	FeedID       int64          `json:"feed_id"`
-	Guid         string         `json:"guid"`
-	Title        string         `json:"title"`
-	Link         string         `json:"link"`
-	Summary      string         `json:"summary"`
-	Categories   string         `json:"categories"`
-	ImageUrl     sql.NullString `json:"image_url"`
-	DurationSec  sql.NullInt64  `json:"duration_sec"`
-	PublishedAt  sql.NullString `json:"published_at"`
-	FetchedAt    string         `json:"fetched_at"`
-	Read         bool           `json:"read"`
-	Favorite     bool           `json:"favorite"`
-	Bookmark     bool           `json:"bookmark"`
-	ReadAt       sql.NullString `json:"read_at"`
-	FeedTitle    string         `json:"feed_title"`
-	FeedUrl      string         `json:"feed_url"`
-	FeedHomeUrl  sql.NullString `json:"feed_home_url"`
-	FeedIsSystem int64          `json:"feed_is_system"`
-	AuthorID     sql.NullInt64  `json:"author_id"`
-	AuthorName   sql.NullString `json:"author_name"`
+	ID            int64          `json:"id"`
+	FeedID        int64          `json:"feed_id"`
+	Guid          string         `json:"guid"`
+	Title         string         `json:"title"`
+	Link          string         `json:"link"`
+	Summary       string         `json:"summary"`
+	Categories    string         `json:"categories"`
+	ImageUrl      sql.NullString `json:"image_url"`
+	ImageCacheKey sql.NullString `json:"image_cache_key"`
+	DurationSec   sql.NullInt64  `json:"duration_sec"`
+	PublishedAt   sql.NullString `json:"published_at"`
+	FetchedAt     string         `json:"fetched_at"`
+	Read          bool           `json:"read"`
+	Favorite      bool           `json:"favorite"`
+	Bookmark      bool           `json:"bookmark"`
+	ReadAt        sql.NullString `json:"read_at"`
+	FeedTitle     string         `json:"feed_title"`
+	FeedUrl       string         `json:"feed_url"`
+	FeedHomeUrl   sql.NullString `json:"feed_home_url"`
+	FeedIsSystem  int64          `json:"feed_is_system"`
+	AuthorID      sql.NullInt64  `json:"author_id"`
+	AuthorName    sql.NullString `json:"author_name"`
 }
 
 func (q *Queries) ListItemsAsc(ctx context.Context, arg ListItemsAscParams) ([]ListItemsAscRow, error) {
@@ -1117,6 +1131,7 @@ func (q *Queries) ListItemsAsc(ctx context.Context, arg ListItemsAscParams) ([]L
 			&i.Summary,
 			&i.Categories,
 			&i.ImageUrl,
+			&i.ImageCacheKey,
 			&i.DurationSec,
 			&i.PublishedAt,
 			&i.FetchedAt,
@@ -1145,7 +1160,7 @@ func (q *Queries) ListItemsAsc(ctx context.Context, arg ListItemsAscParams) ([]L
 }
 
 const listItemsMagic = `-- name: ListItemsMagic :many
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -1194,27 +1209,28 @@ type ListItemsMagicParams struct {
 }
 
 type ListItemsMagicRow struct {
-	ID           int64          `json:"id"`
-	FeedID       int64          `json:"feed_id"`
-	Guid         string         `json:"guid"`
-	Title        string         `json:"title"`
-	Link         string         `json:"link"`
-	Summary      string         `json:"summary"`
-	Categories   string         `json:"categories"`
-	ImageUrl     sql.NullString `json:"image_url"`
-	DurationSec  sql.NullInt64  `json:"duration_sec"`
-	PublishedAt  sql.NullString `json:"published_at"`
-	FetchedAt    string         `json:"fetched_at"`
-	Read         bool           `json:"read"`
-	Favorite     bool           `json:"favorite"`
-	Bookmark     bool           `json:"bookmark"`
-	ReadAt       sql.NullString `json:"read_at"`
-	FeedTitle    string         `json:"feed_title"`
-	FeedUrl      string         `json:"feed_url"`
-	FeedHomeUrl  sql.NullString `json:"feed_home_url"`
-	FeedIsSystem int64          `json:"feed_is_system"`
-	AuthorID     sql.NullInt64  `json:"author_id"`
-	AuthorName   sql.NullString `json:"author_name"`
+	ID            int64          `json:"id"`
+	FeedID        int64          `json:"feed_id"`
+	Guid          string         `json:"guid"`
+	Title         string         `json:"title"`
+	Link          string         `json:"link"`
+	Summary       string         `json:"summary"`
+	Categories    string         `json:"categories"`
+	ImageUrl      sql.NullString `json:"image_url"`
+	ImageCacheKey sql.NullString `json:"image_cache_key"`
+	DurationSec   sql.NullInt64  `json:"duration_sec"`
+	PublishedAt   sql.NullString `json:"published_at"`
+	FetchedAt     string         `json:"fetched_at"`
+	Read          bool           `json:"read"`
+	Favorite      bool           `json:"favorite"`
+	Bookmark      bool           `json:"bookmark"`
+	ReadAt        sql.NullString `json:"read_at"`
+	FeedTitle     string         `json:"feed_title"`
+	FeedUrl       string         `json:"feed_url"`
+	FeedHomeUrl   sql.NullString `json:"feed_home_url"`
+	FeedIsSystem  int64          `json:"feed_is_system"`
+	AuthorID      sql.NullInt64  `json:"author_id"`
+	AuthorName    sql.NullString `json:"author_name"`
 }
 
 // The magic sort: rank feeds by the user's taste instead of strict time. Manual
@@ -1251,6 +1267,7 @@ func (q *Queries) ListItemsMagic(ctx context.Context, arg ListItemsMagicParams) 
 			&i.Summary,
 			&i.Categories,
 			&i.ImageUrl,
+			&i.ImageCacheKey,
 			&i.DurationSec,
 			&i.PublishedAt,
 			&i.FetchedAt,
@@ -1671,6 +1688,25 @@ type SetItemFavoriteParams struct {
 
 func (q *Queries) SetItemFavorite(ctx context.Context, arg SetItemFavoriteParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, setItemFavorite, arg.Favorite, arg.ID, arg.UserID)
+}
+
+const setItemImageCacheKey = `-- name: SetItemImageCacheKey :exec
+UPDATE items
+SET image_cache_key = ?
+WHERE id = ?
+`
+
+type SetItemImageCacheKeyParams struct {
+	ImageCacheKey sql.NullString `json:"image_cache_key"`
+	ID            int64          `json:"id"`
+}
+
+// Record the object-storage key of an item's cached primary image, or clear it.
+// Independent of UpdateItemSnapshotByID, which refreshes the remote image_url on
+// every poll but must not clobber the cached copy.
+func (q *Queries) SetItemImageCacheKey(ctx context.Context, arg SetItemImageCacheKeyParams) error {
+	_, err := q.db.ExecContext(ctx, setItemImageCacheKey, arg.ImageCacheKey, arg.ID)
+	return err
 }
 
 const setItemRead = `-- name: SetItemRead :execresult

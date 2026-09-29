@@ -438,6 +438,54 @@ func TestItemEnclosures(t *testing.T) {
 	}
 }
 
+// TestEnclosureCacheKeyPersists asserts a cached image enclosure's key is
+// carried forward across a re-poll (ReplaceEnclosures) even when the incoming
+// enclosure carries no key, so turning caching off does not revert an
+// already-cached image.
+func TestEnclosureCacheKeyPersists(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+	if _, err := s.Items.Upsert(f.ID, Item{GUID: "g1", FetchedAt: db.Now()}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	itemID, _ := s.Items.ByFeedIdentity(f.ID, "g1")
+
+	if err := s.Items.ReplaceEnclosures(itemID, []Enclosure{
+		{URL: "https://metru.dev/a.png?sig=1", MIMEType: "image/png", CacheKey: "cache/blog/1/1.png"},
+		{URL: "https://metru.dev/b.png?sig=1", MIMEType: "image/png"},
+	}); err != nil {
+		t.Fatalf("ReplaceEnclosures: %v", err)
+	}
+	// A re-poll: new signed URLs, no cache keys supplied.
+	if err := s.Items.ReplaceEnclosures(itemID, []Enclosure{
+		{URL: "https://metru.dev/a.png?sig=2", MIMEType: "image/png"},
+		{URL: "https://metru.dev/b.png?sig=2", MIMEType: "image/png"},
+	}); err != nil {
+		t.Fatalf("ReplaceEnclosures re-poll: %v", err)
+	}
+	got, _ := s.Items.Enclosures(itemID)
+	if len(got) != 2 || got[0].CacheKey != "cache/blog/1/1.png" {
+		t.Fatalf("cache key not carried forward: %+v", got)
+	}
+	if got[1].CacheKey != "" {
+		t.Fatalf("slot with no prior cache key should stay empty: %+v", got[1])
+	}
+
+	// An item's image cache key is independent of the snapshot refresh.
+	if err := s.Items.SetItemImageCacheKey(itemID, "cache/blog/1/0.png"); err != nil {
+		t.Fatalf("SetItemImageCacheKey: %v", err)
+	}
+	if err := s.Items.SetRead(u.ID, itemID, true); err != nil {
+		t.Fatalf("SetRead: %v", err)
+	}
+	it, _ := s.Items.ByID(u.ID, itemID)
+	if it.ImageCacheKey != "cache/blog/1/0.png" {
+		t.Fatalf("ImageCacheKey = %q", it.ImageCacheKey)
+	}
+}
+
 // TestItemCategoriesRoundTrip asserts an item's categories survive a store
 // write and are refreshed (not appended) when the feed's snapshot changes.
 func TestItemCategoriesRoundTrip(t *testing.T) {
@@ -1192,7 +1240,7 @@ func TestListDue(t *testing.T) {
 	}
 
 	// Disabled feeds are never due.
-	s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://a.dev/rss.xml", "", "", 900, true, false)
+	s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://a.dev/rss.xml", "", "", 900, true, false, false)
 	if err := s.Feeds.SetPollMeta(f.ID, "", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -1300,7 +1348,7 @@ func TestURLPolicyApplied(t *testing.T) {
 		t.Fatalf("create FeedURL = %q, want the policy-canonical shape", f.FeedURL)
 	}
 
-	if err := s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://legacy.example/u/bar", "", "", 900, true, true); err != nil {
+	if err := s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://legacy.example/u/bar", "", "", 900, true, true, false); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.Feeds.ByID(u.ID, f.ID)
@@ -1378,7 +1426,7 @@ func TestPluginDisableReenable(t *testing.T) {
 
 	// A user pause (no reason) is never resumed.
 	paused, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "u", "https://example.org/u", "", "", "zorg", 900)
-	s.Feeds.Update(u.ID, paused.ID, a.ID, "u", "https://example.org/u", "", "", 900, true, false)
+	s.Feeds.Update(u.ID, paused.ID, a.ID, "u", "https://example.org/u", "", "", 900, true, false, false)
 	gotPaused, _ := s.Feeds.ByID(u.ID, paused.ID)
 	if gotPaused.DisabledReason != "" {
 		t.Fatalf("a user save should clear the disabled reason: %q", gotPaused.DisabledReason)
@@ -1403,7 +1451,7 @@ func TestResetPluginForDomain(t *testing.T) {
 	active, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "a", "https://example.org/a", "", "", "zorg", 900)
 
 	paused, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "q", "https://example.org/q", "", "", "zorg", 900)
-	s.Feeds.Update(u.ID, paused.ID, a.ID, "q", "https://example.org/q", "", "", 900, true, false)
+	s.Feeds.Update(u.ID, paused.ID, a.ID, "q", "https://example.org/q", "", "", 900, true, false, false)
 
 	other, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "o", "https://other.com/o", "", "", "zorg", 900)
 
@@ -1586,7 +1634,7 @@ func TestMigrateBackfillsCadence(t *testing.T) {
 		t.Fatalf("new feed should default to auto on")
 	}
 	// Turning it off via Update sticks.
-	if err := s.Feeds.Update(u.ID, f.ID, a.ID, "Blog", "https://b.dev/feed.xml", "", "", 900, false, true); err != nil {
+	if err := s.Feeds.Update(u.ID, f.ID, a.ID, "Blog", "https://b.dev/feed.xml", "", "", 900, false, true, false); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.Feeds.ByID(u.ID, f.ID)

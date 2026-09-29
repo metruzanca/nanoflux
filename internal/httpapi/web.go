@@ -85,6 +85,10 @@ type feedForm struct {
 	PollIntervalAuto bool
 	CollectionIDs    []int64
 	Enabled          bool
+	CacheImages      bool
+	// CacheForced is true when the feed's plugin forces image caching on
+	// (CapImageCache), in which case the user cannot turn it off.
+	CacheForced bool
 }
 
 type feedsData struct {
@@ -517,31 +521,35 @@ func withTZ(tz string, items []store.ItemWithFeed) []store.ItemWithFeed {
 }
 
 type itemViewData struct {
-	ID           int64
-	Title        string
-	AuthorName   string
-	AuthorID     int64
-	FeedID       int64
-	PublishedAt  string
-	Summary      string
-	ImageURL     string
-	Kind         store.ItemKind // plugin-supplied card kind (KindText default)
-	DurationSec  int
-	Link         string
-	Body         template.HTML
-	EmbedURL     string
-	SourceURL    string                  // external destination of a reddit link post
-	EmbedSrc     string                  // iframe src from the destination's oEmbed
-	Gallery      []string                // full-res images of a reddit gallery post
-	FeedIsSystem bool                    // true for a saved page (hidden feed/author, no internal links)
-	Attribution  []store.AttributionPart // source line from the item's decoration; author/feed when empty
-	Enclosures   []store.Enclosure
-	ShareToken   string // public share token, "" when the item is not shared
-	Timezone     string // user's IANA timezone, for relative timestamps in templates
-	Favorite     bool   // drives the modal's favorite toggle
-	Bookmark     bool   // drives the modal's bookmark toggle
-	Read         bool   // drives the modal's read/unread toggle (true after auto-mark)
-	ProxyImages  bool   // route remote images through /img (authenticated modal only)
+	ID          int64
+	Title       string
+	AuthorName  string
+	AuthorID    int64
+	FeedID      int64
+	PublishedAt string
+	Summary     string
+	ImageURL    string
+	// ImageCacheKey is the object-storage key of the cached primary image, "" when
+	// not cached. When set (and this view may use the authenticated /cache route)
+	// the image renders from cache instead of the remote URL.
+	ImageCacheKey string
+	Kind          store.ItemKind // plugin-supplied card kind (KindText default)
+	DurationSec   int
+	Link          string
+	Body          template.HTML
+	EmbedURL      string
+	SourceURL     string                  // external destination of a reddit link post
+	EmbedSrc      string                  // iframe src from the destination's oEmbed
+	Gallery       []string                // full-res images of a reddit gallery post
+	FeedIsSystem  bool                    // true for a saved page (hidden feed/author, no internal links)
+	Attribution   []store.AttributionPart // source line from the item's decoration; author/feed when empty
+	Enclosures    []store.Enclosure
+	ShareToken    string // public share token, "" when the item is not shared
+	Timezone      string // user's IANA timezone, for relative timestamps in templates
+	Favorite      bool   // drives the modal's favorite toggle
+	Bookmark      bool   // drives the modal's bookmark toggle
+	Read          bool   // drives the modal's read/unread toggle (true after auto-mark)
+	ProxyImages   bool   // route remote images through /img (authenticated modal only)
 }
 
 // imgSrc returns a remote image URL as it should be rendered: proxied through
@@ -551,6 +559,27 @@ func (d itemViewData) imgSrc(u string) string {
 		return web.ProxiedImageURL(u)
 	}
 	return u
+}
+
+// cachedImageSrc returns the cached primary image when this item has one and the
+// view may use the authenticated /cache route; else the normal proxy/remote path.
+// It only applies when remote is the item's own ImageURL (a body image picked by
+// BestImageURL is not what was cached).
+func (d itemViewData) cachedImageSrc(remote string) string {
+	if d.ImageCacheKey != "" && d.ProxyImages && remote == d.ImageURL {
+		return web.CachedImageURL(d.ImageCacheKey, remote)
+	}
+	return d.imgSrc(remote)
+}
+
+// enclosureSrc returns an image enclosure's source: the cached copy when this item
+// has one for it and the view may use /cache, else the remote URL through the
+// usual proxy rule.
+func (d itemViewData) enclosureSrc(e store.Enclosure) string {
+	if e.CacheKey != "" && d.ProxyImages {
+		return web.CachedImageURL(e.CacheKey, e.URL)
+	}
+	return d.imgSrc(e.URL)
 }
 
 // itemBody returns the HTML an item's modal renders: a plugin-enriched body
@@ -594,26 +623,27 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data := itemViewData{
-		ID:           it.ID,
-		Title:        it.Title,
-		AuthorName:   it.AuthorName,
-		AuthorID:     it.AuthorID,
-		FeedID:       it.FeedID,
-		PublishedAt:  it.PublishedAt,
-		Summary:      it.Summary,
-		ImageURL:     it.ImageURL,
-		Kind:         it.Kind,
-		DurationSec:  it.DurationSec,
-		Link:         it.Link,
-		Body:         template.HTML(itemBody(it)),
-		EmbedURL:     web.YoutubeEmbedURL(it.Link),
-		Timezone:     u.Timezone,
-		Favorite:     it.Favorite,
-		Bookmark:     it.Bookmark,
-		Read:         it.Read,
-		FeedIsSystem: it.FeedIsSystem,
-		Attribution:  it.Attribution,
-		ProxyImages:  true,
+		ID:            it.ID,
+		Title:         it.Title,
+		AuthorName:    it.AuthorName,
+		AuthorID:      it.AuthorID,
+		FeedID:        it.FeedID,
+		PublishedAt:   it.PublishedAt,
+		Summary:       it.Summary,
+		ImageURL:      it.ImageURL,
+		ImageCacheKey: it.ImageCacheKey,
+		Kind:          it.Kind,
+		DurationSec:   it.DurationSec,
+		Link:          it.Link,
+		Body:          template.HTML(itemBody(it)),
+		EmbedURL:      web.YoutubeEmbedURL(it.Link),
+		Timezone:      u.Timezone,
+		Favorite:      it.Favorite,
+		Bookmark:      it.Bookmark,
+		Read:          it.Read,
+		FeedIsSystem:  it.FeedIsSystem,
+		Attribution:   it.Attribution,
+		ProxyImages:   true,
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
@@ -706,16 +736,17 @@ func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := itemViewData{
-		ID:          it.ID,
-		Title:       it.Title,
-		PublishedAt: it.PublishedAt,
-		Summary:     it.Summary,
-		ImageURL:    it.ImageURL,
-		Kind:        it.Kind,
-		DurationSec: it.DurationSec,
-		Link:        it.Link,
-		Body:        template.HTML(itemBody(it)),
-		EmbedURL:    web.YoutubeEmbedURL(it.Link),
+		ID:            it.ID,
+		Title:         it.Title,
+		PublishedAt:   it.PublishedAt,
+		Summary:       it.Summary,
+		ImageURL:      it.ImageURL,
+		ImageCacheKey: it.ImageCacheKey,
+		Kind:          it.Kind,
+		DurationSec:   it.DurationSec,
+		Link:          it.Link,
+		Body:          template.HTML(itemBody(it)),
+		EmbedURL:      web.YoutubeEmbedURL(it.Link),
 	}
 	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
@@ -1107,6 +1138,16 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 		log.Error("create feed", "err", err)
 		return store.Feed{}, "could not create feed"
 	}
+	// A plugin whose images expire forces caching on; the user cannot disable it
+	// later. A feed with no forcing plugin starts with caching off (the user may
+	// enable it from the feed's edit page).
+	if s.imageCacheForced(feedURL) {
+		if err := s.store.Feeds.SetCacheImages(userID, f.ID, true); err != nil {
+			log.Error("force feed image cache", "feed_id", f.ID, "err", err)
+		} else {
+			f.CacheImages = true
+		}
+	}
 	for _, cid := range r.Form["collections"] {
 		if n, err := strconv.ParseInt(cid, 10, 64); err == nil {
 			s.store.Collections.AddFeed(userID, n, f.ID)
@@ -1147,6 +1188,17 @@ func (s *Server) pluginNameFor(feedURL string) string {
 		return f.Meta().Name
 	}
 	return ""
+}
+
+// imageCacheForced reports whether a feed's plugin forces host-side image
+// caching on (it claims CapImageCache for the URL), so the user cannot disable
+// it. It is evaluated against the plugin registry, never stored, so it tracks
+// which plugins are loaded.
+func (s *Server) imageCacheForced(feedURL string) bool {
+	if s.plugins == nil || s.plugins.Empty() {
+		return false
+	}
+	return s.plugins.CachesImages(feedURL)
 }
 
 // pollFeedNow triggers an immediate first poll of a newly added feed. It is
@@ -1211,6 +1263,7 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 		ID: f.ID, Title: f.Title, FeedURL: f.FeedURL, HomeURL: f.HomeURL,
 		Description: f.Description, AuthorID: f.AuthorID,
 		PollIntervalSec: f.PollIntervalSec, PollIntervalAuto: f.PollIntervalAuto, Enabled: f.Enabled,
+		CacheImages: f.CacheImages, CacheForced: s.imageCacheForced(f.FeedURL),
 	}
 	collections, _ := s.store.Collections.List(u.ID)
 	form.CollectionIDs = s.collectionIDsForFeed(u.ID, f.ID)
@@ -1462,8 +1515,9 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, back, http.StatusFound)
 		return
 	}
+	cacheImages := r.FormValue("cache_images") == "1" || s.imageCacheForced(feedURL)
 	if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
-		r.FormValue("home_url"), "", interval, auto, r.FormValue("enabled") == "1"); err != nil {
+		r.FormValue("home_url"), "", interval, auto, r.FormValue("enabled") == "1", cacheImages); err != nil {
 		log.Error("update feed", "err", err)
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return

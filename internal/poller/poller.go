@@ -16,6 +16,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/filtermatch"
+	"github.com/metruzanca/nanoflux/internal/imagecache"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -60,6 +61,15 @@ type itemEnricher interface {
 	Enrich(ctx context.Context, items []store.Item) (map[int64]string, error)
 }
 
+// itemImageCacher stores a feed's images host-side, for feeds whose plugin
+// serves short-lived signed image URLs. Satisfied by *imagecache.Cacher; kept as
+// a local interface so the poller can be tested without object storage.
+type itemImageCacher interface {
+	Forced(feedURL string) bool
+	Folder(feedURL string) string
+	Cache(ctx context.Context, req imagecache.Request) imagecache.Result
+}
+
 // Poller fetches due feeds on an interval. Per-feed schedules come from each
 // feed's poll_interval_sec; the ticker just wakes the loop.
 type Poller struct {
@@ -70,6 +80,7 @@ type Poller struct {
 	hostSpacing time.Duration
 	cool        hostCooler
 	enricher    itemEnricher
+	imgCache    itemImageCacher
 
 	// hostWindow records, per registrable host, the minimum spacing the host
 	// has asked for after a rate limit (learned from Retry-After /
@@ -114,6 +125,11 @@ func (p *Poller) SetHostCooler(c hostCooler) {
 // *plugin.Dispatcher), so newly stored items are offered to matching plugins.
 // A nil enricher disables enrichment.
 func (p *Poller) SetItemEnricher(e itemEnricher) { p.enricher = e }
+
+// SetImageCache attaches the host-side image cache, so a feed with caching
+// enabled (by its plugin or the user) has its item images downloaded and stored
+// at poll time. A nil cacher disables caching.
+func (p *Poller) SetImageCache(c itemImageCacher) { p.imgCache = c }
 
 // Client returns the HTTP client the poller uses, so the plugin host can share
 // the same transport and timeout policy.
@@ -448,7 +464,7 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 	}
 
 	rules, _ := p.store.Filters.ListByFeed(f.UserID, f.ID)
-	newItems, err := p.ingest(f, res, rules, fetched)
+	newItems, err := p.ingest(ctx, f, res, rules, fetched)
 	if err != nil {
 		return newItems, err
 	}
@@ -544,7 +560,7 @@ func (p *Poller) PollOlder(ctx context.Context, f store.Feed) (newItems int, exh
 		if err != nil {
 			return newItems, false, fmt.Errorf("fetch %s: %w", url, err)
 		}
-		inserted, err := p.ingest(f, res, rules, db.Now())
+		inserted, err := p.ingest(ctx, f, res, rules, db.Now())
 		if err != nil {
 			return newItems, false, err
 		}
@@ -574,9 +590,16 @@ func (p *Poller) PollOlder(ctx context.Context, f store.Feed) (newItems int, exh
 // rules and copying enclosures for newly inserted items. It returns how many
 // items were new. Newly stored items are then offered to the body enricher
 // (best-effort; a failure never fails the poll).
-func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter, fetched string) (int, error) {
+//
+// When image caching is on for the feed (its plugin forces it, or the user
+// enabled it), each item's primary image and image enclosures are downloaded
+// into object storage and their keys stored, so a view renders the cached copy
+// instead of a URL that may have expired. Caching is best-effort and never fails
+// the poll.
+func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result, rules []store.Filter, fetched string) (int, error) {
 	newItems := 0
 	var stored []store.Item
+	cacheImages := p.imgCache != nil && (f.CacheImages || p.imgCache.Forced(f.FeedURL))
 	for _, it := range res.Items {
 		action := ""
 		fields := filtermatch.FieldsFromFeedItem(it)
@@ -613,23 +636,34 @@ func (p *Poller) ingest(f store.Feed, res feedparse.Result, rules []store.Filter
 		if inserted {
 			newItems++
 		}
+		// Resolve the stored row once: enclosures and the image cache both need
+		// its id, and it exists after Upsert whether the row is new or already
+		// stored (possibly owned by another feed).
+		var itemID int64
+		if cacheImages || len(it.Enclosures) > 0 || inserted {
+			if id, err := p.store.Items.IngestItemID(f.UserID, f.ID, dedupIdentity(it), store.CrossFeedKey(it.SharedKey)); err == nil {
+				itemID = id
+			}
+		}
+		var enclosureKeys []string
+		if cacheImages && itemID != 0 {
+			enclosureKeys = p.cacheItemImages(ctx, f, it, itemID)
+		}
 		// Enclosures are stored whenever the item carries them, not only when it
 		// is new: a feed polled before its parser learned to expose media (the
 		// native Bluesky plugin, say) gains its attachments on the next poll.
 		// ReplaceEnclosures is delete-then-insert, so this keeps them current.
 		if len(it.Enclosures) > 0 {
-			if err := p.storeEnclosures(f, it); err != nil {
+			if err := p.storeEnclosures(f, it, itemID, enclosureKeys); err != nil {
 				log.Error("store enclosures", "feed_id", f.ID, "guid", it.GUID, "err", err)
 			}
 		}
 		// Enrich only newly inserted items, and only in the owner feed (a
 		// cross-feed member already enriched by the other feed is skipped below).
-		if inserted && p.enricher != nil {
-			if id, err := p.store.Items.IngestItemID(f.UserID, f.ID, dedupIdentity(it), store.CrossFeedKey(it.SharedKey)); err == nil && id != 0 {
-				item.ID = id
-				item.UserID = f.UserID
-				stored = append(stored, item)
-			}
+		if inserted && p.enricher != nil && itemID != 0 {
+			item.ID = itemID
+			item.UserID = f.UserID
+			stored = append(stored, item)
 		}
 	}
 	p.enrichStored(f.UserID, stored)
@@ -697,25 +731,61 @@ func truncateError(msg string) string {
 	return msg
 }
 
+// cacheItemImages downloads an item's primary image and image-typed enclosures
+// into object storage and stores their keys. It returns the enclosure cache keys
+// (parallel to it.Enclosures, "" where nothing was cached). A failure on any one
+// URL is best-effort: that URL stays remote. The primary image key is written
+// straight to the item row.
+func (p *Poller) cacheItemImages(ctx context.Context, f store.Feed, it feedparse.Item, itemID int64) []string {
+	if p.imgCache == nil || itemID == 0 {
+		return nil
+	}
+	encs := make([]imagecache.Enclosure, 0, len(it.Enclosures))
+	for _, e := range it.Enclosures {
+		encs = append(encs, imagecache.Enclosure{URL: e.URL, MIMEType: e.MIMEType})
+	}
+	res := p.imgCache.Cache(ctx, imagecache.Request{
+		Folder:     p.imgCache.Folder(f.FeedURL),
+		ItemID:     itemID,
+		ImageURL:   it.ImageURL,
+		Enclosures: encs,
+	})
+	if res.ImageKey != "" {
+		if err := p.store.Items.SetItemImageCacheKey(itemID, res.ImageKey); err != nil {
+			log.Error("store image cache key", "item_id", itemID, "err", err)
+		}
+	}
+	return res.EnclosureKeys
+}
+
 // storeEnclosures copies a newly inserted item's media attachments into the
 // item_enclosures table. The item may be owned by another feed (a reddit post
 // seen through two subscriptions), so it is resolved by the user's cross-feed
-// identity too.
-func (p *Poller) storeEnclosures(f store.Feed, it feedparse.Item) error {
-	identity := it.Identity
-	if identity == "" {
-		identity = it.GUID
-	}
-	itemID, err := p.store.Items.IngestItemID(f.UserID, f.ID, identity, store.CrossFeedKey(it.SharedKey))
-	if err != nil {
-		return err
+// identity too. cacheKeys, when non-empty, carries the object-storage key of each
+// enclosure's cached image (parallel to it.Enclosures); ReplaceEnclosures carries
+// an existing slot's key forward when none is supplied.
+func (p *Poller) storeEnclosures(f store.Feed, it feedparse.Item, itemID int64, cacheKeys []string) error {
+	if itemID == 0 {
+		identity := it.Identity
+		if identity == "" {
+			identity = it.GUID
+		}
+		id, err := p.store.Items.IngestItemID(f.UserID, f.ID, identity, store.CrossFeedKey(it.SharedKey))
+		if err != nil {
+			return err
+		}
+		itemID = id
 	}
 	if itemID == 0 {
 		return nil
 	}
 	encs := make([]store.Enclosure, 0, len(it.Enclosures))
-	for _, e := range it.Enclosures {
-		encs = append(encs, store.Enclosure{URL: e.URL, MIMEType: e.MIMEType, Size: e.Length})
+	for i, e := range it.Enclosures {
+		enc := store.Enclosure{URL: e.URL, MIMEType: e.MIMEType, Size: e.Length}
+		if i < len(cacheKeys) {
+			enc.CacheKey = cacheKeys[i]
+		}
+		encs = append(encs, enc)
 	}
 	return p.store.Items.ReplaceEnclosures(itemID, encs)
 }

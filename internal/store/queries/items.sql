@@ -78,7 +78,7 @@ WHERE image_url IS NULL AND guid LIKE 'yt:video:%';
 -- The display feed is the item's owner (i.feed_id); feed/author/collection
 -- filters match membership (item_feeds), so an item seen through two feeds
 -- appears in both streams but as one row.
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -109,7 +109,7 @@ ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
 LIMIT sqlc.arg('limit');
 
 -- name: ListItemsAsc :many
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -144,7 +144,7 @@ LIMIT sqlc.arg('limit');
 -- within a tier, feeds with more favorites rank first; within a feed, newest
 -- items first. The favorite count is the owner feed's (i.feed_id), matching the
 -- feed a card names. Offset-paged (no keyset cursor).
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -179,13 +179,13 @@ ORDER BY
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: GetItem :one
-SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url,
+SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url, i.image_cache_key,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite, i.bookmark
 FROM items i
 WHERE i.id = ? AND i.user_id = ?;
 
 -- name: GetItemWithFeed :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -196,7 +196,7 @@ LEFT JOIN authors a ON a.id = f.author_id
 WHERE i.id = ? AND i.user_id = ?;
 
 -- name: GetItemWithFeedAny :one
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -348,8 +348,16 @@ SELECT content FROM items WHERE id = ?;
 SELECT id FROM items
 WHERE feed_id = ? AND dedup_key = ?;
 
+-- name: SetItemImageCacheKey :exec
+-- Record the object-storage key of an item's cached primary image, or clear it.
+-- Independent of UpdateItemSnapshotByID, which refreshes the remote image_url on
+-- every poll but must not clobber the cached copy.
+UPDATE items
+SET image_cache_key = ?
+WHERE id = ?;
+
 -- name: ListEnclosures :many
-SELECT url, title, mime_type, size, sort
+SELECT url, title, mime_type, size, sort, cache_key
 FROM item_enclosures
 WHERE item_id = ?
 ORDER BY sort;
@@ -369,8 +377,8 @@ WHERE items.id = sqlc.arg('itemID')
   );
 
 -- name: InsertEnclosure :exec
-INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort)
-VALUES (?, ?, ?, ?, ?, ?);
+INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort, cache_key)
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 -- name: ListRecentItemTimes :many
 -- A feed's most recent item times (by membership, so a cross-feed item counts).
@@ -494,7 +502,7 @@ SELECT COUNT(*) FROM items WHERE read = 0;
 -- retroactively applying an ingest filter rule to already-stored items. Unlike
 -- ListItems it is not limited and does not exclude the system feed, but the
 -- caller scopes it to a regular feed.
-SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,

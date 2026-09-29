@@ -33,8 +33,13 @@ type Feed struct {
 	IsSystem         bool // hidden feed holding saved pages; never listed or polled
 	// Rank is the user's manual lever for the magic sort: -1 lowered, 0 neutral,
 	// +1 raised. It dominates the favorite-count tier.
-	Rank      int
-	CreatedAt string
+	Rank int
+	// CacheImages opts this feed into host-side image caching: its item images
+	// are downloaded into object storage at poll time and rendered from there,
+	// for sites whose image URLs are short-lived. Forced on (and not user-
+	// disableable) when the feed's plugin claims CapImageCache.
+	CacheImages bool
+	CreatedAt   string
 }
 
 // FeedWithFavorites joins a feed with its author name and its owner-feed
@@ -222,7 +227,7 @@ func (s *FeedStore) SetRank(userID, id int64, rank int) error {
 	return nil
 }
 
-func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int, pollIntervalAuto bool, enabled bool) error {
+func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int, pollIntervalAuto bool, enabled, cacheImages bool) error {
 	feedURL = s.policy.CanonicalizeFeedURL(feedURL)
 	res, err := s.q.UpdateFeed(context.Background(), sqlcgen.UpdateFeedParams{
 		AuthorID:         authorID,
@@ -233,8 +238,27 @@ func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, hom
 		PollIntervalSec:  int64(pollIntervalSec),
 		PollIntervalAuto: boolInt(pollIntervalAuto),
 		Enabled:          enabled,
+		CacheImages:      boolInt(cacheImages),
 		ID:               id,
 		UserID:           userID,
+	})
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetCacheImages turns a feed's host-side image caching on or off. Used at
+// create time to force it on for a feed whose plugin claims CapImageCache, and
+// available to any caller that needs to set the flag without a full update.
+func (s *FeedStore) SetCacheImages(userID, id int64, on bool) error {
+	res, err := s.q.SetFeedCacheImages(context.Background(), sqlcgen.SetFeedCacheImagesParams{
+		CacheImages: boolInt(on),
+		ID:          id,
+		UserID:      userID,
 	})
 	if err != nil {
 		return err
@@ -480,7 +504,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

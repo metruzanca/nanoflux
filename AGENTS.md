@@ -114,6 +114,48 @@ these: `Match` returns true for `CapSharedKey`, `CapDecorate`, `CapURLPolicy`,
 single-image baseline (`web.IsSingleImagePost`) still applies when no plugin
 classified the item, and `ThumbURL` overrides the row thumbnail.
 
+## Image caching (short-lived image URLs)
+
+Some sites sign their image URLs with a lifetime shorter than the poll interval,
+so a stored remote URL is broken by the time the card renders. A plugin whose
+site does this claims `Match(u, CapImageCache)` (appended capability; no
+interface method, no new RPC — it rides the existing `Match` capability int).
+The host then caches that feed's images itself.
+
+- The feature is opt-in: a feed with no plugin starts with caching off and the
+  user can turn it on from the feed's edit page (`feeds.cache_images`,
+  schemaV45). A plugin that claims `CapImageCache` **forces** it on and the user
+  cannot turn it off (`plugin.Registry.CachesImages`, `Server.imageCacheForced`;
+  `feedUpdate`/`createFeed` OR the stored flag with the forced value).
+- At poll time `poller.ingest` (`cacheImages` on the feed) calls
+  `imagecache.Cacher.Cache` for the item's `ImageURL` and each image-typed
+  enclosure. It is best-effort: a failure logs and leaves that URL remote, and
+  it never fails a poll. Downloads are size-capped and concurrent within an item.
+- Cache keys are `cache/<folder>/<itemID>/<slot>.<ext>`, where folder is the
+  plugin name (`plugin.Registry.ImageCacheFolder`; `feeds` when no plugin
+  matches). The stable item id makes a key survive a re-poll even though the
+  signed remote URL rotates. A blob already at the slot is reused via
+  `filestore.Store.Exists` (no re-download); the primary image is cached first
+  and an enclosure that is the same URL (the generic parser mirrors an image
+  enclosure into `ImageURL`) reuses its key.
+- Keys are stored on `items.image_cache_key` (schemaV45, written by
+  `ItemStore.SetItemImageCacheKey`, deliberately **not** touched by the poll
+  snapshot refresh) and `item_enclosures.cache_key`. `ReplaceEnclosures` carries
+  a slot's previous key forward when the incoming enclosure has none, so turning
+  caching off keeps already-cached images showing; it only stops new downloads.
+- Render: `web.CachedImageURL(key, remote)` builds `/cache/<key>?u=<remote>`.
+  `itemViewData.cachedImageSrc`/`enclosureSrc` use it only for the item's own
+  image (not a body image) and only when the view may use the authenticated
+  route; `rowThumb` uses it for list cards. `GET /cache/{key...}` (auth-only,
+  like `/img`) serves the bytes, or proxies `?u=` when the blob is gone (purged
+  cache), so a removed folder degrades to the remote URL instead of a broken
+  image.
+- Removal: cached bytes live under `cache/<plugin>/`, so an admin deletes a
+  plugin's cache by dropping that prefix. The `.ct` sidecars are disk-store
+  metadata; `Stat` ignores them.
+- A plugin claims the capability with a single `Match` case, so no interface or
+  wire change is needed.
+
 ## Item categories (ingest filters)
 
 Feeds carry context that should be filterable without any site-specific code:

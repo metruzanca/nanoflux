@@ -123,6 +123,12 @@ a feed it does not fetch at all.
   items only, after either fetch path.
 - **`Decorate` (optional)** — given a page's stored items, return each item's
   source attribution and card kind. Runs at view time; must not do network I/O.
+- **Image caching (capability only, no method)** — if the site serves images
+  with short-lived, signed URLs, claim `Match(u, CapImageCache)`. At poll time
+  the host then downloads each item's primary image and image-type enclosures
+  into its own object storage (under `cache/<plugin>/`) and renders the cached
+  copy. It is forced on for those feeds and the user cannot disable it. A user
+  may also enable caching per feed without a plugin.
 - **`URLPolicy` (optional)** — pure site URL rules: the canonical feed shape
   (`CanonicalizeFeedURL`) and the token a feed URL represents (`FeedToken`).
 - **`Docs` (optional)** — return Markdown describing the plugin, shown from the

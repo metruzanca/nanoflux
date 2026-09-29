@@ -66,6 +66,21 @@ func (d *diskStore) Get(_ context.Context, key string) (string, []byte, error) {
 	return string(ct), data, nil
 }
 
+// Exists reports whether the object file is present.
+func (d *diskStore) Exists(_ context.Context, key string) (bool, error) {
+	path, err := d.pathFor(key)
+	if err != nil {
+		return false, err
+	}
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("filestore: stat %s: %w", key, err)
+	}
+	return true, nil
+}
+
 func (d *diskStore) Delete(_ context.Context, key string) error {
 	path, err := d.pathFor(key)
 	if err != nil {
