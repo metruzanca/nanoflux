@@ -34,6 +34,29 @@ func TestImgProxy(t *testing.T) {
 		t.Fatalf("body mismatch: %x", rr.Body.Bytes())
 	}
 
+	// An image mislabeled as application/octet-stream (Bluesky's video
+	// thumbnails) is accepted by sniffing, and the real type is echoed so the
+	// browser renders it rather than downloading it.
+	jpeg := []byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}
+	octet := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write(jpeg)
+	}))
+	defer octet.Close()
+	req = httptest.NewRequest(http.MethodGet, "/img?u="+url.QueryEscape(octet.URL+"/thumb.jpg"), nil)
+	req.AddCookie(cookie)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("octet-stream image: %d", rr.Code)
+	}
+	if got := rr.Header().Get("Content-Type"); got != "image/jpeg" {
+		t.Fatalf("sniffed content-type = %q, want image/jpeg", got)
+	}
+	if string(rr.Body.Bytes()) != string(jpeg) {
+		t.Fatalf("octet-stream body mismatch: %x", rr.Body.Bytes())
+	}
+
 	// Non-image upstream content is rejected.
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -46,6 +69,20 @@ func TestImgProxy(t *testing.T) {
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("non-image: %d", rr.Code)
+	}
+
+	// Non-image bytes behind an octet-stream header are still rejected.
+	octetText := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Write([]byte("hello"))
+	}))
+	defer octetText.Close()
+	req = httptest.NewRequest(http.MethodGet, "/img?u="+url.QueryEscape(octetText.URL), nil)
+	req.AddCookie(cookie)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("octet-stream non-image: %d", rr.Code)
 	}
 
 	// Non-http schemes are rejected.
