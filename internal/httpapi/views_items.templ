@@ -400,6 +400,10 @@ templ scopedItemsInner(d scopedItemsData) {
 				@sortPicker(d.Path, d.View, d.Sort, d.NoMagic)
 				@DisplayModeControl(d.Path, d.Mode)
 			</div>
+		} else {
+			<div class="row-actions">
+				@FeedSortControl()
+			</div>
 		}
 	</div>
 	if d.View == "feeds" {
@@ -520,6 +524,18 @@ templ DisplayModeControl(scope, mode string) {
 // rows. The default is "unread".
 templ AuthorSortControl() {
 	@PickerControl("authors", "sort", "unread", "", []pickerOption{
+		{Value: "abc", Label: "abc"},
+		{Value: "newest", Label: "newest"},
+		{Value: "unread", Label: "unread"},
+	})
+}
+
+// FeedSortControl sorts a collection's feeds list alphabetically ("abc"), by
+// newest first, or by most unread items. Client-side: app.js reorders the
+// rendered cards, mirroring AuthorSortControl. The default is "abc" to match
+// the server's title order.
+templ FeedSortControl() {
+	@PickerControl("feeds", "sort", "abc", "", []pickerOption{
 		{Value: "abc", Label: "abc"},
 		{Value: "newest", Label: "newest"},
 		{Value: "unread", Label: "unread"},

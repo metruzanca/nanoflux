@@ -215,6 +215,7 @@ document.addEventListener('click', function (e) {
   var value = opt.dataset.option;
   if (name === 'display') setDisplayMode(value, e);
   else if (name === 'authors') setAuthorSort(value, e);
+  else if (name === 'feeds') setFeedSort(value, e);
 });
 
 // Display mode (list / masonry grid). Stored server-side per account, per
@@ -285,6 +286,42 @@ function setAuthorSort(sort, e) {
   if (e) e.stopPropagation();
   localStorage.setItem(AUTHOR_SORT_KEY, sort);
   applyAuthorSort();
+  closePickers();
+}
+
+// Collection feeds sort (abc / newest / unread). Client-side (localStorage),
+// reorders the rendered feed cards, mirroring the authors sort. The default is
+// "abc" to match the server's title order. Only runs where the feeds picker is
+// present, so the author edit page's feed list is left alone.
+var FEED_SORT_KEY = 'nanoflux.feeds.sort';
+function feedSort() {
+  var s = localStorage.getItem(FEED_SORT_KEY);
+  if (s === 'newest' || s === 'unread') return s;
+  return 'abc';
+}
+function applyFeedSort() {
+  if (!document.querySelector('.picker[data-picker="feeds"]')) return;
+  var sort = feedSort();
+  var list = document.getElementById('collection-feeds-list');
+  if (list) {
+    var rows = Array.prototype.slice.call(list.children);
+    rows.sort(function (a, b) {
+      if (sort === 'newest') {
+        return (b.dataset.created || '').localeCompare(a.dataset.created || '');
+      }
+      if (sort === 'unread') {
+        return (parseInt(b.dataset.unread, 10) || 0) - (parseInt(a.dataset.unread, 10) || 0);
+      }
+      return (a.dataset.title || '').localeCompare(b.dataset.title || '');
+    });
+    rows.forEach(function (r) { list.appendChild(r); });
+  }
+  setPickerState('feeds', sort);
+}
+function setFeedSort(sort, e) {
+  if (e) e.stopPropagation();
+  localStorage.setItem(FEED_SORT_KEY, sort);
+  applyFeedSort();
   closePickers();
 }
 
@@ -1106,6 +1143,7 @@ document.addEventListener('keydown', function (e) {
 document.body.addEventListener('htmx:afterSwap', function (e) {
   applyDisplayMode();
   applyAuthorSort();
+  applyFeedSort();
   refreshNavCounts();
   if (activeItemId) {
     var r = document.getElementById(activeItemId);
