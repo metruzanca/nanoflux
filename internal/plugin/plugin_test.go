@@ -116,13 +116,17 @@ func TestRegistryDocs(t *testing.T) {
 // FeedAdmin, for the control-plane registry tests.
 type fakeProvisioner struct {
 	fakeFetcher
-	label   string
-	fields  []pluginapi.Field
-	deleted bool
+	label    string
+	hasAdmin bool
+	fields   []pluginapi.Field
+	deleted  bool
 }
 
 func (f fakeProvisioner) Meta() pluginapi.Meta {
-	return pluginapi.Meta{Name: f.name, APIVersion: pluginapi.APIVersion, ProvisionLabel: f.label}
+	return pluginapi.Meta{
+		Name: f.name, APIVersion: pluginapi.APIVersion,
+		ProvisionLabel: f.label, HasFeedAdmin: f.hasAdmin,
+	}
 }
 
 func (f fakeProvisioner) Provision(context.Context, pluginapi.ProvisionRequest, pluginapi.Host) (pluginapi.Provisioned, error) {
@@ -222,6 +226,52 @@ func TestRegistryProvisionersAndFeedAdmin(t *testing.T) {
 	}
 	if infos[1].ProvisionLabel != "" || infos[1].CanManageFeeds {
 		t.Fatalf("info[1] = %+v", infos[1])
+	}
+}
+
+// TestMatchFeedAdminOptIn guards that feed management is opt-in for external
+// plugins: the gRPC client wrapper always satisfies FeedAdmin, so the host must
+// trust the capability the plugin reported (Meta.HasFeedAdmin), not a type
+// assertion. A plugin whose Match returns true for CapFeedAdmin but that does
+// not declare the capability must not be matched.
+func TestMatchFeedAdminOptIn(t *testing.T) {
+	matches := func(*url.URL, pluginapi.Capability) bool { return true }
+
+	// External plugin that matches the URL for every capability but does not
+	// report FeedAdmin: must not be treated as a feed admin.
+	reg := NewRegistry()
+	reg.RegisterExternal(fakeProvisioner{
+		fakeFetcher: fakeFetcher{name: "nooptin", match: matches},
+		hasAdmin:    false,
+		fields:      []pluginapi.Field{{Name: "email", Value: "x@h"}},
+	})
+	u, _ := url.Parse("https://anywhere.example/feed.xml")
+	if fa, _ := reg.MatchFeedAdmin(u); fa != nil {
+		t.Fatal("external plugin without HasFeedAdmin must not match FeedAdmin")
+	}
+	if got := reg.FeedAdminSettings("https://anywhere.example/feed.xml"); got != nil {
+		t.Fatalf("FeedAdminSettings = %+v, want nil", got)
+	}
+
+	// External plugin that reports FeedAdmin is matched.
+	reg2 := NewRegistry()
+	reg2.RegisterExternal(fakeProvisioner{
+		fakeFetcher: fakeFetcher{name: "optin", match: matches},
+		hasAdmin:    true,
+		fields:      []pluginapi.Field{{Name: "email", Value: "x@h"}},
+	})
+	if fa, _ := reg2.MatchFeedAdmin(u); fa == nil {
+		t.Fatal("external plugin with HasFeedAdmin should match FeedAdmin")
+	}
+
+	// A native plugin is matched by the real type assertion even though its
+	// authored Meta does not report the capability (the host fills it).
+	reg3 := NewRegistry()
+	reg3.RegisterNative(fakeProvisioner{
+		fakeFetcher: fakeFetcher{name: "native", match: matches},
+	})
+	if fa, _ := reg3.MatchFeedAdmin(u); fa == nil {
+		t.Fatal("native plugin implementing FeedAdmin should match")
 	}
 }
 
