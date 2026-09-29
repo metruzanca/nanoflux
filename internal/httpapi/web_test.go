@@ -2388,6 +2388,56 @@ func TestFeedsPageRemoved(t *testing.T) {
 	}
 }
 
+func TestErrorPagesStyled(t *testing.T) {
+	_, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	// An unknown page is a 404 that still renders the app navbar.
+	rr := doGet(h, "/no-such-page", cookie)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("unknown page = %d, want 404", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, `id="top-nav"`) || !strings.Contains(body, "page not found") {
+		t.Fatalf("404 page should be styled with the navbar: %s", body)
+	}
+
+	// A missing feed's edit page (deleted feed or wrong user) is the same page.
+	if rr := doGet(h, "/feeds/999999/edit", cookie); rr.Code != http.StatusNotFound ||
+		!strings.Contains(rr.Body.String(), `id="top-nav"`) {
+		t.Fatalf("missing feed edit should be a styled 404, got %d", rr.Code)
+	}
+
+	// A path registered only for POST is a styled 405, not plain text, and keeps
+	// its Allow header.
+	rr = doGet(h, "/feeds", cookie)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET /feeds = %d, want 405", rr.Code)
+	}
+	if got := rr.Header().Get("Allow"); !strings.Contains(got, http.MethodPost) {
+		t.Fatalf("405 should keep Allow, got %q", got)
+	}
+	if !strings.Contains(rr.Body.String(), "method not allowed") || !strings.Contains(rr.Body.String(), `id="top-nav"`) {
+		t.Fatalf("405 page should be styled: %s", rr.Body.String())
+	}
+
+	// An anonymous visitor gets the styled page too, with the brand bar only.
+	if rr := doGetRaw(h, "/no-such-page"); rr.Code != http.StatusNotFound ||
+		!strings.Contains(rr.Body.String(), "nanoflux") {
+		t.Fatalf("anonymous 404 should be styled, got %d", rr.Code)
+	}
+
+	// htmx fragments are passed through untouched: no full-page navbar.
+	req := httptest.NewRequest(http.MethodGet, "/no-such-page", nil)
+	req.Header.Set("HX-Request", "true")
+	req.AddCookie(cookie)
+	hrr := httptest.NewRecorder()
+	h.ServeHTTP(hrr, req)
+	if hrr.Code != http.StatusNotFound || strings.Contains(hrr.Body.String(), `id="top-nav"`) {
+		t.Fatalf("htmx 404 should pass through, got %d %s", hrr.Code, hrr.Body.String())
+	}
+}
+
 func TestCollectionAddFeedGroupedByAuthor(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
