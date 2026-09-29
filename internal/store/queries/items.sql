@@ -357,7 +357,7 @@ SET image_cache_key = ?
 WHERE id = ?;
 
 -- name: ListEnclosures :many
-SELECT url, title, mime_type, size, sort, cache_key
+SELECT url, title, mime_type, size, sort, kind, poster, cache_key
 FROM item_enclosures
 WHERE item_id = ?
 ORDER BY sort;
@@ -377,8 +377,8 @@ WHERE items.id = sqlc.arg('itemID')
   );
 
 -- name: InsertEnclosure :exec
-INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort, cache_key)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort, kind, poster, cache_key)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ListRecentItemTimes :many
 -- A feed's most recent item times (by membership, so a cross-feed item counts).

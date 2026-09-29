@@ -541,3 +541,28 @@ func TestFetchExtractsCategories(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveEnclosureKind(t *testing.T) {
+	cases := []struct {
+		kind, url, mime, want string
+	}{
+		{"", "https://p/x.m3u8", "", "hls"},
+		{"", "https://p/x", "application/vnd.apple.mpegurl", "hls"},
+		{"", "https://p/x", "application/x-mpegurl", "hls"},
+		{"", "https://p/x", "video/mp4", "video"},
+		{"", "https://p/x", "image/png", "image"},
+		{"", "https://p/x", "audio/mpeg", "audio"},
+		{"", "https://p/x.pdf", "", ""},
+		// A declared kind wins over the URL/MIME.
+		{"hls", "https://p/x", "application/octet-stream", "hls"},
+		{"image", "https://p/x", "text/plain", "image"},
+		{"link", "https://p/clip.mp4", "video/mp4", "link"},
+		// An unknown declared kind falls back to inference.
+		{"bogus", "https://p/x.mp3", "", "audio"},
+	}
+	for _, c := range cases {
+		if got := ResolveEnclosureKind(c.kind, c.url, c.mime); got != c.want {
+			t.Errorf("ResolveEnclosureKind(%q,%q,%q) = %q, want %q", c.kind, c.url, c.mime, got, c.want)
+		}
+	}
+}

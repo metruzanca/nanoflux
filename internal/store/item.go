@@ -557,6 +557,12 @@ type Enclosure struct {
 	MIMEType string
 	Size     int64
 	Sort     int
+	// Kind is the plugin-declared render kind (feedparse.EnclosureKind*); empty
+	// means the host infers it from the MIME type/extension.
+	Kind string
+	// Poster is a video/audio enclosure's thumbnail; empty falls back to the
+	// item's ImageURL.
+	Poster string
 	// CacheKey is the object-storage key of the enclosure's cached bytes when it
 	// is an image and host-side image caching is enabled; empty otherwise.
 	CacheKey string
@@ -570,7 +576,10 @@ func (s *ItemStore) Enclosures(itemID int64) ([]Enclosure, error) {
 	}
 	out := make([]Enclosure, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, Enclosure{URL: r.Url, Title: r.Title, MIMEType: r.MimeType.String, Size: r.Size, Sort: int(r.Sort), CacheKey: r.CacheKey})
+		out = append(out, Enclosure{
+			URL: r.Url, Title: r.Title, MIMEType: r.MimeType.String, Size: r.Size, Sort: int(r.Sort),
+			Kind: r.Kind, Poster: r.Poster, CacheKey: r.CacheKey,
+		})
 	}
 	return out, nil
 }
@@ -658,6 +667,8 @@ func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
 			MimeType: ns(e.MIMEType),
 			Size:     e.Size,
 			Sort:     int64(i),
+			Kind:     e.Kind,
+			Poster:   e.Poster,
 			CacheKey: cacheKey,
 		}); err != nil {
 			return err

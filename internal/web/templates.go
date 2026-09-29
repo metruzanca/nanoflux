@@ -21,6 +21,7 @@ import (
 	"golang.org/x/net/html"
 
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -233,42 +234,13 @@ func IsSingleImagePost(summary, imageURL, title string) bool {
 	return t == "" || t == strings.TrimSpace(title)
 }
 
-// EnclosureKind reports how an enclosure should render: "audio", "video",
-// "image" (embedded inline), or "" when it is just a file link. A URL whose
-// query string carries signed params (e.g. "photo.jpg?e=…&t=…") is matched via
-// its parsed path, not the raw string.
+// EnclosureKind reports how an enclosure should render: "image", "audio",
+// "video", "hls", or "" when it is just a file link. It delegates to
+// feedparse.ResolveEnclosureKind so the renderer, the image cache, and the
+// plugin-declared kind all agree; a declared kind wins over the MIME
+// type/extension.
 func EnclosureKind(e store.Enclosure) string {
-	mt := strings.ToLower(e.MIMEType)
-	if strings.HasPrefix(mt, "image/") {
-		return "image"
-	}
-	if strings.HasPrefix(mt, "audio/") {
-		return "audio"
-	}
-	if strings.HasPrefix(mt, "video/") || IsHLS(e) {
-		return "video"
-	}
-	ext := strings.ToLower(path.Ext(enclosurePath(e.URL)))
-	switch ext {
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg", ".bmp":
-		return "image"
-	case ".mp3", ".m4a", ".ogg", ".oga", ".opus", ".wav", ".flac", ".aac":
-		return "audio"
-	case ".mp4", ".m4v", ".webm", ".ogv", ".mov", ".mkv":
-		return "video"
-	}
-	return ""
-}
-
-// IsHLS reports whether an enclosure is an HLS manifest (an .m3u8 playlist).
-// Such an enclosure renders as a video, but needs a player (hls.js) in the
-// browser rather than a plain <video src>, so the template marks it.
-func IsHLS(e store.Enclosure) bool {
-	switch strings.ToLower(e.MIMEType) {
-	case "application/vnd.apple.mpegurl", "application/x-mpegurl":
-		return true
-	}
-	return strings.ToLower(path.Ext(enclosurePath(e.URL))) == ".m3u8"
+	return feedparse.ResolveEnclosureKind(e.Kind, e.URL, e.MIMEType)
 }
 
 // enclosurePath returns the path portion of an enclosure URL, or "" when it

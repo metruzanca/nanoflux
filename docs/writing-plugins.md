@@ -258,7 +258,9 @@ for those:
 
 ```go
 func (AppC) Render(ctx context.Context, req pluginapi.RenderRequest, h pluginapi.Host) (pluginapi.Media, error) {
-	// req.Link / req.Summary / req.ImageURL describe the stored item.
+	// req.Link / req.Summary / req.ImageURL describe the stored item. req also
+	// carries GUID, Kind, Categories and Enclosures, so a renderer can branch on
+	// the stored thumbnail or media without re-fetching it.
 	return pluginapi.Media{
 		SourceURL: "https://external.example/page", // "source" menu link
 		EmbedSrc:  "https://player.example/embed/1", // iframe src
@@ -500,13 +502,35 @@ links. `Item.ImageURL` is the listing thumbnail. Because enclosure storage is
 refreshed on every poll (not only on insert), a plugin that starts returning
 enclosures later fills them in on an existing feed without an identity change.
 
-An image enclosure's URL is also the image the host renders inline; a video
-enclosure is played with `<video controls>`. Prefer a directly playable file
-(e.g. an `mp4`) over a streaming manifest: a manifest needs a player the
-frontend does not ship. The native Bluesky plugin is the reference for
-reconstructing media from a site's own records: its profile RSS carries no
-media, so it reads `app.bsky.feed.post` records and resolves each blob to a
-full-size image or an `mp4` via `com.atproto.sync.getBlob`.
+Each `pluginapi.Enclosure` carries:
+
+- `URL` (required), `MIMEType`, `Length`.
+- `Kind` — how the host should render it. Leave it empty (`EnclosureKindAuto`)
+  and the host infers from `MIMEType`, then from the URL extension. Set it
+  explicitly when neither is decisive. Values: `EnclosureKindImage`,
+  `EnclosureKindAudio`, `EnclosureKindVideo`, `EnclosureKindHLS`,
+  `EnclosureKindLink`.
+- `Title` — a label (download link text, media title).
+- `Poster` — a poster frame URL for a video/HLS enclosure; when empty the item's
+  `ImageURL` is used.
+
+The host ships the players, so a plugin only describes the media:
+
+- `image` renders inline (also cached; see below).
+- `video` (`video/*`, `.mp4`, …) plays with `<video controls src>`.
+- `hls` (an `application/vnd.apple.mpegurl` `.m3u8` manifest) plays with a
+  lazily-loaded hls.js; the host marks it `data-hls`, so a plugin never ships
+  its own player. Declare `Kind: pluginapi.EnclosureKindHLS` for a manifest whose
+  type is `application/octet-stream` or whose URL has no `.m3u8` extension.
+- `audio` plays with `<audio controls src>`.
+- anything else, or `link`, becomes a download link.
+
+Because the core resolves the kind, a directly playable file (e.g. an `mp4`)
+still works, but an HLS manifest is now fully supported. The native Bluesky
+plugin is the reference for reconstructing media from a site's own records: its
+profile RSS carries no media, so it reads `app.bsky.feed.post` records and
+resolves each blob to a full-size image, or attaches an HLS enclosure for a
+video (with the video thumbnail as the item's `ImageURL`).
 
 ### Repairing duplicate items
 

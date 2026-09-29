@@ -742,7 +742,7 @@ func (p *Poller) cacheItemImages(ctx context.Context, f store.Feed, it feedparse
 	}
 	encs := make([]imagecache.Enclosure, 0, len(it.Enclosures))
 	for _, e := range it.Enclosures {
-		encs = append(encs, imagecache.Enclosure{URL: e.URL, MIMEType: e.MIMEType})
+		encs = append(encs, imagecache.Enclosure{URL: e.URL, MIMEType: e.MIMEType, Kind: e.Kind})
 	}
 	res := p.imgCache.Cache(ctx, imagecache.Request{
 		Folder:     p.imgCache.Folder(f.FeedURL),
@@ -781,7 +781,10 @@ func (p *Poller) storeEnclosures(f store.Feed, it feedparse.Item, itemID int64, 
 	}
 	encs := make([]store.Enclosure, 0, len(it.Enclosures))
 	for i, e := range it.Enclosures {
-		enc := store.Enclosure{URL: e.URL, MIMEType: e.MIMEType, Size: e.Length}
+		enc := store.Enclosure{
+			URL: e.URL, MIMEType: e.MIMEType, Size: e.Length,
+			Kind: e.Kind, Poster: e.Poster, Title: e.Title,
+		}
 		if i < len(cacheKeys) {
 			enc.CacheKey = cacheKeys[i]
 		}

@@ -308,6 +308,7 @@ func (p Plugin) itemFromRecord(r record, prof profile) (pluginapi.Item, bool) {
 		it.Enclosures = append(it.Enclosures, pluginapi.Enclosure{
 			URL:      hlsURL(prof.DID, cid),
 			MIMEType: "application/vnd.apple.mpegurl",
+			Kind:     pluginapi.EnclosureKindHLS,
 		})
 		if firstImage == "" {
 			firstImage = videoThumbURL(prof.DID, cid)

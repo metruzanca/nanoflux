@@ -180,7 +180,9 @@ func TestFetchImagesAndVideo(t *testing.T) {
 	if len(vid.Enclosures) != 1 {
 		t.Fatalf("video enclosures = %+v", vid.Enclosures)
 	}
-	if vid.Enclosures[0].URL != hlsURL(did, "vcid") || vid.Enclosures[0].MIMEType != "application/vnd.apple.mpegurl" {
+	if vid.Enclosures[0].URL != hlsURL(did, "vcid") ||
+		vid.Enclosures[0].MIMEType != "application/vnd.apple.mpegurl" ||
+		vid.Enclosures[0].Kind != pluginapi.EnclosureKindHLS {
 		t.Errorf("video enclosure = %+v", vid.Enclosures[0])
 	}
 	if vid.ImageURL != videoThumbURL(did, "vcid") {

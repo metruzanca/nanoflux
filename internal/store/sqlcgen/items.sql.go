@@ -633,8 +633,8 @@ func (q *Queries) GetItemWithFeedAny(ctx context.Context, id int64) (GetItemWith
 }
 
 const insertEnclosure = `-- name: InsertEnclosure :exec
-INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort, cache_key)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort, kind, poster, cache_key)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertEnclosureParams struct {
@@ -644,6 +644,8 @@ type InsertEnclosureParams struct {
 	MimeType sql.NullString `json:"mime_type"`
 	Size     int64          `json:"size"`
 	Sort     int64          `json:"sort"`
+	Kind     string         `json:"kind"`
+	Poster   string         `json:"poster"`
 	CacheKey string         `json:"cache_key"`
 }
 
@@ -655,6 +657,8 @@ func (q *Queries) InsertEnclosure(ctx context.Context, arg InsertEnclosureParams
 		arg.MimeType,
 		arg.Size,
 		arg.Sort,
+		arg.Kind,
+		arg.Poster,
 		arg.CacheKey,
 	)
 	return err
@@ -703,7 +707,7 @@ func (q *Queries) ListAuthorRecentItemTimes(ctx context.Context, arg ListAuthorR
 }
 
 const listEnclosures = `-- name: ListEnclosures :many
-SELECT url, title, mime_type, size, sort, cache_key
+SELECT url, title, mime_type, size, sort, kind, poster, cache_key
 FROM item_enclosures
 WHERE item_id = ?
 ORDER BY sort
@@ -715,6 +719,8 @@ type ListEnclosuresRow struct {
 	MimeType sql.NullString `json:"mime_type"`
 	Size     int64          `json:"size"`
 	Sort     int64          `json:"sort"`
+	Kind     string         `json:"kind"`
+	Poster   string         `json:"poster"`
 	CacheKey string         `json:"cache_key"`
 }
 
@@ -733,6 +739,8 @@ func (q *Queries) ListEnclosures(ctx context.Context, itemID int64) ([]ListEnclo
 			&i.MimeType,
 			&i.Size,
 			&i.Sort,
+			&i.Kind,
+			&i.Poster,
 			&i.CacheKey,
 		); err != nil {
 			return nil, err

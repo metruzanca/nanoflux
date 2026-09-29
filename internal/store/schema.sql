@@ -170,6 +170,8 @@ CREATE TABLE item_enclosures (
     mime_type TEXT,
     size      INTEGER NOT NULL DEFAULT 0,
     sort      INTEGER NOT NULL DEFAULT 0,
+    kind      TEXT NOT NULL DEFAULT '',
+    poster    TEXT NOT NULL DEFAULT '',
     cache_key TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX idx_enclosures_item ON item_enclosures(item_id);

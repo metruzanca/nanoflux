@@ -106,7 +106,10 @@ func fromFeedparseItem(it feedparse.Item) pluginapi.Item {
 		DurationSec: it.DurationSec,
 	}
 	for _, e := range it.Enclosures {
-		out.Enclosures = append(out.Enclosures, pluginapi.Enclosure{URL: e.URL, MIMEType: e.MIMEType, Length: e.Length})
+		out.Enclosures = append(out.Enclosures, pluginapi.Enclosure{
+			URL: e.URL, MIMEType: e.MIMEType, Length: e.Length,
+			Kind: e.Kind, Poster: e.Poster, Title: e.Title,
+		})
 	}
 	return out
 }
@@ -151,7 +154,10 @@ func toFeedparseResult(res pluginapi.Result) feedparse.Result {
 			DurationSec: it.DurationSec,
 		}
 		for _, e := range it.Enclosures {
-			fi.Enclosures = append(fi.Enclosures, feedparse.Enclosure{URL: e.URL, MIMEType: e.MIMEType, Length: e.Length})
+			fi.Enclosures = append(fi.Enclosures, feedparse.Enclosure{
+				URL: e.URL, MIMEType: e.MIMEType, Length: e.Length,
+				Kind: e.Kind, Poster: e.Poster, Title: e.Title,
+			})
 		}
 		out.Items = append(out.Items, fi)
 	}
