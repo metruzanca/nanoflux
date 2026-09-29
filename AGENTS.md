@@ -109,7 +109,14 @@ fetched by the generic parser, so `feeds.plugin_name` stays empty:
 The reddit plugin (`internal/plugin/native/reddit`) is the reference for all of
 these: `Match` returns true for `CapSharedKey`, `CapDecorate`, `CapURLPolicy`,
 `CapDiscover`, `CapRender` and `CapDocs` on reddit hosts; it does **not** claim
-`CapFetch`. `ItemWithFeed.Kind` drives the row card (`KindText` default,
+`CapFetch`. A reddit **search** URL (`/search` or `/r/{sub}/search`) is not a
+subreddit/user feed, so the plugin returns false for `CapDiscover`,
+`CapURLPolicy` and `CapDocs` on it (otherwise discovery would read
+`/r/{sub}/search` as r/{sub} and the URL policy would rewrite it to the `.rss`
+origin), leaving those URL-matched capabilities to a plugin that owns search.
+The item-link capabilities (`CapRender`, `CapDecorate`) and the feed-URL-matched
+`CapSharedKey` still apply, so search results cross-dedupe with subscribed feeds
+and render reddit's normal attribution. `ItemWithFeed.Kind` drives the row card (`KindText` default,
 `KindImage`, `KindGallery`, `KindLink`, `KindVideo`, `KindAudio`); a generic
 single-image baseline (`web.IsSingleImagePost`) still applies when no plugin
 classified the item, and `ThumbURL` overrides the row thumbnail.
@@ -398,7 +405,8 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
 
 - `pluginapi.Configurable` (`Settings() []SettingField`, `Configure(values)`),
   advertised by host-filled `Meta.HasSettings`. `SettingField.Kind` is `text`,
-  `password` (write-only) or `url`. Added in APIVersion 0.5.
+  `password` (write-only), `url`, or `bool` (a checkbox, delivered to `Configure`
+  as `"1"`/`"0"`). Added in APIVersion 0.5; `bool` is a later additive kind.
 - **Delivery is a push.** `plugin.ConfigureAll` (called in `Setup`, before
   `ReconcileFeeds`) reads each configurable plugin's stored values and calls
   `Configure`, and the admin save handler re-pushes after a write. Push is what

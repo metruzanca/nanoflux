@@ -117,6 +117,8 @@ templ adminPluginSettingsForm(r adminPluginRow) {
 					}
 				} else if s.Kind == "url" {
 					<input type="url" name={ "setting_" + s.Name } value={ s.Value } placeholder={ s.Placeholder } required?={ s.Required }/>
+				} else if s.Kind == "bool" {
+					<input type="checkbox" name={ "setting_" + s.Name } value="1" checked?={ s.Checked }/>
 				} else {
 					<input type="text" name={ "setting_" + s.Name } value={ s.Value } placeholder={ s.Placeholder } required?={ s.Required }/>
 				}
