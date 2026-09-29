@@ -1,4 +1,4 @@
-# Vendored web components (Vaadin)
+# Vendored web components and JS
 
 nanoflux has no frontend build step and no npm at build or run time. Its few
 JavaScript dependencies are **vendored**: a generated file is committed under
@@ -7,7 +7,28 @@ JavaScript dependencies are **vendored**: a generated file is committed under
 
 This document covers the Vaadin web components used for form controls: where the
 bundle comes from, how to regenerate it, how the server talks to the components,
-and how to add more of them.
+and how to add more of them. `htmx.min.js` is vendored the same way; hls.js is
+covered at the end.
+
+## hls.js (HLS video)
+
+Bluesky videos are stored as HLS enclosures (an `.m3u8` manifest), which Chrome
+and Firefox cannot play natively. `internal/web/static/hls.light.min.js` is the
+pinned hls.js **light** build (VOD playback; the full build is not needed), and
+`internal/web/static/hls-video.js` is the small committed glue that attaches it
+to any `video[data-hls]` (Safari is left to play HLS natively).
+
+Regenerate the vendored build with:
+
+```bash
+mise run vendor:hls      # needs node once; not needed at runtime
+```
+
+`tools/hls-vendor/vendor.sh` installs the pinned `hls.js` version and copies
+`dist/hls.light.min.js` (an IIFE that sets `window.Hls` when loaded as a classic
+script). Unlike the Vaadin bundle it needs no esbuild step. hls.js is **lazy**:
+`hls-video.js` injects the script only when a page actually has an HLS video, so
+readers who never open one do not download it.
 
 Status: Vaadin **25.3.0**, vendored as `vaadin-combo-box`,
 `vaadin-multi-select-combo-box`, `vaadin-switch`, `vaadin-slider`, and

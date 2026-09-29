@@ -18,6 +18,10 @@ run = "go run ./tools/extzip"
 description = "Bundle the pinned Vaadin web components into static/ (needs node)"
 run = "./tools/vaadin-vendor/vendor.sh"
 
+[tasks."vendor:hls"]
+description = "Vendor the pinned hls.js build into static/ (needs node)"
+run = "./tools/hls-vendor/vendor.sh"
+
 [tasks.dev]
 description = "Watch Go sources and rerun the server on change"
 run = "mise watch -r dev-serve"

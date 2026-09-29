@@ -682,9 +682,18 @@ templ itemContent(d itemViewData, v itemVisuals) {
 			if d.EmbedSrc == "" {
 				for _, e := range d.Enclosures {
 					if kind := web.EnclosureKind(e); kind == "video" {
-						<figure>
-							<video controls preload="none" src={ templ.URL(e.URL) }></video>
-						</figure>
+						if web.IsHLS(e) {
+							// An HLS manifest is played by hls.js (static/hls-video.js
+							// loads it lazily and attaches on the data-hls URL); the
+							// stored thumbnail is used as the poster.
+							<figure>
+								<video controls preload="none" data-hls={ e.URL } poster={ templ.URL(d.imgSrc(d.ImageURL)) }></video>
+							</figure>
+						} else {
+							<figure>
+								<video controls preload="none" src={ templ.URL(e.URL) }></video>
+							</figure>
+						}
 					} else if kind == "audio" {
 						<figure>
 							<audio controls preload="none" src={ templ.URL(e.URL) }></audio>

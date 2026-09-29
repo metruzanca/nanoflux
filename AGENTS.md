@@ -422,18 +422,24 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
   selects the repository to read.
 - Two origins are involved and they are **not** interchangeable:
   `public.api.bsky.app` answers `app.bsky.actor.getProfile` but returns **501**
-  for `com.atproto.repo.listRecords`; `bsky.social` answers `listRecords` and
-  `com.atproto.sync.getBlob` but **401**s `getProfile`. The plugin's `apiBase`,
-  `repoBase`, `syncBase`, `imgBase` and `videoBase` vars encode this so a test
-  can point them at a mock host.
+  for `com.atproto.repo.listRecords`; `bsky.social` answers `com.atproto.repo`
+  calls but **401**s `getProfile`. The plugin's `apiBase`, `repoBase`, `imgBase`
+  and `videoBase` vars encode this so a test can point them at a mock host.
 - Media: images use `cdn.bsky.app/img/feed_fullsize/plain/{did}/{cid}` (direct,
-  cacheable). Video is attached as a `video/mp4` enclosure via
-  `com.atproto.sync.getBlob?did={did}&cid={cid}` (redirects to the account's PDS;
-  returns the whole MP4 and ignores `Range`, so seeking is limited until cached),
-  with its poster frame (`video.bsky.app/watch/.../thumbnail.jpg`) as the
-  thumbnail. An HLS alternative (`video.cdn.bsky.app` playlists, Range-capable,
-  needs a frontend player) is documented in a comment on `blobURL` in case the
-  MP4 enclosure proves too limiting.
+  cacheable). Video is attached as an **HLS** enclosure
+  (`application/vnd.apple.mpegurl`, URL
+  `video.bsky.app/watch/{did}/{cid}/playlist.m3u8`); the raw
+  `com.atproto.sync.getBlob` MP4 is not used because it returns the whole file
+  and ignores `Range`, so seeking is limited. HLS segments are CORS-open and
+  Range-capable, and the stored master playlist is fetched fresh at play time
+  (its session-scoped rendition URLs need no storage). The video's poster frame
+  (`video.bsky.app/watch/.../thumbnail.jpg`) is the item thumbnail; it is served
+  as `application/octet-stream`, so `imgProxy` sniffs the bytes (see below).
+  `web.IsHLS` marks the enclosure and the template renders `data-hls`; a
+  lazily-loaded hls.js (`static/hls-video.js`) plays it (`docs/vendored-web-components.md`).
+- The `/img` proxy trusts an upstream `image/*` Content-Type but otherwise sniffs
+  the first bytes with `http.DetectContentType`, echoing the real type. Without
+  this, hosts that mislabel images (Bluesky's video thumbnails) render as broken.
 - Replies are skipped, matching the RSS feed's original-posts-only behavior.
   Quotes are rendered as a link to the quoted post (not expanded: hydrating each
   quoted record would cost one request per quote). Facets (mentions, links,
