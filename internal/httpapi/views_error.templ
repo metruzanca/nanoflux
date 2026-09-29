@@ -1,0 +1,24 @@
+package httpapi
+
+// errorPage renders the styled in-app error screen for a browser navigation to
+// an unknown/missing page (404) or to a URL that exists for a different HTTP
+// method (405). It is shown inside basePage, so the navbar is still there and
+// the visitor can navigate away.
+templ errorPage(status int, path, allow string) {
+	<section class="card login error-page">
+		if status == 404 {
+			<h1>page not found</h1>
+			<p class="muted">The page you were looking for does not exist or may have been removed.</p>
+		} else {
+			<h1>method not allowed</h1>
+			<p class="muted">This URL does not accept that request method.</p>
+			if allow != "" {
+				<p class="small muted">allowed: <code>{ allow }</code></p>
+			}
+		}
+		if path != "" {
+			<p class="small muted"><code>{ path }</code></p>
+		}
+		<p><a href="/">go home</a></p>
+	</section>
+}
