@@ -185,7 +185,7 @@ func (s *grpcFetcherServer) Decorate(_ context.Context, req *pb.DecorateRequest)
 		for _, p := range d.Attribution {
 			parts = append(parts, &pb.SourcePart{Text: p.Text, Token: p.Token, Url: p.URL})
 		}
-		out = append(out, &pb.Decorated{Index: int32(d.Index), Kind: int32(d.Kind), Attribution: parts, ThumbUrl: d.ThumbURL})
+		out = append(out, &pb.Decorated{Index: int32(d.Index), Kind: int32(d.Kind), Attribution: parts, ThumbUrl: d.ThumbURL, DedupeKey: d.DedupeKey})
 	}
 	return &pb.DecorateResponse{Decorations: out}, nil
 }
@@ -476,7 +476,7 @@ func (c *grpcFetcherClient) Decorate(ctx context.Context, req DecorateRequest) (
 		for _, p := range d.Attribution {
 			parts = append(parts, SourcePart{Text: p.Text, Token: p.Token, URL: p.Url})
 		}
-		out = append(out, Decorated{Index: int(d.Index), Kind: ItemKind(d.Kind), Attribution: parts, ThumbURL: d.ThumbUrl})
+		out = append(out, Decorated{Index: int(d.Index), Kind: ItemKind(d.Kind), Attribution: parts, ThumbURL: d.ThumbUrl, DedupeKey: d.DedupeKey})
 	}
 	return out, nil
 }

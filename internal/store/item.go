@@ -117,7 +117,12 @@ type ItemWithFeed struct {
 	// ThumbURL is a decorator-supplied row thumbnail override ("" keeps the
 	// stored ImageURL).
 	ThumbURL string
-	Timezone string // user's IANA timezone, for relative timestamps in templates
+	// DedupeKey is the plugin decorator's view-time content identity, consumed by
+	// httpapi.dedupItems to collapse the same content (e.g. a reddit link post
+	// crossposted to several subreddits under different titles) into one row.
+	// Empty falls back to the legacy title-based collapse.
+	DedupeKey string
+	Timezone  string // user's IANA timezone, for relative timestamps in templates
 }
 
 // ItemSource is one alternate feed an item is a member of, besides the owner
@@ -872,6 +877,7 @@ func decorate(q *sqlcgen.Queries, userID int64, policy URLPolicy, decorator Item
 		}
 		items[i].Kind = d.Kind
 		items[i].ThumbURL = d.ThumbURL
+		items[i].DedupeKey = d.DedupeKey
 		items[i].Attribution = resolveAttribution(d.Attribution, byToken)
 	}
 	return nil

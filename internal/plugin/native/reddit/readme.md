@@ -20,6 +20,11 @@ nanoflux; otherwise they link to reddit.
 The same post seen through a subreddit feed and through the poster's user feed is
 stored once, so reading it in one leaves it read in the other.
 
+A user who reposts the same link to several subreddits under different titles is
+also shown once: the plugin keys each link post by its poster and external
+destination, and the host collapses the duplicates into a single item that lists
+the other subreddits as sources. This applies on the author and collection pages.
+
 ## Categories (for filtering)
 
 Every reddit item carries labels you can write filter rules against. A rule's

@@ -77,6 +77,7 @@ func (d StoreDecorator) Decorate(items []store.ItemWithFeed) (map[int64]store.Ra
 				Kind:        store.ItemKind(dec.Kind),
 				Attribution: toRawAttribution(dec.Attribution),
 				ThumbURL:    dec.ThumbURL,
+				DedupeKey:   dec.DedupeKey,
 			}
 		}
 	}

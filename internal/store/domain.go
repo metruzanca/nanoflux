@@ -110,6 +110,10 @@ type RawDecoration struct {
 	Kind        ItemKind
 	Attribution []RawAttributionPart
 	ThumbURL    string
+	// DedupeKey is a plugin-supplied view-time content identity, used by the
+	// list layer to collapse the same content reposted under different titles
+	// (see pluginapi.Decorated.DedupeKey). Empty disables it.
+	DedupeKey string
 }
 
 // RawAttributionPart is one unresolved piece of a source line.
