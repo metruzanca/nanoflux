@@ -66,8 +66,29 @@ func Setup(ctx context.Context, st *store.Store, client *http.Client, pluginsDir
 	} else {
 		log.Info("plugin system ready", "plugins", reg.Names())
 	}
+	ConfigureAll(st, reg)
 	ReconcileFeeds(st, reg)
 	return &Runtime{Registry: reg, Hosts: hosts, cleanup: cleanup}
+}
+
+// ConfigureAll pushes every configurable plugin its stored values. It runs at
+// startup after the plugins load and before ReconcileFeeds, so a plugin that
+// matches URLs against its configuration (a service host) is configured before
+// its feeds are adopted. A plugin with no stored values still receives an empty
+// map, so it can report itself unconfigured.
+func ConfigureAll(st *store.Store, reg *Registry) {
+	for _, info := range reg.Infos() {
+		if !info.HasSettings {
+			continue
+		}
+		schema := reg.SettingsSchema(info.Name)
+		names := make([]string, 0, len(schema))
+		for _, f := range schema {
+			names = append(names, f.Name)
+		}
+		values := st.Settings.PluginSettings(info.Name, names)
+		reg.Configure(info.Name, values)
+	}
 }
 
 // ReconcileFeeds aligns stored feeds with the loaded plugins. For each feed it
@@ -140,5 +161,5 @@ func registerNative(reg *Registry) {
 	reg.RegisterNative(instagram.Plugin{})
 	reg.RegisterNative(patreon.Plugin{})
 	reg.RegisterNative(&reddit.Plugin{})
-	reg.RegisterNative(killthenewsletter.Plugin{})
+	reg.RegisterNative(killthenewsletter.New())
 }

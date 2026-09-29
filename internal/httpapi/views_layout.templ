@@ -69,6 +69,9 @@ templ topbar(u store.User) {
 						<button type="button" class="add-caret" id="add-menu-btn" aria-haspopup="true" aria-expanded="false" title="more add actions" onclick="toggleAddMenu(event)">@web.Lucide("chevron-down")</button>
 						<div id="add-menu-pop" class="menu-pop" role="menu" hidden>
 							<button type="button" class="link menu-item" role="menuitem" data-action="savePage">save url for later</button>
+							for _, p := range provisionersFrom(ctx) {
+								<button type="button" class="link menu-item" role="menuitem" data-action="provision" data-plugin={ p.Name } data-label={ p.Label }>Add a { p.Label }</button>
+							}
 							<button type="button" class="link menu-item" role="menuitem" data-action="addCollection">add collection</button>
 							<button type="button" class="link menu-item" role="menuitem" data-action="addList">add list</button>
 						</div>
@@ -125,6 +128,16 @@ templ topbar(u store.User) {
 	<!-- Save-page dialog; the nav "add" menu fetches its content (savePageForm)
 	     into this dialog before showing it. -->
 	<dialog id="save-page-dialog" class="modal"></dialog>
+
+	<!-- Provision dialog; the nav "add" menu's "Add a …" entry fetches a
+	     provisioning plugin's create form into this dialog. -->
+	<dialog id="provision-dialog" class="modal">
+		<div class="row">
+			<h2 id="provision-dialog-title">create a feed</h2>
+			<button type="button" class="link" title="close" onclick="document.getElementById('provision-dialog').close()">@web.Lucide("x")</button>
+		</div>
+		<div id="provision-dialog-body"></div>
+	</dialog>
 
 	<!-- Plugin docs dialog; the admin plugin card and the feed edit page fetch
 	     a plugin's documentation (plugin-docs-dialog) into it before showing. -->

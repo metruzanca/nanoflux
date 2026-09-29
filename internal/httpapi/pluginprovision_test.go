@@ -38,7 +38,7 @@ func (stubProvisioner) Provision(context.Context, pluginapi.ProvisionRequest, pl
 		Fields:  []pluginapi.Field{{Name: "email", Label: "subscribe", Value: "pub1@mails.example"}},
 	}, nil
 }
-func (stubProvisioner) Settings(string) []pluginapi.Field {
+func (stubProvisioner) FeedFields(string) []pluginapi.Field {
 	return []pluginapi.Field{{Name: "email", Label: "subscribe", Value: "pub1@mails.example"}}
 }
 func (stubProvisioner) Action(_ context.Context, req pluginapi.FeedActionRequest, _ pluginapi.Host) (pluginapi.FeedActionResult, error) {
@@ -56,17 +56,16 @@ func withProvisioner(t *testing.T, s *Server, p pluginapi.Fetcher) {
 }
 
 // TestProvisionCreateFlow creates a feed through a provisioning plugin and
-// asserts the subscribe address and feed URL are stored.
+// asserts the subscribe address and feed URL are stored, and the created feed
+// gets its own author named after the feed title.
 func TestProvisionCreateFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	withProvisioner(t, s, stubProvisioner{})
 
 	rr := doForm(h, "POST", "/feeds/provision", url.Values{
-		"plugin":      {"mailsite"},
-		"title":       {"My Newsletter"},
-		"author_id":   {"new"},
-		"author_name": {"Mails"},
+		"plugin": {"mailsite"},
+		"title":  {"My Newsletter"},
 	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("provision: %d %s", rr.Code, rr.Body.String())
@@ -89,27 +88,34 @@ func TestProvisionCreateFlow(t *testing.T) {
 	if !found {
 		t.Fatalf("provisioned feed not stored: %+v", feeds)
 	}
+	authors, _ := s.store.Authors.List(1)
+	if len(authors) != 1 || authors[0].Name != "My Newsletter" {
+		t.Fatalf("authors = %+v, want the feed title", authors)
+	}
 }
 
-// TestProvisionDefaultsAuthorName verifies a create with no author name names
-// the new author after the feed title, so the provision form never dead-ends on
-// a required field it does not need.
-func TestProvisionDefaultsAuthorName(t *testing.T) {
+// TestProvisionFormAndMenu verifies the create flow is reachable from the nav
+// add menu: the menu renders an "Add a newsletter" entry for the provisioning
+// plugin, and the fragment handler returns the create form.
+func TestProvisionFormAndMenu(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	withProvisioner(t, s, stubProvisioner{})
 
-	rr := doForm(h, "POST", "/feeds/provision", url.Values{
-		"plugin":    {"mailsite"},
-		"title":     {"My Newsletter"},
-		"author_id": {"new"},
-	}, cookie)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("provision: %d %s", rr.Code, rr.Body.String())
+	page := doGet(h, "/authors", cookie)
+	if page.Code != http.StatusOK {
+		t.Fatalf("authors: %d", page.Code)
 	}
-	authors, _ := s.store.Authors.List(1)
-	if len(authors) != 1 || authors[0].Name != "My Newsletter" {
-		t.Fatalf("authors = %+v", authors)
+	if !strings.Contains(page.Body.String(), "Add a newsletter") {
+		t.Fatalf("add menu missing the provision entry: %s", page.Body.String())
+	}
+
+	rr := doGet(h, "/fragments/provision-form?plugin=mailsite", cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("provision-form: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "create feed") {
+		t.Fatalf("form missing submit: %s", rr.Body.String())
 	}
 }
 
@@ -148,6 +154,68 @@ func TestFeedDeleteRemoteOptIn(t *testing.T) {
 	doForm(h, "POST", "/feeds/"+itoa(f2.ID)+"/delete", url.Values{"delete_remote": {"1"}}, cookie)
 	if len(rec.actions) != 1 || rec.actions[0] != "delete" {
 		t.Fatalf("remote delete not called: %v", rec.actions)
+	}
+}
+
+// configurableStub is a plugin that declares settings and records the values
+// pushed through Configure.
+type configurableStub struct {
+	stubProvisioner
+	got map[string]string
+}
+
+func (c *configurableStub) Settings() []pluginapi.SettingField {
+	return []pluginapi.SettingField{
+		{Name: "base_url", Label: "instance url", Kind: "url"},
+		{Name: "token", Label: "api token", Kind: "password", Required: true},
+	}
+}
+func (c *configurableStub) Configure(values map[string]string) { c.got = values }
+
+// TestAdminPluginSettings covers the admin settings form: the card renders the
+// schema, saving stores and pushes the values to the plugin, and a password is
+// never rendered back.
+func TestAdminPluginSettings(t *testing.T) {
+	s, h := newTestServer(t)
+	admin := createUser(t, s, "root")
+	if err := s.store.Users.SetAdmin(admin.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	cookie := adminSession(t, s, "root")
+	cfg := &configurableStub{}
+	withProvisioner(t, s, cfg)
+
+	card := doGet(h, "/admin", cookie)
+	if card.Code != http.StatusOK || !strings.Contains(card.Body.String(), "instance url") {
+		t.Fatalf("admin card missing settings form: %d %s", card.Code, card.Body.String())
+	}
+
+	rr := doForm(h, "POST", "/admin/plugins/mailsite/settings", url.Values{
+		"setting_base_url": {"https://self.example"},
+		"setting_token":    {"s3cret"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save settings: %d %s", rr.Code, rr.Body.String())
+	}
+	if cfg.got["base_url"] != "https://self.example" || cfg.got["token"] != "s3cret" {
+		t.Fatalf("Configure received %+v", cfg.got)
+	}
+	// The secret is not rendered back, only that it is set.
+	body := rr.Body.String()
+	if strings.Contains(body, "s3cret") {
+		t.Fatalf("password rendered back into the card: %s", body)
+	}
+	if !strings.Contains(body, "set)") {
+		t.Fatalf("password field should report it is set: %s", body)
+	}
+
+	// A required field cannot be cleared.
+	bad := doForm(h, "POST", "/admin/plugins/mailsite/settings", url.Values{
+		"setting_base_url": {"x"},
+		"setting_token":    {""},
+	}, cookie)
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("required-field save: got %d, want 400", bad.Code)
 	}
 }
 

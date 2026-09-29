@@ -129,10 +129,52 @@ func (f fakeProvisioner) Provision(context.Context, pluginapi.ProvisionRequest, 
 	return pluginapi.Provisioned{FeedURL: "https://site.example/feeds/abc.xml", Fields: f.fields}, nil
 }
 
-func (f fakeProvisioner) Settings(string) []pluginapi.Field { return f.fields }
+func (f fakeProvisioner) FeedFields(string) []pluginapi.Field { return f.fields }
 
 func (f fakeProvisioner) Action(context.Context, pluginapi.FeedActionRequest, pluginapi.Host) (pluginapi.FeedActionResult, error) {
 	return pluginapi.FeedActionResult{Deleted: f.deleted}, nil
+}
+
+// fakeConfigurable is a fakeFetcher that also implements Configurable.
+type fakeConfigurable struct {
+	fakeFetcher
+	fields   []pluginapi.SettingField
+	gotValue string
+}
+
+func (f *fakeConfigurable) Settings() []pluginapi.SettingField { return f.fields }
+func (f *fakeConfigurable) Configure(values map[string]string) { f.gotValue = values["base_url"] }
+
+// TestRegistrySettings covers the settings capability: the schema is read from
+// the plugin, Configure pushes values, and Info reports HasSettings.
+func TestRegistrySettings(t *testing.T) {
+	reg := NewRegistry()
+	cfg := &fakeConfigurable{
+		fakeFetcher: fakeFetcher{name: "cfg", match: func(*url.URL, pluginapi.Capability) bool { return false }},
+		fields:      []pluginapi.SettingField{{Name: "base_url", Kind: "url"}},
+	}
+	reg.RegisterNative(cfg)
+	reg.RegisterNative(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
+
+	if got := reg.SettingsSchema("cfg"); len(got) != 1 || got[0].Name != "base_url" {
+		t.Fatalf("SettingsSchema = %+v", got)
+	}
+	if got := reg.SettingsSchema("plain"); got != nil {
+		t.Fatalf("SettingsSchema(plain) = %+v, want nil", got)
+	}
+	if !reg.Configure("cfg", map[string]string{"base_url": "https://self.example"}) {
+		t.Fatal("Configure returned false")
+	}
+	if cfg.gotValue != "https://self.example" {
+		t.Fatalf("Configure pushed %q", cfg.gotValue)
+	}
+	if reg.Configure("plain", nil) {
+		t.Fatal("Configure(plain) should return false")
+	}
+	infos := reg.Infos()
+	if !infos[0].HasSettings || infos[1].HasSettings {
+		t.Fatalf("HasSettings infos = %+v", infos)
+	}
 }
 
 // TestRegistryProvisionersAndFeedAdmin covers the control-plane capabilities: a

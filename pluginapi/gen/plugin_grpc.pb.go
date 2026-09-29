@@ -211,6 +211,8 @@ const (
 	Fetcher_Provision_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/Provision"
 	Fetcher_FeedSettings_FullMethodName        = "/nanoflux.plugin.v1.Fetcher/FeedSettings"
 	Fetcher_FeedAction_FullMethodName          = "/nanoflux.plugin.v1.Fetcher/FeedAction"
+	Fetcher_SettingsSchema_FullMethodName      = "/nanoflux.plugin.v1.Fetcher/SettingsSchema"
+	Fetcher_Configure_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/Configure"
 )
 
 // FetcherClient is the client API for Fetcher service.
@@ -246,6 +248,12 @@ type FetcherClient interface {
 	// FeedAction is optional: manage an already-subscribed feed's remote settings
 	// and lifecycle (sync a title, delete it upstream).
 	FeedAction(ctx context.Context, in *FeedActionRequest, opts ...grpc.CallOption) (*FeedActionResponse, error)
+	// SettingsSchema is optional: the configuration fields the plugin needs, so
+	// the host can render a form. Pure, no network I/O.
+	SettingsSchema(ctx context.Context, in *SettingsSchemaRequest, opts ...grpc.CallOption) (*SettingsSchemaResponse, error)
+	// Configure is optional: the host pushes the stored configuration values to
+	// the plugin. Called at load and whenever an admin saves the form.
+	Configure(ctx context.Context, in *ConfigureRequest, opts ...grpc.CallOption) (*ConfigureResponse, error)
 }
 
 type fetcherClient struct {
@@ -396,6 +404,26 @@ func (c *fetcherClient) FeedAction(ctx context.Context, in *FeedActionRequest, o
 	return out, nil
 }
 
+func (c *fetcherClient) SettingsSchema(ctx context.Context, in *SettingsSchemaRequest, opts ...grpc.CallOption) (*SettingsSchemaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SettingsSchemaResponse)
+	err := c.cc.Invoke(ctx, Fetcher_SettingsSchema_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fetcherClient) Configure(ctx context.Context, in *ConfigureRequest, opts ...grpc.CallOption) (*ConfigureResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConfigureResponse)
+	err := c.cc.Invoke(ctx, Fetcher_Configure_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FetcherServer is the server API for Fetcher service.
 // All implementations must embed UnimplementedFetcherServer
 // for forward compatibility.
@@ -429,6 +457,12 @@ type FetcherServer interface {
 	// FeedAction is optional: manage an already-subscribed feed's remote settings
 	// and lifecycle (sync a title, delete it upstream).
 	FeedAction(context.Context, *FeedActionRequest) (*FeedActionResponse, error)
+	// SettingsSchema is optional: the configuration fields the plugin needs, so
+	// the host can render a form. Pure, no network I/O.
+	SettingsSchema(context.Context, *SettingsSchemaRequest) (*SettingsSchemaResponse, error)
+	// Configure is optional: the host pushes the stored configuration values to
+	// the plugin. Called at load and whenever an admin saves the form.
+	Configure(context.Context, *ConfigureRequest) (*ConfigureResponse, error)
 	mustEmbedUnimplementedFetcherServer()
 }
 
@@ -480,6 +514,12 @@ func (UnimplementedFetcherServer) FeedSettings(context.Context, *FeedSettingsReq
 }
 func (UnimplementedFetcherServer) FeedAction(context.Context, *FeedActionRequest) (*FeedActionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FeedAction not implemented")
+}
+func (UnimplementedFetcherServer) SettingsSchema(context.Context, *SettingsSchemaRequest) (*SettingsSchemaResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SettingsSchema not implemented")
+}
+func (UnimplementedFetcherServer) Configure(context.Context, *ConfigureRequest) (*ConfigureResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Configure not implemented")
 }
 func (UnimplementedFetcherServer) mustEmbedUnimplementedFetcherServer() {}
 func (UnimplementedFetcherServer) testEmbeddedByValue()                 {}
@@ -754,6 +794,42 @@ func _Fetcher_FeedAction_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fetcher_SettingsSchema_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SettingsSchemaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).SettingsSchema(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_SettingsSchema_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).SettingsSchema(ctx, req.(*SettingsSchemaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Fetcher_Configure_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfigureRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).Configure(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_Configure_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).Configure(ctx, req.(*ConfigureRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Fetcher_ServiceDesc is the grpc.ServiceDesc for Fetcher service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -816,6 +892,14 @@ var Fetcher_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FeedAction",
 			Handler:    _Fetcher_FeedAction_Handler,
+		},
+		{
+			MethodName: "SettingsSchema",
+			Handler:    _Fetcher_SettingsSchema_Handler,
+		},
+		{
+			MethodName: "Configure",
+			Handler:    _Fetcher_Configure_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -186,8 +186,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /fragments/manual-feed", s.auth.Require(http.HandlerFunc(s.manualFeedForm)))
 	mux.Handle("GET /fragments/save-page", s.auth.Require(http.HandlerFunc(s.savePageFormFragment)))
 	// Provisioning: create a feed on a remote service (a newsletter inbox) from
-	// the add-feed flow, without leaving nanoflux.
-	mux.Handle("POST /fragments/provision-form", s.auth.Require(http.HandlerFunc(s.provisionFormFragment)))
+	// the nav add menu, without leaving nanoflux.
+	mux.Handle("GET /fragments/provision-form", s.auth.Require(http.HandlerFunc(s.provisionFormFragment)))
 	mux.Handle("POST /feeds/provision", s.auth.Require(http.HandlerFunc(s.feedProvision)))
 	// Remote management (settings, delete) for a plugin-owned feed.
 	mux.Handle("POST /feeds/{id}/plugin-admin", s.auth.Require(http.HandlerFunc(s.pluginAdminAction)))
@@ -216,6 +216,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/settings/signup-banner-dismiss", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminDismissSignupBanner))))
 	mux.Handle("POST /admin/backup", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminBackupNow))))
 	mux.Handle("POST /admin/plugins/reset", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminResetPluginDomain))))
+	mux.Handle("POST /admin/plugins/{name}/settings", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminSavePluginSettings))))
 
 	// Settings.
 	mux.Handle("GET /settings", s.auth.Require(http.HandlerFunc(s.settingsPage)))

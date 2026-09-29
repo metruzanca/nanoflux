@@ -205,6 +205,9 @@ type Info struct {
 	// CanManageFeeds reports whether the plugin manages already-subscribed
 	// feeds' remote settings and lifecycle (implements FeedAdmin).
 	CanManageFeeds bool
+	// HasSettings reports whether the plugin implements Configurable (declares
+	// settings the admin can edit).
+	HasSettings bool
 }
 
 // Infos returns a description of every loaded plugin: native first, then
@@ -229,12 +232,16 @@ func info(f pluginapi.Fetcher, kind string) Info {
 	// Meta does not fill HasDocs.
 	hasDocs := m.HasDocs
 	hasFeedAdmin := m.HasFeedAdmin
+	hasSettings := m.HasSettings
 	if kind == "native" {
 		if !hasDocs {
 			_, hasDocs = f.(pluginapi.Docser)
 		}
 		if !hasFeedAdmin {
 			_, hasFeedAdmin = f.(pluginapi.FeedAdmin)
+		}
+		if !hasSettings {
+			_, hasSettings = f.(pluginapi.Configurable)
 		}
 	}
 	return Info{
@@ -247,6 +254,7 @@ func info(f pluginapi.Fetcher, kind string) Info {
 		HasDocs:        hasDocs,
 		ProvisionLabel: m.ProvisionLabel,
 		CanManageFeeds: hasFeedAdmin,
+		HasSettings:    hasSettings,
 	}
 }
 
@@ -325,7 +333,7 @@ func (r *Registry) FeedAdminSettings(feedURL string) []pluginapi.Field {
 	if fa == nil {
 		return nil
 	}
-	return fa.Settings(feedURL)
+	return fa.FeedFields(feedURL)
 }
 
 // Provisioner is a plugin that can create a feed on a remote service, paired
@@ -352,6 +360,34 @@ func (r *Registry) Provisioners() []Provisioner {
 		out = append(out, Provisioner{Label: label, P: p, F: f})
 	}
 	return out
+}
+
+// SettingsSchema returns the configuration fields a plugin declares, or nil
+// when it is not configurable. It is pure: the plugin must not do network I/O.
+func (r *Registry) SettingsSchema(name string) []pluginapi.SettingField {
+	f := r.ByName(name)
+	if f == nil {
+		return nil
+	}
+	c, ok := f.(pluginapi.Configurable)
+	if !ok {
+		return nil
+	}
+	return c.Settings()
+}
+
+// Configure pushes stored values to one configurable plugin, if it is loaded.
+func (r *Registry) Configure(name string, values map[string]string) bool {
+	f := r.ByName(name)
+	if f == nil {
+		return false
+	}
+	c, ok := f.(pluginapi.Configurable)
+	if !ok {
+		return false
+	}
+	c.Configure(values)
+	return true
 }
 
 // ProvisionerByName returns the create-capable plugin with the given name, or

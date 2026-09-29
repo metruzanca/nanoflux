@@ -17,7 +17,7 @@ import (
 
 // APIVersion is the plugin API version. The host refuses a plugin whose
 // Meta().APIVersion differs.
-const APIVersion = "0.4"
+const APIVersion = "0.5"
 
 // Capability selects which operation a Match call is about. A Fetcher may
 // support either or both.
@@ -106,6 +106,11 @@ type Meta struct {
 	// for external ones) — a plugin does not set it. Like HasDocs, it exists so
 	// a UI can advertise remote feed management without probing.
 	HasFeedAdmin bool
+	// HasSettings reports whether the plugin implements Configurable. It is
+	// filled in by the host (a type assertion for native plugins, the wire for
+	// external ones) — a plugin does not set it. It lets the admin page offer a
+	// settings form without asking every plugin for its schema.
+	HasSettings bool
 }
 
 // Candidate is one feed a plugin discovered on a page. Title/IconURL/HomeURL are
@@ -500,9 +505,11 @@ type Provisioned struct {
 // Settings must be pure (no network I/O): it is called while rendering the
 // feed's page. Action runs on a user's explicit request and may use Host.Do.
 type FeedAdmin interface {
-	// Settings returns the display-only fields for a feed URL, or nil when the
-	// URL is not one the plugin manages. It must not perform network I/O.
-	Settings(feedURL string) []Field
+	// FeedFields returns the display-only fields for a feed URL, or nil when
+	// the URL is not one the plugin manages. It must not perform network I/O.
+	// (Named FeedFields, not Settings, so a plugin can also implement
+	// Configurable without a method-name collision.)
+	FeedFields(feedURL string) []Field
 	// Action performs a remote management action and returns a message and any
 	// refreshed fields. Deleted reports that the remote feed was deleted, so
 	// the host can drop the local feed too when the user asked for it.
@@ -529,4 +536,41 @@ type FeedActionResult struct {
 	Deleted bool
 	// Fields, when non-empty, replaces the feed's displayed fields.
 	Fields []Field
+}
+
+// SettingField describes one configuration value a plugin needs (a service
+// base URL, an API token, a session cookie). The host renders a form from the
+// schema in the admin panel and pushes the stored values back through
+// Configure; a plugin never writes the value itself.
+type SettingField struct {
+	// Name is the stable key, e.g. "base_url". Configure receives values under
+	// this name.
+	Name string
+	// Label is the human label shown in the form.
+	Label string
+	// Kind hints the widget: "text" (default), "password", or "url". A
+	// "password" value is write-only in the UI and is never rendered back.
+	Kind string
+	// Placeholder is optional example text.
+	Placeholder string
+	// Help is optional explanatory text shown under the field.
+	Help string
+	// Required rejects an empty value on save, when the plugin needs one.
+	Required bool
+}
+
+// Configurable is an optional capability a plugin may implement to declare the
+// settings it needs and receive their values. The host calls Configure at load
+// with the stored values (so Match-time configuration, like a service host, is
+// available before the first request) and again whenever an admin saves the
+// form. It is not matched on a URL: every configurable plugin is configured.
+//
+// Configure must be safe to call with an incomplete map (missing fields arrive
+// as empty strings) so a plugin can start unconfigured and report what is
+// missing when it is used.
+type Configurable interface {
+	// Settings returns the fields this plugin needs, in display order.
+	Settings() []SettingField
+	// Configure receives the stored values, keyed by SettingField.Name.
+	Configure(values map[string]string)
 }

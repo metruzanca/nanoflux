@@ -65,6 +65,12 @@ service Fetcher {
   // FeedAction is optional: manage an already-subscribed feed's remote settings
   // and lifecycle (sync a title, delete it upstream).
   rpc FeedAction(FeedActionRequest) returns (FeedActionResponse);
+  // SettingsSchema is optional: the configuration fields the plugin needs, so
+  // the host can render a form. Pure, no network I/O.
+  rpc SettingsSchema(SettingsSchemaRequest) returns (SettingsSchemaResponse);
+  // Configure is optional: the host pushes the stored configuration values to
+  // the plugin. Called at load and whenever an admin saves the form.
+  rpc Configure(ConfigureRequest) returns (ConfigureResponse);
 }
 
 message MetaRequest {}
@@ -81,6 +87,8 @@ message MetaResponse {
   string provision_label = 7;
   // Whether the plugin implements FeedAdmin. Filled by the host, not authored.
   bool has_feed_admin = 8;
+  // Whether the plugin implements Configurable. Filled by the host, not authored.
+  bool has_settings = 9;
 }
 
 message MatchRequest {
@@ -300,6 +308,26 @@ message FeedSettingsResponse {
   repeated Field fields = 1;
   PluginError error = 2;
 }
+
+// SettingsSchema / Configure: a plugin's configuration fields and the stored
+// values the host pushes back. SettingsSchema is pure; Configure carries values
+// keyed by SettingField.name.
+
+message SettingField {
+  string name = 1;
+  string label = 2;
+  string kind = 3;
+  string placeholder = 4;
+  string help = 5;
+  bool required = 6;
+}
+message SettingsSchemaRequest {}
+message SettingsSchemaResponse {
+  repeated SettingField fields = 1;
+  PluginError error = 2;
+}
+message ConfigureRequest { map<string, string> values = 1; }
+message ConfigureResponse { PluginError error = 2; }
 
 // FeedAction manages an already-subscribed feed's remote settings and lifecycle.
 

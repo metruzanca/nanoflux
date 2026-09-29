@@ -532,6 +532,13 @@ document.addEventListener('click', function (e) {
   if (!btn) return;
   e.stopPropagation();
   closeAddMenu();
+  // A provision action carries the plugin name and label on the element (one
+  // entry per provisioning plugin), so it is dispatched with that context
+  // rather than a fixed registry entry.
+  if (btn.dataset.action === 'provision') {
+    openProvisionForm(btn.dataset.plugin, btn.dataset.label);
+    return;
+  }
   var action = ACTIONS[btn.dataset.action];
   if (action) action.run();
 });
@@ -777,6 +784,26 @@ function openSavePage() {
       if (window.nanofluxReinitVaadin) window.nanofluxReinitVaadin(d);
     })
     .catch(function () { d.innerHTML = '<p class="error">could not load the form</p>'; });
+}
+
+// openProvisionForm fetches a provisioning plugin's create form (the nav add
+// menu's "Add a …" entry) into #provision-dialog and shows it, like openSavePage.
+function openProvisionForm(name, label) {
+  var d = document.getElementById('provision-dialog');
+  if (!d) return;
+  var title = document.getElementById('provision-dialog-title');
+  if (title) title.textContent = label ? 'Add a ' + label : 'create a feed';
+  var body = document.getElementById('provision-dialog-body');
+  if (body) body.innerHTML = '<p class="muted">loading…</p>';
+  d.showModal();
+  fetch('/fragments/provision-form?plugin=' + encodeURIComponent(name), { credentials: 'same-origin' })
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      if (body) body.innerHTML = html;
+      htmx.process(d);
+      if (window.nanofluxReinitVaadin) window.nanofluxReinitVaadin(d);
+    })
+    .catch(function () { if (body) body.innerHTML = '<p class="error">could not load the form</p>'; });
 }
 
 // openPluginDocs fetches a plugin's documentation into the shared

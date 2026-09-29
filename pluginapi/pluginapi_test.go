@@ -136,10 +136,32 @@ func (provisionPlugin) Fetch(context.Context, FetchRequest, Host) (Result, error
 func (provisionPlugin) Provision(context.Context, ProvisionRequest, Host) (Provisioned, error) {
 	return Provisioned{FeedURL: "https://h/feeds/1.xml", Fields: []Field{{Name: "email", Value: "a1@h"}}}, nil
 }
-func (provisionPlugin) Settings(string) []Field { return nil }
+func (provisionPlugin) FeedFields(string) []Field { return nil }
 func (provisionPlugin) Action(context.Context, FeedActionRequest, Host) (FeedActionResult, error) {
 	return FeedActionResult{Deleted: true}, nil
 }
+
+// TestSettingsSchemaConversions asserts a plugin's settings schema round-trips
+// across the gRPC helpers.
+func TestSettingsSchemaConversions(t *testing.T) {
+	in := []SettingField{{
+		Name: "base_url", Label: "instance url", Kind: "url",
+		Placeholder: "https://x", Help: "h", Required: true,
+	}}
+	out := fromPBSettingFields(toPBSettingFields(in))
+	if len(out) != 1 || out[0] != in[0] {
+		t.Fatalf("setting field round trip = %+v", out)
+	}
+}
+
+// configPlugin is a minimal Configurable for a compile-time interface check.
+type configPlugin struct{ plainPlugin }
+
+func (configPlugin) Settings() []SettingField { return nil }
+func (configPlugin) Configure(map[string]string) {
+}
+
+var _ Configurable = configPlugin{}
 
 // TestEnrichConversions asserts an enricher's items convert across the gRPC
 // helpers and that an Enriched entry addresses an item by index.

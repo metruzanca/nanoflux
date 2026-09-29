@@ -24,106 +24,101 @@ func (s *Server) provisioners() []plugin.Provisioner {
 	return s.plugins.Provisioners()
 }
 
-// provisionFormData is the "create on the site" add form: a title plus the same
-// author choice the URL flow offers, targeted at one provisioning plugin.
-type provisionFormData struct {
-	Plugin           string
-	Label            string
-	Title            string
-	Authors          []store.Author
-	SelectedAuthorID int64
-	FixedAuthor      *store.Author
-	Redirect         bool
-	Target           string // htmx target for the created panel
+// provisionEntries maps the create-capable plugins to the topbar add-menu
+// entries (plugin name and "Add a …" label).
+func (s *Server) provisionEntries() []provisionEntry {
+	ps := s.provisioners()
+	out := make([]provisionEntry, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, provisionEntry{Name: p.F.Meta().Name, Label: p.Label})
+	}
+	return out
 }
 
-// provisionFormFragment renders the create form into the add dialog's preview
-// container. It is opened by the "create a …" button the add menu renders.
+// provisionFormData is the "create on the site" form shown in the
+// #provision-dialog from the nav "add" menu. It has a title only: a created feed
+// becomes its own author (named after the feed), so the dialog needs no author
+// choice.
+type provisionFormData struct {
+	Plugin      string
+	Label       string
+	Placeholder string
+}
+
+// provisionFormFragment renders the create form into the nav add menu's dialog.
+// It is opened by the "Add a …" entry the add menu renders.
 func (s *Server) provisionFormFragment(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
 	name := strings.TrimSpace(r.FormValue("plugin"))
-	label := ""
-	found := false
-	for _, p := range s.provisioners() {
-		if p.Label == name || p.F.Meta().Name == name {
-			name, label, found = p.F.Meta().Name, p.Label, true
-			break
-		}
-	}
-	if !found {
+	p, _ := s.registryProvisioner(name)
+	if p == nil {
 		renderError(w, r, "that integration is not available")
 		return
 	}
-	authors, _ := s.store.Authors.List(u.ID)
-	selectedAuthor, _ := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
-	d := provisionFormData{
-		Plugin: name, Label: label, Authors: authors, SelectedAuthorID: selectedAuthor,
-		Redirect: r.FormValue("redirect") == "1", Target: "#author-preview",
-	}
-	if r.FormValue("scoped") == "1" {
-		d.Target = "#author-feed-preview"
-		if a, err := s.store.Authors.ByID(u.ID, selectedAuthor); err == nil {
-			d.FixedAuthor = &a
+	label := ""
+	for _, pr := range s.provisioners() {
+		if pr.F.Meta().Name == name {
+			label = pr.Label
+			break
 		}
 	}
-	web.Render(w, r, provisionFormFields(d))
+	web.Render(w, r, provisionFormFields(provisionFormData{
+		Plugin: name, Label: label, Placeholder: "e.g. My Newsletter",
+	}))
 }
 
 // feedProvision creates a remote feed through a provisioning plugin and stores
 // it locally. The plugin owns the create request; the host then stores the
-// returned feed URL and polls it with the generic parser.
+// returned feed URL and polls it with the generic parser. The created feed gets
+// its own author, named after the feed title.
 func (s *Server) feedProvision(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	name := strings.TrimSpace(r.FormValue("plugin"))
 	p, f := s.registryProvisioner(name)
 	if p == nil {
-		writeFormError(w, r, "add-feed-error", "that integration is not available")
+		writeFormError(w, r, "provision-error", "that integration is not available")
 		return
 	}
 	title := strings.TrimSpace(r.FormValue("title"))
 	if title == "" {
-		writeFormError(w, r, "add-feed-error", "a title is required")
+		writeFormError(w, r, "provision-error", "a title is required")
 		return
 	}
 	if s.demoFeedLimitReached(u.ID) {
-		writeFormError(w, r, "add-feed-error", demoAddFeedMessage())
-		return
-	}
-	// A new author defaults to the feed's title: the provision form has no
-	// page to derive a name from, and the newsletter's name is the natural
-	// author name.
-	if r.FormValue("author_id") == "new" && strings.TrimSpace(r.FormValue("author_name")) == "" {
-		r = withFormValue(r, "author_name", title)
-	}
-	authorID, _, errMsg := s.resolveAuthor(r, u.ID)
-	if errMsg != "" {
-		writeFormError(w, r, "add-feed-error", errMsg)
+		writeFormError(w, r, "provision-error", demoAddFeedMessage())
 		return
 	}
 	got, err := p.Provision(r.Context(), pluginapi.ProvisionRequest{Title: title}, s.pluginHosts.For(f))
 	if err != nil {
 		log.Error("plugin provision", "plugin", name, "err", err)
-		writeFormError(w, r, "add-feed-error", provisionErrorMessage(err))
+		writeFormError(w, r, "provision-error", provisionErrorMessage(err))
 		return
 	}
 	feedURL := normalizeURL(got.FeedURL)
 	if feedURL == "" {
-		writeFormError(w, r, "add-feed-error", "the integration did not return a feed")
+		writeFormError(w, r, "provision-error", "the integration did not return a feed")
 		return
 	}
 	if s.feedURLExists(u.ID, feedURL) {
-		writeFormError(w, r, "add-feed-error", "you already have this feed")
+		writeFormError(w, r, "provision-error", "you already have this feed")
 		return
 	}
 	feedTitle := got.Title
 	if feedTitle == "" {
 		feedTitle = title
 	}
-	feed, err := s.store.Feeds.CreateWithPlugin(u.ID, authorID, feedTitle, feedURL, got.HomeURL, "",
+	// The feed's author is named after the feed itself: the dialog has no page
+	// to derive a name from, and the service's name is the natural author.
+	author, err := s.store.Authors.Create(u.ID, feedTitle, "", "")
+	if err != nil {
+		log.Error("create provisioned author", "err", err)
+		writeFormError(w, r, "provision-error", "could not create the feed")
+		return
+	}
+	feed, err := s.store.Feeds.CreateWithPlugin(u.ID, author.ID, feedTitle, feedURL, got.HomeURL, "",
 		s.pluginNameFor(feedURL), 900)
 	if err != nil {
 		log.Error("create provisioned feed", "err", err)
-		writeFormError(w, r, "add-feed-error", "could not save the feed")
+		writeFormError(w, r, "provision-error", "could not save the feed")
 		return
 	}
 	if err := s.store.Collections.AssignAuto(u.ID, feed.ID, got.HomeURL, feedURL); err != nil {
@@ -131,21 +126,7 @@ func (s *Server) feedProvision(w http.ResponseWriter, r *http.Request) {
 	}
 	s.pollFeedNow(feed)
 
-	if r.FormValue("redirect") == "1" {
-		w.Header().Set("HX-Redirect", "/feeds/"+strconv.FormatInt(feed.ID, 10))
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
 	web.Render(w, r, provisionCreated(feed.ID, feedTitle, got.Fields))
-}
-
-// withFormValue sets a form field on r before it is read by a handler. It is a
-// small convenience for defaults a handler computes (the author name for a
-// provision) that shared helpers read straight from the request.
-func withFormValue(r *http.Request, key, value string) *http.Request {
-	_ = r.ParseForm()
-	r.Form.Set(key, value)
-	return r
 }
 
 // registryProvisioner resolves a create-capable plugin by its name or label.
@@ -252,7 +233,7 @@ func (s *Server) feedPanel(feed store.Feed, message string) (feedPanelData, bool
 	return feedPanelData{
 		FeedID:  feed.ID,
 		Title:   feed.Title,
-		Fields:  fa.Settings(feed.FeedURL),
+		Fields:  fa.FeedFields(feed.FeedURL),
 		Message: message,
 	}, true
 }

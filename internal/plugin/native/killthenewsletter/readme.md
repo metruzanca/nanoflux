@@ -28,6 +28,7 @@ to keep them.
 
 ## Self-hosting
 
-To use your own Kill the Newsletter instance instead of the public service, set
-`NF_KTN_HOST` to its host (for example `newsletter.example.com`) and restart
-nanoflux.
+To use your own Kill the Newsletter instance instead of the public service, an
+admin sets the plugin's **instance url** on the admin page (plugins card). Leave
+it empty for the public service, or enter your instance's base URL such as
+`https://newsletter.example.com`.

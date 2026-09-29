@@ -60,6 +60,9 @@ templ AdminPluginsCard(rows []adminPluginRow, domains []adminPluginDomain) {
 								}
 							</p>
 						}
+						if len(r.Settings) > 0 {
+							@adminPluginSettingsForm(r)
+						}
 					</div>
 				}
 			</div>
@@ -92,6 +95,47 @@ templ AdminPluginsCard(rows []adminPluginRow, domains []adminPluginDomain) {
 			</ul>
 		}
 	</section>
+}
+
+// adminPluginSettingsForm is the inline settings form for one configurable
+// plugin, rendered from its declared schema. A password field is write-only: it
+// shows whether a value is set and never renders the stored secret back; a
+// "clear" checkbox unsets it. Submitting re-renders the whole plugins card.
+templ adminPluginSettingsForm(r adminPluginRow) {
+	<form class="stack plugin-settings" hx-post={ "/admin/plugins/" + r.Name + "/settings" } hx-target="#admin-plugins-card" hx-swap="outerHTML">
+		<h4>settings</h4>
+		for _, s := range r.Settings {
+			<label>
+				{ s.Label }
+				if s.Kind == "password" {
+					<input type="password" name={ "setting_" + s.Name } placeholder={ passwordPlaceholder(s) } autocomplete="new-password"/>
+					if s.Set {
+						<label class="check">
+							<input type="checkbox" name={ "clear_" + s.Name } value="1"/>
+							clear the stored value
+						</label>
+					}
+				} else if s.Kind == "url" {
+					<input type="url" name={ "setting_" + s.Name } value={ s.Value } placeholder={ s.Placeholder } required?={ s.Required }/>
+				} else {
+					<input type="text" name={ "setting_" + s.Name } value={ s.Value } placeholder={ s.Placeholder } required?={ s.Required }/>
+				}
+				if s.Help != "" {
+					<span class="muted small">{ s.Help }</span>
+				}
+			</label>
+		}
+		<button type="submit" class="small">save settings</button>
+	</form>
+}
+
+// passwordPlaceholder describes a write-only password field's stored state
+// without revealing the value.
+func passwordPlaceholder(s adminPluginSetting) string {
+	if s.Set {
+		return "•••••••• (set)"
+	}
+	return s.Placeholder
 }
 
 // AdminBackupCard shows automatic-backup configuration and the last run, with a

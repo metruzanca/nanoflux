@@ -68,6 +68,7 @@ func (s *Server) navCountsMiddleware(next http.Handler) http.Handler {
 		r = auth.WithUser(r, u)
 		r = s.withDemoStatusFor(r, u)
 		ctx := withNavCounts(r.Context(), s.computeNavCounts(u.ID))
+		ctx = withProvisioners(ctx, s.provisionEntries())
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
