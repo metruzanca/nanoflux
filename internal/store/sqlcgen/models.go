@@ -64,6 +64,7 @@ type Feed struct {
 	Enabled          bool           `json:"enabled"`
 	IsSystem         int64          `json:"is_system"`
 	Rank             int64          `json:"rank"`
+	CacheImages      int64          `json:"cache_images"`
 	CreatedAt        string         `json:"created_at"`
 }
 
@@ -79,25 +80,26 @@ type Filter struct {
 }
 
 type Item struct {
-	ID          int64          `json:"id"`
-	FeedID      int64          `json:"feed_id"`
-	UserID      int64          `json:"user_id"`
-	Guid        string         `json:"guid"`
-	DedupKey    string         `json:"dedup_key"`
-	CrossKey    string         `json:"cross_key"`
-	Title       string         `json:"title"`
-	Link        string         `json:"link"`
-	Summary     string         `json:"summary"`
-	Content     string         `json:"content"`
-	Categories  string         `json:"categories"`
-	DurationSec sql.NullInt64  `json:"duration_sec"`
-	ImageUrl    sql.NullString `json:"image_url"`
-	PublishedAt sql.NullString `json:"published_at"`
-	FetchedAt   string         `json:"fetched_at"`
-	Read        bool           `json:"read"`
-	ReadAt      sql.NullString `json:"read_at"`
-	Favorite    bool           `json:"favorite"`
-	Bookmark    bool           `json:"bookmark"`
+	ID            int64          `json:"id"`
+	FeedID        int64          `json:"feed_id"`
+	UserID        int64          `json:"user_id"`
+	Guid          string         `json:"guid"`
+	DedupKey      string         `json:"dedup_key"`
+	CrossKey      string         `json:"cross_key"`
+	Title         string         `json:"title"`
+	Link          string         `json:"link"`
+	Summary       string         `json:"summary"`
+	Content       string         `json:"content"`
+	Categories    string         `json:"categories"`
+	DurationSec   sql.NullInt64  `json:"duration_sec"`
+	ImageUrl      sql.NullString `json:"image_url"`
+	ImageCacheKey sql.NullString `json:"image_cache_key"`
+	PublishedAt   sql.NullString `json:"published_at"`
+	FetchedAt     string         `json:"fetched_at"`
+	Read          bool           `json:"read"`
+	ReadAt        sql.NullString `json:"read_at"`
+	Favorite      bool           `json:"favorite"`
+	Bookmark      bool           `json:"bookmark"`
 }
 
 type ItemEnclosure struct {
@@ -108,6 +110,7 @@ type ItemEnclosure struct {
 	MimeType sql.NullString `json:"mime_type"`
 	Size     int64          `json:"size"`
 	Sort     int64          `json:"sort"`
+	CacheKey string         `json:"cache_key"`
 }
 
 type ItemFeed struct {

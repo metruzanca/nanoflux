@@ -21,7 +21,14 @@ const (
 // CORS or hotlink restrictions. Only http(s) URLs are allowed; responses are
 // size-capped and cached by the browser.
 func (s *Server) imgProxy(w http.ResponseWriter, r *http.Request) {
-	u, err := url.Parse(r.URL.Query().Get("u"))
+	s.serveRemoteImage(w, r, r.URL.Query().Get("u"))
+}
+
+// serveRemoteImage fetches and streams one remote image, applying the proxy's
+// URL, size and content-type rules. It backs both /img and the /cache fallback
+// (a cached blob that has been purged falls back to its original URL).
+func (s *Server) serveRemoteImage(w http.ResponseWriter, r *http.Request, rawURL string) {
+	u, err := url.Parse(rawURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		http.Error(w, "bad url", http.StatusBadRequest)
 		return

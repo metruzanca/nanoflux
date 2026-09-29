@@ -754,3 +754,27 @@ func TestExternalRateLimitParity(t *testing.T) {
 		t.Fatalf("retry-after should be positive: %+v", rl)
 	}
 }
+
+// TestRegistryImageCache covers the CapImageCache URL match that decides whether
+// a feed's plugin forces image caching, and the storage folder derived from it.
+func TestRegistryImageCache(t *testing.T) {
+	reg := NewRegistry()
+	reg.RegisterNative(fakeFetcher{
+		name: "pics",
+		match: func(u *url.URL, cap pluginapi.Capability) bool {
+			return cap == pluginapi.CapImageCache && strings.HasSuffix(u.Hostname(), "pics.example")
+		},
+	})
+	if !reg.CachesImages("https://pics.example/blog/x") {
+		t.Fatal("pics feed should force image caching")
+	}
+	if reg.CachesImages("https://example.com/feed") {
+		t.Fatal("unrelated feed should not force image caching")
+	}
+	if got := reg.ImageCacheFolder("https://pics.example/blog/x"); got != "pics" {
+		t.Fatalf("folder = %q, want pics", got)
+	}
+	if got := reg.ImageCacheFolder("https://example.com/feed"); got != "feeds" {
+		t.Fatalf("folder = %q, want feeds", got)
+	}
+}

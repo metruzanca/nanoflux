@@ -71,57 +71,60 @@ func toFeed(f sqlcgen.Feed) Feed {
 		Enabled:          f.Enabled,
 		IsSystem:         f.IsSystem != 0,
 		Rank:             int(f.Rank),
+		CacheImages:      f.CacheImages != 0,
 		CreatedAt:        f.CreatedAt,
 	}
 }
 
 func toItem(m sqlcgen.Item) Item {
 	return Item{
-		ID:          m.ID,
-		FeedID:      m.FeedID,
-		UserID:      m.UserID,
-		GUID:        m.Guid,
-		Identity:    m.DedupKey,
-		CrossKey:    m.CrossKey,
-		Title:       m.Title,
-		Link:        m.Link,
-		Summary:     m.Summary,
-		Content:     m.Content,
-		Categories:  splitCategories(m.Categories),
-		ImageURL:    m.ImageUrl.String,
-		DurationSec: int(m.DurationSec.Int64),
-		PublishedAt: m.PublishedAt.String,
-		FetchedAt:   m.FetchedAt,
-		Read:        m.Read,
-		ReadAt:      m.ReadAt.String,
-		Favorite:    m.Favorite,
-		Bookmark:    m.Bookmark,
+		ID:            m.ID,
+		FeedID:        m.FeedID,
+		UserID:        m.UserID,
+		GUID:          m.Guid,
+		Identity:      m.DedupKey,
+		CrossKey:      m.CrossKey,
+		Title:         m.Title,
+		Link:          m.Link,
+		Summary:       m.Summary,
+		Content:       m.Content,
+		Categories:    splitCategories(m.Categories),
+		ImageURL:      m.ImageUrl.String,
+		ImageCacheKey: m.ImageCacheKey.String,
+		DurationSec:   int(m.DurationSec.Int64),
+		PublishedAt:   m.PublishedAt.String,
+		FetchedAt:     m.FetchedAt,
+		Read:          m.Read,
+		ReadAt:        m.ReadAt.String,
+		Favorite:      m.Favorite,
+		Bookmark:      m.Bookmark,
 	}
 }
 
 func toItemWithFeed(id, feedID int64, guid, title, link, summary, categories string,
-	imageURL sql.NullString, durationSec sql.NullInt64, publishedAt sql.NullString,
+	imageURL, imageCacheKey sql.NullString, durationSec sql.NullInt64, publishedAt sql.NullString,
 	fetchedAt string, read, favorite, bookmark bool,
 	readAt sql.NullString, feedTitle, feedURL string, feedHomeURL sql.NullString,
 	feedIsSystem int64, authorID sql.NullInt64, authorName sql.NullString,
 ) ItemWithFeed {
 	return ItemWithFeed{
 		Item: Item{
-			ID:          id,
-			FeedID:      feedID,
-			GUID:        guid,
-			Title:       title,
-			Link:        link,
-			Summary:     summary,
-			Categories:  splitCategories(categories),
-			ImageURL:    imageURL.String,
-			DurationSec: int(durationSec.Int64),
-			PublishedAt: publishedAt.String,
-			FetchedAt:   fetchedAt,
-			Read:        read,
-			ReadAt:      readAt.String,
-			Favorite:    favorite,
-			Bookmark:    bookmark,
+			ID:            id,
+			FeedID:        feedID,
+			GUID:          guid,
+			Title:         title,
+			Link:          link,
+			Summary:       summary,
+			Categories:    splitCategories(categories),
+			ImageURL:      imageURL.String,
+			ImageCacheKey: imageCacheKey.String,
+			DurationSec:   int(durationSec.Int64),
+			PublishedAt:   publishedAt.String,
+			FetchedAt:     fetchedAt,
+			Read:          read,
+			ReadAt:        readAt.String,
+			Favorite:      favorite,
+			Bookmark:      bookmark,
 		},
 		FeedTitle:    feedTitle,
 		FeedURL:      feedURL,
@@ -182,7 +185,7 @@ func toSourceIcon(id, userID int64, domain, iconURL string, iconKey, lastFetched
 func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 	homeURL, description, etag, lastModified, lastPolledAt, lastError sql.NullString,
 	nextPageURL string, pollIntervalSec int64, pollIntervalAuto int64, lastItemAt, nextPollAt sql.NullString,
-	pluginName string, disabledReason sql.NullString, enabled bool, isSystem int64, rank int64, createdAt string,
+	pluginName string, disabledReason sql.NullString, enabled bool, isSystem int64, rank int64, cacheImages int64, createdAt string,
 ) sqlcgen.Feed {
 	return sqlcgen.Feed{
 		ID:               id,
@@ -206,13 +209,14 @@ func feedFromUnreadRow(id, userID int64, authorID int64, title, feedURL string,
 		Enabled:          enabled,
 		IsSystem:         isSystem,
 		Rank:             rank,
+		CacheImages:      cacheImages,
 		CreatedAt:        createdAt,
 	}
 }
 
 func toFeedWithUnread(f sqlcgen.ListFeedsWithUnreadRow) FeedWithUnread {
 	return FeedWithUnread{
-		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CreatedAt)),
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.CreatedAt)),
 		AuthorName: f.AuthorName.String,
 		Unread:     int(f.Unread),
 	}
@@ -220,7 +224,7 @@ func toFeedWithUnread(f sqlcgen.ListFeedsWithUnreadRow) FeedWithUnread {
 
 func toFeedByAuthorWithUnread(f sqlcgen.ListFeedsByAuthorWithUnreadRow) FeedWithUnread {
 	return FeedWithUnread{
-		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CreatedAt)),
+		Feed:       toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.CreatedAt)),
 		AuthorName: f.AuthorName.String,
 		Unread:     int(f.Unread),
 	}
@@ -228,7 +232,7 @@ func toFeedByAuthorWithUnread(f sqlcgen.ListFeedsByAuthorWithUnreadRow) FeedWith
 
 func toFeedWithFavorites(f sqlcgen.ListFeedsWithFavoriteCountsRow) FeedWithFavorites {
 	return FeedWithFavorites{
-		Feed:          toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CreatedAt)),
+		Feed:          toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.CreatedAt)),
 		AuthorName:    f.AuthorName.String,
 		FavoriteCount: int(f.FavoriteCount),
 	}

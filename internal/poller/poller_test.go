@@ -16,6 +16,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/feedparse"
+	"github.com/metruzanca/nanoflux/internal/imagecache"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -143,7 +144,7 @@ func TestPollOneStaleBacksOff(t *testing.T) {
 
 	// auto is off, but the stale rule still forces 1 day.
 	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
-	st.Feeds.Update(u.ID, f.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 3600, false, true)
+	st.Feeds.Update(u.ID, f.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 3600, false, true, false)
 	fresh, _ := st.Feeds.ByID(u.ID, f.ID)
 	p := New(st, time.Minute, 1)
 	if _, err := p.PollOne(context.Background(), fresh); err != nil {
@@ -705,7 +706,7 @@ func TestPollOneRecordsLastError(t *testing.T) {
 		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title><item><guid>1</guid><title>One</title></item></channel></rss>`))
 	}))
 	defer ok.Close()
-	if err := st.Feeds.Update(u.ID, f.ID, a.ID, "Broken", ok.URL, "", "", 900, false, true); err != nil {
+	if err := st.Feeds.Update(u.ID, f.ID, a.ID, "Broken", ok.URL, "", "", 900, false, true, false); err != nil {
 		t.Fatal(err)
 	}
 	fresh, _ := st.Feeds.ByID(u.ID, f.ID)
@@ -1446,5 +1447,90 @@ func TestPollEnrichesNewItems(t *testing.T) {
 	got, _ = st.Items.OneWithFeed(u.ID, items[0].ID)
 	if got.Content != "<p>full text of https://b.dev/1</p>" {
 		t.Fatalf("content changed on re-poll: %q", got.Content)
+	}
+}
+
+// fakeImageCacher records the requests it is handed and returns deterministic
+// keys, so a test can assert the poller wired caching in without object storage.
+type fakeImageCacher struct {
+	calls int
+	reqs  []imagecache.Request
+}
+
+func (f *fakeImageCacher) Forced(string) bool   { return false }
+func (f *fakeImageCacher) Folder(string) string { return "feeds" }
+func (f *fakeImageCacher) Cache(_ context.Context, req imagecache.Request) imagecache.Result {
+	f.calls++
+	f.reqs = append(f.reqs, req)
+	res := imagecache.Result{EnclosureKeys: make([]string, len(req.Enclosures))}
+	if req.ImageURL != "" {
+		res.ImageKey = fmt.Sprintf("cache/feeds/%d/0.png", req.ItemID)
+	}
+	for i := range req.Enclosures {
+		res.EnclosureKeys[i] = fmt.Sprintf("cache/feeds/%d/%d.png", req.ItemID, i+1)
+	}
+	return res
+}
+
+// TestIngestCachesImages asserts that a feed with image caching on has its
+// item's image and image enclosure keys recorded at poll time, and that a feed
+// without it does not touch the cache.
+func TestIngestCachesImages(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>B</title>
+<item><guid>g1</guid><title>t</title><link>https://b.dev/1</link>
+<enclosure url="https://b.dev/1.png" type="image/png" length="10"/></item>
+<item><guid>g2</guid><title>t2</title><link>https://b.dev/2</link>
+<enclosure url="https://b.dev/2.png" type="image/png" length="10"/></item>
+</channel></rss>`)
+	}))
+	defer srv.Close()
+
+	on, _ := st.Feeds.Create(u.ID, a.ID, "On", srv.URL+"/on", "", "", 900)
+	if err := st.Feeds.SetCacheImages(u.ID, on.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	off, _ := st.Feeds.Create(u.ID, a.ID, "Off", srv.URL+"/off", "", "", 900)
+
+	p := New(st, time.Minute, 1)
+	fc := &fakeImageCacher{}
+	p.SetImageCache(fc)
+
+	on, _ = st.Feeds.ByID(u.ID, on.ID)
+	if _, err := p.PollOne(context.Background(), on); err != nil {
+		t.Fatalf("PollOne (on): %v", err)
+	}
+	if fc.calls != 2 {
+		t.Fatalf("cacher calls = %d, want 2 (one per item)", fc.calls)
+	}
+	itemID, _ := st.Items.ByFeedIdentity(on.ID, "g1")
+	it, _ := st.Items.ByID(u.ID, itemID)
+	if it.ImageCacheKey != fmt.Sprintf("cache/feeds/%d/0.png", itemID) {
+		t.Fatalf("ImageCacheKey = %q", it.ImageCacheKey)
+	}
+	encs, _ := st.Items.Enclosures(itemID)
+	if len(encs) != 1 || encs[0].CacheKey == "" {
+		t.Fatalf("enclosure cache key not stored: %+v", encs)
+	}
+
+	fc.calls = 0
+	off, _ = st.Feeds.ByID(u.ID, off.ID)
+	if _, err := p.PollOne(context.Background(), off); err != nil {
+		t.Fatalf("PollOne (off): %v", err)
+	}
+	if fc.calls != 0 {
+		t.Fatalf("cacher called %d times for a feed with caching off", fc.calls)
 	}
 }

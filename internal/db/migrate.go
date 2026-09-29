@@ -55,6 +55,7 @@ var migrations = []migration{
 	{42, schemaV42},
 	{43, schemaV43},
 	{44, schemaV44},
+	{45, schemaV45},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -659,6 +660,19 @@ const schemaV44 = `
 ALTER TABLE users ADD COLUMN is_ephemeral INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN expires_at TEXT;
 CREATE INDEX idx_users_ephemeral ON users(expires_at) WHERE is_ephemeral = 1;
+`
+
+// schemaV45 adds host-side image caching for feeds whose plugin serves images
+// with short-lived signed URLs. feeds.cache_images is the per-feed user
+// opt-in; a plugin that claims CapImageCache forces it on for its feeds.
+// items.image_cache_key and item_enclosures.cache_key record the object-storage
+// key of the cached bytes, so a view can render the local copy instead of the
+// (possibly expired) remote URL. The remote URL is kept on the row as a fallback
+// when the cache has been purged.
+const schemaV45 = `
+ALTER TABLE feeds ADD COLUMN cache_images INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE items ADD COLUMN image_cache_key TEXT;
+ALTER TABLE item_enclosures ADD COLUMN cache_key TEXT NOT NULL DEFAULT '';
 `
 
 // Migrate applies any pending migrations in order, recording each in

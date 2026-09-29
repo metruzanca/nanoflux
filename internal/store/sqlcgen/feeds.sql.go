@@ -37,7 +37,7 @@ const createFeed = `-- name: CreateFeed :one
 INSERT INTO feeds (user_id, author_id, title, feed_url, home_url, description, poll_interval_sec, plugin_name)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, user_id, author_id, title, feed_url, home_url, description,
-         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, created_at
+         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 `
 
 type CreateFeedParams struct {
@@ -85,6 +85,7 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		&i.Enabled,
 		&i.IsSystem,
 		&i.Rank,
+		&i.CacheImages,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -94,7 +95,7 @@ const createSystemFeed = `-- name: CreateSystemFeed :one
 INSERT INTO feeds (user_id, author_id, title, feed_url, description, poll_interval_sec, plugin_name, enabled, is_system)
 VALUES (?, ?, ?, ?, ?, 0, '', 0, 1)
 RETURNING id, user_id, author_id, title, feed_url, home_url, description,
-         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, created_at
+         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 `
 
 type CreateSystemFeedParams struct {
@@ -138,6 +139,7 @@ func (q *Queries) CreateSystemFeed(ctx context.Context, arg CreateSystemFeedPara
 		&i.Enabled,
 		&i.IsSystem,
 		&i.Rank,
+		&i.CacheImages,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -159,7 +161,7 @@ func (q *Queries) DeleteFeed(ctx context.Context, arg DeleteFeedParams) (sql.Res
 
 const getFeed = `-- name: GetFeed :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE id = ? AND user_id = ?
 `
@@ -194,6 +196,7 @@ func (q *Queries) GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error) 
 		&i.Enabled,
 		&i.IsSystem,
 		&i.Rank,
+		&i.CacheImages,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -201,7 +204,7 @@ func (q *Queries) GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error) 
 
 const getFeedAny = `-- name: GetFeedAny :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE id = ?
 `
@@ -231,6 +234,7 @@ func (q *Queries) GetFeedAny(ctx context.Context, id int64) (Feed, error) {
 		&i.Enabled,
 		&i.IsSystem,
 		&i.Rank,
+		&i.CacheImages,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -238,7 +242,7 @@ func (q *Queries) GetFeedAny(ctx context.Context, id int64) (Feed, error) {
 
 const getFeedByTitle = `-- name: GetFeedByTitle :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE user_id = ? AND title = ? COLLATE NOCASE
 `
@@ -273,6 +277,7 @@ func (q *Queries) GetFeedByTitle(ctx context.Context, arg GetFeedByTitleParams) 
 		&i.Enabled,
 		&i.IsSystem,
 		&i.Rank,
+		&i.CacheImages,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -280,7 +285,7 @@ func (q *Queries) GetFeedByTitle(ctx context.Context, arg GetFeedByTitleParams) 
 
 const getSystemFeed = `-- name: GetSystemFeed :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE user_id = ? AND is_system = 1
 LIMIT 1
@@ -312,6 +317,7 @@ func (q *Queries) GetSystemFeed(ctx context.Context, userID int64) (Feed, error)
 		&i.Enabled,
 		&i.IsSystem,
 		&i.Rank,
+		&i.CacheImages,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -319,7 +325,7 @@ func (q *Queries) GetSystemFeed(ctx context.Context, userID int64) (Feed, error)
 
 const listAllFeeds = `-- name: ListAllFeeds :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
        u.username AS owner
 FROM feeds f
 JOIN users u ON u.id = f.user_id
@@ -349,6 +355,7 @@ type ListAllFeedsRow struct {
 	Enabled          bool           `json:"enabled"`
 	IsSystem         int64          `json:"is_system"`
 	Rank             int64          `json:"rank"`
+	CacheImages      int64          `json:"cache_images"`
 	CreatedAt        string         `json:"created_at"`
 	Owner            string         `json:"owner"`
 }
@@ -384,6 +391,7 @@ func (q *Queries) ListAllFeeds(ctx context.Context) ([]ListAllFeedsRow, error) {
 			&i.Enabled,
 			&i.IsSystem,
 			&i.Rank,
+			&i.CacheImages,
 			&i.CreatedAt,
 			&i.Owner,
 		); err != nil {
@@ -402,7 +410,7 @@ func (q *Queries) ListAllFeeds(ctx context.Context) ([]ListAllFeedsRow, error) {
 
 const listFeeds = `-- name: ListFeeds :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE user_id = ? AND is_system = 0
 ORDER BY title
@@ -439,6 +447,7 @@ func (q *Queries) ListFeeds(ctx context.Context, userID int64) ([]Feed, error) {
 			&i.Enabled,
 			&i.IsSystem,
 			&i.Rank,
+			&i.CacheImages,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -456,7 +465,7 @@ func (q *Queries) ListFeeds(ctx context.Context, userID int64) ([]Feed, error) {
 
 const listFeedsByAuthor = `-- name: ListFeedsByAuthor :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE user_id = ? AND author_id = ? AND is_system = 0
 ORDER BY title
@@ -498,6 +507,7 @@ func (q *Queries) ListFeedsByAuthor(ctx context.Context, arg ListFeedsByAuthorPa
 			&i.Enabled,
 			&i.IsSystem,
 			&i.Rank,
+			&i.CacheImages,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -515,7 +525,7 @@ func (q *Queries) ListFeedsByAuthor(ctx context.Context, arg ListFeedsByAuthorPa
 
 const listFeedsByAuthorWithUnread = `-- name: ListFeedsByAuthorWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i JOIN item_feeds mf ON mf.item_id = i.id
         WHERE mf.feed_id = f.id AND i.read = 0) AS unread
@@ -552,6 +562,7 @@ type ListFeedsByAuthorWithUnreadRow struct {
 	Enabled          bool           `json:"enabled"`
 	IsSystem         int64          `json:"is_system"`
 	Rank             int64          `json:"rank"`
+	CacheImages      int64          `json:"cache_images"`
 	CreatedAt        string         `json:"created_at"`
 	AuthorName       sql.NullString `json:"author_name"`
 	Unread           int64          `json:"unread"`
@@ -588,6 +599,7 @@ func (q *Queries) ListFeedsByAuthorWithUnread(ctx context.Context, arg ListFeeds
 			&i.Enabled,
 			&i.IsSystem,
 			&i.Rank,
+			&i.CacheImages,
 			&i.CreatedAt,
 			&i.AuthorName,
 			&i.Unread,
@@ -607,7 +619,7 @@ func (q *Queries) ListFeedsByAuthorWithUnread(ctx context.Context, arg ListFeeds
 
 const listFeedsDue = `-- name: ListFeedsDue :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE enabled = 1 AND is_system = 0
   AND (
@@ -653,6 +665,7 @@ func (q *Queries) ListFeedsDue(ctx context.Context, now string) ([]Feed, error) 
 			&i.Enabled,
 			&i.IsSystem,
 			&i.Rank,
+			&i.CacheImages,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -670,7 +683,7 @@ func (q *Queries) ListFeedsDue(ctx context.Context, now string) ([]Feed, error) 
 
 const listFeedsWithFavoriteCounts = `-- name: ListFeedsWithFavoriteCounts :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.favorite = 1) AS favorite_count
 FROM feeds f
@@ -701,6 +714,7 @@ type ListFeedsWithFavoriteCountsRow struct {
 	Enabled          bool           `json:"enabled"`
 	IsSystem         int64          `json:"is_system"`
 	Rank             int64          `json:"rank"`
+	CacheImages      int64          `json:"cache_images"`
 	CreatedAt        string         `json:"created_at"`
 	AuthorName       sql.NullString `json:"author_name"`
 	FavoriteCount    int64          `json:"favorite_count"`
@@ -740,6 +754,7 @@ func (q *Queries) ListFeedsWithFavoriteCounts(ctx context.Context, userID int64)
 			&i.Enabled,
 			&i.IsSystem,
 			&i.Rank,
+			&i.CacheImages,
 			&i.CreatedAt,
 			&i.AuthorName,
 			&i.FavoriteCount,
@@ -759,7 +774,7 @@ func (q *Queries) ListFeedsWithFavoriteCounts(ctx context.Context, userID int64)
 
 const listFeedsWithUnread = `-- name: ListFeedsWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i JOIN item_feeds mf ON mf.item_id = i.id
         WHERE mf.feed_id = f.id AND i.read = 0) AS unread
@@ -791,6 +806,7 @@ type ListFeedsWithUnreadRow struct {
 	Enabled          bool           `json:"enabled"`
 	IsSystem         int64          `json:"is_system"`
 	Rank             int64          `json:"rank"`
+	CacheImages      int64          `json:"cache_images"`
 	CreatedAt        string         `json:"created_at"`
 	AuthorName       sql.NullString `json:"author_name"`
 	Unread           int64          `json:"unread"`
@@ -827,6 +843,7 @@ func (q *Queries) ListFeedsWithUnread(ctx context.Context, userID int64) ([]List
 			&i.Enabled,
 			&i.IsSystem,
 			&i.Rank,
+			&i.CacheImages,
 			&i.CreatedAt,
 			&i.AuthorName,
 			&i.Unread,
@@ -918,6 +935,23 @@ WHERE id = ?
 func (q *Queries) ResetFeedPlugin(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, resetFeedPlugin, id)
 	return err
+}
+
+const setFeedCacheImages = `-- name: SetFeedCacheImages :execresult
+UPDATE feeds
+SET cache_images = ?
+WHERE id = ? AND user_id = ?
+`
+
+type SetFeedCacheImagesParams struct {
+	CacheImages int64 `json:"cache_images"`
+	ID          int64 `json:"id"`
+	UserID      int64 `json:"user_id"`
+}
+
+// Turn a feed's host-side image caching on/off, verifying ownership.
+func (q *Queries) SetFeedCacheImages(ctx context.Context, arg SetFeedCacheImagesParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, setFeedCacheImages, arg.CacheImages, arg.ID, arg.UserID)
 }
 
 const setFeedEnabled = `-- name: SetFeedEnabled :exec
@@ -1101,8 +1135,9 @@ SET author_id = ?1, title = ?2,
     description = ?5,
     poll_interval_sec = ?6,
     poll_interval_auto = ?7,
-    enabled = ?8, disabled_reason = NULL
-WHERE id = ?9 AND user_id = ?10
+    enabled = ?8, cache_images = ?9,
+    disabled_reason = NULL
+WHERE id = ?10 AND user_id = ?11
 `
 
 type UpdateFeedParams struct {
@@ -1114,6 +1149,7 @@ type UpdateFeedParams struct {
 	PollIntervalSec  int64          `json:"pollIntervalSec"`
 	PollIntervalAuto int64          `json:"pollIntervalAuto"`
 	Enabled          bool           `json:"enabled"`
+	CacheImages      int64          `json:"cacheImages"`
 	ID               int64          `json:"id"`
 	UserID           int64          `json:"userID"`
 }
@@ -1130,6 +1166,7 @@ func (q *Queries) UpdateFeed(ctx context.Context, arg UpdateFeedParams) (sql.Res
 		arg.PollIntervalSec,
 		arg.PollIntervalAuto,
 		arg.Enabled,
+		arg.CacheImages,
 		arg.ID,
 		arg.UserID,
 	)

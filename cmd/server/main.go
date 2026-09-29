@@ -20,6 +20,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/demo"
 	"github.com/metruzanca/nanoflux/internal/filestore"
 	"github.com/metruzanca/nanoflux/internal/httpapi"
+	"github.com/metruzanca/nanoflux/internal/imagecache"
 	"github.com/metruzanca/nanoflux/internal/maintenance"
 	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/internal/poller"
@@ -107,6 +108,11 @@ func runServer() {
 	// A plugin may enrich a newly stored item's body (full text, translation,
 	// transcript). The dispatcher groups a poll's items by matching plugin.
 	p.SetItemEnricher(plugin.NewDispatcher(plugins.Registry, plugins.Hosts.For))
+	// Image caching: a feed whose plugin serves short-lived signed image URLs
+	// has its images downloaded into object storage at poll time, keyed under
+	// cache/<plugin>/. A plugin that claims CapImageCache forces it on; a user
+	// may also enable it per feed.
+	p.SetImageCache(imagecache.New(files, p.Client(), plugins.Registry.CachesImages, plugins.Registry.ImageCacheFolder))
 	// Rewrite stored feed URLs to their canonical form (e.g. old.reddit.com and
 	// bare reddit.com -> www.reddit.com, /u/ -> /user/, a user's bare feed ->
 	// /submitted.rss). Idempotent; fixes feeds added before canonicalization.

@@ -326,6 +326,12 @@ templ FilterList(feedID int64, rows []store.Filter) {
 
 templ feedFields(d feedsData) {
 	@switchField("enabled", "enabled (poll this feed)", d.Form.Enabled, nil)
+	@switchField("cache_images", "cache images locally", d.Form.CacheImages || d.Form.CacheForced, nil)
+	if d.Form.CacheForced {
+		<p class="muted small">on for this site: its plugin serves image links that expire, so nanoflux keeps a copy. it cannot be turned off.</p>
+	} else {
+		<p class="muted small">download this feed's images into nanoflux so they keep working if the site's image links expire.</p>
+	}
 	<label>
 		title
 		<input name="title" value={ d.Form.Title } required/>

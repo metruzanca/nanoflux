@@ -71,6 +71,14 @@ const (
 	// feed's remote settings and lifecycle (sync a title, delete it upstream).
 	// It is matched on the feed URL, like the other URL-gated capabilities.
 	CapFeedAdmin
+	// CapImageCache asks whether a feed's images need host-side caching because
+	// the site serves them with short-lived, signed URLs that expire before the
+	// next poll. It is matched on the feed URL. A plugin that claims it makes
+	// caching mandatory for its feeds (the user cannot turn it off); the host
+	// downloads each item's image and image enclosures at poll time into its own
+	// storage and renders the cached copy. Default (no plugin) is remote loading,
+	// and a user may opt an individual feed in without a plugin.
+	CapImageCache
 )
 
 // Meta describes a plugin to the host.

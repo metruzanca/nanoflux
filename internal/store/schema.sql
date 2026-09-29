@@ -88,6 +88,7 @@ CREATE TABLE feeds (
     enabled           INTEGER NOT NULL DEFAULT 1,
     is_system         INTEGER NOT NULL DEFAULT 0,
     rank              INTEGER NOT NULL DEFAULT 0,
+    cache_images      INTEGER NOT NULL DEFAULT 0,
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_feeds_user ON feeds(user_id);
@@ -108,6 +109,7 @@ CREATE TABLE items (
     categories   TEXT NOT NULL DEFAULT '',
     duration_sec INTEGER,
     image_url    TEXT,
+    image_cache_key TEXT,
     published_at TEXT,
     fetched_at   TEXT NOT NULL DEFAULT (datetime('now')),
     read         INTEGER NOT NULL DEFAULT 0,
@@ -167,7 +169,8 @@ CREATE TABLE item_enclosures (
     title     TEXT NOT NULL DEFAULT '',
     mime_type TEXT,
     size      INTEGER NOT NULL DEFAULT 0,
-    sort      INTEGER NOT NULL DEFAULT 0
+    sort      INTEGER NOT NULL DEFAULT 0,
+    cache_key TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX idx_enclosures_item ON item_enclosures(item_id);
 

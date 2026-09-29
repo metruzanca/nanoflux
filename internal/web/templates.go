@@ -370,6 +370,21 @@ func ProxiedImageURL(rawurl string) string {
 	return "/img?u=" + url.QueryEscape(rawurl)
 }
 
+// CachedImageURL routes a cached image through the app's authenticated /cache
+// route. key is the object-storage key recorded at poll time; remote is the
+// original URL, carried along so a purged cache can fall back to it. An empty
+// key returns remote unchanged, so an uncached item keeps its normal path.
+func CachedImageURL(key, remote string) string {
+	if key == "" {
+		return remote
+	}
+	p := "/cache/" + key
+	if remote != "" {
+		p += "?u=" + url.QueryEscape(remote)
+	}
+	return p
+}
+
 // UpgradeImageSrcs rewrites an item body so that every <img> wrapped in an
 // <a href> pointing at an image uses that href as its src. Many sites (e.g.
 // Blogger) show a downscaled <img> inside a link to the full-size original;

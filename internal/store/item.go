@@ -39,6 +39,11 @@ type Item struct {
 	Content    string
 	Categories []string
 	ImageURL   string
+	// ImageCacheKey is the object-storage key of the item's cached primary
+	// image, set by the image cache at poll time. Empty means "not cached;
+	// render ImageURL". It survives a snapshot refresh, which only rewrites
+	// ImageURL.
+	ImageCacheKey string
 	// DurationSec is a media item's runtime in seconds. 0 means unknown.
 	DurationSec int
 	PublishedAt string
@@ -327,7 +332,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 		out := make([]ItemWithFeed, 0, len(rows))
 		for _, r := range rows {
 			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
+				r.ImageUrl, r.ImageCacheKey, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 		}
 		if err := s.attachSources(userID, out); err != nil {
@@ -358,7 +363,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 		out := make([]ItemWithFeed, 0, len(rows))
 		for _, r := range rows {
 			out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-				r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
+				r.ImageUrl, r.ImageCacheKey, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 				r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 		}
 		if err := s.attachSources(userID, out); err != nil {
@@ -388,7 +393,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	out := make([]ItemWithFeed, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
+			r.ImageUrl, r.ImageCacheKey, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	if err := s.attachSources(userID, out); err != nil {
@@ -468,7 +473,7 @@ func (s *ItemStore) SearchPage(userID int64, query string, f ItemFilter) ([]Item
 	if limit <= 0 {
 		limit = searchPageLimit
 	}
-	const sql = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.duration_sec,
+	const sql = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
@@ -501,12 +506,12 @@ LIMIT ?7`
 	for rows.Next() {
 		var r sqlcgen.ListItemsRow
 		if err := rows.Scan(&r.ID, &r.FeedID, &r.Guid, &r.Title, &r.Link, &r.Summary, &r.Categories,
-			&r.ImageUrl, &r.DurationSec, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.Bookmark, &r.ReadAt,
+			&r.ImageUrl, &r.ImageCacheKey, &r.DurationSec, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.Bookmark, &r.ReadAt,
 			&r.FeedTitle, &r.FeedUrl, &r.FeedHomeUrl, &r.FeedIsSystem, &r.AuthorID, &r.AuthorName); err != nil {
 			return nil, false, err
 		}
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
+			r.ImageUrl, r.ImageCacheKey, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	if err := rows.Err(); err != nil {
@@ -552,6 +557,9 @@ type Enclosure struct {
 	MIMEType string
 	Size     int64
 	Sort     int
+	// CacheKey is the object-storage key of the enclosure's cached bytes when it
+	// is an image and host-side image caching is enabled; empty otherwise.
+	CacheKey string
 }
 
 // Enclosures returns an item's media attachments in order.
@@ -562,7 +570,7 @@ func (s *ItemStore) Enclosures(itemID int64) ([]Enclosure, error) {
 	}
 	out := make([]Enclosure, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, Enclosure{URL: r.Url, Title: r.Title, MIMEType: r.MimeType.String, Size: r.Size, Sort: int(r.Sort)})
+		out = append(out, Enclosure{URL: r.Url, Title: r.Title, MIMEType: r.MimeType.String, Size: r.Size, Sort: int(r.Sort), CacheKey: r.CacheKey})
 	}
 	return out, nil
 }
@@ -624,12 +632,25 @@ func (s *ItemStore) StatsAuthor(userID, authorID int64) (AuthorItemStats, error)
 	}, nil
 }
 
-// ReplaceEnclosures deletes and re-inserts an item's enclosures.
+// ReplaceEnclosures deletes and re-inserts an item's enclosures. A previous
+// slot's cache_key is carried forward when the incoming enclosure has none, so
+// a re-poll does not drop an already-cached image (which is what keeps a
+// cached copy showing after the user turns caching off).
 func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
+	prev := map[int]string{}
+	if old, err := s.Enclosures(itemID); err == nil {
+		for _, e := range old {
+			prev[e.Sort] = e.CacheKey
+		}
+	}
 	if err := s.q.DeleteEnclosures(context.Background(), itemID); err != nil {
 		return err
 	}
 	for i, e := range encs {
+		cacheKey := e.CacheKey
+		if cacheKey == "" {
+			cacheKey = prev[i]
+		}
 		if err := s.q.InsertEnclosure(context.Background(), sqlcgen.InsertEnclosureParams{
 			ItemID:   itemID,
 			Url:      e.URL,
@@ -637,11 +658,22 @@ func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
 			MimeType: ns(e.MIMEType),
 			Size:     e.Size,
 			Sort:     int64(i),
+			CacheKey: cacheKey,
 		}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// SetItemImageCacheKey records (or clears, with "") the object-storage key of an
+// item's cached primary image. It is deliberately not part of the poll snapshot
+// refresh, so a cached copy is never clobbered by a fresh remote URL.
+func (s *ItemStore) SetItemImageCacheKey(itemID int64, key string) error {
+	return s.q.SetItemImageCacheKey(context.Background(), sqlcgen.SetItemImageCacheKeyParams{
+		ImageCacheKey: ns(key),
+		ID:            itemID,
+	})
 }
 
 // DeleteSaved hard-deletes a saved page: an item under the user's hidden
@@ -675,7 +707,7 @@ func (s *ItemStore) ListFeedItemsForFilter(feedID int64) ([]ItemWithFeed, error)
 	out := make([]ItemWithFeed, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-			r.ImageUrl, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
+			r.ImageUrl, r.ImageCacheKey, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	return out, nil
@@ -753,7 +785,7 @@ func (s *ItemStore) OneWithFeed(userID, itemID int64) (ItemWithFeed, error) {
 		return ItemWithFeed{}, err
 	}
 	slice := []ItemWithFeed{toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary, it.Categories,
-		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.Bookmark, it.ReadAt,
+		it.ImageUrl, it.ImageCacheKey, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.Bookmark, it.ReadAt,
 		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName)}
 	slice[0].Content = it.Content
 	if err := s.attachSources(userID, slice); err != nil {
@@ -773,7 +805,7 @@ func (s *ItemStore) OneWithFeedAny(itemID int64) (ItemWithFeed, error) {
 		return ItemWithFeed{}, err
 	}
 	itw := toItemWithFeed(it.ID, it.FeedID, it.Guid, it.Title, it.Link, it.Summary, it.Categories,
-		it.ImageUrl, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.Bookmark, it.ReadAt,
+		it.ImageUrl, it.ImageCacheKey, it.DurationSec, it.PublishedAt, it.FetchedAt, it.Read, it.Favorite, it.Bookmark, it.ReadAt,
 		it.FeedTitle, it.FeedUrl, it.FeedHomeUrl, it.FeedIsSystem, it.AuthorID, it.AuthorName)
 	itw.Content = it.Content
 	return itw, nil

@@ -40,10 +40,15 @@ func visualsFromKind(d itemViewData) itemVisuals {
 }
 
 // rowThumb returns the image a row should show: the decoration's override when
-// set (a gallery's full-res first image), else the stored ImageURL.
+// set (a gallery's full-res first image), else the cached copy when the item's
+// image is cached, else the stored ImageURL. Templates pass the result through
+// web.ProxiedImageURL, which leaves the local /cache path unchanged.
 func rowThumb(it store.ItemWithFeed) string {
 	if it.ThumbURL != "" {
 		return it.ThumbURL
+	}
+	if it.ImageCacheKey != "" {
+		return web.CachedImageURL(it.ImageCacheKey, it.ImageURL)
 	}
 	return it.ImageURL
 }
@@ -657,7 +662,7 @@ templ itemContent(d itemViewData, v itemVisuals) {
 		</div>
 	} else if v.Image {
 		<div class="image-lightbox">
-			<img src={ templ.URL(d.imgSrc(web.BestImageURL(d.Summary, d.ImageURL))) } alt={ d.Title } loading="lazy"/>
+			<img src={ templ.URL(d.cachedImageSrc(web.BestImageURL(d.Summary, d.ImageURL))) } alt={ d.Title } loading="lazy"/>
 		</div>
 	}
 	if d.Body != "" && !v.Image && d.SourceURL == "" && len(d.Gallery) == 0 {
@@ -669,12 +674,12 @@ templ itemContent(d itemViewData, v itemVisuals) {
 			if imgs := web.ImageEnclosures(d.Enclosures); len(imgs) > 0 && !v.Image && len(d.Gallery) == 0 && !web.BodyHasImage(d.Summary) {
 				if len(imgs) == 1 {
 					<div class="image-lightbox">
-						<img src={ templ.URL(d.imgSrc(imgs[0].URL)) } alt="" loading="lazy"/>
+						<img src={ templ.URL(d.enclosureSrc(imgs[0])) } alt="" loading="lazy"/>
 					</div>
 				} else {
 					<div class="gallery">
 						for _, e := range imgs {
-							<img src={ templ.URL(d.imgSrc(e.URL)) } alt="" loading="lazy"/>
+							<img src={ templ.URL(d.enclosureSrc(e)) } alt="" loading="lazy"/>
 						}
 					</div>
 				}
@@ -687,7 +692,7 @@ templ itemContent(d itemViewData, v itemVisuals) {
 							// loads it lazily and attaches on the data-hls URL); the
 							// stored thumbnail is used as the poster.
 							<figure>
-								<video controls preload="none" data-hls={ e.URL } poster={ templ.URL(d.imgSrc(d.ImageURL)) }></video>
+								<video controls preload="none" data-hls={ e.URL } poster={ templ.URL(d.cachedImageSrc(d.ImageURL)) }></video>
 							</figure>
 						} else {
 							<figure>
