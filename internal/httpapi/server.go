@@ -256,7 +256,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/ext/page-form", s.auth.Require(http.HandlerFunc(s.apiExtPageForm)))
 	mux.Handle("POST /api/ext/page-save", s.auth.Require(http.HandlerFunc(s.apiExtPageSave)))
 
-	return logRequests(privacyHeaders(cors(s.navCountsMiddleware(s.errorPages(mux)))))
+	return logRequests(privacyHeaders(cors(s.analyticsMiddleware(s.navCountsMiddleware(s.errorPages(mux))))))
 }
 
 // privacyHeaders prevents referrer leakage on every response.

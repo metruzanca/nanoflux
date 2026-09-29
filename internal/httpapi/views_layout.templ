@@ -27,6 +27,23 @@ templ head(title, accent string) {
 	<script src={ templ.URL("/static/home-grid.js") } defer></script>
 	<script src={ templ.URL("/static/hls-video.js") } defer></script>
 	<script src={ templ.URL("/static/app.js") } defer></script>
+	if an := analyticsFrom(ctx); an.Enabled() {
+		<script src={ templ.URL("/static/umami.js") } defer></script>
+		<script
+			src={ templ.URL(an.ScriptURL) }
+			data-website-id={ an.WebsiteID }
+			data-before-send="nfBeforeSend"
+			data-do-not-track="true"
+			data-exclude-hash="true"
+			if an.HostURL != "" {
+				data-host-url={ an.HostURL }
+			}
+			if an.Tag != "" {
+				data-tag={ an.Tag }
+			}
+			defer
+		></script>
+	}
 }
 
 templ topbar(u store.User) {

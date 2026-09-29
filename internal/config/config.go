@@ -23,6 +23,24 @@ type Config struct {
 	PluginsDir      string
 	Backup          BackupConfig
 	Demo            DemoConfig
+	Analytics       AnalyticsConfig
+}
+
+// AnalyticsConfig adds an optional, privacy-first site analytics tracker
+// (Umami) to every rendered page. It is off by default: NF_ANALYTICS_ENABLED
+// must be set on, and both the script URL and website id must be present.
+type AnalyticsConfig struct {
+	On        bool   // NF_ANALYTICS_ENABLED: explicit opt-in switch
+	ScriptURL string // NF_ANALYTICS_SCRIPT_URL: tracker script URL
+	WebsiteID string // NF_ANALYTICS_WEBSITE_ID: website id in the dashboard
+	HostURL   string // NF_ANALYTICS_HOST_URL: optional data endpoint override
+	Tag       string // NF_ANALYTICS_TAG: optional tag to group events
+}
+
+// Enabled reports whether analytics should run. The explicit switch and both
+// required values are needed, so a half-configured instance stays off.
+func (a AnalyticsConfig) Enabled() bool {
+	return a.On && a.ScriptURL != "" && a.WebsiteID != ""
 }
 
 // DemoConfig turns on ephemeral demo sessions for public "marketing" deployments.
@@ -100,6 +118,13 @@ func Load() Config {
 			User:     os.Getenv("NF_DEMO_USER"),
 			TTL:      durationEnv("NF_DEMO_TTL", 2*time.Hour),
 			MaxFeeds: intEnv("NF_DEMO_MAX_FEEDS", 5),
+		},
+		Analytics: AnalyticsConfig{
+			On:        boolEnv("NF_ANALYTICS_ENABLED", false),
+			ScriptURL: os.Getenv("NF_ANALYTICS_SCRIPT_URL"),
+			WebsiteID: os.Getenv("NF_ANALYTICS_WEBSITE_ID"),
+			HostURL:   os.Getenv("NF_ANALYTICS_HOST_URL"),
+			Tag:       os.Getenv("NF_ANALYTICS_TAG"),
 		},
 	}
 }

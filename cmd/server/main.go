@@ -45,6 +45,9 @@ func runServer() {
 	cfg := config.Load()
 	setLogLevel(cfg.LogLevel)
 	log.Info("nanoflux starting", "version", version)
+	if cfg.Analytics.On && !cfg.Analytics.Enabled() {
+		log.Warn("analytics disabled: NF_ANALYTICS_ENABLED needs NF_ANALYTICS_SCRIPT_URL and NF_ANALYTICS_WEBSITE_ID")
+	}
 
 	sqldb, err := db.Open(cfg.DBPath)
 	if err != nil {
