@@ -316,6 +316,31 @@ func TestItemModalShowsEnclosure(t *testing.T) {
 	}
 }
 
+func TestItemModalShowsHLSEnclosure(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Video", "https://v.dev/rss.xml", "", "", 900)
+	if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Clip", Link: "https://v.dev/1", FetchedAt: db.Now()}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	itemID, _ := s.store.Items.ByFeedIdentity(f.ID, "g1")
+	// A manifest whose MIME is generic: the declared kind is what makes the host
+	// use the hls player.
+	s.store.Items.ReplaceEnclosures(itemID, []store.Enclosure{
+		{URL: "https://v.dev/playlist.m3u8", MIMEType: "application/octet-stream", Kind: "hls", Poster: "https://v.dev/poster.jpg"},
+	})
+
+	body := doGet(h, "/items/"+itoa(itemID)+"/view", cookie).Body.String()
+	if !strings.Contains(body, `data-hls="https://v.dev/playlist.m3u8"`) {
+		t.Fatalf("item modal should render the HLS player: %s", body)
+	}
+	if !strings.Contains(body, "<video") || !strings.Contains(body, `poster="`) {
+		t.Fatalf("HLS player should carry a poster: %s", body)
+	}
+}
+
 func TestFeedFilterRulesFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

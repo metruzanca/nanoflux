@@ -477,8 +477,9 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
   (its session-scoped rendition URLs need no storage). The video's poster frame
   (`video.bsky.app/watch/.../thumbnail.jpg`) is the item thumbnail; it is served
   as `application/octet-stream`, so `imgProxy` sniffs the bytes (see below).
-  `web.IsHLS` marks the enclosure and the template renders `data-hls`; a
-  lazily-loaded hls.js (`static/hls-video.js`) plays it (`docs/vendored-web-components.md`).
+  The enclosure sets `Kind: pluginapi.EnclosureKindHLS`; `web.EnclosureKind`
+  resolves it to `hls`, the template renders `data-hls`, and a lazily-loaded
+  hls.js (`static/hls-video.js`) plays it (`docs/vendored-web-components.md`).
 - The `/img` proxy trusts an upstream `image/*` Content-Type but otherwise sniffs
   the first bytes with `http.DetectContentType`, echoing the real type. Without
   this, hosts that mislabel images (Bluesky's video thumbnails) render as broken.
@@ -501,6 +502,35 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
 - It is part of the upsert snapshot, so re-polling refreshes it on an existing
   row (`UpdateItemSnapshot`). Cards show it as a bottom-right pill
   (`web.FormatDuration`); 0/unknown renders nothing.
+
+### Enclosure render kinds (core-owned players)
+
+A plugin declares *what* an enclosure is; the core owns *how* it renders, so no
+plugin ships a player. This replaces the old "a manifest needs a frontend we do
+not have" limitation.
+
+- `pluginapi.Enclosure` gained `Kind`, `Poster` and `Title` (APIVersion stays
+  `0.5`; additive). `Kind` is a string: `""` (auto), `image`, `audio`, `video`,
+  `hls`, `link`, with `pluginapi.EnclosureKind*` constants.
+- One resolver is the source of truth: `feedparse.ResolveEnclosureKind(kind,
+  rawurl, mime)`. A declared kind wins; otherwise MIME, then URL extension
+  (`.m3u8` → `hls`). `web.EnclosureKind` (render) and `imagecache.isImage`
+  (cache) both delegate to it, so a generic-parser `.m3u8` is `hls` too.
+- The `pluginapi` and `feedparse` constant sets are duplicated by necessity
+  (`pluginapi` cannot import `internal/feedparse`); keep them in sync.
+- `views_items.templ` dispatches on the resolved kind: `hls` → `<video
+  data-hls poster>` played by the lazily-loaded hls.js (`static/hls-video.js`);
+  `video`/`audio` → native `<video>`/`<audio controls>`; `image` inline; else a
+  download link. The poster is the enclosure's `Poster`, else the item's
+  thumbnail (`itemViewData.enclosurePoster`).
+- Storage: `item_enclosures.kind`/`poster` (schemaV46); `poller.storeEnclosures`
+  and `store.ReplaceEnclosures`/`Enclosures` carry them.
+- `RenderRequest` also gained `GUID`, `Kind`, `Categories` and `Enclosures`, so a
+  view-time renderer sees the stored media instead of only
+  link/summary/imageURL.
+- Plugin-shipped assets and arbitrary custom renderers (a plugin bundling its
+  own JS/CSS) are **not** supported; that would be a separate capability. Any
+  media a site can express through these kinds should use them.
 
 ### Item identity and dedup
 

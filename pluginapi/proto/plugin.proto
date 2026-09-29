@@ -127,6 +127,12 @@ message Enclosure {
   string url = 1;
   string mime_type = 2;
   int64 length = 3;
+  // Declared render kind (see pluginapi.EnclosureKind*). Empty = host infers.
+  string kind = 4;
+  // Thumbnail for a video/audio enclosure. Empty = item's image_url.
+  string poster = 5;
+  // Human label for the enclosure's download link.
+  string title = 6;
 }
 
 message Item {
@@ -181,6 +187,10 @@ message RenderRequest {
   string summary = 3;
   string image_url = 4;
   bytes config = 5;
+  string guid = 6;
+  int32 kind = 7;
+  repeated string categories = 8;
+  repeated Enclosure enclosures = 9;
 }
 message RenderResponse {
   string source_url = 1;

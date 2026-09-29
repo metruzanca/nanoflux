@@ -110,6 +110,8 @@ type ItemEnclosure struct {
 	MimeType sql.NullString `json:"mime_type"`
 	Size     int64          `json:"size"`
 	Sort     int64          `json:"sort"`
+	Kind     string         `json:"kind"`
+	Poster   string         `json:"poster"`
 	CacheKey string         `json:"cache_key"`
 }
 

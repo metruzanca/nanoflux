@@ -107,7 +107,9 @@ func (s *grpcFetcherServer) Render(ctx context.Context, req *pb.RenderRequest) (
 		return &pb.RenderResponse{Error: toPBError(err)}, nil
 	}
 	m, err := r.Render(ctx, RenderRequest{
-		Link: req.Link, Summary: req.Summary, ImageURL: req.ImageUrl, Config: req.Config,
+		GUID: req.Guid, Link: req.Link, Summary: req.Summary, ImageURL: req.ImageUrl,
+		Kind: ItemKind(req.Kind), Categories: req.Categories,
+		Enclosures: fromPBEnclosures(req.Enclosures), Config: req.Config,
 	}, host)
 	if err != nil {
 		return &pb.RenderResponse{Error: toPBError(err)}, nil
@@ -402,7 +404,9 @@ func (c *grpcFetcherClient) Render(ctx context.Context, req RenderRequest, h Hos
 	id, stop := c.serveHost(h)
 	defer stop()
 	resp, err := c.client.Render(ctx, &pb.RenderRequest{
-		HostServer: id, Link: req.Link, Summary: req.Summary, ImageUrl: req.ImageURL, Config: req.Config,
+		HostServer: id, Guid: req.GUID, Link: req.Link, Summary: req.Summary, ImageUrl: req.ImageURL,
+		Kind: int32(req.Kind), Categories: req.Categories,
+		Enclosures: toPBEnclosures(req.Enclosures), Config: req.Config,
 	})
 	if err != nil {
 		return Media{}, err
@@ -616,19 +620,38 @@ func fromPBFeed(f *pb.Feed) Feed {
 	return Feed{Title: f.Title, HomeURL: f.HomeUrl, Description: f.Description, ImageURL: f.ImageUrl}
 }
 
+// toPBEnclosures / fromPBEnclosures convert an item's media attachments.
+func toPBEnclosures(encs []Enclosure) []*pb.Enclosure {
+	out := make([]*pb.Enclosure, 0, len(encs))
+	for _, e := range encs {
+		out = append(out, &pb.Enclosure{
+			Url: e.URL, MimeType: e.MIMEType, Length: e.Length,
+			Kind: e.Kind, Poster: e.Poster, Title: e.Title,
+		})
+	}
+	return out
+}
+
+func fromPBEnclosures(encs []*pb.Enclosure) []Enclosure {
+	out := make([]Enclosure, 0, len(encs))
+	for _, e := range encs {
+		out = append(out, Enclosure{
+			URL: e.Url, MIMEType: e.MimeType, Length: e.Length,
+			Kind: e.Kind, Poster: e.Poster, Title: e.Title,
+		})
+	}
+	return out
+}
+
 func toPBItems(items []Item) []*pb.Item {
 	out := make([]*pb.Item, 0, len(items))
 	for _, it := range items {
-		encs := make([]*pb.Enclosure, 0, len(it.Enclosures))
-		for _, e := range it.Enclosures {
-			encs = append(encs, &pb.Enclosure{Url: e.URL, MimeType: e.MIMEType, Length: e.Length})
-		}
 		out = append(out, &pb.Item{
 			Guid: it.GUID, Identity: it.Identity, SharedKey: it.SharedKey, Title: it.Title, Link: it.Link,
 			Summary: it.Summary, ImageUrl: it.ImageURL, PublishedAt: it.PublishedAt,
 			DurationSec: int32(it.DurationSec),
 			Categories:  it.Categories,
-			Enclosures:  encs,
+			Enclosures:  toPBEnclosures(it.Enclosures),
 		})
 	}
 	return out
@@ -637,16 +660,12 @@ func toPBItems(items []Item) []*pb.Item {
 func fromPBItems(items []*pb.Item) []Item {
 	out := make([]Item, 0, len(items))
 	for _, it := range items {
-		encs := make([]Enclosure, 0, len(it.Enclosures))
-		for _, e := range it.Enclosures {
-			encs = append(encs, Enclosure{URL: e.Url, MIMEType: e.MimeType, Length: e.Length})
-		}
 		out = append(out, Item{
 			GUID: it.Guid, Identity: it.Identity, SharedKey: it.SharedKey, Title: it.Title, Link: it.Link,
 			Summary: it.Summary, ImageURL: it.ImageUrl, PublishedAt: it.PublishedAt,
 			DurationSec: int(it.DurationSec),
 			Categories:  it.Categories,
-			Enclosures:  encs,
+			Enclosures:  fromPBEnclosures(it.Enclosures),
 		})
 	}
 	return out

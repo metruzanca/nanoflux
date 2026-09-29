@@ -56,6 +56,7 @@ var migrations = []migration{
 	{43, schemaV43},
 	{44, schemaV44},
 	{45, schemaV45},
+	{46, schemaV46},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -673,6 +674,14 @@ const schemaV45 = `
 ALTER TABLE feeds ADD COLUMN cache_images INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE items ADD COLUMN image_cache_key TEXT;
 ALTER TABLE item_enclosures ADD COLUMN cache_key TEXT NOT NULL DEFAULT '';
+`
+
+// schemaV46 adds a declared render kind (and optional poster/title) to an
+// item's media attachments, so a plugin can say how an enclosure should render
+// (e.g. "hls") instead of the host inferring it from the MIME type/extension.
+const schemaV46 = `
+ALTER TABLE item_enclosures ADD COLUMN kind TEXT NOT NULL DEFAULT '';
+ALTER TABLE item_enclosures ADD COLUMN poster TEXT NOT NULL DEFAULT '';
 `
 
 // Migrate applies any pending migrations in order, recording each in

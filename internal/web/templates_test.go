@@ -129,9 +129,13 @@ func TestEnclosureKindAndImages(t *testing.T) {
 		{store.Enclosure{URL: "https://p.dev/demo.webp"}, "image"},
 		{store.Enclosure{URL: "https://p.dev/notes.txt", MIMEType: "text/plain"}, ""},
 		{store.Enclosure{URL: "https://p.dev/ep1.mp3"}, "audio"},
-		// HLS manifests are videos (by MIME or by .m3u8 extension).
-		{store.Enclosure{URL: "https://p.dev/playlist.m3u8", MIMEType: "application/vnd.apple.mpegurl"}, "video"},
-		{store.Enclosure{URL: "https://p.dev/playlist.m3u8", MIMEType: "application/octet-stream"}, "video"},
+		// HLS manifests resolve to the hls kind (by MIME or by .m3u8 extension).
+		{store.Enclosure{URL: "https://p.dev/playlist.m3u8", MIMEType: "application/vnd.apple.mpegurl"}, "hls"},
+		{store.Enclosure{URL: "https://p.dev/playlist.m3u8", MIMEType: "application/octet-stream"}, "hls"},
+		// A declared kind wins over what the MIME/extension would infer.
+		{store.Enclosure{URL: "https://p.dev/x", MIMEType: "application/octet-stream", Kind: "video"}, "video"},
+		{store.Enclosure{URL: "https://p.dev/clip.mp4", MIMEType: "video/mp4", Kind: "link"}, "link"},
+		{store.Enclosure{URL: "https://p.dev/x", Kind: "hls"}, "hls"},
 	}
 	for _, c := range cases {
 		if got := EnclosureKind(c.enc); got != c.want {
@@ -139,21 +143,7 @@ func TestEnclosureKindAndImages(t *testing.T) {
 		}
 	}
 
-	hls := []struct {
-		enc  store.Enclosure
-		want bool
-	}{
-		{store.Enclosure{URL: "https://p.dev/playlist.m3u8"}, true},
-		{store.Enclosure{URL: "https://p.dev/x", MIMEType: "application/vnd.apple.mpegurl"}, true},
-		{store.Enclosure{URL: "https://p.dev/x", MIMEType: "application/x-mpegurl"}, true},
-		{store.Enclosure{URL: "https://p.dev/clip.mp4", MIMEType: "video/mp4"}, false},
-		{store.Enclosure{URL: "https://p.dev/x", MIMEType: "video/mp4"}, false},
-	}
-	for _, c := range hls {
-		if got := IsHLS(c.enc); got != c.want {
-			t.Errorf("IsHLS(%+v) = %v, want %v", c.enc, got, c.want)
-		}
-	}
+	// application/x-mpegurl is covered by feedparse.TestResolveEnclosureKind.
 	imgs := ImageEnclosures([]store.Enclosure{
 		{URL: "https://p.dev/photo.jpg?e=1&t=2", MIMEType: "image/jpeg"},
 		{URL: "https://p.dev/ep1.mp3", MIMEType: "audio/mpeg"},

@@ -140,11 +140,43 @@ type Candidate struct {
 	Derived bool
 }
 
+// Enclosure render kinds. Kind is a hint: the host renders the enclosure with
+// its built-in player for the kind, and it wins over what the host would infer
+// from MIMEType/extension. This is how a site whose media is mislabeled (or has
+// no useful extension) still renders correctly without a host change. The
+// values mirror the host's own resolution; keep them stable.
+const (
+	// EnclosureKindAuto (the zero value) lets the host infer the kind from
+	// MIMEType and the URL's extension.
+	EnclosureKindAuto = ""
+	// EnclosureKindImage renders inline as an image.
+	EnclosureKindImage = "image"
+	// EnclosureKindAudio renders as an audio player.
+	EnclosureKindAudio = "audio"
+	// EnclosureKindVideo renders as a native video player (a progressive file).
+	EnclosureKindVideo = "video"
+	// EnclosureKindHLS renders as a video player backed by an HLS manifest
+	// (.m3u8); the host plays it with its bundled HLS player.
+	EnclosureKindHLS = "hls"
+	// EnclosureKindLink is an attachment that is only a link (a download or a
+	// non-inline file), never embedded as media.
+	EnclosureKindLink = "link"
+)
+
 // Enclosure is one media attachment on an item.
 type Enclosure struct {
 	URL      string
 	MIMEType string
 	Length   int64
+	// Kind is the declared render kind (see EnclosureKind*). Empty means the
+	// host infers it from MIMEType/extension.
+	Kind string
+	// Poster is a thumbnail for a video or audio enclosure. Empty falls back to
+	// the item's ImageURL.
+	Poster string
+	// Title is a human label for the enclosure's download link. Empty falls back
+	// to the URL's filename.
+	Title string
 }
 
 // Item is one normalized feed entry.
@@ -445,12 +477,21 @@ const (
 
 // RenderRequest describes the item whose view-time media is being resolved.
 type RenderRequest struct {
+	// GUID is the item's stored GUID.
+	GUID string
 	// Link is the item's stored link (the post permalink).
 	Link string
 	// Summary is the item's stored HTML content.
 	Summary string
 	// ImageURL is the item's stored thumbnail, if any.
 	ImageURL string
+	// Kind is the item's display classification (see ItemKind).
+	Kind ItemKind
+	// Categories are the item's stored categories.
+	Categories []string
+	// Enclosures are the item's stored media attachments, so a renderer can
+	// decide how to render (or replace) media the host already stored.
+	Enclosures []Enclosure
 	// Config is the per-feed plugin config (JSON), may be nil.
 	Config json.RawMessage
 }

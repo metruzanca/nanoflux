@@ -13,7 +13,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/filestore"
 )
 
@@ -51,10 +51,12 @@ func New(files filestore.Store, client *http.Client, forced func(feedURL string)
 	return &Cacher{files: files, client: client, forced: forced, folder: folder, max: defaultMaxBytes, workers: defaultConcurrency}
 }
 
-// Enclosure is one media attachment to consider for caching.
+// Enclosure is one media attachment to consider for caching. Kind is the
+// plugin-declared render kind (empty infers from the MIME type/extension).
 type Enclosure struct {
 	URL      string
 	MIMEType string
+	Kind     string
 }
 
 // Request describes one item's cacheable media. ItemID must be the stored item's
@@ -114,7 +116,7 @@ func (c *Cacher) Cache(ctx context.Context, req Request) Result {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, c.workers)
 	for i, e := range req.Enclosures {
-		if !isImage(e.URL, e.MIMEType) {
+		if !isImage(e.Kind, e.URL, e.MIMEType) {
 			continue
 		}
 		if e.URL == req.ImageURL && res.ImageKey != "" {
@@ -229,19 +231,9 @@ func extFor(ct string) string {
 	return "img"
 }
 
-// isImage reports whether a URL should be treated as an image, by MIME type when
-// present else by file extension (the query string is ignored).
-func isImage(rawurl, mime string) bool {
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(mime)), "image/") {
-		return true
-	}
-	u, err := url.Parse(rawurl)
-	if err != nil {
-		return false
-	}
-	switch strings.ToLower(path.Ext(u.Path)) {
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".bmp", ".svg":
-		return true
-	}
-	return false
+// isImage reports whether an enclosure should be cached as an image. It uses
+// the host's single enclosure-kind resolver, so a plugin-declared kind wins over
+// the MIME type/extension.
+func isImage(kind, rawurl, mime string) bool {
+	return feedparse.ResolveEnclosureKind(kind, rawurl, mime) == feedparse.EnclosureKindImage
 }

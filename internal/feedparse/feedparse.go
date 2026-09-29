@@ -50,6 +50,61 @@ type Enclosure struct {
 	URL      string
 	MIMEType string
 	Length   int64
+	// Kind is the declared render kind (pluginapi.EnclosureKind*); "" lets the
+	// host infer it. Poster and Title are optional display metadata.
+	Kind   string
+	Poster string
+	Title  string
+}
+
+// Enclosure render kinds, mirroring pluginapi's EnclosureKind* constants
+// (pluginapi cannot import this package, so the values are duplicated by
+// necessity; keep them in sync).
+const (
+	EnclosureKindImage = "image"
+	EnclosureKindAudio = "audio"
+	EnclosureKindVideo = "video"
+	EnclosureKindHLS   = "hls"
+	EnclosureKindLink  = "link"
+)
+
+// ResolveEnclosureKind is the single source of truth for how an enclosure
+// renders. A declared kind wins; otherwise it is inferred from the MIME type
+// and then the URL's extension. It returns "" for an unknown attachment (a
+// plain link). It is used by the item template and the image cache so the two
+// agree, and so a plugin that declares a kind is honored even when the MIME
+// type or extension is wrong or absent.
+func ResolveEnclosureKind(kind, rawurl, mime string) string {
+	switch kind {
+	case EnclosureKindImage, EnclosureKindAudio, EnclosureKindVideo, EnclosureKindHLS, EnclosureKindLink:
+		return kind
+	}
+	mt := strings.ToLower(mime)
+	switch {
+	case strings.HasPrefix(mt, "image/"):
+		return EnclosureKindImage
+	case strings.HasPrefix(mt, "audio/"):
+		return EnclosureKindAudio
+	case mt == "application/vnd.apple.mpegurl", mt == "application/x-mpegurl":
+		return EnclosureKindHLS
+	case strings.HasPrefix(mt, "video/"):
+		return EnclosureKindVideo
+	}
+	u, err := url.Parse(rawurl)
+	if err != nil || u.Path == "" {
+		return ""
+	}
+	switch strings.ToLower(path.Ext(u.Path)) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg", ".bmp":
+		return EnclosureKindImage
+	case ".mp3", ".m4a", ".ogg", ".oga", ".opus", ".wav", ".flac", ".aac":
+		return EnclosureKindAudio
+	case ".m3u8":
+		return EnclosureKindHLS
+	case ".mp4", ".m4v", ".webm", ".ogv", ".mov", ".mkv":
+		return EnclosureKindVideo
+	}
+	return ""
 }
 
 // Item is one normalized entry.

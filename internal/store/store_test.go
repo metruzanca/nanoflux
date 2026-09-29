@@ -410,7 +410,7 @@ func TestItemEnclosures(t *testing.T) {
 
 	encs := []Enclosure{
 		{URL: "https://metru.dev/ep1.mp3", Title: "Episode 1", MIMEType: "audio/mpeg", Size: 1234},
-		{URL: "https://metru.dev/ep1.pdf", Title: "Show notes", MIMEType: "application/pdf", Size: 99},
+		{URL: "https://metru.dev/clip.m3u8", MIMEType: "application/vnd.apple.mpegurl", Kind: "hls", Poster: "https://metru.dev/poster.jpg"},
 	}
 	if err := s.Items.ReplaceEnclosures(itemID, encs); err != nil {
 		t.Fatalf("ReplaceEnclosures: %v", err)
@@ -421,6 +421,9 @@ func TestItemEnclosures(t *testing.T) {
 	}
 	if got[0].URL != encs[0].URL || got[0].Sort != 0 || got[1].Sort != 1 {
 		t.Fatalf("enclosures out of order: %+v", got)
+	}
+	if got[1].Kind != "hls" || got[1].Poster != encs[1].Poster {
+		t.Fatalf("enclosure kind/poster not persisted: %+v", got[1])
 	}
 
 	// Replace clears the old set.

@@ -522,6 +522,7 @@ func withTZ(tz string, items []store.ItemWithFeed) []store.ItemWithFeed {
 
 type itemViewData struct {
 	ID          int64
+	GUID        string
 	Title       string
 	AuthorName  string
 	AuthorID    int64
@@ -529,6 +530,7 @@ type itemViewData struct {
 	PublishedAt string
 	Summary     string
 	ImageURL    string
+	Categories  []string
 	// ImageCacheKey is the object-storage key of the cached primary image, "" when
 	// not cached. When set (and this view may use the authenticated /cache route)
 	// the image renders from cache instead of the remote URL.
@@ -582,6 +584,16 @@ func (d itemViewData) enclosureSrc(e store.Enclosure) string {
 	return d.imgSrc(e.URL)
 }
 
+// enclosurePoster returns a video/audio enclosure's poster frame: the
+// enclosure's own poster when set, else the item's thumbnail (cached when
+// available).
+func (d itemViewData) enclosurePoster(e store.Enclosure) string {
+	if e.Poster != "" {
+		return d.imgSrc(e.Poster)
+	}
+	return d.cachedImageSrc(d.ImageURL)
+}
+
 // itemBody returns the HTML an item's modal renders: a plugin-enriched body
 // when present, else the feed's own summary. Classification (image posts) still
 // uses the stored summary, so enrichment never changes a card's kind.
@@ -624,6 +636,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	}
 	data := itemViewData{
 		ID:            it.ID,
+		GUID:          it.GUID,
 		Title:         it.Title,
 		AuthorName:    it.AuthorName,
 		AuthorID:      it.AuthorID,
@@ -632,6 +645,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		Summary:       it.Summary,
 		ImageURL:      it.ImageURL,
 		ImageCacheKey: it.ImageCacheKey,
+		Categories:    it.Categories,
 		Kind:          it.Kind,
 		DurationSec:   it.DurationSec,
 		Link:          it.Link,
@@ -645,10 +659,12 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		Attribution:   it.Attribution,
 		ProxyImages:   true,
 	}
+	// Enclosures are loaded before the render plugins so a renderer can see the
+	// item's stored media.
+	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
 	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemPlugins(ctx, data)
-	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
 	if data.EmbedSrc == "" {
 		data.EmbedSrc = s.resolveMediaEmbed(ctx, data)
 	}
@@ -737,11 +753,13 @@ func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
 	}
 	data := itemViewData{
 		ID:            it.ID,
+		GUID:          it.GUID,
 		Title:         it.Title,
 		PublishedAt:   it.PublishedAt,
 		Summary:       it.Summary,
 		ImageURL:      it.ImageURL,
 		ImageCacheKey: it.ImageCacheKey,
+		Categories:    it.Categories,
 		Kind:          it.Kind,
 		DurationSec:   it.DurationSec,
 		Link:          it.Link,
