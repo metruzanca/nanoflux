@@ -180,7 +180,7 @@ templ CollectionFeedCards(rows []feedRow, showEdit bool) {
 }
 
 templ CollectionFeedCard(r feedRow, showEdit bool) {
-	<li id={ "collection-feed-" + strconv.FormatInt(r.ID, 10) }>
+	<li id={ "collection-feed-" + strconv.FormatInt(r.ID, 10) } data-title={ r.Title } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Unread) }>
 		<div class="card">
 			<div class="row">
 				<div>

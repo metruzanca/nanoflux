@@ -587,6 +587,21 @@ func TestCollectionFeedsTab(t *testing.T) {
 		t.Fatalf("feeds view should not render items: %s", body)
 	}
 
+	// The feeds tab carries a client-side sort picker (abc/newest/unread) and
+	// each card exposes the data the picker sorts on.
+	for _, want := range []string{
+		`class="picker" data-picker="feeds"`,
+		`data-option="abc"`, `data-option="newest"`, `data-option="unread"`,
+		`data-title="Blog"`, `data-unread="1"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("feeds sort control missing %q: %s", want, body)
+		}
+	}
+	if !strings.Contains(body, `data-option="abc" aria-checked="true"`) {
+		t.Fatalf("feeds sort should default to abc: %s", body)
+	}
+
 	// The fragment endpoint returns the same card list.
 	rr := doGet(h, base+"/items?view=feeds", cookie)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `id="collection-feeds-list"`) {
