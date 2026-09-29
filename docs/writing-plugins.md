@@ -234,6 +234,14 @@ renders "r/cats by u/sam": the sub and the poster link internally when
 subscribed, else to reddit. `Kind` picks the row card
 (`KindText`/`KindImage`/`KindGallery`/`KindLink`/`KindVideo`/`KindAudio`), and
 `ThumbURL` overrides the row thumbnail (a gallery's full-res first image).
+`DedupeKey` is an optional view-time content identity: two items seen in
+different feeds with the same key collapse into one row, so the same content
+reposted under different titles shows once. Derive it from the content (and its
+author, so unrelated items that merely share a URL stay apart) using only the
+stored fields — `Decorate` must stay pure. Reddit keys it by the poster plus the
+`[link]` anchor's destination. It applies to cross-feed posts too, which the
+title-based fallback deliberately leaves alone; same-feed items are never
+merged.
 
 ### View-time rendering (`Render`)
 

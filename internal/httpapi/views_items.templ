@@ -210,6 +210,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 							<span>saved</span><a href={ templ.URL(it.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external"></a>
 						} else if len(it.Attribution) > 0 {
 							@attrParts(it.Attribution)
+							@sourcesList(it.Sources)
 						} else if it.AuthorName != "" && !hideAuthor {
 							<a href={ "/authors/" + strconv.FormatInt(it.AuthorID, 10) }>{ it.AuthorName }</a>
 							@sourcesList(it.Sources)

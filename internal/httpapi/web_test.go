@@ -476,6 +476,44 @@ func TestCollectionPageDedups(t *testing.T) {
 	}
 }
 
+// A user who reposts the same external link to several subreddits under
+// different titles is collapsed to one row on a collection page: the reddit
+// plugin keys each link post by its poster and destination, and dedupItems
+// merges them even though their titles (and CrossKeys) differ.
+func TestCollectionDedupsRedditCrosspostsByLink(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	useRedditPlugin(t, s)
+	u, _ := s.store.Users.ByUsername("alice")
+	oneA, _ := s.store.Authors.Create(u.ID, "r/one", "", "")
+	twoA, _ := s.store.Authors.Create(u.ID, "r/two", "", "")
+	oneFeed, _ := s.store.Feeds.Create(u.ID, oneA.ID, "r/one", "https://www.reddit.com/r/one.rss", "", "", 900)
+	twoFeed, _ := s.store.Feeds.Create(u.ID, twoA.ID, "r/two", "https://www.reddit.com/r/two.rss", "", "", 900)
+	c, _ := s.store.Collections.Create(u.ID, "all")
+	s.store.Collections.AddFeed(u.ID, c.ID, oneFeed.ID)
+	s.store.Collections.AddFeed(u.ID, c.ID, twoFeed.ID)
+
+	link := `<p><a href="https://example.com/article">[link]</a></p>`
+	s.store.Items.Upsert(oneFeed.ID, store.Item{
+		GUID: "t3_aaa", SharedKey: "reddit:t3_aaa", Title: "First title",
+		Link:    "https://www.reddit.com/r/one/comments/aaa/x/",
+		Summary: link, Categories: []string{"r/one", "u/sam"}, FetchedAt: db.Now(),
+	})
+	s.store.Items.Upsert(twoFeed.ID, store.Item{
+		GUID: "t3_bbb", SharedKey: "reddit:t3_bbb", Title: "Another title",
+		Link:    "https://www.reddit.com/r/two/comments/bbb/y/",
+		Summary: link, Categories: []string{"r/two", "u/sam"}, FetchedAt: db.Now(),
+	})
+
+	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
+	if got := strings.Count(body, "First title") + strings.Count(body, "Another title"); got != 1 {
+		t.Fatalf("crossposts should collapse to one row, saw %d titles: %s", got, body)
+	}
+	if !strings.Contains(body, "also in") {
+		t.Fatalf("survivor should list the other subreddit as a source: %s", body)
+	}
+}
+
 // A reddit post seen through both a subreddit feed and a user feed renders once
 // on each feed page, attributed as "r/cats by u/sam" with both parts linked
 // internally, and reading it on one page is reflected on the other.

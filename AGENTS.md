@@ -88,6 +88,14 @@ fetched by the generic parser, so `feeds.plugin_name` stays empty:
   resolving each token to the user's subscribed feed via the URL policy's
   `FeedToken` (internal link) or the part's URL (external). This replaces the
   deleted `httpapi.attribution.go` and `store.attachRedditLinks`/`RedditLink`.
+  `Decorated.DedupeKey` is an optional view-time content identity: the store
+  copies it onto `ItemWithFeed.DedupeKey`, and `httpapi.dedupItems` collapses two
+  cross-feed items that share it into one row (survivor + `Sources`) even when
+  their titles differ. reddit keys it by the poster plus the post's external
+  `[link]` destination, so one user crossposting the same link to several
+  subreddits under different titles shows once. It is matched **before** the
+  fuzzy-title path and, unlike title matching, applies to cross-feed posts
+  (which carry a `CrossKey`). Same-feed items are still never merged.
 - **`Enricher`** (`CapEnrich`): `Enrich` produces an item body (full text,
   translation, transcript), matched per item link. It runs in the poller on
   **newly stored** items only (`poller.enrichStored`, wired via

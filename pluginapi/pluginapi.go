@@ -395,6 +395,13 @@ type Decorated struct {
 	// right one to show (e.g. a gallery's cover is a tiny crop). Empty keeps the
 	// stored ImageURL.
 	ThumbURL string
+	// DedupeKey is a view-time content identity for cross-feed deduplication:
+	// two items with the same key, seen in different feeds, collapse into one
+	// row. Use it for the same content reposted under different titles (reddit
+	// link posts crossposted to several subreddits share their external URL),
+	// keyed by both the content and its author so unrelated posts that merely
+	// share a URL are not merged. Empty keeps the default title-only dedupe.
+	DedupeKey string
 }
 
 // SourcePart is one piece of a source attribution line.

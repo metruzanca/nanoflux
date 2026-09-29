@@ -24,8 +24,8 @@ func TestNormalizeTitle(t *testing.T) {
 func TestFuzzyTitles(t *testing.T) {
 	yes := [][2]string{
 		{"go 1.26 released", "go 1.26 released"},
-		{"psa new rules", normalizeTitle("PSA: New Rules")},                        // punctuation/case folded first
-		{"breaking news update", normalizeTitle("breaking news: update")},          // one edit
+		{"psa new rules", normalizeTitle("PSA: New Rules")},                              // punctuation/case folded first
+		{"breaking news update", normalizeTitle("breaking news: update")},                // one edit
 		{"a moderately long title about things", "a moderately long title about thigns"}, // transposition
 	}
 	for _, pair := range yes {
@@ -97,5 +97,59 @@ func TestDedupItems(t *testing.T) {
 	items = []store.ItemWithFeed{item("", 1), item("", 2)}
 	if got := dedupItems(items); len(got) != 2 {
 		t.Fatalf("empty titles should stay separate: %d", len(got))
+	}
+}
+
+// A plugin decorator's DedupeKey collapses the same content reposted under
+// different titles across feeds, including cross-feed posts (which the title
+// path deliberately leaves alone).
+func TestDedupItemsByDedupeKey(t *testing.T) {
+	post := func(title string, feedID int64, cross, key string) store.ItemWithFeed {
+		it := item(title, feedID)
+		it.CrossKey = cross
+		it.DedupeKey = key
+		return it
+	}
+	items := []store.ItemWithFeed{
+		post("look at this cat", 1, "reddit:t3_a", "u/sam|https://x.com/a"),
+		post("CUTE kitten!!!", 2, "reddit:t3_b", "u/sam|https://x.com/a"),
+	}
+	got := dedupItems(items)
+	if len(got) != 1 {
+		t.Fatalf("same dedupe key should collapse, got %d rows", len(got))
+	}
+	if len(got[0].Sources) != 1 || got[0].Sources[0].FeedID != 2 {
+		t.Fatalf("survivor should list feed 2 as a source: %+v", got[0])
+	}
+
+	// The same key within one feed is kept apart (two reposts in one sub).
+	items = []store.ItemWithFeed{
+		post("look at this cat", 1, "reddit:t3_a", "u/sam|https://x.com/a"),
+		post("CUTE kitten!!!", 1, "reddit:t3_b", "u/sam|https://x.com/a"),
+	}
+	if got := dedupItems(items); len(got) != 2 {
+		t.Fatalf("same-feed dedupe-key dupes should stay separate, got %d", len(got))
+	}
+
+	// Cross-feed posts without a key are still never merged by title alone.
+	items = []store.ItemWithFeed{
+		post("Go 1.26 released", 1, "reddit:t3_a", ""),
+		post("Go 1.26 released", 2, "reddit:t3_b", ""),
+	}
+	if got := dedupItems(items); len(got) != 2 {
+		t.Fatalf("cross-key items must not title-merge, got %d", len(got))
+	}
+
+	// A title cluster folds in the key, so a later same-link item joins it.
+	items = []store.ItemWithFeed{
+		post("shared headline", 1, "", ""),
+		post("shared headline", 2, "", ""),
+		post("totally different", 3, "reddit:t3_c", "u/sam|https://x.com/a"),
+	}
+	// Give the first item the same key so the third clusters via the folded key.
+	items[0].DedupeKey = "u/sam|https://x.com/a"
+	got = dedupItems(items)
+	if len(got) != 1 {
+		t.Fatalf("link key should cluster across title and link, got %d rows", len(got))
 	}
 }

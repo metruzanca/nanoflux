@@ -245,6 +245,9 @@ message Decorated {
   int32 kind = 2;
   repeated SourcePart attribution = 3;
   string thumb_url = 4;
+  // View-time content identity for cross-feed dedup: two items with the same
+  // key collapse into one row. Empty means "dedupe by title only".
+  string dedupe_key = 5;
 }
 message DecorateRequest {
   repeated Item items = 1;

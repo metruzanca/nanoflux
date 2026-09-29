@@ -189,6 +189,13 @@ func (*Plugin) Decorate(_ context.Context, req pluginapi.DecorateRequest) ([]plu
 				{Text: "by"},
 				{Text: user, Token: user, URL: "https://www.reddit.com/user/" + strings.TrimPrefix(user, "u/") + "/"},
 			}
+			// A link post reposted to several subreddits under different titles
+			// keeps the same external destination; keying by that destination
+			// (plus the poster) lets the host collapse the crossposts into one
+			// row. The extraction is summary-only, so Decorate stays pure.
+			if dest, ok := extractLinkAnchor(it.Summary); ok {
+				d.DedupeKey = linkDedupeKey(dest, user)
+			}
 		}
 		out = append(out, d)
 	}
@@ -212,6 +219,32 @@ func categoryPair(categories []string) (sub, user string) {
 		}
 	}
 	return sub, user
+}
+
+// linkDedupeKey builds the view-time cross-feed dedupe identity for a reddit
+// link post: the poster plus the post's external destination, normalized so the
+// same URL crossposted by the same user to several subreddits yields one key.
+// It returns "" when the destination has no usable host.
+func linkDedupeKey(dest, author string) string {
+	if dest == "" || author == "" {
+		return ""
+	}
+	u, err := url.Parse(dest)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	u.Fragment = ""
+	u.Host = strings.ToLower(u.Host)
+	if q := u.Query(); len(q) > 0 {
+		for k := range q {
+			if strings.HasPrefix(strings.ToLower(k), "utm_") {
+				q.Del(k)
+			}
+		}
+		u.RawQuery = q.Encode()
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	return strings.ToLower(author) + "|" + u.String()
 }
 
 // itemKind classifies a reddit item from its stored thumbnail and content. It is

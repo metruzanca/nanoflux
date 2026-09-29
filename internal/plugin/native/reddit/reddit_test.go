@@ -377,3 +377,51 @@ func TestDecorateGalleryThumb(t *testing.T) {
 		t.Errorf("thumb = %q", got[0].ThumbURL)
 	}
 }
+
+// Decorate derives a cross-feed dedupe key from a link post's external
+// destination and poster, so the same link crossposted under different titles
+// collapses. A post with no [link] anchor, or no poster category, gets no key.
+func TestDecorateLinkDedupeKey(t *testing.T) {
+	p := &Plugin{}
+	linkContent := `<p><a href="https://www.Example.com/Article/?utm_source=reddit&id=1#top">[link]</a></p>`
+	req := pluginapi.DecorateRequest{Items: []pluginapi.Item{
+		{Categories: []string{"r/cats", "u/sam"}, Summary: linkContent},
+		{Categories: []string{"r/dogs", "u/sam"}, Summary: linkContent},
+		{Categories: []string{"r/cats"}, Summary: linkContent}, // no poster
+		{Categories: []string{"r/cats", "u/sam"}, Summary: "<p>self post, no link</p>"},
+	}}
+	got, err := p.Decorate(context.Background(), req)
+	if err != nil || len(got) != 4 {
+		t.Fatalf("Decorate = %+v, %v", got, err)
+	}
+	want := "u/sam|https://www.example.com/Article?id=1"
+	if got[0].DedupeKey != want {
+		t.Errorf("dedupe key = %q, want %q", got[0].DedupeKey, want)
+	}
+	// The same link posted to a different sub by the same user shares the key.
+	if got[1].DedupeKey != want {
+		t.Errorf("crosspost key = %q, want %q", got[1].DedupeKey, want)
+	}
+	if got[2].DedupeKey != "" {
+		t.Errorf("no-poster item should have no key: %q", got[2].DedupeKey)
+	}
+	if got[3].DedupeKey != "" {
+		t.Errorf("self post should have no key: %q", got[3].DedupeKey)
+	}
+}
+
+func TestLinkDedupeKey(t *testing.T) {
+	key := linkDedupeKey("https://WWW.Example.com/Path/?b=2&utm_medium=x&a=1#frag", "u/sam")
+	if want := "u/sam|https://www.example.com/Path?a=1&b=2"; key != want {
+		t.Errorf("linkDedupeKey = %q, want %q", key, want)
+	}
+	if linkDedupeKey("not a url", "u/sam") != "" {
+		t.Error("unparseable destination should yield no key")
+	}
+	if linkDedupeKey("https://x.com/a", "") != "" {
+		t.Error("missing author should yield no key")
+	}
+	if !strings.HasPrefix(linkDedupeKey("https://x.com/a", "u/Sam"), "u/sam|") {
+		t.Error("author should be lowercased")
+	}
+}

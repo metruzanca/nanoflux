@@ -7,46 +7,59 @@ import (
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
-// dedupItems collapses a page of items that share a (near-)identical title
-// across different feeds into a single row: the newest item survives and the
-// others are listed as alternate sources. Items within the same feed are never
-// merged, because two distinct posts in one feed can legitimately share a
-// title. This is a view-time transformation only — nothing is written back.
+// dedupItems collapses a page of items that are the same content across
+// different feeds into a single row: the newest item survives and the others
+// are listed as alternate sources. Two items match when a plugin decorator gave
+// them the same DedupeKey (the same content reposted under different titles,
+// e.g. a reddit link post crossposted to several subreddits), or when their
+// titles are near-identical. Items within the same feed are never merged,
+// because two distinct posts in one feed can legitimately share a title. This
+// is a view-time transformation only — nothing is written back.
 func dedupItems(items []store.ItemWithFeed) []store.ItemWithFeed {
 	type group struct {
-		key   string
-		index int // index of the survivor in out
+		key   string // normalized survivor title, "" when none
+		link  string // survivor's plugin dedupe key, "" when none
+		index int    // index of the survivor in out
 	}
 	var groups []group
 	out := make([]store.ItemWithFeed, 0, len(items))
 	for _, it := range items {
-		key := normalizeTitle(it.Title)
 		// A saved page (hidden system feed) is never merged into a feed item:
 		// it is deliberate, user-held content, not a duplicate to collapse.
-		// A cross-feed post is deduplicated in storage (one row per post), so
-		// two such rows that merely share a title are distinct posts: collapsing
-		// them by title here would be wrong.
-		if key == "" || it.FeedIsSystem || it.CrossKey != "" {
+		if it.FeedIsSystem {
 			out = append(out, it)
 			continue
 		}
+		titleKey := normalizeTitle(it.Title)
+		linkKey := it.DedupeKey
 		var matched *group
 		for i := range groups {
-			if fuzzyTitles(groups[i].key, key) {
+			// A plugin's content identity wins: it merges the same content
+			// reposted under different titles, including cross-feed posts (a
+			// reddit CrossKey marks distinct posts that may still share an
+			// external link).
+			if linkKey != "" && groups[i].link != "" && groups[i].link == linkKey {
+				matched = &groups[i]
+				break
+			}
+			// Fuzzy title merging applies only to items without a cross-feed
+			// key: two such rows that merely share a title are distinct posts,
+			// so collapsing them by title would be wrong.
+			if titleKey != "" && it.CrossKey == "" && groups[i].key != "" && fuzzyTitles(groups[i].key, titleKey) {
 				matched = &groups[i]
 				break
 			}
 		}
 		if matched == nil {
 			out = append(out, it)
-			groups = append(groups, group{key: key, index: len(out) - 1})
+			groups = append(groups, group{key: titleKey, link: linkKey, index: len(out) - 1})
 			continue
 		}
 		surv := &out[matched.index]
 		if surv.FeedID == it.FeedID {
 			// Distinct post in the same feed — keep both rows.
 			out = append(out, it)
-			groups = append(groups, group{key: key, index: len(out) - 1})
+			groups = append(groups, group{key: titleKey, link: linkKey, index: len(out) - 1})
 			continue
 		}
 		dup := false
@@ -62,6 +75,14 @@ func dedupItems(items []store.ItemWithFeed) []store.ItemWithFeed {
 				FeedTitle: it.FeedTitle,
 				Link:      it.Link,
 			})
+		}
+		// A title match may carry a content identity too; fold both in so later
+		// items with the same key cluster with this row.
+		if matched.link == "" {
+			matched.link = linkKey
+		}
+		if matched.key == "" {
+			matched.key = titleKey
 		}
 	}
 	return out
