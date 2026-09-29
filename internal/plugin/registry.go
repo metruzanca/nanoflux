@@ -309,13 +309,29 @@ func (r *Registry) FeedToken(feedURL string) string {
 
 // MatchFeedAdmin returns the first plugin that manages feeds like u (remote
 // settings and lifecycle), along with its Fetcher (for the host factory), or
-// (nil, nil). It is gated by CapFeedAdmin and requires the FeedAdmin interface.
+// (nil, nil). It is gated by CapFeedAdmin and requires a genuine FeedAdmin
+// implementation.
+//
+// Feed management is opt-in, and an external plugin appears to the host as the
+// gRPC client, which satisfies every optional interface unconditionally. A type
+// assertion therefore cannot tell whether the remote plugin implements
+// FeedAdmin. So a native plugin is checked by the assertion (real), and an
+// external one by Meta.HasFeedAdmin — which the gRPC server computes from the
+// remote implementation — plus its Match for the URL.
 func (r *Registry) MatchFeedAdmin(u *url.URL) (pluginapi.FeedAdmin, pluginapi.Fetcher) {
 	if u == nil {
 		return nil, nil
 	}
-	for _, f := range r.all() {
+	for _, f := range r.native {
 		if !f.Match(u, pluginapi.CapFeedAdmin) {
+			continue
+		}
+		if fa, ok := f.(pluginapi.FeedAdmin); ok {
+			return fa, f
+		}
+	}
+	for _, f := range r.external {
+		if !f.Meta().HasFeedAdmin || !f.Match(u, pluginapi.CapFeedAdmin) {
 			continue
 		}
 		if fa, ok := f.(pluginapi.FeedAdmin); ok {

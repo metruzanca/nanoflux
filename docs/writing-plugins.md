@@ -366,10 +366,19 @@ func (AppC) Action(ctx context.Context, req pluginapi.FeedActionRequest, h plugi
 ```
 
 `FeedFields` is **pure** (no network I/O): the host calls it while rendering the
-feed's page. `Action` runs on an explicit user request. The host sends `"save"`
-with `Fields{"title", "icon"}` and `"delete"`; a plugin may define more actions
-and read them from `req.Action`. Return `Deleted: true` when the remote feed no
+feed's **edit** page (the "managed feed" card, which also offers a title-sync
+action). `Action` runs on an explicit user request. The host sends `"save"` with
+`Fields{"title", "icon"}` and `"delete"`; a plugin may define more actions and
+read them from `req.Action`. Return `Deleted: true` when the remote feed no
 longer exists, and the host removes the local feed too.
+
+Feed management is **opt-in**: implementing `FeedAdmin` is the opt-in, and the
+host only honors a genuine implementation. An external plugin is reached as the
+gRPC client, which satisfies every optional interface unconditionally, so the
+host uses the capability your plugin reports on the wire (`Meta.HasFeedAdmin`,
+computed by the gRPC server from your implementation) rather than a type
+assertion. A plugin that does not implement `FeedAdmin` never shows the card, so
+its `Match` may safely ignore `CapFeedAdmin`.
 
 ### Configuration (`Settings` / `Configure`)
 

@@ -233,20 +233,68 @@ func TestFeedPluginPanelShown(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rr := doGet(h, "/feeds/"+itoa(f.ID), cookie)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("feed page: %d", rr.Code)
+	// The card lives on the edit page, not the regular feed page.
+	feedPage := doGet(h, "/feeds/"+itoa(f.ID), cookie)
+	if feedPage.Code != http.StatusOK {
+		t.Fatalf("feed page: %d", feedPage.Code)
 	}
-	if !strings.Contains(rr.Body.String(), "pub1@mails.example") {
-		t.Fatalf("panel missing subscribe address: %s", rr.Body.String())
+	if strings.Contains(feedPage.Body.String(), "managed feed") {
+		t.Fatalf("managed card must not render on the feed page: %s", feedPage.Body.String())
 	}
 
-	// A remote delete removes the local feed too.
-	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/plugin-admin", url.Values{"action": {"delete"}}, cookie)
-	if rr.Code != http.StatusNoContent {
-		t.Fatalf("plugin-admin delete: %d %s", rr.Code, rr.Body.String())
+	edit := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie)
+	if edit.Code != http.StatusOK {
+		t.Fatalf("edit page: %d", edit.Code)
 	}
+	body := edit.Body.String()
+	if !strings.Contains(body, "managed feed") || !strings.Contains(body, "pub1@mails.example") {
+		t.Fatalf("edit page missing the managed card: %s", body)
+	}
+	if !strings.Contains(body, "also delete it on the remote service") {
+		t.Fatalf("edit page missing the remote-delete checkbox: %s", body)
+	}
+
+	// A remote delete (the delete form's opt-in) removes the local feed too.
+	doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/delete", url.Values{"delete_remote": {"1"}}, cookie)
 	if _, err := s.store.Feeds.ByID(1, f.ID); err == nil {
 		t.Fatal("feed still exists after remote delete")
+	}
+}
+
+// externalIgnoringCap is an external-registered plugin that ignores the
+// capability in Match (like several real external plugins) and does not manage
+// feeds. It must not produce the managed-feed card or the remote-delete
+// checkbox, even though the gRPC client wrapper would satisfy FeedAdmin.
+type externalIgnoringCap struct{ stubProvisioner }
+
+func (externalIgnoringCap) Meta() pluginapi.Meta {
+	return pluginapi.Meta{Name: "ignorescap", APIVersion: pluginapi.APIVersion}
+}
+func (externalIgnoringCap) Match(*url.URL, pluginapi.Capability) bool { return true }
+
+// TestExternalPluginDoesNotManageFeeds guards the opt-in: an external plugin
+// that matches a feed URL for every capability but does not report FeedAdmin
+// must not show the managed-feed UI.
+func TestExternalPluginDoesNotManageFeeds(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	reg := plugin.NewRegistry()
+	reg.RegisterExternal(externalIgnoringCap{})
+	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
+
+	a, _ := s.store.Authors.Create(1, "Site", "", "")
+	f, _ := s.store.Feeds.CreateWithPlugin(1, a.ID, "Site Feed",
+		"https://site.example/feed.xml", "", "", "", 900)
+
+	edit := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie)
+	if edit.Code != http.StatusOK {
+		t.Fatalf("edit page: %d", edit.Code)
+	}
+	body := edit.Body.String()
+	if strings.Contains(body, "managed feed") {
+		t.Fatalf("external plugin without FeedAdmin must not show the managed card: %s", body)
+	}
+	if strings.Contains(body, "also delete it on the remote service") {
+		t.Fatalf("external plugin without FeedAdmin must not show the remote-delete checkbox: %s", body)
 	}
 }

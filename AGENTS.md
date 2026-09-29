@@ -329,14 +329,21 @@ and manage one the user already subscribed to. Both are URL-matched capabilities
   `Action` performs `"save"` (the host passes the current `title`/`icon`) and
   `"delete"` (`Deleted: true` drops the local feed too). (Named `FeedFields`, not
   `Settings`, so a plugin can also implement `Configurable`.)
+  **Feed management is opt-in**: `Registry.MatchFeedAdmin` checks a *genuine*
+  implementation, never a bare type assertion. An external plugin is reached as
+  the gRPC client, which satisfies every optional interface, so the host trusts
+  the capability the plugin reported (`Meta.HasFeedAdmin`, computed by the gRPC
+  server from the remote implementation); a native plugin is checked by the real
+  assertion. Only KTN manages feeds today, so no other feed shows the UI.
 - Host wiring: `Registry.Provisioners()` / `ProvisionerByName(name)` and
   `Registry.MatchFeedAdmin(u)` / `FeedAdminSettings(feedURL)`. `Info` gained
   `ProvisionLabel` and `CanManageFeeds` (host-filled, like `HasDocs`).
 - UI: `GET /fragments/provision-form?plugin=` and `POST /feeds/provision` (add
-  flow, `views_pluginprovision.templ`), and `POST /feeds/{id}/plugin-admin` for a
-  feed's "managed feed" card (`feedPluginPanel`). Feed delete offers an opt-in
-  "also delete it on the remote service" checkbox; the panel's own delete is
-  explicit.
+  flow, `views_pluginprovision.templ`), and `POST /feeds/{id}/plugin-admin` for
+  the title-sync action. The "managed feed" card (`feedPluginPanel`) lives on a
+  feed's **edit** page, not its regular page; remote deletion is the delete
+  form's opt-in "also delete it on the remote service" checkbox (`feedDelete`),
+  so the card itself has no destructive action.
 - Reference: `internal/plugin/native/killthenewsletter`. It does **not** claim
   `CapFetch` (its Atom feeds are read by the generic parser), so
   `feeds.plugin_name` stays empty and `ReconcileFeeds` is untouched — the same

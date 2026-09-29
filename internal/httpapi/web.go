@@ -93,9 +93,10 @@ type feedsData struct {
 	Collections []store.Collection
 	Form        feedForm
 	Rules       feedRulesData
-	// Managed reports that a plugin manages the edited feed on the remote side,
-	// so the delete form offers an opt-in remote delete.
-	Managed bool
+	// Panel is the "managed feed" card for a feed a plugin manages remotely
+	// (a Kill the Newsletter inbox): its display fields and the title-sync
+	// action, shown on the edit page. nil when no plugin manages the feed.
+	Panel *feedPanelData
 }
 
 // feedRulesData drives the filter-rule section on the feed edit page.
@@ -144,9 +145,6 @@ type feedPageData struct {
 	Row     feedRow
 	Scoped  scopedItemsData
 	MarkAll markAllReadData
-	// Panel is the "managed feed" card for a feed owned by a plugin that can
-	// manage it remotely (a Kill the Newsletter inbox), when one matches.
-	Panel *feedPanelData
 }
 
 // markAllReadData drives the "mark all as read" control on a feed or author
@@ -1220,10 +1218,13 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 
 	rules := s.feedRules(u.ID, f.ID)
 	rules.DocsPlugin = s.pluginDocNameFor(f.FeedURL)
-	fa, _ := s.feedAdmin(f.FeedURL)
+	var panel *feedPanelData
+	if p, ok := s.feedPanel(f, ""); ok {
+		panel = &p
+	}
 	web.Render(w, r, basePage("edit "+f.Title, u, feedEditPage(u, feedsData{
 		Authors: authors, Collections: collections, Form: form,
-		Rules: rules, Managed: fa != nil,
+		Rules: rules, Panel: panel,
 	})))
 }
 
@@ -1978,13 +1979,8 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	scoped := s.feedScopedItems(u.ID, id, itemsView(r), itemSortOf(r), u.Timezone)
-	var panel *feedPanelData
-	if p, ok := s.feedPanel(feed, ""); ok {
-		panel = &p
-	}
 	web.Render(w, r, basePage(feed.Title, u, feedPage(u, feedPageData{
 		Row: feedRow{Feed: feed, AuthorName: authorName, Unread: unread, Timezone: u.Timezone}, Scoped: scoped,
-		Panel: panel,
 		MarkAll: markAllReadData{
 			Action: "/feeds/" + strconv.FormatInt(id, 10) + "/read-all",
 			Unread: unread,

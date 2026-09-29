@@ -45,10 +45,11 @@ templ provisionCreated(feedID int64, title string, fields []pluginapi.Field) {
 	</div>
 }
 
-// feedPluginPanel is the "managed by a plugin" card on a feed's page: the
-// plugin's display fields (the subscribe address), a title-sync action, and a
-// remote-delete action. Actions post to /feeds/{id}/plugin-admin and re-render
-// this card.
+// feedPluginPanel is the "managed by a plugin" card on a feed's edit page: the
+// plugin's display fields (the subscribe address) and a title-sync action.
+// Remote deletion is the edit page's delete form ("also delete it on the remote
+// service"), so the card offers no destructive action of its own. The sync form
+// posts to /feeds/{id}/plugin-admin and re-renders this card.
 templ feedPluginPanel(d feedPanelData) {
 	<section class="card" id={ "feed-plugin-panel-" + strconv.FormatInt(d.FeedID, 10) }>
 		<div class="row">
@@ -67,15 +68,11 @@ templ feedPluginPanel(d feedPanelData) {
 				</div>
 			}
 		}
-		<p class="muted small">sync the feed title to the remote service, or delete it there. deleting remotely is permanent.</p>
+		<p class="muted small">sync the feed title to the remote service. to remove the feed there too, use the delete form above.</p>
 		<div class="row-actions">
 			<form hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/plugin-admin" } hx-target={ "#feed-plugin-panel-" + strconv.FormatInt(d.FeedID, 10) } hx-swap="outerHTML">
 				<input type="hidden" name="action" value="save"/>
 				<button type="submit" class="small">sync title</button>
-			</form>
-			<form hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/plugin-admin" } hx-target={ "#feed-plugin-panel-" + strconv.FormatInt(d.FeedID, 10) } hx-swap="outerHTML" hx-confirm="delete this feed on the remote service? this cannot be undone.">
-				<input type="hidden" name="action" value="delete"/>
-				<button type="submit" class="link danger">delete remotely</button>
 			</form>
 		</div>
 	</section>
