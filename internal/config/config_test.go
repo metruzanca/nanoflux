@@ -58,6 +58,57 @@ func TestBackupLocalEnabled(t *testing.T) {
 	}
 }
 
+func TestAnalyticsDefaultsDisabled(t *testing.T) {
+	a := Load().Analytics
+	if a.On || a.Enabled() {
+		t.Fatalf("analytics should default to off: %+v", a)
+	}
+	if a.ScriptURL != "" || a.WebsiteID != "" {
+		t.Errorf("default analytics should be empty: %+v", a)
+	}
+}
+
+func TestAnalyticsEnabled(t *testing.T) {
+	t.Setenv("NF_ANALYTICS_ENABLED", "1")
+	t.Setenv("NF_ANALYTICS_SCRIPT_URL", "https://umami.example.com/script.js")
+	t.Setenv("NF_ANALYTICS_WEBSITE_ID", "abc-123")
+	t.Setenv("NF_ANALYTICS_HOST_URL", "https://umami.example.com")
+	t.Setenv("NF_ANALYTICS_TAG", "demo")
+
+	a := Load().Analytics
+	if !a.Enabled() {
+		t.Fatalf("expected enabled, got %+v", a)
+	}
+	if a.ScriptURL != "https://umami.example.com/script.js" || a.WebsiteID != "abc-123" {
+		t.Errorf("unexpected values: %+v", a)
+	}
+	if a.HostURL != "https://umami.example.com" || a.Tag != "demo" {
+		t.Errorf("unexpected optional values: %+v", a)
+	}
+}
+
+func TestAnalyticsPartialConfigStaysOff(t *testing.T) {
+	t.Setenv("NF_ANALYTICS_ENABLED", "1")
+	t.Setenv("NF_ANALYTICS_SCRIPT_URL", "https://umami.example.com/script.js")
+	if Load().Analytics.Enabled() {
+		t.Error("enabled without a website id")
+	}
+
+	t.Setenv("NF_ANALYTICS_SCRIPT_URL", "")
+	t.Setenv("NF_ANALYTICS_WEBSITE_ID", "abc-123")
+	if Load().Analytics.Enabled() {
+		t.Error("enabled without a script url")
+	}
+}
+
+func TestAnalyticsRequiresExplicitSwitch(t *testing.T) {
+	t.Setenv("NF_ANALYTICS_SCRIPT_URL", "https://umami.example.com/script.js")
+	t.Setenv("NF_ANALYTICS_WEBSITE_ID", "abc-123")
+	if Load().Analytics.Enabled() {
+		t.Error("values alone should not enable analytics without NF_ANALYTICS_ENABLED")
+	}
+}
+
 func TestPluginsDirDefault(t *testing.T) {
 	if got := Load().PluginsDir; got != "./plugins" {
 		t.Errorf("default PluginsDir = %q, want ./plugins", got)
