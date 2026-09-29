@@ -101,11 +101,11 @@ forwarded to nanoflux's logs prefixed with the plugin name.
 ## The capabilities
 
 A plugin implements `Fetcher`; it may also implement the optional `Renderer`,
-`SharedKeyer`, `Enricher`, `Decoration`, `URLPolicy`, `Docser`, `Provisioner`
-and `FeedAdmin` interfaces. `Match` tells the host which URL shapes (and which
-capability) each applies to. A plugin may own a site's whole shape (fetch +
-discover + shared keys + enrich + render + URL rules) or decorate a feed it does
-not fetch at all.
+`SharedKeyer`, `Enricher`, `Decoration`, `URLPolicy`, `Docser`, `Provisioner`,
+`FeedAdmin` and `Configurable` interfaces. `Match` tells the host which URL
+shapes (and which capability) each applies to. A plugin may own a site's whole
+shape (fetch + discover + shared keys + enrich + render + URL rules) or decorate
+a feed it does not fetch at all.
 
 - **`Fetch` (required)** — given a feed URL, return its `Feed` metadata and
   `[]Item`s. Runs in the poller and on manual refresh.
@@ -131,12 +131,17 @@ not fetch at all.
 - **`Provision` (optional)** — create a feed on the remote service on the user's
   behalf, so a user never leaves nanoflux (the native Kill the Newsletter
   plugin creates a newsletter inbox). Advertised by a non-empty
-  `Meta.ProvisionLabel`, which is the add-feed "create a …" menu entry; there is
-  no URL to match.
+  `Meta.ProvisionLabel`, which is the nav "add" menu entry; there is no URL to
+  match.
 - **`FeedAdmin` (optional)** — read a feed's display-only fields and perform
-  remote management actions (sync a title, delete the remote feed). `Settings`
+  remote management actions (sync a title, delete the remote feed). `FeedFields`
   is pure (view-time, no network I/O); `Action` may use `Host.Do`. `Match(u,
   CapFeedAdmin)` decides which feed URLs it manages.
+- **`Settings` / `Configure` (optional)** — declare admin-editable configuration
+  (a service base URL, an API token, session cookies) and receive the stored
+  values. The admin panel renders a form from `Settings`; the host pushes values
+  through `Configure` at load and on save. Not URL-matched: every configurable
+  plugin is configured.
 
 ```go
 func (AppC) Discover(ctx context.Context, pageURL string, h pluginapi.Host) ([]pluginapi.Candidate, error) {
@@ -319,11 +324,12 @@ func (AppC) Provision(ctx context.Context, req pluginapi.ProvisionRequest, h plu
 }
 ```
 
-A plugin that implements `Provisioner` is offered in the add-feed flow's
-"create a …" menu only when `Meta().ProvisionLabel` is non-empty; set it to the
-menu entry (`"newsletter (Kill the Newsletter)"`). The host stores the returned
-`FeedURL` and polls it with the generic parser, so a plugin that does not also
-claim `CapFetch` needs no fetch code.
+A plugin that implements `Provisioner` is offered in the nav "add" menu's caret
+dropdown only when `Meta().ProvisionLabel` is non-empty; set it to the menu entry
+(`"newsletter"`, rendered as "Add a newsletter"). The create form opens in a
+shared dialog, and a created feed gets its own author named after the feed title.
+The host stores the returned `FeedURL` and polls it with the generic parser, so a
+plugin that does not also claim `CapFetch` needs no fetch code.
 
 `FeedURL` is the only required field; the host normalizes it and rejects a
 duplicate. Return a `RateLimit` (or a `StatusError`) to have the create failure
@@ -336,7 +342,7 @@ the feed's remote identity (an inbox address) and can sync or delete the remote
 feed.
 
 ```go
-func (AppC) Settings(feedURL string) []pluginapi.Field {
+func (AppC) FeedFields(feedURL string) []pluginapi.Field {
 	return []pluginapi.Field{{Name: "email", Label: "subscribe this address", Value: "abc@appc.com", Kind: "email"}}
 }
 
@@ -351,14 +357,50 @@ func (AppC) Action(ctx context.Context, req pluginapi.FeedActionRequest, h plugi
 }
 ```
 
-`Settings` is **pure** (no network I/O): the host calls it while rendering the
+`FeedFields` is **pure** (no network I/O): the host calls it while rendering the
 feed's page. `Action` runs on an explicit user request. The host sends `"save"`
 with `Fields{"title", "icon"}` and `"delete"`; a plugin may define more actions
 and read them from `req.Action`. Return `Deleted: true` when the remote feed no
 longer exists, and the host removes the local feed too.
 
+### Configuration (`Settings` / `Configure`)
+
+A plugin that needs admin-editable configuration — a service base URL, an API
+token, a session cookie — implements `Configurable` instead of reading env vars
+or a sidecar file. The host renders a form in the admin panel and pushes the
+stored values back:
+
+```go
+func (AppC) Settings() []pluginapi.SettingField {
+	return []pluginapi.SettingField{{
+		Name: "base_url", Label: "instance url", Kind: "url",
+		Placeholder: "https://appc.com",
+		Help: "Leave empty for the public instance.",
+	}}
+}
+
+func (p *AppC) Configure(values map[string]string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.base = strings.TrimSuffix(values["base_url"], "/")
+}
+```
+
+`Kind` is `text` (default), `url`, or `password`. A `password` value is
+write-only: the admin form shows only whether a value is set (never the value),
+and a blank submit leaves the stored one unchanged, so a secret survives a save.
+`Required` rejects an empty value on save.
+
+Delivery is a **push**: the host calls `Configure` once at load with the stored
+values (so `Match` can rely on configuration — it receives no `Host`) and again
+whenever an admin saves. `Configure` must tolerate an incomplete map: missing
+fields arrive as empty strings, so a plugin can start unconfigured and report
+what is missing when it is used. A native plugin caches the values; guard them
+if `Match` reads them from another goroutine.
+
 The native Kill the Newsletter plugin (`internal/plugin/native/killthenewsletter`)
-is the reference for both capabilities.
+is the reference for all three capabilities: it provisions, manages and takes its
+instance base URL from a setting.
 
 ### Item identity (`Identity`)
 

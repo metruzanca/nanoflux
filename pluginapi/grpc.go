@@ -42,10 +42,12 @@ func (s *grpcFetcherServer) Meta(context.Context, *pb.MetaRequest) (*pb.MetaResp
 	m := s.impl.Meta()
 	_, hasDocs := s.impl.(Docser)
 	_, hasFeedAdmin := s.impl.(FeedAdmin)
+	_, hasSettings := s.impl.(Configurable)
 	return &pb.MetaResponse{
 		Name: m.Name, ApiVersion: m.APIVersion, RawNetwork: m.RawNetwork,
 		UserAgent: m.UserAgent, Summary: m.Summary, HasDocs: hasDocs,
 		ProvisionLabel: m.ProvisionLabel, HasFeedAdmin: hasFeedAdmin,
+		HasSettings: hasSettings,
 	}, nil
 }
 
@@ -227,7 +229,24 @@ func (s *grpcFetcherServer) FeedSettings(_ context.Context, req *pb.FeedSettings
 	if !ok {
 		return &pb.FeedSettingsResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
 	}
-	return &pb.FeedSettingsResponse{Fields: toPBFields(fa.Settings(req.FeedUrl))}, nil
+	return &pb.FeedSettingsResponse{Fields: toPBFields(fa.FeedFields(req.FeedUrl))}, nil
+}
+
+func (s *grpcFetcherServer) SettingsSchema(_ context.Context, _ *pb.SettingsSchemaRequest) (*pb.SettingsSchemaResponse, error) {
+	c, ok := s.impl.(Configurable)
+	if !ok {
+		return &pb.SettingsSchemaResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	return &pb.SettingsSchemaResponse{Fields: toPBSettingFields(c.Settings())}, nil
+}
+
+func (s *grpcFetcherServer) Configure(_ context.Context, req *pb.ConfigureRequest) (*pb.ConfigureResponse, error) {
+	c, ok := s.impl.(Configurable)
+	if !ok {
+		return &pb.ConfigureResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	c.Configure(req.Values)
+	return &pb.ConfigureResponse{}, nil
 }
 
 func (s *grpcFetcherServer) FeedAction(ctx context.Context, req *pb.FeedActionRequest) (*pb.FeedActionResponse, error) {
@@ -267,6 +286,30 @@ func fromPBFields(fields []*pb.Field) []Field {
 	return out
 }
 
+// toPBSettingFields / fromPBSettingFields convert a plugin's settings schema
+// across the wire.
+func toPBSettingFields(fields []SettingField) []*pb.SettingField {
+	out := make([]*pb.SettingField, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, &pb.SettingField{
+			Name: f.Name, Label: f.Label, Kind: f.Kind,
+			Placeholder: f.Placeholder, Help: f.Help, Required: f.Required,
+		})
+	}
+	return out
+}
+
+func fromPBSettingFields(fields []*pb.SettingField) []SettingField {
+	out := make([]SettingField, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, SettingField{
+			Name: f.Name, Label: f.Label, Kind: f.Kind,
+			Placeholder: f.Placeholder, Help: f.Help, Required: f.Required,
+		})
+	}
+	return out
+}
+
 // dialHost connects back to the host's Host service over the broker.
 func (s *grpcFetcherServer) dialHost(id uint32) (Host, error) {
 	conn, err := s.broker.Dial(id)
@@ -292,6 +335,7 @@ func (c *grpcFetcherClient) Meta() Meta {
 		Name: resp.Name, APIVersion: resp.ApiVersion, RawNetwork: resp.RawNetwork,
 		UserAgent: resp.UserAgent, Summary: resp.Summary, HasDocs: resp.HasDocs,
 		ProvisionLabel: resp.ProvisionLabel, HasFeedAdmin: resp.HasFeedAdmin,
+		HasSettings: resp.HasSettings,
 	}
 }
 
@@ -472,7 +516,19 @@ func (c *grpcFetcherClient) Provision(ctx context.Context, req ProvisionRequest,
 	}, nil
 }
 
-func (c *grpcFetcherClient) Settings(feedURL string) []Field {
+func (c *grpcFetcherClient) Settings() []SettingField {
+	resp, err := c.client.SettingsSchema(context.Background(), &pb.SettingsSchemaRequest{})
+	if err != nil || resp.Error != nil {
+		return nil
+	}
+	return fromPBSettingFields(resp.Fields)
+}
+
+func (c *grpcFetcherClient) Configure(values map[string]string) {
+	_, _ = c.client.Configure(context.Background(), &pb.ConfigureRequest{Values: values})
+}
+
+func (c *grpcFetcherClient) FeedFields(feedURL string) []Field {
 	resp, err := c.client.FeedSettings(context.Background(), &pb.FeedSettingsRequest{FeedUrl: feedURL})
 	if err != nil || resp.Error != nil {
 		return nil
@@ -500,15 +556,16 @@ func (c *grpcFetcherClient) Action(ctx context.Context, req FeedActionRequest, h
 }
 
 var (
-	_ Fetcher     = (*grpcFetcherClient)(nil)
-	_ Renderer    = (*grpcFetcherClient)(nil)
-	_ Docser      = (*grpcFetcherClient)(nil)
-	_ SharedKeyer = (*grpcFetcherClient)(nil)
-	_ Enricher    = (*grpcFetcherClient)(nil)
-	_ Decoration  = (*grpcFetcherClient)(nil)
-	_ URLPolicy   = (*grpcFetcherClient)(nil)
-	_ Provisioner = (*grpcFetcherClient)(nil)
-	_ FeedAdmin   = (*grpcFetcherClient)(nil)
+	_ Fetcher      = (*grpcFetcherClient)(nil)
+	_ Renderer     = (*grpcFetcherClient)(nil)
+	_ Docser       = (*grpcFetcherClient)(nil)
+	_ SharedKeyer  = (*grpcFetcherClient)(nil)
+	_ Enricher     = (*grpcFetcherClient)(nil)
+	_ Decoration   = (*grpcFetcherClient)(nil)
+	_ URLPolicy    = (*grpcFetcherClient)(nil)
+	_ Provisioner  = (*grpcFetcherClient)(nil)
+	_ FeedAdmin    = (*grpcFetcherClient)(nil)
+	_ Configurable = (*grpcFetcherClient)(nil)
 )
 
 // ---- conversions ----

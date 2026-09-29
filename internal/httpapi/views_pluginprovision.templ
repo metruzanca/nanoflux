@@ -3,48 +3,24 @@ package httpapi
 import (
 	"strconv"
 
-	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
-// provisionButtons renders one "create a …" button per provisioning plugin,
-// shown beside "add manually" in the add-feed dialog. Each opens the plugin's
-// create form in the dialog's preview container. The scoped author fields (when
-// present) ride along, so the create form on an author page is fixed to that
-// author, exactly like the manual-feed button.
-templ provisionButtons(ps []plugin.Provisioner, target string) {
-	for _, p := range ps {
-		<button type="button" hx-post="/fragments/provision-form" hx-vals={ "{\"plugin\": " + strconv.Quote(p.F.Meta().Name) + "}" } hx-target={ target } hx-swap="innerHTML" hx-include="#feed-author-id, #feed-author-scoped, #feed-redirect">create a { p.F.Meta().ProvisionLabel }</button>
-	}
-}
-
-// provisionFormFields is the create form for one provisioning plugin: the same
-// author handling as the URL flow, plus a title the remote feed is created with.
-// A create swaps the created panel into d.Target; a validation error is an
-// out-of-band swap into #add-feed-error, so the form stays put.
+// provisionFormFields is the create form for one provisioning plugin, shown in
+// the shared #provision-dialog. The author is not chosen here: a created feed is
+// its own author (defaulted to the feed title server-side), since the nav "add"
+// menu is not scoped to an author. A create swaps the created panel into
+// #provision-dialog-body; a validation error is an out-of-band swap into
+// #provision-error, so the form stays put.
 templ provisionFormFields(d provisionFormData) {
-	<form class="stack" hx-post="/feeds/provision" hx-target={ d.Target } hx-swap="innerHTML">
+	<form class="stack" hx-post="/feeds/provision" hx-target="#provision-dialog-body" hx-swap="innerHTML">
 		<input type="hidden" name="plugin" value={ d.Plugin }/>
-		if d.Redirect {
-			<input type="hidden" name="redirect" value="1"/>
-		}
 		<p class="muted small">nanoflux will create a { d.Label } and show you the address to subscribe with.</p>
 		<label>
 			title
-			<input name="title" type="text" placeholder="e.g. My Newsletter" autofocus required/>
+			<input name="title" type="text" placeholder={ d.Placeholder } autofocus required/>
 		</label>
-		if d.FixedAuthor != nil {
-			<input type="hidden" name="author_id" value={ strconv.FormatInt(d.FixedAuthor.ID, 10) }/>
-			<p class="muted small">author · { d.FixedAuthor.Name }</p>
-		} else {
-			@comboSelect("author_id", authorValue(d.SelectedAuthorID), "author", "search authors", authorItems(d.Authors), nil)
-			<div id="new-author">
-				if d.SelectedAuthorID == 0 {
-					@authorCreateFields(authorPreviewForm{Optional: true})
-				}
-			</div>
-		}
-		<div id="add-feed-error" class="error"></div>
+		<div id="provision-error" class="error"></div>
 		<button type="submit">create feed</button>
 	</form>
 }

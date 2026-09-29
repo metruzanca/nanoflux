@@ -54,10 +54,6 @@ type feedChoose struct {
 type authorPreviewForm struct {
 	Name      string
 	AvatarURL string
-	// Optional drops the name field's `required`: the provision flow has no
-	// page to derive a name from and defaults it to the feed title server-side,
-	// so a blank name is allowed there but not in the URL flow.
-	Optional bool
 }
 
 // noFeedFoundData carries the URL that yielded no feed, the htmx container the

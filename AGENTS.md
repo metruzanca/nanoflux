@@ -308,26 +308,54 @@ and manage one the user already subscribed to. Both are URL-matched capabilities
 
 - **`Provisioner`** (`CapProvision`) creates a remote feed. There is no URL to
   match, so the host advertises the plugin only when `Meta.ProvisionLabel` is
-  non-empty; the label is the add-feed "create a …" menu entry. The returned
-  `Provisioned.FeedURL` is stored and polled by the generic parser unless the
-  plugin also claims `CapFetch`. `Provisioned.Fields` are display-only values
-  (the inbox address) rendered read-only with a copy control.
-- **`FeedAdmin`** (`CapFeedAdmin`) manages an existing feed: `Settings(feedURL)`
+  non-empty; the label is the topbar add-menu ("#add-menu-pop") entry, rendered
+  as "Add a {label}". The returned `Provisioned.FeedURL` is stored and polled by
+  the generic parser unless the plugin also claims `CapFetch`.
+  `Provisioned.Fields` are display-only values (the inbox address) rendered
+  read-only with a copy control. The create form lives in the shared
+  `#provision-dialog` (`GET /fragments/provision-form?plugin=`,
+  `openProvisionForm` in `app.js`), and a created feed gets its own author named
+  after the feed title.
+- **`FeedAdmin`** (`CapFeedAdmin`) manages an existing feed: `FeedFields(feedURL)`
   is **pure** (view-time, no network I/O) and returns the display-only fields;
   `Action` performs `"save"` (the host passes the current `title`/`icon`) and
-  `"delete"` (`Deleted: true` drops the local feed too).
+  `"delete"` (`Deleted: true` drops the local feed too). (Named `FeedFields`, not
+  `Settings`, so a plugin can also implement `Configurable`.)
 - Host wiring: `Registry.Provisioners()` / `ProvisionerByName(name)` and
   `Registry.MatchFeedAdmin(u)` / `FeedAdminSettings(feedURL)`. `Info` gained
   `ProvisionLabel` and `CanManageFeeds` (host-filled, like `HasDocs`).
-- UI: `POST /fragments/provision-form` and `POST /feeds/provision` (add flow,
-  `views_pluginprovision.templ`), and `POST /feeds/{id}/plugin-admin` for a
+- UI: `GET /fragments/provision-form?plugin=` and `POST /feeds/provision` (add
+  flow, `views_pluginprovision.templ`), and `POST /feeds/{id}/plugin-admin` for a
   feed's "managed feed" card (`feedPluginPanel`). Feed delete offers an opt-in
   "also delete it on the remote service" checkbox; the panel's own delete is
   explicit.
 - Reference: `internal/plugin/native/killthenewsletter`. It does **not** claim
   `CapFetch` (its Atom feeds are read by the generic parser), so
   `feeds.plugin_name` stays empty and `ReconcileFeeds` is untouched — the same
-  pattern reddit uses. Its host is configurable with `NF_KTN_HOST`.
+  pattern reddit uses. Its instance is a plugin setting (see below).
+
+### Plugin settings
+
+A plugin can declare admin-editable configuration (a service base URL, API
+tokens, session cookies) instead of reading env vars or a sidecar config file.
+
+- `pluginapi.Configurable` (`Settings() []SettingField`, `Configure(values)`),
+  advertised by host-filled `Meta.HasSettings`. `SettingField.Kind` is `text`,
+  `password` (write-only) or `url`. Added in APIVersion 0.5.
+- **Delivery is a push.** `plugin.ConfigureAll` (called in `Setup`, before
+  `ReconcileFeeds`) reads each configurable plugin's stored values and calls
+  `Configure`, and the admin save handler re-pushes after a write. Push is what
+  lets `Match` honor configuration: `Match` receives no Host, so a plugin that
+  matches URLs by a configured host (KTN) caches the value in `Configure`.
+- **Storage** reuses the global `settings` table, keyed `plugin.<name>.<field>`
+  (`SettingStore.PluginSettings`/`SetPluginSettings`). No migration.
+- **UI**: the admin plugins card renders a settings form per configurable plugin
+  (`POST /admin/plugins/{name}/settings`); a `password` field shows only whether
+  a value is set and offers a "clear" checkbox, so a secret is never rendered
+  back. Saving stores, calls `Configure`, and re-renders the card.
+- `internal/plugin/native/killthenewsletter` is the reference: its `base_url`
+  setting selects the public or a self-hosted instance, and changes both what
+  `Match` recognizes and what `Provision`/`Action` call.
 
 ### Plugin docs
 

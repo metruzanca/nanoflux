@@ -19,7 +19,6 @@ import (
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/filtermatch"
-	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 	"github.com/metruzanca/nanoflux/pluginapi"
@@ -128,9 +127,6 @@ type authorsData struct {
 	Links      []store.AuthorLink   // edit page: the author's external links, editable
 	Feeds      []feedRow            // edit page: the author's feeds, shown as a UX assist
 	AvatarCard authorAvatarCardData // edit page avatar cache card
-	// Provisioners are the loaded plugins that can create a remote feed, shown
-	// as "create a …" entries in the add-feed dialog.
-	Provisioners []plugin.Provisioner
 }
 
 type authorData struct {
@@ -142,9 +138,6 @@ type authorData struct {
 	Frequency string // approximate posting cadence, "" when unknown
 	Timezone  string
 	MarkAll   markAllReadData
-	// Provisioners are the loaded plugins that can create a remote feed, shown
-	// as "create a …" entries in the author's add-feed dialog.
-	Provisioners []plugin.Provisioner
 }
 
 type feedPageData struct {
@@ -1795,7 +1788,7 @@ func (s *Server) authors(w http.ResponseWriter, r *http.Request) {
 		}
 		return rows[i].Name < rows[j].Name
 	})
-	web.Render(w, r, basePage("authors", u, authorsPage(u, authorsData{Rows: rows, Provisioners: s.provisioners()})))
+	web.Render(w, r, basePage("authors", u, authorsPage(u, authorsData{Rows: rows})))
 }
 
 func (s *Server) authorRows(userID int64) []authorRow {
@@ -1857,7 +1850,6 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
 		Author: a, Rows: rows, Links: links, Scoped: scoped,
 		Stats: stats, Frequency: frequency, Timezone: u.Timezone,
-		Provisioners: s.provisioners(),
 		MarkAll: markAllReadData{
 			Action: "/authors/" + strconv.FormatInt(id, 10) + "/read-all",
 			Unread: stats.Unread,
@@ -2097,11 +2089,10 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
 	feeds, _ := s.feedRowsForAuthor(u.ID, a.ID, u.Timezone)
 	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
-		Form:         authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
-		Links:        links,
-		Feeds:        feeds,
-		AvatarCard:   s.authorAvatarCardData(a, u.Timezone, ""),
-		Provisioners: s.provisioners(),
+		Form:       authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
+		Links:      links,
+		Feeds:      feeds,
+		AvatarCard: s.authorAvatarCardData(a, u.Timezone, ""),
 	})))
 }
 

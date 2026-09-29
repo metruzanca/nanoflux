@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/log"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
+	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
 type adminData struct {
@@ -41,6 +43,25 @@ type adminPluginRow struct {
 	// CanManageFeeds reports whether the plugin manages existing feeds' remote
 	// settings and lifecycle.
 	CanManageFeeds bool
+	// HasSettings reports whether the plugin declares admin-editable settings.
+	HasSettings bool
+	// Settings are the plugin's declared fields with their stored values, for
+	// the inline settings form on the card.
+	Settings []adminPluginSetting
+}
+
+// adminPluginSetting is one plugin setting field with its current value. A
+// password field carries only whether a value is set (never the value itself),
+// so a secret is not rendered back into the page.
+type adminPluginSetting struct {
+	Name        string
+	Label       string
+	Kind        string
+	Placeholder string
+	Help        string
+	Required    bool
+	Value       string // empty for a password field
+	Set         bool   // for a password field: a value is stored
 }
 
 // adminPluginDomain is one registrable domain owned by a plugin, with the number
@@ -220,7 +241,7 @@ func (s *Server) adminPluginRows() []adminPluginRow {
 	infos := s.plugins.Infos()
 	rows := make([]adminPluginRow, 0, len(infos))
 	for _, in := range infos {
-		rows = append(rows, adminPluginRow{
+		row := adminPluginRow{
 			Name:           in.Name,
 			Kind:           in.Kind,
 			Version:        in.Version,
@@ -230,9 +251,43 @@ func (s *Server) adminPluginRows() []adminPluginRow {
 			HasDocs:        in.HasDocs,
 			ProvisionLabel: in.ProvisionLabel,
 			CanManageFeeds: in.CanManageFeeds,
-		})
+			HasSettings:    in.HasSettings,
+		}
+		if in.HasSettings {
+			row.Settings = s.adminPluginSettings(in.Name)
+		}
+		rows = append(rows, row)
 	}
 	return rows
+}
+
+// adminPluginSettings builds the settings form for one configurable plugin: its
+// declared schema paired with the stored values. A "password" field reports only
+// whether a value is set, so the secret is never sent to the browser.
+func (s *Server) adminPluginSettings(name string) []adminPluginSetting {
+	if s.plugins == nil {
+		return nil
+	}
+	schema := s.plugins.SettingsSchema(name)
+	names := make([]string, 0, len(schema))
+	for _, f := range schema {
+		names = append(names, f.Name)
+	}
+	values := s.store.Settings.PluginSettings(name, names)
+	out := make([]adminPluginSetting, 0, len(schema))
+	for _, f := range schema {
+		row := adminPluginSetting{
+			Name: f.Name, Label: f.Label, Kind: f.Kind,
+			Placeholder: f.Placeholder, Help: f.Help, Required: f.Required,
+		}
+		if f.Kind == "password" {
+			row.Set = values[f.Name] != ""
+		} else {
+			row.Value = values[f.Name]
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 // adminPluginDomains groups plugin-owned feeds by registrable domain, so the
@@ -292,6 +347,60 @@ func (s *Server) adminResetPluginDomain(w http.ResponseWriter, r *http.Request) 
 	}
 	log.Info("admin: reset plugin domain", "domain", domain, "feeds", n)
 	web.Render(w, r, AdminPluginsCard(s.adminPluginRows(), s.adminPluginDomains()))
+}
+
+// adminSavePluginSettings validates and stores a plugin's settings, then pushes
+// them to the plugin so its behavior (and URL matching) updates immediately. The
+// card re-renders with the result.
+func (s *Server) adminSavePluginSettings(w http.ResponseWriter, r *http.Request) {
+	if s.plugins == nil {
+		writeFormError(w, r, "admin-plugins-error", "plugins are not loaded")
+		return
+	}
+	name := r.PathValue("name")
+	if s.plugins.ByName(name) == nil {
+		writeFormError(w, r, "admin-plugins-error", "no such plugin")
+		return
+	}
+	schema := s.plugins.SettingsSchema(name)
+	if len(schema) == 0 {
+		writeFormError(w, r, "admin-plugins-error", "that plugin has no settings")
+		return
+	}
+	values := make(map[string]string, len(schema))
+	for _, f := range schema {
+		v := strings.TrimSpace(r.FormValue("setting_" + f.Name))
+		if f.Required && v == "" {
+			writeFormError(w, r, "admin-plugins-error", f.Label+" is required")
+			return
+		}
+		// A write-only password field is left unchanged when blank, so the
+		// stored secret survives a save that did not re-enter it.
+		if f.Kind == "password" && v == "" {
+			if r.FormValue("clear_"+f.Name) == "1" {
+				values[f.Name] = ""
+			}
+			continue
+		}
+		values[f.Name] = v
+	}
+	if err := s.store.Settings.SetPluginSettings(name, values); err != nil {
+		log.Error("admin: save plugin settings", "plugin", name, "err", err)
+		writeFormError(w, r, "admin-plugins-error", "could not save the settings")
+		return
+	}
+	s.plugins.Configure(name, s.store.Settings.PluginSettings(name, settingNames(schema)))
+	log.Info("admin: saved plugin settings", "plugin", name)
+	web.Render(w, r, AdminPluginsCard(s.adminPluginRows(), s.adminPluginDomains()))
+}
+
+// settingNames extracts the field names from a settings schema.
+func settingNames(schema []pluginapi.SettingField) []string {
+	out := make([]string, 0, len(schema))
+	for _, f := range schema {
+		out = append(out, f.Name)
+	}
+	return out
 }
 
 // adminInstanceData rebuilds the data the instance settings card needs, for

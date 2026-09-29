@@ -8,9 +8,8 @@ import (
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
-// publicIDFromPath extracts the publicId from a Kill the Newsletter path of the
-// forms /feeds/{id} or /feeds/{id}.xml. Returns ("", false) when the path does
-// not match.
+// publicIDFromPath extracts the publicId from a path of the forms /feeds/{id}
+// or /feeds/{id}.xml. Returns ("", false) when the path does not match.
 func publicIDFromPath(path string) (string, bool) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) != 2 || parts[0] != "feeds" {
@@ -24,51 +23,51 @@ func publicIDFromPath(path string) (string, bool) {
 }
 
 // publicIDFromFeedURL extracts the publicId from a feed URL on the configured
-// host, or ("", false) when the URL is not one of this plugin's feeds.
-func publicIDFromFeedURL(raw string) (string, bool) {
+// instance, or ("", false) when the URL is not one of this plugin's feeds.
+func (p *Plugin) publicIDFromFeedURL(raw string) (string, bool) {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Host == "" || !isKTNHost(u.Hostname()) {
+	if err != nil || u.Host == "" || !p.isHost(u.Hostname()) {
 		return "", false
 	}
 	return publicIDFromPath(u.Path)
 }
 
-// deriveFeed resolves a feed for a Kill the Newsletter page URL with no request.
-// Both the feed page (/feeds/{id}) and the Atom URL (/feeds/{id}.xml) map to the
-// same canonical feed; the public service rate-limits discovery requests, so the
-// candidate is built directly and marked Derived.
-func deriveFeed(rawurl string) (pluginapi.Candidate, bool) {
-	id, ok := publicIDFromFeedURL(rawurl)
+// deriveFeed resolves a feed for a feed page URL with no request. Both the feed
+// page (/feeds/{id}) and the Atom URL (/feeds/{id}.xml) map to the same
+// canonical feed; the service rate-limits discovery requests, so the candidate
+// is built directly and marked Derived.
+func (p *Plugin) deriveFeed(rawurl string) (pluginapi.Candidate, bool) {
+	id, ok := p.publicIDFromFeedURL(rawurl)
 	if !ok {
 		return pluginapi.Candidate{}, false
 	}
 	return pluginapi.Candidate{
-		FeedURL: feedURLFor(id),
+		FeedURL: p.feedURLFor(id),
 		Title:   "Kill the Newsletter",
-		HomeURL: homeURLFor(id),
+		HomeURL: p.homeURLFor(id),
 		Derived: true,
 	}, true
 }
 
-// canonicalFeedURL rewrites a Kill the Newsletter URL to the canonical Atom
-// shape: https://{host}/feeds/{publicId}.xml. A URL with no publicId is returned
+// canonicalFeedURL rewrites a configured-instance URL to the canonical Atom
+// shape: {base}/feeds/{publicId}.xml. A URL with no publicId is returned
 // unchanged.
-func canonicalFeedURL(raw string) string {
+func (p *Plugin) canonicalFeedURL(raw string) string {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Host == "" || !isKTNHost(u.Hostname()) {
+	if err != nil || u.Host == "" || !p.isHost(u.Hostname()) {
 		return raw
 	}
 	id, ok := publicIDFromPath(u.Path)
 	if !ok {
 		return raw
 	}
-	return feedURLFor(id)
+	return p.feedURLFor(id)
 }
 
 // feedToken returns the publicId a feed URL represents (the token a feed is
 // identified by), or "" when the URL is not one of this plugin's feeds.
-func feedToken(feedURL string) string {
-	id, _ := publicIDFromFeedURL(feedURL)
+func (p *Plugin) feedToken(feedURL string) string {
+	id, _ := p.publicIDFromFeedURL(feedURL)
 	return id
 }
 
