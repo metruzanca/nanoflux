@@ -56,12 +56,9 @@ var (
 	apiBase = "https://public.api.bsky.app"
 	// repoBase serves com.atproto.repo.listRecords.
 	repoBase = "https://bsky.social"
-	// syncBase serves com.atproto.sync.getBlob (which redirects to the
-	// account's PDS).
-	syncBase = "https://bsky.social"
 	// imgBase serves image blobs as full-size images with no redirect.
 	imgBase = "https://cdn.bsky.app"
-	// videoBase serves a video's poster frame.
+	// videoBase serves a video's HLS playlist and poster frame.
 	videoBase = "https://video.bsky.app"
 )
 
@@ -302,14 +299,15 @@ func (p Plugin) itemFromRecord(r record, prof profile) (pluginapi.Item, bool) {
 	}
 	if c.video != nil && c.video.Ref.Link != "" {
 		cid := c.video.Ref.Link
-		mime := c.video.MIMEType
-		if mime == "" {
-			mime = "video/mp4"
-		}
+		// The video is exposed as an HLS playlist, not the raw blob: the raw
+		// blob (com.atproto.sync.getBlob) returns the whole file and ignores
+		// Range, so seeking is limited, while the HLS segments are CORS-open
+		// and Range-capable. The stored URL is the stable master playlist; the
+		// browser fetches it at play time, so the session-scoped rendition URLs
+		// inside it are always fresh.
 		it.Enclosures = append(it.Enclosures, pluginapi.Enclosure{
-			URL:      blobURL(prof.DID, cid),
-			MIMEType: mime,
-			Length:   c.video.Size,
+			URL:      hlsURL(prof.DID, cid),
+			MIMEType: "application/vnd.apple.mpegurl",
 		})
 		if firstImage == "" {
 			firstImage = videoThumbURL(prof.DID, cid)
@@ -344,23 +342,14 @@ func imageURL(did, cid string) string {
 	return imgBase + "/img/feed_fullsize/plain/" + did + "/" + cid
 }
 
-// blobURL is the raw blob URL, used for a video so the enclosure is a playable
-// video/mp4 rather than an HLS playlist.
-//
-// Alternative video strategy (not implemented): Bluesky also serves each video
-// as an HLS playlist at
-//
-//	https://video.bsky.app/watch/{urlencoded did}/{cid}/playlist.m3u8
-//
-// which redirects to video.cdn.bsky.app and lists per-rendition playlists
-// (360p/, 720p/…) whose segments are CORS-open and support Range requests.
-// Unlike com.atproto.sync.getBlob — which returns the whole MP4 and ignores
-// Range, so seeking is limited — HLS would give proper seeking and adaptive
-// bitrates. It needs an HLS player in the frontend (a vendored hls.js) and its
-// segment URLs are session-scoped, so it would be a view-time concern rather
-// than a stored enclosure. Revisit if the direct-MP4 enclosure proves limiting.
-func blobURL(did, cid string) string {
-	return syncBase + "/xrpc/com.atproto.sync.getBlob?did=" + url.QueryEscape(did) + "&cid=" + cid
+// hlsURL is a video's HLS master playlist. It is the enclosure the plugin
+// stores, so the item plays with real seeking. The URL is stable (the playlist
+// it returns is fetched fresh at play time and carries the session-scoped
+// rendition URLs), so it is safe to store. It redirects to video.cdn.bsky.app;
+// the master, rendition playlists and segments are all CORS-open, and the
+// segments support Range requests.
+func hlsURL(did, cid string) string {
+	return videoBase + "/watch/" + url.PathEscape(did) + "/" + cid + "/playlist.m3u8"
 }
 
 // videoThumbURL is a video's poster frame, used as the item thumbnail in lists.

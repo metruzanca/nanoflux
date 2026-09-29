@@ -245,7 +245,7 @@ func EnclosureKind(e store.Enclosure) string {
 	if strings.HasPrefix(mt, "audio/") {
 		return "audio"
 	}
-	if strings.HasPrefix(mt, "video/") {
+	if strings.HasPrefix(mt, "video/") || IsHLS(e) {
 		return "video"
 	}
 	ext := strings.ToLower(path.Ext(enclosurePath(e.URL)))
@@ -258,6 +258,17 @@ func EnclosureKind(e store.Enclosure) string {
 		return "video"
 	}
 	return ""
+}
+
+// IsHLS reports whether an enclosure is an HLS manifest (an .m3u8 playlist).
+// Such an enclosure renders as a video, but needs a player (hls.js) in the
+// browser rather than a plain <video src>, so the template marks it.
+func IsHLS(e store.Enclosure) bool {
+	switch strings.ToLower(e.MIMEType) {
+	case "application/vnd.apple.mpegurl", "application/x-mpegurl":
+		return true
+	}
+	return strings.ToLower(path.Ext(enclosurePath(e.URL))) == ".m3u8"
 }
 
 // enclosurePath returns the path portion of an enclosure URL, or "" when it

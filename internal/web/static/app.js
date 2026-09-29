@@ -377,6 +377,8 @@ function openItemData(id) {
       // The modal is injected via plain innerHTML, so htmx never processed its
       // elements (e.g. the share button's hx-post). Initialize them here.
       htmx.process(document.getElementById('item-dialog'));
+      // The body was injected via innerHTML, so initialize any HLS video in it.
+      if (window.nanofluxInitHLS) window.nanofluxInitHLS(itemDialog);
       // Focus the scrollable body so the browser's arrow keys scroll the post
       // (rather than the dialog's first button grabbing focus).
       body.focus();
@@ -403,6 +405,8 @@ if (itemDialog) {
   itemDialog.addEventListener('close', function () {
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     currentItemId = null;
+    // Stop any HLS video's network activity once the modal is gone.
+    if (window.nanofluxDestroyHLS) window.nanofluxDestroyHLS(itemDialog);
   });
   // The item dialog closes only via Esc (native) or the ✕ button. A click on
   // the backdrop deliberately does NOT close it: an accidental outside click
