@@ -37,6 +37,26 @@ templ authorsPage(u store.User, d authorsData) {
 		</form>
 		<div id="author-preview"></div>
 	</dialog>
+
+	<dialog id="create-author-dialog" class="modal">
+		<form class="stack" hx-post="/authors">
+			<div class="row">
+				<h2>add author</h2>
+				<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+			</div>
+			<label>name
+				<input name="name" autofocus required/>
+			</label>
+			<label>avatar url
+				<input name="avatar_url" type="url"/>
+			</label>
+			<label>description
+				<textarea name="description" rows="3"></textarea>
+			</label>
+			<div id="add-author-error" class="error"></div>
+			<button type="submit">add author</button>
+		</form>
+	</dialog>
 }
 
 templ AuthorsList(rows []authorRow) {

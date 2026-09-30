@@ -90,6 +90,7 @@ templ topbar(u store.User) {
 							for _, p := range provisionersFrom(ctx) {
 								<button type="button" class="link menu-item" role="menuitem" data-action="provision" data-plugin={ p.Name } data-label={ p.Label }>Add a { p.Label }</button>
 							}
+							<button type="button" class="link menu-item" role="menuitem" data-action="addAuthor">add author</button>
 							<button type="button" class="link menu-item" role="menuitem" data-action="addCollection">add collection</button>
 							<button type="button" class="link menu-item" role="menuitem" data-action="addList">add list</button>
 						</div>
