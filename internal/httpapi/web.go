@@ -1891,7 +1891,10 @@ func (s *Server) authorCreate(w http.ResponseWriter, r *http.Request) {
 		s.autoCacheAuthorAvatar(ctx, a)
 		cancel()
 	}
-	web.Render(w, r, AuthorRow(authorRow{Author: a}))
+	// A standalone author has no feeds yet, so land on the new author's page
+	// where feeds can be added.
+	w.Header().Set("HX-Redirect", "/authors/"+strconv.FormatInt(a.ID, 10))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {

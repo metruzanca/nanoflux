@@ -871,6 +871,7 @@ function openPluginDocs(name) {
 // rows reference the same objects.
 var ACTIONS = {
   addFeed:       { label: 'add feed',           hint: 'action', run: function () { openDialog('/authors', 'add-author-dialog'); } },
+  addAuthor:     { label: 'add author',         hint: 'action', run: function () { openDialog('/authors', 'create-author-dialog'); } },
   savePage:      { label: 'save url for later', hint: 'action', run: openSavePage },
   addCollection: { label: 'add collection',     hint: 'action', run: function () { openDialog('/collections', 'add-collection-dialog'); } },
   addList:       { label: 'add list',           hint: 'action', run: function () { openDialog('/lists', 'add-list-dialog'); } },
@@ -891,6 +892,7 @@ function commandRows() {
     { label: 'lists', hint: 'go', run: run('/lists') },
     { label: 'settings', hint: 'go', run: run('/settings') },
     ACTIONS.addFeed,
+    ACTIONS.addAuthor,
     ACTIONS.savePage,
     ACTIONS.addCollection,
     ACTIONS.addList,

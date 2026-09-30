@@ -802,15 +802,22 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 
-	// Create an author through the web UI (returns the row fragment).
+	// Create an author through the web UI (redirects to the new author page).
 	rr := doForm(h, "POST", "/authors", url.Values{
 		"name": {"Metru"},
 	}, cookie)
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "author-") {
+	if rr.Code != http.StatusNoContent {
 		t.Fatalf("create author: %d %s", rr.Code, rr.Body.String())
+	}
+	if loc := rr.Header().Get("HX-Redirect"); !strings.HasPrefix(loc, "/authors/") {
+		t.Fatalf("create author should redirect to the author page, got %q", loc)
 	}
 	if body := doGet(h, "/authors", cookie).Body.String(); !strings.Contains(body, "Metru") {
 		t.Fatal("authors page missing author")
+	}
+	// The add menu offers a standalone author dialog, and the page renders it.
+	if body := doGet(h, "/authors", cookie).Body.String(); !strings.Contains(body, `data-action="addAuthor"`) || !strings.Contains(body, `id="create-author-dialog"`) {
+		t.Fatal("authors page missing add-author menu entry or dialog")
 	}
 
 	// Global add with an existing author: the feed lands under that author and
