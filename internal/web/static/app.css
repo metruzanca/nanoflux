@@ -1232,6 +1232,56 @@ details.feeds-section summary:hover { color: var(--accent); }
     align-items: flex-start;
   }
   .tabs { flex-wrap: wrap; }
+
+  /* Item preview: use the whole viewport so the content has room, and stack
+     the header (title, then actions) so the title and the fav / bookmark /
+     read / ⋯ buttons and the close ✕ no longer collide or wrap into each
+     other on a narrow screen. */
+  #item-dialog[open] {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .item-dialog-head {
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem 0.5rem;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  #item-dialog-controls-src {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  #item-dialog-controls-src h1 {
+    font-size: 1.1rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  #item-dialog-body { padding: 0.75rem 0.75rem 1rem; }
+
+  /* A video gets the full width, edge to edge, under the pinned header. The
+     dialog and body are no longer padded here, so pull the media back out to
+     the screen edges and drop the rounded frame. */
+  #item-dialog:has(.video-embed) .video-embed {
+    margin: 0 -0.75rem;
+    border: 0;
+    border-radius: 0;
+    background: #000;
+  }
+  #item-dialog:has(.enclosures video) .enclosures figure { margin: 0 -0.75rem; }
+  #item-dialog:has(.enclosures video) .enclosures video { border-radius: 0; }
 }
 
 /* --- Vaadin components (vendored) ------------------------------------------
