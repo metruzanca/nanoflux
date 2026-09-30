@@ -244,6 +244,16 @@ func TestProxiedImageURL(t *testing.T) {
 			t.Errorf("ProxiedImageURL(%q) = %q, want unchanged", raw, got)
 		}
 	}
+	// A host-installed bypass predicate (the plugin layer's ProxyBypasser) makes
+	// matching image URLs load directly instead of through /img.
+	SetProxyBypass(func(raw string) bool { return strings.HasPrefix(raw, "https://i.example/") })
+	defer SetProxyBypass(nil)
+	if got := ProxiedImageURL("https://i.example/a.jpg"); got != "https://i.example/a.jpg" {
+		t.Errorf("bypass = %q, want direct", got)
+	}
+	if got := ProxiedImageURL("https://cdn.example/a.jpg"); got != "/img?u="+url.QueryEscape("https://cdn.example/a.jpg") {
+		t.Errorf("non-bypassed = %q, want proxied", got)
+	}
 }
 
 func TestProxyImageSrcs(t *testing.T) {

@@ -778,3 +778,33 @@ func TestRegistryImageCache(t *testing.T) {
 		t.Fatalf("folder = %q, want feeds", got)
 	}
 }
+
+// fakeBypasser is a fakeFetcher that also implements ProxyBypasser.
+type fakeBypasser struct {
+	fakeFetcher
+	host string
+}
+
+func (f fakeBypasser) BypassProxy(rawurl string) bool {
+	u, err := url.Parse(rawurl)
+	return err == nil && u.Hostname() == f.host
+}
+
+// TestRegistryBypassesProxy covers the plugin-driven /img proxy opt-out: a
+// plugin implementing ProxyBypasser wins for its hosts, and a plugin that does
+// not implement it never bypasses.
+func TestRegistryBypassesProxy(t *testing.T) {
+	reg := NewRegistry()
+	reg.RegisterNative(fakeBypasser{fakeFetcher: fakeFetcher{name: "media"}, host: "i.example"})
+	reg.RegisterNative(fakeFetcher{name: "plain"})
+
+	if !reg.BypassesProxy("https://i.example/a.jpg") {
+		t.Error("plugin host should bypass the proxy")
+	}
+	if reg.BypassesProxy("https://cdn.example/a.jpg") {
+		t.Error("unclaimed host should be proxied")
+	}
+	if reg.BypassesProxy("not a url") {
+		t.Error("an unparsable url should not bypass")
+	}
+}

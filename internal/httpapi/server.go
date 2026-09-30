@@ -63,6 +63,11 @@ func (s *Server) SetBackupRunner(r *backup.Runner) { s.backups = r }
 func (s *Server) SetPlugins(reg *plugin.Registry, hosts *plugin.Hosts) {
 	s.plugins = reg
 	s.pluginHosts = hosts
+	// Let a plugin opt its image hosts out of the /img proxy (a site that
+	// hotlinks freely but blocks the proxy's server-side request).
+	if reg != nil {
+		web.SetProxyBypass(reg.BypassesProxy)
+	}
 }
 
 func (s *Server) Handler() http.Handler {

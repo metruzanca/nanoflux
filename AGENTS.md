@@ -105,6 +105,23 @@ fetched by the generic parser, so `feeds.plugin_name` stays empty:
   `items.summary` because `UpdateItemSnapshotByID` refreshes the summary every
   poll; `httpapi.itemBody` renders content when present, else the summary.
   `examples/plugin-enrich` is the reference.
+- **`ProxyBypasser`** (no capability constant): a plugin whose image hosts
+  hotlink freely but refuse the host's server-side `/img` request implements
+  `BypassProxy(rawurl) bool`. `plugin.Registry.BypassesProxy` asks every plugin
+  that implements it and any true answer makes `web.ProxiedImageURL` return the
+  raw URL. `httpapi.Server.SetPlugins` installs the predicate into `web`
+  (`web.SetProxyBypass`) once at startup. Pure; the reference is the reddit
+  plugin's `redditMediaHosts` list. External plugins are the gRPC client, which
+  does not implement this, so only native plugins can bypass today.
+
+`Match` **must honour the capability it is asked about**: return false for any
+capability the plugin does not claim. A plugin that ignores it (an early
+`func Match(u, _ Capability) bool { return isSiteURL(u) }`) spuriously claims
+URL-matched capabilities the registry asks about — which broke the Match-only
+`CapImageCache` for Instagram/Patreon feeds until their `Match` was made
+cap-aware. Optional capabilities that pair `Match` with a type assertion are
+tolerant (a non-implementer is skipped; the external gRPC client's unsupported
+RPC is handled), but Match-only ones are not.
 
 The reddit plugin (`internal/plugin/native/reddit`) is the reference for all of
 these: `Match` returns true for `CapSharedKey`, `CapDecorate`, `CapURLPolicy`,

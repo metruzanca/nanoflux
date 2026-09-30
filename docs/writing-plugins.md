@@ -129,6 +129,11 @@ a feed it does not fetch at all.
   into its own object storage (under `cache/<plugin>/`) and renders the cached
   copy. It is forced on for those feeds and the user cannot disable it. A user
   may also enable caching per feed without a plugin.
+- **`BypassProxy` (optional)** — if the site's images hotlink freely in a browser
+  but refuse the host's server-side `/img` request, implement `ProxyBypasser` and
+  return true for that host. Matching image URLs then load directly. Pure (no
+  network I/O); it is not URL-capability matched, the host asks every plugin that
+  implements it.
 - **`URLPolicy` (optional)** — pure site URL rules: the canonical feed shape
   (`CanonicalizeFeedURL`) and the token a feed URL represents (`FeedToken`).
 - **`Docs` (optional)** — return Markdown describing the plugin, shown from the
