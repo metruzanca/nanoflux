@@ -5,6 +5,11 @@
 - App links are internal by default, ↗ on every external link.
 - mise is for development, make is for selfhosting an instance
 - Do not mention any external plugins in internal code, comments or docs
+- Prefer extending `pluginapi` over site-specific core changes. When a request
+  concerns one site and the direct fix would add a special case to the core app,
+  stop and extend `pluginapi` instead, then have the core call into a native or
+  external plugin. Core should not accumulate per-site edge cases. (See "Plugins
+  own site-specific behavior".)
 - Do not run `make` or `podman` or `docker` commands without user's approval. The container is likely the user's production deployment. Use go to run the app locally instead e.g. go run cmd/server/main.go which runs on 8080. You may kill port 8080 if necessary.
 - we're pre v1 so breaking changes are allowed/expected if they make v1 better.
 
@@ -61,6 +66,14 @@ capabilities (`pluginapi.Capability`, added additively over the single `Fetcher`
 gRPC service and `APIVersion`-gated). A site whose feed URL shape is known and
 rate-limited (reddit) owns its rules in its plugin while its `.rss` is still
 fetched by the generic parser, so `feeds.plugin_name` stays empty:
+
+When a site-specific need appears, the default is a plugin, not core. Reach for
+a new `pluginapi.Capability` (URL-matched when the behavior is keyed to a URL) or
+an optional interface advertised by a host-filled `Meta` flag, and wire the core
+to call the registry at one chokepoint. Keep anything that runs per render pure
+and cheap (a Match-only capability needs the plugin's `Match` to be
+capability-aware; see the invariant below). Native when the logic is general or
+needs no isolation; external when it is opt-in, fragile, or ToS-sensitive.
 
 - **`URLPolicy`** (`CapURLPolicy`): `CanonicalizeFeedURL(raw)` returns the
   redirect-free stored shape, and `FeedToken(feedURL)` the `r/<sub>` / `u/<name>`
