@@ -79,8 +79,15 @@ func (Plugin) Meta() pluginapi.Meta {
 // Docs returns this plugin's Markdown documentation.
 func (Plugin) Docs() string { return readme }
 
-func (Plugin) Match(u *url.URL, _ pluginapi.Capability) bool {
-	return isProfileURL(u)
+func (Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
+	// Honour the capability: a plugin that ignores it would spuriously claim
+	// every URL-matched capability the registry asks about.
+	switch cap {
+	case pluginapi.CapDiscover, pluginapi.CapFetch:
+		return isProfileURL(u)
+	default:
+		return false
+	}
 }
 
 // Discover: the profile URL is itself the feed URL.

@@ -54,7 +54,7 @@ templ AuthorRow(r authorRow) {
 				if r.AvatarKey != "" {
 					<img class="avatar avatar-sm" src={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/avatar?v=" + url.QueryEscape(r.LastFetchedAt) } alt=""/>
 				} else if r.AvatarURL != "" {
-					<img class="avatar avatar-sm" src={ "/img?u=" + url.QueryEscape(r.AvatarURL) } onerror="this.style.display='none'" alt=""/>
+					<img class="avatar avatar-sm" src={ web.ProxiedImageURL(r.AvatarURL) } onerror="this.style.display='none'" alt=""/>
 				}
 				<strong>{ r.Name }</strong>
 			</a>
@@ -99,7 +99,7 @@ templ authorAvatarFields(d authorAvatarCardData) {
 				if d.AvatarKey != "" {
 					<img class="avatar avatar-lg" src={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar?v=" + url.QueryEscape(d.LastFetchedAt) } alt=""/>
 				} else if d.AvatarURL != "" {
-					<img class="avatar avatar-lg" src={ "/img?u=" + url.QueryEscape(d.AvatarURL) } onerror="this.style.display='none'" alt=""/>
+					<img class="avatar avatar-lg" src={ web.ProxiedImageURL(d.AvatarURL) } onerror="this.style.display='none'" alt=""/>
 				} else {
 					<span class="muted">no avatar url set</span>
 				}
@@ -184,7 +184,7 @@ templ authorPage(u store.User, d authorData) {
 				if d.Author.AvatarKey != "" {
 					<img class="avatar avatar-lg" src={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/avatar?v=" + url.QueryEscape(d.Author.LastFetchedAt) } alt=""/>
 				} else if d.Author.AvatarURL != "" {
-					<img class="avatar avatar-lg" src={ "/img?u=" + url.QueryEscape(d.Author.AvatarURL) } onerror="this.style.display='none'" alt=""/>
+					<img class="avatar avatar-lg" src={ web.ProxiedImageURL(d.Author.AvatarURL) } onerror="this.style.display='none'" alt=""/>
 				}
 				<h1>{ d.Author.Name }</h1>
 			</div>

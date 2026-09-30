@@ -325,18 +325,32 @@ func isImageHref(href string) bool {
 	return false
 }
 
+// proxyBypass, when installed by the host, reports whether an image URL should
+// be loaded directly instead of through /img. It is the plugin layer's
+// ProxyBypasser decision; nil means "always proxy".
+var proxyBypass func(rawurl string) bool
+
+// SetProxyBypass installs the host's plugin-driven image-proxy bypass. It is set
+// once at startup, before any rendering, so a plain variable is race-free.
+func SetProxyBypass(fn func(rawurl string) bool) { proxyBypass = fn }
+
 // ProxiedImageURL routes an absolute http(s) image URL through the app's /img
 // proxy. Some hosts (Instagram's CDN) answer with
 // Cross-Origin-Resource-Policy: same-origin, which blocks a direct browser
 // hotlink; fetching server-side and re-serving from our own origin avoids it.
-// Non-http(s) sources (data: URIs, relative paths) are returned unchanged, as
-// are URLs that cannot be parsed.
+// A plugin may instead opt a host out (ProxyBypasser): the proxy's server-side
+// request is refused there while a direct load works. Non-http(s) sources
+// (data: URIs, relative paths) are returned unchanged, as are URLs that cannot
+// be parsed.
 func ProxiedImageURL(rawurl string) string {
 	if rawurl == "" {
 		return ""
 	}
 	u, err := url.Parse(rawurl)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return rawurl
+	}
+	if proxyBypass != nil && proxyBypass(rawurl) {
 		return rawurl
 	}
 	return "/img?u=" + url.QueryEscape(rawurl)

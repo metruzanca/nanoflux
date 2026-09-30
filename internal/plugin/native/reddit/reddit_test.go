@@ -460,3 +460,30 @@ func TestSearchURLNotOwned(t *testing.T) {
 		t.Errorf("Discover(search) = %v, %v; want ErrUnsupportedCapability", cs, err)
 	}
 }
+
+// BypassProxy opts reddit's image CDNs out of the host's /img proxy (they
+// hotlink freely but refuse the proxy's server-side request). Non-media hosts,
+// including reddit itself, stay proxied.
+func TestBypassProxy(t *testing.T) {
+	p := &Plugin{}
+	for _, u := range []string{
+		"https://i.redd.it/abc.jpeg",
+		"https://preview.redd.it/abc.jpeg?s=x",
+		"https://external-preview.redd.it/abc.jpeg",
+		"https://b.thumbs.redditmedia.com/abc.jpg",
+		"https://www.redditstatic.com/x.png",
+	} {
+		if !p.BypassProxy(u) {
+			t.Errorf("BypassProxy(%q) = false, want true", u)
+		}
+	}
+	for _, u := range []string{
+		"https://www.reddit.com/r/cats/comments/1a/x/",
+		"https://cdn.example/a.jpg",
+		"://bad",
+	} {
+		if p.BypassProxy(u) {
+			t.Errorf("BypassProxy(%q) = true, want false", u)
+		}
+	}
+}

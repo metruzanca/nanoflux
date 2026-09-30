@@ -67,11 +67,12 @@ type Plugin struct {
 }
 
 var (
-	_ pluginapi.Fetcher     = (*Plugin)(nil)
-	_ pluginapi.Renderer    = (*Plugin)(nil)
-	_ pluginapi.SharedKeyer = (*Plugin)(nil)
-	_ pluginapi.URLPolicy   = (*Plugin)(nil)
-	_ pluginapi.Decoration  = (*Plugin)(nil)
+	_ pluginapi.Fetcher       = (*Plugin)(nil)
+	_ pluginapi.Renderer      = (*Plugin)(nil)
+	_ pluginapi.SharedKeyer   = (*Plugin)(nil)
+	_ pluginapi.URLPolicy     = (*Plugin)(nil)
+	_ pluginapi.Decoration    = (*Plugin)(nil)
+	_ pluginapi.ProxyBypasser = (*Plugin)(nil)
 )
 
 func (*Plugin) Meta() pluginapi.Meta {
@@ -461,6 +462,32 @@ func isSearchURL(u *url.URL) bool {
 	}
 	for _, seg := range strings.Split(strings.Trim(u.Path, "/"), "/") {
 		if strings.EqualFold(seg, "search") {
+			return true
+		}
+	}
+	return false
+}
+
+// redditMediaHosts are the CDNs reddit serves images from. They hotlink freely
+// (a browser loads them directly) but refuse the host's server-side image proxy,
+// so reddit's images are loaded directly instead.
+var redditMediaHosts = []string{"redd.it", "redditmedia.com", "redditstatic.com"}
+
+// BypassProxy reports whether the host should load rawurl directly instead of
+// through /img: reddit's media hosts hotlink freely but block the proxy.
+func (*Plugin) BypassProxy(rawurl string) bool {
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return false
+	}
+	return isRedditMediaHost(u.Hostname())
+}
+
+// isRedditMediaHost reports whether host is one of reddit's image CDNs.
+func isRedditMediaHost(host string) bool {
+	host = strings.ToLower(host)
+	for _, h := range redditMediaHosts {
+		if host == h || strings.HasSuffix(host, "."+h) {
 			return true
 		}
 	}

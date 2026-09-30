@@ -67,8 +67,15 @@ func (Plugin) Docs() string { return readme }
 
 // Match handles both discover and fetch: creator pages, and the derived
 // campaign-posts API URL (the stored feed URL / pagination cursor).
-func (Plugin) Match(u *url.URL, _ pluginapi.Capability) bool {
-	return isProfileURL(u) || isPostsURL(u)
+func (Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
+	// Honour the capability: a plugin that ignores it would spuriously claim
+	// every URL-matched capability the registry asks about.
+	switch cap {
+	case pluginapi.CapDiscover, pluginapi.CapFetch:
+		return isProfileURL(u) || isPostsURL(u)
+	default:
+		return false
+	}
 }
 
 // Discover offers the creator page as its own feed URL (resolved to a campaign
