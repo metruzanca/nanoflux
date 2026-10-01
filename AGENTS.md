@@ -215,6 +215,30 @@ category.
   `action: hide, field: category, pattern: r/golang` works. Choices live in
   `filterFieldItems`; `feedRuleCreate` accepts the field.
 
+## Filter modes (block / allow)
+
+A feed's rules are a block list by default; a feed can instead be an allow list.
+
+- `feeds.filter_mode` (schemaV47) is `block` (default) or `allow`.
+  `filtermatch.Decide(mode, rules, fields)` is the single decision shared by
+  `poller.ingest` and the HTTP preview/retroactive paths. `block`: the first
+  matching rule wins (`delete` drops the item, `mark_read` stores it read; no
+  match keeps it). `allow`: the item is kept iff it matches **at least one**
+  rule, the per-rule action is ignored, and no rules at all keeps everything (a
+  safety default so flipping the toggle cannot wipe a feed). `NormalizeMode`
+  maps an unknown/empty value to `block`.
+- `poller.ingest` returns `(newItems, filtered)`. `PollOlder` treats a page with
+  zero new items as history-exhausted only when nothing was filtered, so an
+  all-filtered page cannot stop a "load older items" walk.
+- The feed edit filters card has a mode picker (`POST /feeds/{id}/filter-mode`,
+  `Server.feedFilterMode`). Switching to allow re-applies the whole rule set to
+  stored items and removes those matching no rule; switching back to block only
+  affects future polls (removed items are already gone). Adding a rule in allow
+  mode likewise re-applies the full set; in block mode only the new rule is
+  applied. `feedRulePreview` is set-level in allow mode (keep = matches any rule)
+  and per-rule in block mode. `store.FeedStore.SetFilterMode` verifies
+  ownership, and `cloneFeeds` carries the mode so demo clones keep it.
+
 ## Appearance
 
 Per-user display preferences live in the settings "appearance" card and are

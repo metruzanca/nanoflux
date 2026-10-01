@@ -46,3 +46,40 @@ func TestMatchInvalidRegex(t *testing.T) {
 		t.Fatal("expected a compile error for an invalid regex")
 	}
 }
+
+func TestDecide(t *testing.T) {
+	sponsored := store.Filter{Field: "title", Pattern: "sponsored", Action: ActionDelete}
+	saved := store.Filter{Field: "title", Pattern: "draft", Action: ActionMarkRead}
+	it := Fields{Title: "A Sponsored Draft"}
+	plain := Fields{Title: "A normal post"}
+
+	cases := []struct {
+		name  string
+		mode  string
+		rules []store.Filter
+		f     Fields
+		want  Decision
+	}{
+		{"block no match keeps", ModeBlock, []store.Filter{sponsored}, plain, Keep},
+		{"block delete drops", ModeBlock, []store.Filter{sponsored}, it, Drop},
+		{"block mark read", ModeBlock, []store.Filter{saved}, Fields{Title: "draft notes"}, MarkRead},
+		{"block first match wins", ModeBlock, []store.Filter{saved, sponsored}, it, MarkRead},
+		{"allow match keeps", ModeAllow, []store.Filter{sponsored}, it, Keep},
+		{"allow no match drops", ModeAllow, []store.Filter{sponsored}, plain, Drop},
+		{"allow action ignored", ModeAllow, []store.Filter{{Field: "title", Pattern: "sponsored", Action: ActionDelete}}, it, Keep},
+		{"allow any rule keeps", ModeAllow, []store.Filter{{Field: "title", Pattern: "nope"}, sponsored}, it, Keep},
+		{"allow zero rules keeps", ModeAllow, nil, plain, Keep},
+		{"unknown mode is block", "bogus", []store.Filter{sponsored}, plain, Keep},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Decide(tc.mode, tc.rules, tc.f)
+			if err != nil {
+				t.Fatalf("Decide: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("Decide = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

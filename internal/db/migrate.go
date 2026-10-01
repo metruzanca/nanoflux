@@ -57,6 +57,7 @@ var migrations = []migration{
 	{44, schemaV44},
 	{45, schemaV45},
 	{46, schemaV46},
+	{47, schemaV47},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -682,6 +683,14 @@ ALTER TABLE item_enclosures ADD COLUMN cache_key TEXT NOT NULL DEFAULT '';
 const schemaV46 = `
 ALTER TABLE item_enclosures ADD COLUMN kind TEXT NOT NULL DEFAULT '';
 ALTER TABLE item_enclosures ADD COLUMN poster TEXT NOT NULL DEFAULT '';
+`
+
+// schemaV47 adds a per-feed filter mode. 'block' (the default) applies each
+// matching rule's action as before; 'allow' turns the rule set into an allow
+// list, keeping only items that match at least one rule (and dropping the rest
+// at ingest).
+const schemaV47 = `
+ALTER TABLE feeds ADD COLUMN filter_mode TEXT NOT NULL DEFAULT 'block';
 `
 
 // Migrate applies any pending migrations in order, recording each in

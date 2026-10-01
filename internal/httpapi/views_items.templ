@@ -431,6 +431,7 @@ type pickerOption struct {
 	HxPost   string // POST endpoint for a server-side mutation picker (e.g. home mode)
 	HxVals   string // JSON extra values sent with HxPost
 	HxTarget string
+	HxConfirm string // confirmation prompt for a mutating option
 }
 
 // PickerControl is the shared pill + dropdown used for the display mode, the
@@ -494,6 +495,9 @@ templ PickerControl(name, title, current, scope string, options []pickerOption) 
 						hx-vals={ o.HxVals }
 						hx-target={ o.HxTarget }
 						hx-swap="outerHTML"
+						if o.HxConfirm != "" {
+							hx-confirm={ o.HxConfirm }
+						}
 					>
 						if o.Icon != "" {
 							@ModeIcon(o.Icon)

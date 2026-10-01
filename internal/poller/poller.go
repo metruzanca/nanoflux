@@ -464,7 +464,7 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 	}
 
 	rules, _ := p.store.Filters.ListByFeed(f.UserID, f.ID)
-	newItems, err := p.ingest(ctx, f, res, rules, fetched)
+	newItems, _, err := p.ingest(ctx, f, res, rules, fetched)
 	if err != nil {
 		return newItems, err
 	}
@@ -560,7 +560,7 @@ func (p *Poller) PollOlder(ctx context.Context, f store.Feed) (newItems int, exh
 		if err != nil {
 			return newItems, false, fmt.Errorf("fetch %s: %w", url, err)
 		}
-		inserted, err := p.ingest(ctx, f, res, rules, db.Now())
+		inserted, filtered, err := p.ingest(ctx, f, res, rules, db.Now())
 		if err != nil {
 			return newItems, false, err
 		}
@@ -571,10 +571,12 @@ func (p *Poller) PollOlder(ctx context.Context, f store.Feed) (newItems int, exh
 			p.store.Feeds.SetNextPageURL(f.ID, "")
 			return newItems, true, nil
 		}
-		if inserted == 0 || seen[next] {
-			// A page with zero new items means every older page is already
-			// stored (feeds are newest-first), and a repeated URL is a loop.
-			// Either way the history is exhausted.
+		if (inserted == 0 && filtered == 0) || seen[next] {
+			// A page with zero new items and nothing filtered out means every
+			// older item is already stored (feeds are newest-first). A page
+			// whose items were all filtered out must not stop the walk: older
+			// pages may contain items the filter keeps. A repeated URL is a loop.
+			// Either way the history is exhausted only in the first case.
 			p.store.Feeds.SetNextPageURL(f.ID, "")
 			return newItems, true, nil
 		}
@@ -596,20 +598,18 @@ func (p *Poller) PollOlder(ctx context.Context, f store.Feed) (newItems int, exh
 // into object storage and their keys stored, so a view renders the cached copy
 // instead of a URL that may have expired. Caching is best-effort and never fails
 // the poll.
-func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result, rules []store.Filter, fetched string) (int, error) {
-	newItems := 0
+func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result, rules []store.Filter, fetched string) (int, int, error) {
+	newItems, filtered := 0, 0
 	var stored []store.Item
 	cacheImages := p.imgCache != nil && (f.CacheImages || p.imgCache.Forced(f.FeedURL))
 	for _, it := range res.Items {
-		action := ""
 		fields := filtermatch.FieldsFromFeedItem(it)
-		for _, rule := range rules {
-			if m, err := filtermatch.Match(rule, fields); err == nil && m {
-				action = rule.Action
-				break
-			}
+		decision, err := filtermatch.Decide(f.FilterMode, rules, fields)
+		if err != nil {
+			return newItems, filtered, err
 		}
-		if action == filtermatch.ActionDelete {
+		if decision == filtermatch.Drop {
+			filtered++
 			continue
 		}
 		item := store.Item{
@@ -625,13 +625,13 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 			PublishedAt: it.PublishedAt,
 			FetchedAt:   fetched,
 		}
-		if action == filtermatch.ActionMarkRead {
+		if decision == filtermatch.MarkRead {
 			item.Read = true
 			item.ReadAt = db.Now()
 		}
 		inserted, err := p.store.Items.Upsert(f.ID, item)
 		if err != nil {
-			return newItems, err
+			return newItems, filtered, err
 		}
 		if inserted {
 			newItems++
@@ -667,7 +667,7 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 		}
 	}
 	p.enrichStored(f.UserID, stored)
-	return newItems, nil
+	return newItems, filtered, nil
 }
 
 // enrichStored offers newly stored items to the body enricher and writes the

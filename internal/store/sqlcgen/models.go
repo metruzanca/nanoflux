@@ -65,6 +65,7 @@ type Feed struct {
 	IsSystem         int64          `json:"is_system"`
 	Rank             int64          `json:"rank"`
 	CacheImages      int64          `json:"cache_images"`
+	FilterMode       string         `json:"filter_mode"`
 	CreatedAt        string         `json:"created_at"`
 }
 
