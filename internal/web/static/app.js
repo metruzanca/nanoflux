@@ -338,6 +338,9 @@ function addAuthorLinkRow() {
 
 // Item modal.
 var currentItemId = null;
+// The page title behind the modal, saved on a fresh open so that closing the
+// modal (or navigating back out of an item) restores the tab title.
+var savedPageTitle = null;
 var itemDialog = document.getElementById('item-dialog');
 
 // The open item is mirrored in the URL hash (#item-<id>) so the modal deep-links
@@ -360,6 +363,7 @@ function openItem(el) {
 function openItemData(id) {
   if (!itemDialog) return;
   var wasOpen = itemDialog.open;
+  if (!wasOpen) savedPageTitle = document.title;
   currentItemId = id;
   var body = document.getElementById('item-dialog-body');
   body.innerHTML = '<p class="muted">loading…</p>';
@@ -374,6 +378,9 @@ function openItemData(id) {
       // so the title and buttons stay pinned at the top and only content scrolls.
       var controls = body.querySelector('#item-dialog-controls-src');
       if (controls && slot) slot.replaceChildren(controls);
+      // Mirror the item's title into the tab while its modal is open.
+      var titleEl = controls && controls.querySelector('h1');
+      if (titleEl && titleEl.textContent) document.title = titleEl.textContent;
       // The modal is injected via plain innerHTML, so htmx never processed its
       // elements (e.g. the share button's hx-post). Initialize them here.
       htmx.process(document.getElementById('item-dialog'));
@@ -383,6 +390,7 @@ function openItemData(id) {
       // (rather than the dialog's first button grabbing focus).
       body.focus();
       markRowRead(id);
+      updateItemNavButtons();
     })
     .catch(function () { body.innerHTML = '<p class="error">could not load item</p>'; });
   itemDialog.showModal();
@@ -405,6 +413,7 @@ if (itemDialog) {
   itemDialog.addEventListener('close', function () {
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     currentItemId = null;
+    if (savedPageTitle !== null) { document.title = savedPageTitle; savedPageTitle = null; }
     // Stop any HLS video's network activity once the modal is gone.
     if (window.nanofluxDestroyHLS) window.nanofluxDestroyHLS(itemDialog);
   });
@@ -643,19 +652,47 @@ function requestMore() {
   btn.click();
   return true;
 }
-// navigateItem opens the row dir steps from the current item (dir 1 = next,
-// -1 = previous). Returns false at the edge of the loaded rows.
-function navigateItem(dir) {
+// siblingItem returns the loaded row dir steps from the current item (dir 1 =
+// next, -1 = previous), or null at the edge of the loaded rows.
+function siblingItem(dir) {
   var current = document.getElementById('item-' + currentItemId);
-  if (!current) return false;
+  if (!current) return null;
   var list = current.closest('ul.items') || current.parentElement;
   var items = Array.prototype.slice.call(list.querySelectorAll('li[id^="item-"]'));
-  var next = items[items.indexOf(current) + dir];
+  return items[items.indexOf(current) + dir] || null;
+}
+// navigateItem opens the row dir steps from the current item. Returns false at
+// the edge of the loaded rows.
+function navigateItem(dir) {
+  var next = siblingItem(dir);
   if (!next) return false;
   var link = next.querySelector('[data-item-id]');
   if (!link) return false;
   openItem(link);
   return true;
+}
+// itemNav is the shared next/previous action for the arrow keys, the modal's
+// pager buttons and the modal swipe: move within the loaded rows, or (forward
+// only) fetch the next page and continue into it. Returns whether it acted.
+function itemNav(dir) {
+  if (navigateItem(dir)) {
+    if (dir > 0) prefetchNearEnd();
+    return true;
+  }
+  if (dir > 0 && loadMoreButton()) {
+    continueAfterLoad = true;
+    requestMore();
+    return true;
+  }
+  return false;
+}
+// updateItemNavButtons disables the pager at the ends: previous is dead at the
+// first loaded row, next only when no further row and no page remain.
+function updateItemNavButtons() {
+  var prev = document.getElementById('item-prev');
+  var next = document.getElementById('item-next');
+  if (prev) prev.disabled = !siblingItem(-1);
+  if (next) next.disabled = !siblingItem(1) && !loadMoreButton();
 }
 // prefetchNearEnd loads the next page once the current item is one row from the
 // end, so the following press is instant ("1 post before" buffer).
@@ -673,20 +710,7 @@ document.addEventListener('keydown', function (e) {
   if (!dialog || !dialog.open || !currentItemId) return;
   if (e.target.closest && e.target.closest('input, textarea, select')) return;
   var dir = e.key === 'ArrowRight' ? 1 : -1;
-
-  if (navigateItem(dir)) {
-    e.preventDefault();
-    if (dir > 0) prefetchNearEnd();
-    return;
-  }
-  // At the end of the loaded rows: if more pages exist, page forward and
-  // continue into the new rows once they arrive (requestMore is a no-op when a
-  // prefetch is already in flight, so the flag just waits for it).
-  if (dir > 0 && loadMoreButton()) {
-    continueAfterLoad = true;
-    requestMore();
-    e.preventDefault();
-  }
+  if (itemNav(dir)) e.preventDefault();
 });
 
 // "/" focuses the search box.
@@ -1164,6 +1188,7 @@ document.body.addEventListener('htmx:afterSwap', function (e) {
       navigateItem(1);
       prefetchNearEnd();
     }
+    if (itemDialog && itemDialog.open) updateItemNavButtons();
   }
 });
 // A failed load-more leaves no rows to advance into; release the guard so the
@@ -1260,6 +1285,65 @@ document.body.addEventListener('htmx:responseError', function () {
   }
 
   document.addEventListener('touchend', settle);
+  document.addEventListener('touchcancel', reset);
+})();
+
+// Swipe left/right on the item preview body to move between items (touch only).
+// The modal is a vertical scroller, so the horizontal gesture is only claimed
+// once it clearly beats the vertical one; from then on preventDefault keeps the
+// browser from scrolling. Text that scrolls sideways on its own (pre blocks)
+// and media controls keep their native gesture.
+(function () {
+  var THRESHOLD = 12;  // px of horizontal travel before it's a swipe
+  var COMMIT = 60;     // px floor for committing a swipe
+  var MAX_PREVIEW = 60; // px the body follows the finger (visually damped)
+
+  var body = null;
+  var startX = 0;
+  var startY = 0;
+  var swiping = false;
+
+  function reset() {
+    if (body) body.style.removeProperty('transform');
+    body = null;
+    swiping = false;
+  }
+
+  document.addEventListener('touchstart', function (e) {
+    if (body || !itemDialog || !itemDialog.open) return;
+    var t = e.changedTouches[0];
+    var el = t.target.closest && t.target.closest('#item-dialog-body');
+    if (!el) return;
+    if (t.target.closest && t.target.closest('pre, video, audio, iframe, input, textarea, select, [contenteditable="true"]')) return;
+    body = el;
+    startX = t.clientX;
+    startY = t.clientY;
+    swiping = false;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function (e) {
+    if (!body) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - startX;
+    var dy = t.clientY - startY;
+    if (!swiping) {
+      if (Math.abs(dx) < THRESHOLD || Math.abs(dx) <= Math.abs(dy)) return;
+      swiping = true;
+    }
+    e.preventDefault();
+    var clamped = Math.max(-MAX_PREVIEW, Math.min(MAX_PREVIEW, dx * 0.5));
+    body.style.transform = 'translateX(' + clamped + 'px)';
+  }, { passive: false });
+
+  document.addEventListener('touchend', function (e) {
+    if (!body) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - startX;
+    var wasSwiping = swiping;
+    reset();
+    if (!wasSwiping || Math.abs(dx) < COMMIT) return;
+    itemNav(dx < 0 ? 1 : -1);
+  });
   document.addEventListener('touchcancel', reset);
 })();
 
