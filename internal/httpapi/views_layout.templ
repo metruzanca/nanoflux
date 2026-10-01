@@ -138,6 +138,10 @@ templ topbar(u store.User) {
 			<button type="button" class="link" title="close" onclick="document.getElementById('item-dialog').close()">@web.Lucide("x")</button>
 		</div>
 		<div id="item-dialog-body" class="item-view" tabindex="0"></div>
+		<div class="item-dialog-foot">
+			<button type="button" id="item-prev" title="previous item" aria-label="previous item" onclick="itemNav(-1)">@web.Lucide("chevron-left")<span>previous</span></button>
+			<button type="button" id="item-next" title="next item" aria-label="next item" onclick="itemNav(1)"><span>next</span>@web.Lucide("chevron-right")</button>
+		</div>
 	</dialog>
 
 	<!-- Shared add-to-list picker; the item's "⋯" menu fetches its content into
