@@ -22,6 +22,77 @@ const (
 	ActionMarkRead = "mark_read"
 )
 
+// Filter modes. Stored in feeds.filter_mode as plain text.
+const (
+	// ModeBlock is the default: a matching rule applies its own action to the
+	// matching item, and an item matching no rule is kept.
+	ModeBlock = "block"
+	// ModeAllow turns the feed's rule set into an allow list: an item is kept
+	// only when it matches at least one rule (the per-rule action is ignored),
+	// and an item matching no rule is dropped. With no rules at all nothing is
+	// matched, so an allow feed with no rules keeps everything rather than
+	// wiping itself.
+	ModeAllow = "allow"
+)
+
+// NormalizeMode maps an unknown/empty mode to ModeBlock, so a missing or bad
+// value behaves like the historical default.
+func NormalizeMode(mode string) string {
+	if mode == ModeAllow {
+		return ModeAllow
+	}
+	return ModeBlock
+}
+
+// Decision is the outcome of evaluating a feed's rules against one item.
+type Decision int
+
+const (
+	// Keep stores the item normally.
+	Keep Decision = iota
+	// Drop discards the item (never stored at ingest; removed retroactively).
+	Drop
+	// MarkRead stores the item as already read.
+	MarkRead
+)
+
+// Decide evaluates a feed's whole rule set against an item under the feed's
+// mode. It is the single decision shared by ingest and the HTTP preview/apply
+// paths. In block mode the first matching rule's action wins; in allow mode an
+// item is kept iff at least one rule matches, with no rule at all meaning keep.
+func Decide(mode string, rules []store.Filter, f Fields) (Decision, error) {
+	if len(rules) == 0 {
+		return Keep, nil
+	}
+	if NormalizeMode(mode) == ModeAllow {
+		for _, rule := range rules {
+			m, err := Match(rule, f)
+			if err != nil {
+				return Keep, err
+			}
+			if m {
+				// The rule's action is intentionally ignored in allow mode:
+				// matching is what grants the item entry.
+				return Keep, nil
+			}
+		}
+		return Drop, nil
+	}
+	for _, rule := range rules {
+		m, err := Match(rule, f)
+		if err != nil {
+			return Keep, err
+		}
+		if m {
+			if rule.Action == ActionMarkRead {
+				return MarkRead, nil
+			}
+			return Drop, nil
+		}
+	}
+	return Keep, nil
+}
+
 // Fields is the subset of an item a rule matches against. Both feedparse.Item
 // (freshly fetched) and store.ItemWithFeed (already stored) can be reduced to it.
 type Fields struct {

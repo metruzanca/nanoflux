@@ -472,6 +472,54 @@ func TestFeedFilterRetroactiveMarkRead(t *testing.T) {
 	}
 }
 
+// Switching a feed to allow mode, then adding a rule, keeps only items that
+// match a rule and removes the rest retroactively.
+func TestFeedAllowModeRetroactive(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "1", Title: "A reblog", Categories: []string{"reblog"}, FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "2", Title: "Normal post", FetchedAt: db.Now()})
+
+	// Switching to allow mode with no rules keeps everything (safety).
+	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filter-mode", url.Values{"mode": {"allow"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set mode: %d %s", rr.Code, rr.Body.String())
+	}
+	if got, _ := s.store.Feeds.ByID(u.ID, f.ID); got.FilterMode != "allow" {
+		t.Fatalf("filter mode = %q, want allow", got.FilterMode)
+	}
+	if items, _ := s.store.Items.List(u.ID, store.ItemFilter{FeedID: f.ID, Limit: 10}); len(items) != 2 {
+		t.Fatalf("allow mode with no rules should keep everything, got %d", len(items))
+	}
+
+	// Previewing an allow rule shows the resulting allow set: the non-matching
+	// item is the one that would be removed.
+	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters/preview", url.Values{
+		"field": {"category"}, "pattern": {"reblog"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("allow preview: %d %s", rr.Code, rr.Body.String())
+	}
+	if body := rr.Body.String(); !strings.Contains(body, "remove (matches no rule) (1)") || !strings.Contains(body, "keep (1)") {
+		t.Fatalf("allow preview sections missing: %s", body)
+	}
+
+	// Saving the rule applies the allow list: only the reblog survives.
+	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/filters", url.Values{
+		"field": {"category"}, "pattern": {"reblog"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("save allow rule: %d %s", rr.Code, rr.Body.String())
+	}
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{FeedID: f.ID, Limit: 10})
+	if len(items) != 1 || items[0].Title != "A reblog" {
+		t.Fatalf("allow mode should keep only the matching item: %+v", items)
+	}
+}
+
 func TestCollectionPageDedups(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

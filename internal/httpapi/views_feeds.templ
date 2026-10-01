@@ -199,10 +199,33 @@ templ feedRulesSection(d feedRulesData) {
 				<button type="button" class="link" data-plugin={ d.DocsPlugin } title="read this feed's plugin documentation" onclick="openPluginDocs(this.dataset.plugin)">plugin docs</button>
 			}
 		</div>
-		<p class="muted small">Rules run against new items when the feed is polled and are applied to this feed's existing items when added. "delete" removes matching items from this feed; "mark read" stores them as already read. The "category" field matches any feed-provided category, e.g. <code>r/golang</code> or <code>u/someuser</code>.</p>
+		{{ modeURL := "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filter-mode" }}
+		<div class="row">
+			@PickerControl("filter-mode", "how the rules are applied", d.Mode, "", []pickerOption{
+				{Value: filtermatch.ModeBlock, Label: "block list", HxPost: modeURL, HxVals: `{"mode":"block"}`, HxTarget: "#feed-rules"},
+				{Value: filtermatch.ModeAllow, Label: "allow list", HxPost: modeURL, HxVals: `{"mode":"allow"}`, HxTarget: "#feed-rules", HxConfirm: "switch to allow list? items matching no rule are removed from this feed."},
+			})
+			<span class="muted small">
+				if d.Mode == filtermatch.ModeAllow {
+					keep only items matching a rule
+				} else {
+					act on items matching a rule
+				}
+			</span>
+		</div>
+		if d.Mode == filtermatch.ModeAllow {
+			<p class="muted small">Rules run against new items when the feed is polled and are applied to this feed's existing items when added. In <strong>allow list</strong> mode an item is kept only when it matches at least one rule; items matching none are removed. The rule action is ignored here. The "category" field matches any feed-provided category, e.g. <code>r/golang</code> or <code>u/someuser</code>.</p>
+			if len(d.Rows) == 0 {
+				<p class="notice small">No allow rules yet, so every item is currently kept. Add a rule to start filtering.</p>
+			}
+		} else {
+			<p class="muted small">Rules run against new items when the feed is polled and are applied to this feed's existing items when added. "delete" removes matching items from this feed; "mark read" stores them as already read. Switch to <strong>allow list</strong> to keep only items that match a rule. The "category" field matches any feed-provided category, e.g. <code>r/golang</code> or <code>u/someuser</code>.</p>
+		}
 		<form class="stack" hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters/preview" } hx-target="#filter-preview-dialog" hx-swap="innerHTML" hx-on::after-request="document.getElementById('filter-preview-dialog').showModal()">
 			<div class="row">
-				@comboSelect("action", "delete", "action", "", filterActionItems, nil)
+				if d.Mode != filtermatch.ModeAllow {
+					@comboSelect("action", "delete", "action", "", filterActionItems, nil)
+				}
 				@comboSelect("field", "title", "field", "", filterFieldItems, nil)
 				<label>
 					pattern
@@ -213,7 +236,7 @@ templ feedRulesSection(d feedRulesData) {
 			<div id="feed-rules-error" class="error"></div>
 			<button type="submit">add rule</button>
 		</form>
-		@FilterList(d.FeedID, d.Rows)
+		@FilterList(d.FeedID, d.Mode, d.Rows)
 		<!-- The preview dialog lives inside the section so saving a rule (which
 		     swaps #feed-rules outerHTML) removes the open dialog with it. -->
 		<dialog id="filter-preview-dialog" class="modal filter-preview-dialog"></dialog>
@@ -225,13 +248,17 @@ templ feedRulesSection(d feedRulesData) {
 // truncated to PageSize per section (counts are the true totals).
 type filterPreviewData struct {
 	FeedID   int64
+	Mode     string
 	Rule     filterRuleInput
 	Keep     []store.ItemWithFeed
 	Affected []store.ItemWithFeed
 	PageSize int
 }
 
-func filterPreviewAffectedTitle(action string) string {
+func filterPreviewAffectedTitle(mode, action string) string {
+	if filtermatch.NormalizeMode(mode) == filtermatch.ModeAllow {
+		return "remove (matches no rule)"
+	}
 	if action == filtermatch.ActionMarkRead {
 		return "mark read"
 	}
@@ -243,7 +270,13 @@ func filterPreviewAffectedTitle(action string) string {
 // are posted to /feeds/{id}/filters by the save button; cancel and Esc abort.
 templ filterPreview(d filterPreviewData) {
 	<div class="row">
-		<h2>add filter: { d.Rule.Action } { d.Rule.Field } <code>{ d.Rule.Pattern }</code></h2>
+		<h2>
+			if d.Mode == filtermatch.ModeAllow {
+				add allow rule: { d.Rule.Field } <code>{ d.Rule.Pattern }</code>
+			} else {
+				add filter: { d.Rule.Action } { d.Rule.Field } <code>{ d.Rule.Pattern }</code>
+			}
+		</h2>
 		<button type="button" class="link" title="close" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
 	</div>
 	<p class="muted small">applies to this feed's existing items now, and to new items when polled.</p>
@@ -253,7 +286,7 @@ templ filterPreview(d filterPreviewData) {
 			@previewItems(d.Keep, d.PageSize)
 		</section>
 		<section>
-			<h3>{ filterPreviewAffectedTitle(d.Rule.Action) } ({ len(d.Affected) })</h3>
+			<h3>{ filterPreviewAffectedTitle(d.Mode, d.Rule.Action) } ({ len(d.Affected) })</h3>
 			@previewItems(d.Affected, d.PageSize)
 		</section>
 	</div>
@@ -302,13 +335,17 @@ templ previewItems(items []store.ItemWithFeed, pageSize int) {
 	}
 }
 
-templ FilterList(feedID int64, rows []store.Filter) {
+templ FilterList(feedID int64, mode string, rows []store.Filter) {
 	<ul class="plain" id="feed-filters-list">
 		for _, r := range rows {
 			<li id={ "filter-" + strconv.FormatInt(r.ID, 10) }>
 				<div class="row">
 					<span class="muted small">
-						{ r.Action } · { r.Field } · <code>{ r.Pattern }</code>
+						if filtermatch.NormalizeMode(mode) == filtermatch.ModeAllow {
+							keep · { r.Field } · <code>{ r.Pattern }</code>
+						} else {
+							{ r.Action } · { r.Field } · <code>{ r.Pattern }</code>
+						}
 						if r.IsRegex {
 							· regex
 						}

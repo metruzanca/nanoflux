@@ -139,6 +139,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /feeds/{id}/rank", s.auth.Require(http.HandlerFunc(s.feedRank)))
 	mux.Handle("POST /feeds/{id}/filters", s.auth.Require(http.HandlerFunc(s.feedRuleCreate)))
 	mux.Handle("POST /feeds/{id}/filters/preview", s.auth.Require(http.HandlerFunc(s.feedRulePreview)))
+	mux.Handle("POST /feeds/{id}/filter-mode", s.auth.Require(http.HandlerFunc(s.feedFilterMode)))
 	mux.Handle("POST /filters/{id}/delete", s.auth.Require(http.HandlerFunc(s.filterDelete)))
 
 	// Authors.

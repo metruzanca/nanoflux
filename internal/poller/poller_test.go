@@ -16,6 +16,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/feedparse"
+	"github.com/metruzanca/nanoflux/internal/filtermatch"
 	"github.com/metruzanca/nanoflux/internal/imagecache"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
@@ -483,6 +484,56 @@ func TestPollOneAppliesFilters(t *testing.T) {
 		if it.Title == "spoiler alert" && !it.Read {
 			t.Fatal("spoiler item should be stored read")
 		}
+	}
+}
+
+// TestPollOneAllowFilter asserts that in allow mode a feed keeps only items
+// matching at least one rule, dropping everything else.
+func TestPollOneAllowFilter(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
+
+	const body = `<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <title>Blog</title>
+  <link>https://blog.dev/</link>
+  <item><guid>1</guid><title>keep me</title><link>https://blog.dev/1</link></item>
+  <item><guid>2</guid><title>drop me</title><link>https://blog.dev/2</link></item>
+</channel></rss>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(body))
+	}))
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL, "", "", 900)
+	if err := st.Feeds.SetFilterMode(u.ID, f.ID, filtermatch.ModeAllow); err != nil {
+		t.Fatalf("set filter mode: %v", err)
+	}
+	if _, err := st.Filters.Create(u.ID, f.ID, filtermatch.ActionDelete, "title", "keep", false); err != nil {
+		t.Fatalf("create allow rule: %v", err)
+	}
+	f, _ = st.Feeds.ByID(u.ID, f.ID)
+
+	p := New(st, time.Minute, 1)
+	n, err := p.PollOne(context.Background(), f)
+	if err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("new items = %d, want 1 (allow list keeps only matches)", n)
+	}
+	items, _ := st.Items.List(u.ID, store.ItemFilter{})
+	if len(items) != 1 || items[0].Title != "keep me" {
+		t.Fatalf("stored items = %+v, want only 'keep me'", items)
 	}
 }
 
