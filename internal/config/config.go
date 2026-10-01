@@ -18,8 +18,6 @@ type Config struct {
 	// same registrable host, applied even before that host ever rate-limits.
 	// Zero disables it; a learned rate-limit window still overrides it.
 	PollHostSpacing time.Duration
-	BootstrapUser   string
-	BootstrapPass   string
 	PluginsDir      string
 	Backup          BackupConfig
 	Demo            DemoConfig
@@ -97,8 +95,6 @@ func Load() Config {
 		// 60s matches reddit's anonymous per-IP window (the tightest host we
 		// know of); 0 disables the default spacing.
 		PollHostSpacing: durationEnv("NF_POLL_HOST_SPACING", 60*time.Second),
-		BootstrapUser:   os.Getenv("NF_ADMIN_USER"),
-		BootstrapPass:   os.Getenv("NF_ADMIN_PASS"),
 		PluginsDir:      getenv("NF_PLUGINS_DIR", "./plugins"),
 		Backup: BackupConfig{
 			Interval: durationEnv("NF_BACKUP_INTERVAL", 0),

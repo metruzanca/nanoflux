@@ -231,6 +231,7 @@ func TestDemoFeedLimit(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/authors/"+itoa(authorID)+"/feeds", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.AddCookie(cookie)
+		req.Header.Set("X-CSRF-Token", csrfToken(cookie.Value))
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
 		return rr

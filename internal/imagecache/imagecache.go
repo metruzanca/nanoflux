@@ -22,6 +22,8 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/filestore"
+	"github.com/metruzanca/nanoflux/internal/imageutil"
+	"github.com/metruzanca/nanoflux/internal/safedial"
 )
 
 // defaultMaxBytes caps a single cached image. Anything larger is left remote.
@@ -46,7 +48,7 @@ type Cacher struct {
 // plugin ("feeds" for a feed with no plugin). Either callback may be nil.
 func New(files filestore.Store, client *http.Client, forced func(feedURL string) bool, folder func(feedURL string) string) *Cacher {
 	if client == nil {
-		client = &http.Client{Timeout: 20 * time.Second}
+		client = safedial.Client(20 * time.Second)
 	}
 	return &Cacher{files: files, client: client, forced: forced, folder: folder, max: defaultMaxBytes, workers: defaultConcurrency}
 }
@@ -169,14 +171,9 @@ func (c *Cacher) cacheOne(ctx context.Context, folder string, itemID int64, slot
 	if resp.StatusCode != http.StatusOK {
 		return ""
 	}
-	ct := strings.TrimSpace(resp.Header.Get("Content-Type"))
 	prefix512, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-	if !strings.HasPrefix(ct, "image/") {
-		if sniffed := http.DetectContentType(prefix512); strings.HasPrefix(sniffed, "image/") {
-			ct = sniffed
-		}
-	}
-	if !strings.HasPrefix(ct, "image/") {
+	ct, ok := imageutil.Sniff(resp.Header.Get("Content-Type"), prefix512)
+	if !ok {
 		return ""
 	}
 	data, err := io.ReadAll(io.LimitReader(io.MultiReader(bytes.NewReader(prefix512), resp.Body), c.max+1))

@@ -175,7 +175,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 		}
 	>
 		if v.Video {
-			<a class="thumb" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
+			<a class="thumb" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>
 				if thumb := rowThumb(it); thumb != "" {
 					<img src={ templ.URL(web.ProxiedImageURL(thumb)) } alt="" loading="lazy"/>
 				} else {
@@ -186,7 +186,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 				}
 			</a>
 		} else if v.Image || v.Link || v.Gallery {
-			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
+			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>
 				<img src={ templ.URL(web.ProxiedImageURL(rowThumb(it))) } alt="" loading="lazy"/>
 				if v.Link {
 					<span class="thumb-badge" title="content lives on an external site">external</span>
@@ -195,7 +195,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 		} else if it.ImageURL != "" {
 			// A text post that still carries a thumbnail (e.g. one that arrived
 			// only as an image enclosure) gets a thumb beside its text.
-			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">
+			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>
 				<img src={ templ.URL(web.ProxiedImageURL(it.ImageURL)) } alt="" loading="lazy"/>
 			</a>
 		}
@@ -203,9 +203,9 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 			<div class="row">
 				<div>
 					if it.Read {
-						<a class="item-title" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">{ it.Title }</a>
+						<a class="item-title" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>{ it.Title }</a>
 					} else {
-						<a class="item-title unread" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } onclick="return openItem(this)">{ it.Title }</a>
+						<a class="item-title unread" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>{ it.Title }</a>
 					}
 					<div class="item-meta">
 						@web.SourceIcon(itemIconURL(it))
@@ -442,7 +442,7 @@ type pickerOption struct {
 // state is not scoped.
 templ PickerControl(name, title, current, scope string, options []pickerOption) {
 	<div class="picker" data-picker={ name } data-scope={ scope } data-mode={ current }>
-		<button type="button" class="mode-btn" aria-haspopup="true" aria-expanded="false" title={ title } onclick="togglePicker(event)">
+		<button type="button" class="mode-btn" aria-haspopup="true" aria-expanded="false" title={ title } data-toggle-picker>
 			for _, o := range options {
 				if o.Icon != "" {
 					<span
@@ -751,20 +751,20 @@ templ itemMenuFull(itemID, feedID int64, sourceURL, shareToken string, inModal b
 // page's feed is hidden, so its "go to feed" entry is omitted.
 templ itemMenuFullSys(itemID, feedID int64, sourceURL, shareToken string, inModal, isSystem bool) {
 	<div class="item-menu" data-item-id={ strconv.FormatInt(itemID, 10) }>
-		<button type="button" class="link menu-btn" aria-haspopup="true" aria-expanded="false" title="more actions" onclick="toggleItemMenu(event)">@web.Lucide("ellipsis")
+		<button type="button" class="link menu-btn" aria-haspopup="true" aria-expanded="false" title="more actions" data-toggle-item-menu>@web.Lucide("ellipsis")
 </button>
 		<div class="menu-pop" role="menu" hidden>
-			<button type="button" class="link menu-item" role="menuitem" onclick="itemMenuAction(event, 'lists')">add to list</button>
+			<button type="button" class="link menu-item" role="menuitem" data-item-menu="lists">add to list</button>
 			if !isSystem {
 				<a class="menu-item" role="menuitem" href={ "/feeds/" + strconv.FormatInt(feedID, 10) }>go to feed</a>
 			}
 			if inModal && sourceURL != "" {
 				<a class="menu-item external" role="menuitem" href={ templ.URL(sourceURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">source</a>
 			}
-			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-before" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">mark all before as read</button>
-			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-after" } hx-swap="none" hx-on::after-request="if(event.detail.successful) window.location.reload()">mark all after as read</button>
+			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-before" } hx-swap="none" data-reload-on-success>mark all before as read</button>
+			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-after" } hx-swap="none" data-reload-on-success>mark all after as read</button>
 			if inModal {
-				<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/unread" } hx-swap="none" hx-on::after-request="if(event.detail.successful) markUnreadReload()">mark as not read</button>
+				<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/unread" } hx-swap="none" data-unread-reload>mark as not read</button>
 				@shareControl(itemID, shareToken)
 			}
 			if isSystem {
@@ -783,7 +783,7 @@ templ itemMenuFullSys(itemID, feedID int64, sourceURL, shareToken string, inModa
 templ itemListsDialogInner(itemID int64, items []comboItem, selected []string) {
 	<div class="row">
 		<h2>add to list</h2>
-		<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+		<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
 	</div>
 	<form class="stack" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/lists" } hx-target="#item-lists-dialog" hx-swap="innerHTML">
 		@comboMulti("lists", "lists", selected, items)
@@ -842,19 +842,19 @@ templ markAllReadControl(d markAllReadData) {
 			if d.Unread == 0 {
 				disabled
 			}
-			onclick="this.nextElementSibling.showModal()"
+			data-open-next
 		>@web.Lucide("check-check")
 </button>
 		if d.Unread > 0 {
 			<dialog class="modal">
 				<div class="row">
 					<h2>mark { d.Unread } items as read?</h2>
-					<button type="button" class="link" title="close" onclick="this.closest('dialog').close()">@web.Lucide("x")
+					<button type="button" class="link" title="close" data-close-dialog>@web.Lucide("x")
 </button>
 				</div>
 				<div class="row-actions">
-					<button type="button" class="link" onclick="this.closest('dialog').close()">cancel</button>
-					<button type="button" hx-post={ d.Action } hx-swap="none" hx-on::after-request="if(event.detail.successful){this.closest('dialog').close();window.location.reload()}">mark as read</button>
+					<button type="button" class="link" data-close-dialog>cancel</button>
+					<button type="button" hx-post={ d.Action } hx-swap="none" data-reload-close>mark as read</button>
 				</div>
 			</dialog>
 		}

@@ -6,8 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
+
+	"github.com/metruzanca/nanoflux/internal/imageutil"
 )
 
 // maxProxyImageBytes caps how much of an upstream image is proxied. sniffLen is
@@ -16,6 +17,14 @@ const (
 	maxProxyImageBytes = 5 << 20
 	sniffLen           = 512
 )
+
+// setImageHeaders hardens a response that serves fetched image bytes. The
+// sandbox CSP neutralizes any residual active content (a parser gap, an SVG
+// that slipped through a mislabeled type) if a browser opens the URL directly.
+func setImageHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+}
 
 // imgProxy fetches a remote image server-side so author avatars load without
 // CORS or hotlink restrictions. Only http(s) URLs are allowed; responses are
@@ -61,18 +70,14 @@ func (s *Server) serveRemoteImage(w http.ResponseWriter, r *http.Request, rawURL
 	// Sniffing also lets us echo the real type, so the browser renders the
 	// image instead of downloading it.
 	prefix, _ := io.ReadAll(io.LimitReader(resp.Body, sniffLen))
-	ct := strings.TrimSpace(resp.Header.Get("Content-Type"))
-	if !strings.HasPrefix(ct, "image/") {
-		if sniffed := http.DetectContentType(prefix); strings.HasPrefix(sniffed, "image/") {
-			ct = sniffed
-		}
-	}
-	if !strings.HasPrefix(ct, "image/") {
+	ct, ok := imageutil.Sniff(resp.Header.Get("Content-Type"), prefix)
+	if !ok {
 		http.Error(w, "not an image", http.StatusBadRequest)
 		return
 	}
 
 	w.Header().Set("Content-Type", ct)
+	setImageHeaders(w)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	_, _ = io.Copy(w, io.LimitReader(io.MultiReader(bytes.NewReader(prefix), resp.Body), maxProxyImageBytes))
 }

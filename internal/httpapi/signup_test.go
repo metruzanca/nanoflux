@@ -9,6 +9,9 @@ import (
 
 func TestSignupFlow(t *testing.T) {
 	s, h := newTestServer(t)
+	if err := s.store.Settings.SetAllowSignup(true); err != nil {
+		t.Fatal(err)
+	}
 
 	// Signup page renders.
 	rr := doGet(h, "/signup", nil)
@@ -66,7 +69,10 @@ func TestSignupFlow(t *testing.T) {
 }
 
 func TestSignupDoesNotClobberBootstrapUser(t *testing.T) {
-	_, h := newTestServer(t)
+	s, h := newTestServer(t)
+	if err := s.store.Settings.SetAllowSignup(true); err != nil {
+		t.Fatal(err)
+	}
 	if rr := doForm(h, "POST", "/signup", url.Values{
 		"username": {"alice"}, "password": {"longenough"},
 	}, nil); rr.Code != http.StatusBadRequest {
@@ -78,6 +84,9 @@ func TestSignupDoesNotClobberBootstrapUser(t *testing.T) {
 // account, and an unknown one is ignored rather than rejecting the signup.
 func TestSignupTimezone(t *testing.T) {
 	s, h := newTestServer(t)
+	if err := s.store.Settings.SetAllowSignup(true); err != nil {
+		t.Fatal(err)
+	}
 
 	if rr := doForm(h, "POST", "/signup", url.Values{
 		"username": {"bob"}, "password": {"longenough"}, "timezone": {"America/New_York"},

@@ -161,7 +161,7 @@ func provisionCreated(feedID int64, title string, fields []pluginapi.Field) temp
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" readonly onclick=\"this.select()\"> <button type=\"button\" class=\"link\" onclick=\"navigator.clipboard.writeText(this.previousElementSibling.value)\">copy</button></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "\" readonly data-select-on-click> <button type=\"button\" class=\"link\" data-copy-prev>copy</button></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -295,7 +295,7 @@ func feedPluginPanel(d feedPanelData) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" readonly onclick=\"this.select()\"> <button type=\"button\" class=\"link\" onclick=\"navigator.clipboard.writeText(this.previousElementSibling.value)\">copy</button></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\" readonly data-select-on-click> <button type=\"button\" class=\"link\" data-copy-prev>copy</button></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

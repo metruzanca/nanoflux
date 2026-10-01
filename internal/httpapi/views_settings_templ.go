@@ -194,7 +194,7 @@ func settingsAvatar(d settingsAvatarData) templ.Component {
 			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<section class=\"card\" id=\"settings-avatar-card\"><div class=\"row\"><h2>profile</h2><button type=\"button\" class=\"link\" onclick=\"document.getElementById('password-dialog').showModal()\">change password</button></div><form id=\"avatar-form\" class=\"stack\" hx-post=\"/settings/avatar\" hx-target=\"#settings-avatar-card\" hx-swap=\"outerHTML\" enctype=\"multipart/form-data\"><div class=\"avatar-edit\" id=\"avatar-edit\" data-avatar-drop title=\"click or drop an image to update your picture\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<section class=\"card\" id=\"settings-avatar-card\"><div class=\"row\"><h2>profile</h2><button type=\"button\" class=\"link\" data-open=\"password-dialog\">change password</button></div><form id=\"avatar-form\" class=\"stack\" hx-post=\"/settings/avatar\" hx-target=\"#settings-avatar-card\" hx-swap=\"outerHTML\" enctype=\"multipart/form-data\"><div class=\"avatar-edit\" id=\"avatar-edit\" data-avatar-drop title=\"click or drop an image to update your picture\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -235,7 +235,7 @@ func settingsAvatar(d settingsAvatarData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<button type=\"button\" class=\"avatar-pencil\" aria-label=\"change profile picture\" onclick=\"document.getElementById('avatar-input').click()\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "<button type=\"button\" class=\"avatar-pencil\" aria-label=\"change profile picture\" data-click=\"avatar-input\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -243,7 +243,7 @@ func settingsAvatar(d settingsAvatarData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</button> <input id=\"avatar-input\" class=\"avatar-file\" type=\"file\" name=\"avatar\" accept=\"image/*\" onchange=\"submitAvatar(this.form)\"></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</button> <input id=\"avatar-input\" class=\"avatar-file\" type=\"file\" name=\"avatar\" accept=\"image/*\" data-submit-avatar></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -516,7 +516,7 @@ func appearanceAccent(d settingsAccentData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\" onchange=\"this.form.requestSubmit()\"></label> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\" data-submit-on-change></label> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -802,7 +802,7 @@ func settingsPasswordCard(d settingsPasswordData) templ.Component {
 			templ_7745c5c3_Var27 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<div id=\"settings-password-card\"><div class=\"row\"><h2>change password</h2><button type=\"button\" class=\"link\" title=\"close\" onclick=\"document.getElementById('password-dialog').close()\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<div id=\"settings-password-card\"><div class=\"row\"><h2>change password</h2><button type=\"button\" class=\"link\" title=\"close\" data-close=\"password-dialog\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

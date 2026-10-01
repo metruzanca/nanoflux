@@ -20,6 +20,7 @@ func (s *Server) cacheImage(w http.ResponseWriter, r *http.Request) {
 	ct, data, err := s.files.Get(r.Context(), key)
 	if err == nil {
 		w.Header().Set("Content-Type", ct)
+		setImageHeaders(w)
 		w.Header().Set("Cache-Control", "private, max-age=86400")
 		w.Write(data)
 		return

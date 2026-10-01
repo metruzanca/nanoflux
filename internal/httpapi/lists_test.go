@@ -58,7 +58,7 @@ func TestListsFlow(t *testing.T) {
 	if !strings.Contains(body, `id="item-dialog-controls-src"`) {
 		t.Fatalf("item modal controls should be wrapped for relocation: %s", body)
 	}
-	if !strings.Contains(body, `itemMenuAction(event, 'lists')`) {
+	if !strings.Contains(body, `data-item-menu="lists"`) {
 		t.Fatalf("item menu should offer add to list: %s", body)
 	}
 	// The picker fragment lists the user's lists.

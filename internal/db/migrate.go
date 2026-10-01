@@ -147,14 +147,16 @@ const schemaV16 = `
 ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
 `
 
-// schemaV17 adds a global key/value settings table (seeded with signup
-// enabled) and a per-user flag for dismissing the admin signup banner.
+// schemaV17 adds a global key/value settings table (signup is seeded closed;
+// a fresh install opens it only through the no-users bootstrap window, where
+// the first account becomes admin and closes it again) and a per-user flag for
+// dismissing the admin signup banner.
 const schemaV17 = `
 CREATE TABLE settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
-INSERT INTO settings(key, value) VALUES ('allow_signup', '1');
+INSERT INTO settings(key, value) VALUES ('allow_signup', '0');
 ALTER TABLE users ADD COLUMN signup_banner_dismissed INTEGER NOT NULL DEFAULT 0;
 `
 

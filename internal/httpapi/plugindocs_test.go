@@ -76,7 +76,7 @@ func TestAdminPluginCardShowsSummaryAndDocs(t *testing.T) {
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 
 	body := doGet(h, "/admin", cookie).Body.String()
-	for _, want := range []string{"a stub that documents itself", "openPluginDocs(this.dataset.plugin)", `data-plugin="docsstub"`} {
+	for _, want := range []string{"a stub that documents itself", "data-plugin-docs", `data-plugin="docsstub"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("admin plugins card missing %q: %s", want, body)
 		}
@@ -101,7 +101,7 @@ func TestFeedEditShowsDocsButton(t *testing.T) {
 		"https://docs.example/feed.xml", "", "", "", 900)
 
 	body := doGet(h, "/feeds/"+itoa(feed.ID)+"/edit", cookie).Body.String()
-	if !strings.Contains(body, "openPluginDocs(this.dataset.plugin)") || !strings.Contains(body, `data-plugin="docsstub"`) {
+	if !strings.Contains(body, "data-plugin-docs") || !strings.Contains(body, `data-plugin="docsstub"`) {
 		t.Fatalf("feed edit should show the docs button: %s", body)
 	}
 }

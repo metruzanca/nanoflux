@@ -1860,25 +1860,26 @@ func TestListObjectKeysIncludesAuthorAvatars(t *testing.T) {
 
 func TestSettingStore(t *testing.T) {
 	s := newTestStore(t)
-	// Migration seeds allow_signup = '1'.
+	// Migration seeds allow_signup = '0' (signup opens only through the
+	// no-users bootstrap window).
 	allow, err := s.Settings.AllowSignup()
-	if err != nil || !allow {
-		t.Fatalf("default allow_signup = %v, %v; want true", allow, err)
+	if err != nil || allow {
+		t.Fatalf("default allow_signup = %v, %v; want false", allow, err)
 	}
-	if err := s.Settings.SetAllowSignup(false); err != nil {
+	if err := s.Settings.SetAllowSignup(true); err != nil {
 		t.Fatalf("SetAllowSignup: %v", err)
 	}
 	allow, _ = s.Settings.AllowSignup()
-	if allow {
-		t.Fatal("allow_signup should be false")
+	if !allow {
+		t.Fatal("allow_signup should be true")
 	}
-	// A missing row defaults back to true.
+	// A missing row defaults to false.
 	if _, err := s.db.Exec(`DELETE FROM settings WHERE key = 'allow_signup'`); err != nil {
 		t.Fatal(err)
 	}
 	allow, err = s.Settings.AllowSignup()
-	if err != nil || !allow {
-		t.Fatalf("missing setting should default true: %v %v", allow, err)
+	if err != nil || allow {
+		t.Fatalf("missing setting should default false: %v %v", allow, err)
 	}
 }
 
@@ -2088,7 +2089,7 @@ func TestSessionsExceptAndList(t *testing.T) {
 	for _, se := range sess {
 		got[se.Token] = true
 	}
-	if len(sess) != 1 || !got["b"] {
+	if len(sess) != 1 || !got[HashSessionToken("b")] {
 		t.Fatalf("expected only token b to remain, got %v", got)
 	}
 }
@@ -2153,5 +2154,20 @@ func TestItemContentSurvivesRepoll(t *testing.T) {
 	}
 	if got.Content != "<p>extracted full text</p>" {
 		t.Fatalf("content must survive a re-poll: %q", got.Content)
+	}
+}
+
+func TestCreateFirstAdmin(t *testing.T) {
+	s := newTestStore(t)
+	u, first, err := s.Users.CreateFirstAdmin("root", "hash")
+	if err != nil || !first || !u.IsAdmin {
+		t.Fatalf("first user = %+v, first=%v, err=%v; want admin", u, first, err)
+	}
+	if allow, _ := s.Settings.AllowSignup(); allow {
+		t.Fatal("signups should close after the first account")
+	}
+	u2, first2, err := s.Users.CreateFirstAdmin("second", "hash")
+	if err != nil || first2 || u2.IsAdmin {
+		t.Fatalf("second user = %+v, first=%v, err=%v; want non-admin", u2, first2, err)
 	}
 }

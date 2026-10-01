@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
@@ -13,6 +15,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/oembed"
 	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/internal/poller"
+	"github.com/metruzanca/nanoflux/internal/safedial"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -37,12 +40,12 @@ type Server struct {
 }
 
 func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore.Store) *Server {
-	client := &http.Client{Timeout: 20 * time.Second}
+	client := safedial.Client(20 * time.Second)
 	return &Server{
 		store:        st,
 		auth:         a,
 		cfg:          cfg,
-		discoverer:   discover.New(nil),
+		discoverer:   discover.New(client),
 		client:       client,
 		files:        fs,
 		oembed:       oembed.New(client, 5*time.Minute, 30*time.Second, 2000),
@@ -262,27 +265,89 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/ext/page-form", s.auth.Require(http.HandlerFunc(s.apiExtPageForm)))
 	mux.Handle("POST /api/ext/page-save", s.auth.Require(http.HandlerFunc(s.apiExtPageSave)))
 
-	return logRequests(privacyHeaders(cors(s.analyticsMiddleware(s.navCountsMiddleware(s.errorPages(mux))))))
+	return logRequests(s.securityHeaders(s.csrfMiddleware(cors(s.analyticsMiddleware(s.navCountsMiddleware(s.errorPages(mux)))))))
 }
 
-// privacyHeaders prevents referrer leakage on every response.
-func privacyHeaders(next http.Handler) http.Handler {
+// securityHeaders sets the response headers shared by every route. The CSP is
+// deliberately eval- and inline-script-free; a few vendored scripts rely on
+// inline <style> injection, so style-src keeps 'unsafe-inline'.
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		h := w.Header()
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", s.contentSecurityPolicy())
+		// Only send HSTS when the request actually arrived over HTTPS, so a
+		// plain-HTTP LAN install is not locked to a scheme it does not serve.
+		if auth.SecureRequest(r) {
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// cors answers the browser extension's cross-origin preflights. Auth relies
-// on a Bearer token (never cookies cross-site), so allowing any origin is safe.
+// contentSecurityPolicy builds the app's CSP. Analytics origins are added only
+// when analytics is enabled; everything else is static.
+func (s *Server) contentSecurityPolicy() string {
+	script := []string{"'self'", "https://cdnjs.cloudflare.com"}
+	connect := []string{"'self'", "https:", "http:"}
+	style := []string{"'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"}
+	if s.cfg.Analytics.Enabled() {
+		if o := urlOrigin(s.cfg.Analytics.ScriptURL); o != "" {
+			script = append(script, o)
+			connect = append(connect, o) // umami posts to the script origin by default
+		}
+		if o := urlOrigin(s.cfg.Analytics.HostURL); o != "" {
+			connect = append(connect, o)
+		}
+	}
+	directives := [][2]string{
+		{"default-src", "'self'"},
+		{"script-src", strings.Join(script, " ")},
+		{"style-src", strings.Join(style, " ")},
+		{"img-src", "'self' data: blob: https: http:"},
+		{"media-src", "'self' blob: https: http:"},
+		{"connect-src", strings.Join(connect, " ")},
+		{"font-src", "'self' data:"},
+		{"frame-src", "https://www.youtube.com https://www.youtube-nocookie.com"},
+		{"frame-ancestors", "'none'"},
+		{"base-uri", "'self'"},
+		{"form-action", "'self'"},
+		{"object-src", "'none'"},
+		{"worker-src", "'self' blob:"},
+		{"manifest-src", "'self'"},
+	}
+	parts := make([]string, 0, len(directives))
+	for _, d := range directives {
+		parts = append(parts, d[0]+" "+d[1])
+	}
+	return strings.Join(parts, "; ")
+}
+
+// urlOrigin returns scheme://host for raw, or "" when it is not an absolute URL.
+func urlOrigin(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// cors answers the browser extension's cross-origin preflights, and only for
+// the /api/ routes it uses. Auth there relies on a Bearer token (never a
+// cross-site cookie), so allowing any origin is safe. The HTML app is
+// same-origin and gets no CORS headers.
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-CSRF-Token")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

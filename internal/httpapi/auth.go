@@ -69,18 +69,24 @@ func redirectTarget(next string) string {
 	return "/"
 }
 
-// allowSignup reports the global signup setting, defaulting to open when the
-// setting cannot be read so an error never locks everyone out. Demo mode forces
-// it off: a public marketing deployment should not mint durable accounts, only
-// ephemeral demos.
+// allowSignup reports whether the signup page is open. A fresh install (zero
+// real accounts) always allows the first signup so the person deploying the app
+// can create the initial admin; that signup closes the door behind them. After
+// that the global setting decides, and demo mode forces it off because a public
+// marketing deployment should not mint durable accounts, only ephemeral demos.
 func (s *Server) allowSignup() bool {
 	if s.demoEnabled() {
 		return false
 	}
+	// Bootstrap window: no users yet. Checked before the setting so a settings
+	// read failure cannot lock a fresh install out of creating its first account.
+	if n, err := s.store.Users.CountPersistent(); err == nil && n == 0 {
+		return true
+	}
 	allow, err := s.store.Settings.AllowSignup()
 	if err != nil {
 		log.Error("read allow_signup", "err", err)
-		return true
+		return false
 	}
 	return allow
 }
@@ -140,11 +146,14 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	u, err := s.store.Users.Create(username, hash)
+	u, firstAdmin, err := s.store.Users.CreateFirstAdmin(username, hash)
 	if err != nil {
 		log.Error("create user", "err", err)
 		renderErr("that username is taken")
 		return
+	}
+	if firstAdmin {
+		log.Info("first account created as admin", "username", u.Username)
 	}
 
 	// Seed the new account's timezone from the browser (an IANA name submitted

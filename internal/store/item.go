@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/sanitize"
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 )
 
@@ -183,6 +184,7 @@ type ItemStore struct {
 // exists its content snapshot (summary, categories, thumbnail, duration) is
 // refreshed without touching identity, published_at or read state.
 func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
+	it.Summary = sanitize.HTML(it.Summary)
 	key := dedupKey(it)
 	crossKey := crossFeedKey(it.SharedKey)
 	ctx := context.Background()
@@ -977,7 +979,7 @@ func anyTokens(raw map[int64]RawDecoration) bool {
 // enriched body survives re-polling.
 func (s *ItemStore) SetContent(userID, itemID int64, content string) error {
 	return s.q.SetItemContent(context.Background(), sqlcgen.SetItemContentParams{
-		Content: content,
+		Content: sanitize.HTML(content),
 		ID:      itemID,
 		UserID:  userID,
 	})

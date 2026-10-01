@@ -17,6 +17,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/filtermatch"
 	"github.com/metruzanca/nanoflux/internal/imagecache"
+	"github.com/metruzanca/nanoflux/internal/safedial"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -99,7 +100,7 @@ func New(st *store.Store, interval time.Duration, workers int) *Poller {
 	}
 	return &Poller{
 		store:       st,
-		client:      &http.Client{Timeout: fetchTimeout},
+		client:      safedial.Client(fetchTimeout),
 		interval:    interval,
 		workers:     workers,
 		hostSpacing: defaultHostSpacing,

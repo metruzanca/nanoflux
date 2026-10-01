@@ -4,6 +4,27 @@ document.addEventListener('htmx:beforeSwap', function (e) {
   if (e.detail.xhr.status >= 400) e.detail.shouldSwap = true;
 });
 
+// CSRF: the per-session token is rendered into <head>; attach it to every
+// non-GET htmx request and fetch call. Plain forms carry it as a hidden field.
+(function () {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  var token = meta ? (meta.getAttribute('content') || '') : '';
+  window.nanofluxCSRF = token;
+  if (!token) return;
+  document.addEventListener('htmx:configRequest', function (e) {
+    e.detail.headers['X-CSRF-Token'] = token;
+  });
+  var origFetch = window.fetch;
+  window.fetch = function (input, init) {
+    init = init || {};
+    var method = (init.method || (input && input.method) || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') {
+      init.headers = Object.assign({}, init.headers, { 'X-CSRF-Token': token });
+    }
+    return origFetch.call(this, input, init);
+  };
+})();
+
 // Hidden timezone fields (the signup form) are filled from the browser so a new
 // account starts with the right timezone. Server-side validation still applies.
 (function () {
@@ -159,7 +180,8 @@ function closePickers() {
 }
 function togglePicker(e) {
   e.stopPropagation();
-  var btn = e.currentTarget;
+  var btn = e.target.closest('[data-toggle-picker]');
+  if (!btn) return;
   var ctl = btn.closest('.picker');
   var menu = pickerMenu(btn);
   if (!menu) return;
@@ -470,13 +492,15 @@ function closeItemMenus() {
 }
 function toggleItemMenu(e) {
   e.stopPropagation();
-  var ctl = e.currentTarget.closest('.item-menu');
+  var btn = e.target.closest('[data-toggle-item-menu]');
+  if (!btn) return;
+  var ctl = btn.closest('.item-menu');
   if (!ctl) return;
   closeItemMenus();
   var menu = ctl.querySelector('.menu-pop');
   var open = !menu.hidden;
   menu.hidden = open;
-  e.currentTarget.setAttribute('aria-expanded', String(!open));
+  btn.setAttribute('aria-expanded', String(!open));
   // Let the dropdown escape the row's overflow:hidden (the swipe container)
   // while it's open.
   var li = ctl.closest('li');
@@ -484,7 +508,7 @@ function toggleItemMenu(e) {
 }
 function itemMenuAction(e, action) {
   e.stopPropagation();
-  var ctl = e.currentTarget.closest('.item-menu');
+  var ctl = e.target.closest('.item-menu');
   if (!ctl) return;
   closeItemMenus();
   if (action !== 'lists') return;
@@ -1412,4 +1436,107 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     setTimeout(tick, 1000);
   }
   tick();
+})();
+
+// CSP-safe event delegation. The app serves a Content-Security-Policy without
+// 'unsafe-inline', so inline on* handlers and hx-on are gone; the behaviors are
+// wired through data-* hooks here instead.
+(function () {
+  function closest(el, sel) { return el && el.closest ? el.closest(sel) : null; }
+  function byId(id) { return document.getElementById(id); }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var el;
+
+    if ((el = t.closest('[data-open]'))) {
+      var d = byId(el.getAttribute('data-open'));
+      if (d && d.showModal) d.showModal();
+      return;
+    }
+    if ((el = t.closest('[data-open-next]'))) {
+      var n = el.nextElementSibling;
+      if (n && n.showModal) n.showModal();
+      return;
+    }
+    if ((el = t.closest('[data-close]'))) {
+      var c = byId(el.getAttribute('data-close'));
+      if (c) c.close();
+      return;
+    }
+    if ((el = t.closest('[data-close-dialog]'))) {
+      var cd = closest(el, 'dialog');
+      if (cd) cd.close();
+      return;
+    }
+    if ((el = t.closest('[data-click]'))) {
+      var clickTarget = byId(el.getAttribute('data-click'));
+      if (clickTarget) clickTarget.click();
+      return;
+    }
+    if ((el = t.closest('[data-remove-closest]'))) {
+      var rm = closest(el, el.getAttribute('data-remove-closest'));
+      if (rm) rm.remove();
+      return;
+    }
+    if ((el = t.closest('[data-select-on-click]'))) { el.select(); return; }
+    if ((el = t.closest('[data-copy-prev]'))) {
+      var prev = el.previousElementSibling;
+      if (prev && navigator.clipboard) navigator.clipboard.writeText(prev.value);
+      return;
+    }
+    if ((el = t.closest('[data-open-item]'))) { e.preventDefault(); openItem(el); return; }
+    if ((el = t.closest('[data-toggle-picker]'))) { togglePicker(e); return; }
+    if ((el = t.closest('[data-toggle-item-menu]'))) { toggleItemMenu(e); return; }
+    if ((el = t.closest('[data-item-menu]'))) { itemMenuAction(e, el.getAttribute('data-item-menu')); return; }
+    if ((el = t.closest('[data-toggle-add-menu]'))) { toggleAddMenu(e); return; }
+    if ((el = t.closest('[data-toggle-user-menu]'))) { toggleUserMenu(e); return; }
+    if ((el = t.closest('[data-toggle-nav]'))) { toggleNav(e); return; }
+    if ((el = t.closest('[data-item-nav]'))) { itemNav(parseInt(el.getAttribute('data-item-nav'), 10)); return; }
+    if ((el = t.closest('[data-plugin-docs]'))) { e.preventDefault(); openPluginDocs(el.dataset.plugin); return; }
+    if ((el = t.closest('[data-add-author-link]'))) { addAuthorLinkRow(); return; }
+  });
+
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (!t || !t.matches) return;
+    if (t.matches('[data-submit-avatar]')) { submitAvatar(t.form); return; }
+    if (t.matches('[data-submit-on-change]')) { if (t.form) t.form.requestSubmit(); return; }
+  });
+
+  document.addEventListener('submit', function (e) {
+    var f = e.target;
+    if (f && f.hasAttribute && f.hasAttribute('data-confirm')) {
+      if (!window.confirm(f.getAttribute('data-confirm'))) e.preventDefault();
+    }
+  }, true);
+
+  // Broken images marked data-hide-on-error hide themselves (was onerror=).
+  document.addEventListener('error', function (e) {
+    var t = e.target;
+    if (t && t.tagName === 'IMG' && t.hasAttribute('data-hide-on-error')) t.style.display = 'none';
+  }, true);
+
+  document.body.addEventListener('htmx:afterRequest', function (e) {
+    var el = e.detail && e.detail.elt;
+    if (!el || !el.hasAttribute) return;
+    var ok = e.detail.successful;
+    if (ok && el.hasAttribute('data-form-close-reset')) {
+      var d = closest(el, 'dialog');
+      if (d) d.close();
+      if (el.reset) el.reset();
+    }
+    if (el.hasAttribute('data-after-show')) {
+      var sd = byId(el.getAttribute('data-after-show'));
+      if (sd && sd.showModal) sd.showModal();
+    }
+    if (ok && el.hasAttribute('data-reload-on-success')) { window.location.reload(); return; }
+    if (ok && el.hasAttribute('data-unread-reload')) { markUnreadReload(); return; }
+    if (ok && el.hasAttribute('data-reload-close')) {
+      var rd = closest(el, 'dialog');
+      if (rd) rd.close();
+      window.location.reload();
+    }
+  });
 })();

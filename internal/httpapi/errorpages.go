@@ -38,7 +38,6 @@ func (s *Server) errorPages(next http.Handler) http.Handler {
 		// with an HTML response. The Allow header (405) is kept for display.
 		h.Set("Content-Type", "text/html; charset=utf-8")
 		h.Del("Content-Length")
-		h.Del("X-Content-Type-Options")
 		w.WriteHeader(ec.status)
 		_ = basePage(errorTitle(ec.status), u, errorPage(ec.status, r.URL.Path, h.Get("Allow"))).
 			Render(r.Context(), w)

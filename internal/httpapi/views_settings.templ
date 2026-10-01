@@ -57,7 +57,7 @@ templ settingsAvatar(d settingsAvatarData) {
 	<section class="card" id="settings-avatar-card">
 		<div class="row">
 			<h2>profile</h2>
-			<button type="button" class="link" onclick="document.getElementById('password-dialog').showModal()">change password</button>
+			<button type="button" class="link" data-open="password-dialog">change password</button>
 		</div>
 		<form id="avatar-form" class="stack" hx-post="/settings/avatar" hx-target="#settings-avatar-card" hx-swap="outerHTML" enctype="multipart/form-data">
 			<div class="avatar-edit" id="avatar-edit" data-avatar-drop title="click or drop an image to update your picture">
@@ -66,9 +66,9 @@ templ settingsAvatar(d settingsAvatarData) {
 				} else {
 					<span class="avatar avatar-lg avatar-default" id="avatar-img">{ web.Initial(d.Username) }</span>
 				}
-				<button type="button" class="avatar-pencil" aria-label="change profile picture" onclick="document.getElementById('avatar-input').click()">@web.Lucide("pencil")
+				<button type="button" class="avatar-pencil" aria-label="change profile picture" data-click="avatar-input">@web.Lucide("pencil")
 </button>
-				<input id="avatar-input" class="avatar-file" type="file" name="avatar" accept="image/*" onchange="submitAvatar(this.form)"/>
+				<input id="avatar-input" class="avatar-file" type="file" name="avatar" accept="image/*" data-submit-avatar/>
 			</div>
 			if d.Error != "" {
 				<div class="error" role="alert">{ d.Error }</div>
@@ -126,7 +126,7 @@ templ appearanceAccent(d settingsAccentData) {
 				}
 			</div>
 			<label>custom color
-				<input type="color" name="accent" value={ d.Accent } onchange="this.form.requestSubmit()"/>
+				<input type="color" name="accent" value={ d.Accent } data-submit-on-change/>
 			</label>
 			if d.Error != "" {
 				<div class="error" role="alert">{ d.Error }</div>
@@ -195,7 +195,7 @@ templ settingsPasswordCard(d settingsPasswordData) {
 	<div id="settings-password-card">
 		<div class="row">
 			<h2>change password</h2>
-			<button type="button" class="link" title="close" onclick="document.getElementById('password-dialog').close()">@web.Lucide("x")</button>
+			<button type="button" class="link" title="close" data-close="password-dialog">@web.Lucide("x")</button>
 		</div>
 		<form class="stack" hx-post="/settings/password" hx-target="#settings-password-card" hx-swap="outerHTML">
 			<label>current password

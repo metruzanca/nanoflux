@@ -15,10 +15,13 @@ services:
       NF_ADDR: ":8080"
       NF_DB: "/data/rss.db"
       NF_FILE_STORE: "/filestore"
-      # Set these in a .env file to create the first account at startup;
-      # otherwise the default admin/admin account is created.
-      NF_ADMIN_USER: "${NF_ADMIN_USER:-}"
-      NF_ADMIN_PASS: "${NF_ADMIN_PASS:-}"
+      # There is no admin account by default: the first person to sign up on a
+      # fresh install becomes the admin, and signups then close. Re-open them
+      # from the admin page, or create/recover an admin with the CLI:
+      #   docker compose run --rm nanoflux user create you --admin
+      # Refuse to reach private/loopback addresses when fetching feeds unless
+      # your feeds live on your LAN.
+      NF_ALLOW_PRIVATE_FETCH: "${NF_ALLOW_PRIVATE_FETCH:-}"
       # Automatic filesystem backups, on by default. The server snapshots the
       # database and file store into ./backups on the host once a day, keeping
       # the newest seven. Set NF_BACKUP_INTERVAL=0 in .env to turn them off, or

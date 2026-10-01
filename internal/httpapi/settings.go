@@ -16,6 +16,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/imageutil"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -243,12 +244,12 @@ func (s *Server) settingsSessionsRevoke(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.Sessions.Delete(token); err != nil {
+	if err := s.store.Sessions.DeleteByHash(token); err != nil {
 		log.Error("revoke session", "err", err)
 		http.NotFound(w, r)
 		return
 	}
-	if token == auth.Token(r) {
+	if token == store.HashSessionToken(auth.Token(r)) {
 		s.auth.ClearCookie(w, r)
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
@@ -263,10 +264,11 @@ func (s *Server) settingsSessionsData(u store.User, currentToken string) setting
 		return settingsSessionsData{}
 	}
 	rows := make([]settingsSessionRow, 0, len(sessions))
+	currentHash := store.HashSessionToken(currentToken)
 	for _, se := range sessions {
 		rows = append(rows, settingsSessionRow{
 			Token:     se.Token,
-			IsCurrent: se.Token == currentToken,
+			IsCurrent: se.Token == currentHash,
 			CreatedAt: se.CreatedAt,
 		})
 	}
@@ -493,6 +495,7 @@ func (s *Server) avatarImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", ct)
+	setImageHeaders(w)
 	w.Header().Set("Cache-Control", "private, no-cache")
 	w.Write(data)
 }
@@ -507,6 +510,7 @@ func (s *Server) serveSourceIcon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "public, max-age=86400")
+	setImageHeaders(w)
 	if ic, err := s.store.SourceIcons.ByDomain(u.ID, domain); err == nil && ic.IconKey != "" {
 		ct, data, err := s.files.Get(r.Context(), ic.IconKey)
 		if err == nil {
@@ -566,13 +570,13 @@ func (s *Server) fetchAndCacheIcon(ctx context.Context, ic store.SourceIcon) err
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("status %d", resp.StatusCode)
 	}
-	ct := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(ct, "image/") {
-		return errors.New("not an image")
-	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxIconBytes))
 	if err != nil {
 		return err
+	}
+	ct, ok := imageutil.Sniff(resp.Header.Get("Content-Type"), data)
+	if !ok {
+		return errors.New("not an image")
 	}
 	key := "icons/" + strconv.FormatInt(ic.UserID, 10) + "/" + ic.Domain
 	if err := s.files.Put(ctx, key, ct, data); err != nil {

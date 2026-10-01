@@ -32,7 +32,6 @@ docker run -d --name nanoflux -p 8080:8080 \
   -v nanoflux-db:/data \
   -v nanoflux-files:/filestore \
   -e NF_FILE_STORE=/filestore \
-  -e NF_ADMIN_USER=admin -e NF_ADMIN_PASS=changeme \
   ghcr.io/metruzanca/nanoflux:latest
 ```
 
@@ -47,8 +46,10 @@ make start
 
 Updating nanoflux is also made easy with the Makefile, just run `make update`.
 
-NOTE: Signups are **open by default** so a fresh instance is usable. You may disable them on `/admin`.
-You can create new accounts from the CLI inside the container or re-enable signups briefly.
+On a fresh install there is no account yet: signup is open for exactly one
+account, and the first person to sign up becomes the admin. Signups close
+automatically right after. Re-open them from `/admin`, or create/recover an
+admin from the CLI inside the container (see [CLI](#cli)).
 
 
 ### CLI
@@ -127,9 +128,32 @@ nanoflux supports external feed plugins — small executables dropped into
 `plugins/` that add site-specific sources. Build them with `make plugins`. See
 [`docs/writing-plugins.md`](docs/writing-plugins.md) to write your own.
 
+> **Security: plugins are arbitrary executables.** An external plugin runs as a
+> child process with the same OS privileges as the nanoflux server, and it can
+> read or modify anything the server can, including its database and files. Only
+> put plugin binaries you trust into `plugins/`, and make sure that directory is
+> not writable by untrusted users or processes. There is no sandbox. If you do
+> not need external plugins, leave the directory empty.
+
 - [nanoflux-plugin-x](https://github.com/metruzanca/nanoflux-plugin-x)↗ — X
   (Twitter) profile feeds, fetched with your own logged-in session. Use at your
   own risk.
+
+## Security
+
+- **No default account.** The first signup on a fresh install becomes the admin
+  and closes signups; there is no shipped username/password. Recover a locked
+  instance with `nanoflux user create <name> --admin` or
+  `nanoflux user set-admin <name> true` (or `docker compose run --rm nanoflux
+  user ...`).
+- **Untrusted feed HTML is sanitized** at ingest, so a malicious feed cannot
+  run script in your session.
+- **Outbound fetches refuse private addresses** (loopback, RFC1918, link-local,
+  cloud metadata). Set `NF_ALLOW_PRIVATE_FETCH=1` if your feeds are on your LAN.
+- **Sessions and CSRF tokens** are stored hashed; cookies are `HttpOnly` and
+  `SameSite=Lax`, and the app ships a strict Content-Security-Policy.
+- Plugins are the main trust boundary — see the warning above. Run nanoflux
+  behind TLS (a reverse proxy is fine) for any non-local deployment.
 
 ## Contributing
 

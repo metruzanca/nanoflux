@@ -385,7 +385,9 @@ CTA differs. The demo is a real temporary account, not a shared sandbox.
   live so editing the seed changes it without a restart.
 - `users.List`/`CountPersistent` exclude ephemeral accounts, so the admin user
   list and the "first account" bootstrap ignore demo users. `Server.allowSignup`
-  returns false in demo mode; the seed admin logs in normally.
+  is false in demo mode; it is also false once any real account exists unless
+  the admin re-enables it (see "First account and signup" below). The seed admin
+  logs in normally.
 - `views_layout.templ`'s topbar renders a `#demo-countdown` badge when the
   request carries a demo status (`demoFrom` context); `app.js` ticks it and
   sends the visitor to `/` at zero. Do not put it on the landing page.
@@ -683,3 +685,52 @@ The invariants that bite:
   cell content is slotted from the light DOM, so htmx can reach the cloned row
   markup. Vaadin's base color tokens default via `light-dark()` (OS preference,
   not `data-theme`) and are remapped on `:root` in `app.css`.
+
+## Security invariants
+
+- **First account and signup.** There is no admin env var and no default
+  account. `Server.allowSignup` opens signup only while `CountPersistent()==0`
+  (checked before the `allow_signup` setting, so a settings read error cannot
+  lock out a fresh install), or when the admin has enabled it. The first signup
+  runs `UserStore.CreateFirstAdmin`, which promotes the account in the same
+  transaction and flips `allow_signup='0'`; a concurrent second signup simply
+  becomes a normal user. `schemaV17` seeds `allow_signup='0'`. Recovery is the
+  CLI (`nanoflux user create --admin`, `user set-admin`).
+- **Ingest sanitizer.** `internal/sanitize.HTML` (bluemonday, raster-only media,
+  no script/style/iframe/svg/event handlers/js URLs) is applied at the store
+  write boundary: `ItemStore.Upsert` (covers feed summaries, plugin items and
+  saved pages) and `ItemStore.SetContent` (enriched bodies). Item bodies are
+  still rendered with `templ.Raw`, so the sanitizer is the only thing keeping
+  feed HTML inert; do not add a new write path that stores an item body without
+  going through these methods.
+- **SSRF guard.** `internal/safedial.Client` refuses non-public addresses and
+  dials the resolved IP itself (DNS-rebinding safe). It backs the poller client
+  (hence plugin `Host.Do` and `imagecache`), the httpapi client (discovery,
+  oEmbed, avatars, icons, `/img`). Do not construct a bare `http.Client` for a
+  user-supplied URL. `NF_ALLOW_PRIVATE_FETCH=1` is the LAN opt-out, read per
+  client construction.
+- **CSRF.** `csrfMiddleware` requires `hex(sha256("nanoflux-csrf:"+session))` on
+  unsafe methods, from `X-CSRF-Token` (htmx/fetch, set in `app.js` from the
+  `<meta name="csrf-token">`) or a `csrf_token` hidden field (`@csrfField()`).
+  Exempt: `/login`, `/signup`, `/demo` and `/api/` (Bearer). Every new
+  authenticated plain `<form method="post">` needs `@csrfField()`; htmx forms
+  are covered by the header.
+- **CSP / no inline JS.** `securityHeaders` sets a strict CSP plus
+  `X-Frame-Options`, `nosniff` and HTTPS-conditional HSTS. `script-src` has no
+  `unsafe-inline`/`unsafe-eval`, so inline `on*` handlers and htmx `hx-on` are
+  forbidden: wire behaviors through `data-*` hooks in `app.js`. `style-src`
+  keeps `unsafe-inline` (inline style attributes and vendored component styles).
+  The landing page's highlight.js bootstrap is `static/marketing.js`, not
+  inline.
+- **Images are raster-only.** `internal/imageutil.Sniff` rejects SVG/HTML; it
+  gates `/img`, author avatars, source icons and `imagecache`, and the
+  byte-serving routes add `Content-Security-Policy: default-src 'none'; sandbox`.
+  Never trust an upstream `Content-Type` alone.
+- **Sessions are hashed.** `SessionStore` stores `sha256(raw token)`; lookups
+  hash the presented value. The settings page keys revoke by the stored hash and
+  `DeleteByHash`; `DeleteUserSessionsExcept` hashes the kept token. The raw token
+  still lives only in the HttpOnly cookie (and CSRF derives from it).
+- **Error text.** Fetch failures are shown through `feedPreviewError` (categorized,
+  never the URL or raw error); the underlying error is logged with the URL
+  (`feed preview failed`, poller `poll feed`). Do not return `err.Error()` to a
+  user.
