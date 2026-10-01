@@ -19,6 +19,7 @@ templ head(title, accent string) {
 	<link rel="manifest" href="/manifest.webmanifest"/>
 	<link rel="apple-touch-icon" href="/static/apple-touch-icon.png"/>
 	<title>{ web.PageTitle(title) }</title>
+	<meta name="csrf-token" content={ csrfFrom(ctx) }/>
 	<link rel="icon" type="image/svg+xml" href={ templ.URL("/favicon.svg?c=" + logoColorParam(accent)) }/>
 	<link rel="stylesheet" href={ templ.URL("/static/app.css") }/>
 	<script src={ templ.URL("/static/htmx.min.js") } defer></script>
@@ -84,7 +85,7 @@ templ topbar(u store.User) {
 					</form>
 					<div class="add-menu">
 						<button type="button" class="add-primary" data-action="addFeed">+ add feed</button>
-						<button type="button" class="add-caret" id="add-menu-btn" aria-haspopup="true" aria-expanded="false" title="more add actions" onclick="toggleAddMenu(event)">@web.Lucide("chevron-down")</button>
+						<button type="button" class="add-caret" id="add-menu-btn" aria-haspopup="true" aria-expanded="false" title="more add actions" data-toggle-add-menu>@web.Lucide("chevron-down")</button>
 						<div id="add-menu-pop" class="menu-pop" role="menu" hidden>
 							<button type="button" class="link menu-item" role="menuitem" data-action="savePage">save url for later</button>
 							for _, p := range provisionersFrom(ctx) {
@@ -96,7 +97,7 @@ templ topbar(u store.User) {
 						</div>
 					</div>
 					<div class="user-menu">
-						<button type="button" id="user-menu-btn" class="avatar-btn" aria-haspopup="true" aria-expanded="false" title={ u.Username } onclick="toggleUserMenu(event)">
+						<button type="button" id="user-menu-btn" class="avatar-btn" aria-haspopup="true" aria-expanded="false" title={ u.Username } data-toggle-user-menu>
 							if u.HasAvatar {
 								<img class="avatar avatar-sm" src={ templ.URL("/avatar") } alt={ u.Username }/>
 							} else {
@@ -119,12 +120,12 @@ templ topbar(u store.User) {
 								<a href="/admin" role="menuitem">admin</a>
 							}
 							<a href="/settings" role="menuitem">settings</a>
-							<form action="/logout" method="post"><button class="link menu-item" type="submit">log out</button></form>
+							<form action="/logout" method="post">@csrfField()<button class="link menu-item" type="submit">log out</button></form>
 						</div>
 					</div>
 				</div>
 			</nav>
-			<button type="button" id="nav-toggle" class="hamburger" aria-label="menu" aria-expanded="false" aria-controls="top-nav" onclick="toggleNav(event)">
+			<button type="button" id="nav-toggle" class="hamburger" aria-label="menu" aria-expanded="false" aria-controls="top-nav" data-toggle-nav>
 				<span></span>
 				<span></span>
 				<span></span>
@@ -135,12 +136,12 @@ templ topbar(u store.User) {
 	<dialog id="item-dialog" class="modal wide">
 		<div class="item-dialog-head">
 			<div id="item-dialog-controls"></div>
-			<button type="button" class="link" title="close" onclick="document.getElementById('item-dialog').close()">@web.Lucide("x")</button>
+			<button type="button" class="link" title="close" data-close="item-dialog">@web.Lucide("x")</button>
 		</div>
 		<div id="item-dialog-body" class="item-view" tabindex="0"></div>
 		<div class="item-dialog-foot">
-			<button type="button" id="item-prev" title="previous item" aria-label="previous item" onclick="itemNav(-1)">@web.Lucide("chevron-left")<span>previous</span></button>
-			<button type="button" id="item-next" title="next item" aria-label="next item" onclick="itemNav(1)"><span>next</span>@web.Lucide("chevron-right")</button>
+			<button type="button" id="item-prev" title="previous item" aria-label="previous item" data-item-nav="-1">@web.Lucide("chevron-left")<span>previous</span></button>
+			<button type="button" id="item-next" title="next item" aria-label="next item" data-item-nav="1"><span>next</span>@web.Lucide("chevron-right")</button>
 		</div>
 	</dialog>
 
@@ -157,7 +158,7 @@ templ topbar(u store.User) {
 	<dialog id="provision-dialog" class="modal">
 		<div class="row">
 			<h2 id="provision-dialog-title">create a feed</h2>
-			<button type="button" class="link" title="close" onclick="document.getElementById('provision-dialog').close()">@web.Lucide("x")</button>
+			<button type="button" class="link" title="close" data-close="provision-dialog">@web.Lucide("x")</button>
 		</div>
 		<div id="provision-dialog-body"></div>
 	</dialog>
@@ -181,7 +182,7 @@ templ topbar(u store.User) {
 	<dialog id="shortcuts-dialog" class="modal">
 		<div class="row">
 			<h2 class="muted">keyboard shortcuts</h2>
-			<button type="button" class="link" onclick="document.getElementById('shortcuts-dialog').close()">@web.Lucide("x")</button>
+			<button type="button" class="link" data-close="shortcuts-dialog">@web.Lucide("x")</button>
 		</div>
 		@shortcutsTable()
 	</dialog>
@@ -242,6 +243,12 @@ func appearanceStyle(u store.User) string {
 	b.WriteString("--grid-columns: ")
 	b.WriteString(strconv.Itoa(store.ClampGridColumns(u.GridMaxColumns)))
 	return b.String()
+}
+
+// csrfField renders the hidden CSRF token for a plain (non-htmx) POST form.
+// htmx and fetch requests send the same token as X-CSRF-Token from app.js.
+templ csrfField() {
+	<input type="hidden" name="csrf_token" value={ csrfFrom(ctx) }/>
 }
 
 // FormError is the shared user-facing error banner (role="alert").

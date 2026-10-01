@@ -79,7 +79,7 @@ plugins list + per-domain reset (`internal/httpapi/admin.go:100`).
 ### Environment (`internal/config/config.go:52`, `.env.example`)
 
 `NF_ADDR`, `NF_DB`, `NF_FILE_STORE`, `NF_LOG_LEVEL`, `NF_POLL_INTERVAL`,
-`NF_POLL_WORKERS`, `NF_USER_AGENT`, `NF_ADMIN_USER/PASS`, `NF_PLUGINS_DIR`,
+`NF_POLL_WORKERS`, `NF_USER_AGENT`, `NF_PLUGINS_DIR`, `NF_ALLOW_PRIVATE_FETCH`,
 `NF_S3_*`, `NF_BACKUP_*`.
 
 ### Theming / display

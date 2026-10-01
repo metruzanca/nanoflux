@@ -13,7 +13,7 @@ templ authorsPage(u store.User, d authorsData) {
 		<h1>authors</h1>
 		<div class="row-actions">
 			@AuthorSortControl()
-			<button type="button" onclick="document.getElementById('add-author-dialog').showModal()">+ add feed</button>
+			<button type="button" data-open="add-author-dialog">+ add feed</button>
 		</div>
 	</div>
 	@AuthorsList(d.Rows)
@@ -24,7 +24,7 @@ templ authorsPage(u store.User, d authorsData) {
 	<dialog id="add-author-dialog" class="modal">
 		<div class="row">
 			<h2>add feed</h2>
-			<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+			<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
 		</div>
 		<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-preview" hx-swap="innerHTML">
 			<label>url
@@ -42,7 +42,7 @@ templ authorsPage(u store.User, d authorsData) {
 		<form class="stack" hx-post="/authors">
 			<div class="row">
 				<h2>add author</h2>
-				<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+				<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
 			</div>
 			<label>name
 				<input name="name" autofocus required/>
@@ -74,7 +74,7 @@ templ AuthorRow(r authorRow) {
 				if r.AvatarKey != "" {
 					<img class="avatar avatar-sm" src={ "/authors/" + strconv.FormatInt(r.ID, 10) + "/avatar?v=" + url.QueryEscape(r.LastFetchedAt) } alt=""/>
 				} else if r.AvatarURL != "" {
-					<img class="avatar avatar-sm" src={ web.ProxiedImageURL(r.AvatarURL) } onerror="this.style.display='none'" alt=""/>
+					<img class="avatar avatar-sm" src={ web.ProxiedImageURL(r.AvatarURL) } data-hide-on-error alt=""/>
 				}
 				<strong>{ r.Name }</strong>
 			</a>
@@ -87,12 +87,14 @@ templ authorEditPage(u store.User, d authorsData) {
 	<section class="card">
 		<h1>edit author</h1>
 		<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
+			@csrfField()
 			@authorFields(d)
 			@authorLinkFields(d)
 			@authorAvatarFields(d.AvatarCard)
 			<button type="submit">save</button>
 		</form>
-		<form class="stack delete-form" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } onsubmit="return confirm('delete this author and their feeds?')">
+		<form class="stack delete-form" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this author and their feeds?">
+			@csrfField()
 			<button type="submit" class="danger">delete</button>
 		</form>
 	</section>
@@ -119,7 +121,7 @@ templ authorAvatarFields(d authorAvatarCardData) {
 				if d.AvatarKey != "" {
 					<img class="avatar avatar-lg" src={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar?v=" + url.QueryEscape(d.LastFetchedAt) } alt=""/>
 				} else if d.AvatarURL != "" {
-					<img class="avatar avatar-lg" src={ web.ProxiedImageURL(d.AvatarURL) } onerror="this.style.display='none'" alt=""/>
+					<img class="avatar avatar-lg" src={ web.ProxiedImageURL(d.AvatarURL) } data-hide-on-error alt=""/>
 				} else {
 					<span class="muted">no avatar url set</span>
 				}
@@ -163,7 +165,7 @@ templ authorLinkFields(d authorsData) {
 			@authorLinkFieldRow(strconv.FormatInt(l.ID, 10), l.Label, l.URL)
 		}
 	</div>
-	<button type="button" class="link" onclick="addAuthorLinkRow()">+ add link</button>
+	<button type="button" class="link" data-add-author-link>+ add link</button>
 	<template id="author-link-row-template">
 		@authorLinkFieldRow("", "", "")
 	</template>
@@ -178,7 +180,7 @@ templ authorLinkFieldRow(id, label, linkURL string) {
 		<label>url
 			<input name="link_url" type="text" value={ linkURL } placeholder="https://..."/>
 		</label>
-		<button type="button" class="link danger" title="remove link" onclick="this.closest('.author-link-row').remove()">@web.Lucide("x")</button>
+		<button type="button" class="link danger" title="remove link" data-remove-closest=".author-link-row">@web.Lucide("x")</button>
 	</div>
 }
 
@@ -204,7 +206,7 @@ templ authorPage(u store.User, d authorData) {
 				if d.Author.AvatarKey != "" {
 					<img class="avatar avatar-lg" src={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/avatar?v=" + url.QueryEscape(d.Author.LastFetchedAt) } alt=""/>
 				} else if d.Author.AvatarURL != "" {
-					<img class="avatar avatar-lg" src={ web.ProxiedImageURL(d.Author.AvatarURL) } onerror="this.style.display='none'" alt=""/>
+					<img class="avatar avatar-lg" src={ web.ProxiedImageURL(d.Author.AvatarURL) } data-hide-on-error alt=""/>
 				}
 				<h1>{ d.Author.Name }</h1>
 			</div>
@@ -221,7 +223,7 @@ templ authorPage(u store.User, d authorData) {
 	</section>
 	<div class="author-feeds">
 		@FeedsList(d.Rows)
-		<button type="button" class="link" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>
+		<button type="button" class="link" data-open="add-author-feed-dialog">+ add feed</button>
 	</div>
 	<div class="author-items">
 		@ScopedItems(d.Scoped)
@@ -230,7 +232,7 @@ templ authorPage(u store.User, d authorData) {
 	<dialog id="add-author-feed-dialog" class="modal">
 		<div class="row">
 			<h2>add feed for { d.Author.Name }</h2>
-			<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+			<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
 		</div>
 		<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-feed-preview" hx-swap="innerHTML">
 			<input type="hidden" id="feed-author-id" name="author_id" value={ strconv.FormatInt(d.Author.ID, 10) }/>

@@ -89,7 +89,7 @@ templ staleBadge(f store.Feed, tz string) {
 // new author pre-filled from discovery; on an author page the author is fixed
 // and only the feed fields render.
 templ feedPreviewFields(d feedPreviewForm) {
-	<form class="stack" hx-post={ d.Action } hx-target={ d.Target } hx-swap={ d.Swap } hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+	<form class="stack" hx-post={ d.Action } hx-target={ d.Target } hx-swap={ d.Swap } data-form-close-reset>
 		if d.Redirect {
 			<input type="hidden" name="redirect" value="1"/>
 		}
@@ -172,10 +172,12 @@ templ feedEditPage(u store.User, d feedsData) {
 	<section class="card">
 		<h1>edit feed</h1>
 		<form class="stack" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
+			@csrfField()
 			@feedFields(d)
 			<button type="submit">save</button>
 		</form>
-		<form class="stack delete-form" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } onsubmit="return confirm('delete this feed?')">
+		<form class="stack delete-form" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this feed?">
+			@csrfField()
 			if d.Panel != nil {
 				<label class="check">
 					<input type="checkbox" name="delete_remote" value="1"/>
@@ -196,7 +198,7 @@ templ feedRulesSection(d feedRulesData) {
 		<div class="row">
 			<h2>filters</h2>
 			if d.DocsPlugin != "" {
-				<button type="button" class="link" data-plugin={ d.DocsPlugin } title="read this feed's plugin documentation" onclick="openPluginDocs(this.dataset.plugin)">plugin docs</button>
+				<button type="button" class="link" data-plugin={ d.DocsPlugin } title="read this feed's plugin documentation" data-plugin-docs>plugin docs</button>
 			}
 		</div>
 		{{ modeURL := "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filter-mode" }}
@@ -221,7 +223,7 @@ templ feedRulesSection(d feedRulesData) {
 		} else {
 			<p class="muted small">Rules run against new items when the feed is polled and are applied to this feed's existing items when added. "delete" removes matching items from this feed; "mark read" stores them as already read. Switch to <strong>allow list</strong> to keep only items that match a rule. The "category" field matches any feed-provided category, e.g. <code>r/golang</code> or <code>u/someuser</code>.</p>
 		}
-		<form class="stack" hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters/preview" } hx-target="#filter-preview-dialog" hx-swap="innerHTML" hx-on::after-request="document.getElementById('filter-preview-dialog').showModal()">
+		<form class="stack" hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters/preview" } hx-target="#filter-preview-dialog" hx-swap="innerHTML" data-after-show="filter-preview-dialog">
 			<div class="row">
 				if d.Mode != filtermatch.ModeAllow {
 					@comboSelect("action", "delete", "action", "", filterActionItems, nil)
@@ -277,7 +279,7 @@ templ filterPreview(d filterPreviewData) {
 				add filter: { d.Rule.Action } { d.Rule.Field } <code>{ d.Rule.Pattern }</code>
 			}
 		</h2>
-		<button type="button" class="link" title="close" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+		<button type="button" class="link" title="close" data-close-dialog>@web.Lucide("x")</button>
 	</div>
 	<p class="muted small">applies to this feed's existing items now, and to new items when polled.</p>
 	<div class="filter-preview-cols">
@@ -291,7 +293,7 @@ templ filterPreview(d filterPreviewData) {
 		</section>
 	</div>
 	<div class="row-actions">
-		<button type="button" class="link" autofocus onclick="this.closest('dialog').close()">cancel</button>
+		<button type="button" class="link" autofocus data-close-dialog>cancel</button>
 		<form hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/filters" } hx-target="#feed-rules" hx-swap="outerHTML">
 			<input type="hidden" name="action" value={ d.Rule.Action }/>
 			<input type="hidden" name="field" value={ d.Rule.Field }/>
@@ -413,7 +415,7 @@ templ feedPage(u store.User, d feedPageData) {
 					title="refresh"
 					hx-post={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/refresh" }
 					hx-swap="none"
-					hx-on::after-request="if(event.detail.successful) window.location.reload()"
+					data-reload-on-success
 					if d.Row.Cooling() {
 						disabled
 					}

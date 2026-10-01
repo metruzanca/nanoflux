@@ -34,6 +34,23 @@ func newTestServer(t *testing.T) (*Server, http.Handler) {
 	return s, s.Handler()
 }
 
+// newEmptyServer builds a server over an empty database, for exercising the
+// first-signup bootstrap (no users yet).
+func newEmptyServer(t *testing.T) (*Server, http.Handler) {
+	t.Helper()
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { sqldb.Close() })
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	s := New(st, auth.New(st), config.Config{}, filestore.NewMemory())
+	return s, s.Handler()
+}
+
 func login(t *testing.T, h http.Handler) *httptest.ResponseRecorder {
 	t.Helper()
 	form := url.Values{"username": {"alice"}, "password": {"secret"}}
@@ -133,6 +150,7 @@ func TestLogout(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: token})
+	req.Header.Set("X-CSRF-Token", csrfToken(token))
 	rr2 := httptest.NewRecorder()
 	h.ServeHTTP(rr2, req)
 	if rr2.Code != http.StatusFound || rr2.Header().Get("Location") != "/login" {

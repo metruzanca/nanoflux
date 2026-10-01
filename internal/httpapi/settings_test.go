@@ -130,7 +130,7 @@ func TestSettingsAvatar(t *testing.T) {
 	// avatar is a drop target, and a pencil badge opens the picker.
 	body = doGet(h, "/settings", cookie).Body.String()
 	for _, want := range []string{
-		`onchange="submitAvatar(this.form)"`,
+		`data-submit-avatar`,
 		`data-avatar-drop`,
 		`class="avatar-pencil"`,
 	} {
@@ -219,6 +219,7 @@ func uploadForm(h http.Handler, path, field, filename string, data []byte, cooki
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	if cookie != nil {
 		req.AddCookie(cookie)
+		req.Header.Set("X-CSRF-Token", csrfToken(cookie.Value))
 	}
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
@@ -753,14 +754,15 @@ func TestSettingsSessionsRevoke(t *testing.T) {
 	if err := s.store.Sessions.Create(u.ID, "ghost", db.FormatTime(time.Now().Add(time.Hour))); err != nil {
 		t.Fatal(err)
 	}
+	ghostHash := store.HashSessionToken("ghost")
 	cookie := sessionCookie(t, h)
 
 	body := doGet(h, "/settings", cookie).Body.String()
-	if !strings.Contains(body, "this device") || !strings.Contains(body, "ghost") {
+	if !strings.Contains(body, "this device") || !strings.Contains(body, ghostHash) {
 		t.Fatal("settings should list sessions")
 	}
 
-	rr := doForm(h, "POST", "/settings/sessions/ghost/revoke", url.Values{}, cookie)
+	rr := doForm(h, "POST", "/settings/sessions/"+ghostHash+"/revoke", url.Values{}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("revoke: %d %s", rr.Code, rr.Body.String())
 	}
@@ -769,7 +771,7 @@ func TestSettingsSessionsRevoke(t *testing.T) {
 	}
 
 	// Revoking the current session logs out.
-	rr = doForm(h, "POST", "/settings/sessions/"+cookie.Value+"/revoke", url.Values{}, cookie)
+	rr = doForm(h, "POST", "/settings/sessions/"+store.HashSessionToken(cookie.Value)+"/revoke", url.Values{}, cookie)
 	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/login" {
 		t.Fatalf("revoke current: %d %s", rr.Code, rr.Header().Get("Location"))
 	}

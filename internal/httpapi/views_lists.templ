@@ -10,15 +10,15 @@ import (
 templ listsPage(u store.User, d listsPageData) {
 	<div class="row">
 		<h1>lists</h1>
-		<button type="button" onclick="document.getElementById('add-list-dialog').showModal()">+ add list</button>
+		<button type="button" data-open="add-list-dialog">+ add list</button>
 	</div>
 	@ListsList(d)
 
 	<dialog id="add-list-dialog" class="modal">
-		<form class="stack" hx-post="/lists" hx-target="#lists-list" hx-swap="beforeend" hx-on::after-request="if(event.detail.successful && event.detail.elt === this){this.closest('dialog').close();this.reset()}">
+		<form class="stack" hx-post="/lists" hx-target="#lists-list" hx-swap="beforeend" data-form-close-reset>
 			<div class="row">
 				<h2>add list</h2>
-				<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+				<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
 			</div>
 			<label>name
 				<input name="name" autofocus required/>
@@ -139,12 +139,14 @@ templ listEditPage(u store.User, d listPageData) {
 	<section class="card">
 		<h1>edit list</h1>
 		<form class="stack" method="post" action={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/edit" }>
+			@csrfField()
 			<label>name
 				<input name="name" value={ d.List.Name } required/>
 			</label>
 			<button type="submit">save</button>
 		</form>
-		<form class="stack delete-form" method="post" action={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/delete" } onsubmit="return confirm('delete this list?')">
+		<form class="stack delete-form" method="post" action={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/delete" } data-confirm="delete this list?">
+			@csrfField()
 			<button type="submit" class="danger">delete</button>
 		</form>
 	</section>

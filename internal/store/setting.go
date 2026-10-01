@@ -13,11 +13,12 @@ import (
 type SettingStore struct{ q *sqlcgen.Queries }
 
 // AllowSignup reports whether new users can register via the signup page. The
-// default when the setting is absent is true (signup open).
+// default when the setting is absent is false (signup closed); fresh installs
+// open signup only through the no-users bootstrap window.
 func (s *SettingStore) AllowSignup() (bool, error) {
 	v, err := s.q.GetSetting(context.Background(), "allow_signup")
 	if errors.Is(err, sql.ErrNoRows) {
-		return true, nil
+		return false, nil
 	}
 	if err != nil {
 		return false, err

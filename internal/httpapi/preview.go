@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -100,10 +101,15 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	if len(candidates) == 0 {
 		// Surface the underlying failure when there is one (e.g. a rate limit)
 		// so the user can tell "no feed here" from "couldn't check right now".
+		// The raw cause is logged with the URL, never shown.
+		if err != nil {
+			log.Warn("feed preview failed", "url", pageURL, "err", err)
+		}
 		web.Render(w, r, noFeedFound(noFeedFoundData{URL: pageURL, Target: previewTarget, Reason: feedPreviewError(err)}))
 		return
 	}
 	if err != nil {
+		log.Warn("feed preview partial failure", "url", pageURL, "err", err)
 		renderError(w, r, "could not inspect that url")
 		return
 	}
@@ -309,33 +315,42 @@ func (s *Server) discoverCandidates(ctx context.Context, pageURL string) ([]disc
 }
 
 // feedPreviewError maps a discovery/fetch error to a short, user-facing reason
-// (or "" for an unknown cause). It never includes the URL, since errors carry
-// the raw fetch URL and the client must not see internals.
+// (or "" for an unknown cause). It never includes the URL or a raw network
+// error, which would leak the server's internal connectivity; callers log the
+// underlying error with the URL instead.
 func feedPreviewError(err error) string {
 	if err == nil {
 		return ""
 	}
 	var rl *feedparse.RateLimitError
 	if errors.As(err, &rl) {
-		return "the site is rate-limiting requests (HTTP " + strconv.Itoa(rl.Status) + ") — wait a bit and try again"
+		return "that site is rate-limiting requests — wait a minute and try again"
 	}
 	var se *feedparse.StatusError
 	if errors.As(err, &se) {
 		switch se.Code {
-		case http.StatusTooManyRequests:
-			return "the site is rate-limiting requests (HTTP 429) — wait a bit and try again"
+		case http.StatusUnauthorized:
+			return "that site requires a login (HTTP 401)"
 		case http.StatusForbidden:
-			return "the site refused the request (HTTP 403) — it may block automated access"
+			return "that site refused the request (HTTP 403) — it may block automated access"
 		case http.StatusNotFound:
-			return "the page could not be found (HTTP 404) — check the url"
+			return "no page or feed was found at that address (HTTP 404) — check the url"
+		case http.StatusTooManyRequests:
+			return "that site is rate-limiting requests — wait a minute and try again"
+		case http.StatusGone:
+			return "that feed is gone (HTTP 410)"
 		default:
 			if se.Code >= 500 {
-				return "the site had a server error (HTTP " + strconv.Itoa(se.Code) + ") — try again later"
+				return "that site is having server problems (HTTP " + strconv.Itoa(se.Code) + ") — try again later"
 			}
-			return "the site returned an error (HTTP " + strconv.Itoa(se.Code) + ")"
+			return "that site returned an error (HTTP " + strconv.Itoa(se.Code) + ")"
 		}
 	}
-	return "could not inspect that url"
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return "that site took too long to respond — check the url and try again"
+	}
+	return "couldn't reach that site — check the url and your connection"
 }
 
 // renderFeedPreviewForm renders the combined add form for one discovered feed.

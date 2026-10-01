@@ -41,7 +41,7 @@ func New(sqldb *sql.DB) *Store {
 	return &Store{
 		db:          sqldb,
 		q:           q,
-		Users:       &UserStore{q: q},
+		Users:       &UserStore{q: q, db: sqldb},
 		Sessions:    &SessionStore{q: q},
 		Settings:    &SettingStore{q: q},
 		Authors:     &AuthorStore{q: q},

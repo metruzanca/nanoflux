@@ -20,7 +20,7 @@ templ pluginDocsDialog(name string, body template.HTML, note string) {
 				plugin docs
 			}
 		</h2>
-		<button type="button" class="link" title="close" onclick="document.getElementById('plugin-docs-dialog').close()">@web.Lucide("x")</button>
+		<button type="button" class="link" title="close" data-close="plugin-docs-dialog">@web.Lucide("x")</button>
 	</div>
 	if note != "" {
 		<p class="muted">{ note }</p>

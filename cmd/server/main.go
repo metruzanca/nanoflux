@@ -60,7 +60,6 @@ func runServer() {
 	}
 
 	st := store.New(sqldb)
-	bootstrapUser(st, cfg)
 	a := auth.New(st)
 	a.SetDemoMode(cfg.Demo.Enabled())
 
@@ -251,46 +250,4 @@ func setLogLevel(level string) {
 	default:
 		log.SetLevel(log.InfoLevel)
 	}
-}
-
-// bootstrapUser creates the first account from env when the database is empty.
-// The first account is always an admin so the instance has someone who can
-// manage users. With no env creds it falls back to a default admin/admin
-// account so a fresh instance is immediately usable; the signup page lets
-// other users register.
-func bootstrapUser(st *store.Store, cfg config.Config) {
-	n, err := st.Users.CountPersistent()
-	if err != nil {
-		log.Fatal("count users", "err", err)
-	}
-	if n > 0 {
-		return
-	}
-	if cfg.BootstrapUser != "" && cfg.BootstrapPass != "" {
-		hash, err := auth.HashPassword(cfg.BootstrapPass)
-		if err != nil {
-			log.Fatal("hash password", "err", err)
-		}
-		u, err := st.Users.Create(cfg.BootstrapUser, hash)
-		if err != nil {
-			log.Fatal("create bootstrap user", "err", err)
-		}
-		if err := st.Users.SetAdmin(u.ID, true); err != nil {
-			log.Fatal("grant admin", "err", err)
-		}
-		log.Info("created bootstrap user", "username", cfg.BootstrapUser, "admin", true)
-		return
-	}
-	hash, err := auth.HashPassword("admin")
-	if err != nil {
-		log.Fatal("hash password", "err", err)
-	}
-	u, err := st.Users.Create("admin", hash)
-	if err != nil {
-		log.Fatal("create default admin", "err", err)
-	}
-	if err := st.Users.SetAdmin(u.ID, true); err != nil {
-		log.Fatal("grant admin", "err", err)
-	}
-	log.Warn("no users found: created default account admin/admin — change the password after logging in")
 }

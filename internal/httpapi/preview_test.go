@@ -169,7 +169,7 @@ func TestFeedPreviewRateLimitReason(t *testing.T) {
 	if !strings.Contains(body, "no feed found at that url") || !strings.Contains(body, `role="alert"`) {
 		t.Fatalf("should still render the no-feed banner: %s", body)
 	}
-	if !strings.Contains(body, "rate-limiting") || !strings.Contains(body, "429") {
+	if !strings.Contains(body, "rate-limiting") {
 		t.Fatalf("should explain the rate limit: %s", body)
 	}
 	// The raw fetch url must not be echoed back.

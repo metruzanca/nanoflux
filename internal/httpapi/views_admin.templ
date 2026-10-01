@@ -56,7 +56,7 @@ templ AdminPluginsCard(rows []adminPluginRow, domains []adminPluginDomain) {
 								}
 								if r.HasDocs {
 									{ " " }
-									<a href="#" data-plugin={ r.Name } title="read this plugin's documentation" onclick="openPluginDocs(this.dataset.plugin);return false">read more</a>
+									<a href="#" data-plugin={ r.Name } title="read this plugin's documentation" data-plugin-docs>read more</a>
 								}
 							</p>
 						}

@@ -253,6 +253,9 @@ func TestAdminSignupBannerAndDismiss(t *testing.T) {
 	if err := s.store.Users.SetAdmin(root.ID, true); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.store.Settings.SetAllowSignup(true); err != nil {
+		t.Fatal(err)
+	}
 	cookie := adminSession(t, s, "root")
 
 	body := doGet(h, "/admin", cookie).Body.String()
@@ -313,9 +316,20 @@ func TestAdminStats(t *testing.T) {
 func TestSignupGating(t *testing.T) {
 	s, h := newTestServer(t)
 
-	// Default: signup open, login links to it.
+	// Default for an instance that already has accounts: signup closed.
+	if body := doGetRaw(h, "/signup").Body.String(); !strings.Contains(body, "signups are disabled") {
+		t.Fatal("signup should be closed when accounts already exist")
+	}
+	if body := doGetRaw(h, "/login").Body.String(); strings.Contains(body, `href="/signup"`) {
+		t.Fatal("login must not link to signup when closed")
+	}
+
+	// Enabled: signup page renders and login links to it.
+	if err := s.store.Settings.SetAllowSignup(true); err != nil {
+		t.Fatal(err)
+	}
 	if body := doGetRaw(h, "/signup").Body.String(); !strings.Contains(body, "create account") {
-		t.Fatal("signup page should render by default")
+		t.Fatal("signup page should render when enabled")
 	}
 	if body := doGetRaw(h, "/login").Body.String(); !strings.Contains(body, `href="/signup"`) {
 		t.Fatal("login should link to signup while open")

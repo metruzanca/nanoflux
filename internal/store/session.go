@@ -2,18 +2,27 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 )
+
+// HashSessionToken returns the value stored for a session token. Only the hash
+// is persisted, so a leaked database does not yield usable session cookies.
+func HashSessionToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
 
 type SessionStore struct{ q *sqlcgen.Queries }
 
 // Create stores a session token. expiresAt is a db-formatted UTC timestamp.
 func (s *SessionStore) Create(userID int64, token, expiresAt string) error {
 	return s.q.CreateSession(context.Background(), sqlcgen.CreateSessionParams{
-		Token:     token,
+		Token:     HashSessionToken(token),
 		UserID:    userID,
 		ExpiresAt: expiresAt,
 	})
@@ -21,7 +30,7 @@ func (s *SessionStore) Create(userID int64, token, expiresAt string) error {
 
 // UserByToken returns the user for a valid, unexpired session token.
 func (s *SessionStore) UserByToken(token string) (User, error) {
-	u, err := s.q.GetUserByToken(context.Background(), token)
+	u, err := s.q.GetUserByToken(context.Background(), HashSessionToken(token))
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound
 	}
@@ -32,7 +41,13 @@ func (s *SessionStore) UserByToken(token string) (User, error) {
 }
 
 func (s *SessionStore) Delete(token string) error {
-	return s.q.DeleteSession(context.Background(), token)
+	return s.q.DeleteSession(context.Background(), HashSessionToken(token))
+}
+
+// DeleteByHash removes a session by its stored hash (the identifier the
+// settings page holds), rather than a raw cookie token.
+func (s *SessionStore) DeleteByHash(hash string) error {
+	return s.q.DeleteSession(context.Background(), hash)
 }
 
 // DeleteUserSessions revokes every session belonging to a user (used when a
@@ -47,7 +62,7 @@ func (s *SessionStore) DeleteUserSessions(userID int64) error {
 func (s *SessionStore) DeleteUserSessionsExcept(userID int64, keepToken string) error {
 	return s.q.DeleteSessionsByUserExcept(context.Background(), sqlcgen.DeleteSessionsByUserExceptParams{
 		UserID: userID,
-		Token:  keepToken,
+		Token:  HashSessionToken(keepToken),
 	})
 }
 
@@ -75,7 +90,7 @@ func (s *SessionStore) ListUserSessions(userID int64) ([]Session, error) {
 func (s *SessionStore) Touch(token, expiresAt string) error {
 	return s.q.TouchSession(context.Background(), sqlcgen.TouchSessionParams{
 		ExpiresAt: expiresAt,
-		Token:     token,
+		Token:     HashSessionToken(token),
 	})
 }
 

@@ -36,8 +36,8 @@ templ provisionCreated(feedID int64, title string, fields []pluginapi.Field) {
 			for _, f := range fields {
 				<div class="copy-field">
 					<span class="muted small">{ f.Label }</span>
-					<input type="text" value={ f.Value } readonly onclick="this.select()"/>
-					<button type="button" class="link" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">copy</button>
+					<input type="text" value={ f.Value } readonly data-select-on-click/>
+					<button type="button" class="link" data-copy-prev>copy</button>
 				</div>
 			}
 		}
@@ -63,8 +63,8 @@ templ feedPluginPanel(d feedPanelData) {
 			for _, f := range d.Fields {
 				<div class="copy-field">
 					<span class="muted small">{ f.Label }</span>
-					<input type="text" value={ f.Value } readonly onclick="this.select()"/>
-					<button type="button" class="link" onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">copy</button>
+					<input type="text" value={ f.Value } readonly data-select-on-click/>
+					<button type="button" class="link" data-copy-prev>copy</button>
 				</div>
 			}
 		}

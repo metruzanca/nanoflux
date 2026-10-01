@@ -29,6 +29,9 @@ func doForm(h http.Handler, method, path string, form url.Values, cookie *http.C
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if cookie != nil {
 		req.AddCookie(cookie)
+		if method != http.MethodGet && method != http.MethodHead {
+			req.Header.Set("X-CSRF-Token", csrfToken(cookie.Value))
+		}
 	}
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
@@ -1505,7 +1508,7 @@ func TestAuthorPageHasAddFeedDialog(t *testing.T) {
 	}
 	// The add-feed control is a link-styled button that sits after the feed
 	// list, not a primary button above it.
-	const addFeedBtn = `<button type="button" class="link" onclick="document.getElementById('add-author-feed-dialog').showModal()">+ add feed</button>`
+	const addFeedBtn = `data-open="add-author-feed-dialog"`
 	if !strings.Contains(body, addFeedBtn) {
 		t.Fatalf("author page add-feed should be a link-styled button: %s", body)
 	}
@@ -1529,7 +1532,7 @@ func TestAuthorLinks(t *testing.T) {
 		`id="author-link-row-template"`,
 		`name="link_url"`,
 		`name="link_label"`,
-		"addAuthorLinkRow()",
+		"data-add-author-link",
 	} {
 		if !strings.Contains(edit, want) {
 			t.Fatalf("author edit page missing %q: %s", want, edit)
@@ -2189,6 +2192,7 @@ func TestMarkRangeReadAuthorScoped(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/items/"+itoa(middle)+"/read-before", nil)
 	req.Header.Set("HX-Current-URL", "http://example.com/authors/"+itoa(a.ID))
 	req.AddCookie(cookie)
+	req.Header.Set("X-CSRF-Token", csrfToken(cookie.Value))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNoContent {
@@ -2222,6 +2226,7 @@ func TestMarkRangeReadAuthorScoped(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/items/"+itoa(soloMiddle)+"/read-before", nil)
 	req.Header.Set("HX-Current-URL", "http://example.com/feeds/"+itoa(g.ID))
 	req.AddCookie(cookie)
+	req.Header.Set("X-CSRF-Token", csrfToken(cookie.Value))
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNoContent {

@@ -63,7 +63,7 @@ func pluginDocsDialog(name string, body template.HTML, note string) templ.Compon
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</h2><button type=\"button\" class=\"link\" title=\"close\" onclick=\"document.getElementById('plugin-docs-dialog').close()\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</h2><button type=\"button\" class=\"link\" title=\"close\" data-close=\"plugin-docs-dialog\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

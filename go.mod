@@ -7,6 +7,7 @@ require (
 	github.com/charmbracelet/log v1.0.0
 	github.com/hashicorp/go-hclog v0.14.1
 	github.com/hashicorp/go-plugin v1.6.3
+	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/mmcdole/gofeed v1.4.2
 	github.com/spf13/cobra v1.10.2
@@ -19,8 +20,10 @@ require (
 )
 
 require (
+	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/gorilla/css v1.0.1 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/oklog/run v1.0.0 // indirect

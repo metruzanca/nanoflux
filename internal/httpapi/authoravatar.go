@@ -7,13 +7,13 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/imageutil"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -66,13 +66,13 @@ func (s *Server) fetchAndCacheAuthorAvatar(ctx context.Context, a store.Author) 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("status %d", resp.StatusCode)
 	}
-	ct := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(ct, "image/") {
-		return errors.New("not an image")
-	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxAvatarBytes))
 	if err != nil {
 		return err
+	}
+	ct, ok := imageutil.Sniff(resp.Header.Get("Content-Type"), data)
+	if !ok {
+		return errors.New("not an image")
 	}
 	key := authorAvatarKey(a.UserID, a.ID)
 	if err := s.files.Put(ctx, key, ct, data); err != nil {
@@ -131,6 +131,7 @@ func (s *Server) authorAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", ct)
+	setImageHeaders(w)
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.Write(data)
 }

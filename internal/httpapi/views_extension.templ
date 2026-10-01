@@ -89,7 +89,7 @@ templ extPageSaved(itemID int64, title, list string) {
 templ savePageForm(selectedList string, lists []comboItem) {
 	<div class="row">
 		<h2>save url for later</h2>
-		<button type="button" class="link" onclick="this.closest('dialog').close()">@web.Lucide("x")</button>
+		<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
 	</div>
 	<form class="stack" hx-post="/save-page" hx-target="#save-page-dialog" hx-swap="innerHTML">
 		<label>url
@@ -129,7 +129,7 @@ templ savePageSaved(itemID int64, title, list string) {
 		if itemID != 0 {
 			<a href={ templ.URL("/#item-" + strconv.FormatInt(itemID, 10)) }>open this page</a>
 		}
-		<button type="button" onclick="this.closest('dialog').close()">close</button>
+		<button type="button" data-close-dialog>close</button>
 	</div>
 }
 

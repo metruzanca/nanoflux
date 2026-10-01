@@ -26,7 +26,10 @@ type User struct {
 	CreatedAt         string
 }
 
-type UserStore struct{ q *sqlcgen.Queries }
+type UserStore struct {
+	q  *sqlcgen.Queries
+	db *sql.DB
+}
 
 func (s *UserStore) Create(username, passwordHash string) (User, error) {
 	ctx := context.Background()
@@ -38,6 +41,47 @@ func (s *UserStore) Create(username, passwordHash string) (User, error) {
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
 	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.CreatedAt), nil
+}
+
+// CreateFirstAdmin creates a user and, when they are the first real
+// (non-ephemeral) account on the instance, grants them admin and closes
+// signups. It runs in one transaction so two concurrent first signups cannot
+// both become admin: the first transaction to commit wins, the second is a
+// normal user. The returned bool reports whether this account was promoted.
+func (s *UserStore) CreateFirstAdmin(username, passwordHash string) (User, bool, error) {
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, false, fmt.Errorf("begin create user: %w", err)
+	}
+	defer tx.Rollback()
+	q := s.q.WithTx(tx)
+
+	n, err := q.CountPersistentUsers(ctx)
+	if err != nil {
+		return User{}, false, fmt.Errorf("count users: %w", err)
+	}
+	u, err := q.CreateUser(ctx, sqlcgen.CreateUserParams{
+		Username:     username,
+		PasswordHash: passwordHash,
+	})
+	if err != nil {
+		return User{}, false, fmt.Errorf("create user: %w", err)
+	}
+	first := n == 0
+	if first {
+		if err := q.SetUserAdmin(ctx, sqlcgen.SetUserAdminParams{IsAdmin: true, ID: u.ID}); err != nil {
+			return User{}, false, fmt.Errorf("grant admin: %w", err)
+		}
+		u.IsAdmin = true
+		if err := q.UpsertSetting(ctx, sqlcgen.UpsertSettingParams{Key: "allow_signup", Value: "0"}); err != nil {
+			return User{}, false, fmt.Errorf("close signups: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, false, fmt.Errorf("commit create user: %w", err)
+	}
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.CreatedAt), first, nil
 }
 
 func (s *UserStore) ByID(id int64) (User, error) {

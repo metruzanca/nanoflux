@@ -5,7 +5,6 @@ import (
 	"github.com/charmbracelet/log"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/discover"
@@ -221,10 +220,11 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 			title = c.Title
 		}
 	} else {
-		client := &http.Client{Timeout: 15 * time.Second}
+		client := s.client
 		res, err := feedparse.Fetch(r.Context(), req.FeedURL, client, "", "")
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "not a feed: " + err.Error()})
+			log.Warn("api save: not a feed", "url", req.FeedURL, "err", err)
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not read a feed at that url"})
 			return
 		}
 		// The entered page URL wins over the feed's own advertised home (e.g. a
