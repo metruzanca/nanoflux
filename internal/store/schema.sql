@@ -137,6 +137,16 @@ CREATE TABLE item_feeds (
 );
 CREATE INDEX idx_item_feeds_feed ON item_feeds(feed_id);
 
+-- Normalized item categories/tags (schemaV48): one row per tag. Lets a list be
+-- filtered by tag with an exact, indexed match. Populated by ItemStore.Upsert
+-- and by a one-time startup backfill from items.categories.
+CREATE TABLE item_categories (
+    item_id  INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    category TEXT    NOT NULL,
+    PRIMARY KEY (item_id, category)
+);
+CREATE INDEX idx_item_categories_category ON item_categories(category);
+
 CREATE TABLE collections (
     id         INTEGER PRIMARY KEY,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

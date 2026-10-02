@@ -113,6 +113,9 @@ type feedRulesData struct {
 	// on CapDocs, so a generic-parser feed like reddit's still finds it), or ""
 	// when none does. It drives the "docs" button beside the filters.
 	DocsPlugin string
+	// Tags is every distinct category seen in this feed's items so far, with
+	// counts, for the collapsible tag list. Most-used first.
+	Tags []store.CategoryCount
 }
 
 type authorRow struct {
@@ -197,6 +200,8 @@ type scopedItemsData struct {
 	FavCount    int           // favorited items in scope, for the "favorites (N)" tab
 	BookmarkTab bool          // author scope only: render the "bookmarks" tab
 	BookCount   int           // bookmarked items in scope, for the "bookmarks (N)" tab
+	Tags        []string      // active tag filters (AND), from ?tags=
+	TagOptions  []comboItem   // distinct tags in scope, for the tag-filter modal
 }
 
 // itemSort is the ordering of an item list: newest first (time desc), oldest
@@ -286,10 +291,11 @@ func pageCursorFor(base string, items []store.ItemWithFeed, hasMore bool, sort i
 }
 
 // scopedFilter builds the item filter for a feed/author/collection list,
-// honoring the sort and a page cursor (a keyset id for the time sorts, an offset
-// for magic).
-func scopedFilter(view string, sort itemSort, cursor int64, feedID, authorID, collectionID int64) store.ItemFilter {
-	f := store.ItemFilter{FeedID: feedID, AuthorID: authorID, CollectionID: collectionID, Limit: pageSize}
+// honoring the sort, a page cursor (a keyset id for the time sorts, an offset
+// for magic), and any active tag filters (AND-ed; none means no tag filter).
+// tags is variadic so the global lists (which never tag-filter) can omit it.
+func scopedFilter(view string, sort itemSort, cursor int64, feedID, authorID, collectionID int64, tags ...string) store.ItemFilter {
+	f := store.ItemFilter{FeedID: feedID, AuthorID: authorID, CollectionID: collectionID, Limit: pageSize, Tags: tags}
 	switch sort {
 	case sortOldest:
 		f.Ascending = true
@@ -311,6 +317,74 @@ func scopedFilter(view string, sort itemSort, cursor int64, feedID, authorID, co
 		f.UnreadOnly = true
 	}
 	return f
+}
+
+// maxTagFilters caps how many tags a list request may carry, so a hand-crafted
+// URL cannot build an unbounded IN (...) predicate.
+const maxTagFilters = 100
+
+// tagParams reads the active tag filters from a list request: repeated ?tags=
+// values, trimmed, empties dropped, deduped preserving order, and capped.
+func tagParams(r *http.Request) []string {
+	raw := r.URL.Query()["tags"]
+	if len(raw) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, t := range raw {
+		t = strings.TrimSpace(t)
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+		if len(out) >= maxTagFilters {
+			break
+		}
+	}
+	return out
+}
+
+// appendTags adds the active tags to a list URL base as repeated ?tags= params
+// (the cursor/pagination keys are appended after it), preserving any existing
+// query string.
+func appendTags(base string, tags []string) string {
+	if len(tags) == 0 {
+		return base
+	}
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	var b strings.Builder
+	b.WriteString(base)
+	for _, t := range tags {
+		b.WriteString(sep)
+		b.WriteString("tags=")
+		b.WriteString(url.QueryEscape(t))
+		sep = "&"
+	}
+	return b.String()
+}
+
+// tagPageURL builds a scoped page's URL with its view/sort and the given tags,
+// used by the active-filter chips (clicking one drops it) and their links.
+func tagPageURL(path, view string, sort itemSort, tags []string) string {
+	u := path + "?view=" + url.QueryEscape(view) + "&sort=" + sort.param()
+	return appendTags(u, tags)
+}
+
+// withoutTag returns tags with the entry at index i removed, for a chip's
+// remove link. An out-of-range index returns tags unchanged.
+func withoutTag(tags []string, i int) []string {
+	if i < 0 || i >= len(tags) {
+		return tags
+	}
+	out := make([]string, 0, len(tags)-1)
+	out = append(out, tags[:i]...)
+	out = append(out, tags[i+1:]...)
+	return out
 }
 
 // cursorID reads the page cursor from a load-more request: before= (newest),
@@ -1309,7 +1383,8 @@ func (s *Server) feedRules(userID, feedID int64) feedRulesData {
 	if f, err := s.store.Feeds.ByID(userID, feedID); err == nil {
 		mode = filtermatch.NormalizeMode(f.FilterMode)
 	}
-	return feedRulesData{FeedID: feedID, Rows: rows, Mode: mode}
+	cats, _ := s.store.Items.ListCategories(userID, store.ItemFilter{FeedID: feedID})
+	return feedRulesData{FeedID: feedID, Rows: rows, Mode: mode, Tags: cats}
 }
 
 // filterRuleInput is a validated ingest filter rule from the feed edit form.
@@ -1873,7 +1948,7 @@ func (s *Server) feedOlder(w http.ResponseWriter, r *http.Request) {
 	}
 	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
 	row := feedRow{Feed: f, AuthorName: author.Name, Timezone: u.Timezone}
-	scoped := s.feedScopedItems(u.ID, id, itemsView(r), itemSortOf(r), u.Timezone)
+	scoped := s.feedScopedItems(u.ID, id, itemsView(r), itemSortOf(r), u.Timezone, tagParams(r))
 	scoped.SwapOOB = true
 	web.Render(w, r, templ.Join(feedOlderControl(row), ScopedItems(scoped)))
 }
@@ -2005,7 +2080,7 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, id)
-	scoped := s.authorScopedItems(u.ID, id, authorView(r), itemSortOf(r), u.Timezone)
+	scoped := s.authorScopedItems(u.ID, id, authorView(r), itemSortOf(r), u.Timezone, tagParams(r))
 	stats, _ := s.store.Items.StatsAuthor(u.ID, id)
 	frequency := ""
 	if times, err := s.store.Items.AuthorRecentTimes(u.ID, id, 30); err == nil {
@@ -2087,20 +2162,22 @@ func (s *Server) reconcileAuthorLinks(userID, authorID int64, r *http.Request) {
 
 // authorScopedItems loads one item list (unread/read/favorites/bookmarks) for
 // an author plus the counts that drive the tabs.
-func (s *Server) authorScopedItems(userID, authorID int64, view string, sort itemSort, tz string) scopedItemsData {
-	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, sort, 0, 0, authorID, 0))
+func (s *Server) authorScopedItems(userID, authorID int64, view string, sort itemSort, tz string, tags []string) scopedItemsData {
+	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, sort, 0, 0, authorID, 0, tags...))
 	unread, _ := s.store.Items.CountUnreadAuthor(userID, authorID)
 	read, _ := s.store.Items.CountReadAuthor(userID, authorID)
 	favs, _ := s.store.Items.CountFavoritesAuthor(userID, authorID)
 	books, _ := s.store.Items.CountBookmarksAuthor(userID, authorID)
 	base := "/authors/" + strconv.FormatInt(authorID, 10)
-	itemsBase := base + "/items?view=" + view + "&sort=" + sort.param()
+	itemsBase := appendTags(base+"/items?view="+view+"&sort="+sort.param(), tags)
+	cats, _ := s.store.Items.ListCategories(userID, store.ItemFilter{AuthorID: authorID})
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
 		More: pageCursorFor(itemsBase, items, more, sort, 0), HideAuthor: true,
 		Mode: s.store.ViewPrefs.Mode(userID, base), FavTab: favs > 0 || view == "favorites", FavCount: favs,
 		BookmarkTab: books > 0 || view == "bookmarks", BookCount: books,
+		Tags: tags, TagOptions: tagItems(cats),
 	}
 }
 
@@ -2113,17 +2190,18 @@ func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 	}
 	view := authorView(r)
 	sort := itemSortOf(r)
+	tags := tagParams(r)
 	if cursor := cursorID(r, sort); cursor > 0 {
-		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, sort, cursor, 0, id, 0))
+		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, sort, cursor, 0, id, 0, tags...))
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		base := "/authors/" + strconv.FormatInt(id, 10) + "/items?view=" + view + "&sort=" + sort.param()
+		base := appendTags("/authors/"+strconv.FormatInt(id, 10)+"/items?view="+view+"&sort="+sort.param(), tags)
 		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursorFor(base, items, more, sort, int(cursor)), true))
 		return
 	}
-	web.Render(w, r, ScopedItems(s.authorScopedItems(u.ID, id, view, sort, u.Timezone)))
+	web.Render(w, r, ScopedItems(s.authorScopedItems(u.ID, id, view, sort, u.Timezone, tags)))
 }
 
 func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
@@ -2143,7 +2221,7 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 		authorName = a.Name
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
-	scoped := s.feedScopedItems(u.ID, id, itemsView(r), itemSortOf(r), u.Timezone)
+	scoped := s.feedScopedItems(u.ID, id, itemsView(r), itemSortOf(r), u.Timezone, tagParams(r))
 	web.Render(w, r, basePage(feed.Title, u, feedPage(u, feedPageData{
 		Row: feedRow{Feed: feed, AuthorName: authorName, Unread: unread, Timezone: u.Timezone}, Scoped: scoped,
 		MarkAll: markAllReadData{
@@ -2155,17 +2233,19 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 
 // feedScopedItems loads one item list for a feed plus the counts that drive the
 // tabs.
-func (s *Server) feedScopedItems(userID, feedID int64, view string, sort itemSort, tz string) scopedItemsData {
-	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, sort, 0, feedID, 0, 0))
+func (s *Server) feedScopedItems(userID, feedID int64, view string, sort itemSort, tz string, tags []string) scopedItemsData {
+	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, sort, 0, feedID, 0, 0, tags...))
 	unread, _ := s.store.Items.CountUnread(userID, feedID)
 	read, _ := s.store.Items.CountRead(userID, feedID)
 	base := "/feeds/" + strconv.FormatInt(feedID, 10)
-	itemsBase := base + "/items?view=" + view + "&sort=" + sort.param()
+	itemsBase := appendTags(base+"/items?view="+view+"&sort="+sort.param(), tags)
+	cats, _ := s.store.Items.ListCategories(userID, store.ItemFilter{FeedID: feedID})
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
 		More: pageCursorFor(itemsBase, items, more, sort, 0),
 		Mode: s.store.ViewPrefs.Mode(userID, base),
+		Tags: tags, TagOptions: tagItems(cats),
 	}
 }
 
@@ -2178,17 +2258,18 @@ func (s *Server) feedItems(w http.ResponseWriter, r *http.Request) {
 	}
 	view := itemsView(r)
 	sort := itemSortOf(r)
+	tags := tagParams(r)
 	if cursor := cursorID(r, sort); cursor > 0 {
-		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, sort, cursor, id, 0, 0))
+		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, sort, cursor, id, 0, 0, tags...))
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		base := "/feeds/" + strconv.FormatInt(id, 10) + "/items?view=" + view + "&sort=" + sort.param()
+		base := appendTags("/feeds/"+strconv.FormatInt(id, 10)+"/items?view="+view+"&sort="+sort.param(), tags)
 		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursorFor(base, items, more, sort, int(cursor)), false))
 		return
 	}
-	web.Render(w, r, ScopedItems(s.feedScopedItems(u.ID, id, view, sort, u.Timezone)))
+	web.Render(w, r, ScopedItems(s.feedScopedItems(u.ID, id, view, sort, u.Timezone, tags)))
 }
 
 // feedRowFor builds a single feed row with its collection tags, for the feed
@@ -2391,7 +2472,7 @@ func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	d, err := s.collectionDataFor(u.ID, id, collectionView(r), itemSortOf(r), u.Timezone)
+	d, err := s.collectionDataFor(u.ID, id, collectionView(r), itemSortOf(r), u.Timezone, tagParams(r))
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -2399,14 +2480,14 @@ func (s *Server) collectionPage(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage(d.Collection.Name, u, collectionPage(u, d)))
 }
 
-func (s *Server) collectionDataFor(userID, id int64, view string, sort itemSort, tz string) (collectionData, error) {
+func (s *Server) collectionDataFor(userID, id int64, view string, sort itemSort, tz string, tags []string) (collectionData, error) {
 	c, err := s.store.Collections.ByID(userID, id)
 	if err != nil {
 		return collectionData{}, err
 	}
 	feeds, _ := s.store.Collections.Feeds(userID, id)
 	allFeeds, _ := s.store.Feeds.ListWithUnread(userID)
-	scoped := s.collectionScopedItems(userID, id, view, sort, tz)
+	scoped := s.collectionScopedItems(userID, id, view, sort, tz, tags)
 	return collectionData{Collection: c, Feeds: feeds, AllFeeds: groupFeedsByAuthor(allFeeds), Scoped: scoped}, nil
 }
 
@@ -2435,7 +2516,7 @@ func groupFeedsByAuthor(rows []store.FeedWithUnread) []collectionFeedGroup {
 // the counts that drive the tabs. The collection scope also gets a "feeds" tab
 // listing the collection's feeds as cards; when that view is active no items
 // are loaded.
-func (s *Server) collectionScopedItems(userID, collectionID int64, view string, sort itemSort, tz string) scopedItemsData {
+func (s *Server) collectionScopedItems(userID, collectionID int64, view string, sort itemSort, tz string, tags []string) scopedItemsData {
 	memberFeeds, _ := s.store.Collections.Feeds(userID, collectionID)
 	unread, _ := s.store.Items.CountUnreadCollection(userID, collectionID)
 	read, _ := s.store.Items.CountReadCollection(userID, collectionID)
@@ -2443,14 +2524,16 @@ func (s *Server) collectionScopedItems(userID, collectionID int64, view string, 
 	d := scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
 		UnreadCount: unread, ReadCount: read, FeedsTab: true, FeedCount: len(memberFeeds),
-		Mode: s.store.ViewPrefs.Mode(userID, base),
+		Mode: s.store.ViewPrefs.Mode(userID, base), Tags: tags,
 	}
 	if view == "feeds" {
 		d.Feeds = s.collectionFeedRows(userID, memberFeeds, tz)
 		return d
 	}
-	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, sort, 0, 0, 0, collectionID))
-	itemsBase := base + "/items?view=" + view + "&sort=" + sort.param()
+	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, sort, 0, 0, 0, collectionID, tags...))
+	itemsBase := appendTags(base+"/items?view="+view+"&sort="+sort.param(), tags)
+	cats, _ := s.store.Items.ListCategories(userID, store.ItemFilter{CollectionID: collectionID})
+	d.TagOptions = tagItems(cats)
 	d.Items = withTZ(tz, dedupItems(items))
 	d.More = pageCursorFor(itemsBase, items, more, sort, 0)
 	return d
@@ -2486,19 +2569,20 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
 	}
 	view := collectionView(r)
 	sort := itemSortOf(r)
+	tags := tagParams(r)
 	if view != "feeds" {
 		if cursor := cursorID(r, sort); cursor > 0 {
-			items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, sort, cursor, 0, 0, id))
+			items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, sort, cursor, 0, 0, id, tags...))
 			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
-			base := "/collections/" + strconv.FormatInt(id, 10) + "/items?view=" + view + "&sort=" + sort.param()
+			base := appendTags("/collections/"+strconv.FormatInt(id, 10)+"/items?view="+view+"&sort="+sort.param(), tags)
 			web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursorFor(base, items, more, sort, int(cursor)), false))
 			return
 		}
 	}
-	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, view, sort, u.Timezone)))
+	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, view, sort, u.Timezone, tags)))
 }
 
 func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
@@ -2588,7 +2672,7 @@ func (s *Server) collectionAddFeed(w http.ResponseWriter, r *http.Request) {
 	if feedID != 0 {
 		s.store.Collections.AddFeed(u.ID, id, feedID)
 	}
-	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeCollectionView(r.FormValue("view")), itemSortOf(r), u.Timezone)))
+	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeCollectionView(r.FormValue("view")), itemSortOf(r), u.Timezone, tagParams(r))))
 }
 
 func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {

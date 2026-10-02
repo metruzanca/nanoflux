@@ -913,6 +913,23 @@ function openPluginDocs(name) {
     .catch(function () { d.innerHTML = '<p class="error">could not load the documentation</p>'; });
 }
 
+// tagFill prefills the feed's add-filter-rule form with a category rule for the
+// clicked tag: the field select becomes "category" and the pattern input holds
+// the tag, so the user only picks an action and saves.
+function tagFill(el) {
+  var card = document.getElementById('feed-rules');
+  if (!card) return;
+  var form = card.querySelector('form');
+  if (!form) return;
+  var tag = el.getAttribute('data-tag-fill') || '';
+  var pattern = form.querySelector('input[name="pattern"]');
+  if (pattern) { pattern.value = tag; pattern.focus(); }
+  var combo = form.querySelector('[id="field"]');
+  if (combo) combo.value = 'category';
+  var mirror = form.querySelector('input[name="field"]');
+  if (mirror) mirror.value = 'category';
+}
+
 // ACTIONS is the single source of truth for the "add" actions shared by the
 // command palette and the nav "add" dropdown. Server-rendered buttons invoke
 // them through data-action (see the delegated click handler below); palette
@@ -1486,6 +1503,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
       if (prev && navigator.clipboard) navigator.clipboard.writeText(prev.value);
       return;
     }
+    if ((el = t.closest('[data-tag-fill]'))) { tagFill(el); return; }
     if ((el = t.closest('[data-open-item]'))) { e.preventDefault(); openItem(el); return; }
     if ((el = t.closest('[data-toggle-picker]'))) { togglePicker(e); return; }
     if ((el = t.closest('[data-toggle-item-menu]'))) { toggleItemMenu(e); return; }

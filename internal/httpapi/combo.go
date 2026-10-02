@@ -111,6 +111,17 @@ var filterFieldItems = []comboItem{
 	{Value: "category", Label: "category"},
 }
 
+// tagItems maps an item scope's distinct categories to combo options (value and
+// label are both the tag) for the tag-filter modal. Counts are shown in the feed
+// filter card, not here, so a selected chip reads as a plain tag.
+func tagItems(cats []store.CategoryCount) []comboItem {
+	out := make([]comboItem, 0, len(cats))
+	for _, c := range cats {
+		out = append(out, comboItem{Value: c.Category, Label: c.Category})
+	}
+	return out
+}
+
 // nonAutoCollections returns the user's own collections (auto collections are
 // managed from each feed's site and are not user-selectable on the feed form).
 func nonAutoCollections(cs []store.Collection) []comboItem {

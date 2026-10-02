@@ -103,6 +103,11 @@ type Item struct {
 	Bookmark      bool           `json:"bookmark"`
 }
 
+type ItemCategory struct {
+	ItemID   int64  `json:"item_id"`
+	Category string `json:"category"`
+}
+
 type ItemEnclosure struct {
 	ID       int64          `json:"id"`
 	ItemID   int64          `json:"item_id"`

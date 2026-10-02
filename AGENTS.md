@@ -215,6 +215,32 @@ category.
   `action: hide, field: category, pattern: r/golang` works. Choices live in
   `filterFieldItems`; `feedRuleCreate` accepts the field.
 
+### Tags (normalized category table)
+
+Categories are also normalized for tag browsing and list filtering.
+
+- `item_categories(item_id, category)` (schemaV48, PK + index on `category`,
+  FK `ON DELETE CASCADE`) is one row per tag. `ItemStore.Upsert` replaces an
+  item's rows via `syncItemCategories` (same newline codec as the column);
+  `mergeDedupGroup` folds a loser's tags into the survivor; `CloneUser` copies
+  them; `BackfillItemCategories` (run at startup in `cmd/server/main.go`) fills
+  rows for items stored before the migration, and is a no-op once populated.
+- `ItemStore.ListCategories(userID, ItemFilter{FeedID|AuthorID|CollectionID})`
+  returns each distinct tag with its item count, most-used first.
+- `ItemFilter.Tags` filters a list to items carrying **every** listed tag (AND).
+  The generated `ListItems*` queries are fixed-shape, so tag filtering uses the
+  hand-written `ItemStore.listPageTagged` (dynamic `EXISTS` per tag; supports
+  newest/oldest/magic and all scopes), mirroring `SearchPage`'s raw-SQL pattern.
+  The HTTP layer reads repeated `?tags=` (`tagParams`, capped at
+  `maxTagFilters`); tab/sort/pagination links carry them (`appendTags`).
+- UI: the item modal shows its tags as clickable chips (linking to
+  `/feeds/{id}?tags=`); a scoped feed/author/collection list gets a
+  magnifying-glass tag-filter dialog (`comboMulti` over the scope's
+  `ListCategories` options) plus active-filter chips; the feed edit filter card
+  gets a collapsible (`<details class="tag-cloud">`) tag list with counts whose
+  buttons prefill the add-rule form (`data-tag-fill` in `app.js`).
+
+
 ## Filter modes (block / allow)
 
 A feed's rules are a block list by default; a feed can instead be an allow list.

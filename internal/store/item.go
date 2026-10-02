@@ -158,7 +158,11 @@ type ItemFilter struct {
 	// then by item time. It uses Offset rather than the keyset cursors.
 	Magic  bool
 	Offset int // magic-sort page offset (ignored when Magic is false)
-	Limit  int
+	// Tags filters the list to items carrying every listed category (AND). An
+	// item matches when its tag set is a superset of Tags. Empty means no tag
+	// filter. Matching is exact and case-sensitive (tags are stored verbatim).
+	Tags  []string
+	Limit int
 }
 
 type ItemStore struct {
@@ -278,6 +282,13 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 		}
 	}
 
+	// Normalize the item's tags into item_categories so the list can filter by
+	// tag with an exact, indexed match. Replace rather than append, mirroring
+	// the denormalized column refreshed above.
+	if err := syncItemCategories(ctx, q, itemID, it.Categories); err != nil {
+		return false, fmt.Errorf("sync item categories: %w", err)
+	}
+
 	// Membership makes the item visible in this feed's streams. A new membership
 	// (or a new row) counts as new for this feed.
 	mres, err := q.AddItemFeed(ctx, sqlcgen.AddItemFeedParams{ItemID: itemID, FeedID: feedID})
@@ -310,6 +321,12 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	limit := f.Limit
 	if limit <= 0 || limit > 500 {
 		limit = 100
+	}
+	// Tag filtering is AND over an arbitrary set of tags, which the generated
+	// queries (fixed placeholder shapes) cannot express, so it uses a
+	// hand-written dynamic query. sqlc owns the rest of the list paths.
+	if len(f.Tags) > 0 {
+		return s.listPageTagged(userID, f, limit)
 	}
 	if f.Magic {
 		rows, err := s.q.ListItemsMagic(context.Background(), sqlcgen.ListItemsMagicParams{
@@ -504,6 +521,119 @@ LIMIT ?7`
 	}
 	defer rows.Close()
 
+	out := make([]ItemWithFeed, 0, limit)
+	for rows.Next() {
+		var r sqlcgen.ListItemsRow
+		if err := rows.Scan(&r.ID, &r.FeedID, &r.Guid, &r.Title, &r.Link, &r.Summary, &r.Categories,
+			&r.ImageUrl, &r.ImageCacheKey, &r.DurationSec, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.Bookmark, &r.ReadAt,
+			&r.FeedTitle, &r.FeedUrl, &r.FeedHomeUrl, &r.FeedIsSystem, &r.AuthorID, &r.AuthorName); err != nil {
+			return nil, false, err
+		}
+		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
+			r.ImageUrl, r.ImageCacheKey, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
+			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	hasMore := len(out) > limit
+	if hasMore {
+		out = out[:limit]
+	}
+	if err := s.attachSources(userID, out); err != nil {
+		return nil, false, err
+	}
+	return out, hasMore, nil
+}
+
+// itemListColumns is the shared SELECT list for the item list queries (the
+// generated ListItems* and the hand-written tagged variant), so both scan the
+// same sqlcgen.ListItemsRow shape.
+const itemListColumns = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id`
+
+// listPageTagged is ListPage with an AND tag filter. It builds the query
+// dynamically (one EXISTS per tag) because the tag set is variable and the
+// generated queries have a fixed placeholder shape. It mirrors ListItems'
+// scope, read/favorite/bookmark, saved-page and cursor semantics, and supports
+// all three sorts. limit is the caller's already-clamped page size.
+func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]ItemWithFeed, bool, error) {
+	var b strings.Builder
+	b.WriteString(itemListColumns)
+	var args []any
+	if f.Magic {
+		b.WriteString(` LEFT JOIN (
+			SELECT feed_id, COUNT(*) AS fav_count FROM items
+			WHERE user_id = ? AND favorite = 1 GROUP BY feed_id
+		) fc ON fc.feed_id = i.feed_id`)
+		args = append(args, userID)
+	}
+	b.WriteString(" WHERE i.user_id = ?")
+	args = append(args, userID)
+	if f.FeedID != 0 {
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = ?)")
+		args = append(args, f.FeedID)
+	}
+	if f.AuthorID != 0 {
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id WHERE mf.item_id = i.id AND mf2.author_id = ?)")
+		args = append(args, f.AuthorID)
+	}
+	if f.CollectionID != 0 {
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))")
+		args = append(args, f.CollectionID)
+	}
+	if f.UnreadOnly {
+		b.WriteString(" AND i.read = 0")
+	}
+	if f.ReadOnly {
+		b.WriteString(" AND i.read = 1")
+	}
+	if f.FavoritesOnly {
+		b.WriteString(" AND i.favorite = 1")
+	}
+	if f.BookmarksOnly {
+		b.WriteString(" AND i.bookmark = 1")
+	}
+	// Saved pages (system feed items) surface only in favorites, bookmarks and
+	// search; keep them out of the unread/read/feed/author/collection streams.
+	if !f.FavoritesOnly && !f.BookmarksOnly {
+		b.WriteString(" AND f.is_system = 0")
+	}
+	for _, tag := range f.Tags {
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = i.id AND ic.category = ?)")
+		args = append(args, tag)
+	}
+	switch {
+	case f.Magic:
+		b.WriteString(" ORDER BY CASE WHEN f.rank > 0 THEN 0 WHEN f.rank < 0 THEN 2 ELSE 1 END ASC, COALESCE(fc.fav_count, 0) DESC, COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ? OFFSET ?")
+		args = append(args, limit+1, f.Offset)
+	case f.Ascending:
+		if f.AfterID != 0 {
+			b.WriteString(" AND (COALESCE(i.published_at, i.fetched_at), i.id) > (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = ?)")
+			args = append(args, f.AfterID)
+		}
+		b.WriteString(" ORDER BY COALESCE(i.published_at, i.fetched_at) ASC, i.id ASC LIMIT ?")
+		args = append(args, limit+1)
+	default:
+		if f.BeforeID != 0 {
+			b.WriteString(" AND (COALESCE(i.published_at, i.fetched_at), i.id) < (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = ?)")
+			args = append(args, f.BeforeID)
+		}
+		b.WriteString(" ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ?")
+		args = append(args, limit+1)
+	}
+
+	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
 	out := make([]ItemWithFeed, 0, limit)
 	for rows.Next() {
 		var r sqlcgen.ListItemsRow
@@ -724,6 +854,102 @@ func (s *ItemStore) ListFeedItemsForFilter(feedID int64) ([]ItemWithFeed, error)
 			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
 	}
 	return out, nil
+}
+
+// CategoryCount is one tag and how many items in a scope carry it.
+type CategoryCount struct {
+	Category string
+	Count    int
+}
+
+// syncItemCategories replaces itemID's tag rows with cats (normalized through
+// the same newline codec as items.categories), inside the caller's transaction.
+func syncItemCategories(ctx context.Context, q *sqlcgen.Queries, itemID int64, cats []string) error {
+	if err := q.DeleteItemCategories(ctx, itemID); err != nil {
+		return err
+	}
+	for _, c := range splitCategories(joinCategories(cats)) {
+		if err := q.AddItemCategory(ctx, sqlcgen.AddItemCategoryParams{ItemID: itemID, Category: c}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ListCategories returns the distinct tags in a scope with their item counts,
+// most-used first. It dispatches on the same FeedID/AuthorID/CollectionID
+// fields as ListPage; all zero returns the user's tags across every feed.
+func (s *ItemStore) ListCategories(userID int64, f ItemFilter) ([]CategoryCount, error) {
+	ctx := context.Background()
+	switch {
+	case f.FeedID != 0:
+		rows, err := s.q.ListCategoriesForFeed(ctx, sqlcgen.ListCategoriesForFeedParams{FeedID: f.FeedID, UserID: userID})
+		if err != nil {
+			return nil, err
+		}
+		return categoryCounts(len(rows), func(i int) (string, int64) { return rows[i].Category, rows[i].ItemCount }), nil
+	case f.AuthorID != 0:
+		rows, err := s.q.ListCategoriesForAuthor(ctx, sqlcgen.ListCategoriesForAuthorParams{AuthorID: f.AuthorID, UserID: userID})
+		if err != nil {
+			return nil, err
+		}
+		return categoryCounts(len(rows), func(i int) (string, int64) { return rows[i].Category, rows[i].ItemCount }), nil
+	case f.CollectionID != 0:
+		rows, err := s.q.ListCategoriesForCollection(ctx, sqlcgen.ListCategoriesForCollectionParams{CollectionID: f.CollectionID, UserID: userID})
+		if err != nil {
+			return nil, err
+		}
+		return categoryCounts(len(rows), func(i int) (string, int64) { return rows[i].Category, rows[i].ItemCount }), nil
+	default:
+		return nil, nil
+	}
+}
+
+// categoryCounts maps sqlc rows to CategoryCount via the caller's accessors.
+func categoryCounts(n int, at func(i int) (string, int64)) []CategoryCount {
+	out := make([]CategoryCount, 0, n)
+	for i := 0; i < n; i++ {
+		c, count := at(i)
+		out = append(out, CategoryCount{Category: c, Count: int(count)})
+	}
+	return out
+}
+
+// BackfillItemCategories populates item_categories for items stored before
+// schemaV48, deriving the rows from the denormalized items.categories column
+// (SQLite cannot split it). Idempotent: items that already have tag rows are
+// skipped, so it is a cheap no-op after the first run. Returns how many items
+// were populated.
+func (s *ItemStore) BackfillItemCategories() (int, error) {
+	rows, err := s.q.ListItemsWithCategories(context.Background())
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) == 0 {
+		return 0, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin category backfill: %w", err)
+	}
+	defer tx.Rollback()
+	ctx := context.Background()
+	q := s.q.WithTx(tx)
+	n := 0
+	for _, r := range rows {
+		cats := splitCategories(r.Categories)
+		if len(cats) == 0 {
+			continue
+		}
+		if err := syncItemCategories(ctx, q, r.ID, cats); err != nil {
+			return n, fmt.Errorf("backfill item %d categories: %w", r.ID, err)
+		}
+		n++
+	}
+	if err := tx.Commit(); err != nil {
+		return n, err
+	}
+	return n, nil
 }
 
 // RemoveFeedMemberships removes itemIDs from feedID's membership set. Items

@@ -79,6 +79,9 @@ func (s *Store) CloneUser(seedID int64, newUsername, passwordHash, expiresAt str
 	if err != nil {
 		return User{}, err
 	}
+	if err := cloneItemCategories(ctx, tx, seedID, itemMap); err != nil {
+		return User{}, err
+	}
 	if err := cloneItemFeeds(ctx, tx, seedID, itemMap, feedMap); err != nil {
 		return User{}, err
 	}
@@ -313,6 +316,50 @@ func cloneItems(ctx context.Context, tx *sql.Tx, seedID, newID int64, feedMap ma
 		itemMap[it.id] = nid
 	}
 	return itemMap, nil
+}
+
+// cloneItemCategories populates item_categories for cloned items, derived from
+// the copied items.categories string (SQLite cannot split it in SQL). Uses the
+// same newline codec as the store so the clone's tags match the seed's.
+func cloneItemCategories(ctx context.Context, tx *sql.Tx, seedID int64, itemMap map[int64]int64) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT i.id, i.categories
+		FROM items i
+		JOIN feeds f ON f.id = i.feed_id
+		WHERE f.user_id = ? AND f.is_system = 0 AND i.categories <> ''`, seedID)
+	if err != nil {
+		return fmt.Errorf("clone item_categories select: %w", err)
+	}
+	defer rows.Close()
+	type row struct {
+		itemID     int64
+		categories string
+	}
+	var rs []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.itemID, &r.categories); err != nil {
+			return fmt.Errorf("clone item_categories scan: %w", err)
+		}
+		rs = append(rs, r)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, r := range rs {
+		newItem, ok := itemMap[r.itemID]
+		if !ok {
+			continue
+		}
+		for _, c := range splitCategories(r.categories) {
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO item_categories (item_id, category) VALUES (?, ?)
+				ON CONFLICT (item_id, category) DO NOTHING`, newItem, c); err != nil {
+				return fmt.Errorf("clone item_category insert: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 // cloneItemFeeds copies feed memberships for cloned items (preserving cross-feed
