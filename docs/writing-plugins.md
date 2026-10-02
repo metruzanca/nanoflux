@@ -279,6 +279,12 @@ plugin can resolve. Every `Media` field is optional; empty fields leave the
 item's stored content in place. Returning `pluginapi.ErrUnsupportedCapability`
 (or an empty `Media`) means "nothing extra".
 
+`EmbedSrc` may point at any `http(s)` player: the app's CSP allows framing any
+`https:`/`http:` origin, exactly as it does for images and media, so a player
+host does not need to be registered ahead of time. Feed and plugin HTML cannot
+inject an iframe (the store strips it at ingest), so the only frames are the
+ones the core renders — yours and the oEmbed providers it resolves.
+
 ### Documentation (`Docs`)
 
 A plugin can document itself in Markdown so its users know what to expect and

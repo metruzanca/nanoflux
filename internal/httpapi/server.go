@@ -289,6 +289,14 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 
 // contentSecurityPolicy builds the app's CSP. Analytics origins are added only
 // when analytics is enabled; everything else is static.
+//
+// frame-src is deliberately open to any http(s) origin, like img-src and
+// media-src: the app renders third-party player iframes resolved at view time
+// (oEmbed providers such as vimeo or imgur, and plugin Render EmbedSrc),
+// and those hosts cannot be known ahead of time. Stored feed and plugin HTML
+// cannot inject an iframe (sanitize.HTML strips it at the store boundary), so
+// the only frames are the ones the core itself emits. 'self' is intentionally
+// absent so an embed cannot frame the app's own authenticated pages.
 func (s *Server) contentSecurityPolicy() string {
 	script := []string{"'self'", "https://cdnjs.cloudflare.com"}
 	connect := []string{"'self'", "https:", "http:"}
@@ -310,7 +318,7 @@ func (s *Server) contentSecurityPolicy() string {
 		{"media-src", "'self' blob: https: http:"},
 		{"connect-src", strings.Join(connect, " ")},
 		{"font-src", "'self' data:"},
-		{"frame-src", "https://www.youtube.com https://www.youtube-nocookie.com"},
+		{"frame-src", "https: http:"},
 		{"frame-ancestors", "'none'"},
 		{"base-uri", "'self'"},
 		{"form-action", "'self'"},

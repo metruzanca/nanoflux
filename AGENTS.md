@@ -747,7 +747,14 @@ The invariants that bite:
   forbidden: wire behaviors through `data-*` hooks in `app.js`. `style-src`
   keeps `unsafe-inline` (inline style attributes and vendored component styles).
   The landing page's highlight.js bootstrap is `static/marketing.js`, not
-  inline.
+  inline. `frame-src` is intentionally `https: http:` (not an allowlist), like
+  `img-src`/`media-src`: the app renders third-party player iframes resolved at
+  view time (oEmbed providers such as vimeo or imgur, and plugin `Render`
+  `EmbedSrc`), whose hosts cannot be known ahead of time. This is safe because
+  stored feed/plugin HTML cannot inject an iframe (`sanitize.HTML` strips it at
+  the store boundary), so the only frames are core-emitted, and `'self'` is
+  deliberately absent so an embed cannot frame the app's own pages. Keep
+  `frame-ancestors 'none'`, `object-src 'none'` and the strict `script-src`.
 - **Images are raster-only.** `internal/imageutil.Sniff` rejects SVG/HTML; it
   gates `/img`, author avatars, source icons and `imagecache`, and the
   byte-serving routes add `Content-Security-Policy: default-src 'none'; sandbox`.
