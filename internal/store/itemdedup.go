@@ -165,6 +165,13 @@ func (s *ItemStore) mergeDedupGroup(g DedupGroup) error {
 		if err := exec(ctx, tx, `UPDATE item_enclosures SET item_id = ? WHERE item_id = ?`, g.Survivor, loser); err != nil {
 			return err
 		}
+		// Fold the loser's tags into the survivor (its rows cascade away with
+		// the loser) so a merge never loses a category.
+		if err := exec(ctx, tx, `
+			INSERT OR IGNORE INTO item_categories (item_id, category)
+			SELECT ?, category FROM item_categories WHERE item_id = ?`, g.Survivor, loser); err != nil {
+			return err
+		}
 		// list_items is keyed (list_id, item_id): insert-or-ignore then drop.
 		if err := exec(ctx, tx, `
 			INSERT OR IGNORE INTO list_items (list_id, item_id, created_at)

@@ -239,6 +239,17 @@ templ feedRulesSection(d feedRulesData) {
 			<button type="submit">add rule</button>
 		</form>
 		@FilterList(d.FeedID, d.Mode, d.Rows)
+		if len(d.Tags) > 0 {
+			<details class="tag-cloud">
+				<summary>all tags seen in this feed ({ strconv.Itoa(len(d.Tags)) })</summary>
+				<p class="muted small">Every category seen in this feed's items so far. Click one to use it as a filter rule.</p>
+				<div class="chips">
+					for _, tc := range d.Tags {
+						<button type="button" class="chip" data-tag-fill={ tc.Category } title={ "add a category filter for " + tc.Category }>{ tc.Category } ({ strconv.Itoa(tc.Count) })</button>
+					}
+				</div>
+			</details>
+		}
 		<!-- The preview dialog lives inside the section so saving a rule (which
 		     swaps #feed-rules outerHTML) removes the open dialog with it. -->
 		<dialog id="filter-preview-dialog" class="modal filter-preview-dialog"></dialog>

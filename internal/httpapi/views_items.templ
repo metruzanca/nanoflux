@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -351,9 +352,9 @@ func readTitle(read bool) string {
 	return "mark read"
 }
 
-// scopedTabURL builds a tab link carrying the active sort.
-func scopedTabURL(path, view string, sort itemSort) string {
-	return path + "?view=" + view + "&sort=" + sort.param()
+// scopedTabURL builds a tab link carrying the active sort and tag filters.
+func scopedTabURL(path, view string, sort itemSort, tags []string) string {
+	return appendTags(path+"?view="+view+"&sort="+sort.param(), tags)
 }
 
 templ ScopedItems(d scopedItemsData) {
@@ -368,7 +369,7 @@ templ ScopedItems(d scopedItemsData) {
 	}
 }
 
-templ scopedTab(path, itemsPath, view, label, count string, active bool, sort itemSort) {
+templ scopedTab(path, itemsPath, view, label, count string, active bool, sort itemSort, tags []string) {
 	if view == "feeds" {
 		if active {
 			<a class="active" href={ path + "?view=feeds" } hx-get={ itemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ path + "?view=feeds" }>{ label } ({ count })</a>
@@ -376,8 +377,8 @@ templ scopedTab(path, itemsPath, view, label, count string, active bool, sort it
 			<a href={ path + "?view=feeds" } hx-get={ itemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ path + "?view=feeds" }>{ label } ({ count })</a>
 		}
 	} else {
-		{{ u := scopedTabURL(path, view, sort) }}
-		{{ hu := scopedTabURL(itemsPath, view, sort) }}
+		{{ u := scopedTabURL(path, view, sort, tags) }}
+		{{ hu := scopedTabURL(itemsPath, view, sort, tags) }}
 		if active {
 			<a class="active" href={ u } hx-get={ hu } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ u }>{ label } ({ count })</a>
 		} else {
@@ -389,21 +390,24 @@ templ scopedTab(path, itemsPath, view, label, count string, active bool, sort it
 templ scopedItemsInner(d scopedItemsData) {
 	<div class="tabs-row">
 		<nav class="tabs">
-			@scopedTab(d.Path, d.ItemsPath, "unread", "unread", strconv.Itoa(d.UnreadCount), d.View == "unread", d.Sort)
-			@scopedTab(d.Path, d.ItemsPath, "read", "read", strconv.Itoa(d.ReadCount), d.View == "read", d.Sort)
+			@scopedTab(d.Path, d.ItemsPath, "unread", "unread", strconv.Itoa(d.UnreadCount), d.View == "unread", d.Sort, d.Tags)
+			@scopedTab(d.Path, d.ItemsPath, "read", "read", strconv.Itoa(d.ReadCount), d.View == "read", d.Sort, d.Tags)
 			if d.FeedsTab {
-				@scopedTab(d.Path, d.ItemsPath, "feeds", "feeds", strconv.Itoa(d.FeedCount), d.View == "feeds", d.Sort)
+				@scopedTab(d.Path, d.ItemsPath, "feeds", "feeds", strconv.Itoa(d.FeedCount), d.View == "feeds", d.Sort, d.Tags)
 			}
 			if d.FavTab {
-				@scopedTab(d.Path, d.ItemsPath, "favorites", "favorites", strconv.Itoa(d.FavCount), d.View == "favorites", d.Sort)
+				@scopedTab(d.Path, d.ItemsPath, "favorites", "favorites", strconv.Itoa(d.FavCount), d.View == "favorites", d.Sort, d.Tags)
 			}
 			if d.BookmarkTab {
-				@scopedTab(d.Path, d.ItemsPath, "bookmarks", "bookmarks", strconv.Itoa(d.BookCount), d.View == "bookmarks", d.Sort)
+				@scopedTab(d.Path, d.ItemsPath, "bookmarks", "bookmarks", strconv.Itoa(d.BookCount), d.View == "bookmarks", d.Sort, d.Tags)
 			}
 		</nav>
 		if d.View != "feeds" {
 			<div class="row-actions">
-				@sortPicker(d.Path, d.View, d.Sort, d.NoMagic)
+				if len(d.TagOptions) > 0 || len(d.Tags) > 0 {
+					<button type="button" class="mode-btn" title="filter by tag" data-open="tag-filter-dialog">@web.Lucide("search")</button>
+				}
+				@sortPicker(d.Path, d.View, d.Sort, d.NoMagic, d.Tags)
 				@DisplayModeControl(d.Path, d.Mode)
 			</div>
 		} else {
@@ -412,10 +416,35 @@ templ scopedItemsInner(d scopedItemsData) {
 			</div>
 		}
 	</div>
+	if len(d.Tags) > 0 && d.View != "feeds" {
+		<div class="chips active-tags">
+			for i, t := range d.Tags {
+				<a class="chip" href={ templ.URL(tagPageURL(d.Path, d.View, d.Sort, withoutTag(d.Tags, i))) } title={ "remove tag filter " + t }>{ t } <span aria-hidden="true">×</span></a>
+			}
+			<a class="chip chip-clear" href={ templ.URL(tagPageURL(d.Path, d.View, d.Sort, nil)) }>clear all</a>
+		</div>
+	}
 	if d.View == "feeds" {
 		@CollectionFeedCards(d.Feeds, false)
 	} else {
 		@ItemsListPage(d.Items, d.More, d.HideAuthor, d.Mode)
+		if len(d.TagOptions) > 0 || len(d.Tags) > 0 {
+			<dialog id="tag-filter-dialog" class="modal">
+				<div class="row">
+					<h2>filter by tag</h2>
+					<button type="button" class="link" title="close" data-close-dialog>@web.Lucide("x")</button>
+				</div>
+				<form method="get" action={ templ.URL(d.Path) } class="stack">
+					<input type="hidden" name="view" value={ d.View }/>
+					<input type="hidden" name="sort" value={ d.Sort.param() }/>
+					@comboMulti("tags", "tags", d.Tags, d.TagOptions)
+					<div class="row-actions">
+						<button type="button" class="link" data-close-dialog>cancel</button>
+						<button type="submit">apply</button>
+					</div>
+				</form>
+			</dialog>
+		}
 	}
 }
 
@@ -557,13 +586,14 @@ templ FeedSortControl() {
 // ?sort=. basePath and view build the target URL; the list fragment is reloaded
 // in place by app.js on navigation.
 templ SortControl(basePath, view string, current itemSort) {
-	@sortPicker(basePath, view, current, false)
+	@sortPicker(basePath, view, current, false, nil)
 }
 
 // sortPicker renders the sort options, omitting magic when noMagic is set (a
-// list orders by membership time, so feed taste does not apply).
-templ sortPicker(basePath, view string, current itemSort, noMagic bool) {
-	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, "?view="+view+"&", current, noMagic))
+// list orders by membership time, so feed taste does not apply). tags are
+// carried into each option so changing the sort keeps the tag filter.
+templ sortPicker(basePath, view string, current itemSort, noMagic bool, tags []string) {
+	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, "?view="+view+"&", current, noMagic, tags))
 }
 
 // SimpleSortControl is SortControl for a page whose list is not scoped (a plain
@@ -573,18 +603,18 @@ templ SimpleSortControl(basePath string, current itemSort) {
 	if strings.Contains(basePath, "?") {
 		{{ sep = "&" }}
 	}
-	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, sep, current, false))
+	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, sep, current, false, nil))
 }
 
 // sortOptions builds the newest/oldest/magic picker options for a base URL. The
 // magic option is dropped when noMagic is set.
-func sortOptions(basePath, sep string, current itemSort, noMagic bool) []pickerOption {
+func sortOptions(basePath, sep string, current itemSort, noMagic bool, tags []string) []pickerOption {
 	opts := []pickerOption{
-		{Value: string(sortNewest), Label: "newest", Icon: "desc", Href: basePath + sep + "sort=newest"},
-		{Value: string(sortOldest), Label: "oldest", Icon: "asc", Href: basePath + sep + "sort=oldest"},
+		{Value: string(sortNewest), Label: "newest", Icon: "desc", Href: appendTags(basePath+sep+"sort=newest", tags)},
+		{Value: string(sortOldest), Label: "oldest", Icon: "asc", Href: appendTags(basePath+sep+"sort=oldest", tags)},
 	}
 	if !noMagic {
-		opts = append(opts, pickerOption{Value: string(sortMagic), Label: "magic", Icon: "magic", Href: basePath + sep + "sort=magic"})
+		opts = append(opts, pickerOption{Value: string(sortMagic), Label: "magic", Icon: "magic", Href: appendTags(basePath+sep+"sort=magic", tags)})
 	}
 	return opts
 }
@@ -640,6 +670,22 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 			}
 			· <a href={ templ.URL(d.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">open live</a>
 		</p>
+		if len(d.Categories) > 0 {
+			<div class="item-tags">
+				<span class="muted small">tags</span>
+				<div class="chips">
+					if d.FeedIsSystem {
+						for _, c := range d.Categories {
+							<span class="chip">{ c }</span>
+						}
+					} else {
+						for _, c := range d.Categories {
+							<a class="chip" href={ templ.URL("/feeds/" + strconv.FormatInt(d.FeedID, 10) + "?tags=" + url.QueryEscape(c)) } title={ "show items tagged " + c }>{ c }</a>
+						}
+					}
+				</div>
+			</div>
+		}
 		@itemContent(d, v)
 	</div>
 }

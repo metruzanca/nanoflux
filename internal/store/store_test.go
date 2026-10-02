@@ -529,6 +529,89 @@ func TestItemCategoriesRoundTrip(t *testing.T) {
 	}
 }
 
+// TestItemTagFiltering covers the normalized item_categories table: a feed's
+// distinct tag list with counts, AND tag filtering on the item list, and the
+// startup backfill from the denormalized column.
+func TestItemTagFiltering(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+
+	upsert := func(guid string, cats ...string) {
+		t.Helper()
+		if _, err := s.Items.Upsert(f.ID, Item{
+			GUID: guid, Title: guid, Link: "https://metru.dev/" + guid,
+			Categories: cats, FetchedAt: db.Now(),
+		}); err != nil {
+			t.Fatalf("upsert %s: %v", guid, err)
+		}
+	}
+	upsert("a", "r/golang", "tutorial")
+	upsert("b", "r/golang")
+	upsert("c", "r/rust")
+
+	cats, err := s.Items.ListCategories(u.ID, ItemFilter{FeedID: f.ID})
+	if err != nil {
+		t.Fatalf("ListCategories: %v", err)
+	}
+	if len(cats) != 3 {
+		t.Fatalf("categories = %+v, want 3", cats)
+	}
+	// r/golang has 2 items, so it sorts first; the rest are alphabetical.
+	if cats[0].Category != "r/golang" || cats[0].Count != 2 {
+		t.Fatalf("top category = %+v, want r/golang x2", cats[0])
+	}
+
+	list := func(tags ...string) []string {
+		t.Helper()
+		items, _, err := s.Items.ListPage(u.ID, ItemFilter{FeedID: f.ID, Tags: tags, Limit: 10})
+		if err != nil {
+			t.Fatalf("ListPage %v: %v", tags, err)
+		}
+		out := make([]string, 0, len(items))
+		for _, it := range items {
+			out = append(out, it.GUID)
+		}
+		return out
+	}
+	if got := list(); len(got) != 3 {
+		t.Fatalf("no tag filter = %v, want all 3", got)
+	}
+	if got := list("r/golang"); len(got) != 2 {
+		t.Fatalf("r/golang = %v, want a,b", got)
+	}
+	if got := list("tutorial"); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("tutorial = %v, want [a]", got)
+	}
+	// AND: only the item carrying both tags.
+	if got := list("r/golang", "tutorial"); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("r/golang+tutorial = %v, want [a]", got)
+	}
+	if got := list("r/golang", "r/rust"); len(got) != 0 {
+		t.Fatalf("r/golang+r/rust = %v, want none", got)
+	}
+
+	// The backfill repopulates from items.categories when the rows are missing.
+	if _, err := s.db.Exec(`DELETE FROM item_categories`); err != nil {
+		t.Fatalf("clear categories: %v", err)
+	}
+	n, err := s.Items.BackfillItemCategories()
+	if err != nil {
+		t.Fatalf("BackfillItemCategories: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("backfilled %d items, want 3", n)
+	}
+	if got := list("r/golang"); len(got) != 2 {
+		t.Fatalf("after backfill r/golang = %v, want a,b", got)
+	}
+	// A second run is a no-op.
+	if n, _ := s.Items.BackfillItemCategories(); n != 0 {
+		t.Fatalf("second backfill = %d, want 0", n)
+	}
+}
+
 func TestShareStore(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

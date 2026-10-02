@@ -58,6 +58,7 @@ var migrations = []migration{
 	{45, schemaV45},
 	{46, schemaV46},
 	{47, schemaV47},
+	{48, schemaV48},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -693,6 +694,20 @@ ALTER TABLE item_enclosures ADD COLUMN poster TEXT NOT NULL DEFAULT '';
 // at ingest).
 const schemaV47 = `
 ALTER TABLE feeds ADD COLUMN filter_mode TEXT NOT NULL DEFAULT 'block';
+`
+
+// schemaV48 normalizes item categories/tags into their own table so a list can
+// be filtered by tag with an exact, indexed match (the denormalized
+// items.categories is a newline-joined string with no server-side split). The
+// rows are written by ItemStore.Upsert; a one-time Go backfill populates them
+// for items stored before this migration, since SQLite cannot split the column.
+const schemaV48 = `
+CREATE TABLE item_categories (
+    item_id  INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    category TEXT    NOT NULL,
+    PRIMARY KEY (item_id, category)
+);
+CREATE INDEX idx_item_categories_category ON item_categories(category);
 `
 
 // Migrate applies any pending migrations in order, recording each in

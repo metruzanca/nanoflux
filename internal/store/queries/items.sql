@@ -549,3 +549,53 @@ WHERE items.feed_id = sqlc.arg('feedID')
 UPDATE items
 SET read = 1, read_at = sqlc.arg('readAt')
 WHERE user_id = sqlc.arg('userID') AND id IN (sqlc.slice('itemIDs'));
+
+-- name: DeleteItemCategories :exec
+-- Clear an item's tag rows before re-inserting the current set, so a re-poll
+-- replaces rather than accumulates (mirroring items.categories).
+DELETE FROM item_categories WHERE item_id = ?;
+
+-- name: AddItemCategory :exec
+INSERT INTO item_categories (item_id, category)
+VALUES (?, ?)
+ON CONFLICT DO NOTHING;
+
+-- name: ListCategoriesForFeed :many
+-- Distinct tags across a feed's items with their counts, most-used first. Scoped
+-- through the feed's owner so ids cannot cross accounts.
+SELECT ic.category, COUNT(*) AS item_count
+FROM item_categories ic
+JOIN item_feeds mf ON mf.item_id = ic.item_id
+JOIN feeds f ON f.id = mf.feed_id
+WHERE mf.feed_id = sqlc.arg('feedID') AND f.user_id = sqlc.arg('userID')
+GROUP BY ic.category
+ORDER BY item_count DESC, ic.category ASC;
+
+-- name: ListCategoriesForAuthor :many
+-- Distinct tags across all of an author's feeds, most-used first.
+SELECT ic.category, COUNT(*) AS item_count
+FROM item_categories ic
+JOIN item_feeds mf ON mf.item_id = ic.item_id
+JOIN feeds f ON f.id = mf.feed_id
+WHERE f.author_id = sqlc.arg('authorID') AND f.user_id = sqlc.arg('userID')
+GROUP BY ic.category
+ORDER BY item_count DESC, ic.category ASC;
+
+-- name: ListCategoriesForCollection :many
+-- Distinct tags across a collection's feeds, most-used first.
+SELECT ic.category, COUNT(*) AS item_count
+FROM item_categories ic
+JOIN item_feeds mf ON mf.item_id = ic.item_id
+WHERE mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = sqlc.arg('collectionID'))
+  AND EXISTS (SELECT 1 FROM collections c WHERE c.id = sqlc.arg('collectionID') AND c.user_id = sqlc.arg('userID'))
+GROUP BY ic.category
+ORDER BY item_count DESC, ic.category ASC;
+
+-- name: ListItemsWithCategories :many
+-- Items that carry a category string but have no item_categories rows yet, for
+-- the one-time backfill (SQLite cannot split the newline-joined column in SQL).
+-- The NOT EXISTS makes the backfill a cheap no-op once every item is populated.
+SELECT id, categories FROM items
+WHERE categories <> ''
+  AND NOT EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = items.id);
+

@@ -86,6 +86,15 @@ func runServer() {
 		log.Info("merged cross-feed duplicate items", "merged", rep.ItemsMerged, "groups", len(rep.Groups))
 	}
 
+	// Populate the normalized item_categories table for items stored before it
+	// existed, so tag filtering and the feed's tag list cover old items too.
+	// Idempotent; a cheap no-op after the first run.
+	if n, err := st.Items.BackfillItemCategories(); err != nil {
+		log.Error("backfill item categories", "err", err)
+	} else if n > 0 {
+		log.Info("backfilled item categories", "items", n)
+	}
+
 	p := poller.New(st, cfg.PollInterval, cfg.PollWorkers)
 	p.SetHostSpacing(cfg.PollHostSpacing)
 	// One cooldown shared by the poller and the plugin host: a rate limit seen

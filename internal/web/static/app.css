@@ -638,7 +638,33 @@ li.text-card .card-body { flex: 1; min-width: 0; }
   border-radius: 999px;
   background: var(--panel);
   color: var(--fg);
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: none;
+  cursor: pointer;
 }
+a.chip:hover, button.chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Item tags on the modal: a muted label followed by clickable chips. */
+.item-tags { display: flex; align-items: baseline; gap: 0.5rem; margin: 0.6rem 0 0; }
+.item-tags .chips { margin: 0; }
+
+/* Active tag filters on a scoped list, above the items. */
+.active-tags { margin: 0 0 0.75rem; }
+.active-tags .chip {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  color: var(--accent);
+}
+.active-tags .chip:hover { border-color: var(--accent); }
+.active-tags .chip-clear { background: var(--panel); border-color: var(--border); color: var(--muted); }
+
+/* Collapsible "all tags seen in this feed" list in the feed filter card. */
+.tag-cloud { margin: 0.75rem 0 0; }
+.tag-cloud > summary { cursor: pointer; color: var(--muted); font-size: 0.8rem; }
+.tag-cloud > summary:hover { color: var(--fg); }
+.tag-cloud .chips { margin-top: 0.5rem; }
+
 
 .tabs { display: flex; gap: 0.5rem; margin: 0 0 0.75rem; }
 .tabs a {

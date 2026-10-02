@@ -11,6 +11,22 @@ import (
 	"strings"
 )
 
+const addItemCategory = `-- name: AddItemCategory :exec
+INSERT INTO item_categories (item_id, category)
+VALUES (?, ?)
+ON CONFLICT DO NOTHING
+`
+
+type AddItemCategoryParams struct {
+	ItemID   int64  `json:"item_id"`
+	Category string `json:"category"`
+}
+
+func (q *Queries) AddItemCategory(ctx context.Context, arg AddItemCategoryParams) error {
+	_, err := q.db.ExecContext(ctx, addItemCategory, arg.ItemID, arg.Category)
+	return err
+}
+
 const addItemFeed = `-- name: AddItemFeed :execresult
 INSERT INTO item_feeds (item_id, feed_id)
 VALUES (?, ?)
@@ -282,6 +298,17 @@ WHERE item_id = ?
 
 func (q *Queries) DeleteEnclosures(ctx context.Context, itemID int64) error {
 	_, err := q.db.ExecContext(ctx, deleteEnclosures, itemID)
+	return err
+}
+
+const deleteItemCategories = `-- name: DeleteItemCategories :exec
+DELETE FROM item_categories WHERE item_id = ?
+`
+
+// Clear an item's tag rows before re-inserting the current set, so a re-poll
+// replaces rather than accumulates (mirroring items.categories).
+func (q *Queries) DeleteItemCategories(ctx context.Context, itemID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteItemCategories, itemID)
 	return err
 }
 
@@ -696,6 +723,139 @@ func (q *Queries) ListAuthorRecentItemTimes(ctx context.Context, arg ListAuthorR
 			return nil, err
 		}
 		items = append(items, t)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCategoriesForAuthor = `-- name: ListCategoriesForAuthor :many
+SELECT ic.category, COUNT(*) AS item_count
+FROM item_categories ic
+JOIN item_feeds mf ON mf.item_id = ic.item_id
+JOIN feeds f ON f.id = mf.feed_id
+WHERE f.author_id = ?1 AND f.user_id = ?2
+GROUP BY ic.category
+ORDER BY item_count DESC, ic.category ASC
+`
+
+type ListCategoriesForAuthorParams struct {
+	AuthorID int64 `json:"authorID"`
+	UserID   int64 `json:"userID"`
+}
+
+type ListCategoriesForAuthorRow struct {
+	Category  string `json:"category"`
+	ItemCount int64  `json:"item_count"`
+}
+
+// Distinct tags across all of an author's feeds, most-used first.
+func (q *Queries) ListCategoriesForAuthor(ctx context.Context, arg ListCategoriesForAuthorParams) ([]ListCategoriesForAuthorRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCategoriesForAuthor, arg.AuthorID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCategoriesForAuthorRow
+	for rows.Next() {
+		var i ListCategoriesForAuthorRow
+		if err := rows.Scan(&i.Category, &i.ItemCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCategoriesForCollection = `-- name: ListCategoriesForCollection :many
+SELECT ic.category, COUNT(*) AS item_count
+FROM item_categories ic
+JOIN item_feeds mf ON mf.item_id = ic.item_id
+WHERE mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?1)
+  AND EXISTS (SELECT 1 FROM collections c WHERE c.id = ?1 AND c.user_id = ?2)
+GROUP BY ic.category
+ORDER BY item_count DESC, ic.category ASC
+`
+
+type ListCategoriesForCollectionParams struct {
+	CollectionID int64 `json:"collectionID"`
+	UserID       int64 `json:"userID"`
+}
+
+type ListCategoriesForCollectionRow struct {
+	Category  string `json:"category"`
+	ItemCount int64  `json:"item_count"`
+}
+
+// Distinct tags across a collection's feeds, most-used first.
+func (q *Queries) ListCategoriesForCollection(ctx context.Context, arg ListCategoriesForCollectionParams) ([]ListCategoriesForCollectionRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCategoriesForCollection, arg.CollectionID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCategoriesForCollectionRow
+	for rows.Next() {
+		var i ListCategoriesForCollectionRow
+		if err := rows.Scan(&i.Category, &i.ItemCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCategoriesForFeed = `-- name: ListCategoriesForFeed :many
+SELECT ic.category, COUNT(*) AS item_count
+FROM item_categories ic
+JOIN item_feeds mf ON mf.item_id = ic.item_id
+JOIN feeds f ON f.id = mf.feed_id
+WHERE mf.feed_id = ?1 AND f.user_id = ?2
+GROUP BY ic.category
+ORDER BY item_count DESC, ic.category ASC
+`
+
+type ListCategoriesForFeedParams struct {
+	FeedID int64 `json:"feedID"`
+	UserID int64 `json:"userID"`
+}
+
+type ListCategoriesForFeedRow struct {
+	Category  string `json:"category"`
+	ItemCount int64  `json:"item_count"`
+}
+
+// Distinct tags across a feed's items with their counts, most-used first. Scoped
+// through the feed's owner so ids cannot cross accounts.
+func (q *Queries) ListCategoriesForFeed(ctx context.Context, arg ListCategoriesForFeedParams) ([]ListCategoriesForFeedRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCategoriesForFeed, arg.FeedID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCategoriesForFeedRow
+	for rows.Next() {
+		var i ListCategoriesForFeedRow
+		if err := rows.Scan(&i.Category, &i.ItemCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -1290,6 +1450,43 @@ func (q *Queries) ListItemsMagic(ctx context.Context, arg ListItemsMagicParams) 
 			&i.AuthorID,
 			&i.AuthorName,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listItemsWithCategories = `-- name: ListItemsWithCategories :many
+SELECT id, categories FROM items
+WHERE categories <> ''
+  AND NOT EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = items.id)
+`
+
+type ListItemsWithCategoriesRow struct {
+	ID         int64  `json:"id"`
+	Categories string `json:"categories"`
+}
+
+// Items that carry a category string but have no item_categories rows yet, for
+// the one-time backfill (SQLite cannot split the newline-joined column in SQL).
+// The NOT EXISTS makes the backfill a cheap no-op once every item is populated.
+func (q *Queries) ListItemsWithCategories(ctx context.Context) ([]ListItemsWithCategoriesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listItemsWithCategories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListItemsWithCategoriesRow
+	for rows.Next() {
+		var i ListItemsWithCategoriesRow
+		if err := rows.Scan(&i.ID, &i.Categories); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
