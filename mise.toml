@@ -31,3 +31,7 @@ hide = true
 description = "Regenerate templates/queries and run the RSS server"
 run = "templ generate && go run cmd/server/main.go"
 sources = ["**/*.go", "**/*.templ", "internal/web/static/**", "go.mod", "go.sum"]
+
+[tasks."build:armv6"]
+description = "Cross-compile nanoflux + plugins for armv6 (Pi Zero W); add -- --image to build the container"
+run = "./scripts/build-armv6.sh"
