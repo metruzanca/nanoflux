@@ -100,7 +100,7 @@ func TestFeedEditShowsDocsButton(t *testing.T) {
 	feed, _ := s.store.Feeds.CreateWithPlugin(u.ID, author.ID, "d",
 		"https://docs.example/feed.xml", "", "", "", 900)
 
-	body := doGet(h, "/feeds/"+itoa(feed.ID)+"/edit", cookie).Body.String()
+	body := doGet(h, "/authors/"+itoa(author.ID)+"/edit?feed="+itoa(feed.ID), cookie).Body.String()
 	if !strings.Contains(body, "data-plugin-docs") || !strings.Contains(body, `data-plugin="docsstub"`) {
 		t.Fatalf("feed edit should show the docs button: %s", body)
 	}

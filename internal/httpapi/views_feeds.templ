@@ -168,9 +168,11 @@ templ noFeedFound(d noFeedFoundData) {
 	</div>
 }
 
-templ feedEditPage(u store.User, d feedsData) {
+// feedEditor is the feed edit form, embedded in the combined author edit page.
+// It renders the feed's fields, delete form, plugin panel and filter rules.
+templ feedEditor(d feedsData) {
 	<section class="card">
-		<h1>edit feed</h1>
+		<h2>edit feed: { d.Form.Title }</h2>
 		<form class="stack" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
 			@csrfField()
 			@feedFields(d)
@@ -412,13 +414,6 @@ templ feedFields(d feedsData) {
 		home url
 		<input name="home_url" type="url" value={ d.Form.HomeURL }/>
 	</label>
-	@comboSelect("author_id", authorValue(d.Form.AuthorID), "author", "search authors", authorItems(d.Authors), templ.Attributes{
-		"hx-get":     "/fragments/author-form",
-		"hx-target":  "#new-author",
-		"hx-swap":    "innerHTML",
-		"hx-trigger": "change",
-	})
-	<div id="new-author"></div>
 	@switchField("poll_interval_auto", "auto-adjust poll interval", d.Form.PollIntervalAuto, nil)
 	<label>
 		poll interval (seconds) — used when auto-adjust is off
@@ -437,7 +432,7 @@ templ feedPage(u store.User, d feedPageData) {
 				{ d.Row.Title }
 			</h1>
 			<div class="row-actions">
-				<a class="small" title="edit" href={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/edit" }>@web.EditIcon()
+				<a class="small" title="edit feed" href={ "/authors/" + strconv.FormatInt(d.Row.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(d.Row.ID, 10) }>@web.EditIcon()
 </a>
 				<button
 					class="link"

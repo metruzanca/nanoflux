@@ -242,7 +242,7 @@ func TestFeedPluginPanelShown(t *testing.T) {
 		t.Fatalf("managed card must not render on the feed page: %s", feedPage.Body.String())
 	}
 
-	edit := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie)
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie)
 	if edit.Code != http.StatusOK {
 		t.Fatalf("edit page: %d", edit.Code)
 	}
@@ -286,7 +286,7 @@ func TestExternalPluginDoesNotManageFeeds(t *testing.T) {
 	f, _ := s.store.Feeds.CreateWithPlugin(1, a.ID, "Site Feed",
 		"https://site.example/feed.xml", "", "", "", 900)
 
-	edit := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie)
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie)
 	if edit.Code != http.StatusOK {
 		t.Fatalf("edit page: %d", edit.Code)
 	}

@@ -753,14 +753,14 @@ func CollectionFeedCard(r feedRow, showEdit bool) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if showEdit {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<div class=\"row-actions\"><a class=\"small\" title=\"edit\" href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "<div class=\"row-actions\"><a class=\"small\" title=\"edit feed\" href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var30 templ.SafeURL
-			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinURLErrs("/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit")
+			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinURLErrs("/authors/" + strconv.FormatInt(r.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(r.ID, 10))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_collections.templ`, Line: 198, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_collections.templ`, Line: 198, Col: 141}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 			if templ_7745c5c3_Err != nil {

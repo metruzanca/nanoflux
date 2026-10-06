@@ -208,7 +208,7 @@ func TestAutoCollectionHiddenFromFeedEditCheckboxes(t *testing.T) {
 	feeds, _ := s.store.Feeds.List(u.ID)
 	f := feeds[0]
 
-	body := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie).Body.String()
+	body := doGet(h, "/authors/"+itoa(f.AuthorID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
 	if !strings.Contains(body, "Dev") {
 		t.Fatalf("manual collection should appear in the edit combo: %s", body)
 	}
