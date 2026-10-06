@@ -193,8 +193,8 @@ func (s *UserStore) Delete(userID int64) error {
 }
 
 // ListObjectKeys returns the object-storage keys owned by the user (avatar,
-// custom icon blobs, and cached author avatars), for cleanup when the user is
-// deleted.
+// custom icon blobs, cached author avatars, and cached item media), for cleanup
+// when the user is deleted.
 func (s *UserStore) ListObjectKeys(userID int64) ([]string, error) {
 	rows, err := s.q.ListUserIconKeys(context.Background(), userID)
 	if err != nil {
@@ -220,6 +220,11 @@ func (s *UserStore) ListObjectKeys(userID int64) ([]string, error) {
 			keys = append(keys, k.String)
 		}
 	}
+	cacheKeys, err := s.q.ListUserCacheKeys(context.Background(), userID)
+	if err != nil {
+		return nil, err
+	}
+	keys = append(keys, nonEmptyStrings(cacheKeys)...)
 	return keys, nil
 }
 

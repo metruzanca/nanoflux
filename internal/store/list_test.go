@@ -515,9 +515,22 @@ func TestFeedDeleteRehomesSharedItem(t *testing.T) {
 	post := Item{GUID: "t3_1abc", SharedKey: "reddit:t3_1abc", Title: "A cat", Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now()}
 	s.Items.Upsert(subFeed.ID, post)
 	s.Items.Upsert(userFeed.ID, post)
+	sharedID, _ := s.Items.ByFeedIdentity(subFeed.ID, "t3_1abc")
+	s.Items.SetItemImageCacheKey(sharedID, "cache/feeds/shared/0.png", 111)
 
-	if err := s.Feeds.Delete(u.ID, subFeed.ID); err != nil {
+	solo := Item{GUID: "t3_solo", Title: "Solo", Categories: []string{"r/cats"}, FetchedAt: db.Now()}
+	s.Items.Upsert(subFeed.ID, solo)
+	soloID, _ := s.Items.ByFeedIdentity(subFeed.ID, "t3_solo")
+	s.Items.SetItemImageCacheKey(soloID, "cache/feeds/solo/0.png", 222)
+
+	// The delete returns only the doomed item's cached-media key: the shared
+	// post is re-homed and keeps its blob.
+	keys, err := s.Feeds.Delete(u.ID, subFeed.ID)
+	if err != nil {
 		t.Fatalf("delete sub feed: %v", err)
+	}
+	if len(keys) != 1 || keys[0] != "cache/feeds/solo/0.png" {
+		t.Fatalf("delete cache keys = %v, want only the solo item's", keys)
 	}
 	items, _ := s.Items.List(u.ID, ItemFilter{FeedID: userFeed.ID, Limit: 10})
 	if len(items) != 1 {

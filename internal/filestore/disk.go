@@ -117,6 +117,33 @@ func (d *diskStore) Stat(_ context.Context) (Stat, error) {
 	return st, err
 }
 
+// List returns every blob whose key begins with prefix, ignoring the .ct
+// content-type sidecars.
+func (d *diskStore) List(_ context.Context, prefix string) ([]Object, error) {
+	var out []Object
+	err := filepath.Walk(d.root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if !info.Mode().IsRegular() || strings.HasSuffix(path, ".ct") {
+			return nil
+		}
+		rel, err := filepath.Rel(d.root, path)
+		if err != nil {
+			return err
+		}
+		key := filepath.ToSlash(rel)
+		if strings.HasPrefix(key, prefix) {
+			out = append(out, Object{Key: key, Size: info.Size()})
+		}
+		return nil
+	})
+	return out, err
+}
+
 // pathFor resolves a storage key to a file path under root, rejecting keys
 // that would escape the root directory.
 func (d *diskStore) pathFor(key string) (string, error) {

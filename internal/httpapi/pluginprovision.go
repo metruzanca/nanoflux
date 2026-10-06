@@ -193,11 +193,13 @@ func (s *Server) pluginAdminAction(w http.ResponseWriter, r *http.Request) {
 	// A remote delete the user asked for during local delete is performed by
 	// feedDelete; an explicit delete action here drops the local feed too.
 	if res.Deleted {
-		if err := s.store.Feeds.Delete(u.ID, id); err != nil {
+		cacheKeys, err := s.store.Feeds.Delete(u.ID, id)
+		if err != nil {
 			log.Error("delete feed after remote delete", "feed_id", id, "err", err)
 			writeFormError(w, r, pluginPanelErrorID(feed.ID), "the feed was deleted remotely but could not be removed locally")
 			return
 		}
+		s.purgeObjects(r.Context(), cacheKeys)
 		w.Header().Set("HX-Redirect", "/authors/"+strconv.FormatInt(feed.AuthorID, 10))
 		w.WriteHeader(http.StatusNoContent)
 		return

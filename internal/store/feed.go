@@ -317,11 +317,12 @@ func (s *FeedStore) SetHideFollowedAuthors(userID, id int64, on bool) error {
 // feed are re-homed to that feed first (so deleting the subreddit feed does not
 // delete a post still reachable through a user feed); items whose only
 // membership is this feed are removed with it. Both the feed's membership rows
-// and its remaining items cascade.
-func (s *FeedStore) Delete(userID, id int64) error {
+// and its remaining items cascade. It returns the object-storage keys of the
+// cached media it removed, so the caller can purge those blobs.
+func (s *FeedStore) Delete(userID, id int64) ([]string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin delete feed: %w", err)
+		return nil, fmt.Errorf("begin delete feed: %w", err)
 	}
 	defer tx.Rollback()
 	ctx := context.Background()
@@ -329,11 +330,19 @@ func (s *FeedStore) Delete(userID, id int64) error {
 
 	f, err := q.GetFeed(ctx, sqlcgen.GetFeedParams{ID: id, UserID: userID})
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
+		return nil, ErrNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("delete feed: %w", err)
+		return nil, fmt.Errorf("delete feed: %w", err)
 	}
+
+	// Collect the cached media of the items this delete removes before the
+	// cascade drops their rows (re-homed items keep theirs).
+	cacheRows, err := q.ListFeedCacheKeys(ctx, f.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list feed cache keys: %w", err)
+	}
+	cacheKeys := nonEmptyStrings(cacheRows)
 
 	// Re-home owned items that have another membership to one of those feeds,
 	// before the feed's cascade removes them.
@@ -347,13 +356,13 @@ func (s *FeedStore) Delete(userID, id int64) error {
 		WHERE items.feed_id = ?
 		  AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = items.id AND mf.feed_id <> ?)`,
 		f.ID, f.ID, f.ID); err != nil {
-		return fmt.Errorf("re-home feed items: %w", err)
+		return nil, fmt.Errorf("re-home feed items: %w", err)
 	}
 
 	if _, err := q.DeleteFeed(ctx, sqlcgen.DeleteFeedParams{ID: id, UserID: userID}); err != nil {
-		return fmt.Errorf("delete feed: %w", err)
+		return nil, fmt.Errorf("delete feed: %w", err)
 	}
-	return tx.Commit()
+	return cacheKeys, tx.Commit()
 }
 
 // SetPollMeta records the result of a fetch: entity tags for conditional GET

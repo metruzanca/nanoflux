@@ -278,6 +278,9 @@ templ authorStats(s store.AuthorItemStats, feedCount int, frequency, tz string) 
 				if s.Favorites > 0 {
 					<span><strong>{ s.Favorites }</strong> favorited</span>
 				}
+				if s.Storage > 0 {
+					<span title="cached media for this author's feeds"><strong>{ web.FormatBytes(s.Storage) }</strong> cached</span>
+				}
 			</div>
 			if s.FirstAt != "" {
 				<div class="item-meta">

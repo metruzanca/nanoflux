@@ -43,6 +43,39 @@ func (q *Queries) AddItemFeed(ctx context.Context, arg AddItemFeedParams) (sql.R
 	return q.db.ExecContext(ctx, addItemFeed, arg.ItemID, arg.FeedID)
 }
 
+const allCacheKeys = `-- name: AllCacheKeys :many
+SELECT image_cache_key AS obj_key FROM items
+WHERE image_cache_key IS NOT NULL AND image_cache_key <> ''
+UNION
+SELECT cache_key AS obj_key FROM item_enclosures
+WHERE cache_key <> ''
+`
+
+// Every object-storage key referenced by an item's cached media. Used to find
+// orphaned cache blobs (present in the store but referenced by no row).
+func (q *Queries) AllCacheKeys(ctx context.Context) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, allCacheKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []sql.NullString
+	for rows.Next() {
+		var obj_key sql.NullString
+		if err := rows.Scan(&obj_key); err != nil {
+			return nil, err
+		}
+		items = append(items, obj_key)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const backfillYouTubeThumbnails = `-- name: BackfillYouTubeThumbnails :execresult
 UPDATE items
 SET image_url = 'https://i.ytimg.com/vi/' || substr(guid, length('yt:video:') + 1) || '/hqdefault.jpg'
@@ -426,7 +459,7 @@ func (q *Queries) GetAuthorItemStats(ctx context.Context, arg GetAuthorItemStats
 }
 
 const getItem = `-- name: GetItem :one
-SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url, i.image_cache_key,
+SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url, i.image_cache_key, i.image_cache_size,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite, i.bookmark
 FROM items i
 WHERE i.id = ? AND i.user_id = ?
@@ -455,6 +488,7 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 		&i.DurationSec,
 		&i.ImageUrl,
 		&i.ImageCacheKey,
+		&i.ImageCacheSize,
 		&i.PublishedAt,
 		&i.FetchedAt,
 		&i.Read,
@@ -660,20 +694,21 @@ func (q *Queries) GetItemWithFeedAny(ctx context.Context, id int64) (GetItemWith
 }
 
 const insertEnclosure = `-- name: InsertEnclosure :exec
-INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort, kind, poster, cache_key)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO item_enclosures (item_id, url, title, mime_type, size, sort, kind, poster, cache_key, cache_size)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertEnclosureParams struct {
-	ItemID   int64          `json:"item_id"`
-	Url      string         `json:"url"`
-	Title    string         `json:"title"`
-	MimeType sql.NullString `json:"mime_type"`
-	Size     int64          `json:"size"`
-	Sort     int64          `json:"sort"`
-	Kind     string         `json:"kind"`
-	Poster   string         `json:"poster"`
-	CacheKey string         `json:"cache_key"`
+	ItemID    int64          `json:"item_id"`
+	Url       string         `json:"url"`
+	Title     string         `json:"title"`
+	MimeType  sql.NullString `json:"mime_type"`
+	Size      int64          `json:"size"`
+	Sort      int64          `json:"sort"`
+	Kind      string         `json:"kind"`
+	Poster    string         `json:"poster"`
+	CacheKey  string         `json:"cache_key"`
+	CacheSize int64          `json:"cache_size"`
 }
 
 func (q *Queries) InsertEnclosure(ctx context.Context, arg InsertEnclosureParams) error {
@@ -687,6 +722,7 @@ func (q *Queries) InsertEnclosure(ctx context.Context, arg InsertEnclosureParams
 		arg.Kind,
 		arg.Poster,
 		arg.CacheKey,
+		arg.CacheSize,
 	)
 	return err
 }
@@ -867,21 +903,22 @@ func (q *Queries) ListCategoriesForFeed(ctx context.Context, arg ListCategoriesF
 }
 
 const listEnclosures = `-- name: ListEnclosures :many
-SELECT url, title, mime_type, size, sort, kind, poster, cache_key
+SELECT url, title, mime_type, size, sort, kind, poster, cache_key, cache_size
 FROM item_enclosures
 WHERE item_id = ?
 ORDER BY sort
 `
 
 type ListEnclosuresRow struct {
-	Url      string         `json:"url"`
-	Title    string         `json:"title"`
-	MimeType sql.NullString `json:"mime_type"`
-	Size     int64          `json:"size"`
-	Sort     int64          `json:"sort"`
-	Kind     string         `json:"kind"`
-	Poster   string         `json:"poster"`
-	CacheKey string         `json:"cache_key"`
+	Url       string         `json:"url"`
+	Title     string         `json:"title"`
+	MimeType  sql.NullString `json:"mime_type"`
+	Size      int64          `json:"size"`
+	Sort      int64          `json:"sort"`
+	Kind      string         `json:"kind"`
+	Poster    string         `json:"poster"`
+	CacheKey  string         `json:"cache_key"`
+	CacheSize int64          `json:"cache_size"`
 }
 
 func (q *Queries) ListEnclosures(ctx context.Context, itemID int64) ([]ListEnclosuresRow, error) {
@@ -902,10 +939,51 @@ func (q *Queries) ListEnclosures(ctx context.Context, itemID int64) ([]ListEnclo
 			&i.Kind,
 			&i.Poster,
 			&i.CacheKey,
+			&i.CacheSize,
 		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeedCacheKeys = `-- name: ListFeedCacheKeys :many
+SELECT i.image_cache_key AS obj_key FROM items i
+WHERE i.feed_id = ?1
+  AND i.image_cache_key IS NOT NULL AND i.image_cache_key <> ''
+  AND NOT EXISTS (
+    SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id <> ?1)
+UNION
+SELECT e.cache_key AS obj_key FROM item_enclosures e
+JOIN items i ON i.id = e.item_id
+WHERE i.feed_id = ?1 AND e.cache_key <> ''
+  AND NOT EXISTS (
+    SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id <> ?1)
+`
+
+// Cached-media keys for the items a feed deletion actually removes: items owned
+// by the feed that are not also members of another feed (those are re-homed and
+// keep their cached bytes).
+func (q *Queries) ListFeedCacheKeys(ctx context.Context, feedid int64) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, listFeedCacheKeys, feedid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []sql.NullString
+	for rows.Next() {
+		var obj_key sql.NullString
+		if err := rows.Scan(&obj_key); err != nil {
+			return nil, err
+		}
+		items = append(items, obj_key)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -992,6 +1070,62 @@ func (q *Queries) ListFeedItemsForFilter(ctx context.Context, feedid int64) ([]L
 			&i.AuthorID,
 			&i.AuthorName,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeedStorage = `-- name: ListFeedStorage :many
+SELECT f.id AS feed_id, f.title AS title,
+  COALESCE(img.bytes, 0) + COALESCE(enc.bytes, 0) AS bytes
+FROM feeds f
+LEFT JOIN (
+  SELECT mf.feed_id AS feed_id, SUM(i.image_cache_size) AS bytes
+  FROM item_feeds mf JOIN items i ON i.id = mf.item_id
+  WHERE i.image_cache_size > 0 GROUP BY mf.feed_id
+) img ON img.feed_id = f.id
+LEFT JOIN (
+  SELECT mf.feed_id AS feed_id, SUM(e.cache_size) AS bytes
+  FROM item_feeds mf JOIN item_enclosures e ON e.item_id = mf.item_id
+  WHERE e.cache_size > 0 GROUP BY mf.feed_id
+) enc ON enc.feed_id = f.id
+WHERE f.user_id = ?1 AND f.is_system = 0
+  AND COALESCE(img.bytes, 0) + COALESCE(enc.bytes, 0) > 0
+ORDER BY bytes DESC
+LIMIT ?2
+`
+
+type ListFeedStorageParams struct {
+	UserID int64 `json:"userID"`
+	Limit  int64 `json:"limit"`
+}
+
+type ListFeedStorageRow struct {
+	FeedID int64  `json:"feed_id"`
+	Title  string `json:"title"`
+	Bytes  int64  `json:"bytes"`
+}
+
+// Cached-media bytes per feed for a user, largest first, for the admin storage
+// view. System feeds (saved pages) are excluded.
+func (q *Queries) ListFeedStorage(ctx context.Context, arg ListFeedStorageParams) ([]ListFeedStorageRow, error) {
+	rows, err := q.db.QueryContext(ctx, listFeedStorage, arg.UserID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFeedStorageRow
+	for rows.Next() {
+		var i ListFeedStorageRow
+		if err := rows.Scan(&i.FeedID, &i.Title, &i.Bytes); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1538,6 +1672,39 @@ func (q *Queries) ListRecentItemTimes(ctx context.Context, arg ListRecentItemTim
 	return items, nil
 }
 
+const listUserCacheKeys = `-- name: ListUserCacheKeys :many
+SELECT i.image_cache_key AS obj_key FROM items i
+WHERE i.user_id = ?1 AND i.image_cache_key IS NOT NULL AND i.image_cache_key <> ''
+UNION
+SELECT e.cache_key AS obj_key FROM item_enclosures e
+JOIN items i ON i.id = e.item_id
+WHERE i.user_id = ?1 AND e.cache_key <> ''
+`
+
+// Cached-media keys owned by a user, for purging when the account is deleted.
+func (q *Queries) ListUserCacheKeys(ctx context.Context, userid int64) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, listUserCacheKeys, userid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []sql.NullString
+	for rows.Next() {
+		var obj_key sql.NullString
+		if err := rows.Scan(&obj_key); err != nil {
+			return nil, err
+		}
+		items = append(items, obj_key)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markAllItemsRead = `-- name: MarkAllItemsRead :exec
 UPDATE items
 SET read = 1, read_at = ?1
@@ -1824,6 +1991,23 @@ func (q *Queries) RemoveItemFeedMemberships(ctx context.Context, arg RemoveItemF
 	return err
 }
 
+const setEnclosureCacheSizeByKey = `-- name: SetEnclosureCacheSizeByKey :exec
+UPDATE item_enclosures
+SET cache_size = ?
+WHERE cache_key = ?
+`
+
+type SetEnclosureCacheSizeByKeyParams struct {
+	CacheSize int64  `json:"cache_size"`
+	CacheKey  string `json:"cache_key"`
+}
+
+// Backfill the recorded size of a cached enclosure by its storage key.
+func (q *Queries) SetEnclosureCacheSizeByKey(ctx context.Context, arg SetEnclosureCacheSizeByKeyParams) error {
+	_, err := q.db.ExecContext(ctx, setEnclosureCacheSizeByKey, arg.CacheSize, arg.CacheKey)
+	return err
+}
+
 const setItemBookmark = `-- name: SetItemBookmark :execresult
 UPDATE items
 SET bookmark = ?
@@ -1897,20 +2081,45 @@ func (q *Queries) SetItemFavorite(ctx context.Context, arg SetItemFavoriteParams
 
 const setItemImageCacheKey = `-- name: SetItemImageCacheKey :exec
 UPDATE items
-SET image_cache_key = ?
-WHERE id = ?
+SET image_cache_key = ?1,
+    image_cache_size = CASE
+        WHEN IFNULL(?1, '') = '' THEN 0
+        WHEN CAST(?2 AS INTEGER) > 0 THEN CAST(?2 AS INTEGER)
+        ELSE image_cache_size
+    END
+WHERE id = ?3
 `
 
 type SetItemImageCacheKeyParams struct {
-	ImageCacheKey sql.NullString `json:"image_cache_key"`
-	ID            int64          `json:"id"`
+	Key  sql.NullString `json:"key"`
+	Size int64          `json:"size"`
+	ID   int64          `json:"id"`
 }
 
-// Record the object-storage key of an item's cached primary image, or clear it.
+// Record the object-storage key and byte size of an item's cached primary
+// image, or clear it. A size of 0 with a non-empty key means "reused an existing
+// blob; keep the size already recorded", so a re-poll never zeroes it.
 // Independent of UpdateItemSnapshotByID, which refreshes the remote image_url on
 // every poll but must not clobber the cached copy.
 func (q *Queries) SetItemImageCacheKey(ctx context.Context, arg SetItemImageCacheKeyParams) error {
-	_, err := q.db.ExecContext(ctx, setItemImageCacheKey, arg.ImageCacheKey, arg.ID)
+	_, err := q.db.ExecContext(ctx, setItemImageCacheKey, arg.Key, arg.Size, arg.ID)
+	return err
+}
+
+const setItemImageCacheSizeByKey = `-- name: SetItemImageCacheSizeByKey :exec
+UPDATE items
+SET image_cache_size = ?
+WHERE image_cache_key = ?
+`
+
+type SetItemImageCacheSizeByKeyParams struct {
+	ImageCacheSize int64          `json:"image_cache_size"`
+	ImageCacheKey  sql.NullString `json:"image_cache_key"`
+}
+
+// Backfill the recorded size of a cached primary image by its storage key.
+func (q *Queries) SetItemImageCacheSizeByKey(ctx context.Context, arg SetItemImageCacheSizeByKeyParams) error {
+	_, err := q.db.ExecContext(ctx, setItemImageCacheSizeByKey, arg.ImageCacheSize, arg.ImageCacheKey)
 	return err
 }
 
@@ -1965,6 +2174,57 @@ func (q *Queries) SetItemsReadByIDs(ctx context.Context, arg SetItemsReadByIDsPa
 	}
 	_, err := q.db.ExecContext(ctx, query, queryParams...)
 	return err
+}
+
+const storageByAuthor = `-- name: StorageByAuthor :one
+SELECT CAST(COALESCE(SUM(sz), 0) AS INTEGER) AS bytes FROM (
+  SELECT i.image_cache_size AS sz FROM items i
+  WHERE i.user_id = ?1 AND i.image_cache_size > 0
+    AND i.id IN (
+      SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+      WHERE f.user_id = ?1 AND f.author_id = ?2)
+  UNION ALL
+  SELECT e.cache_size AS sz FROM item_enclosures e
+  WHERE e.cache_size > 0
+    AND e.item_id IN (
+      SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+      WHERE f.user_id = ?1 AND f.author_id = ?2)
+)
+`
+
+type StorageByAuthorParams struct {
+	UserID   int64 `json:"userID"`
+	AuthorID int64 `json:"authorID"`
+}
+
+// Total bytes of cached media across all of an author's feeds. Counts each item
+// (and enclosure) once even when it is a member of several of those feeds.
+func (q *Queries) StorageByAuthor(ctx context.Context, arg StorageByAuthorParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, storageByAuthor, arg.UserID, arg.AuthorID)
+	var bytes int64
+	err := row.Scan(&bytes)
+	return bytes, err
+}
+
+const storageByFeed = `-- name: StorageByFeed :one
+SELECT CAST(COALESCE(SUM(sz), 0) AS INTEGER) AS bytes FROM (
+  SELECT i.image_cache_size AS sz FROM items i
+  JOIN item_feeds mf ON mf.item_id = i.id
+  WHERE mf.feed_id = ?1 AND i.image_cache_size > 0
+  UNION ALL
+  SELECT e.cache_size AS sz FROM item_enclosures e
+  JOIN item_feeds mf ON mf.item_id = e.item_id
+  WHERE mf.feed_id = ?1 AND e.cache_size > 0
+)
+`
+
+// Total bytes of cached media for the items a feed lists (by membership, so a
+// cross-feed item counts). Each item and enclosure is counted once.
+func (q *Queries) StorageByFeed(ctx context.Context, feedid int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, storageByFeed, feedid)
+	var bytes int64
+	err := row.Scan(&bytes)
+	return bytes, err
 }
 
 const updateItemSnapshotByID = `-- name: UpdateItemSnapshotByID :exec

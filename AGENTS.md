@@ -182,9 +182,13 @@ The host then caches that feed's images itself.
   enclosure into `ImageURL`) reuses its key.
 - Keys are stored on `items.image_cache_key` (schemaV45, written by
   `ItemStore.SetItemImageCacheKey`, deliberately **not** touched by the poll
-  snapshot refresh) and `item_enclosures.cache_key`. `ReplaceEnclosures` carries
-  a slot's previous key forward when the incoming enclosure has none, so turning
-  caching off keeps already-cached images showing; it only stops new downloads.
+  snapshot refresh) and `item_enclosures.cache_key`. Their byte sizes live on
+  `items.image_cache_size` / `item_enclosures.cache_size` (schemaV50), written
+  on a fresh download; a reused blob reports size 0 and the store keeps the
+  recorded size (a re-poll never zeroes it). `ReplaceEnclosures` carries a
+  slot's previous key and size forward when the incoming enclosure has none, so
+  turning caching off keeps already-cached images showing; it only stops new
+  downloads.
 - Render: `web.CachedImageURL(key, remote)` builds `/cache/<key>?u=<remote>`.
   `itemViewData.cachedImageSrc`/`enclosureSrc` use it only for the item's own
   image (not a body image) and only when the view may use the authenticated
@@ -192,9 +196,18 @@ The host then caches that feed's images itself.
   like `/img`) serves the bytes, or proxies `?u=` when the blob is gone (purged
   cache), so a removed folder degrades to the remote URL instead of a broken
   image.
-- Removal: cached bytes live under `cache/<plugin>/`, so an admin deletes a
-  plugin's cache by dropping that prefix. The `.ct` sidecars are disk-store
-  metadata; `Stat` ignores them.
+- Sizes drive the feed page and author stats ("cached media", `web.FormatBytes`),
+  summed from the DB via `ItemStore.StorageByFeed`/`StorageByAuthor` (membership-
+  scoped). The `.ct` sidecars are disk-store metadata; `List`/`Stat` ignore them.
+- Purge: deleting a user (`Users.ListObjectKeys` includes the item/enclosure
+  cache keys) or a feed (`FeedStore.Delete` returns the keys of the items it
+  actually removes; re-homed cross-feed items keep theirs) deletes those blobs
+  best-effort. `filestore.Store.List` backs `nanoflux storage report` (bytes by
+  kind and cache plugin, plus orphaned cached media), `nanoflux storage gc
+  --apply` (delete cached blobs no row references) and `nanoflux storage
+  backfill` (fill sizes for media cached before schemaV50). Backups exclude the
+  whole `cache/` subtree (`backup.excludedFileStoreDirs`), so cached media never
+  bloats a snapshot; avatars and icons are still archived.
 - A plugin claims the capability with a single `Match` case, so no interface or
   wire change is needed.
 

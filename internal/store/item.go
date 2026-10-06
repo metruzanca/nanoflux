@@ -698,6 +698,8 @@ type Enclosure struct {
 	// CacheKey is the object-storage key of the enclosure's cached bytes when it
 	// is an image and host-side image caching is enabled; empty otherwise.
 	CacheKey string
+	// CacheSize is the byte size of the cached enclosure (0 when not cached).
+	CacheSize int64
 }
 
 // Enclosures returns an item's media attachments in order.
@@ -710,7 +712,7 @@ func (s *ItemStore) Enclosures(itemID int64) ([]Enclosure, error) {
 	for _, r := range rows {
 		out = append(out, Enclosure{
 			URL: r.Url, Title: r.Title, MIMEType: r.MimeType.String, Size: r.Size, Sort: int(r.Sort),
-			Kind: r.Kind, Poster: r.Poster, CacheKey: r.CacheKey,
+			Kind: r.Kind, Poster: r.Poster, CacheKey: r.CacheKey, CacheSize: r.CacheSize,
 		})
 	}
 	return out, nil
@@ -749,6 +751,7 @@ type AuthorItemStats struct {
 	Recent    int    // posts within the recent window
 	FirstAt   string // oldest post time, "" when the author has no posts
 	LastAt    string // newest post time, "" when the author has no posts
+	Storage   int64  // bytes of cached media across the author's feeds
 }
 
 // StatsAuthor returns all-time aggregate stats for an author across all of their
@@ -762,6 +765,7 @@ func (s *ItemStore) StatsAuthor(userID, authorID int64) (AuthorItemStats, error)
 	if err != nil {
 		return AuthorItemStats{}, err
 	}
+	storage, _ := s.StorageByAuthor(userID, authorID)
 	return AuthorItemStats{
 		Total:     int(r.TotalPosts),
 		Unread:    int(r.UnreadPosts),
@@ -770,6 +774,7 @@ func (s *ItemStore) StatsAuthor(userID, authorID int64) (AuthorItemStats, error)
 		Recent:    int(r.RecentPosts),
 		FirstAt:   r.FirstPostAt,
 		LastAt:    r.LastPostAt,
+		Storage:   storage,
 	}, nil
 }
 
@@ -778,10 +783,10 @@ func (s *ItemStore) StatsAuthor(userID, authorID int64) (AuthorItemStats, error)
 // a re-poll does not drop an already-cached image (which is what keeps a
 // cached copy showing after the user turns caching off).
 func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
-	prev := map[int]string{}
+	prev := map[int]Enclosure{}
 	if old, err := s.Enclosures(itemID); err == nil {
 		for _, e := range old {
-			prev[e.Sort] = e.CacheKey
+			prev[e.Sort] = e
 		}
 	}
 	if err := s.q.DeleteEnclosures(context.Background(), itemID); err != nil {
@@ -789,19 +794,22 @@ func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
 	}
 	for i, e := range encs {
 		cacheKey := e.CacheKey
+		cacheSize := e.CacheSize
 		if cacheKey == "" {
-			cacheKey = prev[i]
+			cacheKey = prev[i].CacheKey
+			cacheSize = prev[i].CacheSize
 		}
 		if err := s.q.InsertEnclosure(context.Background(), sqlcgen.InsertEnclosureParams{
-			ItemID:   itemID,
-			Url:      e.URL,
-			Title:    e.Title,
-			MimeType: ns(e.MIMEType),
-			Size:     e.Size,
-			Sort:     int64(i),
-			Kind:     e.Kind,
-			Poster:   e.Poster,
-			CacheKey: cacheKey,
+			ItemID:    itemID,
+			Url:       e.URL,
+			Title:     e.Title,
+			MimeType:  ns(e.MIMEType),
+			Size:      e.Size,
+			Sort:      int64(i),
+			Kind:      e.Kind,
+			Poster:    e.Poster,
+			CacheKey:  cacheKey,
+			CacheSize: cacheSize,
 		}); err != nil {
 			return err
 		}
@@ -809,13 +817,15 @@ func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
 	return nil
 }
 
-// SetItemImageCacheKey records (or clears, with "") the object-storage key of an
-// item's cached primary image. It is deliberately not part of the poll snapshot
-// refresh, so a cached copy is never clobbered by a fresh remote URL.
-func (s *ItemStore) SetItemImageCacheKey(itemID int64, key string) error {
+// SetItemImageCacheKey records (or clears, with "", size 0) the object-storage
+// key and byte size of an item's cached primary image. It is deliberately not
+// part of the poll snapshot refresh, so a cached copy is never clobbered by a
+// fresh remote URL.
+func (s *ItemStore) SetItemImageCacheKey(itemID int64, key string, size int64) error {
 	return s.q.SetItemImageCacheKey(context.Background(), sqlcgen.SetItemImageCacheKeyParams{
-		ImageCacheKey: ns(key),
-		ID:            itemID,
+		Key:  ns(key),
+		Size: size,
+		ID:   itemID,
 	})
 }
 
@@ -836,6 +846,102 @@ func (s *ItemStore) DeleteSaved(userID, itemID int64) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// AllCacheKeys returns every object-storage key referenced by cached item
+// media. The storage audit diffs it against the filestore to find orphans.
+func (s *ItemStore) AllCacheKeys() ([]string, error) {
+	rows, err := s.q.AllCacheKeys(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return nonEmptyStrings(rows), nil
+}
+
+// ListUserCacheKeys returns the cached-media keys owned by a user, for purging
+// when the account is deleted.
+func (s *ItemStore) ListUserCacheKeys(userID int64) ([]string, error) {
+	rows, err := s.q.ListUserCacheKeys(context.Background(), userID)
+	if err != nil {
+		return nil, err
+	}
+	return nonEmptyStrings(rows), nil
+}
+
+// ListFeedCacheKeys returns the cached-media keys of the items a feed deletion
+// removes (items owned solely by the feed; re-homed cross-feed items keep
+// theirs), for purging those blobs.
+func (s *ItemStore) ListFeedCacheKeys(feedID int64) ([]string, error) {
+	rows, err := s.q.ListFeedCacheKeys(context.Background(), feedID)
+	if err != nil {
+		return nil, err
+	}
+	return nonEmptyStrings(rows), nil
+}
+
+// SetItemImageCacheSizeByKey records the byte size of a cached primary image by
+// its storage key. Used by the storage backfill.
+func (s *ItemStore) SetItemImageCacheSizeByKey(key string, size int64) error {
+	return s.q.SetItemImageCacheSizeByKey(context.Background(), sqlcgen.SetItemImageCacheSizeByKeyParams{
+		ImageCacheSize: size,
+		ImageCacheKey:  ns(key),
+	})
+}
+
+// SetEnclosureCacheSizeByKey records the byte size of a cached enclosure by its
+// storage key. Used by the storage backfill.
+func (s *ItemStore) SetEnclosureCacheSizeByKey(key string, size int64) error {
+	return s.q.SetEnclosureCacheSizeByKey(context.Background(), sqlcgen.SetEnclosureCacheSizeByKeyParams{
+		CacheSize: size,
+		CacheKey:  key,
+	})
+}
+
+// StorageByFeed returns the cached-media bytes a feed lists (by membership).
+func (s *ItemStore) StorageByFeed(feedID int64) (int64, error) {
+	return s.q.StorageByFeed(context.Background(), feedID)
+}
+
+// StorageByAuthor returns the cached-media bytes across all of an author's feeds.
+func (s *ItemStore) StorageByAuthor(userID, authorID int64) (int64, error) {
+	return s.q.StorageByAuthor(context.Background(), sqlcgen.StorageByAuthorParams{
+		UserID:   userID,
+		AuthorID: authorID,
+	})
+}
+
+// FeedStorage is one feed's cached-media footprint.
+type FeedStorage struct {
+	FeedID int64
+	Title  string
+	Bytes  int64
+}
+
+// ListFeedStorage returns a user's feeds that hold cached media, largest first.
+func (s *ItemStore) ListFeedStorage(userID int64, limit int) ([]FeedStorage, error) {
+	rows, err := s.q.ListFeedStorage(context.Background(), sqlcgen.ListFeedStorageParams{
+		UserID: userID,
+		Limit:  int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FeedStorage, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, FeedStorage{FeedID: r.FeedID, Title: r.Title, Bytes: r.Bytes})
+	}
+	return out, nil
+}
+
+// nonEmptyStrings drops NULL/empty entries from a nullable-string column.
+func nonEmptyStrings(rows []sql.NullString) []string {
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.Valid && r.String != "" {
+			out = append(out, r.String)
+		}
+	}
+	return out
 }
 
 // ListFeedItemsForFilter returns every item that is a member of feedID, for
