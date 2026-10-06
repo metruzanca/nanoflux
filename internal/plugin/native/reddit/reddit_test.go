@@ -121,6 +121,9 @@ func TestMatch(t *testing.T) {
 		if !p.Match(parsed, pluginapi.CapDiscover) {
 			t.Errorf("Match(%q, CapDiscover) = false", u)
 		}
+		if !p.Match(parsed, pluginapi.CapAuthorToken) {
+			t.Errorf("Match(%q, CapAuthorToken) = false", u)
+		}
 		if p.Match(parsed, pluginapi.CapFetch) {
 			t.Errorf("reddit should not claim fetch for %q", u)
 		}
@@ -319,6 +322,33 @@ func TestFeedToken(t *testing.T) {
 
 // Decorate builds "r/cats by u/sam" for a post with both categories, carrying
 // tokens the host resolves, and classifies the card kind.
+// AuthorTokens names only the poster (u/<name>), never the subreddit, so a
+// feed's discovery mode cannot hide the feed's own community.
+func TestAuthorTokens(t *testing.T) {
+	p := &Plugin{}
+	cases := []struct {
+		in   []string
+		want []string
+	}{
+		{[]string{"r/cats", "u/Sam"}, []string{"u/Sam"}},
+		{[]string{"r/cats"}, nil},
+		{[]string{"u/sam", "u/other"}, []string{"u/sam", "u/other"}},
+		{nil, nil},
+	}
+	for _, c := range cases {
+		got := p.AuthorTokens(c.in)
+		if len(got) != len(c.want) {
+			t.Errorf("AuthorTokens(%v) = %v, want %v", c.in, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("AuthorTokens(%v)[%d] = %q, want %q", c.in, i, got[i], c.want[i])
+			}
+		}
+	}
+}
+
 func TestDecorate(t *testing.T) {
 	p := &Plugin{}
 	req := pluginapi.DecorateRequest{Items: []pluginapi.Item{

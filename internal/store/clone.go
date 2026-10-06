@@ -167,7 +167,7 @@ func cloneAuthors(ctx context.Context, tx *sql.Tx, seedID, newID int64) error {
 func cloneFeeds(ctx context.Context, tx *sql.Tx, seedID, newID int64) (map[int64]int64, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, author_id, title, feed_url, home_url, description,
-		       poll_interval_sec, poll_interval_auto, plugin_name, rank, filter_mode
+		       poll_interval_sec, poll_interval_auto, plugin_name, rank, filter_mode, hide_followed_authors
 		FROM feeds WHERE user_id = ? AND is_system = 0`, seedID)
 	if err != nil {
 		return nil, fmt.Errorf("clone feeds select: %w", err)
@@ -183,12 +183,13 @@ func cloneFeeds(ctx context.Context, tx *sql.Tx, seedID, newID int64) (map[int64
 		pluginName       string
 		rank             int64
 		filterMode       string
+		hideFollowed     int64
 	}
 	var feeds []feed
 	for rows.Next() {
 		var f feed
 		if err := rows.Scan(&f.id, &f.authorID, &f.title, &f.feedURL, &f.homeURL, &f.desc,
-			&f.pollInterval, &f.pollIntervalAuto, &f.pluginName, &f.rank, &f.filterMode); err != nil {
+			&f.pollInterval, &f.pollIntervalAuto, &f.pluginName, &f.rank, &f.filterMode, &f.hideFollowed); err != nil {
 			return nil, fmt.Errorf("clone feeds scan: %w", err)
 		}
 		feeds = append(feeds, f)
@@ -214,10 +215,10 @@ func cloneFeeds(ctx context.Context, tx *sql.Tx, seedID, newID int64) (map[int64
 			INSERT INTO feeds (
 				user_id, author_id, title, feed_url, home_url, description,
 				poll_interval_sec, poll_interval_auto, plugin_name, rank, filter_mode,
-				enabled, disabled_reason
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
+				hide_followed_authors, enabled, disabled_reason
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
 			newID, newAuthor, f.title, f.feedURL, f.homeURL, f.desc,
-			f.pollInterval, f.pollIntervalAuto, f.pluginName, f.rank, f.filterMode)
+			f.pollInterval, f.pollIntervalAuto, f.pluginName, f.rank, f.filterMode, f.hideFollowed)
 		if err != nil {
 			return nil, fmt.Errorf("clone feed insert: %w", err)
 		}
