@@ -405,7 +405,7 @@ templ scopedItemsInner(d scopedItemsData) {
 		if d.View != "feeds" {
 			<div class="row-actions">
 				if len(d.TagOptions) > 0 || len(d.Tags) > 0 {
-					<button type="button" class="mode-btn" title="filter by tag" data-open="tag-filter-dialog">@web.Lucide("search")</button>
+					<button type="button" class="mode-btn" title="filter by tag" data-open="tag-filter-dialog">@web.Lucide("funnel-plus")</button>
 				}
 				@sortPicker(d.Path, d.View, d.Sort, d.NoMagic, d.Tags)
 				@DisplayModeControl(d.Path, d.Mode)

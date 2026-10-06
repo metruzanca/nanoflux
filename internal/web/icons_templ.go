@@ -76,7 +76,8 @@ func SourceIcon(rawurl string) templ.Component {
 }
 
 // lucideShapes holds the inner markup of the Lucide icons the UI inlines:
-// https://lucide.dev (ISC), v0.469.0. Keep each entry a single SVG child set.
+// https://lucide.dev (ISC), v0.469.0 (funnel-plus from v0.500.0). Keep each
+// entry a single SVG child set.
 var lucideShapes = map[string]string{
 	"check":         `<path d="M20 6 9 17l-5-5"/>`,
 	"check-check":   `<path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/>`,
@@ -96,6 +97,7 @@ var lucideShapes = map[string]string{
 	"chevron-right": `<path d="m9 18 6-6-6-6"/>`,
 	"sparkles":      `<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>`,
 	"arrow-up-down": `<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>`,
+	"funnel-plus":   `<path d="M13.354 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14v6a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341l1.218-1.348"/><path d="M16 6h6"/><path d="M19 3v6"/>`,
 }
 
 // Lucide inlines a Lucide glyph (by its icon name) at the default size. The
