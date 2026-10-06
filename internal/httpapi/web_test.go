@@ -352,7 +352,7 @@ func TestFeedFilterRulesFlow(t *testing.T) {
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 
 	// The edit page shows the filters section.
-	edit := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie).Body.String()
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
 	if !strings.Contains(edit, `id="feed-rules"`) {
 		t.Fatalf("edit page should include the filters section: %s", edit)
 	}
@@ -2272,7 +2272,7 @@ func TestFeedEditDeleteFlow(t *testing.T) {
 	}
 
 	// The feed edit page carries the delete form.
-	edit := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie).Body.String()
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
 	if !strings.Contains(edit, `action="/feeds/`+itoa(f.ID)+`/delete"`) ||
 		!strings.Contains(edit, `class="danger"`) {
 		t.Fatalf("feed edit page should carry a delete form: %s", edit)
@@ -2385,9 +2385,49 @@ func TestAuthorEditListsFeedsWithEditLinks(t *testing.T) {
 
 	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit", cookie).Body.String()
 	if !strings.Contains(edit, `id="collection-feed-`+itoa(f.ID)+`"`) ||
-		!strings.Contains(edit, `href="/feeds/`+itoa(f.ID)+`/edit"`) ||
+		!strings.Contains(edit, `href="/authors/`+itoa(a.ID)+`/edit?feed=`+itoa(f.ID)+`"`) ||
 		!strings.Contains(edit, "Blog") {
 		t.Fatalf("author edit should list the author's feeds with an edit link: %s", edit)
+	}
+}
+
+func TestFeedEditRedirectsToCombinedAuthorEdit(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+
+	// The old feed edit URL redirects to the combined author edit page with the
+	// feed selected.
+	rr := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie)
+	if rr.Code != http.StatusFound ||
+		rr.Header().Get("Location") != "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID) {
+		t.Fatalf("feed edit should redirect to the combined page: %d %q", rr.Code, rr.Header().Get("Location"))
+	}
+
+	// The combined page renders the author form and the selected feed's editor.
+	body := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
+	for _, want := range []string{
+		`name="name"`,
+		"edit feed: Blog",
+		`id="feed-rules"`,
+		`action="/feeds/` + itoa(f.ID) + `/edit"`,
+		`name="feed_url"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("combined edit page missing %q: %s", want, body)
+		}
+	}
+	// The author picker is gone from the feed form.
+	if strings.Contains(body, `name="author_id"`) {
+		t.Fatalf("combined feed editor should not carry an author picker: %s", body)
+	}
+	// An unknown or foreign feed id yields no editor.
+	other, _ := s.store.Authors.Create(u.ID, "Other", "", "")
+	body = doGet(h, "/authors/"+itoa(other.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
+	if strings.Contains(body, "edit feed: Blog") {
+		t.Fatalf("a feed not owned by the author should not render an editor: %s", body)
 	}
 }
 
@@ -2584,7 +2624,7 @@ func TestFeedEditAutoInterval(t *testing.T) {
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 
 	// Edit form shows the auto checkbox (new feeds default to on).
-	edit := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie).Body.String()
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
 	if !strings.Contains(edit, `name="poll_interval_auto"`) {
 		t.Fatalf("edit form should render the auto-adjust checkbox: %s", edit)
 	}

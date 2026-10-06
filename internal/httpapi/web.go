@@ -93,8 +93,6 @@ type feedForm struct {
 }
 
 type feedsData struct {
-	Rows        []feedRow
-	Authors     []store.Author
 	Collections []store.Collection
 	Form        feedForm
 	Rules       feedRulesData
@@ -141,6 +139,9 @@ type authorsData struct {
 	Links      []store.AuthorLink   // edit page: the author's external links, editable
 	Feeds      []feedRow            // edit page: the author's feeds, shown as a UX assist
 	AvatarCard authorAvatarCardData // edit page avatar cache card
+	// Editor is the combined page's feed editor, for the feed named by the
+	// ?feed= query. nil when no feed is selected.
+	Editor *feedsData
 }
 
 type authorData struct {
@@ -1350,6 +1351,8 @@ func (s *Server) resolveAuthor(r *http.Request, userID int64) (int64, bool, stri
 	}
 }
 
+// feedEdit is the legacy feed edit URL. Editing now lives on the combined
+// author edit page, so this redirects there with the feed selected.
 func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -1362,15 +1365,21 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	http.Redirect(w, r, "/authors/"+strconv.FormatInt(f.AuthorID, 10)+"/edit?feed="+strconv.FormatInt(f.ID, 10), http.StatusFound)
+}
+
+// feedEditorData assembles the editor for a single feed: its form fields, the
+// collections it belongs to, its filter rules and its plugin panel. It backs
+// the combined author edit page's ?feed= editor.
+func (s *Server) feedEditorData(u store.User, f store.Feed) *feedsData {
 	form := feedForm{
 		ID: f.ID, Title: f.Title, FeedURL: f.FeedURL, HomeURL: f.HomeURL,
 		Description: f.Description, AuthorID: f.AuthorID,
 		PollIntervalSec: f.PollIntervalSec, PollIntervalAuto: f.PollIntervalAuto, Enabled: f.Enabled,
 		CacheImages: f.CacheImages, CacheForced: s.imageCacheForced(f.FeedURL),
 	}
-	collections, _ := s.store.Collections.List(u.ID)
 	form.CollectionIDs = s.collectionIDsForFeed(u.ID, f.ID)
-	authors, _ := s.store.Authors.List(u.ID)
+	collections, _ := s.store.Collections.List(u.ID)
 
 	rules := s.feedRules(u.ID, f.ID)
 	rules.DocsPlugin = s.pluginDocNameFor(f.FeedURL)
@@ -1378,10 +1387,7 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 	if p, ok := s.feedPanel(f, ""); ok {
 		panel = &p
 	}
-	web.Render(w, r, basePage("edit "+f.Title, u, feedEditPage(u, feedsData{
-		Authors: authors, Collections: collections, Form: form,
-		Rules: rules, Panel: panel,
-	})))
+	return &feedsData{Collections: collections, Form: form, Rules: rules, Panel: panel}
 }
 
 // feedRules returns a feed's filter rules (its own plus feed-wide rules) and
@@ -1729,16 +1735,13 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		// Adaptive polling owns the interval; keep the stored value.
 		interval = old.PollIntervalSec
 	}
-	back := "/authors/" + strconv.FormatInt(old.AuthorID, 10)
+	back := "/authors/" + strconv.FormatInt(old.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(id, 10)
 	if title == "" || feedURL == "" {
 		http.Redirect(w, r, back, http.StatusFound)
 		return
 	}
-	authorID, _, errMsg := s.resolveAuthor(r, u.ID)
-	if errMsg != "" {
-		http.Redirect(w, r, back, http.StatusFound)
-		return
-	}
+	// Editing happens on the feed's author's page, so the feed keeps its author.
+	authorID := old.AuthorID
 	cacheImages := r.FormValue("cache_images") == "1" || s.imageCacheForced(feedURL)
 	if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
 		r.FormValue("home_url"), "", interval, auto, r.FormValue("enabled") == "1", cacheImages); err != nil {
@@ -1789,7 +1792,7 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 			s.store.Collections.RemoveFeed(u.ID, c.ID, id)
 		}
 	}
-	http.Redirect(w, r, "/authors/"+strconv.FormatInt(authorID, 10), http.StatusFound)
+	http.Redirect(w, r, "/authors/"+strconv.FormatInt(authorID, 10)+"/edit?feed="+strconv.FormatInt(id, 10), http.StatusFound)
 }
 
 func unique(ids []int64) []int64 {
@@ -2384,11 +2387,18 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
 	feeds, _ := s.feedRowsForAuthor(u.ID, a.ID, u.Timezone)
+	var editor *feedsData
+	if fid, err := strconv.ParseInt(r.URL.Query().Get("feed"), 10, 64); err == nil && fid != 0 {
+		if f, err := s.store.Feeds.ByID(u.ID, fid); err == nil && f.AuthorID == a.ID {
+			editor = s.feedEditorData(u, f)
+		}
+	}
 	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
 		Form:       authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
 		Links:      links,
 		Feeds:      feeds,
 		AvatarCard: s.authorAvatarCardData(a, u.Timezone, ""),
+		Editor:     editor,
 	})))
 }
 

@@ -104,6 +104,9 @@ templ authorEditPage(u store.User, d authorsData) {
 			@CollectionFeedCards(d.Feeds, true)
 		</div>
 	}
+	if d.Editor != nil {
+		@feedEditor(*d.Editor)
+	}
 }
 
 // authorAvatarFields renders the avatar section inside the edit form: the

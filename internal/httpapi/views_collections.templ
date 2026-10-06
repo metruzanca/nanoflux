@@ -195,7 +195,7 @@ templ CollectionFeedCard(r feedRow, showEdit bool) {
 				</div>
 				if showEdit {
 					<div class="row-actions">
-						<a class="small" title="edit" href={ "/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit" }>@web.EditIcon()</a>
+						<a class="small" title="edit feed" href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(r.ID, 10) }>@web.EditIcon()</a>
 					</div>
 				}
 			</div>

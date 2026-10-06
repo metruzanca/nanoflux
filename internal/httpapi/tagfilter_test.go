@@ -52,7 +52,7 @@ func TestTagFilterUI(t *testing.T) {
 	}
 
 	// Feed edit: collapsible tag list with counts and a prefill hook.
-	body = doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie).Body.String()
+	body = doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
 	if !strings.Contains(body, `class="tag-cloud"`) {
 		t.Fatalf("feed edit missing tag cloud: %s", body)
 	}
