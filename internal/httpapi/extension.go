@@ -97,6 +97,9 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
 	}
 	s.pollFeedNow(f)
+	if _, err := s.store.RefilterDiscoveryForUser(u.ID); err != nil {
+		log.Error("refilter discovery feeds", "user_id", u.ID, "err", err)
+	}
 	return apiFeed{
 		ID: f.ID, Title: f.Title, FeedURL: f.FeedURL, HomeURL: f.HomeURL,
 		AuthorID: f.AuthorID, AuthorName: authorName,

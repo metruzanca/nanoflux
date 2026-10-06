@@ -59,6 +59,7 @@ var migrations = []migration{
 	{46, schemaV46},
 	{47, schemaV47},
 	{48, schemaV48},
+	{49, schemaV49},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -708,6 +709,15 @@ CREATE TABLE item_categories (
     PRIMARY KEY (item_id, category)
 );
 CREATE INDEX idx_item_categories_category ON item_categories(category);
+`
+
+// schemaV49 adds a per-feed "discovery mode": hide posts authored by someone the
+// user already follows through another feed, so a community feed can show only
+// the posts the user does not get elsewhere. The author is identified by a
+// plugin AuthorTokenizer (reddit: the u/<name> category) and matched against the
+// URL tokens of the user's subscribed feeds.
+const schemaV49 = `
+ALTER TABLE feeds ADD COLUMN hide_followed_authors INTEGER NOT NULL DEFAULT 0;
 `
 
 // Migrate applies any pending migrations in order, recording each in

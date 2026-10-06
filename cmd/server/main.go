@@ -116,6 +116,10 @@ func runServer() {
 	// item decoration so lists render plugin-owned attribution and card kinds.
 	st.SetURLPolicy(plugin.NewStoreURLPolicy(plugins.Registry))
 	st.SetItemDecorator(plugin.NewStoreDecorator(plugins.Registry))
+	// A feed's discovery mode hides posts from authors the user already follows
+	// directly; the tokenizer names an item's author under the owning plugin's
+	// rules (reddit: the u/<name> category).
+	st.SetAuthorTokenizer(plugin.NewStoreAuthorTokenizer(plugins.Registry))
 	// A plugin may enrich a newly stored item's body (full text, translation,
 	// transcript). The dispatcher groups a poll's items by matching plugin.
 	p.SetItemEnricher(plugin.NewDispatcher(plugins.Registry, plugins.Hosts.For))

@@ -33,6 +33,10 @@ type Store struct {
 	Lists       *ListStore
 	AuthorLinks *AuthorLinkStore
 	ViewPrefs   *ViewPrefStore
+
+	// tokenizer names the author(s) an item is attributed to, from the plugin
+	// layer. It backs a feed's "discovery mode". Nil until installed.
+	tokenizer AuthorTokenizer
 }
 
 func New(sqldb *sql.DB) *Store {
@@ -76,6 +80,11 @@ func (s *Store) SetItemDecorator(d ItemDecorator) {
 	s.Items.decorator = d
 	s.Lists.decorator = d
 }
+
+// SetAuthorTokenizer installs the plugin-backed author tokenizer, so a feed's
+// discovery mode can tell whether a post's author is one the user follows
+// through another feed. A nil tokenizer clears it.
+func (s *Store) SetAuthorTokenizer(t AuthorTokenizer) { s.tokenizer = t }
 
 // DB exposes the underlying handle for poller and CLI use.
 func (s *Store) DB() *sql.DB { return s.db }

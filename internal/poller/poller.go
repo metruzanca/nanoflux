@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -603,6 +604,14 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 	newItems, filtered := 0, 0
 	var stored []store.Item
 	cacheImages := p.imgCache != nil && (f.CacheImages || p.imgCache.Forced(f.FeedURL))
+	// Discovery mode: the tokens of every source the user already follows. An
+	// item whose author resolves to one of them (through a feed other than this
+	// one) is skipped, so this feed shows only what the user does not get
+	// elsewhere.
+	var followed map[string]int64
+	if f.HideFollowedAuthors {
+		followed = p.store.FollowedFeedTokens(f.UserID)
+	}
 	for _, it := range res.Items {
 		fields := filtermatch.FieldsFromFeedItem(it)
 		decision, err := filtermatch.Decide(f.FilterMode, rules, fields)
@@ -610,6 +619,10 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 			return newItems, filtered, err
 		}
 		if decision == filtermatch.Drop {
+			filtered++
+			continue
+		}
+		if followedAuthor(followed, p.store.AuthorTokensFor(f.FeedURL, it.Categories), f.ID) {
 			filtered++
 			continue
 		}
@@ -792,4 +805,19 @@ func (p *Poller) storeEnclosures(f store.Feed, it feedparse.Item, itemID int64, 
 		encs = append(encs, enc)
 	}
 	return p.store.Items.ReplaceEnclosures(itemID, encs)
+}
+
+// followedAuthor reports whether any of an item's author tokens names a source
+// the user follows through a feed other than the one being polled. ownFeedID is
+// excluded so a feed never hides the very subscription it represents.
+func followedAuthor(followed map[string]int64, authors []string, ownFeedID int64) bool {
+	if len(followed) == 0 {
+		return false
+	}
+	for _, a := range authors {
+		if fid, ok := followed[strings.ToLower(a)]; ok && fid != ownFeedID {
+			return true
+		}
+	}
+	return false
 }

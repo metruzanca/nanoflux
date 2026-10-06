@@ -71,6 +71,17 @@ type identityPolicy struct{}
 func (identityPolicy) CanonicalizeFeedURL(raw string) string { return raw }
 func (identityPolicy) FeedToken(string) string               { return "" }
 
+// AuthorTokenizer names the author(s) an item is attributed to, supplied by the
+// plugin layer (matched on the feed URL). It is used by a feed's "discovery
+// mode" to match a post's author against the feeds a user already follows. The
+// tokens share the URLPolicy.FeedToken vocabulary. A nil tokenizer means no
+// feed hides anything.
+type AuthorTokenizer interface {
+	// AuthorTokens returns the author token(s) an item's categories attribute
+	// it to ("u/sam"), or nil when the URL has no author rule.
+	AuthorTokens(feedURL string, categories []string) []string
+}
+
 // ItemDecorator supplies view-time decoration for stored items (source
 // attribution, card kind, thumbnail), computed by the plugin layer. It is
 // injected by the plugin layer and called in one batch per page load. A nil

@@ -308,6 +308,25 @@ func (r *Registry) FeedToken(feedURL string) string {
 	return ""
 }
 
+// AuthorTokens names the author(s) an item is attributed to under the owning
+// plugin's rules, or nil when no plugin claims CapAuthorToken for the URL. It
+// backs a feed's discovery mode.
+func (r *Registry) AuthorTokens(feedURL string, categories []string) []string {
+	u := mustParse(feedURL)
+	if u == nil {
+		return nil
+	}
+	for _, f := range r.all() {
+		if !f.Match(u, pluginapi.CapAuthorToken) {
+			continue
+		}
+		if t, ok := f.(pluginapi.AuthorTokenizer); ok {
+			return t.AuthorTokens(categories)
+		}
+	}
+	return nil
+}
+
 // MatchFeedAdmin returns the first plugin that manages feeds like u (remote
 // settings and lifecycle), along with its Fetcher (for the host factory), or
 // (nil, nil). It is gated by CapFeedAdmin and requires a genuine FeedAdmin

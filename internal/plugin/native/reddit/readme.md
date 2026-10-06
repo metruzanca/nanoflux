@@ -39,6 +39,20 @@ case-insensitively (or as a regex when **regex** is checked).
 So on a subreddit feed you filter by who posted, and on a user feed you filter
 by where they posted.
 
+## Discovery mode (hide authors you follow)
+
+A feed's edit page has a **discovery mode** toggle. With it on, the feed drops
+every post whose author you already follow through another subscription, so a
+subreddit feed can show only what you do not already get from the users you
+follow. Subscribe to an author and their posts leave the community feed; the
+posts stay in the author's own feed.
+
+reddit's plugin identifies the author as the item's `u/<name>` category (never
+the `r/<sub>`, which is a community, not a person), and the host matches it
+against the tokens of your subscribed feeds. This is why a post by `u/sam` in
+`r/cats` disappears from `r/cats` when you follow `u/sam`, but `r/cats` itself
+never hides its own posts.
+
 ### Examples
 
 Delete everything from a user in a subreddit you otherwise follow:

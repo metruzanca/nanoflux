@@ -43,30 +43,31 @@ type CollectionFeed struct {
 }
 
 type Feed struct {
-	ID               int64          `json:"id"`
-	UserID           int64          `json:"user_id"`
-	AuthorID         int64          `json:"author_id"`
-	Title            string         `json:"title"`
-	FeedUrl          string         `json:"feed_url"`
-	HomeUrl          sql.NullString `json:"home_url"`
-	Description      sql.NullString `json:"description"`
-	Etag             sql.NullString `json:"etag"`
-	LastModified     sql.NullString `json:"last_modified"`
-	LastPolledAt     sql.NullString `json:"last_polled_at"`
-	LastError        sql.NullString `json:"last_error"`
-	NextPageUrl      string         `json:"next_page_url"`
-	PollIntervalSec  int64          `json:"poll_interval_sec"`
-	PollIntervalAuto int64          `json:"poll_interval_auto"`
-	LastItemAt       sql.NullString `json:"last_item_at"`
-	NextPollAt       sql.NullString `json:"next_poll_at"`
-	PluginName       string         `json:"plugin_name"`
-	DisabledReason   sql.NullString `json:"disabled_reason"`
-	Enabled          bool           `json:"enabled"`
-	IsSystem         int64          `json:"is_system"`
-	Rank             int64          `json:"rank"`
-	CacheImages      int64          `json:"cache_images"`
-	FilterMode       string         `json:"filter_mode"`
-	CreatedAt        string         `json:"created_at"`
+	ID                  int64          `json:"id"`
+	UserID              int64          `json:"user_id"`
+	AuthorID            int64          `json:"author_id"`
+	Title               string         `json:"title"`
+	FeedUrl             string         `json:"feed_url"`
+	HomeUrl             sql.NullString `json:"home_url"`
+	Description         sql.NullString `json:"description"`
+	Etag                sql.NullString `json:"etag"`
+	LastModified        sql.NullString `json:"last_modified"`
+	LastPolledAt        sql.NullString `json:"last_polled_at"`
+	LastError           sql.NullString `json:"last_error"`
+	NextPageUrl         string         `json:"next_page_url"`
+	PollIntervalSec     int64          `json:"poll_interval_sec"`
+	PollIntervalAuto    int64          `json:"poll_interval_auto"`
+	LastItemAt          sql.NullString `json:"last_item_at"`
+	NextPollAt          sql.NullString `json:"next_poll_at"`
+	PluginName          string         `json:"plugin_name"`
+	DisabledReason      sql.NullString `json:"disabled_reason"`
+	Enabled             bool           `json:"enabled"`
+	IsSystem            int64          `json:"is_system"`
+	Rank                int64          `json:"rank"`
+	CacheImages         int64          `json:"cache_images"`
+	FilterMode          string         `json:"filter_mode"`
+	HideFollowedAuthors int64          `json:"hide_followed_authors"`
+	CreatedAt           string         `json:"created_at"`
 }
 
 type Filter struct {

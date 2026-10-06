@@ -136,6 +136,14 @@ a feed it does not fetch at all.
   implements it.
 - **`URLPolicy` (optional)** — pure site URL rules: the canonical feed shape
   (`CanonicalizeFeedURL`) and the token a feed URL represents (`FeedToken`).
+- **`AuthorTokens` (optional)** — name the author(s) an item is attributed to,
+  using the `FeedToken` vocabulary (`reddit: ["u/sam"]`). `Match(u,
+  CapAuthorToken)` decides which feeds it applies to, and it is pure. The host
+  uses it for a feed's **discovery mode**: posts whose author the user already
+  follows through another subscription are hidden from that feed. A plugin that
+  does not implement it never has its feeds hide anything, and it must not return
+  a community/topic token as an author (reddit returns only `u/<name>`, never
+  `r/<sub>`), or a discovery feed could hide its own topic's posts.
 - **`Docs` (optional)** — return Markdown describing the plugin, shown from the
   admin plugin card and from a feed's edit page. `Match(u, CapDocs)` decides
   which URLs it documents.
