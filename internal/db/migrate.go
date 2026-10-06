@@ -60,6 +60,7 @@ var migrations = []migration{
 	{47, schemaV47},
 	{48, schemaV48},
 	{49, schemaV49},
+	{50, schemaV50},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -718,6 +719,17 @@ CREATE INDEX idx_item_categories_category ON item_categories(category);
 // URL tokens of the user's subscribed feeds.
 const schemaV49 = `
 ALTER TABLE feeds ADD COLUMN hide_followed_authors INTEGER NOT NULL DEFAULT 0;
+`
+
+// schemaV50 records the byte size of cached item media alongside its storage
+// key, so a feed's or author's storage use can be summed from the database
+// instead of walking the object store on every render. image_cache_size is the
+// cached primary image; cache_size is a cached enclosure. Both are 0 when the
+// blob is not cached (or was cached before this column existed; the
+// `nanoflux storage backfill` command fills them from the store).
+const schemaV50 = `
+ALTER TABLE items ADD COLUMN image_cache_size INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE item_enclosures ADD COLUMN cache_size INTEGER NOT NULL DEFAULT 0;
 `
 
 // Migrate applies any pending migrations in order, recording each in

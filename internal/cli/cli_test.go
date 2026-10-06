@@ -482,3 +482,51 @@ func TestSwapDBCrossDevice(t *testing.T) {
 	}
 }
 
+// TestStorageReportAndGC covers the diagnostic command: it reports where bytes
+// live (flagging orphans) and only deletes them with --apply.
+func TestStorageReportAndGC(t *testing.T) {
+	h := newCLI(t)
+	u, _ := h.st.Users.Create("alice", "h")
+	a, _ := h.st.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := h.st.Feeds.Create(u.ID, a.ID, "Blog", "https://x.dev/rss", "", "", 900)
+	if _, err := h.st.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "One", FetchedAt: db.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := h.st.Items.ByFeedIdentity(f.ID, "g1")
+	if err := h.st.Items.SetItemImageCacheKey(id, "cache/feeds/1/0.png", 1000); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	h.files.Put(ctx, "cache/feeds/1/0.png", "image/png", make([]byte, 1000))
+	h.files.Put(ctx, "cache/feeds/2/0.png", "image/png", make([]byte, 500))
+
+	if err := h.exec(t, "storage", "report"); err != nil {
+		t.Fatalf("report: %v", err)
+	}
+	if !strings.Contains(h.stdout.String(), "orphaned cache") {
+		t.Fatalf("report missing orphan note:\n%s", h.stdout.String())
+	}
+
+	// gc reports without deleting unless --apply is given.
+	if err := h.exec(t, "storage", "gc"); err != nil {
+		t.Fatalf("gc: %v", err)
+	}
+	if !strings.Contains(h.stdout.String(), "would delete") {
+		t.Fatalf("gc report:\n%s", h.stdout.String())
+	}
+	if ok, _ := h.files.Exists(ctx, "cache/feeds/2/0.png"); !ok {
+		t.Fatal("gc without --apply must not delete")
+	}
+
+	if err := h.exec(t, "storage", "gc", "--apply"); err != nil {
+		t.Fatalf("gc --apply: %v", err)
+	}
+	if ok, _ := h.files.Exists(ctx, "cache/feeds/2/0.png"); ok {
+		t.Fatal("orphan was not deleted")
+	}
+	if ok, _ := h.files.Exists(ctx, "cache/feeds/1/0.png"); !ok {
+		t.Fatal("referenced blob was wrongly deleted")
+	}
+}
+

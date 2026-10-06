@@ -66,6 +66,7 @@ type feedRow struct {
 	store.Feed
 	AuthorName  string
 	Unread      int
+	Storage     int64              // cached-media bytes this feed lists (feed page only)
 	Timezone    string             // user's IANA timezone, for relative timestamps in templates
 	Collections []store.Collection // the collections this feed belongs to (author page)
 }
@@ -1873,6 +1874,16 @@ func stripWWW(s string) string {
 	return u.String()
 }
 
+// purgeObjects deletes the given object-storage keys, best-effort. A flaky
+// store must never block a feed/account mutation that already committed.
+func (s *Server) purgeObjects(ctx context.Context, keys []string) {
+	for _, k := range keys {
+		if err := s.files.Delete(ctx, k); err != nil {
+			log.Warn("purge object", "key", k, "err", err)
+		}
+	}
+}
+
 func (s *Server) feedDelete(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -1885,11 +1896,13 @@ func (s *Server) feedDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.Feeds.Delete(u.ID, id); err != nil {
+	cacheKeys, err := s.store.Feeds.Delete(u.ID, id)
+	if err != nil {
 		log.Error("delete feed", "err", err)
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		return
 	}
+	s.purgeObjects(r.Context(), cacheKeys)
 	// When the user opted in and a plugin manages this feed, delete the remote
 	// feed too. Best-effort, after the local delete: a remote failure must not
 	// block removing the feed from nanoflux, so it is only logged.
@@ -2261,9 +2274,10 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 		authorName = a.Name
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
+	storage, _ := s.store.Items.StorageByFeed(id)
 	scoped := s.feedScopedItems(u.ID, id, itemsView(r), itemSortOf(r), u.Timezone, tagParams(r))
 	web.Render(w, r, basePage(feed.Title, u, feedPage(u, feedPageData{
-		Row: feedRow{Feed: feed, AuthorName: authorName, Unread: unread, Timezone: u.Timezone}, Scoped: scoped,
+		Row: feedRow{Feed: feed, AuthorName: authorName, Unread: unread, Storage: storage, Timezone: u.Timezone}, Scoped: scoped,
 		MarkAll: markAllReadData{
 			Action: "/feeds/" + strconv.FormatInt(id, 10) + "/read-all",
 			Unread: unread,

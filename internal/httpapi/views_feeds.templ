@@ -471,6 +471,9 @@ templ feedPage(u store.User, d feedPageData) {
 			} else {
 				never
 			}
+			if d.Row.Storage > 0 {
+				· cached media { web.FormatBytes(d.Row.Storage) }
+			}
 		</p>
 		if d.Row.LastError != "" {
 			<div class="error" role="alert">last poll failed: { d.Row.LastError }</div>

@@ -31,6 +31,12 @@ type Stat struct {
 	Bytes   int64
 }
 
+// Object is one stored blob: its key and byte size.
+type Object struct {
+	Key  string
+	Size int64
+}
+
 // Store is the blob interface the rest of the app depends on.
 type Store interface {
 	Put(ctx context.Context, key, contentType string, data []byte) error
@@ -39,6 +45,9 @@ type Store interface {
 	// Used to skip re-downloading a blob already cached at a known key.
 	Exists(ctx context.Context, key string) (bool, error)
 	Delete(ctx context.Context, key string) error
+	// List returns every object whose key begins with prefix (all objects when
+	// prefix is empty). Used for storage reporting, orphan GC and size backfill.
+	List(ctx context.Context, prefix string) ([]Object, error)
 	EnsureBucket(ctx context.Context) error
 	Stat(ctx context.Context) (Stat, error)
 }
@@ -202,6 +211,18 @@ func (s *s3Store) Stat(ctx context.Context) (Stat, error) {
 	return st, nil
 }
 
+// List returns every object whose key begins with prefix.
+func (s *s3Store) List(ctx context.Context, prefix string) ([]Object, error) {
+	var out []Object
+	for obj := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if obj.Err != nil {
+			return nil, fmt.Errorf("filestore: list %s: %w", s.bucket, obj.Err)
+		}
+		out = append(out, Object{Key: obj.Key, Size: obj.Size})
+	}
+	return out, nil
+}
+
 // Memory is an in-memory Store for tests.
 type Memory struct {
 	mu sync.Mutex
@@ -257,4 +278,16 @@ func (m *Memory) Stat(_ context.Context) (Stat, error) {
 		st.Bytes += int64(len(o.data))
 	}
 	return st, nil
+}
+
+func (m *Memory) List(_ context.Context, prefix string) ([]Object, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Object, 0, len(m.m))
+	for k, o := range m.m {
+		if strings.HasPrefix(k, prefix) {
+			out = append(out, Object{Key: k, Size: int64(len(o.data))})
+		}
+	}
+	return out, nil
 }

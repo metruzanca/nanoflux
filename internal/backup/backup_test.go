@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +63,9 @@ func TestWriteArchive(t *testing.T) {
 	fsDir := t.TempDir()
 	os.MkdirAll(filepath.Join(fsDir, "avatars"), 0o755)
 	os.WriteFile(filepath.Join(fsDir, "avatars", "1"), []byte("png"), 0o644)
+	// Cached item media must never be archived.
+	os.MkdirAll(filepath.Join(fsDir, "cache", "feeds", "1"), 0o755)
+	os.WriteFile(filepath.Join(fsDir, "cache", "feeds", "1", "0.jpg"), []byte("jpg"), 0o644)
 
 	var buf bytes.Buffer
 	if err := WriteArchive(context.Background(), sqldb, fsDir, true, &buf); err != nil {
@@ -75,6 +79,9 @@ func TestWriteArchive(t *testing.T) {
 		}
 		if n == "filestore/avatars/1" {
 			hasFile = true
+		}
+		if strings.HasPrefix(n, "filestore/cache") {
+			t.Fatalf("image cache leaked into archive: %s", n)
 		}
 	}
 	if !hasDB || !hasFile {

@@ -86,6 +86,8 @@ nanoflux item backfill-thumbs               # fill missing YouTube thumbnails (n
 nanoflux user --help
 nanoflux backup                # writes backups/nanoflux-<timestamp>-<version>.tar.gz
 nanoflux restore backups/nanoflux-20260921-120000-1.0.0.tar.gz   # refuses while the server is running
+nanoflux storage report        # where object-storage bytes live, per kind and cache plugin
+nanoflux storage gc --apply    # remove cached item media no row references
 ```
 
 ### Configuration
@@ -103,6 +105,13 @@ make backup
 ls backups/
 make restore ARCHIVE=backups/nanoflux-20260921-120000-1.0.0.tar.gz
 ```
+
+Cached item media (the image cache under `filestore/cache/`) is **not** included
+in snapshots: it is derived, can be many gigabytes, and would dominate the
+archive. Avatars and icons are included. If you need to reclaim space from an
+already-running instance, `nanoflux storage report` shows where the bytes are
+and `nanoflux storage gc --apply` removes cached media that no item references
+(for example after deleting a feed or account).
 
 ## Browser extension
 

@@ -660,15 +660,16 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 			}
 		}
 		var enclosureKeys []string
+		var enclosureSizes []int64
 		if cacheImages && itemID != 0 {
-			enclosureKeys = p.cacheItemImages(ctx, f, it, itemID)
+			enclosureKeys, enclosureSizes = p.cacheItemImages(ctx, f, it, itemID)
 		}
 		// Enclosures are stored whenever the item carries them, not only when it
 		// is new: a feed polled before its parser learned to expose media (the
 		// native Bluesky plugin, say) gains its attachments on the next poll.
 		// ReplaceEnclosures is delete-then-insert, so this keeps them current.
 		if len(it.Enclosures) > 0 {
-			if err := p.storeEnclosures(f, it, itemID, enclosureKeys); err != nil {
+			if err := p.storeEnclosures(f, it, itemID, enclosureKeys, enclosureSizes); err != nil {
 				log.Error("store enclosures", "feed_id", f.ID, "guid", it.GUID, "err", err)
 			}
 		}
@@ -746,13 +747,13 @@ func truncateError(msg string) string {
 }
 
 // cacheItemImages downloads an item's primary image and image-typed enclosures
-// into object storage and stores their keys. It returns the enclosure cache keys
-// (parallel to it.Enclosures, "" where nothing was cached). A failure on any one
-// URL is best-effort: that URL stays remote. The primary image key is written
-// straight to the item row.
-func (p *Poller) cacheItemImages(ctx context.Context, f store.Feed, it feedparse.Item, itemID int64) []string {
+// into object storage and stores their keys and byte sizes. It returns the
+// enclosure cache keys and sizes (parallel to it.Enclosures, "" / 0 where
+// nothing was cached). A failure on any one URL is best-effort: that URL stays
+// remote. The primary image key and size are written straight to the item row.
+func (p *Poller) cacheItemImages(ctx context.Context, f store.Feed, it feedparse.Item, itemID int64) ([]string, []int64) {
 	if p.imgCache == nil || itemID == 0 {
-		return nil
+		return nil, nil
 	}
 	encs := make([]imagecache.Enclosure, 0, len(it.Enclosures))
 	for _, e := range it.Enclosures {
@@ -765,20 +766,21 @@ func (p *Poller) cacheItemImages(ctx context.Context, f store.Feed, it feedparse
 		Enclosures: encs,
 	})
 	if res.ImageKey != "" {
-		if err := p.store.Items.SetItemImageCacheKey(itemID, res.ImageKey); err != nil {
+		if err := p.store.Items.SetItemImageCacheKey(itemID, res.ImageKey, res.ImageBytes); err != nil {
 			log.Error("store image cache key", "item_id", itemID, "err", err)
 		}
 	}
-	return res.EnclosureKeys
+	return res.EnclosureKeys, res.EnclosureBytes
 }
 
 // storeEnclosures copies a newly inserted item's media attachments into the
 // item_enclosures table. The item may be owned by another feed (a reddit post
 // seen through two subscriptions), so it is resolved by the user's cross-feed
-// identity too. cacheKeys, when non-empty, carries the object-storage key of each
-// enclosure's cached image (parallel to it.Enclosures); ReplaceEnclosures carries
-// an existing slot's key forward when none is supplied.
-func (p *Poller) storeEnclosures(f store.Feed, it feedparse.Item, itemID int64, cacheKeys []string) error {
+// identity too. cacheKeys/cacheSizes, when non-empty, carry the object-storage
+// key and byte size of each enclosure's cached image (parallel to
+// it.Enclosures); ReplaceEnclosures carries an existing slot's key and size
+// forward when none is supplied.
+func (p *Poller) storeEnclosures(f store.Feed, it feedparse.Item, itemID int64, cacheKeys []string, cacheSizes []int64) error {
 	if itemID == 0 {
 		identity := it.Identity
 		if identity == "" {
@@ -801,6 +803,9 @@ func (p *Poller) storeEnclosures(f store.Feed, it feedparse.Item, itemID int64, 
 		}
 		if i < len(cacheKeys) {
 			enc.CacheKey = cacheKeys[i]
+		}
+		if i < len(cacheSizes) {
+			enc.CacheSize = cacheSizes[i]
 		}
 		encs = append(encs, enc)
 	}

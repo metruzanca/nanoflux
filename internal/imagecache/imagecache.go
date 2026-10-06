@@ -73,10 +73,14 @@ type Request struct {
 
 // Result carries the object-storage keys of the cached media. Empty means
 // "nothing cached" (the caller keeps the remote URL). EnclosureKeys is parallel
-// to Request.Enclosures.
+// to Request.Enclosures. A size of 0 with a non-empty key means the blob was
+// reused from a previous download and its size is unchanged; the caller should
+// keep any size it already recorded.
 type Result struct {
-	ImageKey      string
-	EnclosureKeys []string
+	ImageKey       string
+	ImageBytes     int64
+	EnclosureKeys  []string
+	EnclosureBytes []int64
 }
 
 // Forced reports whether a feed's plugin forces image caching on.
@@ -99,7 +103,10 @@ func (c *Cacher) Folder(feedURL string) string {
 // not already stored, and returns their keys. It is best-effort: a failure logs
 // and leaves that URL remote.
 func (c *Cacher) Cache(ctx context.Context, req Request) Result {
-	res := Result{EnclosureKeys: make([]string, len(req.Enclosures))}
+	res := Result{
+		EnclosureKeys:  make([]string, len(req.Enclosures)),
+		EnclosureBytes: make([]int64, len(req.Enclosures)),
+	}
 	if c == nil || c.files == nil || req.ItemID == 0 {
 		return res
 	}
@@ -112,7 +119,7 @@ func (c *Cacher) Cache(ctx context.Context, req Request) Result {
 	// (the generic parser mirrors an image enclosure into ImageURL) reuses its
 	// key instead of downloading the bytes twice.
 	if strings.TrimSpace(req.ImageURL) != "" {
-		res.ImageKey = c.cacheOne(ctx, folder, req.ItemID, 0, req.ImageURL)
+		res.ImageKey, res.ImageBytes = c.cacheOne(ctx, folder, req.ItemID, 0, req.ImageURL)
 	}
 
 	var wg sync.WaitGroup
@@ -123,6 +130,7 @@ func (c *Cacher) Cache(ctx context.Context, req Request) Result {
 		}
 		if e.URL == req.ImageURL && res.ImageKey != "" {
 			res.EnclosureKeys[i] = res.ImageKey
+			res.EnclosureBytes[i] = res.ImageBytes
 			continue
 		}
 		wg.Add(1)
@@ -130,8 +138,9 @@ func (c *Cacher) Cache(ctx context.Context, req Request) Result {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			if key := c.cacheOne(ctx, folder, req.ItemID, i+1, e.URL); key != "" {
+			if key, size := c.cacheOne(ctx, folder, req.ItemID, i+1, e.URL); key != "" {
 				res.EnclosureKeys[i] = key
+				res.EnclosureBytes[i] = size
 			}
 		}(i, e)
 	}
@@ -139,57 +148,58 @@ func (c *Cacher) Cache(ctx context.Context, req Request) Result {
 	return res
 }
 
-// cacheOne returns the storage key for rawurl at (folder, itemID, slot), or ""
-// when it is not an image or the download failed. An already-stored blob is
-// reused without a network request.
-func (c *Cacher) cacheOne(ctx context.Context, folder string, itemID int64, slot int, rawurl string) string {
+// cacheOne returns the storage key for rawurl at (folder, itemID, slot) and the
+// cached byte size (0 when an already-stored blob was reused), or "" when it is
+// not an image or the download failed. An already-stored blob is reused without
+// a network request.
+func (c *Cacher) cacheOne(ctx context.Context, folder string, itemID int64, slot int, rawurl string) (string, int64) {
 	prefix := "cache/" + folder + "/" + strconv.FormatInt(itemID, 10) + "/" + strconv.Itoa(slot)
 
 	// Reuse a previous download for this slot (the URL's signed params rotate
 	// every poll but the bytes are the same image).
 	if key := c.existing(ctx, prefix); key != "" {
-		return key
+		return key, 0
 	}
 
 	u, err := url.Parse(rawurl)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return ""
+		return "", 0
 	}
 	dctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	httpReq, err := http.NewRequestWithContext(dctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return ""
+		return "", 0
 	}
 	httpReq.Header.Set("User-Agent", "nanoflux/0.1")
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		log.Debug("image cache: fetch", "url", rawurl, "err", err)
-		return ""
+		return "", 0
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return "", 0
 	}
 	prefix512, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 	ct, ok := imageutil.Sniff(resp.Header.Get("Content-Type"), prefix512)
 	if !ok {
-		return ""
+		return "", 0
 	}
 	data, err := io.ReadAll(io.LimitReader(io.MultiReader(bytes.NewReader(prefix512), resp.Body), c.max+1))
 	if err != nil {
 		log.Debug("image cache: read", "url", rawurl, "err", err)
-		return ""
+		return "", 0
 	}
 	if int64(len(data)) > c.max {
-		return ""
+		return "", 0
 	}
 	key := prefix + "." + extFor(ct)
 	if err := c.files.Put(dctx, key, ct, data); err != nil {
 		log.Error("image cache: store", "key", key, "err", err)
-		return ""
+		return "", 0
 	}
-	return key
+	return key, int64(len(data))
 }
 
 // existing finds a previously stored blob for prefix regardless of its extension

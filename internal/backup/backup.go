@@ -45,8 +45,8 @@ func sanitizeVersion(version string) string {
 // WriteArchive writes a consistent backup archive to w: data/rss.db (a
 // snapshot taken with VACUUM INTO, so it is consistent even while the server
 // runs in WAL mode) and, when includeFiles is true, the local file store under
-// filestore/. includeFiles is false when blobs live in object storage, where
-// the provider is responsible for them.
+// filestore/ (excluding the derived image cache). includeFiles is false when
+// blobs live in object storage, where the provider is responsible for them.
 func WriteArchive(ctx context.Context, db *sql.DB, fileStoreDir string, includeFiles bool, w io.Writer) error {
 	tmp, err := os.MkdirTemp("", "nanoflux-snapshot-")
 	if err != nil {
@@ -70,7 +70,10 @@ func WriteArchive(ctx context.Context, db *sql.DB, fileStoreDir string, includeF
 	}
 	if includeFiles && fileStoreDir != "" {
 		if _, err := os.Stat(fileStoreDir); err == nil {
-			if err := tarAddDir(tw, "filestore", fileStoreDir); err != nil {
+			// Cached item media (cache/<plugin>/<itemID>/...) is derived and can
+			// dwarf everything else, so it is excluded from snapshots. Real
+			// blobs (avatars, icons, author avatars) are still archived.
+			if err := tarAddDir(tw, "filestore", fileStoreDir, excludedFileStoreDirs); err != nil {
 				return err
 			}
 		}
@@ -106,7 +109,12 @@ func tarAddFile(tw *tar.Writer, name, path string) error {
 	return err
 }
 
-func tarAddDir(tw *tar.Writer, prefix, root string) error {
+// excludedFileStoreDirs are top-level file-store directories left out of
+// snapshots. Cached item media is reproducible (or proxied from the remote
+// URL) and is not worth the archive size.
+var excludedFileStoreDirs = []string{"cache"}
+
+func tarAddDir(tw *tar.Writer, prefix, root string, excludeDirs []string) error {
 	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -118,6 +126,15 @@ func tarAddDir(tw *tar.Writer, prefix, root string) error {
 		if err != nil {
 			return err
 		}
-		return tarAddFile(tw, filepath.Join(prefix, filepath.ToSlash(rel)), path)
+		rel = filepath.ToSlash(rel)
+		for _, ex := range excludeDirs {
+			if rel == ex || strings.HasPrefix(rel, ex+"/") {
+				if info.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+		}
+		return tarAddFile(tw, filepath.Join(prefix, rel), path)
 	})
 }

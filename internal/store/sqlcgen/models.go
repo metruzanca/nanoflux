@@ -82,26 +82,27 @@ type Filter struct {
 }
 
 type Item struct {
-	ID            int64          `json:"id"`
-	FeedID        int64          `json:"feed_id"`
-	UserID        int64          `json:"user_id"`
-	Guid          string         `json:"guid"`
-	DedupKey      string         `json:"dedup_key"`
-	CrossKey      string         `json:"cross_key"`
-	Title         string         `json:"title"`
-	Link          string         `json:"link"`
-	Summary       string         `json:"summary"`
-	Content       string         `json:"content"`
-	Categories    string         `json:"categories"`
-	DurationSec   sql.NullInt64  `json:"duration_sec"`
-	ImageUrl      sql.NullString `json:"image_url"`
-	ImageCacheKey sql.NullString `json:"image_cache_key"`
-	PublishedAt   sql.NullString `json:"published_at"`
-	FetchedAt     string         `json:"fetched_at"`
-	Read          bool           `json:"read"`
-	ReadAt        sql.NullString `json:"read_at"`
-	Favorite      bool           `json:"favorite"`
-	Bookmark      bool           `json:"bookmark"`
+	ID             int64          `json:"id"`
+	FeedID         int64          `json:"feed_id"`
+	UserID         int64          `json:"user_id"`
+	Guid           string         `json:"guid"`
+	DedupKey       string         `json:"dedup_key"`
+	CrossKey       string         `json:"cross_key"`
+	Title          string         `json:"title"`
+	Link           string         `json:"link"`
+	Summary        string         `json:"summary"`
+	Content        string         `json:"content"`
+	Categories     string         `json:"categories"`
+	DurationSec    sql.NullInt64  `json:"duration_sec"`
+	ImageUrl       sql.NullString `json:"image_url"`
+	ImageCacheKey  sql.NullString `json:"image_cache_key"`
+	ImageCacheSize int64          `json:"image_cache_size"`
+	PublishedAt    sql.NullString `json:"published_at"`
+	FetchedAt      string         `json:"fetched_at"`
+	Read           bool           `json:"read"`
+	ReadAt         sql.NullString `json:"read_at"`
+	Favorite       bool           `json:"favorite"`
+	Bookmark       bool           `json:"bookmark"`
 }
 
 type ItemCategory struct {
@@ -110,16 +111,17 @@ type ItemCategory struct {
 }
 
 type ItemEnclosure struct {
-	ID       int64          `json:"id"`
-	ItemID   int64          `json:"item_id"`
-	Url      string         `json:"url"`
-	Title    string         `json:"title"`
-	MimeType sql.NullString `json:"mime_type"`
-	Size     int64          `json:"size"`
-	Sort     int64          `json:"sort"`
-	Kind     string         `json:"kind"`
-	Poster   string         `json:"poster"`
-	CacheKey string         `json:"cache_key"`
+	ID        int64          `json:"id"`
+	ItemID    int64          `json:"item_id"`
+	Url       string         `json:"url"`
+	Title     string         `json:"title"`
+	MimeType  sql.NullString `json:"mime_type"`
+	Size      int64          `json:"size"`
+	Sort      int64          `json:"sort"`
+	Kind      string         `json:"kind"`
+	Poster    string         `json:"poster"`
+	CacheKey  string         `json:"cache_key"`
+	CacheSize int64          `json:"cache_size"`
 }
 
 type ItemFeed struct {

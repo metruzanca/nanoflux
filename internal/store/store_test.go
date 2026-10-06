@@ -456,7 +456,7 @@ func TestEnclosureCacheKeyPersists(t *testing.T) {
 	itemID, _ := s.Items.ByFeedIdentity(f.ID, "g1")
 
 	if err := s.Items.ReplaceEnclosures(itemID, []Enclosure{
-		{URL: "https://metru.dev/a.png?sig=1", MIMEType: "image/png", CacheKey: "cache/blog/1/1.png"},
+		{URL: "https://metru.dev/a.png?sig=1", MIMEType: "image/png", CacheKey: "cache/blog/1/1.png", CacheSize: 4096},
 		{URL: "https://metru.dev/b.png?sig=1", MIMEType: "image/png"},
 	}); err != nil {
 		t.Fatalf("ReplaceEnclosures: %v", err)
@@ -472,12 +472,15 @@ func TestEnclosureCacheKeyPersists(t *testing.T) {
 	if len(got) != 2 || got[0].CacheKey != "cache/blog/1/1.png" {
 		t.Fatalf("cache key not carried forward: %+v", got)
 	}
+	if got[0].CacheSize != 4096 {
+		t.Fatalf("cache size not carried forward: %+v", got[0])
+	}
 	if got[1].CacheKey != "" {
 		t.Fatalf("slot with no prior cache key should stay empty: %+v", got[1])
 	}
 
 	// An item's image cache key is independent of the snapshot refresh.
-	if err := s.Items.SetItemImageCacheKey(itemID, "cache/blog/1/0.png"); err != nil {
+	if err := s.Items.SetItemImageCacheKey(itemID, "cache/blog/1/0.png", 1234); err != nil {
 		t.Fatalf("SetItemImageCacheKey: %v", err)
 	}
 	if err := s.Items.SetRead(u.ID, itemID, true); err != nil {
@@ -1299,7 +1302,7 @@ func TestFeedIsolation(t *testing.T) {
 	if _, err := s.Feeds.ByID(u2.ID, f1.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound cross-user feed read, got %v", err)
 	}
-	if err := s.Feeds.Delete(u2.ID, f1.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := s.Feeds.Delete(u2.ID, f1.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound cross-user feed delete, got %v", err)
 	}
 }
@@ -1938,6 +1941,55 @@ func TestListObjectKeysIncludesAuthorAvatars(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("author avatar key missing from %v", keys)
+	}
+}
+
+// TestCachedMediaSizesAndPurgeKeys asserts cached-media byte sizes sum per feed
+// and author, and that the user's purge key set includes cached item media.
+func TestCachedMediaSizesAndPurgeKeys(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://x.dev/rss.xml", "", "", 900)
+	if _, err := s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "One", FetchedAt: db.Now()}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	id, _ := s.Items.ByFeedIdentity(f.ID, "g1")
+	if err := s.Items.SetItemImageCacheKey(id, "cache/feeds/item/0.png", 500); err != nil {
+		t.Fatalf("SetItemImageCacheKey: %v", err)
+	}
+	if err := s.Items.ReplaceEnclosures(id, []Enclosure{
+		{URL: "https://x.dev/a.png", MIMEType: "image/png", CacheKey: "cache/feeds/enc/1.png", CacheSize: 300},
+	}); err != nil {
+		t.Fatalf("ReplaceEnclosures: %v", err)
+	}
+
+	if got, err := s.Items.StorageByFeed(f.ID); err != nil || got != 800 {
+		t.Fatalf("StorageByFeed = %d, %v; want 800", got, err)
+	}
+	if got, err := s.Items.StorageByAuthor(u.ID, a.ID); err != nil || got != 800 {
+		t.Fatalf("StorageByAuthor = %d, %v; want 800", got, err)
+	}
+
+	keys, err := s.Users.ListObjectKeys(u.ID)
+	if err != nil {
+		t.Fatalf("ListObjectKeys: %v", err)
+	}
+	for _, want := range []string{"cache/feeds/item/0.png", "cache/feeds/enc/1.png"} {
+		found := false
+		for _, k := range keys {
+			if k == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("cache key %q missing from purge set %v", want, keys)
+		}
+	}
+
+	all, err := s.Items.AllCacheKeys()
+	if err != nil || len(all) != 2 {
+		t.Fatalf("AllCacheKeys = %v, %v; want 2 keys", all, err)
 	}
 }
 

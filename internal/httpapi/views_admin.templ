@@ -11,6 +11,7 @@ templ adminPage(u store.User, d adminData) {
 	<h1>admin</h1>
 	@AdminInstanceCard(d)
 	@AdminStats(d.Stats)
+	@AdminStorageCard(d.Storage)
 	@AdminPluginsCard(d.Plugins, d.PluginOwners)
 	@AdminBackupCard(d.Backup)
 	<section class="card">
@@ -219,6 +220,30 @@ templ AdminStats(st adminStats) {
 			<span><strong>{ st.Objects }</strong> objects</span>
 			<span><strong>{ st.Storage }</strong> storage</span>
 		</div>
+	</section>
+}
+
+// AdminStorageCard breaks the object store down by kind and cache plugin, so it
+// is visible which feeds/sites dominate storage. Cached item media is excluded
+// from backups; orphaned blobs no row references are flagged for `storage gc`.
+templ AdminStorageCard(d adminStorage) {
+	<section class="card" id="admin-storage-card">
+		<h2>storage</h2>
+		if d.Total == "" || d.Total == "unavailable" {
+			<p class="muted small">storage breakdown unavailable.</p>
+		} else {
+			<p class="muted small">
+				total { d.Total }. Cached item media is left out of backups; avatars and icons are included.
+			</p>
+			if d.OrphanObjects > 0 {
+				<p class="muted small">orphaned cached media: <strong>{ d.Orphans }</strong> in { strconv.Itoa(d.OrphanObjects) } objects — run <code>nanoflux storage gc --apply</code> to remove.</p>
+			}
+			<div class="row stats" aria-label="storage breakdown">
+				for _, g := range d.Groups {
+					<span><strong>{ web.FormatBytes(g.Bytes) }</strong> { g.Label }</span>
+				}
+			</div>
+		}
 	</section>
 }
 

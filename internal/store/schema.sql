@@ -112,6 +112,7 @@ CREATE TABLE items (
     duration_sec INTEGER,
     image_url    TEXT,
     image_cache_key TEXT,
+    image_cache_size INTEGER NOT NULL DEFAULT 0,
     published_at TEXT,
     fetched_at   TEXT NOT NULL DEFAULT (datetime('now')),
     read         INTEGER NOT NULL DEFAULT 0,
@@ -184,7 +185,8 @@ CREATE TABLE item_enclosures (
     sort      INTEGER NOT NULL DEFAULT 0,
     kind      TEXT NOT NULL DEFAULT '',
     poster    TEXT NOT NULL DEFAULT '',
-    cache_key TEXT NOT NULL DEFAULT ''
+    cache_key TEXT NOT NULL DEFAULT '',
+    cache_size INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_enclosures_item ON item_enclosures(item_id);
 

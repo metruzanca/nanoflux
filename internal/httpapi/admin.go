@@ -12,6 +12,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/plugin"
+	"github.com/metruzanca/nanoflux/internal/storage"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 	"github.com/metruzanca/nanoflux/pluginapi"
@@ -19,12 +20,23 @@ import (
 
 type adminData struct {
 	Stats        adminStats
+	Storage      adminStorage
 	AllowSignup  bool
 	BannerShown  bool
 	Users        []adminUserRow
 	Backup       adminBackup
 	Plugins      []adminPluginRow
 	PluginOwners []adminPluginDomain
+}
+
+// adminStorage is the object-store breakdown shown on /admin: bytes per kind
+// (avatars, icons) and per cache plugin folder, plus orphaned cached media that
+// no row references.
+type adminStorage struct {
+	Groups        []storage.Group
+	Total         string
+	Orphans       string
+	OrphanObjects int
 }
 
 // adminPluginRow is one loaded plugin shown in the plugins card. Kind is
@@ -131,6 +143,7 @@ func (s *Server) adminPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	d := adminData{
 		Stats:        s.adminStats(r.Context()),
+		Storage:      s.adminStorageData(r.Context()),
 		Users:        s.adminUserRows(u.ID, u.Timezone),
 		Backup:       s.adminBackupData(u.Timezone),
 		Plugins:      s.adminPluginRows(),
@@ -211,6 +224,26 @@ func (s *Server) adminStats(ctx context.Context) adminStats {
 	st.Objects = stat.Objects
 	st.Storage = web.FormatBytes(stat.Bytes)
 	return st
+}
+
+// adminStorageData breaks the object store down by kind and cache plugin, and
+// counts orphaned cached media (bytes no item or enclosure references).
+func (s *Server) adminStorageData(ctx context.Context) adminStorage {
+	rep, err := storage.Audit(ctx, s.files, s.store)
+	if err != nil {
+		log.Warn("admin: storage audit", "err", err)
+		return adminStorage{Total: "unavailable"}
+	}
+	groups := rep.Groups
+	if len(groups) > 12 {
+		groups = groups[:12]
+	}
+	return adminStorage{
+		Groups:        groups,
+		Total:         web.FormatBytes(rep.TotalBytes),
+		Orphans:       web.FormatBytes(rep.OrphanBytes),
+		OrphanObjects: rep.OrphanObjects,
+	}
 }
 
 func (s *Server) adminUserRows(selfID int64, tz string) []adminUserRow {
