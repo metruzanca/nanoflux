@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -185,6 +186,17 @@ func runServer() {
 			log.Fatal("server", "err", err)
 		}
 	}()
+
+	// Opt-in profiling endpoint. Off unless NF_PPROF_ADDR is set; it exposes
+	// process internals, so point it at a loopback address.
+	if cfg.PProfAddr != "" {
+		go func() {
+			log.Info("pprof listening", "addr", cfg.PProfAddr)
+			if err := http.ListenAndServe(cfg.PProfAddr, nil); err != nil {
+				log.Error("pprof", "err", err)
+			}
+		}()
+	}
 
 	<-ctx.Done()
 
