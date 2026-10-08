@@ -61,6 +61,7 @@ var migrations = []migration{
 	{48, schemaV48},
 	{49, schemaV49},
 	{50, schemaV50},
+	{51, schemaV51},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -730,6 +731,22 @@ ALTER TABLE feeds ADD COLUMN hide_followed_authors INTEGER NOT NULL DEFAULT 0;
 const schemaV50 = `
 ALTER TABLE items ADD COLUMN image_cache_size INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE item_enclosures ADD COLUMN cache_size INTEGER NOT NULL DEFAULT 0;
+`
+
+// schemaV51 indexes items by owner. Every user-scoped read (unread/read counts,
+// favorites, bookmarks, and the item list's user filter and time ordering) went
+// through a full table scan: the only indexes on items were keyed on feed_id,
+// but the hot paths filter on user_id. On a low-power host (a Raspberry Pi) that
+// made a page render take seconds and ran on every request via the nav counts.
+// The composite (user_id, read) serves both counts and the read/unread streams;
+// the expression index matches the list's ORDER BY COALESCE(published_at,
+// fetched_at) DESC so the sort is no longer needed. Favorite/bookmark are
+// partial indexes so only the (few) flagged rows are indexed.
+const schemaV51 = `
+CREATE INDEX idx_items_user_read ON items(user_id, read);
+CREATE INDEX idx_items_user_time ON items(user_id, COALESCE(published_at, fetched_at) DESC, id DESC);
+CREATE INDEX idx_items_user_favorite ON items(user_id) WHERE favorite = 1;
+CREATE INDEX idx_items_user_bookmark ON items(user_id) WHERE bookmark = 1;
 `
 
 // Migrate applies any pending migrations in order, recording each in

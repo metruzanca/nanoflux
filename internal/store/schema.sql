@@ -129,6 +129,14 @@ CREATE UNIQUE INDEX idx_items_dedup ON items(feed_id, dedup_key);
 -- it is declared here for sqlc only (migrations create it, not schema.sql).
 CREATE UNIQUE INDEX idx_items_cross ON items(user_id, cross_key) WHERE cross_key <> '';
 
+-- Owner-scoped access (schemaV51): the hot read paths filter items by user_id
+-- (counts, favorites/bookmarks, the item list's user filter and time order), so
+-- without these the queries full-scan the table.
+CREATE INDEX idx_items_user_read ON items(user_id, read);
+CREATE INDEX idx_items_user_time ON items(user_id, COALESCE(published_at, fetched_at) DESC, id DESC);
+CREATE INDEX idx_items_user_favorite ON items(user_id) WHERE favorite = 1;
+CREATE INDEX idx_items_user_bookmark ON items(user_id) WHERE bookmark = 1;
+
 -- Membership: an item belongs to its owner feed (items.feed_id) plus any other
 -- feeds it was also seen in. Feeds list items through this table.
 CREATE TABLE item_feeds (
