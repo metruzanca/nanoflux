@@ -23,9 +23,12 @@ type Config struct {
 	// "127.0.0.1:6060"). Empty disables it. It exposes process internals and
 	// must not be reachable from an untrusted network.
 	PProfAddr string
-	Backup    BackupConfig
-	Demo      DemoConfig
-	Analytics AnalyticsConfig
+	// SessionTouchInterval is the minimum spacing between writes of a session's
+	// sliding expiry. 0 writes on every request.
+	SessionTouchInterval time.Duration
+	Backup               BackupConfig
+	Demo                 DemoConfig
+	Analytics            AnalyticsConfig
 }
 
 // AnalyticsConfig adds an optional, privacy-first site analytics tracker
@@ -101,6 +104,9 @@ func Load() Config {
 		PollHostSpacing: durationEnv("NF_POLL_HOST_SPACING", 60*time.Second),
 		PluginsDir:      getenv("NF_PLUGINS_DIR", "./plugins"),
 		PProfAddr:       os.Getenv("NF_PPROF_ADDR"),
+		// Sliding session writes on every request would serialize behind the
+		// poller on a single connection; one write a minute is plenty.
+		SessionTouchInterval: durationEnv("NF_SESSION_TOUCH_INTERVAL", time.Minute),
 		Backup: BackupConfig{
 			Interval: durationEnv("NF_BACKUP_INTERVAL", 0),
 			Keep:     intEnv("NF_BACKUP_KEEP", 7),

@@ -3,10 +3,12 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/metruzanca/nanoflux/internal/db"
@@ -26,10 +28,58 @@ const (
 type Authenticator struct {
 	store    *store.Store
 	demoMode bool
+
+	// touchInterval bounds how often a session's sliding expiry is written. A
+	// write on every request serializes behind the poller on a single
+	// connection; 0 touches on every resolve (the old behavior).
+	touchInterval time.Duration
+	touchMu       sync.Mutex
+	lastTouch     map[string]time.Time
 }
 
 func New(st *store.Store) *Authenticator {
-	return &Authenticator{store: st}
+	return &Authenticator{
+		store:         st,
+		touchInterval: time.Minute,
+		lastTouch:     map[string]time.Time{},
+	}
+}
+
+// SetTouchInterval sets the minimum spacing between sliding-expiry writes for a
+// session. 0 disables throttling (touch on every resolve).
+func (a *Authenticator) SetTouchInterval(d time.Duration) {
+	if d < 0 {
+		d = 0
+	}
+	a.touchInterval = d
+}
+
+// touch slides a session's expiry, at most once per touchInterval. The raw
+// token is hashed so it is not retained in memory.
+func (a *Authenticator) touch(token string) {
+	now := time.Now()
+	if a.touchInterval <= 0 {
+		a.store.Sessions.Touch(token, db.FormatTime(now.Add(SessionTTL)))
+		return
+	}
+	sum := sha256.Sum256([]byte(token))
+	key := string(sum[:])
+	a.touchMu.Lock()
+	last, ok := a.lastTouch[key]
+	if ok && now.Sub(last) < a.touchInterval {
+		a.touchMu.Unlock()
+		return
+	}
+	a.lastTouch[key] = now
+	if len(a.lastTouch) > 4096 {
+		for k, t := range a.lastTouch {
+			if now.Sub(t) > a.touchInterval*4 {
+				delete(a.lastTouch, k)
+			}
+		}
+	}
+	a.touchMu.Unlock()
+	a.store.Sessions.Touch(token, db.FormatTime(now.Add(SessionTTL)))
 }
 
 // SetDemoMode turns on ephemeral-session handling: a demo account's absolute
@@ -142,8 +192,9 @@ func (a *Authenticator) User(r *http.Request) (store.User, error) {
 			return u, nil
 		}
 	}
-	// Sliding session: extend expiry, ignore errors.
-	a.store.Sessions.Touch(token, db.FormatTime(time.Now().Add(SessionTTL)))
+	// Sliding session: extend expiry, ignore errors. Throttled so a burst of
+	// requests does not write on each one.
+	a.touch(token)
 	return u, nil
 }
 
