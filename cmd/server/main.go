@@ -69,6 +69,10 @@ func runServer() {
 	if err := db.Migrate(sqldb); err != nil {
 		log.Fatal("migrate database", "err", err)
 	}
+	// Migrations ran on one connection (they toggle foreign_keys); now let the
+	// server's handle pool reads alongside the writer.
+	db.SetConnPool(sqldb, cfg.DBMaxConns)
+	log.Info("database ready", "max_conns", cfg.DBMaxConns)
 
 	st := store.New(sqldb)
 	a := auth.New(st)

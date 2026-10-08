@@ -20,7 +20,10 @@ type Share struct {
 	CreatedAt string
 }
 
-type ShareStore struct{ q *sqlcgen.Queries }
+type ShareStore struct {
+	q  *sqlcgen.Queries
+	db *sql.DB
+}
 
 func toShare(s sqlcgen.SharedItem) Share {
 	return Share{ID: s.ID, ItemID: s.ItemID, Token: s.Token, CreatedAt: s.CreatedAt}
@@ -37,19 +40,34 @@ func newToken() (string, error) {
 // Create shares an item, returning the existing share if it is already shared.
 // The item must belong to userID.
 func (s *ShareStore) Create(userID, itemID int64) (Share, error) {
-	if sh, err := s.ByItem(userID, itemID); err == nil {
-		return sh, nil
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Share{}, err
+	}
+	defer tx.Rollback()
+	q := s.q.WithTx(tx)
+	if sh, err := q.GetShareByItem(ctx, sqlcgen.GetShareByItemParams{UserID: userID, ID: itemID}); err == nil {
+		if err := tx.Commit(); err != nil {
+			return Share{}, err
+		}
+		return toShare(sh), nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Share{}, err
 	}
 	token, err := newToken()
 	if err != nil {
 		return Share{}, err
 	}
-	sh, err := s.q.CreateShare(context.Background(), sqlcgen.CreateShareParams{
+	sh, err := q.CreateShare(ctx, sqlcgen.CreateShareParams{
 		ItemID: itemID,
 		Token:  token,
 	})
 	if err != nil {
 		return Share{}, fmt.Errorf("create share: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Share{}, err
 	}
 	return toShare(sh), nil
 }

@@ -26,7 +26,10 @@ type CollectionWithCounts struct {
 	Read      int
 }
 
-type CollectionStore struct{ q *sqlcgen.Queries }
+type CollectionStore struct {
+	q  *sqlcgen.Queries
+	db *sql.DB
+}
 
 func (s *CollectionStore) Create(userID int64, name string) (Collection, error) {
 	c, err := s.q.CreateCollection(context.Background(), sqlcgen.CreateCollectionParams{
@@ -44,23 +47,27 @@ func (s *CollectionStore) Create(userID int64, name string) (Collection, error) 
 // does not exist. A user-created collection with the same name is left alone;
 // auto collections are always separate rows.
 func (s *CollectionStore) EnsureAuto(userID int64, host string) (Collection, error) {
-	c, err := s.q.GetAutoCollection(context.Background(), sqlcgen.GetAutoCollectionParams{
-		UserID: userID,
-		Name:   host,
-	})
-	if err == nil {
-		return toCollection(c), nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
 		return Collection{}, err
 	}
-	c, err = s.q.CreateCollection(context.Background(), sqlcgen.CreateCollectionParams{
-		UserID: userID,
-		Name:   host,
-		IsAuto: 1,
-	})
+	defer tx.Rollback()
+	q := s.q.WithTx(tx)
+	if c, err := q.GetAutoCollection(ctx, sqlcgen.GetAutoCollectionParams{UserID: userID, Name: host}); err == nil {
+		if err := tx.Commit(); err != nil {
+			return Collection{}, err
+		}
+		return toCollection(c), nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Collection{}, err
+	}
+	c, err := q.CreateCollection(ctx, sqlcgen.CreateCollectionParams{UserID: userID, Name: host, IsAuto: 1})
 	if err != nil {
 		return Collection{}, fmt.Errorf("create auto collection: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Collection{}, err
 	}
 	return toCollection(c), nil
 }

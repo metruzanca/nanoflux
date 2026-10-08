@@ -10,7 +10,10 @@ import (
 
 // SettingStore reads and writes global key/value settings (the settings
 // table). Missing keys read as their default value.
-type SettingStore struct{ q *sqlcgen.Queries }
+type SettingStore struct {
+	q  *sqlcgen.Queries
+	db *sql.DB
+}
 
 // AllowSignup reports whether new users can register via the signup page. The
 // default when the setting is absent is false (signup closed); fresh installs
@@ -65,13 +68,20 @@ func (s *SettingStore) PluginSettings(plugin string, fields []string) map[string
 // field absent from values is left unchanged, so a write-only secret (a
 // password field the UI did not re-submit) survives a save.
 func (s *SettingStore) SetPluginSettings(plugin string, values map[string]string) error {
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	q := s.q.WithTx(tx)
 	for name, value := range values {
-		if err := s.q.UpsertSetting(context.Background(), sqlcgen.UpsertSettingParams{
+		if err := q.UpsertSetting(ctx, sqlcgen.UpsertSettingParams{
 			Key:   pluginSettingKey(plugin, name),
 			Value: value,
 		}); err != nil {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
