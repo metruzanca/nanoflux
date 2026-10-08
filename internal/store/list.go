@@ -27,6 +27,7 @@ type ListWithCount struct {
 
 type ListStore struct {
 	q         *sqlcgen.Queries
+	db        *sql.DB
 	policy    URLPolicy
 	decorator ItemDecorator
 }
@@ -79,14 +80,29 @@ func (s *ListStore) ByName(userID int64, name string) (List, error) {
 // Ensure returns the user's list named name, creating it when absent. Used to
 // materialize a list a user names while saving a page.
 func (s *ListStore) Ensure(userID int64, name string) (List, error) {
-	l, err := s.ByName(userID, name)
-	if err == nil {
-		return l, nil
-	}
-	if !errors.Is(err, ErrNotFound) {
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
 		return List{}, err
 	}
-	return s.Create(userID, name)
+	defer tx.Rollback()
+	q := s.q.WithTx(tx)
+	if l, err := q.GetListByName(ctx, sqlcgen.GetListByNameParams{UserID: userID, Name: name}); err == nil {
+		if err := tx.Commit(); err != nil {
+			return List{}, err
+		}
+		return toList(l.ID, l.UserID, l.Name, l.ShareToken, l.CreatedAt), nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return List{}, err
+	}
+	l, err := q.CreateList(ctx, sqlcgen.CreateListParams{UserID: userID, Name: name})
+	if err != nil {
+		return List{}, fmt.Errorf("create list: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return List{}, err
+	}
+	return toList(l.ID, l.UserID, l.Name, l.ShareToken, l.CreatedAt), nil
 }
 
 // ByToken resolves a shared list by its public token, regardless of user.

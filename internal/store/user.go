@@ -352,21 +352,34 @@ func (s *UserStore) SetFavoritesShareToken(userID int64, token string) error {
 // ShareFavorites creates a public share token for the favorites list, reusing
 // an existing one when the list is already shared.
 func (s *UserStore) ShareFavorites(userID int64) (string, error) {
-	tok, err := s.FavoritesShareToken(userID)
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
 	}
-	if tok != "" {
-		return tok, nil
-	}
-	tok, err = newToken()
+	defer tx.Rollback()
+	q := s.q.WithTx(tx)
+	tok, err := q.GetFavoritesShareToken(ctx, userID)
 	if err != nil {
 		return "", err
 	}
-	if err := s.SetFavoritesShareToken(userID, tok); err != nil {
+	if tok.Valid && tok.String != "" {
+		if err := tx.Commit(); err != nil {
+			return "", err
+		}
+		return tok.String, nil
+	}
+	fresh, err := newToken()
+	if err != nil {
 		return "", err
 	}
-	return tok, nil
+	if err := q.SetFavoritesShareToken(ctx, sqlcgen.SetFavoritesShareTokenParams{Token: ns(fresh), UserID: userID}); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return fresh, nil
 }
 
 // ByFavoritesShareToken resolves the owner of a public favorites share link.
@@ -403,21 +416,34 @@ func (s *UserStore) SetBookmarksShareToken(userID int64, token string) error {
 // ShareBookmarks creates a public share token for the bookmarks list, reusing an
 // existing one when the list is already shared.
 func (s *UserStore) ShareBookmarks(userID int64) (string, error) {
-	tok, err := s.BookmarksShareToken(userID)
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
 	}
-	if tok != "" {
-		return tok, nil
-	}
-	tok, err = newToken()
+	defer tx.Rollback()
+	q := s.q.WithTx(tx)
+	tok, err := q.GetBookmarksShareToken(ctx, userID)
 	if err != nil {
 		return "", err
 	}
-	if err := s.SetBookmarksShareToken(userID, tok); err != nil {
+	if tok.Valid && tok.String != "" {
+		if err := tx.Commit(); err != nil {
+			return "", err
+		}
+		return tok.String, nil
+	}
+	fresh, err := newToken()
+	if err != nil {
 		return "", err
 	}
-	return tok, nil
+	if err := q.SetBookmarksShareToken(ctx, sqlcgen.SetBookmarksShareTokenParams{Token: ns(fresh), UserID: userID}); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return fresh, nil
 }
 
 // ByBookmarksShareToken resolves the owner of a public bookmarks share link.

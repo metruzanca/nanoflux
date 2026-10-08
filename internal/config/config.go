@@ -26,9 +26,13 @@ type Config struct {
 	// SessionTouchInterval is the minimum spacing between writes of a session's
 	// sliding expiry. 0 writes on every request.
 	SessionTouchInterval time.Duration
-	Backup               BackupConfig
-	Demo                 DemoConfig
-	Analytics            AnalyticsConfig
+	// DBMaxConns is the SQLite connection pool size for the server's handle
+	// (after migrations). 1 serializes all access; a small pool lets reads run
+	// alongside a writer. Writes still serialize (SQLite allows one writer).
+	DBMaxConns int
+	Backup     BackupConfig
+	Demo       DemoConfig
+	Analytics  AnalyticsConfig
 }
 
 // AnalyticsConfig adds an optional, privacy-first site analytics tracker
@@ -107,6 +111,7 @@ func Load() Config {
 		// Sliding session writes on every request would serialize behind the
 		// poller on a single connection; one write a minute is plenty.
 		SessionTouchInterval: durationEnv("NF_SESSION_TOUCH_INTERVAL", time.Minute),
+		DBMaxConns:           intEnv("NF_DB_MAX_CONNS", 4),
 		Backup: BackupConfig{
 			Interval: durationEnv("NF_BACKUP_INTERVAL", 0),
 			Keep:     intEnv("NF_BACKUP_KEEP", 7),

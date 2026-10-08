@@ -783,13 +783,23 @@ func (s *ItemStore) StatsAuthor(userID, authorID int64) (AuthorItemStats, error)
 // a re-poll does not drop an already-cached image (which is what keeps a
 // cached copy showing after the user turns caching off).
 func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	q := s.q.WithTx(tx)
 	prev := map[int]Enclosure{}
-	if old, err := s.Enclosures(itemID); err == nil {
-		for _, e := range old {
-			prev[e.Sort] = e
+	if old, err := q.ListEnclosures(ctx, itemID); err == nil {
+		for _, r := range old {
+			prev[int(r.Sort)] = Enclosure{
+				URL: r.Url, Title: r.Title, MIMEType: r.MimeType.String, Size: r.Size, Sort: int(r.Sort),
+				Kind: r.Kind, Poster: r.Poster, CacheKey: r.CacheKey, CacheSize: r.CacheSize,
+			}
 		}
 	}
-	if err := s.q.DeleteEnclosures(context.Background(), itemID); err != nil {
+	if err := q.DeleteEnclosures(ctx, itemID); err != nil {
 		return err
 	}
 	for i, e := range encs {
@@ -799,7 +809,7 @@ func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
 			cacheKey = prev[i].CacheKey
 			cacheSize = prev[i].CacheSize
 		}
-		if err := s.q.InsertEnclosure(context.Background(), sqlcgen.InsertEnclosureParams{
+		if err := q.InsertEnclosure(ctx, sqlcgen.InsertEnclosureParams{
 			ItemID:    itemID,
 			Url:       e.URL,
 			Title:     e.Title,
@@ -814,7 +824,7 @@ func (s *ItemStore) ReplaceEnclosures(itemID int64, encs []Enclosure) error {
 			return err
 		}
 	}
-	return nil
+	return tx.Commit()
 }
 
 // SetItemImageCacheKey records (or clears, with "", size 0) the object-storage
@@ -1067,13 +1077,6 @@ func (s *ItemStore) RemoveFeedMemberships(userID, feedID int64, itemIDs []int64)
 	if len(itemIDs) == 0 {
 		return 0, nil
 	}
-	// The feed is user-scoped so a caller can only touch its own feed.
-	if _, err := s.q.GetFeed(context.Background(), sqlcgen.GetFeedParams{ID: feedID, UserID: userID}); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-		return 0, err
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("begin remove memberships: %w", err)
@@ -1081,6 +1084,14 @@ func (s *ItemStore) RemoveFeedMemberships(userID, feedID int64, itemIDs []int64)
 	defer tx.Rollback()
 	ctx := context.Background()
 	q := s.q.WithTx(tx)
+	// The feed is user-scoped so a caller can only touch its own feed. Inside
+	// the transaction so the guard is atomic with the mutation.
+	if _, err := q.GetFeed(ctx, sqlcgen.GetFeedParams{ID: feedID, UserID: userID}); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrNotFound
+		}
+		return 0, err
+	}
 
 	if err := q.RemoveItemFeedMemberships(ctx, sqlcgen.RemoveItemFeedMembershipsParams{
 		FeedID:  feedID,
