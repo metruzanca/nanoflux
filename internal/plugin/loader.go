@@ -46,7 +46,7 @@ func LoadExternal(ctx context.Context, dir string, reg *Registry, hosts func(plu
 		return func() {}
 	}
 
-	var clients []*goplugin.Client
+	var managed []*managedExternal
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -56,20 +56,18 @@ func LoadExternal(ctx context.Context, dir string, reg *Registry, hosts func(plu
 		if err != nil || info.Mode()&0o111 == 0 {
 			continue // not executable
 		}
-		f, client, err := loadOne(ctx, path)
+		m, err := newManagedExternal(path)
 		if err != nil {
 			log.Warn("plugin load failed", "path", path, "err", err)
 			continue
 		}
-		if client != nil {
-			clients = append(clients, client)
-		}
-		reg.RegisterExternal(f)
+		managed = append(managed, m)
+		reg.RegisterExternal(m)
 	}
 
 	return func() {
-		for _, c := range clients {
-			c.Kill()
+		for _, m := range managed {
+			m.Close()
 		}
 	}
 }

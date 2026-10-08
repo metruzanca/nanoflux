@@ -666,6 +666,60 @@ func TestLoadExternalRenderExample(t *testing.T) {
 	}
 }
 
+// TestManagedExternalIdleShutdown proves an idle external plugin is reaped and
+// transparently respawned on the next real call.
+func TestManagedExternalIdleShutdown(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a plugin binary")
+	}
+	bin := buildExamplePlugin(t, "plugin-render", "nanoflux-plugin-render")
+
+	old := idleTimeout
+	SetIdleTimeout(2 * time.Second)
+	defer SetIdleTimeout(old)
+
+	reg := NewRegistry()
+	hosts := NewHosts(http.DefaultClient, NewCooldown())
+	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
+	defer cleanup()
+
+	if len(reg.external) != 1 {
+		t.Fatalf("external plugins = %d, want 1", len(reg.external))
+	}
+	me, ok := reg.external[0].(*managedExternal)
+	if !ok {
+		t.Fatalf("external plugin is %T, want *managedExternal", reg.external[0])
+	}
+	running := func() bool {
+		me.mu.Lock()
+		defer me.mu.Unlock()
+		return me.client != nil
+	}
+
+	if !running() {
+		t.Fatal("plugin should be running right after load")
+	}
+
+	// The reaper must kill it once it has been idle past the timeout.
+	deadline := time.Now().Add(8 * time.Second)
+	for running() && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if running() {
+		t.Fatal("idle plugin was not reaped")
+	}
+
+	// A real call must respawn it and still work.
+	if _, err := me.Render(context.Background(), pluginapi.RenderRequest{
+		Link: "https://posts.render.example/1",
+	}, hosts.For(me)); err != nil {
+		t.Fatalf("render after reap: %v", err)
+	}
+	if !running() {
+		t.Fatal("plugin was not respawned on use")
+	}
+}
+
 // TestLoadExternalYouTubeExample loads the example that serves the native
 // YouTube plugin over gRPC, proving the two forms are the same behaviour: the
 // external plugin matches the same URLs as the native one.
