@@ -602,7 +602,6 @@ func (p *Poller) PollOlder(ctx context.Context, f store.Feed) (newItems int, exh
 // the poll.
 func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result, rules []store.Filter, fetched string) (int, int, error) {
 	newItems, filtered := 0, 0
-	var stored []store.Item
 	cacheImages := p.imgCache != nil && (f.CacheImages || p.imgCache.Forced(f.FeedURL))
 	// Discovery mode: the tokens of every source the user already follows. An
 	// item whose author resolves to one of them (through a feed other than this
@@ -612,6 +611,15 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 	if f.HideFollowedAuthors {
 		followed = p.store.FollowedFeedTokens(f.UserID)
 	}
+
+	// Filter the page first, collecting what survives, then store it in one
+	// transaction. The poller used to open a transaction per item, which is a
+	// lot of commits on a single-writer SQLite host.
+	type incoming struct {
+		it   feedparse.Item
+		item store.Item
+	}
+	incomingItems := make([]incoming, 0, len(res.Items))
 	for _, it := range res.Items {
 		fields := filtermatch.FieldsFromFeedItem(it)
 		decision, err := filtermatch.Decide(f.FilterMode, rules, fields)
@@ -643,42 +651,48 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 			item.Read = true
 			item.ReadAt = db.Now()
 		}
-		inserted, err := p.store.Items.Upsert(f.ID, item)
-		if err != nil {
-			return newItems, filtered, err
-		}
-		if inserted {
+		incomingItems = append(incomingItems, incoming{it: it, item: item})
+	}
+
+	storeItems := make([]store.Item, len(incomingItems))
+	for i := range incomingItems {
+		storeItems[i] = incomingItems[i].item
+	}
+	results, err := p.store.Items.UpsertMany(f.ID, storeItems)
+	if err != nil {
+		return newItems, filtered, err
+	}
+
+	var stored []store.Item
+	for i, inc := range incomingItems {
+		res := results[i]
+		if res.Inserted {
 			newItems++
 		}
-		// Resolve the stored row once: enclosures and the image cache both need
-		// its id, and it exists after Upsert whether the row is new or already
-		// stored (possibly owned by another feed).
-		var itemID int64
-		if cacheImages || len(it.Enclosures) > 0 || inserted {
-			if id, err := p.store.Items.IngestItemID(f.UserID, f.ID, dedupIdentity(it), store.CrossFeedKey(it.SharedKey)); err == nil {
-				itemID = id
-			}
-		}
+		// The upsert returns the stored id, so enclosures and the image cache do
+		// not need a separate lookup (the old IngestItemID query).
+		itemID := res.ItemID
 		var enclosureKeys []string
 		var enclosureSizes []int64
 		if cacheImages && itemID != 0 {
-			enclosureKeys, enclosureSizes = p.cacheItemImages(ctx, f, it, itemID)
+			enclosureKeys, enclosureSizes = p.cacheItemImages(ctx, f, inc.it, itemID)
 		}
 		// Enclosures are stored whenever the item carries them, not only when it
 		// is new: a feed polled before its parser learned to expose media (the
 		// native Bluesky plugin, say) gains its attachments on the next poll.
 		// ReplaceEnclosures is delete-then-insert, so this keeps them current.
-		if len(it.Enclosures) > 0 {
-			if err := p.storeEnclosures(f, it, itemID, enclosureKeys, enclosureSizes); err != nil {
-				log.Error("store enclosures", "feed_id", f.ID, "guid", it.GUID, "err", err)
+		if len(inc.it.Enclosures) > 0 {
+			if err := p.storeEnclosures(f, inc.it, itemID, enclosureKeys, enclosureSizes); err != nil {
+				log.Error("store enclosures", "feed_id", f.ID, "guid", inc.it.GUID, "err", err)
 			}
 		}
 		// Enrich only newly inserted items, and only in the owner feed (a
-		// cross-feed member already enriched by the other feed is skipped below).
-		if inserted && p.enricher != nil && itemID != 0 {
-			item.ID = itemID
-			item.UserID = f.UserID
-			stored = append(stored, item)
+		// cross-feed member already enriched by the other feed is skipped).
+		if res.Inserted && p.enricher != nil && itemID != 0 {
+			it := inc.item
+			it.ID = itemID
+			it.UserID = f.UserID
+			stored = append(stored, it)
 		}
 	}
 	p.enrichStored(f.UserID, stored)
@@ -717,14 +731,6 @@ func (p *Poller) enrichStored(userID int64, items []store.Item) {
 			log.Error("store enriched content", "item_id", it.ID, "err", err)
 		}
 	}
-}
-
-// dedupIdentity is an item's stable per-feed dedup key: its Identity, else GUID.
-func dedupIdentity(it feedparse.Item) string {
-	if it.Identity != "" {
-		return it.Identity
-	}
-	return it.GUID
 }
 
 // wakeString renders the earliest paced-host next-hit for a log line, or "" so

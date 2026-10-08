@@ -188,31 +188,68 @@ type ItemStore struct {
 // exists its content snapshot (summary, categories, thumbnail, duration) is
 // refreshed without touching identity, published_at or read state.
 func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
-	it.Summary = sanitize.HTML(it.Summary)
-	key := dedupKey(it)
-	crossKey := crossFeedKey(it.SharedKey)
-	ctx := context.Background()
+	res, err := s.UpsertMany(feedID, []Item{it})
+	if err != nil {
+		return false, err
+	}
+	return res[0].Inserted, nil
+}
 
+// UpsertResult is one item's outcome from UpsertMany.
+type UpsertResult struct {
+	ItemID   int64
+	Inserted bool
+}
+
+// UpsertMany stores a feed's freshly parsed items in one transaction and returns
+// each item's stored id and whether it is new to the feed (a new row or a new
+// membership). Batching turns a page's many small write transactions into one,
+// which matters on a single-writer SQLite host, and the returned ids save the
+// caller a lookup per item.
+func (s *ItemStore) UpsertMany(feedID int64, items []Item) ([]UpsertResult, error) {
+	out := make([]UpsertResult, len(items))
+	if len(items) == 0 {
+		return out, nil
+	}
+	ctx := context.Background()
 	tx, err := s.db.Begin()
 	if err != nil {
-		return false, fmt.Errorf("begin upsert: %w", err)
+		return nil, fmt.Errorf("begin upsert: %w", err)
 	}
 	defer tx.Rollback()
 	q := s.q.WithTx(tx)
 
 	userID, err := q.FeedUserID(ctx, feedID)
 	if err != nil {
-		return false, fmt.Errorf("upsert item feed owner: %w", err)
+		return nil, fmt.Errorf("upsert item feed owner: %w", err)
 	}
+	for i, it := range items {
+		itemID, inserted, err := upsertTx(ctx, q, feedID, userID, it)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = UpsertResult{ItemID: itemID, Inserted: inserted}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit upsert: %w", err)
+	}
+	return out, nil
+}
 
-	var itemID int64
+// upsertTx is the per-item upsert, run inside a caller-provided transaction. It
+// reports the stored row id and whether the item is new to feedID.
+func upsertTx(ctx context.Context, q *sqlcgen.Queries, feedID, userID int64, it Item) (itemID int64, inserted bool, err error) {
+	it.Summary = sanitize.HTML(it.Summary)
+	key := dedupKey(it)
+	crossKey := crossFeedKey(it.SharedKey)
+
 	if crossKey != "" {
 		itemID, err = q.GetItemByUserCrossKey(ctx, sqlcgen.GetItemByUserCrossKeyParams{
 			UserID:   userID,
 			CrossKey: crossKey,
 		})
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return false, fmt.Errorf("upsert item cross lookup: %w", err)
+			return 0, false, fmt.Errorf("upsert item cross lookup: %w", err)
 		}
 		if errors.Is(err, sql.ErrNoRows) {
 			itemID = 0
@@ -239,11 +276,11 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 			ReadAt:      ns(it.ReadAt),
 		})
 		if err != nil {
-			return false, fmt.Errorf("upsert item: %w", err)
+			return 0, false, fmt.Errorf("upsert item: %w", err)
 		}
 		n, err := res.RowsAffected()
 		if err != nil {
-			return false, fmt.Errorf("upsert item rows affected: %w", err)
+			return 0, false, fmt.Errorf("upsert item rows affected: %w", err)
 		}
 		newRow = n > 0
 		// Resolve the id whether we inserted or collided on (feed_id, dedup_key).
@@ -252,7 +289,7 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 			DedupKey: key,
 		})
 		if err != nil {
-			return false, fmt.Errorf("upsert item resolve id: %w", err)
+			return 0, false, fmt.Errorf("upsert item resolve id: %w", err)
 		}
 	}
 
@@ -264,7 +301,7 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 			FeedID:   feedID,
 			DedupKey: key,
 		}); err != nil {
-			return false, fmt.Errorf("set item cross key: %w", err)
+			return 0, false, fmt.Errorf("set item cross key: %w", err)
 		}
 	}
 
@@ -278,7 +315,7 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 			DurationSec: ni(int64(it.DurationSec)),
 			ID:          itemID,
 		}); err != nil {
-			return false, fmt.Errorf("refresh item snapshot: %w", err)
+			return 0, false, fmt.Errorf("refresh item snapshot: %w", err)
 		}
 	}
 
@@ -286,24 +323,20 @@ func (s *ItemStore) Upsert(feedID int64, it Item) (inserted bool, err error) {
 	// tag with an exact, indexed match. Replace rather than append, mirroring
 	// the denormalized column refreshed above.
 	if err := syncItemCategories(ctx, q, itemID, it.Categories); err != nil {
-		return false, fmt.Errorf("sync item categories: %w", err)
+		return 0, false, fmt.Errorf("sync item categories: %w", err)
 	}
 
 	// Membership makes the item visible in this feed's streams. A new membership
 	// (or a new row) counts as new for this feed.
 	mres, err := q.AddItemFeed(ctx, sqlcgen.AddItemFeedParams{ItemID: itemID, FeedID: feedID})
 	if err != nil {
-		return false, fmt.Errorf("add item feed: %w", err)
+		return 0, false, fmt.Errorf("add item feed: %w", err)
 	}
 	mn, err := mres.RowsAffected()
 	if err != nil {
-		return false, fmt.Errorf("add item feed rows affected: %w", err)
+		return 0, false, fmt.Errorf("add item feed rows affected: %w", err)
 	}
-	inserted = newRow || mn > 0
-	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("commit upsert: %w", err)
-	}
-	return inserted, nil
+	return itemID, newRow || mn > 0, nil
 }
 
 func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
