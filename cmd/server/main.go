@@ -56,6 +56,16 @@ func runServer() {
 	}
 	defer sqldb.Close()
 
+	// A second connection for background housekeeping (auto-backup, auto-read
+	// sweep). On a single SQLite connection a long VACUUM INTO or sweep would
+	// otherwise stall request handling; WAL lets a separate reader run
+	// alongside the server.
+	bgDB, err := db.Open(cfg.DBPath)
+	if err != nil {
+		log.Fatal("open background database", "err", err)
+	}
+	defer bgDB.Close()
+
 	if err := db.Migrate(sqldb); err != nil {
 		log.Fatal("migrate database", "err", err)
 	}
@@ -63,6 +73,7 @@ func runServer() {
 	st := store.New(sqldb)
 	a := auth.New(st)
 	a.SetDemoMode(cfg.Demo.Enabled())
+	a.SetTouchInterval(cfg.SessionTouchInterval)
 
 	files, err := newFileStore(cfg)
 	if err != nil {
@@ -139,13 +150,13 @@ func runServer() {
 
 	go p.Run(ctx)
 
-	backupRunner := newBackupRunner(ctx, cfg, sqldb, version)
+	backupRunner := newBackupRunner(ctx, cfg, bgDB, version)
 	if backupRunner != nil {
 		go backupRunner.Run(ctx)
 	}
 
 	// Mark stale unread items read for users who opted in to auto-read.
-	go maintenance.New(st, maintenance.DefaultInterval).Run(ctx)
+	go maintenance.New(store.New(bgDB), maintenance.DefaultInterval).Run(ctx)
 
 	// Demo mode: clone a curated seed account for each visitor and purge expired
 	// ones in the background. Built before the server closure so its manager can
