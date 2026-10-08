@@ -19,9 +19,13 @@ type Config struct {
 	// Zero disables it; a learned rate-limit window still overrides it.
 	PollHostSpacing time.Duration
 	PluginsDir      string
-	Backup          BackupConfig
-	Demo            DemoConfig
-	Analytics       AnalyticsConfig
+	// PProfAddr, when set, serves net/http/pprof on that address (e.g.
+	// "127.0.0.1:6060"). Empty disables it. It exposes process internals and
+	// must not be reachable from an untrusted network.
+	PProfAddr string
+	Backup    BackupConfig
+	Demo      DemoConfig
+	Analytics AnalyticsConfig
 }
 
 // AnalyticsConfig adds an optional, privacy-first site analytics tracker
@@ -96,6 +100,7 @@ func Load() Config {
 		// know of); 0 disables the default spacing.
 		PollHostSpacing: durationEnv("NF_POLL_HOST_SPACING", 60*time.Second),
 		PluginsDir:      getenv("NF_PLUGINS_DIR", "./plugins"),
+		PProfAddr:       os.Getenv("NF_PPROF_ADDR"),
 		Backup: BackupConfig{
 			Interval: durationEnv("NF_BACKUP_INTERVAL", 0),
 			Keep:     intEnv("NF_BACKUP_KEEP", 7),
