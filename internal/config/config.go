@@ -30,9 +30,12 @@ type Config struct {
 	// (after migrations). 1 serializes all access; a small pool lets reads run
 	// alongside a writer. Writes still serialize (SQLite allows one writer).
 	DBMaxConns int
-	Backup     BackupConfig
-	Demo       DemoConfig
-	Analytics  AnalyticsConfig
+	// PluginIdleTimeout is how long an external plugin subprocess may sit
+	// unused before it is killed and respawned on demand. 0 keeps them resident.
+	PluginIdleTimeout time.Duration
+	Backup            BackupConfig
+	Demo              DemoConfig
+	Analytics         AnalyticsConfig
 }
 
 // AnalyticsConfig adds an optional, privacy-first site analytics tracker
@@ -112,6 +115,7 @@ func Load() Config {
 		// poller on a single connection; one write a minute is plenty.
 		SessionTouchInterval: durationEnv("NF_SESSION_TOUCH_INTERVAL", time.Minute),
 		DBMaxConns:           intEnv("NF_DB_MAX_CONNS", 4),
+		PluginIdleTimeout:    durationEnv("NF_PLUGIN_IDLE_TIMEOUT", 5*time.Minute),
 		Backup: BackupConfig{
 			Interval: durationEnv("NF_BACKUP_INTERVAL", 0),
 			Keep:     intEnv("NF_BACKUP_KEEP", 7),
