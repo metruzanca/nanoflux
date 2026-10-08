@@ -63,7 +63,14 @@ func WriteArchive(ctx context.Context, db *sql.DB, fileStoreDir string, includeF
 		return fmt.Errorf("snapshot database: %w", err)
 	}
 
-	zw := gzip.NewWriter(w)
+	// BestSpeed, not the default level: backups are I/O and CPU bound and on a
+	// single-core host (a Raspberry Pi) the default compresses for minutes while
+	// starving feed fetches and the web UI. Feed media is already compressed, so
+	// the ratio barely moves.
+	zw, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
+	if err != nil {
+		return err
+	}
 	tw := tar.NewWriter(zw)
 	if err := tarAddFile(tw, "data/rss.db", dbOut); err != nil {
 		return err
