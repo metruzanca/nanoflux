@@ -108,7 +108,6 @@ func runServer() {
 	// generic parser while its plugin was still loading, and a plugin-only feed
 	// would fail to parse and record a spurious "last poll failed".
 	plugins := plugin.Setup(ctx, st, p.Client(), cfg.PluginsDir, cooldown)
-	defer plugins.Close()
 
 	// With the plugins loaded, hand the store their per-URL site rules so feed
 	// create/edit and the canonicalize pass defer site-specific URL handling to
@@ -189,10 +188,36 @@ func runServer() {
 
 	<-ctx.Done()
 
+	// Second signal is a hard exit: a stuck shutdown (an in-flight fetch, a
+	// plugin subprocess that will not die) must never leave `docker stop` to
+	// time out and SIGKILL the container after its grace period.
+	stop()
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		log.Warn("second signal: exiting immediately")
+		os.Exit(1)
+	}()
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Warn("shutdown", "err", err)
+	}
+
+	// Kill plugin subprocesses, but bound the wait: a plugin that ignores the
+	// kill must not block process exit. go-plugin subprocesses exit with the
+	// host anyway (their stdin closes).
+	closed := make(chan struct{})
+	go func() {
+		plugins.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(3 * time.Second):
+		log.Warn("plugin shutdown timed out; exiting")
 	}
 }
 
