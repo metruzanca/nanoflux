@@ -67,9 +67,8 @@ is a special list. Dev via `mise`, selfhost via `make`.
 
 ### Per-feed settings (`GET /feeds/{id}/edit`)
 
-`title`, `feed_url`, `home_url`, `author_id`, `poll_interval_sec` (min 60),
-`poll_interval_auto`, `enabled`, collection memberships, and ingest filter rules
-(`views_feeds.templ:234`, update `web.go:890`).
+`title`, `feed_url`, `home_url`, `poll_interval_sec` (min 60),
+`poll_interval_auto`, `enabled`, and collection memberships.
 
 ### Admin / instance
 
@@ -96,16 +95,16 @@ plugins list + per-domain reset (`internal/httpapi/admin.go:100`).
 
 ### Filters / search / tags
 
-- Ingest filters (`filters` table, `schema.sql:163`): `action` delete/mark_read,
-  `field` title/summary/link/category, `pattern`, `is_regex`. Applied at poll
-  time and **retroactively** to a feed's stored items when a rule is added
-  (with a keep/delete preview modal). A `delete` rule removes the item from that
-  feed (deleting the row when no other feed holds it); `mark_read` marks it read.
-  UI is per-feed only; `feed_id NULL` (all-feeds) rules work in the store but
-  have **no UI** and are not applied retroactively.
+- The per-feed ingest filter-rule system was removed for a clean
+  reimplementation; schemaV53 drops the `filters` table and `feeds.filter_mode`.
+  There is no rule editor or retroactive application today. The categories the
+  parser/plugins surface remain and power the tag filter (see
+  `docs/fetching.md`).
 - Search is stateless FTS5 (`items_fts`, schemaV10) with `title:`, `author:`,
   `feed:`, `unread:` qualifiers (`search.go:73`). No saved searches.
-- Tags: only collection name pills on feed rows. No item tags/labels.
+- Tags: item categories are surfaced as tags in the item modal and a scoped
+  tag-filter dialog on feed/author/collection lists, backed by
+  `item_categories`. Collection name pills remain on feed rows.
 - Unread counts exist per scope but are not surfaced on every scope.
 
 ### Sharing / export
@@ -131,9 +130,10 @@ swipe gestures, deep-link item modal, load-more.
 
 - No font size/family/density/reader-width preference; no serif variants.
 - List/grid and authors-sort are per-browser, not per-account (`todo.md:6`).
-- No global (all-feeds) rule UI, and no retroactive application for them; rules
-  are per-feed and limited to delete/mark_read.
-- No tags/labels; no saved searches.
+- No ingest filter rules: the previous per-feed rule system was removed for a
+  reimplementation, so there is no rule editor, retroactive application, or
+  delete/mark_read action today.
+- Tags exist (item categories surfaced as tags); no saved searches.
 - No unread-count badges across all scopes.
 - No tracking-param stripping / referrer policy / media proxy.
 - No full-text extraction or custom scraper rules.
@@ -159,10 +159,12 @@ Pure presets; no new concepts; low migration risk. This is the honest
 
 ### Tier 2 - Power-user organization (the Inoreader core loop)
 
-- Global rules: expose existing `feed_id NULL` filters in a settings card, and
-  extend `action` with `star`, `tag`, `notify`.
-- Tags/labels: new `tags` + `item_tags`, tag control in the item view, a tag
-  scope in `store.ItemFilter`, and `tag:` in the search grammar.
+- Rebuild ingest rules (removed pending reimplementation): a rule editor with
+  `field`/`pattern` and delete/mark_read actions, retroactive application, and
+  global (all-feeds) rules, extending `action` with `star`, `tag`, `notify`.
+- Tags/labels: largely present (item categories surfaced as tags, a scoped
+  tag-filter dialog, `tag:` in search). Remaining: a tag control in the item
+  view and saved tag scopes.
 - Saved searches: persist the existing query grammar (`saved_searches` table +
   sidebar list/run endpoints); the parser already exists.
 - Unread-count badges on feeds, collections, tags, and lists.
@@ -254,11 +256,11 @@ that already exists and lowers the cost. Effort is a rough S/M/L.
 - **Retention / cleanup per feed (M).** Keep at most N items or delete read
   items older than N days, to bound SQLite growth. Complements auto-read,
   which only flips the read flag and never deletes.
-- **Mute by domain or author (S).** Ingest filters cover keyword/title matches;
-  add a "mute this site" action from an item, stored as a filter on the feed's
+- **Mute by domain or author (S).** Rebuild the ingest rule system first; then
+  add a "mute this site" action from an item, stored as a rule on the feed's
   domain.
 - **Bulk selection and batch actions (M).** Select rows, then mark read/unread,
-  favorite, tag, or move to a list. Needed once tags exist.
+  favorite, tag, or move to a list.
 - **Mark read on scroll (S).** Opt-in display pref; common in mobile readers.
 - **Smart / virtual feeds (M).** Saved scopes like "all unread in this
   collection", "favorites", "recently added", rendered as sidebar entries. The
@@ -422,8 +424,8 @@ growing core). **Bluesky** is done.
 
 ## Open questions
 
-- Tier 1 first, or fold in Tier 2 global-rule UI since the store already
-  supports it?
+- Tier 1 first, or fold in Tier 2 rule UI now that ingest rules are being
+  rebuilt from scratch?
 - Per-scope view-pref storage: dedicated table vs a single JSON column on
   `users` (home config already uses JSON).
 - Density semantics: spacing-only, or also thumbnail/card size in grid mode?
