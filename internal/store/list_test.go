@@ -541,67 +541,6 @@ func TestFeedDeleteRehomesSharedItem(t *testing.T) {
 	}
 }
 
-// Removing a feed's membership for an item shared with another feed keeps the
-// row and re-homes it; removing the last membership deletes it.
-func TestRemoveFeedMemberships(t *testing.T) {
-	s := newTestStore(t)
-	u := mustUser(t, s, "alice")
-	a1, _ := s.Authors.Create(u.ID, "r/cats", "", "")
-	a2, _ := s.Authors.Create(u.ID, "sam", "", "")
-	subFeed, _ := s.Feeds.Create(u.ID, a1.ID, "r/cats", "https://www.reddit.com/r/cats.rss", "", "", 900)
-	userFeed, _ := s.Feeds.Create(u.ID, a2.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
-
-	// A shared post: member of both feeds, owned by the sub feed.
-	shared := Item{GUID: "t3_1abc", SharedKey: "reddit:t3_1abc", Title: "A cat", Categories: []string{"r/cats"}, FetchedAt: db.Now()}
-	s.Items.Upsert(subFeed.ID, shared)
-	s.Items.Upsert(userFeed.ID, shared)
-	sharedID, _ := s.Items.ByFeedIdentity(subFeed.ID, "t3_1abc")
-	// A post only in the sub feed.
-	only := Item{GUID: "t3_2def", Title: "Solo", Categories: []string{"r/cats"}, FetchedAt: db.Now()}
-	s.Items.Upsert(subFeed.ID, only)
-	onlyID, _ := s.Items.ByFeedIdentity(subFeed.ID, "t3_2def")
-
-	if _, err := s.Items.RemoveFeedMemberships(u.ID, subFeed.ID, []int64{sharedID, onlyID}); err != nil {
-		t.Fatalf("RemoveFeedMemberships: %v", err)
-	}
-
-	// The solo item's last membership is gone: the row is deleted.
-	if _, err := s.Items.ByID(u.ID, onlyID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("solo item should be deleted, got %v", err)
-	}
-	// The shared item survives through the user feed and is re-homed to it.
-	userItems, _ := s.Items.List(u.ID, ItemFilter{FeedID: userFeed.ID, Limit: 10})
-	if len(userItems) != 1 || userItems[0].ID != sharedID {
-		t.Fatalf("shared item should survive via the user feed: %+v", userItems)
-	}
-	if userItems[0].FeedID != userFeed.ID {
-		t.Fatalf("shared item should be re-homed to the user feed, owner=%d", userItems[0].FeedID)
-	}
-	// It is no longer visible through the sub feed.
-	if subItems, _ := s.Items.List(u.ID, ItemFilter{FeedID: subFeed.ID, Limit: 10}); len(subItems) != 0 {
-		t.Fatalf("sub feed should have no items, got %d", len(subItems))
-	}
-}
-
-// SetItemsReadBulk marks items read and records the time.
-func TestSetItemsReadBulk(t *testing.T) {
-	s := newTestStore(t)
-	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "A", "", "")
-	f, _ := s.Feeds.Create(u.ID, a.ID, "F", "https://f.dev/rss", "", "", 900)
-	s.Items.Upsert(f.ID, Item{GUID: "1", Title: "One", FetchedAt: db.Now()})
-	s.Items.Upsert(f.ID, Item{GUID: "2", Title: "Two", FetchedAt: db.Now()})
-	id, _ := s.Items.ByFeedIdentity(f.ID, "1")
-
-	if err := s.Items.SetItemsReadBulk(u.ID, []int64{id}); err != nil {
-		t.Fatalf("SetItemsReadBulk: %v", err)
-	}
-	got, _ := s.Items.ByID(u.ID, id)
-	if !got.Read || got.ReadAt == "" {
-		t.Fatalf("item should be read with a timestamp: %+v", got)
-	}
-}
-
 // MergeCrossFeedDuplicates collapses rows that were stored separately before the
 // cross-feed model existed, carrying read state onto the survivor.
 func TestMergeCrossFeedDuplicates(t *testing.T) {

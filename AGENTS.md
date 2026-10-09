@@ -206,27 +206,25 @@ The host then caches that feed's images itself.
 - A plugin claims the capability with a single `Match` case, so no interface or
   wire change is needed.
 
-## Item categories (ingest filters)
+## Item categories
 
-Feeds carry context that should be filterable without any site-specific code:
-reddit, for example, tags every entry with its subreddit (`<category
-label="r/golang"/>`) and its author (`<name>/u/poster</name>`). A subreddit feed
-gives the poster as the item author; a user feed gives the destination sub as the
-category.
+Feeds carry context that surfaces without any site-specific code: reddit, for
+example, tags every entry with its subreddit (`<category label="r/golang"/>`)
+and its author (`<name>/u/poster</name>`). A subreddit feed gives the poster as
+the item author; a user feed gives the destination sub as the category.
 
 - `feedparse.normalizeItem` maps an entry's `<category>` values plus its author
   name(s) into `Item.Categories` (leading `/` stripped, deduped). This is the
   generic parser path reddit uses. Plugin-fetched items set `pluginapi.Item.
   Categories` directly; `plugin/dispatch.go` copies them into `feedparse.Item`,
-  so both paths reach the same store and filter (a plugin can mark a post kind,
-  e.g. a reblog, with a single label).
+  so both paths reach the same store (a plugin can mark a post kind, e.g. a
+  reblog, with a single label).
 - `items.categories` (schemaV36) stores them newline-joined (denormalized);
   `Upsert`/`UpdateItemSnapshot` write them, so an already-stored item gains
   categories on re-poll without a re-fetch. `poller.ingest` copies them through.
-- A filter rule's `field = "category"` matches if **any one** category matches
-  (contains, case-insensitive; regex per-category), so
-  `action: hide, field: category, pattern: r/golang` works. Choices live in
-  `filterFieldItems`; `feedRuleCreate` accepts the field.
+- Categories feed the tag filter (below) and are available to plugins via
+  `pluginapi.Item.Categories`. The former ingest filter-rule system was removed
+  for a clean reimplementation; no per-feed rule table remains.
 
 ### Tags (normalized category table)
 
@@ -249,34 +247,7 @@ Categories are also normalized for tag browsing and list filtering.
 - UI: the item modal shows its tags as clickable chips (linking to
   `/feeds/{id}?tags=`); a scoped feed/author/collection list gets a
   magnifying-glass tag-filter dialog (`comboMulti` over the scope's
-  `ListCategories` options) plus active-filter chips; the feed edit filter card
-  gets a collapsible (`<details class="tag-cloud">`) tag list with counts whose
-  buttons prefill the add-rule form (`data-tag-fill` in `app.js`).
-
-
-## Filter modes (block / allow)
-
-A feed's rules are a block list by default; a feed can instead be an allow list.
-
-- `feeds.filter_mode` (schemaV47) is `block` (default) or `allow`.
-  `filtermatch.Decide(mode, rules, fields)` is the single decision shared by
-  `poller.ingest` and the HTTP preview/retroactive paths. `block`: the first
-  matching rule wins (`delete` drops the item, `mark_read` stores it read; no
-  match keeps it). `allow`: the item is kept iff it matches **at least one**
-  rule, the per-rule action is ignored, and no rules at all keeps everything (a
-  safety default so flipping the toggle cannot wipe a feed). `NormalizeMode`
-  maps an unknown/empty value to `block`.
-- `poller.ingest` returns `(newItems, filtered)`. `PollOlder` treats a page with
-  zero new items as history-exhausted only when nothing was filtered, so an
-  all-filtered page cannot stop a "load older items" walk.
-- The feed edit filters card has a mode picker (`POST /feeds/{id}/filter-mode`,
-  `Server.feedFilterMode`). Switching to allow re-applies the whole rule set to
-  stored items and removes those matching no rule; switching back to block only
-  affects future polls (removed items are already gone). Adding a rule in allow
-  mode likewise re-applies the full set; in block mode only the new rule is
-  applied. `feedRulePreview` is set-level in allow mode (keep = matches any rule)
-  and per-rule in block mode. `store.FeedStore.SetFilterMode` verifies
-  ownership, and `cloneFeeds` carries the mode so demo clones keep it.
+  `ListCategories` options) plus active-filter chips.
 
 ## Appearance
 
@@ -407,8 +378,7 @@ CTA differs. The demo is a real temporary account, not a shared sandbox.
   refreshes normally. Do not "helpfully" copy `enabled`; pausing is the point.
 - `home_config` pinned collection sections are remapped to the cloned collection
   ids; items keep read/favorite/bookmark state and feed memberships; collections,
-  lists, filters, author links, source icons (URLs only) and view prefs are
-  copied. Blobs (`avatar_key`, `icon_key`) are **not** shared, so deleting one
+  lists, author links, source icons (URLs only) and view prefs are copied. Blobs (`avatar_key`, `icon_key`) are **not** shared, so deleting one
   account's objects can never reach the other's.
 - `auth.Authenticator.SetDemoMode(true)` makes session resolution enforce the
   account's absolute expiry and **skip the sliding `Touch`**, so activity cannot
@@ -533,11 +503,11 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
   back it; `Registry.ErrNotFound` distinguishes "no such plugin" from
   "plugin has no docs" (`pluginapi.ErrUnsupportedCapability`).
 - `Registry.Docs` is called lazily by `GET /fragments/plugin-docs?plugin=<name>`
-  (auth-only, **not** admin-only: the feed edit page offers the same docs next
-  to the filter rules). The readme must not do network I/O.
+  (auth-only, **not** admin-only: the feed editor offers the same docs next
+  to the feed title). The readme must not do network I/O.
 - The docs modal is the shared `#plugin-docs-dialog` in `views_layout.templ`,
   filled by `openPluginDocs(name)` in `app.js`. Entry points: the admin plugin
-  card and the feed edit filter section.
+  card and the feed editor's "plugin docs" button.
 - Markdown is rendered by `web.Markdown` (goldmark, raw HTML disabled; anchors
   get `class="external"` + `target/rel`). goldmark is a root-module dep only;
   `pluginapi` stays dependency-free.

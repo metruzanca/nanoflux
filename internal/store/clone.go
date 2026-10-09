@@ -95,9 +95,6 @@ func (s *Store) CloneUser(seedID int64, newUsername, passwordHash, expiresAt str
 	if err := cloneLists(ctx, tx, seedID, newID, itemMap); err != nil {
 		return User{}, err
 	}
-	if err := cloneFilters(ctx, tx, seedID, newID, feedMap); err != nil {
-		return User{}, err
-	}
 	if err := cloneAuthorLinks(ctx, tx, seedID, newID); err != nil {
 		return User{}, err
 	}
@@ -167,7 +164,7 @@ func cloneAuthors(ctx context.Context, tx *sql.Tx, seedID, newID int64) error {
 func cloneFeeds(ctx context.Context, tx *sql.Tx, seedID, newID int64) (map[int64]int64, error) {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, author_id, title, feed_url, home_url, description,
-		       poll_interval_sec, poll_interval_auto, plugin_name, rank, filter_mode
+		       poll_interval_sec, poll_interval_auto, plugin_name, rank
 		FROM feeds WHERE user_id = ? AND is_system = 0`, seedID)
 	if err != nil {
 		return nil, fmt.Errorf("clone feeds select: %w", err)
@@ -182,13 +179,12 @@ func cloneFeeds(ctx context.Context, tx *sql.Tx, seedID, newID int64) (map[int64
 		pollIntervalAuto int64
 		pluginName       string
 		rank             int64
-		filterMode       string
 	}
 	var feeds []feed
 	for rows.Next() {
 		var f feed
 		if err := rows.Scan(&f.id, &f.authorID, &f.title, &f.feedURL, &f.homeURL, &f.desc,
-			&f.pollInterval, &f.pollIntervalAuto, &f.pluginName, &f.rank, &f.filterMode); err != nil {
+			&f.pollInterval, &f.pollIntervalAuto, &f.pluginName, &f.rank); err != nil {
 			return nil, fmt.Errorf("clone feeds scan: %w", err)
 		}
 		feeds = append(feeds, f)
@@ -213,11 +209,11 @@ func cloneFeeds(ctx context.Context, tx *sql.Tx, seedID, newID int64) (map[int64
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO feeds (
 				user_id, author_id, title, feed_url, home_url, description,
-				poll_interval_sec, poll_interval_auto, plugin_name, rank, filter_mode,
+				poll_interval_sec, poll_interval_auto, plugin_name, rank,
 				enabled, disabled_reason
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)`,
 			newID, newAuthor, f.title, f.feedURL, f.homeURL, f.desc,
-			f.pollInterval, f.pollIntervalAuto, f.pluginName, f.rank, f.filterMode)
+			f.pollInterval, f.pollIntervalAuto, f.pluginName, f.rank)
 		if err != nil {
 			return nil, fmt.Errorf("clone feed insert: %w", err)
 		}
@@ -596,53 +592,6 @@ func cloneLists(ctx context.Context, tx *sql.Tx, seedID, newID int64, itemMap ma
 			INSERT INTO list_items (list_id, item_id, created_at) VALUES (?, ?, ?)
 			ON CONFLICT (list_id, item_id) DO NOTHING`, newList, newItem, x.createdAt); err != nil {
 			return fmt.Errorf("clone list_items insert: %w", err)
-		}
-	}
-	return nil
-}
-
-// cloneFilters copies ingest-filter rules, remapping a feed-scoped rule's feed
-// (an unclonable feed drops the rule to user-wide rather than pointing at the
-// seed's feed).
-func cloneFilters(ctx context.Context, tx *sql.Tx, seedID, newID int64, feedMap map[int64]int64) error {
-	rows, err := tx.QueryContext(ctx, `
-		SELECT feed_id, action, field, pattern, is_regex
-		FROM filters WHERE user_id = ?`, seedID)
-	if err != nil {
-		return fmt.Errorf("clone filters select: %w", err)
-	}
-	defer rows.Close()
-	type filter struct {
-		feedID        sql.NullInt64
-		action, field string
-		pattern       string
-		isRegex       int64
-	}
-	var fs []filter
-	for rows.Next() {
-		var f filter
-		if err := rows.Scan(&f.feedID, &f.action, &f.field, &f.pattern, &f.isRegex); err != nil {
-			return fmt.Errorf("clone filters scan: %w", err)
-		}
-		fs = append(fs, f)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, f := range fs {
-		var newFeed any
-		if f.feedID.Valid {
-			id, ok := feedMap[f.feedID.Int64]
-			if !ok {
-				continue
-			}
-			newFeed = id
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO filters (user_id, feed_id, action, field, pattern, is_regex)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			newID, newFeed, f.action, f.field, f.pattern, f.isRegex); err != nil {
-			return fmt.Errorf("clone filter insert: %w", err)
 		}
 	}
 	return nil

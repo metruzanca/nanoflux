@@ -65,19 +65,7 @@ type Feed struct {
 	IsSystem         int64          `json:"is_system"`
 	Rank             int64          `json:"rank"`
 	CacheImages      int64          `json:"cache_images"`
-	FilterMode       string         `json:"filter_mode"`
 	CreatedAt        string         `json:"created_at"`
-}
-
-type Filter struct {
-	ID        int64         `json:"id"`
-	UserID    int64         `json:"user_id"`
-	FeedID    sql.NullInt64 `json:"feed_id"`
-	Action    string        `json:"action"`
-	Field     string        `json:"field"`
-	Pattern   string        `json:"pattern"`
-	IsRegex   int64         `json:"is_regex"`
-	CreatedAt string        `json:"created_at"`
 }
 
 type Item struct {

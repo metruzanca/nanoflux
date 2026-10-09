@@ -8,9 +8,9 @@ import (
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
-// TestTagFilterUI covers the tag/filter overhaul's rendering: the item modal's
-// tags section, the scoped list's active-filter chips and tag modal, filtering
-// a list by tag, and the feed filter card's collapsible tag list.
+// TestTagFilterUI covers the tag filter's rendering: the item modal's tags
+// section, the scoped list's active-filter chips and tag modal, and filtering a
+// list by tag.
 func TestTagFilterUI(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
@@ -49,18 +49,6 @@ func TestTagFilterUI(t *testing.T) {
 	// The dialog offers every tag in scope, including the one not selected.
 	if !strings.Contains(body, "r/rust") {
 		t.Fatalf("tag dialog should offer r/rust: %s", body)
-	}
-
-	// Feed edit: collapsible tag list with counts and a prefill hook.
-	body = doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
-	if !strings.Contains(body, `class="tag-cloud"`) {
-		t.Fatalf("feed edit missing tag cloud: %s", body)
-	}
-	if !strings.Contains(body, `data-tag-fill="r/golang"`) {
-		t.Fatalf("tag cloud missing prefill button: %s", body)
-	}
-	if !strings.Contains(body, "r/golang (1)") {
-		t.Fatalf("tag cloud missing count: %s", body)
 	}
 
 	// Item modal: a tags section with a chip linking to the feed filtered by tag.

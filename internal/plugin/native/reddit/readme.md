@@ -25,35 +25,16 @@ also shown once: the plugin keys each link post by its poster and external
 destination, and the host collapses the duplicates into a single item that lists
 the other subreddits as sources. This applies on the author and collection pages.
 
-## Categories (for filtering)
+## Categories (tags)
 
-Every reddit item carries labels you can write filter rules against. A rule's
-**field** is `category` and its **pattern** is matched against any one of them,
-case-insensitively (or as a regex when **regex** is checked).
+Every reddit item carries labels, surfaced as tags in the in-feed tag filter, so
+you can narrow a list to a subreddit or an author.
 
 | Feed | Category labels |
 | --- | --- |
 | Subreddit (`r/foo`) | the post's author, e.g. `u/someuser` |
 | User (`u/someuser`) | the destination subreddit, e.g. `r/foo` |
 
-So on a subreddit feed you filter by who posted, and on a user feed you filter
-by where they posted.
-
-### Examples
-
-Delete everything from a user in a subreddit you otherwise follow:
-
-- action: `delete`
-- field: `category`
-- pattern: `u/thatguy`
-
-Keep a user feed focused on one subreddit, deleting the rest:
-
-- action: `delete`
-- field: `category`
-- pattern: `r/politics`
-
-A rule acts when its pattern matches, so to keep only certain subs, add one
-`delete` rule per unwanted sub. To filter by title or body text instead, use the
-`title` or `summary` field. The same `category` field works on any feed type
-whose parser provides categories, not just reddit.
+So on a subreddit feed the tags identify who posted, and on a user feed they
+identify where they posted. The same labels work for any feed whose parser
+provides categories, not just reddit.

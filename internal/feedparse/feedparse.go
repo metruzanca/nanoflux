@@ -486,32 +486,6 @@ func StripTracking(raw string) string {
 	return u.String()
 }
 
-// PlainText extracts visible text from feed-provided HTML, for rule matching
-// and plain-text contexts.
-func PlainText(s string) string {
-	if s == "" || !strings.Contains(s, "<") {
-		return strings.TrimSpace(s)
-	}
-	doc, err := html.Parse(strings.NewReader(s))
-	if err != nil {
-		return s
-	}
-	var b strings.Builder
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.TextNode {
-			b.WriteString(n.Data)
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	for c := doc.FirstChild; c != nil; c = c.NextSibling {
-		walk(c)
-	}
-	return strings.TrimSpace(b.String())
-}
-
 func imageURL(img *gofeed.Image) string {
 	if img == nil {
 		return ""

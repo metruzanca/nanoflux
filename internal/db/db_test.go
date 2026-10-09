@@ -31,6 +31,27 @@ func TestMigrate(t *testing.T) {
 		}
 	}
 
+	// The ingest filter-rule system (schemaV53) is gone: no filters table and no
+	// filter_mode column on feeds.
+	var filtersTable int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='filters'`,
+	).Scan(&filtersTable); err != nil {
+		t.Fatal(err)
+	}
+	if filtersTable != 0 {
+		t.Errorf("filters table should not exist after schemaV53")
+	}
+	var hasFilterMode int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('feeds') WHERE name='filter_mode'`,
+	).Scan(&hasFilterMode); err != nil {
+		t.Fatal(err)
+	}
+	if hasFilterMode != 0 {
+		t.Errorf("feeds.filter_mode should not exist after schemaV53")
+	}
+
 	// Second run must be a no-op.
 	if err := Migrate(sqldb); err != nil {
 		t.Fatalf("re-migrate: %v", err)
