@@ -197,7 +197,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 			// A text post that still carries a thumbnail (e.g. one that arrived
 			// only as an image enclosure) gets a thumb beside its text.
 			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>
-				<img src={ templ.URL(web.ProxiedImageURL(it.ImageURL)) } alt="" loading="lazy"/>
+				<img src={ templ.URL(web.ProxiedImageURL(rowThumb(it))) } alt="" loading="lazy"/>
 			</a>
 		}
 		<div class="card-body">
