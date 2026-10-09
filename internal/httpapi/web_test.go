@@ -1228,6 +1228,49 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	}
 }
 
+func TestTextCardThumbnailUsesCache(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Pics", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Pics", "https://pics.dev/rss.xml", "", "", 900)
+	// A post whose media travels only as an image enclosure: no <img> in the
+	// summary, so it renders as a text card with a side thumbnail. Its remote
+	// URL is signed and short-lived, so the row must render the cached copy.
+	const remote = "https://cdn.pics.dev/signed.jpg?e=1"
+	s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "p1", Title: "Post", Link: "https://pics.dev/1",
+		Summary: "<p>hello</p>", ImageURL: remote, FetchedAt: db.Now(),
+	})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	var id int64
+	for _, it := range items {
+		if it.GUID == "p1" {
+			id = it.ID
+		}
+	}
+	if id == 0 {
+		t.Fatal("stored item not found")
+	}
+	key := "cache/pics/" + itoa(id) + "/0.jpg"
+	if err := s.store.Items.SetItemImageCacheKey(id, key, 123); err != nil {
+		t.Fatalf("SetItemImageCacheKey: %v", err)
+	}
+
+	body := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, `id="item-`+itoa(id)+`" class="text-card"`) {
+		t.Fatalf("item should render a text-card: %s", body)
+	}
+	if !strings.Contains(body, pxImg(web.CachedImageURL(key, remote))) {
+		t.Fatalf("text-card thumbnail should use the cached image: %s", body)
+	}
+	if strings.Contains(body, pxImg(remote)) {
+		t.Fatalf("text-card thumbnail must not proxy the expiring remote url: %s", body)
+	}
+}
+
 func TestItemViewImageLightbox(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
