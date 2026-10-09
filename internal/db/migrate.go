@@ -63,6 +63,7 @@ var migrations = []migration{
 	{50, schemaV50},
 	{51, schemaV51},
 	{52, schemaV52},
+	{53, schemaV53},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -754,6 +755,15 @@ CREATE INDEX idx_items_user_bookmark ON items(user_id) WHERE bookmark = 1;
 // rules, so no code references the column.
 const schemaV52 = `
 ALTER TABLE feeds DROP COLUMN hide_followed_authors;
+`
+
+// schemaV53 removes the ingest filter-rule system (reverted for a clean
+// reimplementation): the filters table and the per-feed filter_mode column.
+// Categories (items.categories / item_categories) and the in-feed tag filter
+// are unaffected.
+const schemaV53 = `
+DROP TABLE filters;
+ALTER TABLE feeds DROP COLUMN filter_mode;
 `
 
 // Migrate applies any pending migrations in order, recording each in

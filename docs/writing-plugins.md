@@ -288,7 +288,7 @@ ones the core renders — yours and the oEmbed providers it resolves.
 ### Documentation (`Docs`)
 
 A plugin can document itself in Markdown so its users know what to expect and
-how to write filter rules against it. Implement `Docser`:
+which categories it surfaces. Implement `Docser`:
 
 ```go
 //go:embed readme.md
@@ -492,18 +492,16 @@ each entry.
 ### Categories (`Categories`)
 
 Set `Item.Categories` to feed-provided labels when the site carries context
-worth filtering on: a subreddit, an author, a post kind. The host stores them
-(`items.categories`) and matches a filter rule's `field = "category"` against
-**any one** category (contains, case-insensitive; regex per category). So a
-plugin that marks, say, reblogs with a single `"reblog"` label lets the user
-delete them all with one rule (`action: delete, field: category, pattern:
-reblog`) without any site-specific host code.
+worth surfacing: a subreddit, an author, a post kind. The host stores them
+(`items.categories`) and exposes them to the in-feed tag filter, so a user can
+narrow a list to (or exclude) a label such as a subreddit or an author without
+any site-specific host code.
 
 The generic RSS/Atom parser fills the equivalent from an entry's `<category>`
 values and author names, which is how reddit's `r/<sub>` and `u/<name>` work.
 A plugin that reads a site's own API sets the slice directly. Keep values clean
-(no leading slash, no surrounding whitespace) so a filter matches predictably.
-Leave it `nil` when the site offers nothing to filter on.
+(no leading slash, no surrounding whitespace) so a tag matches predictably.
+Leave it `nil` when the site offers nothing to surface.
 
 ### Media and enclosures (`Enclosures`, `ImageURL`)
 

@@ -39,11 +39,7 @@ type Feed struct {
 	// for sites whose image URLs are short-lived. Forced on (and not user-
 	// disableable) when the feed's plugin claims CapImageCache.
 	CacheImages bool
-	// FilterMode selects how the feed's filter rules are read: "block" (default)
-	// applies each matching rule's action, "allow" keeps only items matching at
-	// least one rule. See filtermatch.
-	FilterMode string
-	CreatedAt  string
+	CreatedAt   string
 }
 
 // FeedWithFavorites joins a feed with its author name and its owner-feed
@@ -263,23 +259,6 @@ func (s *FeedStore) SetCacheImages(userID, id int64, on bool) error {
 		CacheImages: boolInt(on),
 		ID:          id,
 		UserID:      userID,
-	})
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// SetFilterMode sets a feed's filter mode ("block" or "allow"), verifying the
-// feed belongs to the user.
-func (s *FeedStore) SetFilterMode(userID, id int64, mode string) error {
-	res, err := s.q.SetFeedFilterMode(context.Background(), sqlcgen.SetFeedFilterModeParams{
-		FilterMode: mode,
-		ID:         id,
-		UserID:     userID,
 	})
 	if err != nil {
 		return err
@@ -534,7 +513,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.FilterMode, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

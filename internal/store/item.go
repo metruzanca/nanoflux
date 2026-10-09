@@ -987,24 +987,6 @@ func nonEmptyStrings(rows []sql.NullString) []string {
 	return out
 }
 
-// ListFeedItemsForFilter returns every item that is a member of feedID, for
-// retroactively evaluating an ingest filter rule over already-stored items.
-// Unlike ListItems it is not limited and includes the feed's items however they
-// became members (a cross-feed post shows up in every feed it belongs to).
-func (s *ItemStore) ListFeedItemsForFilter(feedID int64) ([]ItemWithFeed, error) {
-	rows, err := s.q.ListFeedItemsForFilter(context.Background(), feedID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]ItemWithFeed, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-			r.ImageUrl, r.ImageCacheKey, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
-			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
-	}
-	return out, nil
-}
-
 // CategoryCount is one tag and how many items in a scope carry it.
 type CategoryCount struct {
 	Category string
@@ -1099,69 +1081,6 @@ func (s *ItemStore) BackfillItemCategories() (int, error) {
 		return n, err
 	}
 	return n, nil
-}
-
-// RemoveFeedMemberships removes itemIDs from feedID's membership set. Items
-// still reachable through another feed are re-homed to one of those; items whose
-// last membership is removed are deleted (cascading enclosures, list items,
-// shares and the FTS index). One transaction, scoped to the feed's owner. It
-// returns how many memberships were removed.
-func (s *ItemStore) RemoveFeedMemberships(userID, feedID int64, itemIDs []int64) (int, error) {
-	if len(itemIDs) == 0 {
-		return 0, nil
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return 0, fmt.Errorf("begin remove memberships: %w", err)
-	}
-	defer tx.Rollback()
-	ctx := context.Background()
-	q := s.q.WithTx(tx)
-	// The feed is user-scoped so a caller can only touch its own feed. Inside
-	// the transaction so the guard is atomic with the mutation.
-	if _, err := q.GetFeed(ctx, sqlcgen.GetFeedParams{ID: feedID, UserID: userID}); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return 0, ErrNotFound
-		}
-		return 0, err
-	}
-
-	if err := q.RemoveItemFeedMemberships(ctx, sqlcgen.RemoveItemFeedMembershipsParams{
-		FeedID:  feedID,
-		ItemIDs: itemIDs,
-	}); err != nil {
-		return 0, fmt.Errorf("remove memberships: %w", err)
-	}
-	// Re-home rows still owned by this feed that another feed still holds, then
-	// delete the rest (their last membership is gone).
-	if err := q.RehomeOwnedItems(ctx, sqlcgen.RehomeOwnedItemsParams{
-		FeedID:  feedID,
-		ItemIDs: itemIDs,
-	}); err != nil {
-		return 0, fmt.Errorf("rehome items: %w", err)
-	}
-	if err := q.DeleteOrphanOwnedItems(ctx, sqlcgen.DeleteOrphanOwnedItemsParams{
-		FeedID:  feedID,
-		ItemIDs: itemIDs,
-	}); err != nil {
-		return 0, fmt.Errorf("delete orphan items: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	return len(itemIDs), nil
-}
-
-// SetItemsReadBulk marks a set of the user's items read, recording the time.
-func (s *ItemStore) SetItemsReadBulk(userID int64, itemIDs []int64) error {
-	if len(itemIDs) == 0 {
-		return nil
-	}
-	return s.q.SetItemsReadByIDs(context.Background(), sqlcgen.SetItemsReadByIDsParams{
-		ReadAt:  ns(db.Now()),
-		UserID:  userID,
-		ItemIDs: itemIDs,
-	})
 }
 
 // OneWithFeed returns a single item joined with its feed and author.

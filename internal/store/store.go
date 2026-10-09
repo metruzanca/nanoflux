@@ -28,7 +28,6 @@ type Store struct {
 	Items       *ItemStore
 	Collections *CollectionStore
 	SourceIcons *SourceIconStore
-	Filters     *FilterStore
 	Shares      *ShareStore
 	Lists       *ListStore
 	AuthorLinks *AuthorLinkStore
@@ -49,7 +48,6 @@ func New(sqldb *sql.DB) *Store {
 		Items:       &ItemStore{q: q, db: sqldb, policy: policy},
 		Collections: &CollectionStore{q: q, db: sqldb},
 		SourceIcons: &SourceIconStore{q: q},
-		Filters:     &FilterStore{q: q},
 		Shares:      &ShareStore{q: q, db: sqldb},
 		Lists:       &ListStore{q: q, db: sqldb, policy: policy},
 		AuthorLinks: &AuthorLinkStore{q: q},

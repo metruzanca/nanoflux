@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,7 +17,6 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
-	"github.com/metruzanca/nanoflux/internal/filtermatch"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 	"github.com/metruzanca/nanoflux/pluginapi"
@@ -95,26 +93,14 @@ type feedForm struct {
 type feedsData struct {
 	Collections []store.Collection
 	Form        feedForm
-	Rules       feedRulesData
+	// DocsPlugin is the loaded plugin that documents this feed's URL (matched
+	// on CapDocs, so a generic-parser feed like reddit's still finds it), or ""
+	// when none does. It drives the "plugin docs" button on the editor.
+	DocsPlugin string
 	// Panel is the "managed feed" card for a feed a plugin manages remotely
 	// (a Kill the Newsletter inbox): its display fields and the title-sync
 	// action, shown on the edit page. nil when no plugin manages the feed.
 	Panel *feedPanelData
-}
-
-// feedRulesData drives the filter-rule section on the feed edit page.
-type feedRulesData struct {
-	FeedID int64
-	Rows   []store.Filter
-	// Mode is the feed's filter mode ("block" or "allow").
-	Mode string
-	// DocsPlugin is the loaded plugin that documents this feed's URL (matched
-	// on CapDocs, so a generic-parser feed like reddit's still finds it), or ""
-	// when none does. It drives the "docs" button beside the filters.
-	DocsPlugin string
-	// Tags is every distinct category seen in this feed's items so far, with
-	// counts, for the collapsible tag list. Most-used first.
-	Tags []store.CategoryCount
 }
 
 type authorRow struct {
@@ -1361,7 +1347,7 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 // feedEditorData assembles the editor for a single feed: its form fields, the
-// collections it belongs to, its filter rules and its plugin panel. It backs
+// collections it belongs to, its plugin docs link and its plugin panel. It backs
 // the combined author edit page's ?feed= editor.
 func (s *Server) feedEditorData(u store.User, f store.Feed) *feedsData {
 	form := feedForm{
@@ -1373,298 +1359,11 @@ func (s *Server) feedEditorData(u store.User, f store.Feed) *feedsData {
 	form.CollectionIDs = s.collectionIDsForFeed(u.ID, f.ID)
 	collections, _ := s.store.Collections.List(u.ID)
 
-	rules := s.feedRules(u.ID, f.ID)
-	rules.DocsPlugin = s.pluginDocNameFor(f.FeedURL)
 	var panel *feedPanelData
 	if p, ok := s.feedPanel(f, ""); ok {
 		panel = &p
 	}
-	return &feedsData{Collections: collections, Form: form, Rules: rules, Panel: panel}
-}
-
-// feedRules returns a feed's filter rules (its own plus feed-wide rules) and
-// its filter mode. An unreadable feed defaults to block mode.
-func (s *Server) feedRules(userID, feedID int64) feedRulesData {
-	rows, _ := s.store.Filters.ListByFeed(userID, feedID)
-	mode := filtermatch.ModeBlock
-	if f, err := s.store.Feeds.ByID(userID, feedID); err == nil {
-		mode = filtermatch.NormalizeMode(f.FilterMode)
-	}
-	cats, _ := s.store.Items.ListCategories(userID, store.ItemFilter{FeedID: feedID})
-	return feedRulesData{FeedID: feedID, Rows: rows, Mode: mode, Tags: cats}
-}
-
-// filterRuleInput is a validated ingest filter rule from the feed edit form.
-type filterRuleInput struct {
-	Action  string
-	Field   string
-	Pattern string
-	IsRegex bool
-}
-
-// parseFilterRule validates a filter rule from the form, returning the rule and
-// an empty error string, or a user-facing message when invalid.
-func parseFilterRule(r *http.Request) (filterRuleInput, string) {
-	pattern := strings.TrimSpace(r.FormValue("pattern"))
-	if pattern == "" {
-		return filterRuleInput{}, "a pattern is required"
-	}
-	action := r.FormValue("action")
-	if action != filtermatch.ActionDelete && action != filtermatch.ActionMarkRead {
-		action = filtermatch.ActionDelete
-	}
-	field := r.FormValue("field")
-	switch field {
-	case "title", "summary", "link", "category":
-	default:
-		field = "title"
-	}
-	isRegex := r.FormValue("is_regex") == "1"
-	if isRegex {
-		if _, err := regexp.Compile(pattern); err != nil {
-			return filterRuleInput{}, "invalid regex"
-		}
-	}
-	return filterRuleInput{Action: action, Field: field, Pattern: pattern, IsRegex: isRegex}, ""
-}
-
-// applyFilterRetroactively runs a feed's filters over its stored items after a
-// rule is added or the feed is switched to allow mode. In block mode only the
-// just-added rule is applied (a delete rule removes the matching items from the
-// feed, a mark_read rule marks them read). In allow mode the whole rule set
-// decides: every item matching no rule is removed. Best-effort with respect to
-// the rule/mode already being saved; the caller logs and surfaces failures.
-func (s *Server) applyFilterRetroactively(userID, feedID int64, mode string, rule filterRuleInput) (int, error) {
-	items, err := s.store.Items.ListFeedItemsForFilter(feedID)
-	if err != nil {
-		return 0, err
-	}
-	fields := func(it store.ItemWithFeed) filtermatch.Fields {
-		return filtermatch.Fields{Title: it.Title, Link: it.Link, Summary: it.Summary, Categories: it.Categories}
-	}
-	if filtermatch.NormalizeMode(mode) == filtermatch.ModeAllow {
-		// The full set is what matters: an item survives iff some rule keeps it.
-		rules, err := s.store.Filters.ListByFeed(userID, feedID)
-		if err != nil {
-			return 0, err
-		}
-		ids := make([]int64, 0, len(items))
-		for _, it := range items {
-			decision, err := filtermatch.Decide(filtermatch.ModeAllow, rules, fields(it))
-			if err != nil {
-				return 0, err
-			}
-			if decision == filtermatch.Drop {
-				ids = append(ids, it.ID)
-			}
-		}
-		if len(ids) == 0 {
-			return 0, nil
-		}
-		return s.store.Items.RemoveFeedMemberships(userID, feedID, ids)
-	}
-	match := store.Filter{
-		Action:  rule.Action,
-		Field:   rule.Field,
-		Pattern: rule.Pattern,
-		IsRegex: rule.IsRegex,
-	}
-	ids := make([]int64, 0, len(items))
-	for _, it := range items {
-		ok, err := filtermatch.Match(match, fields(it))
-		if err != nil {
-			return 0, err
-		}
-		if ok {
-			ids = append(ids, it.ID)
-		}
-	}
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	if rule.Action == filtermatch.ActionMarkRead {
-		if err := s.store.Items.SetItemsReadBulk(userID, ids); err != nil {
-			return 0, err
-		}
-		return len(ids), nil
-	}
-	return s.store.Items.RemoveFeedMemberships(userID, feedID, ids)
-}
-
-// feedRuleCreate adds a filter rule from the feed edit page and applies it to
-// the feed's existing items.
-func (s *Server) feedRuleCreate(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	rule, msg := parseFilterRule(r)
-	if msg != "" {
-		writeFormError(w, r, "feed-rules-error", msg)
-		return
-	}
-	f, err := s.store.Feeds.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if _, err := s.store.Filters.Create(u.ID, id, rule.Action, rule.Field, rule.Pattern, rule.IsRegex); err != nil {
-		log.Error("create filter", "err", err)
-		writeFormError(w, r, "feed-rules-error", "could not add rule")
-		return
-	}
-	if _, err := s.applyFilterRetroactively(u.ID, id, f.FilterMode, rule); err != nil {
-		log.Error("apply filter retroactively", "feed_id", id, "err", err)
-		writeFormError(w, r, "feed-rules-error", "rule saved, but applying it to existing items failed")
-		return
-	}
-	web.Render(w, r, feedRulesSection(s.feedRules(u.ID, id)))
-}
-
-// feedFilterMode sets a feed's filter mode from the filter card. Switching to
-// allow mode re-applies the rule set to existing items (removing those that
-// match no rule); switching back to block only affects future polls (items an
-// allow filter removed are already gone).
-func (s *Server) feedFilterMode(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	f, err := s.store.Feeds.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	mode := filtermatch.NormalizeMode(r.FormValue("mode"))
-	if mode != f.FilterMode {
-		if err := s.store.Feeds.SetFilterMode(u.ID, id, mode); err != nil {
-			log.Error("set filter mode", "feed_id", id, "err", err)
-			http.Error(w, "could not change filter mode", http.StatusInternalServerError)
-			return
-		}
-		if mode == filtermatch.ModeAllow {
-			if _, err := s.applyFilterRetroactively(u.ID, id, mode, filterRuleInput{}); err != nil {
-				log.Error("apply allow filters retroactively", "feed_id", id, "err", err)
-			}
-		}
-	}
-	web.Render(w, r, feedRulesSection(s.feedRules(u.ID, id)))
-}
-
-// feedRulePreview validates a rule and renders a modal showing which of the
-// feed's stored items it would keep and which it would delete (or mark read).
-// The rule is not saved; the dialog's save button posts to feedRuleCreate.
-func (s *Server) feedRulePreview(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	f, err := s.store.Feeds.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	rule, msg := parseFilterRule(r)
-	if msg != "" {
-		w.WriteHeader(http.StatusBadRequest)
-		web.Render(w, r, FormError(msg))
-		return
-	}
-	items, err := s.store.Items.ListFeedItemsForFilter(id)
-	if err != nil {
-		log.Error("filter preview list items", "feed_id", id, "err", err)
-		renderError(w, r, "could not preview this rule")
-		return
-	}
-	fields := func(it store.ItemWithFeed) filtermatch.Fields {
-		return filtermatch.Fields{Title: it.Title, Link: it.Link, Summary: it.Summary, Categories: it.Categories}
-	}
-	var keep, affected []store.ItemWithFeed
-	if filtermatch.NormalizeMode(f.FilterMode) == filtermatch.ModeAllow {
-		// Allow mode is set-level: show the resulting allow set, i.e. an item is
-		// kept when it matches the new rule or any existing one.
-		existing, _ := s.store.Filters.ListByFeed(u.ID, id)
-		rules := append(existing, store.Filter{
-			Action: rule.Action, Field: rule.Field, Pattern: rule.Pattern, IsRegex: rule.IsRegex,
-		})
-		for _, it := range items {
-			decision, err := filtermatch.Decide(filtermatch.ModeAllow, rules, fields(it))
-			if err != nil {
-				renderError(w, r, "could not preview this rule")
-				return
-			}
-			if decision == filtermatch.Drop {
-				affected = append(affected, it)
-			} else {
-				keep = append(keep, it)
-			}
-		}
-	} else {
-		match := store.Filter{
-			Action:  rule.Action,
-			Field:   rule.Field,
-			Pattern: rule.Pattern,
-			IsRegex: rule.IsRegex,
-		}
-		for _, it := range items {
-			ok, err := filtermatch.Match(match, fields(it))
-			if err != nil {
-				renderError(w, r, "could not preview this rule")
-				return
-			}
-			if ok {
-				affected = append(affected, it)
-			} else {
-				keep = append(keep, it)
-			}
-		}
-	}
-	web.Render(w, r, filterPreview(filterPreviewData{
-		FeedID:   id,
-		Mode:     filtermatch.NormalizeMode(f.FilterMode),
-		Rule:     rule,
-		Keep:     withTZ(u.Timezone, keep),
-		Affected: withTZ(u.Timezone, affected),
-		PageSize: filterPreviewPageSize,
-	}))
-}
-
-// filterPreviewPageSize caps how many items each section of the preview modal
-// renders; the counts always report the true totals.
-const filterPreviewPageSize = 20
-
-// filterDelete removes a filter rule and re-renders the list. Removal is not
-// retroactive: items a delete rule has already removed are gone for good, and
-// future polls simply re-evaluate the remaining rules.
-func (s *Server) filterDelete(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	fid, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	f, err := s.store.Filters.ByID(u.ID, fid)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if err := s.store.Filters.Delete(u.ID, fid); err != nil {
-		log.Error("delete filter", "err", err)
-		http.Error(w, "delete failed", http.StatusInternalServerError)
-		return
-	}
-	rows, _ := s.store.Filters.ListByFeed(u.ID, f.FeedID)
-	mode := filtermatch.ModeBlock
-	if feed, err := s.store.Feeds.ByID(u.ID, f.FeedID); err == nil {
-		mode = filtermatch.NormalizeMode(feed.FilterMode)
-	}
-	web.Render(w, r, FilterList(f.FeedID, mode, rows))
+	return &feedsData{Collections: collections, Form: form, DocsPlugin: s.pluginDocNameFor(f.FeedURL), Panel: panel}
 }
 
 func (s *Server) collectionIDsForFeed(userID, feedID int64) []int64 {

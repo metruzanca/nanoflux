@@ -89,7 +89,6 @@ CREATE TABLE feeds (
     is_system         INTEGER NOT NULL DEFAULT 0,
     rank              INTEGER NOT NULL DEFAULT 0,
     cache_images      INTEGER NOT NULL DEFAULT 0,
-    filter_mode       TEXT NOT NULL DEFAULT 'block',
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_feeds_user ON feeds(user_id);
@@ -196,19 +195,6 @@ CREATE TABLE item_enclosures (
     cache_size INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_enclosures_item ON item_enclosures(item_id);
-
-CREATE TABLE filters (
-    id         INTEGER PRIMARY KEY,
-    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    feed_id    INTEGER REFERENCES feeds(id) ON DELETE CASCADE,
-    action     TEXT NOT NULL,
-    field      TEXT NOT NULL,
-    pattern    TEXT NOT NULL,
-    is_regex   INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX idx_filters_user ON filters(user_id);
-CREATE INDEX idx_filters_feed ON filters(feed_id);
 
 CREATE TABLE shared_items (
     id         INTEGER PRIMARY KEY,
