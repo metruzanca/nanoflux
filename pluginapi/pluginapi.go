@@ -79,13 +79,6 @@ const (
 	// storage and renders the cached copy. Default (no plugin) is remote loading,
 	// and a user may opt an individual feed in without a plugin.
 	CapImageCache
-	// CapAuthorToken asks whether the plugin can name the author(s) an item is
-	// attributed to, using the same token vocabulary as URLPolicy.FeedToken
-	// (reddit: "u/sam"). It lets the host match a post's author against the
-	// feeds a user already follows — a "discovery" feed hides posts from
-	// authors the user subscribes to directly. Matched on the feed URL; pure,
-	// no network I/O.
-	CapAuthorToken
 )
 
 // Meta describes a plugin to the host.
@@ -406,22 +399,6 @@ type URLPolicy interface {
 	// not one of the plugin's feeds. The host matches it against an item's
 	// Tokens to link an item to the user's subscribed feed for it.
 	FeedToken(feedURL string) string
-}
-
-// AuthorTokenizer is an optional capability a plugin may implement to name the
-// author(s) an item is attributed to. It is gated by CapAuthorToken and matched
-// on the feed URL, and is pure (no network I/O).
-//
-// The returned tokens use the same vocabulary as URLPolicy.FeedToken, so the
-// host can tell whether a post's author is one the user already follows through
-// another feed (reddit: an item on r/cats carries "u/sam"). This is what powers
-// a feed's "discovery mode": hiding posts from authors the user subscribes to
-// directly. A plugin that does not implement it simply never has its feeds
-// hide anything.
-type AuthorTokenizer interface {
-	// AuthorTokens returns the author token(s) an item's categories attribute
-	// it to. Empty means the item has no author the host can match.
-	AuthorTokens(categories []string) []string
 }
 
 // Decoration is an optional capability a plugin may implement to render a

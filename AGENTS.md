@@ -126,11 +126,6 @@ needs no isolation; external when it is opt-in, fragile, or ToS-sensitive.
   (`web.SetProxyBypass`) once at startup. Pure; the reference is the reddit
   plugin's `redditMediaHosts` list. External plugins are the gRPC client, which
   does not implement this, so only native plugins can bypass today.
-- **`AuthorTokenizer`** (`CapAuthorToken`): `AuthorTokens(categories)` names the
-  author(s) an item is attributed to, in the `URLPolicy.FeedToken` vocabulary
-  (reddit: `u/sam`). Matched on the feed URL, pure. The host uses it for a
-  feed's discovery mode (see "Discovery mode"); reddit returns only `u/<name>`
-  so the community (`r/<sub>`) is never treated as an author.
 
 `Match` **must honour the capability it is asked about**: return false for any
 capability the plugin does not claim. A plugin that ignores it (an early
@@ -143,8 +138,8 @@ RPC is handled), but Match-only ones are not.
 
 The reddit plugin (`internal/plugin/native/reddit`) is the reference for all of
 these: `Match` returns true for `CapSharedKey`, `CapDecorate`, `CapURLPolicy`,
-`CapDiscover`, `CapRender`, `CapAuthorToken` and `CapDocs` on reddit hosts; it
-does **not** claim `CapFetch`. A reddit **search** URL (`/search` or `/r/{sub}/search`) is not a
+`CapDiscover`, `CapRender` and `CapDocs` on reddit hosts; it does **not** claim
+`CapFetch`. A reddit **search** URL (`/search` or `/r/{sub}/search`) is not a
 subreddit/user feed, so the plugin returns false for `CapDiscover`,
 `CapURLPolicy` and `CapDocs` on it (otherwise discovery would read
 `/r/{sub}/search` as r/{sub} and the URL policy would rewrite it to the `.rss`
@@ -282,35 +277,6 @@ A feed's rules are a block list by default; a feed can instead be an allow list.
   applied. `feedRulePreview` is set-level in allow mode (keep = matches any rule)
   and per-rule in block mode. `store.FeedStore.SetFilterMode` verifies
   ownership, and `cloneFeeds` carries the mode so demo clones keep it.
-
-## Discovery mode (hide posts from authors you follow)
-
-A feed can be a "discovery" feed that hides posts from authors the user already
-follows through another subscription, so `r/sub` shows the rest while the
-followed authors are consumed directly.
-
-- `feeds.hide_followed_authors` (schemaV49, default 0). `Feed.HideFollowedAuthors`,
-  `FeedStore.SetHideFollowedAuthors`, query `SetFeedHideFollowedAuthors`.
-- The author is named by the feed's plugin via `pluginapi.AuthorTokenizer`
-  (gated by `CapAuthorToken`, matched on the feed URL, pure). reddit returns the
-  item's `u/<name>` category, never `r/<sub>`: the subreddit is a community, not
-  an author, so a feed never hides its own topic's posts. A plugin that does not
-  implement it hides nothing.
-- `plugin.Registry.AuthorTokens` backs `plugin.StoreAuthorTokenizer`, installed
-  on the store (`Store.SetAuthorTokenizer`) in `cmd/server/main.go`.
-- At poll time `poller.ingest` loads `Store.FollowedFeedTokens(userID)` (every
-  subscribed feed's `URLPolicy.FeedToken` -> feed id) and drops an item whose
-  `Store.AuthorTokensFor(f.FeedURL, it.Categories)` names a followed feed other
-  than the polled one (`followedAuthor`). It counts as `filtered`, so
-  `PollOlder` history-exhaustion still works.
-- Retroactive: `Store.ApplyDiscoveryFilter(userID, feedID)` removes matching
-  stored items (via `ListFeedItemsForFilter` + `RemoveFeedMemberships`) when the
-  toggle is turned on; `Store.RefilterDiscoveryForUser` re-runs it for every
-  discovery feed after a new feed is created (`createFeed`), so subscribing to a
-  new author clears their older posts immediately. Unsubscribing needs no hook:
-  the discovery feed's next poll restores the posts.
-- UI: the feed edit filters card has a discovery-mode `PickerControl`
-  (`POST /feeds/{id}/discovery`, `Server.feedDiscoveryToggle`).
 
 ## Appearance
 

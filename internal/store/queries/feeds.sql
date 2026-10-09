@@ -2,37 +2,37 @@
 INSERT INTO feeds (user_id, author_id, title, feed_url, home_url, description, poll_interval_sec, plugin_name)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, user_id, author_id, title, feed_url, home_url, description,
-         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, hide_followed_authors, created_at;
+         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, created_at;
 
 -- name: GetFeed :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, hide_followed_authors, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, created_at
 FROM feeds
 WHERE id = ? AND user_id = ?;
 
 -- name: GetFeedAny :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, hide_followed_authors, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, created_at
 FROM feeds
 WHERE id = ?;
 
 -- name: ListFeeds :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, hide_followed_authors, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, created_at
 FROM feeds
 WHERE user_id = ? AND is_system = 0
 ORDER BY title;
 
 -- name: ListFeedsByAuthor :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, hide_followed_authors, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, created_at
 FROM feeds
 WHERE user_id = ? AND author_id = ? AND is_system = 0
 ORDER BY title;
 
 -- name: ListFeedsWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.filter_mode, f.hide_followed_authors, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.filter_mode, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i JOIN item_feeds mf ON mf.item_id = i.id
         WHERE mf.feed_id = f.id AND i.read = 0) AS unread
@@ -43,7 +43,7 @@ ORDER BY f.title;
 
 -- name: ListFeedsByAuthorWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.filter_mode, f.hide_followed_authors, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.filter_mode, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i JOIN item_feeds mf ON mf.item_id = i.id
         WHERE mf.feed_id = f.id AND i.read = 0) AS unread
@@ -55,7 +55,7 @@ ORDER BY f.title;
 -- name: GetSystemFeed :one
 -- The hidden per-user feed that holds saved pages, or no rows when none exists.
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, hide_followed_authors, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, created_at
 FROM feeds
 WHERE user_id = ? AND is_system = 1
 LIMIT 1;
@@ -66,7 +66,7 @@ LIMIT 1;
 INSERT INTO feeds (user_id, author_id, title, feed_url, description, poll_interval_sec, plugin_name, enabled, is_system)
 VALUES (?, ?, ?, ?, ?, 0, '', 0, 1)
 RETURNING id, user_id, author_id, title, feed_url, home_url, description,
-         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, hide_followed_authors, created_at;
+         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, created_at;
 
 -- name: UpdateFeed :execresult
 -- A user save clears any automatic disabled reason: the user took over the
@@ -132,13 +132,6 @@ UPDATE feeds
 SET filter_mode = ?
 WHERE id = ? AND user_id = ?;
 
--- name: SetFeedHideFollowedAuthors :execresult
--- Turn a feed's "discovery mode" on/off (hide posts from authors the user
--- already follows), verifying ownership.
-UPDATE feeds
-SET hide_followed_authors = ?
-WHERE id = ? AND user_id = ?;
-
 -- name: SetFeedPluginName :exec
 UPDATE feeds
 SET plugin_name = ?
@@ -172,7 +165,7 @@ WHERE id = ?;
 
 -- name: ListFeedsDue :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, hide_followed_authors, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, created_at
 FROM feeds
 WHERE enabled = 1 AND is_system = 0
   AND (
@@ -198,13 +191,13 @@ ORDER BY f.id;
 
 -- name: GetFeedByTitle :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, hide_followed_authors, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, filter_mode, created_at
 FROM feeds
 WHERE user_id = ? AND title = ? COLLATE NOCASE;
 
 -- name: ListAllFeeds :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.filter_mode, f.hide_followed_authors, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.filter_mode, f.created_at,
        u.username AS owner
 FROM feeds f
 JOIN users u ON u.id = f.user_id
@@ -229,7 +222,7 @@ WHERE id = ? AND user_id = ?;
 -- magic-sort algorithm editor: most favorited first, then by title. A feed with
 -- no favorites still appears (count 0).
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.filter_mode, f.hide_followed_authors, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.filter_mode, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.favorite = 1) AS favorite_count
 FROM feeds f

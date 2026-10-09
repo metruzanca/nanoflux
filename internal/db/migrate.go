@@ -62,6 +62,7 @@ var migrations = []migration{
 	{49, schemaV49},
 	{50, schemaV50},
 	{51, schemaV51},
+	{52, schemaV52},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -714,10 +715,9 @@ CREATE INDEX idx_item_categories_category ON item_categories(category);
 `
 
 // schemaV49 adds a per-feed "discovery mode": hide posts authored by someone the
-// user already follows through another feed, so a community feed can show only
-// the posts the user does not get elsewhere. The author is identified by a
-// plugin AuthorTokenizer (reddit: the u/<name> category) and matched against the
-// URL tokens of the user's subscribed feeds.
+// user already follows through another feed. The feature was reverted; schemaV52
+// drops the column. The migration is retained so the append-only history stays
+// valid (a fresh database adds the column here so V52 has something to drop).
 const schemaV49 = `
 ALTER TABLE feeds ADD COLUMN hide_followed_authors INTEGER NOT NULL DEFAULT 0;
 `
@@ -747,6 +747,13 @@ CREATE INDEX idx_items_user_read ON items(user_id, read);
 CREATE INDEX idx_items_user_time ON items(user_id, COALESCE(published_at, fetched_at) DESC, id DESC);
 CREATE INDEX idx_items_user_favorite ON items(user_id) WHERE favorite = 1;
 CREATE INDEX idx_items_user_bookmark ON items(user_id) WHERE bookmark = 1;
+`
+
+// schemaV52 drops the per-feed discovery-mode column added by schemaV49. The
+// feature (hide posts from followed authors) was reverted in favor of filter
+// rules, so no code references the column.
+const schemaV52 = `
+ALTER TABLE feeds DROP COLUMN hide_followed_authors;
 `
 
 // Migrate applies any pending migrations in order, recording each in

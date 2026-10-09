@@ -67,13 +67,12 @@ type Plugin struct {
 }
 
 var (
-	_ pluginapi.Fetcher         = (*Plugin)(nil)
-	_ pluginapi.Renderer        = (*Plugin)(nil)
-	_ pluginapi.SharedKeyer     = (*Plugin)(nil)
-	_ pluginapi.URLPolicy       = (*Plugin)(nil)
-	_ pluginapi.Decoration      = (*Plugin)(nil)
-	_ pluginapi.ProxyBypasser   = (*Plugin)(nil)
-	_ pluginapi.AuthorTokenizer = (*Plugin)(nil)
+	_ pluginapi.Fetcher       = (*Plugin)(nil)
+	_ pluginapi.Renderer      = (*Plugin)(nil)
+	_ pluginapi.SharedKeyer   = (*Plugin)(nil)
+	_ pluginapi.URLPolicy     = (*Plugin)(nil)
+	_ pluginapi.Decoration    = (*Plugin)(nil)
+	_ pluginapi.ProxyBypasser = (*Plugin)(nil)
 )
 
 func (*Plugin) Meta() pluginapi.Meta {
@@ -98,7 +97,7 @@ func (*Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
 		return false
 	}
 	switch cap {
-	case pluginapi.CapRender, pluginapi.CapDocs, pluginapi.CapSharedKey, pluginapi.CapURLPolicy, pluginapi.CapDiscover, pluginapi.CapDecorate, pluginapi.CapAuthorToken:
+	case pluginapi.CapRender, pluginapi.CapDocs, pluginapi.CapSharedKey, pluginapi.CapURLPolicy, pluginapi.CapDiscover, pluginapi.CapDecorate:
 		if !isRedditHost(u.Hostname()) {
 			return false
 		}
@@ -147,22 +146,6 @@ func (*Plugin) CanonicalizeFeedURL(raw string) string {
 // subscribed feed for it.
 func (*Plugin) FeedToken(feedURL string) string {
 	return feedToken(feedURL)
-}
-
-// AuthorTokens returns the poster token(s) an item's categories attribute it to
-// ("u/sam"), using the same vocabulary as FeedToken so the host can tell
-// whether the user already follows the poster through a separate subscription.
-// The subreddit (r/<sub>) is a community, not an author, and is never returned;
-// this is what keeps a feed's discovery mode from hiding every post from the
-// feed's own community.
-func (*Plugin) AuthorTokens(categories []string) []string {
-	var out []string
-	for _, c := range categories {
-		if strings.HasPrefix(strings.ToLower(c), "u/") {
-			out = append(out, c)
-		}
-	}
-	return out
 }
 
 // SharedKeys gives every reddit post a cross-feed SharedKey from its GUID, the
