@@ -217,24 +217,6 @@ templ feedRulesSection(d feedRulesData) {
 				}
 			</span>
 		</div>
-		{{ discoveryURL := "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/discovery" }}
-		{{ discoveryVal := "0" }}{{ if d.HideFollowedAuthors { discoveryVal = "1" } }}
-		<div class="row">
-			@PickerControl("discovery-mode", "discovery mode: hide posts from authors you already follow", discoveryVal, "", []pickerOption{
-				{Value: "0", Label: "show all authors", HxPost: discoveryURL, HxVals: `{"on":"0"}`, HxTarget: "#feed-rules"},
-				{Value: "1", Label: "hide followed authors", HxPost: discoveryURL, HxVals: `{"on":"1"}`, HxTarget: "#feed-rules", HxConfirm: "hide posts from authors you already follow? they stay in their own feeds."},
-			})
-			<span class="muted small">
-				if d.HideFollowedAuthors {
-					hiding posts from authors you follow directly; this feed shows the rest
-				} else {
-					show every author
-				}
-			</span>
-		</div>
-		if d.HideFollowedAuthors {
-			<p class="muted small">Posts whose author you already get through another feed are dropped from this feed, so it only shows what you do not see elsewhere. Subscribe to an author to hide their posts here. The author is identified by this feed's plugin, e.g. reddit's <code>u/someuser</code>.</p>
-		}
 		if d.Mode == filtermatch.ModeAllow {
 			<p class="muted small">Rules run against new items when the feed is polled and are applied to this feed's existing items when added. In <strong>allow list</strong> mode an item is kept only when it matches at least one rule; items matching none are removed. The rule action is ignored here. The "category" field matches any feed-provided category, e.g. <code>r/golang</code> or <code>u/someuser</code>.</p>
 			if len(d.Rows) == 0 {

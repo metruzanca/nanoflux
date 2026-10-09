@@ -287,18 +287,6 @@ subreddit with no site-specific code. Categories are stored newline-joined in
 `items.categories` (schemaV36) and refreshed on re-poll, so an item already
 stored gains them without a re-fetch.
 
-## Discovery mode (hide posts from authors you follow)
-
-A feed can be marked a **discovery feed** (`feeds.hide_followed_authors`). At
-poll time the poller drops a post whose author the user already follows through
-another of their feeds. The author is named by the feed's plugin
-(`pluginapi.AuthorTokenizer`, gated by `CapAuthorToken`), and the host matches
-that token against the URL tokens of the user's subscribed feeds
-(`Store.FollowedFeedTokens`, using `URLPolicy.FeedToken`). Excluding the polled
-feed's own token keeps a feed from hiding its own posts. Enabling the mode, and
-subscribing to a new author, re-run the filter over already-stored items
-(`Store.ApplyDiscoveryFilter`, `Store.RefilterDiscoveryForUser`).
-
 ## Pagination ("load older items")
 
 A feed may advertise a next page via a feed-level `rel="next"` link or a

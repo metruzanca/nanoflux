@@ -285,9 +285,6 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
 	}
 	s.pollFeedNow(f)
-	if _, err := s.store.RefilterDiscoveryForUser(u.ID); err != nil {
-		log.Error("refilter discovery feeds", "user_id", u.ID, "err", err)
-	}
 
 	author, _ := s.store.Authors.ByID(u.ID, authorID)
 	writeJSON(w, http.StatusOK, apiFeed{

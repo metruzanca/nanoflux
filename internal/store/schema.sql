@@ -90,7 +90,6 @@ CREATE TABLE feeds (
     rank              INTEGER NOT NULL DEFAULT 0,
     cache_images      INTEGER NOT NULL DEFAULT 0,
     filter_mode       TEXT NOT NULL DEFAULT 'block',
-    hide_followed_authors INTEGER NOT NULL DEFAULT 0,
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_feeds_user ON feeds(user_id);

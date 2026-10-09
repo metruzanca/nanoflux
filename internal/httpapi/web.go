@@ -115,9 +115,6 @@ type feedRulesData struct {
 	// Tags is every distinct category seen in this feed's items so far, with
 	// counts, for the collapsible tag list. Most-used first.
 	Tags []store.CategoryCount
-	// HideFollowedAuthors is the feed's discovery mode: drop posts from authors
-	// the user already follows through another feed.
-	HideFollowedAuthors bool
 }
 
 type authorRow struct {
@@ -1269,11 +1266,6 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 	// waiting for the next poller tick. Fire-and-forget: the poller's http
 	// client bounds the fetch, and a slow feed can't stall the add response.
 	s.pollFeedNow(f)
-	// A newly subscribed author's already-stored posts should leave the user's
-	// discovery feeds now, not wait for each feed's next poll.
-	if _, err := s.store.RefilterDiscoveryForUser(userID); err != nil {
-		log.Error("refilter discovery feeds", "user_id", userID, "err", err)
-	}
 	return f, ""
 }
 
@@ -1395,13 +1387,11 @@ func (s *Server) feedEditorData(u store.User, f store.Feed) *feedsData {
 func (s *Server) feedRules(userID, feedID int64) feedRulesData {
 	rows, _ := s.store.Filters.ListByFeed(userID, feedID)
 	mode := filtermatch.ModeBlock
-	hideFollowed := false
 	if f, err := s.store.Feeds.ByID(userID, feedID); err == nil {
 		mode = filtermatch.NormalizeMode(f.FilterMode)
-		hideFollowed = f.HideFollowedAuthors
 	}
 	cats, _ := s.store.Items.ListCategories(userID, store.ItemFilter{FeedID: feedID})
-	return feedRulesData{FeedID: feedID, Rows: rows, Mode: mode, Tags: cats, HideFollowedAuthors: hideFollowed}
+	return feedRulesData{FeedID: feedID, Rows: rows, Mode: mode, Tags: cats}
 }
 
 // filterRuleInput is a validated ingest filter rule from the feed edit form.
@@ -1565,37 +1555,7 @@ func (s *Server) feedFilterMode(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, feedRulesSection(s.feedRules(u.ID, id)))
 }
 
-// feedDiscoveryToggle turns a feed's discovery mode on or off. Turning it on
-// drops the feed's existing posts whose author the user already follows through
-// another feed.
-func (s *Server) feedDiscoveryToggle(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	f, err := s.store.Feeds.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	on := r.FormValue("on") == "1"
-	if on != f.HideFollowedAuthors {
-		if err := s.store.Feeds.SetHideFollowedAuthors(u.ID, id, on); err != nil {
-			log.Error("set hide followed authors", "feed_id", id, "err", err)
-			http.Error(w, "could not change discovery mode", http.StatusInternalServerError)
-			return
-		}
-		if on {
-			if _, err := s.store.ApplyDiscoveryFilter(u.ID, id); err != nil {
-				log.Error("apply discovery filter retroactively", "feed_id", id, "err", err)
-			}
-		}
-	}
-	web.Render(w, r, feedRulesSection(s.feedRules(u.ID, id)))
-}
-
+// feedRulePreview validates a rule and renders a modal showing which of the
 // feed's stored items it would keep and which it would delete (or mark read).
 // The rule is not saved; the dialog's save button posts to feedRuleCreate.
 func (s *Server) feedRulePreview(w http.ResponseWriter, r *http.Request) {

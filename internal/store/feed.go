@@ -43,13 +43,7 @@ type Feed struct {
 	// applies each matching rule's action, "allow" keeps only items matching at
 	// least one rule. See filtermatch.
 	FilterMode string
-	// HideFollowedAuthors is the feed's "discovery mode": at poll time, posts
-	// whose author the user already follows through another feed are dropped, so
-	// the feed shows only posts the user does not get elsewhere. The author is
-	// identified by the feed's plugin AuthorTokenizer and matched against the URL
-	// tokens of the user's subscribed feeds. Off by default.
-	HideFollowedAuthors bool
-	CreatedAt           string
+	CreatedAt  string
 }
 
 // FeedWithFavorites joins a feed with its author name and its owner-feed
@@ -286,23 +280,6 @@ func (s *FeedStore) SetFilterMode(userID, id int64, mode string) error {
 		FilterMode: mode,
 		ID:         id,
 		UserID:     userID,
-	})
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// SetHideFollowedAuthors turns a feed's "discovery mode" on or off, verifying
-// the feed belongs to the user.
-func (s *FeedStore) SetHideFollowedAuthors(userID, id int64, on bool) error {
-	res, err := s.q.SetFeedHideFollowedAuthors(context.Background(), sqlcgen.SetFeedHideFollowedAuthorsParams{
-		HideFollowedAuthors: boolInt(on),
-		ID:                  id,
-		UserID:              userID,
 	})
 	if err != nil {
 		return err
@@ -557,7 +534,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.FilterMode, f.HideFollowedAuthors, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.FilterMode, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

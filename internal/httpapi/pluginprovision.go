@@ -125,9 +125,6 @@ func (s *Server) feedProvision(w http.ResponseWriter, r *http.Request) {
 		log.Error("assign auto collection", "feed_id", feed.ID, "err", err)
 	}
 	s.pollFeedNow(feed)
-	if _, err := s.store.RefilterDiscoveryForUser(u.ID); err != nil {
-		log.Error("refilter discovery feeds", "user_id", u.ID, "err", err)
-	}
 
 	web.Render(w, r, provisionCreated(feed.ID, feedTitle, got.Fields))
 }

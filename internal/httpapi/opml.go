@@ -233,10 +233,6 @@ func (s *Server) opmlImport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if _, err := s.store.RefilterDiscoveryForUser(u.ID); err != nil {
-		log.Error("refilter discovery feeds", "user_id", u.ID, "err", err)
-	}
-
 	msg := "imported " + strconv.Itoa(imported) + " · skipped " + strconv.Itoa(skipped) + " · failed " + strconv.Itoa(failed)
 	if demoLimited {
 		msg += " · " + demoAddFeedMessage()
