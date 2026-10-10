@@ -1,0 +1,44 @@
+# Local source build. Unlike the root Dockerfile (which goreleaser feeds a
+# prebuilt binary staged under $TARGETPLATFORM/), this one compiles the server
+# inside the image, so `docker build` works straight from a checkout and the
+# host needs no Go toolchain. The Makefile builds it via docker-compose.
+#
+# Only the server is compiled here; external plugins are host-built by `make
+# plugins` and mounted from ./plugins at runtime, exactly as with the release
+# image.
+
+FROM docker.io/library/golang:1.26-alpine AS build
+WORKDIR /src
+
+# Module graph first so a source-only change does not re-download deps. The
+# server imports pluginapi, which is a separate module wired in with a
+# `replace => ./pluginapi` directive, so it must be present before download.
+COPY go.mod go.sum ./
+COPY pluginapi ./pluginapi
+RUN go mod download
+
+COPY cmd ./cmd
+COPY internal ./internal
+# The extension package (//go:embed of its static assets) is part of the main
+# module and imported by the server, so it must be present to compile.
+COPY extension ./extension
+
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -trimpath \
+    -ldflags "-s -w -X main.version=${VERSION}" \
+    -o /out/nanoflux ./cmd/server
+
+FROM docker.io/library/alpine:3.20
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=build /out/nanoflux /usr/local/bin/nanoflux
+
+ENV NF_ADDR=:8080 \
+    NF_DB=/data/rss.db
+
+VOLUME /data
+
+EXPOSE 8080
+
+ENTRYPOINT ["nanoflux"]

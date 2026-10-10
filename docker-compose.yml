@@ -8,7 +8,15 @@ name: nanoflux
 
 services:
   nanoflux:
-    image: ghcr.io/metruzanca/nanoflux:latest
+    # Default to a locally built image (Dockerfile.local, from this checkout).
+    # `make start REGISTRY=ghcr` or setting NANOFLUX_IMAGE in .env switches to a
+    # published image; the build block is then unused.
+    image: ${NANOFLUX_IMAGE:-nanoflux:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      args:
+        VERSION: ${NANOFLUX_VERSION:-dev}
     ports:
       - "20310:8080"
     environment:

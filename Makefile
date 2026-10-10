@@ -4,31 +4,37 @@ COMPOSE := $(RUNTIME) compose
 GHCR_REPO := metruzanca/nanoflux
 GHCR_IMAGE := ghcr.io/$(GHCR_REPO)
 
-# The image is published under a concrete version tag (goreleaser strips the
-# leading "v" from the git tag, so release v0.5.0 -> image 0.5.0) alongside
-# "latest". Pulling the concrete version instead of "latest" busts the local
-# Docker cache, which otherwise keeps serving a stale "latest" manifest.
-#
-# Recreating the container matters as much as the retag: compose (podman-compose
-# included) decides whether to recreate a service by comparing the image
-# reference *string*, not the resolved image id, so retagging "latest" alone
-# leaves the old container running. update therefore forces a recreate.
-latest_image_tag = $(shell \
-	curl -fsSL "https://api.github.com/repos/$(GHCR_REPO)/releases/latest" 2>/dev/null \
-	| sed -n 's/.*"tag_name": *"\(v[0-9][^"]*\)".*/\1/p' \
-	| sed 's/^v//')
+# Where the image comes from. `local` (the default) builds it from this checkout
+# with Dockerfile.local, so `make start` works on a fresh clone with no release
+# needed. `ghcr` uses the published image instead:
+#   make start REGISTRY=ghcr   /   make update REGISTRY=ghcr
+# (For raw `docker compose` outside this Makefile, NANOFLUX_IMAGE selects the
+# image directly and defaults to nanoflux:local.)
+REGISTRY ?= local
+ifeq ($(REGISTRY),ghcr)
+IMAGE := $(GHCR_IMAGE):latest
+else
+IMAGE := nanoflux:local
+endif
+
+# The running version baked into a local build: the nearest tag, else a short
+# SHA. Exported so docker-compose passes it to the build as NANOFLUX_VERSION.
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
+export NANOFLUX_IMAGE := $(IMAGE)
+export NANOFLUX_VERSION := $(VERSION)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop restart update status logs shell version backup restore plugins
+.PHONY: help build start stop restart update status logs shell version backup restore plugins
 
 help:
 	@echo "nanoflux - manage your instance"
 	@echo ""
-	@echo "  start     start the app (pulls the image, creates .env on first run)"
+	@echo "  build     build the image from this checkout (local registry, the default)"
+	@echo "  start     build if needed and start the app (creates .env on first run)"
 	@echo "  stop      shut the app down (containers and data kept)"
 	@echo "  restart   restart the app"
-	@echo "  update    pull the latest release image (by version) and redeploy"
+	@echo "  update    rebuild from source and redeploy (local), or pull the latest release (REGISTRY=ghcr)"
 	@echo "  status    show container status"
 	@echo "  logs      tail the app logs"
 	@echo "  shell     open a shell in the app container"
@@ -38,7 +44,16 @@ help:
 	@echo "  plugins   rebuild every plugin in plugins/ against the current pluginapi"
 	@echo ""
 	@echo "Run with podman: make <cmd> RUNTIME=podman"
+	@echo "Use the published image instead of a local build: make <start|update> REGISTRY=ghcr"
 	@echo "Development tasks (icons, extension, dev, gen) live in mise: mise tasks"
+
+# Build the image from source (Dockerfile.local), tagged nanoflux:local. Only
+# meaningful for the local registry; REGISTRY=ghcr pulls the published image.
+build:
+	@if [ "$(REGISTRY)" = ghcr ]; then \
+		echo "REGISTRY=ghcr uses the published image; run '$(COMPOSE) pull'"; exit 1; \
+	fi
+	$(COMPOSE) build
 
 start:
 	@if [ ! -f .env ]; then \
@@ -46,7 +61,14 @@ start:
 		echo "created .env - the first account you sign up at http://localhost:8080 becomes the admin"; \
 	fi
 	@mkdir -p backups
-	$(COMPOSE) up -d
+	@if [ "$(REGISTRY)" = ghcr ]; then \
+		echo "starting from published image $(IMAGE)"; \
+		$(COMPOSE) pull; \
+		$(COMPOSE) up -d; \
+	else \
+		echo "building $(IMAGE) from source and starting"; \
+		$(COMPOSE) up -d --build; \
+	fi
 
 stop:
 	$(COMPOSE) stop
@@ -54,16 +76,26 @@ stop:
 restart:
 	$(COMPOSE) restart
 
+# local: pull the current checkout, rebuild the image, redeploy.
+# ghcr:  fetch the newest release tag, pull, retag latest, redeploy.
 update:
 	@OLD="$$($(COMPOSE) exec -T nanoflux nanoflux version 2>/dev/null | tr -d '[:space:]')"; \
-	TAG="$(latest_image_tag)"; \
-	if [ -z "$$TAG" ]; then \
-		echo "could not determine the latest release from GitHub; falling back to 'latest'"; \
-		$(COMPOSE) pull; \
+	if [ "$(REGISTRY)" = ghcr ]; then \
+		TAG="$$(curl -fsSL "https://api.github.com/repos/$(GHCR_REPO)/releases/latest" 2>/dev/null \
+			| sed -n 's/.*"tag_name": *"\(v[0-9][^"]*\)".*/\1/p' | sed 's/^v//')"; \
+		if [ -z "$$TAG" ]; then \
+			echo "could not determine the latest release from GitHub; falling back to 'latest'"; \
+			$(COMPOSE) pull; \
+		else \
+			echo "updating to $(GHCR_IMAGE):$$TAG"; \
+			$(RUNTIME) pull $(GHCR_IMAGE):$$TAG; \
+			$(RUNTIME) tag $(GHCR_IMAGE):$$TAG $(GHCR_IMAGE):latest; \
+		fi; \
 	else \
-		echo "updating to $(GHCR_IMAGE):$$TAG"; \
-		$(RUNTIME) pull $(GHCR_IMAGE):$$TAG; \
-		$(RUNTIME) tag $(GHCR_IMAGE):$$TAG $(GHCR_IMAGE):latest; \
+		echo "pulling source and rebuilding $(IMAGE)"; \
+		git pull --ff-only || echo "warning: git pull failed; building the current checkout"; \
+		V="$$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')"; \
+		NANOFLUX_VERSION="$$V" $(COMPOSE) build --pull; \
 	fi; \
 	$(COMPOSE) up -d --force-recreate; \
 	NEW="$$(for i in $$(seq 1 30); do \

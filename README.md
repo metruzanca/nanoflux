@@ -25,7 +25,34 @@ storage.
 
 ## Usage
 
-The recommended approach is to use the docker container.
+The easiest way to run nanoflux is to build it locally. Clone the repository
+and run `make start`: it builds the image from source (no Go toolchain needed on
+the host) and starts it.
+
+```bash
+git clone https://github.com/metruzanca/nanoflux
+cd nanoflux
+make start
+```
+
+Updating is the same story: `make update` pulls the latest source, rebuilds the
+image, and redeploys. (`make build` builds the image without starting it.)
+
+### Prebuilt images (GHCR)
+
+Official releases are published as container images to
+`ghcr.io/metruzanca/nanoflux`. To use one instead of a local build, pass
+`REGISTRY=ghcr`:
+
+```bash
+make start REGISTRY=ghcr    # pull and run the latest release
+make update REGISTRY=ghcr   # update to the latest release
+```
+
+Running compose directly, point it at any image with `NANOFLUX_IMAGE`
+(default `nanoflux:local`).
+
+With plain Docker:
 
 ```bash
 docker run -d --name nanoflux -p 8080:8080 \
@@ -34,17 +61,6 @@ docker run -d --name nanoflux -p 8080:8080 \
   -e NF_FILE_STORE=/filestore \
   ghcr.io/metruzanca/nanoflux:latest
 ```
-
-We also include a docker-compose.yml and have setup a `Makefile` with admin/maintenance commands.
-Making the easiest way to run nanoflux, clone the repository and run `make start`
-
-```bash
-git clone https://github.com/metruzanca/nanoflux
-cd nanoflux
-make start
-```
-
-Updating nanoflux is also made easy with the Makefile, just run `make update`.
 
 On a fresh install there is no account yet: signup is open for exactly one
 account, and the first person to sign up becomes the admin. Signups close
@@ -58,9 +74,11 @@ For selfhosting convenience, I've setup a `Makefile` with the most likely comman
 
 | Command | What it does |
 | --- | --- |
-| `make start` | start the app (pulls the image, creates `.env` on first run) |
+| `make build` | build the image from this checkout (local registry, the default) |
+| `make start` | build if needed and start the app (creates `.env` on first run) |
 | `make stop` | shut the app down (containers and data kept) |
 | `make restart` | restart the app |
+| `make update` | rebuild from source and redeploy (or pull the latest release with `REGISTRY=ghcr`) |
 | `make status` | show container status |
 | `make logs` | tail the app logs |
 | `make shell` | open a shell in the app container |
