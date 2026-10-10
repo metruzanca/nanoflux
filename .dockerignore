@@ -1,8 +1,15 @@
 .git
 .github
+.env
 data
+backups
 website
 dist
+plugins
+examples
+reference
+tools
+scripts
 *.md
 Dockerfile
 docker-compose.yml
