@@ -25,7 +25,7 @@ func TestFeedIconUsesHomeURL(t *testing.T) {
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://feeds.example.org/rss", "https://example.org", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Item", Link: "https://example.org/1", FetchedAt: db.Now()})
 
-	for _, page := range []string{"/authors/" + itoa(a.ID), "/feeds/" + itoa(f.ID), "/unread"} {
+	for _, page := range []string{"/authors/" + itoa(a.ID), "/authors/" + itoa(a.ID) + "?feed=" + itoa(f.ID), "/unread"} {
 		body := doGet(h, page, cookie).Body.String()
 		if !strings.Contains(body, `src="/icons/example.org"`) {
 			t.Fatalf("%s: icon should use the home host: %s", page, body)
@@ -49,15 +49,9 @@ func TestFeedErrorSurface(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Feed detail page shows the error text.
-	body := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
-	if !strings.Contains(body, "last poll failed: boom: dns lookup failed") {
-		t.Fatalf("feed page missing error text: %s", body)
-	}
-
-	// The author's feeds list row gets a badge.
-	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
-	if !strings.Contains(body, "last poll failed") {
+	// The author's feeds list card carries the error text on its badge.
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if !strings.Contains(body, "last poll failed") || !strings.Contains(body, "boom: dns lookup failed") {
 		t.Fatalf("author page feeds list missing error badge: %s", body)
 	}
 }
@@ -71,7 +65,7 @@ func TestFeedErrorHiddenAfterSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
+	body := doGet(h, "/authors/"+itoa(a.ID)+"?feed="+itoa(f.ID), cookie).Body.String()
 	if strings.Contains(body, "last poll failed") {
 		t.Fatal("healthy feed should not show an error")
 	}
@@ -105,10 +99,10 @@ func TestFeedOlder(t *testing.T) {
 	}
 	f, _ = s.store.Feeds.ByID(u.ID, f.ID)
 
-	// The feed page shows the "load older items" button.
-	body := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
+	// The feed's card on the author page shows the "load older items" button.
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
 	if !strings.Contains(body, "load older items") {
-		t.Fatalf("feed page missing load-older button: %s", body)
+		t.Fatalf("author feed card missing load-older button: %s", body)
 	}
 
 	// Clicking it imports page 2 and reports exhaustion in the fragment.
@@ -153,7 +147,7 @@ func TestFeedOlderNoButtonWhenNotPaginated(t *testing.T) {
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Flat", "https://flat.dev/feed.xml", "", "", 900)
-	body := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
+	body := doGet(h, "/authors/"+itoa(a.ID)+"?feed="+itoa(f.ID), cookie).Body.String()
 	if strings.Contains(body, "load older items") {
 		t.Fatalf("non-paginated feed should not show load-older button: %s", body)
 	}
@@ -279,18 +273,19 @@ func TestFeedRefreshRespectsBackoff(t *testing.T) {
 	if hits != 0 {
 		t.Fatalf("refresh during backoff must not fetch, got %d hits", hits)
 	}
-	// The feed page shows the retry deadline and disables its refresh button.
-	body := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
+	// The feed's card on the author page shows the retry deadline and disables
+	// its refresh button.
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
 	if !strings.Contains(body, "rate limited · retry") {
-		t.Fatalf("feed page should show the rate-limit retry notice: %s", body)
+		t.Fatalf("author feed card should show the rate-limit retry notice: %s", body)
 	}
 	refresh := `hx-post="/feeds/` + itoa(f.ID) + `/refresh"`
 	i := strings.Index(body, refresh)
 	if i < 0 {
-		t.Fatalf("feed page should still render its refresh button: %s", body)
+		t.Fatalf("author feed card should still render its refresh button: %s", body)
 	}
 	if end := i + 400; end <= len(body) && !strings.Contains(body[i:end], "disabled") {
-		t.Fatalf("feed page refresh button should be disabled while cooling: %s", body[i:end])
+		t.Fatalf("author feed card refresh button should be disabled while cooling: %s", body[i:end])
 	}
 }
 
@@ -314,16 +309,17 @@ func TestMarkAllReadControls(t *testing.T) {
 		}
 	}
 
-	// The feed page shows the button and dialog naming its 2 unread items.
-	body := doGet(h, "/feeds/"+itoa(f1.ID), cookie).Body.String()
+	// The feed's card on the author page shows the button and dialog naming its
+	// 2 unread items.
+	body := doGet(h, "/authors/"+itoa(a.ID)+"?feed="+itoa(f1.ID), cookie).Body.String()
 	if !strings.Contains(body, `title="mark all 2 items as read"`) {
-		t.Fatalf("feed page missing mark-all-read button: %s", body)
+		t.Fatalf("author feed card missing mark-all-read button: %s", body)
 	}
 	if !strings.Contains(body, "mark 2 items as read?") {
-		t.Fatalf("feed page dialog should name 2 items: %s", body)
+		t.Fatalf("author feed card dialog should name 2 items: %s", body)
 	}
 	if !strings.Contains(body, `hx-post="/feeds/`+itoa(f1.ID)+`/read-all"`) {
-		t.Fatalf("feed page missing read-all action: %s", body)
+		t.Fatalf("author feed card missing read-all action: %s", body)
 	}
 
 	// An author page with unread items names them in its own dialog.

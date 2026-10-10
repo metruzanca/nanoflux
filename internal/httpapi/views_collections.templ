@@ -186,7 +186,7 @@ templ CollectionFeedCard(r feedRow, showEdit bool) {
 		<div class="card">
 			<div class="row">
 				<div>
-					<a href={ "/feeds/" + strconv.FormatInt(r.ID, 10) }>
+					<a href={ templ.URL(authorFeedURL(r.AuthorID, r.ID)) }>
 						<strong>
 							@web.SourceIcon(feedIconURL(r.Feed))
 							{ r.Title }

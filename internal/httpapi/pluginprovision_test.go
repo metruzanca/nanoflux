@@ -233,13 +233,13 @@ func TestFeedPluginPanelShown(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The card lives on the edit page, not the regular feed page.
-	feedPage := doGet(h, "/feeds/"+itoa(f.ID), cookie)
-	if feedPage.Code != http.StatusOK {
-		t.Fatalf("feed page: %d", feedPage.Code)
+	// The card lives on the edit page, not on the author page's feed card.
+	authorPage := doGet(h, "/authors/"+itoa(a.ID), cookie)
+	if authorPage.Code != http.StatusOK {
+		t.Fatalf("author page: %d", authorPage.Code)
 	}
-	if strings.Contains(feedPage.Body.String(), "managed feed") {
-		t.Fatalf("managed card must not render on the feed page: %s", feedPage.Body.String())
+	if strings.Contains(authorPage.Body.String(), "managed feed") {
+		t.Fatalf("managed card must not render on the author page: %s", authorPage.Body.String())
 	}
 
 	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie)

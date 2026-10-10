@@ -50,7 +50,7 @@ func TestAPIEntities(t *testing.T) {
 	for want, url := range map[string]string{
 		"author:Metru":   "/authors/" + itoa(a.ID),
 		"collection:Dev": "/collections/" + itoa(coll.ID),
-		"feed:Blog":      "/feeds/" + itoa(f.ID),
+		"feed:Blog":      "/authors/" + itoa(a.ID) + "?feed=" + itoa(f.ID),
 	} {
 		if byKey[want] != url {
 			t.Errorf("entity %q url = %q, want %q (all: %+v)", want, byKey[want], url, body.Entities)

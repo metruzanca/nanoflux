@@ -49,7 +49,7 @@ func (s *Server) apiEntities(w http.ResponseWriter, r *http.Request) {
 		out = append(out, apiEntity{Kind: "collection", ID: c.ID, Name: c.Name, URL: "/collections/" + strconv.FormatInt(c.ID, 10), Unread: c.Unread})
 	}
 	for _, f := range feeds {
-		out = append(out, apiEntity{Kind: "feed", ID: f.ID, Name: f.Title, URL: "/feeds/" + strconv.FormatInt(f.ID, 10), Unread: f.Unread})
+		out = append(out, apiEntity{Kind: "feed", ID: f.ID, Name: f.Title, URL: authorFeedURL(f.AuthorID, f.ID), Unread: f.Unread})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"entities": out})
 }
