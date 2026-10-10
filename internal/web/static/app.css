@@ -541,9 +541,9 @@ div.stats strong { font-size: 1.1rem; }
 .author-feeds > summary:hover { color: var(--accent); }
 .author-feeds-body { margin-top: 0.6rem; }
 
-/* Combined, deduped tags across an author's feeds, shown as chips on the
-   author card. Each links to the author's tag-filtered item list. */
-.author-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.6rem; }
+/* Combined, deduped feed collections across an author's feeds, shown as chips
+   on the author card. Each links to its collection page. */
+.author-collections { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.6rem; }
 
 /* Author edit: each feed is a collapsible panel (native <details>). The body
    holds that feed's settings, loaded on first open. */
