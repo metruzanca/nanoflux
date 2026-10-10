@@ -354,9 +354,9 @@ func TestFavoritesAlgorithm(t *testing.T) {
 	if !strings.Contains(body, "1 favorites") {
 		t.Fatalf("algorithm page should show the favorite count: %s", body)
 	}
-	// The favorites page links to the editor.
-	if fav := doGet(h, "/favorites", cookie).Body.String(); !strings.Contains(fav, "/favorites/algorithm") {
-		t.Fatalf("favorites page should link to the algorithm editor: %s", fav)
+	// The lists index links to the editor from the special favorites card.
+	if lists := doGet(h, "/lists", cookie).Body.String(); !strings.Contains(lists, "/favorites/algorithm") {
+		t.Fatalf("lists page should link to the algorithm editor: %s", lists)
 	}
 
 	feedID := item.FeedID

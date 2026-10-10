@@ -1,9 +1,5 @@
 package httpapi
 
-import (
-	"strconv"
-)
-
 templ loginPage(errMsg string, allowSignup bool, next string) {
 	<section class="card login">
 		<h1>log in</h1>
@@ -59,22 +55,12 @@ templ signupDisabledPage() {
 
 // dashboardPage is the customizable home: the user's pinned collection
 // sections, each a compact list of that collection's unread items. Empty
-// sections are dropped before render. Each section renders as a list or a grid
-// depending on its configured mode.
+// sections are dropped before render. Each section renders as a list, grid, or
+// cards depending on its configured mode (see homeSection).
 templ dashboardPage(d dashboardData) {
 	<div id="home-sections">
 		for _, sec := range d.Sections {
-			<section class="home-section">
-				<div class="row">
-					<h2><a href={ "/collections/" + strconv.FormatInt(sec.Collection.ID, 10) }>{ sec.Collection.Name }</a></h2>
-					<a class="small" href={ "/collections/" + strconv.FormatInt(sec.Collection.ID, 10) }>more →</a>
-				</div>
-				<ul class={ "items", templ.KV("masonry", sec.Mode == "grid") }>
-					for _, it := range sec.Items {
-						@ItemRow(it, false)
-					}
-				</ul>
-			</section>
+			@homeSectionBlock(sec)
 		}
 	</div>
 }
@@ -110,7 +96,6 @@ templ favoritesPage(d favoritesData) {
 		<div class="row-actions">
 			@SimpleSortControl("/favorites", d.Sort)
 			@DisplayModeControl("/favorites", d.Mode)
-			<a class="button small" title="edit the magic sort" href="/favorites/algorithm">edit algorithm</a>
 			@favoritesShareControl(d.ShareToken)
 		</div>
 	</div>

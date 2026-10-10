@@ -107,6 +107,9 @@ type authorRow struct {
 	store.Author
 	FeedCount int
 	Unread    int
+	// Taste is the magic-sort key: the author's rank tier (raised > neutral >
+	// lowered), then total favorites across their feeds. Higher sorts first.
+	Taste int
 }
 
 type authorForm struct {
@@ -128,14 +131,17 @@ type authorsData struct {
 }
 
 type authorData struct {
-	Author    store.Author
-	Rows      []feedRow
-	Links     []store.AuthorLink
-	Scoped    scopedItemsData
-	Stats     store.AuthorItemStats
-	Frequency string // approximate posting cadence, "" when unknown
-	Timezone  string
-	MarkAll   markAllReadData
+	Author store.Author
+	Rows   []feedRow
+	Links  []store.AuthorLink
+	// Categories is every tag across the author's feeds, combined and deduped
+	// (ListCategories is distinct by category). Shown as chips on the author card.
+	Categories []store.CategoryCount
+	Scoped     scopedItemsData
+	Stats      store.AuthorItemStats
+	Frequency  string // approximate posting cadence, "" when unknown
+	Timezone   string
+	MarkAll    markAllReadData
 }
 
 type feedPageData struct {
@@ -1346,6 +1352,23 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/authors/"+strconv.FormatInt(f.AuthorID, 10)+"/edit?feed="+strconv.FormatInt(f.ID, 10), http.StatusFound)
 }
 
+// feedEditFragment returns one feed's editor body for the author edit page's
+// lazy feed accordion. Ownership is checked through Feeds.ByID.
+func (s *Server) feedEditFragment(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := s.store.Feeds.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	web.Render(w, r, feedEditorBody(*s.feedEditorData(u, f)))
+}
+
 // feedEditorData assembles the editor for a single feed: its form fields, the
 // collections it belongs to, its plugin docs link and its plugin panel. It backs
 // the combined author edit page's ?feed= editor.
@@ -1748,9 +1771,26 @@ func (s *Server) authorRows(userID int64) []authorRow {
 	rows, _ := s.store.Authors.ListWithFeedCount(userID)
 	out := make([]authorRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, authorRow{Author: r.Author, FeedCount: r.FeedCount, Unread: r.UnreadCount})
+		out = append(out, authorRow{
+			Author: r.Author, FeedCount: r.FeedCount, Unread: r.UnreadCount,
+			Taste: authorTaste(r.MaxRank, r.FavCount),
+		})
 	}
 	return out
+}
+
+// authorTaste builds the author index's magic-sort key: raised authors rank
+// above neutral above lowered, and within a tier the author with more
+// favorites ranks higher. Kept in one place so the client sort and any server
+// tie-break agree.
+func authorTaste(maxRank, favCount int) int {
+	tier := 1 // neutral
+	if maxRank > 0 {
+		tier = 2 // raised: the author has at least one raised feed
+	} else if maxRank < 0 {
+		tier = 0 // lowered: every feed is lowered
+	}
+	return tier*1_000_000_000 + favCount
 }
 
 func (s *Server) authorCreate(w http.ResponseWriter, r *http.Request) {
@@ -1803,8 +1843,9 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 			frequency = web.PostFrequency(gap)
 		}
 	}
+	cats, _ := s.store.Items.ListCategories(u.ID, store.ItemFilter{AuthorID: id})
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
-		Author: a, Rows: rows, Links: links, Scoped: scoped,
+		Author: a, Rows: rows, Links: links, Scoped: scoped, Categories: cats,
 		Stats: stats, Frequency: frequency, Timezone: u.Timezone,
 		MarkAll: markAllReadData{
 			Action: "/authors/" + strconv.FormatInt(id, 10) + "/read-all",

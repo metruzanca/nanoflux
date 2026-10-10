@@ -8,17 +8,22 @@ import (
 
 // ViewMode is a per-scope item-list layout.
 const (
-	ViewModeList = "list"
-	ViewModeGrid = "grid"
+	ViewModeList  = "list"
+	ViewModeGrid  = "grid"
+	ViewModeCards = "cards"
 )
 
 // NormalizeViewMode maps any stored/submitted value onto a known mode,
 // defaulting to the list layout.
 func NormalizeViewMode(mode string) string {
-	if mode == ViewModeGrid {
+	switch mode {
+	case ViewModeGrid:
 		return ViewModeGrid
+	case ViewModeCards:
+		return ViewModeCards
+	default:
+		return ViewModeList
 	}
-	return ViewModeList
 }
 
 // ViewPrefStore stores each user's display preference (list or grid) per page

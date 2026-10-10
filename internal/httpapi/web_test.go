@@ -1816,12 +1816,17 @@ func TestAuthorsPageSortControl(t *testing.T) {
 	if !strings.Contains(body, `class="picker" data-picker="authors"`) ||
 		!strings.Contains(body, `data-option="newest"`) ||
 		!strings.Contains(body, `data-option="unread"`) ||
+		!strings.Contains(body, `data-option="magic"`) ||
 		!strings.Contains(body, "abc") {
 		t.Fatalf("authors page should carry the sort picker: %s", body)
 	}
 	// The picker's rendered (default) state is "unread", not "abc".
 	if !strings.Contains(body, `data-option="unread" aria-checked="true"`) {
 		t.Fatalf("authors sort should default to unread: %s", body)
+	}
+	// Rows carry the magic-sort taste key for the client-side reorder.
+	if !strings.Contains(body, `data-taste="`) {
+		t.Fatalf("author rows should carry a taste key: %s", body)
 	}
 	// Server render is already most-unread-first: Zed (2 unread) before Abe (0).
 	if strings.Index(body, ">Zed<") > strings.Index(body, ">Abe<") {
@@ -2172,8 +2177,12 @@ func TestCollectionsIndexShowsStats(t *testing.T) {
 
 	body := doGet(h, "/collections", cookie).Body.String()
 	if !strings.Contains(body, `class="card"`) ||
-		!strings.Contains(body, "2 feeds · 2 unread · 1 read") {
+		!strings.Contains(body, "2 feeds · 2 unread") {
 		t.Fatalf("collections index should render cards with stats: %s", body)
+	}
+	// The "read" stat was dropped from the collection card.
+	if strings.Contains(body, " read</div>") || strings.Contains(body, "2 unread · 1 read") {
+		t.Fatalf("collections index should not show a read stat: %s", body)
 	}
 }
 
@@ -2248,10 +2257,17 @@ func TestAuthorEditListsFeedsWithEditLinks(t *testing.T) {
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 
 	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit", cookie).Body.String()
-	if !strings.Contains(edit, `id="collection-feed-`+itoa(f.ID)+`"`) ||
-		!strings.Contains(edit, `href="/authors/`+itoa(a.ID)+`/edit?feed=`+itoa(f.ID)+`"`) ||
+	if !strings.Contains(edit, `id="feed-acc-`+itoa(f.ID)+`"`) ||
+		!strings.Contains(edit, `hx-get="/feeds/`+itoa(f.ID)+`/edit-fragment"`) ||
 		!strings.Contains(edit, "Blog") {
-		t.Fatalf("author edit should list the author's feeds with an edit link: %s", edit)
+		t.Fatalf("author edit should list the author's feeds as an accordion: %s", edit)
+	}
+	// Opening a panel lazily loads the feed's editor body.
+	body := doGet(h, "/feeds/"+itoa(f.ID)+"/edit-fragment", cookie).Body.String()
+	for _, want := range []string{`action="/feeds/` + itoa(f.ID) + `/edit"`, `name="feed_url"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("edit fragment missing %q: %s", want, body)
+		}
 	}
 }
 
@@ -2270,11 +2286,12 @@ func TestFeedEditRedirectsToCombinedAuthorEdit(t *testing.T) {
 		t.Fatalf("feed edit should redirect to the combined page: %d %q", rr.Code, rr.Header().Get("Location"))
 	}
 
-	// The combined page renders the author form and the selected feed's editor.
+	// The combined page renders the author form and, for the selected feed, its
+	// editor inline (the accordion panel is open).
 	body := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
 	for _, want := range []string{
 		`name="name"`,
-		"edit feed: Blog",
+		`id="feed-acc-` + itoa(f.ID) + `"`,
 		`action="/feeds/` + itoa(f.ID) + `/edit"`,
 		`name="feed_url"`,
 	} {
@@ -2286,10 +2303,10 @@ func TestFeedEditRedirectsToCombinedAuthorEdit(t *testing.T) {
 	if strings.Contains(body, `name="author_id"`) {
 		t.Fatalf("combined feed editor should not carry an author picker: %s", body)
 	}
-	// An unknown or foreign feed id yields no editor.
+	// An unknown or foreign feed id yields no editor (and no author picker).
 	other, _ := s.store.Authors.Create(u.ID, "Other", "", "")
 	body = doGet(h, "/authors/"+itoa(other.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
-	if strings.Contains(body, "edit feed: Blog") {
+	if strings.Contains(body, `name="feed_url"`) {
 		t.Fatalf("a feed not owned by the author should not render an editor: %s", body)
 	}
 }

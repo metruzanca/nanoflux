@@ -29,43 +29,67 @@ templ listsPage(u store.User, d listsPageData) {
 	</dialog>
 }
 
-// ListsList is the index list: the special favorites and bookmarks lists pinned
-// first, then every user-created list.
+// ListsList is the index: the special favorites and bookmarks lists pinned
+// first as their own cards (they are not rows in the lists table), then every
+// user-created list. User lists live in their own <ul id="lists-list">, which
+// is also the target the add-list form appends to.
 templ ListsList(d listsPageData) {
-	<ul class="plain" id="lists-list">
+	<ul class="plain" id="special-lists">
 		@FavoritesListRow(d)
 		@BookmarksListRow(d)
+	</ul>
+	if len(d.Lists) > 0 {
+		<h2>your lists</h2>
+	}
+	<ul class="plain" id="lists-list">
 		for _, l := range d.Lists {
 			@ListRow(l)
 		}
 	</ul>
 }
 
+// FavoritesListRow is the special favorites list as a card. Unlike a normal
+// list it is not created by the user: it is every item marked favorite, and it
+// is the taste signal that drives the "magic" sort, so its card explains that
+// and offers the algorithm editor here rather than on the cluttered favorites
+// page.
 templ FavoritesListRow(d listsPageData) {
 	<li id="favorites-list">
-		<div class="row">
-			<div>
-				<a href="/favorites"><strong>favorites</strong></a>
-				<span class="muted">({ d.FavoritesCount })</span>
+		<div class="card">
+			<div class="row">
+				<div>
+					<a href="/favorites"><strong>favorites</strong></a>
+					<span class="muted">({ d.FavoritesCount })</span>
+				</div>
+				<div class="row-actions">
+					<a class="button small" title="edit the magic sort" href="/favorites/algorithm">edit algorithm</a>
+					@favoritesShareControl(d.FavoritesShareTok)
+				</div>
 			</div>
-			<div class="row-actions">
-				@favoritesShareControl(d.FavoritesShareTok)
+			<div class="item-meta">
+				favorites are the taste signal behind the “magic” sort: use edit algorithm to raise or lower a feed, and magic will rank its items higher or lower.
 			</div>
 		</div>
 	</li>
 }
 
 // BookmarksListRow pins the native bookmarks list (save-for-later) next to
-// favorites on the lists index.
+// favorites on the lists index. It is a special list too: every item saved for
+// later, not a user-created list.
 templ BookmarksListRow(d listsPageData) {
 	<li id="bookmarks-list">
-		<div class="row">
-			<div>
-				<a href="/bookmarks"><strong>bookmarks</strong></a>
-				<span class="muted">({ d.BookmarksCount })</span>
+		<div class="card">
+			<div class="row">
+				<div>
+					<a href="/bookmarks"><strong>bookmarks</strong></a>
+					<span class="muted">({ d.BookmarksCount })</span>
+				</div>
+				<div class="row-actions">
+					@bookmarksShareControl(d.BookmarksShareTok)
+				</div>
 			</div>
-			<div class="row-actions">
-				@bookmarksShareControl(d.BookmarksShareTok)
+			<div class="item-meta">
+				items you saved for later. bookmarks are kept separate from your lists so you can always find something to read.
 			</div>
 		</div>
 	</li>
@@ -73,13 +97,15 @@ templ BookmarksListRow(d listsPageData) {
 
 templ ListRow(l store.ListWithCount) {
 	<li id={ "list-" + strconv.FormatInt(l.ID, 10) }>
-		<div class="row">
-			<div>
-				<a href={ "/lists/" + strconv.FormatInt(l.ID, 10) }><strong>{ l.Name }</strong></a>
-				<span class="muted">({ l.ItemCount })</span>
-			</div>
-			<div class="row-actions">
-				@listShareControl(l.ID, l.ShareToken)
+		<div class="card">
+			<div class="row">
+				<div>
+					<a href={ "/lists/" + strconv.FormatInt(l.ID, 10) }><strong>{ l.Name }</strong></a>
+					<span class="muted">({ l.ItemCount })</span>
+				</div>
+				<div class="row-actions">
+					@listShareControl(l.ID, l.ShareToken)
+				</div>
 			</div>
 		</div>
 	</li>

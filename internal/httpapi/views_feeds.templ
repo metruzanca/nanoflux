@@ -49,12 +49,7 @@ templ FeedRow(r feedRow) {
 				} else {
 					<a href={ templ.URL(r.FeedURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">feed</a>
 				}
-				· { r.Unread } unread · last polled 
-				if r.LastPolledAt != "" {
-					{ web.TimeFmt(r.Timezone, r.LastPolledAt) }
-				} else {
-					never
-				}
+				· { r.Unread } unread
 			</div>
 			if len(r.Collections) > 0 {
 				<div class="feed-collections">
@@ -167,35 +162,45 @@ templ noFeedFound(d noFeedFoundData) {
 	</div>
 }
 
-// feedEditor is the feed edit form, embedded in the combined author edit page.
-// It renders the feed's fields, delete form, plugin panel and a plugin docs link.
+// feedEditorBody is the feed edit form on its own: the fields + save form, the
+// delete form, the plugin panel, and a plugin docs link. It is what the author
+// edit page's feed accordion loads into each panel (lazily via
+// /feeds/{id}/edit-fragment), so it carries no card chrome or title.
+templ feedEditorBody(d feedsData) {
+	if d.DocsPlugin != "" {
+		<div class="row">
+			<button type="button" class="link" data-plugin={ d.DocsPlugin } title="read this feed's plugin documentation" data-plugin-docs>plugin docs</button>
+		</div>
+	}
+	<form class="stack" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
+		@csrfField()
+		@feedFields(d)
+		<button type="submit">save</button>
+	</form>
+	<form class="stack delete-form" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this feed?">
+		@csrfField()
+		if d.Panel != nil {
+			<label class="check">
+				<input type="checkbox" name="delete_remote" value="1"/>
+				also delete it on the remote service
+			</label>
+		}
+		<button type="submit" class="danger">delete</button>
+	</form>
+	if d.Panel != nil {
+		@feedPluginPanel(*d.Panel)
+	}
+}
+
+// feedEditor wraps feedEditorBody in a titled card. Kept for any standalone
+// rendering; the author edit page uses the accordion + feedEditorBody instead.
 templ feedEditor(d feedsData) {
 	<section class="card">
 		<div class="row">
 			<h2>edit feed: { d.Form.Title }</h2>
-			if d.DocsPlugin != "" {
-				<button type="button" class="link" data-plugin={ d.DocsPlugin } title="read this feed's plugin documentation" data-plugin-docs>plugin docs</button>
-			}
 		</div>
-		<form class="stack" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
-			@csrfField()
-			@feedFields(d)
-			<button type="submit">save</button>
-		</form>
-		<form class="stack delete-form" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this feed?">
-			@csrfField()
-			if d.Panel != nil {
-				<label class="check">
-					<input type="checkbox" name="delete_remote" value="1"/>
-					also delete it on the remote service
-				</label>
-			}
-			<button type="submit" class="danger">delete</button>
-		</form>
+		@feedEditorBody(d)
 	</section>
-	if d.Panel != nil {
-		@feedPluginPanel(*d.Panel)
-	}
 }
 
 templ feedFields(d feedsData) {
@@ -293,7 +298,6 @@ templ feedPage(u store.User, d feedPageData) {
 			@feedOlderControl(d.Row)
 		}
 	</section>
-	<h2>items</h2>
 	@ScopedItems(d.Scoped)
 }
 

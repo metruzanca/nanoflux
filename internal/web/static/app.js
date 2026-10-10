@@ -251,7 +251,9 @@ function displayScope() {
 }
 function displayMode() {
   var ctl = document.querySelector('.picker[data-picker="display"]');
-  return (ctl && ctl.dataset.mode === 'grid') ? 'grid' : 'list';
+  var m = ctl && ctl.dataset.mode;
+  if (m === 'grid' || m === 'cards') return m;
+  return 'list';
 }
 function applyDisplayMode() {
   var mode = displayMode();
@@ -269,6 +271,7 @@ function setDisplayMode(mode, e) {
   var list = document.getElementById('items-list');
   if (list && list.tagName === 'UL') {
     list.classList.toggle('masonry', mode === 'grid');
+    list.classList.toggle('cards', mode === 'cards');
   }
   setPickerState('display', mode);
   fetch('/prefs/display', {
@@ -278,12 +281,12 @@ function setDisplayMode(mode, e) {
   }).catch(function () {});
 }
 
-// Authors sort (abc / newest / unread). Client-side (localStorage), reorders
-// the rendered rows. The default is "unread".
+// Authors sort (abc / newest / unread / magic). Client-side (localStorage),
+// reorders the rendered rows. The default is "unread".
 var AUTHOR_SORT_KEY = 'nanoflux.authors.sort';
 function authorSort() {
   var s = localStorage.getItem(AUTHOR_SORT_KEY);
-  if (s === 'abc' || s === 'newest') return s;
+  if (s === 'abc' || s === 'newest' || s === 'magic') return s;
   return 'unread';
 }
 function applyAuthorSort() {
@@ -297,6 +300,11 @@ function applyAuthorSort() {
       }
       if (sort === 'unread') {
         return (parseInt(b.dataset.unread, 10) || 0) - (parseInt(a.dataset.unread, 10) || 0);
+      }
+      if (sort === 'magic') {
+        var d = (parseInt(b.dataset.taste, 10) || 0) - (parseInt(a.dataset.taste, 10) || 0);
+        if (d !== 0) return d;
+        return (a.dataset.name || '').localeCompare(b.dataset.name || '');
       }
       return (a.dataset.name || '').localeCompare(b.dataset.name || '');
     });
@@ -466,6 +474,7 @@ function markRowRead(id) {
   if (!row) return;
   var title = row.querySelector('.item-title');
   if (title) title.classList.remove('unread');
+  row.classList.add('read');
   var btn = row.querySelector('.read-btn');
   if (btn) {
     btn.textContent = '↺';
