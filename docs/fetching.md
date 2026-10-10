@@ -262,8 +262,8 @@ plugin are re-enabled; a feed the user paused stays paused.
 | Other HTTP error (`4xx`/`5xx`) | Records `last_error`; retried on the feed's normal interval |
 | Parse error (not a feed) | Records `last_error`; retried on the normal interval |
 
-`last_error` is shown as a **"last poll failed"** badge on the feed row and the
-feed page. It is distinct from the amber **stale** badge ("no new posts in a
+`last_error` is shown as a **"last poll failed"** badge on the author page's
+feed card. It is distinct from the amber **stale** badge ("no new posts in a
 while"), which is not a failure.
 
 ## Item categories
@@ -285,11 +285,11 @@ former ingest filter-rule system was removed for a clean reimplementation.
 ## Pagination ("load older items")
 
 A feed may advertise a next page via a feed-level `rel="next"` link or a
-`page=`-style query. The first poll records that cursor. The feed page offers a
-**"load older items"** button which walks up to 5 pages per click (bounded so an
-unbounded history cannot stall the request) until the history is exhausted.
-Routine polls never touch the cursor, so they cannot clobber an in-progress
-backfill.
+`page=`-style query. The first poll records that cursor. The feed's card on its
+author page offers a **"load older items"** button which walks up to 5 pages per
+click (bounded so an unbounded history cannot stall the request) until the
+history is exhausted, refreshing the author's item list as it goes. Routine
+polls never touch the cursor, so they cannot clobber an in-progress backfill.
 
 ## Configuration
 

@@ -9,47 +9,78 @@ import (
 )
 
 templ FeedsList(rows []feedRow) {
-	<ul class="plain" id="feeds-list">
+	<ul class="feed-cards" id="feeds-list">
 		for _, r := range rows {
 			@FeedRow(r)
 		}
 	</ul>
 }
 
-// FeedRow is a feed as it appears on the author page's feed list (and the
-// fragments that append to it). It is deliberately read-only: editing and
-// refreshing live on the feed's own page, and the link points at the feed's
-// home site rather than its feed URL, which is what a reader wants to visit.
+// FeedRow is one of an author's feeds as a card. It carries everything that used
+// to live on the feed's own page (which was folded into the author page): the
+// link to the feed's scoped item list, the refresh and mark-all-read actions,
+// the "load older items" control, the external feed/home link, the last-polled
+// line and the cached-media stat. It is the htmx swap target for the add /
+// refresh / toggle fragments, which re-render a single row.
 templ FeedRow(r feedRow) {
-	<li id={ "feed-" + strconv.FormatInt(r.ID, 10) }>
-		<div>
-			<a href={ "/feeds/" + strconv.FormatInt(r.ID, 10) }>
-				<strong>
-					@web.SourceIcon(feedIconURL(r.Feed))
-					{ r.Title }
-				</strong>
-			</a>
-			if !r.Enabled {
-				if r.DisabledReason != "" {
-					<span class="badge danger" title={ r.DisabledReason }>disabled · { r.DisabledReason }</span>
-				} else {
-					<span class="badge">paused</span>
-				}
-			}
-			if r.LastError != "" {
-				<span class="badge danger" title={ r.LastError }>last poll failed</span>
-			}
-			if r.Cooling() {
-				<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited · retry { web.Until(r.NextPollAt) }</span>
-			}
-			@staleBadge(r.Feed, r.Timezone)
+	{{ id := strconv.FormatInt(r.ID, 10) }}
+	{{ authorID := strconv.FormatInt(r.AuthorID, 10) }}
+	{{ feedURL := "/authors/" + authorID + "?feed=" + id }}
+	<li id={ "feed-" + id } class="feed-card-item">
+		<div class="card">
+			<div class="row">
+				<div>
+					<a href={ templ.URL(feedURL) }>
+						<strong>
+							@web.SourceIcon(feedIconURL(r.Feed))
+							{ r.Title }
+						</strong>
+					</a>
+					if !r.Enabled {
+						if r.DisabledReason != "" {
+							<span class="badge danger" title={ r.DisabledReason }>disabled · { r.DisabledReason }</span>
+						} else {
+							<span class="badge">paused</span>
+						}
+					}
+					if r.LastError != "" {
+						<span class="badge danger" title={ r.LastError }>last poll failed</span>
+					}
+					if r.Cooling() {
+						<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited · retry { web.Until(r.NextPollAt) }</span>
+					}
+					@staleBadge(r.Feed, r.Timezone)
+				</div>
+				<div class="row-actions">
+					<button
+						class="link"
+						title="refresh"
+						hx-post={ "/feeds/" + id + "/refresh" }
+						hx-target={ "#feed-" + id }
+						hx-swap="outerHTML"
+						if r.Cooling() {
+							disabled
+						}
+					>@web.Lucide("refresh-cw")</button>
+					@markAllReadControl(markAllReadData{Action: "/feeds/" + id + "/read-all", Unread: r.Unread})
+					<a class="small" title="edit feed" href={ templ.URL("/authors/" + authorID + "/edit?feed=" + id) }>@web.EditIcon()</a>
+				</div>
+			</div>
 			<div class="item-meta">
 				if home := strings.TrimSpace(r.HomeURL); home != "" {
 					<a href={ templ.URL(home) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home</a>
 				} else {
 					<a href={ templ.URL(r.FeedURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">feed</a>
 				}
-				· { r.Unread } unread
+				· { r.Unread } unread · last polled 
+				if r.LastPolledAt != "" {
+					{ web.TimeFmt(r.Timezone, r.LastPolledAt) }
+				} else {
+					never
+				}
+				if r.Storage > 0 {
+					· cached media { web.FormatBytes(r.Storage) }
+				}
 			</div>
 			if len(r.Collections) > 0 {
 				<div class="feed-collections">
@@ -57,6 +88,9 @@ templ FeedRow(r feedRow) {
 						<a class="tag" href={ "/collections/" + strconv.FormatInt(c.ID, 10) } title={ c.Name }>#{ c.Name }</a>
 					}
 				</div>
+			}
+			if r.NextPageURL != "" {
+				@feedOlderControl(r)
 			}
 		</div>
 	</li>
@@ -192,17 +226,6 @@ templ feedEditorBody(d feedsData) {
 	}
 }
 
-// feedEditor wraps feedEditorBody in a titled card. Kept for any standalone
-// rendering; the author edit page uses the accordion + feedEditorBody instead.
-templ feedEditor(d feedsData) {
-	<section class="card">
-		<div class="row">
-			<h2>edit feed: { d.Form.Title }</h2>
-		</div>
-		@feedEditorBody(d)
-	</section>
-}
-
 templ feedFields(d feedsData) {
 	@switchField("enabled", "enabled (poll this feed)", d.Form.Enabled, nil)
 	@switchField("cache_images", "cache images locally", d.Form.CacheImages || d.Form.CacheForced, nil)
@@ -233,82 +256,15 @@ templ feedFields(d feedsData) {
 	}
 }
 
-templ feedPage(u store.User, d feedPageData) {
-	<section class="card">
-		<div class="row">
-			<h1>
-				@web.SourceIcon(feedIconURL(d.Row.Feed))
-				{ d.Row.Title }
-			</h1>
-			<div class="row-actions">
-				<a class="small" title="edit feed" href={ "/authors/" + strconv.FormatInt(d.Row.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(d.Row.ID, 10) }>@web.EditIcon()
-</a>
-				<button
-					class="link"
-					title="refresh"
-					hx-post={ "/feeds/" + strconv.FormatInt(d.Row.ID, 10) + "/refresh" }
-					hx-swap="none"
-					data-reload-on-success
-					if d.Row.Cooling() {
-						disabled
-					}
-				>@web.Lucide("refresh-cw")
-</button>
-				@markAllReadControl(d.MarkAll)
-			</div>
-		</div>
-		<p class="item-meta">
-			if d.Row.AuthorName != "" {
-				<a href={ "/authors/" + strconv.FormatInt(d.Row.AuthorID, 10) }>{ d.Row.AuthorName }</a> ·
-			} else {
-				no author ·
-			}
-			<a href={ templ.URL(d.Row.FeedURL) } class="external" referrerpolicy="no-referrer">feed</a>
-			if d.Row.HomeURL != "" {
-				· <a href={ templ.URL(d.Row.HomeURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home</a>
-			}
-		</p>
-		<p class="muted small">
-			{ d.Row.Unread } unread · last polled 
-			if d.Row.LastPolledAt != "" {
-				{ web.TimeFmt(d.Row.Timezone, d.Row.LastPolledAt) }
-			} else {
-				never
-			}
-			if d.Row.Storage > 0 {
-				· cached media { web.FormatBytes(d.Row.Storage) }
-			}
-		</p>
-		if d.Row.LastError != "" {
-			<div class="error" role="alert">last poll failed: { d.Row.LastError }</div>
-		}
-		if d.Row.Cooling() {
-			<div class="notice">rate limited · retry { web.Until(d.Row.NextPollAt) }</div>
-		}
-		if sf, ok := web.StaleFeedFor(d.Row.LastItemAt); ok {
-			<div class="notice">
-				if sf.Abandoned {
-					no new posts in { sf.Days } days · this account may be abandoned
-				} else {
-					no new posts in { sf.Days } days
-				}
-			</div>
-		}
-		if d.Row.NextPageURL != "" {
-			@feedOlderControl(d.Row)
-		}
-	</section>
-	@ScopedItems(d.Scoped)
-}
-
-// feedOlderControl is the "load older items" control for a paginated feed. It
-// is the htmx swap target for POST /feeds/{id}/older: the response replaces it
-// (button advances to the next page, or becomes a "history complete" note once
-// pages run out) and out-of-band swaps the item list.
+// feedOlderControl is the "load older items" control inside a feed card. It is
+// the htmx swap target for POST /feeds/{id}/older: the response replaces it
+// (the button advances to the next page, or becomes a "history complete" note
+// once pages run out) and out-of-band swaps the item list.
 templ feedOlderControl(f feedRow) {
-	<div id="feed-older">
+	{{ id := strconv.FormatInt(f.ID, 10) }}
+	<div id={ "feed-older-" + id } class="feed-older">
 		if f.NextPageURL != "" {
-			<button class="link" hx-post={ "/feeds/" + strconv.FormatInt(f.ID, 10) + "/older" } hx-target="#feed-older" hx-swap="outerHTML">load older items</button>
+			<button class="link" hx-post={ "/feeds/" + id + "/older" } hx-target={ "#feed-older-" + id } hx-swap="outerHTML">load older items</button>
 		} else {
 			<span class="muted small">full history loaded</span>
 		}

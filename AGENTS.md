@@ -191,9 +191,10 @@ The host then caches that feed's images itself.
   like `/img`) serves the bytes, or proxies `?u=` when the blob is gone (purged
   cache), so a removed folder degrades to the remote URL instead of a broken
   image.
-- Sizes drive the feed page and author stats ("cached media", `web.FormatBytes`),
-  summed from the DB via `ItemStore.StorageByFeed`/`StorageByAuthor` (membership-
-  scoped). The `.ct` sidecars are disk-store metadata; `List`/`Stat` ignore them.
+- Sizes drive the author feed cards and author stats ("cached media",
+  `web.FormatBytes`), summed from the DB via `ItemStore.StorageByFeed`/
+  `StorageByAuthor` (membership-scoped). The `.ct` sidecars are disk-store
+  metadata; `List`/`Stat` ignore them.
 - Purge: deleting a user (`Users.ListObjectKeys` includes the item/enclosure
   cache keys) or a feed (`FeedStore.Delete` returns the keys of the items it
   actually removes; re-homed cross-feed items keep theirs) deletes those blobs
@@ -245,9 +246,31 @@ Categories are also normalized for tag browsing and list filtering.
   The HTTP layer reads repeated `?tags=` (`tagParams`, capped at
   `maxTagFilters`); tab/sort/pagination links carry them (`appendTags`).
 - UI: the item modal shows its tags as clickable chips (linking to
-  `/feeds/{id}?tags=`); a scoped feed/author/collection list gets a
-  magnifying-glass tag-filter dialog (`comboMulti` over the scope's
-  `ListCategories` options) plus active-filter chips.
+  `/authors/{id}?tags=`); a scoped feed/author/collection list gets a
+  magnifying-glass filter dialog (`comboMulti` over the scope's `ListCategories`
+  options, plus, on author pages, a single-select over the author's feeds that
+  sets `?feed=`) and active-filter chips.
+
+## Feeds live on the author page
+
+There is no `/feeds/{id}` page. An author's feeds render as cards inside the
+`details.author-feeds` section of `/authors/{id}` (`FeedRow`), each carrying the
+actions that used to live on the feed page: a link to the feed's scoped item
+list, refresh (`POST /feeds/{id}/refresh`), feed-scoped mark-all-read, "load
+older items" (`POST /feeds/{id}/older`, which appends OOB to the author's item
+list), the external home/feed link, the last-polled line and the cached-media
+stat. `GET /feeds/{id}/edit` still redirects to the author edit page.
+
+A feed's item list is the author page filtered with `?feed={id}`
+(`Server.authorFeedFilter` validates ownership; `authorScopedItems` sets
+`ItemFilter.FeedID`), which scopes the tabs, counts, sort, tags, pagination and
+the header mark-all to that feed. Every former `/feeds/{id}` link now points at
+an author page: the feed card title at `/authors/{id}?feed=`, item/source/author
+links at `/authors/{id}`, the item modal's tag chips at `/authors/{id}?tags=`,
+the search-palette feed entity and the provision success link at
+`/authors/{id}?feed=`. The item menu's old "go to feed" is "go to author" (and
+is omitted on the author's own page). Display-mode scopes drop `/feeds/{id}`;
+the author page's scope stays `/authors/{id}`.
 
 ## Appearance
 

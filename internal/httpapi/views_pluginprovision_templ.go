@@ -91,7 +91,7 @@ func provisionFormFields(d provisionFormData) templ.Component {
 // provisionCreated is shown after a remote feed is created: the feed URL plus
 // the display fields the plugin returned (the subscribe address), each with a
 // copy control, and a deep link to the new feed.
-func provisionCreated(feedID int64, title string, fields []pluginapi.Field) templ.Component {
+func provisionCreated(feedID, authorID int64, title string, fields []pluginapi.Field) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -172,9 +172,9 @@ func provisionCreated(feedID int64, title string, fields []pluginapi.Field) temp
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var9 templ.SafeURL
-		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs("/feeds/" + strconv.FormatInt(feedID, 10))
+		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(authorFeedURL(authorID, feedID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_pluginprovision.templ`, Line: 44, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_pluginprovision.templ`, Line: 44, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {

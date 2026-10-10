@@ -366,10 +366,11 @@ func TestCollectionPageDedups(t *testing.T) {
 		t.Fatalf("row should list the alternate feed as a source: %s", body)
 	}
 
-	// The feed page still lists the item (dedup is collection/author-scoped only).
-	body = doGet(h, "/feeds/"+itoa(f1.ID), cookie).Body.String()
+	// The single-feed author view still lists the item (dedup is
+	// collection/author-scoped only).
+	body = doGet(h, "/authors/"+itoa(a.ID)+"?feed="+itoa(f1.ID), cookie).Body.String()
 	if got := strings.Count(body, "Funny cat video"); got != 1 {
-		t.Fatalf("feed page should show its own item: %d", got)
+		t.Fatalf("feed-filtered author page should show its own item: %d", got)
 	}
 }
 
@@ -432,9 +433,9 @@ func TestCrossFeedRedditItem(t *testing.T) {
 	s.store.Items.Upsert(subFeed.ID, post)
 	s.store.Items.Upsert(userFeed.ID, post)
 
-	body := doGet(h, "/feeds/"+itoa(subFeed.ID), cookie).Body.String()
+	body := doGet(h, "/authors/"+itoa(subA.ID)+"?feed="+itoa(subFeed.ID), cookie).Body.String()
 	if got := strings.Count(body, "A cat"); got != 1 {
-		t.Fatalf("sub feed page should show the post once, saw %d: %s", got, body)
+		t.Fatalf("sub feed view should show the post once, saw %d: %s", got, body)
 	}
 	if !strings.Contains(body, `href="/authors/`+itoa(subA.ID)+`">r/cats</a>`) ||
 		!strings.Contains(body, `<span>by</span>`) ||
@@ -450,7 +451,7 @@ func TestCrossFeedRedditItem(t *testing.T) {
 	if err := s.store.Items.SetRead(u.ID, items[0].ID, true); err != nil {
 		t.Fatal(err)
 	}
-	ubody := doGet(h, "/feeds/"+itoa(userFeed.ID)+"?view=read", cookie).Body.String()
+	ubody := doGet(h, "/authors/"+itoa(userA.ID)+"?feed="+itoa(userFeed.ID)+"&view=read", cookie).Body.String()
 	if !strings.Contains(ubody, `href="/authors/`+itoa(subA.ID)+`">r/cats</a>`) ||
 		!strings.Contains(ubody, `href="/authors/`+itoa(userA.ID)+`">u/sam</a>`) {
 		t.Fatalf("user feed read view should render the shared item attributed: %s", ubody)
@@ -482,7 +483,7 @@ func TestRedditAttributionLinksUnpolledUserFeed(t *testing.T) {
 		Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now(),
 	})
 
-	body := doGet(h, "/feeds/"+itoa(subFeed.ID), cookie).Body.String()
+	body := doGet(h, "/authors/"+itoa(subA.ID)+"?feed="+itoa(subFeed.ID), cookie).Body.String()
 	if !strings.Contains(body, `href="/authors/`+itoa(subA.ID)+`">r/cats</a>`) ||
 		!strings.Contains(body, `href="/authors/`+itoa(userA.ID)+`">u/sam</a>`) {
 		t.Fatalf("poster should link internally even before the user feed polls: %s", body)
@@ -1041,8 +1042,8 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	if !strings.Contains(body, `href="/authors/1">bigboxSWE</a>`) {
 		t.Fatalf("item meta should link the author internally: %s", body)
 	}
-	if !strings.Contains(body, `href="/feeds/1">go to feed</a>`) {
-		t.Fatalf("item menu should offer 'go to feed': %s", body)
+	if !strings.Contains(body, `href="/authors/1">go to author</a>`) {
+		t.Fatalf("item menu should offer 'go to author': %s", body)
 	}
 	if strings.Contains(body, `href="https://www.youtube.com/feeds/videos.xml`) {
 		t.Fatalf("item meta must not link to the external feed url: %s", body)
@@ -1309,12 +1310,13 @@ func TestItemView(t *testing.T) {
 	if !strings.Contains(body, "<b>world</b>") || !strings.Contains(body, "Item") || !strings.Contains(body, "Metru") {
 		t.Fatalf("item view content: %s", body)
 	}
-	// Modal meta links author and feed internally, never to the external RSS url.
+	// Modal meta links the author internally, never to the removed feed page or
+	// the external RSS url.
 	if !strings.Contains(body, `href="/authors/1">Metru</a>`) {
 		t.Fatalf("modal meta should link the author internally: %s", body)
 	}
-	if !strings.Contains(body, `href="/feeds/1">feed</a>`) {
-		t.Fatalf("modal meta should link the feed internally as 'feed': %s", body)
+	if strings.Contains(body, `href="/feeds/1"`) {
+		t.Fatalf("modal meta must not link to the removed feed page: %s", body)
 	}
 	if strings.Contains(body, `href="https://b.dev/rss.xml"`) {
 		t.Fatalf("modal meta must not link to the external feed url: %s", body)
@@ -1511,14 +1513,12 @@ func TestExternalLinksCarryMarker(t *testing.T) {
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "https://b.dev", "", 900)
 	s.store.AuthorLinks.Create(u.ID, a.ID, "twitch", "https://twitch.tv/metru")
 
-	// Feed page: "feed" and "home" links are external, carry the ↗ marker
-	// class, and are hardened against referrer leakage.
-	body := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
-	if !strings.Contains(body, `href="https://b.dev/rss.xml" class="external" referrerpolicy="no-referrer">feed`) {
-		t.Fatalf("feed page feed link should be external-marked: %s", body)
-	}
+	// The feed's card on the author page: the home link (the feed row prefers
+	// the home page over the RSS url) is external, carries the ↗ marker class,
+	// and is hardened against referrer leakage.
+	body := doGet(h, "/authors/"+itoa(a.ID)+"?feed="+itoa(f.ID), cookie).Body.String()
 	if !strings.Contains(body, `href="https://b.dev" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home`) {
-		t.Fatalf("feed page home link should be external-marked: %s", body)
+		t.Fatalf("author feed card home link should be external-marked: %s", body)
 	}
 
 	// Author page: a link bookmark is external and marked.
@@ -1561,19 +1561,20 @@ func TestFeedAndAuthorPagesShowItems(t *testing.T) {
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Feed Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
-	// Feed detail page shows the feed, its author, and its items.
-	rr := doGet(h, "/feeds/"+itoa(f.ID), cookie)
+	// The author page shows the feed, the author and the feed's items; the
+	// ?feed= filter scopes the item list to that one feed.
+	rr := doGet(h, "/authors/"+itoa(a.ID)+"?feed="+itoa(f.ID), cookie)
 	if rr.Code != http.StatusOK {
-		t.Fatalf("feed page: %d", rr.Code)
+		t.Fatalf("author feed-filtered page: %d", rr.Code)
 	}
 	body := rr.Body.String()
 	for _, want := range []string{"Blog", "Feed Item", "Metru"} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("feed page missing %q: %s", want, body)
+			t.Fatalf("author page missing %q: %s", want, body)
 		}
 	}
 
-	// Author page shows items from the author's feeds.
+	// The plain author page also shows the items.
 	rr = doGet(h, "/authors/"+itoa(a.ID), cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("author page: %d", rr.Code)
@@ -1612,10 +1613,11 @@ func TestScopedReadUnreadTabs(t *testing.T) {
 	for _, scope := range []struct {
 		base string // page URL
 		frag string // fragment URL
+		sep  string // query separator for appending ?view=
 	}{
-		{"/feeds/" + itoa(f.ID), "/feeds/" + itoa(f.ID) + "/items"},
-		{"/authors/" + itoa(a.ID), "/authors/" + itoa(a.ID) + "/items"},
-		{"/collections/" + itoa(coll.ID), "/collections/" + itoa(coll.ID) + "/items"},
+		{"/authors/" + itoa(a.ID) + "?feed=" + itoa(f.ID), "/authors/" + itoa(a.ID) + "/items?feed=" + itoa(f.ID), "&"},
+		{"/authors/" + itoa(a.ID), "/authors/" + itoa(a.ID) + "/items", "?"},
+		{"/collections/" + itoa(coll.ID), "/collections/" + itoa(coll.ID) + "/items", "?"},
 	} {
 		// Default view is unread: only the unread item, tabs show both counts.
 		body := doGet(h, scope.base, cookie).Body.String()
@@ -1632,7 +1634,7 @@ func TestScopedReadUnreadTabs(t *testing.T) {
 		}
 
 		// ?view=read shows only the read item, with its read-at timestamp.
-		body = doGet(h, scope.base+"?view=read", cookie).Body.String()
+		body = doGet(h, scope.base+scope.sep+"view=read", cookie).Body.String()
 		if !strings.Contains(body, `data-item-link="https://b.dev/2"`) ||
 			strings.Contains(body, `data-item-link="https://b.dev/1"`) {
 			t.Fatalf("%s read view wrong list: %s", scope.base, body)
@@ -1642,7 +1644,7 @@ func TestScopedReadUnreadTabs(t *testing.T) {
 		}
 
 		// The fragment endpoint returns the tabbed list for the requested view.
-		rr := doGet(h, scope.frag+"?view=read", cookie)
+		rr := doGet(h, scope.frag+scope.sep+"view=read", cookie)
 		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `data-item-link="https://b.dev/2"`) {
 			t.Fatalf("%s fragment: %d %s", scope.frag, rr.Code, rr.Body.String())
 		}
@@ -1736,7 +1738,7 @@ func TestDisplayModeControlPresent(t *testing.T) {
 		{"/read", "/read"},
 		{"/favorites", "/favorites"},
 		{"/authors/" + itoa(a.ID), "/authors/" + itoa(a.ID)},
-		{"/feeds/" + itoa(f.ID), "/feeds/" + itoa(f.ID)},
+		{"/authors/" + itoa(a.ID) + "?feed=" + itoa(f.ID), "/authors/" + itoa(a.ID)},
 		{"/collections/" + itoa(coll.ID), "/collections/" + itoa(coll.ID)},
 		{"/lists/" + itoa(list.ID), "/lists/" + itoa(list.ID)},
 	}
@@ -2119,17 +2121,23 @@ func TestFeedEditDeleteFlow(t *testing.T) {
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "https://b.dev", "", 900)
 
-	// The author page's feed rows are read-only: no edit, refresh, pause, or
-	// delete — those live on the feed's own page.
+	// The author page's feed card carries the refresh and edit actions (moved
+	// off the removed feed page) but not the pause/delete controls.
 	author := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
-	for _, dead := range []string{
-		`/feeds/` + itoa(f.ID) + `/edit`,
+	for _, want := range []string{
 		`/feeds/` + itoa(f.ID) + `/refresh`,
+		`/authors/` + itoa(a.ID) + `/edit?feed=` + itoa(f.ID),
+	} {
+		if !strings.Contains(author, want) {
+			t.Fatalf("author feed card should link to %s: %s", want, author)
+		}
+	}
+	for _, dead := range []string{
 		`/feeds/` + itoa(f.ID) + `/toggle`,
 		`/feeds/` + itoa(f.ID) + `/delete`,
 	} {
 		if strings.Contains(author, dead) {
-			t.Fatalf("author feed row should not link to %s: %s", dead, author)
+			t.Fatalf("author feed card should not link to %s: %s", dead, author)
 		}
 	}
 	// The row links to the feed's home site, labelled "home", not its feed URL.
@@ -2485,14 +2493,14 @@ func TestStaleFeedBadge(t *testing.T) {
 		t.Fatalf("expected stale badge on author page: %s", body)
 	}
 
-	// Quiet for 35 days -> "may be abandoned" on the feed page.
+	// Quiet for 35 days -> "may be abandoned" badge on the author feed card.
 	abandoned := time.Now().Add(-35 * 24 * time.Hour).Format("2006-01-02 15:04:05")
 	if err := s.store.Feeds.SetLastItemAt(f.ID, abandoned); err != nil {
 		t.Fatal(err)
 	}
-	body = doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
-	if !strings.Contains(body, "notice") || !strings.Contains(body, "may be abandoned") {
-		t.Fatalf("expected abandoned notice on feed page: %s", body)
+	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if !strings.Contains(body, "may be abandoned") {
+		t.Fatalf("expected abandoned badge on author page: %s", body)
 	}
 }
 
@@ -2639,29 +2647,30 @@ func TestDisplayPrefPersist(t *testing.T) {
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Post", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
-	// A feed page renders list by default (the <ul> has no masonry class).
-	body := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
-	if !strings.Contains(body, `data-scope="/feeds/`+itoa(f.ID)+`" data-mode="list"`) {
-		t.Fatalf("feed page should default to list mode: %s", body)
+	// An author page renders list by default (the <ul> has no masonry class).
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if !strings.Contains(body, `data-scope="/authors/`+itoa(a.ID)+`" data-mode="list"`) {
+		t.Fatalf("author page should default to list mode: %s", body)
 	}
 
 	// Saving grid persists it and the page renders masonry on the next load.
 	if rr := doForm(h, "POST", "/prefs/display", url.Values{
-		"scope": {"/feeds/" + itoa(f.ID)}, "mode": {"grid"},
+		"scope": {"/authors/" + itoa(a.ID)}, "mode": {"grid"},
 	}, cookie); rr.Code != http.StatusNoContent {
 		t.Fatalf("save display pref: %d %s", rr.Code, rr.Body.String())
 	}
-	body = doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
+	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
 	if !strings.Contains(body, `data-mode="grid"`) || !strings.Contains(body, `class="items masonry"`) {
-		t.Fatalf("feed page should render grid after saving: %s", body)
+		t.Fatalf("author page should render grid after saving: %s", body)
 	}
 	// The fixed views are independent.
 	if got := doGet(h, "/unread", cookie).Body.String(); !strings.Contains(got, `data-mode="list"`) {
 		t.Fatalf("/unread should remain list: %s", got)
 	}
 
-	// An unknown scope or id is rejected.
-	for _, scope := range []string{"/etc/passwd", "/feeds/abc", "/feeds/1/items", ""} {
+	// An unknown scope or id is rejected. The removed feed page scope is no
+	// longer valid.
+	for _, scope := range []string{"/etc/passwd", "/authors/abc", "/authors/1/items", "/feeds/1", ""} {
 		if rr := doForm(h, "POST", "/prefs/display", url.Values{"scope": {scope}, "mode": {"grid"}}, cookie); rr.Code != http.StatusBadRequest {
 			t.Fatalf("scope %q: got %d, want 400", scope, rr.Code)
 		}

@@ -40,7 +40,7 @@ templ favoritesAlgorithmPage(u store.User, d algorithmData) {
 							if r.AuthorName != "" {
 								<a class="muted small" href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.AuthorName }</a>
 							}
-							<a href={ templ.URL("/feeds/" + strconv.FormatInt(r.ID, 10)) }><strong>{ r.Title }</strong></a>
+							<a href={ templ.URL(authorFeedURL(r.AuthorID, r.ID)) }><strong>{ r.Title }</strong></a>
 						</div>
 						<div class="row-actions">
 							<span class="item-meta">{ r.FavoriteCount } favorites</span>

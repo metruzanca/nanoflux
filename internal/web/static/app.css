@@ -566,6 +566,23 @@ div.stats strong { font-size: 1.1rem; }
 .feed-accordion-item[open] > summary::after { content: "▾"; }
 .feed-accordion-title { font-weight: 600; }
 .feed-accordion-body { padding: 0 0.9rem 0.9rem; }
+
+/* Author page: the feeds list is a two-column grid of cards (one card per
+   feed), so the space is used rather than a single clumped column. */
+ul.feed-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+ul.feed-cards > li { display: block; }
+ul.feed-cards .card { margin-bottom: 0; height: 100%; }
+.feed-older { margin-top: 0.5rem; }
+@media (max-width: 720px) {
+  ul.feed-cards { grid-template-columns: 1fr; }
+}
 .error.banner { padding: 0.7rem 0.9rem; }
 .badge.danger { background: rgba(255, 107, 107, 0.18); color: var(--fg); }
 

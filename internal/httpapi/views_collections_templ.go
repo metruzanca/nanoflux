@@ -710,9 +710,9 @@ func CollectionFeedCard(r feedRow, showEdit bool) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var27 templ.SafeURL
-		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinURLErrs("/feeds/" + strconv.FormatInt(r.ID, 10))
+		templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL(authorFeedURL(r.AuthorID, r.ID)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_collections.templ`, Line: 189, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_collections.templ`, Line: 189, Col: 57}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var27))
 		if templ_7745c5c3_Err != nil {

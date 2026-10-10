@@ -28,7 +28,7 @@ templ provisionFormFields(d provisionFormData) {
 // provisionCreated is shown after a remote feed is created: the feed URL plus
 // the display fields the plugin returned (the subscribe address), each with a
 // copy control, and a deep link to the new feed.
-templ provisionCreated(feedID int64, title string, fields []pluginapi.Field) {
+templ provisionCreated(feedID, authorID int64, title string, fields []pluginapi.Field) {
 	<div class="stack">
 		<p><strong>{ title }</strong> was created.</p>
 		if len(fields) > 0 {
@@ -41,7 +41,7 @@ templ provisionCreated(feedID int64, title string, fields []pluginapi.Field) {
 				</div>
 			}
 		}
-		<a class="button" href={ "/feeds/" + strconv.FormatInt(feedID, 10) }>open the feed</a>
+		<a class="button" href={ templ.URL(authorFeedURL(authorID, feedID)) }>open the feed</a>
 	</div>
 }
 

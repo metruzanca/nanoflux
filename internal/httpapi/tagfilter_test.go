@@ -32,27 +32,27 @@ func TestTagFilterUI(t *testing.T) {
 	golangID := upsert("a", "Go post", "r/golang", "tutorial")
 	upsert("b", "Rust post", "r/rust")
 
-	// Scoped list: active tag chips and the tag-filter dialog with options.
-	body := doGet(h, "/feeds/"+itoa(f.ID)+"?tags=r/golang", cookie).Body.String()
+	// Scoped list: active tag chips and the filter dialog with options.
+	body := doGet(h, "/authors/"+itoa(a.ID)+"?feed="+itoa(f.ID)+"&tags=r/golang", cookie).Body.String()
 	if !strings.Contains(body, `class="chips active-tags"`) {
 		t.Fatalf("feed list missing active tag chips: %s", body)
 	}
 	if !strings.Contains(body, `id="tag-filter-dialog"`) {
-		t.Fatalf("feed list missing tag-filter dialog: %s", body)
+		t.Fatalf("feed list missing filter dialog: %s", body)
 	}
 	if !strings.Contains(body, `data-open="tag-filter-dialog"`) {
-		t.Fatalf("feed list missing tag filter button: %s", body)
+		t.Fatalf("feed list missing filter button: %s", body)
 	}
 	if !strings.Contains(body, "Go post") || strings.Contains(body, "Rust post") {
 		t.Fatalf("tag filter should keep only the matching item: %s", body)
 	}
 	// The dialog offers every tag in scope, including the one not selected.
 	if !strings.Contains(body, "r/rust") {
-		t.Fatalf("tag dialog should offer r/rust: %s", body)
+		t.Fatalf("filter dialog should offer r/rust: %s", body)
 	}
 
-	// Item modal: a tags section with a chip linking to the feed filtered by tag.
-	// This runs last because opening the modal marks the item read.
+	// Item modal: a tags section with a chip linking to the author filtered by
+	// tag. This runs last because opening the modal marks the item read.
 	body = doGet(h, "/items/"+itoa(golangID)+"/view", cookie).Body.String()
 	if !strings.Contains(body, `class="item-tags"`) {
 		t.Fatalf("item modal missing tags section: %s", body)
@@ -60,7 +60,7 @@ func TestTagFilterUI(t *testing.T) {
 	if !strings.Contains(body, "r/golang") || !strings.Contains(body, "tutorial") {
 		t.Fatalf("item modal missing tag chips: %s", body)
 	}
-	if !strings.Contains(body, "/feeds/"+itoa(f.ID)+"?tags=r%2Fgolang") {
-		t.Fatalf("item modal tag chip should link to the filtered feed: %s", body)
+	if !strings.Contains(body, "/authors/"+itoa(a.ID)+"?tags=r%2Fgolang") {
+		t.Fatalf("item modal tag chip should link to the filtered author: %s", body)
 	}
 }

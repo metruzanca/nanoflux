@@ -126,7 +126,7 @@ func (s *Server) feedProvision(w http.ResponseWriter, r *http.Request) {
 	}
 	s.pollFeedNow(feed)
 
-	web.Render(w, r, provisionCreated(feed.ID, feedTitle, got.Fields))
+	web.Render(w, r, provisionCreated(feed.ID, author.ID, feedTitle, got.Fields))
 }
 
 // registryProvisioner resolves a create-capable plugin by its name or label.

@@ -128,10 +128,9 @@ func (s *Server) Handler() http.Handler {
 	// PWA share target: the OS share sheet opens GET /add?url=…
 	mux.Handle("GET /add", s.auth.Require(http.HandlerFunc(s.shareAdd)))
 
-	// Feeds (always viewed from an author).
+	// Feeds (always viewed from an author; a feed's items are the author page's
+	// ?feed= filter, so there is no feed page).
 	mux.Handle("POST /feeds", s.auth.Require(http.HandlerFunc(s.feedCreate)))
-	mux.Handle("GET /feeds/{id}", s.auth.Require(http.HandlerFunc(s.feedPage)))
-	mux.Handle("GET /feeds/{id}/items", s.auth.Require(http.HandlerFunc(s.feedItems)))
 	mux.Handle("GET /feeds/{id}/edit", s.auth.Require(http.HandlerFunc(s.feedEdit)))
 	mux.Handle("GET /feeds/{id}/edit-fragment", s.auth.Require(http.HandlerFunc(s.feedEditFragment)))
 	mux.Handle("POST /feeds/{id}/edit", s.auth.Require(http.HandlerFunc(s.feedUpdate)))
