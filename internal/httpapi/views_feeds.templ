@@ -28,8 +28,8 @@ templ FeedRow(r feedRow) {
 	{{ feedURL := "/authors/" + authorID + "?feed=" + id }}
 	<li id={ "feed-" + id } class="feed-card-item">
 		<div class="card">
-			<div class="row">
-				<div>
+			<div class="row feed-card-head">
+				<div class="feed-card-title">
 					<a href={ templ.URL(feedURL) }>
 						<strong>
 							@web.SourceIcon(feedIconURL(r.Feed))
@@ -66,32 +66,36 @@ templ FeedRow(r feedRow) {
 					<a class="small" title="edit feed" href={ templ.URL("/authors/" + authorID + "/edit?feed=" + id) }>@web.EditIcon()</a>
 				</div>
 			</div>
-			<div class="item-meta">
-				if home := strings.TrimSpace(r.HomeURL); home != "" {
-					<a href={ templ.URL(home) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home</a>
-				} else {
-					<a href={ templ.URL(r.FeedURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">feed</a>
-				}
-				· { r.Unread } unread · last polled 
-				if r.LastPolledAt != "" {
-					{ web.TimeFmt(r.Timezone, r.LastPolledAt) }
-				} else {
-					never
-				}
-				if r.Storage > 0 {
-					· cached media { web.FormatBytes(r.Storage) }
-				}
-			</div>
-			if len(r.Collections) > 0 {
-				<div class="feed-collections">
-					for _, c := range r.Collections {
-						<a class="tag" href={ "/collections/" + strconv.FormatInt(c.ID, 10) } title={ c.Name }>#{ c.Name }</a>
+			<div class="feed-card-meta">
+				<span class="item-meta">
+					if home := strings.TrimSpace(r.HomeURL); home != "" {
+						<a href={ templ.URL(home) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home</a>
+					} else {
+						<a href={ templ.URL(r.FeedURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">feed</a>
+					}
+					· { r.Unread } unread · last polled 
+					if r.LastPolledAt != "" {
+						{ web.TimeFmt(r.Timezone, r.LastPolledAt) }
+					} else {
+						never
+					}
+					if r.Storage > 0 {
+						· cached media { web.FormatBytes(r.Storage) }
+					}
+				</span>
+				<div class="feed-card-right">
+					if len(r.Collections) > 0 {
+						<div class="feed-collections">
+							for _, c := range r.Collections {
+								<a class="tag" href={ "/collections/" + strconv.FormatInt(c.ID, 10) } title={ c.Name }>#{ c.Name }</a>
+							}
+						</div>
+					}
+					if r.NextPageURL != "" {
+						@feedOlderControl(r)
 					}
 				</div>
-			}
-			if r.NextPageURL != "" {
-				@feedOlderControl(r)
-			}
+			</div>
 		</div>
 	</li>
 }
