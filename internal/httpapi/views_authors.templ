@@ -233,12 +233,6 @@ templ authorPageLinks(links []store.AuthorLink) {
 	}
 }
 
-// authorTagURL builds the link that filters an author's item list to one tag,
-// the same ?tags= the scoped tag picker uses.
-func authorTagURL(authorID int64, tag string) string {
-	return "/authors/" + strconv.FormatInt(authorID, 10) + "?tags=" + url.QueryEscape(tag)
-}
-
 templ authorPage(u store.User, d authorData) {
 	<section class="card">
 		<div class="author-head">
@@ -260,10 +254,10 @@ templ authorPage(u store.User, d authorData) {
 			<p>{ d.Author.Description }</p>
 		}
 		@authorStats(d.Stats, len(d.Rows), d.Frequency, d.Timezone)
-		if len(d.Categories) > 0 {
-			<div class="author-tags" aria-label="tags across this author's feeds">
-				for _, c := range d.Categories {
-					<a class="tag" href={ templ.URL(authorTagURL(d.Author.ID, c.Category)) } title={ strconv.Itoa(c.Count) + " items" }>#{ c.Category }</a>
+		if len(d.Collections) > 0 {
+			<div class="author-collections" aria-label="collections this author's feeds belong to">
+				for _, c := range d.Collections {
+					<a class="tag" href={ "/collections/" + strconv.FormatInt(c.ID, 10) } title={ c.Name }>#{ c.Name }</a>
 				}
 			</div>
 		}

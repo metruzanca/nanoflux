@@ -134,14 +134,14 @@ type authorData struct {
 	Author store.Author
 	Rows   []feedRow
 	Links  []store.AuthorLink
-	// Categories is every tag across the author's feeds, combined and deduped
-	// (ListCategories is distinct by category). Shown as chips on the author card.
-	Categories []store.CategoryCount
-	Scoped     scopedItemsData
-	Stats      store.AuthorItemStats
-	Frequency  string // approximate posting cadence, "" when unknown
-	Timezone   string
-	MarkAll    markAllReadData
+	// Collections is every feed collection the author's feeds belong to,
+	// combined and deduped. Shown as chips on the author card.
+	Collections []store.Collection
+	Scoped      scopedItemsData
+	Stats       store.AuthorItemStats
+	Frequency   string // approximate posting cadence, "" when unknown
+	Timezone    string
+	MarkAll     markAllReadData
 }
 
 type feedPageData struct {
@@ -1843,9 +1843,8 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 			frequency = web.PostFrequency(gap)
 		}
 	}
-	cats, _ := s.store.Items.ListCategories(u.ID, store.ItemFilter{AuthorID: id})
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
-		Author: a, Rows: rows, Links: links, Scoped: scoped, Categories: cats,
+		Author: a, Rows: rows, Links: links, Scoped: scoped, Collections: authorCollections(rows),
 		Stats: stats, Frequency: frequency, Timezone: u.Timezone,
 		MarkAll: markAllReadData{
 			Action: "/authors/" + strconv.FormatInt(id, 10) + "/read-all",
@@ -2071,6 +2070,23 @@ func (s *Server) feedRowsForAuthor(userID, authorID int64, tz string) ([]feedRow
 		})
 	}
 	return out, nil
+}
+
+// authorCollections returns the distinct collections the author's feeds belong
+// to, combined and deduped, ordered by name, for the author card's chips.
+func authorCollections(rows []feedRow) []store.Collection {
+	seen := make(map[int64]store.Collection)
+	for _, r := range rows {
+		for _, c := range r.Collections {
+			seen[c.ID] = c
+		}
+	}
+	out := make([]store.Collection, 0, len(seen))
+	for _, c := range seen {
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
