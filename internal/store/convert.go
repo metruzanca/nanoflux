@@ -29,6 +29,28 @@ func boolInt(b bool) int64 {
 	return 0
 }
 
+// intFromSQL reads a scalar sqlc typed as interface{} (SQLite aggregates it
+// cannot infer) as an int. NULL and unexpected types yield 0.
+func intFromSQL(v interface{}) int {
+	switch n := v.(type) {
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case []byte:
+		i := 0
+		for _, c := range n {
+			if c < '0' || c > '9' {
+				break
+			}
+			i = i*10 + int(c-'0')
+		}
+		return i
+	default:
+		return 0
+	}
+}
+
 func toUser(id int64, username, passwordHash string, isAdmin bool, avatarKey, timezone sql.NullString, theme, accentColor, homeConfig string, autoReadAfterDays int64, hideUnreadCounts, hideUnreadNav bool, gridMaxColumns int64, createdAt string) User {
 	return User{
 		ID:                id,

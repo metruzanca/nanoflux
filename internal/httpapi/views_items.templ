@@ -67,6 +67,17 @@ func itemCardClass(v itemVisuals) string {
 	}
 }
 
+// itemRowClass is the <li> class for a row: its media card class plus "read"
+// when the item is read, which the CSS darkens (and app.js toggles in place on
+// the mark-read fast path).
+func itemRowClass(it store.ItemWithFeed, v itemVisuals) string {
+	cls := itemCardClass(v)
+	if it.Read {
+		cls += " read"
+	}
+	return cls
+}
+
 // loadMoreData carries the fragment URL for a "load more" button. It is nil
 // when there is no next page.
 type loadMoreData struct {
@@ -74,13 +85,18 @@ type loadMoreData struct {
 }
 
 // itemsListClass is the <ul> class for an item list: "items", plus "masonry"
-// when the scope's saved display mode is grid. The mode is server-side (per
-// account), so the list is laid out correctly on first paint.
+// for the grid layout or "cards" for the larger two-column card layout. The
+// mode is server-side (per account), so the list is laid out correctly on
+// first paint.
 func itemsListClass(mode string) string {
-	if store.NormalizeViewMode(mode) == store.ViewModeGrid {
+	switch store.NormalizeViewMode(mode) {
+	case store.ViewModeGrid:
 		return "items masonry"
+	case store.ViewModeCards:
+		return "items cards"
+	default:
+		return "items"
 	}
-	return "items"
 }
 
 templ ItemsList(items []store.ItemWithFeed, hideAuthor bool, mode string) {
@@ -170,7 +186,7 @@ templ ItemRowOOB(it store.ItemWithFeed, hideAuthor bool) {
 templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 	<li
 		id={ "item-" + strconv.FormatInt(it.ID, 10) }
-		class={ itemCardClass(v) }
+		class={ itemRowClass(it, v) }
 		if oob {
 			hx-swap-oob="outerHTML"
 		}
@@ -555,17 +571,20 @@ templ DisplayModeControl(scope, mode string) {
 	@PickerControl("display", "display mode", store.NormalizeViewMode(mode), scope, []pickerOption{
 		{Value: "list", Label: "list", Icon: "list"},
 		{Value: "grid", Label: "grid", Icon: "grid"},
+		{Value: "cards", Label: "cards", Icon: "cards"},
 	})
 }
 
 // AuthorSortControl sorts the authors list alphabetically ("abc"), by newest
-// first, or by most unread items. Client-side: app.js reorders the rendered
-// rows. The default is "unread".
+// first, by most unread items, or by magic (the taste of the author's feeds:
+// raised feeds first, then most favorited). Client-side: app.js reorders the
+// rendered rows. The default is "unread".
 templ AuthorSortControl() {
 	@PickerControl("authors", "sort", "unread", "", []pickerOption{
 		{Value: "abc", Label: "abc"},
 		{Value: "newest", Label: "newest"},
 		{Value: "unread", Label: "unread"},
+		{Value: "magic", Label: "magic", Icon: "magic"},
 	})
 }
 
@@ -624,6 +643,8 @@ templ ModeIcon(name string) {
 	switch name {
 		case "grid":
 			@web.Lucide("layout-grid")
+		case "cards":
+			@web.Lucide("layout-dashboard")
 		case "list":
 			@web.Lucide("list")
 		case "desc":

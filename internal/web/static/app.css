@@ -7,6 +7,7 @@
   --accent: #5b8cff;
   --danger: #ff6b6b;
   --warn: #e0a72e;
+  --item-read-bg: #0b0d11;
 }
 
 /* Light theme: selected via data-theme on <html> (user setting, "system"
@@ -20,6 +21,7 @@
   --accent: #3b6ee8;
   --danger: #d64545;
   --warn: #b8860b;
+  --item-read-bg: #eceff4;
 }
 
 * { box-sizing: border-box; }
@@ -298,6 +300,12 @@ main:has(#home-sections) {
 .home-section h2 { margin: 0; font-size: 1.05rem; }
 .home-section .row { align-items: baseline; }
 .home-section ul.items { margin-top: 0.5rem; }
+/* The section header keeps the title left and the display/sort pickers right on
+   desktop. The "more" link sits at the bottom-right of the section so phone
+   users can reach it without scrolling back to the top; on narrow screens the
+   pickers are hidden and the more link is the only affordance. */
+.home-section-head { align-items: center; }
+.home-section-more { display: flex; justify-content: flex-end; margin-top: 0.4rem; }
 
 .login { max-width: 22rem; margin: 4rem auto; }
 .login form, form.stack { display: flex; flex-direction: column; gap: 0.75rem; }
@@ -528,6 +536,36 @@ div.stats strong { font-size: 1.1rem; }
    them the breathing room a heading used to provide. */
 .author-feeds { margin-top: 1.5rem; }
 .author-items { margin-top: 1.5rem; }
+/* The author card's feed list is a collapsible section. */
+.author-feeds > summary { cursor: pointer; color: var(--fg); font-weight: 600; }
+.author-feeds > summary:hover { color: var(--accent); }
+.author-feeds-body { margin-top: 0.6rem; }
+
+/* Combined, deduped tags across an author's feeds, shown as chips on the
+   author card. Each links to the author's tag-filtered item list. */
+.author-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.6rem; }
+
+/* Author edit: each feed is a collapsible panel (native <details>). The body
+   holds that feed's settings, loaded on first open. */
+.feed-accordion { display: flex; flex-direction: column; gap: 0.5rem; }
+.feed-accordion-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.feed-accordion-item > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  cursor: pointer;
+  list-style: none;
+}
+.feed-accordion-item > summary::-webkit-details-marker { display: none; }
+.feed-accordion-item > summary::after { content: "▸"; margin-left: auto; color: var(--muted); }
+.feed-accordion-item[open] > summary::after { content: "▾"; }
+.feed-accordion-title { font-weight: 600; }
+.feed-accordion-body { padding: 0 0.9rem 0.9rem; }
 .error.banner { padding: 0.7rem 0.9rem; }
 .badge.danger { background: rgba(255, 107, 107, 0.18); color: var(--fg); }
 
@@ -794,6 +832,41 @@ ul.items.masonry .thumb img {
    height with the rules above; keep it a fixed 16:9 box. */
 ul.items.masonry .thumb:not(:has(img)) { aspect-ratio: 16 / 9; }
 ul.items.masonry .item-summary { -webkit-line-clamp: 3; line-clamp: 3; }
+
+/* Cards display mode: like the grid, but each card is larger and framed. A
+   card spans the full width of the two-column grid, so the default layout
+   shows one larger card per row; the thumb goes full-width and the summary
+   keeps more lines. Below 720px the grid collapses to a single column and the
+   card spans it. */
+ul.items.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+  align-items: start;
+}
+ul.items.cards li {
+  grid-column: span 2;
+  display: block;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+ul.items.cards .thumb,
+ul.items.cards .thumb--img {
+  width: 100%;
+  aspect-ratio: auto;
+  height: auto;
+}
+ul.items.cards .thumb img { width: 100%; height: auto; }
+ul.items.cards .thumb:not(:has(img)) { aspect-ratio: 16 / 9; }
+ul.items.cards .item-summary { -webkit-line-clamp: 4; line-clamp: 4; }
+
+/* A read item's row gets a darker background, so read state reads at a glance
+   rather than only from the unread dot. Placed after the card rules so it wins
+   the equal-specificity battle against the cards panel background. */
+ul.items li.read { background: var(--item-read-bg); }
 
 #load-more {
   display: block;
@@ -1268,6 +1341,12 @@ details.feeds-section summary:hover { color: var(--accent); }
   /* Narrow screens get a single grid column so cards keep a usable size. */
   ul.items.masonry { grid-template-columns: 1fr; }
   #home-sections ul.items.masonry { grid-template-columns: 1fr; }
+  ul.items.cards { grid-template-columns: 1fr; }
+  ul.items.cards li { grid-column: span 1; }
+
+  /* Home section header pickers are desktop-only: on a phone the section's
+     bottom-right "more" link is the affordance instead. */
+  .home-section-controls { display: none; }
 
   .row { flex-wrap: wrap; }
 

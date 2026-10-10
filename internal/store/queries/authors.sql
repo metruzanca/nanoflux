@@ -41,9 +41,16 @@ DELETE FROM authors
 WHERE id = ? AND user_id = ? AND is_system = 0;
 
 -- name: ListAuthorsWithFeedCount :many
+-- max_rank and fav_count carry the author's magic-sort taste signal: the highest
+-- manual rank across the author's feeds (raised/neutral/lowered tier) and the
+-- total favorites their feeds own. The /authors page sorts on them client-side.
 SELECT a.id, a.user_id, a.name, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.is_system, a.created_at,
        COUNT(DISTINCT f.id) AS feed_count,
-       COUNT(DISTINCT i.id) AS unread_count
+       COUNT(DISTINCT i.id) AS unread_count,
+       (SELECT COALESCE(MAX(f2.rank), 0) FROM feeds f2
+          WHERE f2.author_id = a.id AND f2.user_id = a.user_id) AS max_rank,
+       (SELECT COUNT(*) FROM items i2 JOIN feeds f2 ON f2.id = i2.feed_id
+          WHERE f2.author_id = a.id AND f2.user_id = a.user_id AND i2.favorite = 1) AS fav_count
 FROM authors a
 LEFT JOIN feeds f ON f.author_id = a.id AND f.user_id = a.user_id
 LEFT JOIN items i ON i.feed_id = f.id AND i.read = 0

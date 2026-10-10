@@ -6,11 +6,12 @@ import (
 	"github.com/metruzanca/nanoflux/internal/web"
 )
 
-// homeModeControl picks how one pinned home section renders (list or grid).
-// It is the custom pill picker (not a combo box): the choice is a server-side
-// mutation, so each option POSTs to /settings/home and the card is swapped back.
+// homeModeControl picks how one pinned home section renders (list, grid, or
+// cards). It is the custom pill picker (not a combo box): the choice is a
+// server-side mutation, so each option POSTs to /settings/home and the card is
+// swapped back.
 templ homeModeControl(collectionID int64, mode string) {
-	@PickerControl("mode-"+strconv.FormatInt(collectionID, 10), "how this section renders", mode, "", []pickerOption{
+	@PickerControl("mode-"+strconv.FormatInt(collectionID, 10), "how this section renders", normalizeHomeMode(mode), "", []pickerOption{
 		{
 			Value: "list", Label: "list", Icon: "list",
 			HxPost:   "/settings/home",
@@ -23,7 +24,64 @@ templ homeModeControl(collectionID int64, mode string) {
 			HxTarget: "#settings-home-card",
 			HxVals:   `{"action":"mode","collection_id":"` + strconv.FormatInt(collectionID, 10) + `","mode":"grid"}`,
 		},
+		{
+			Value: "cards", Label: "cards", Icon: "cards",
+			HxPost:   "/settings/home",
+			HxTarget: "#settings-home-card",
+			HxVals:   `{"action":"mode","collection_id":"` + strconv.FormatInt(collectionID, 10) + `","mode":"cards"}`,
+		},
 	})
+}
+
+// homeSectionModeControl is homeModeControl as it appears in a dashboard
+// section header: the options POST to the section endpoint and swap just that
+// section in place (outerHTML), rather than the settings card.
+templ homeSectionModeControl(collectionID int64, mode string) {
+	{{ id := strconv.FormatInt(collectionID, 10) }}
+	{{ endpoint := "/home/sections/" + id }}
+	{{ target := "#home-section-" + id }}
+	@PickerControl("mode-"+id, "how this section renders", normalizeHomeMode(mode), "", []pickerOption{
+		{Value: "list", Label: "list", Icon: "list", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"mode","mode":"list"}`},
+		{Value: "grid", Label: "grid", Icon: "grid", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"mode","mode":"grid"}`},
+		{Value: "cards", Label: "cards", Icon: "cards", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"mode","mode":"cards"}`},
+	})
+}
+
+// homeSectionSortControl is the sort picker in a dashboard section header: the
+// three sorts POST to the section endpoint and swap the section in place.
+templ homeSectionSortControl(collectionID int64, sort string) {
+	{{ id := strconv.FormatInt(collectionID, 10) }}
+	{{ endpoint := "/home/sections/" + id }}
+	{{ target := "#home-section-" + id }}
+	@PickerControl("sort-"+id, "how this section is sorted", normalizeHomeSort(sort), "", []pickerOption{
+		{Value: "magic", Label: "magic", Icon: "magic", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"sort","sort":"magic"}`},
+		{Value: "newest", Label: "newest", Icon: "desc", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"sort","sort":"newest"}`},
+		{Value: "oldest", Label: "oldest", Icon: "asc", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"sort","sort":"oldest"}`},
+	})
+}
+
+// homeSectionBlock is one pinned collection block on the dashboard: its title,
+// the desktop-only display/sort pickers in the header, the item list, and the
+// "more" link pinned to the bottom-right.
+templ homeSectionBlock(sec homeSectionData) {
+	{{ id := strconv.FormatInt(sec.Collection.ID, 10) }}
+	<section class="home-section" id={ "home-section-" + id }>
+		<div class="row home-section-head">
+			<h2><a href={ "/collections/" + id }>{ sec.Collection.Name }</a></h2>
+			<div class="row-actions home-section-controls">
+				@homeSectionSortControl(sec.Collection.ID, sec.Sort.param())
+				@homeSectionModeControl(sec.Collection.ID, sec.Mode)
+			</div>
+		</div>
+		<ul class={ itemsListClass(sec.Mode) }>
+			for _, it := range sec.Items {
+				@ItemRow(it, false)
+			}
+		</ul>
+		<div class="home-section-more">
+			<a class="small" href={ "/collections/" + id }>more →</a>
+		</div>
+	</section>
 }
 
 // homeSortControl picks one pinned home section's item sort (newest, oldest, or

@@ -29,10 +29,12 @@ type homeSection struct {
 	Sort  string `json:"sort,omitempty"`
 }
 
-// homeModeList and homeModeGrid are the two per-section render methods.
+// homeModeList, homeModeGrid and homeModeCards are the per-section render
+// methods.
 const (
-	homeModeList = "list"
-	homeModeGrid = "grid"
+	homeModeList  = "list"
+	homeModeGrid  = "grid"
+	homeModeCards = "cards"
 )
 
 // normalization of a pinned section's sort.
@@ -45,10 +47,14 @@ const (
 // normalizeHomeMode maps any stored/submitted value onto a known render method,
 // defaulting to the list view.
 func normalizeHomeMode(mode string) string {
-	if strings.TrimSpace(mode) == homeModeGrid {
+	switch strings.TrimSpace(mode) {
+	case homeModeGrid:
 		return homeModeGrid
+	case homeModeCards:
+		return homeModeCards
+	default:
+		return homeModeList
 	}
-	return homeModeList
 }
 
 // normalizeHomeSort maps any stored/submitted value onto a known sort,
@@ -152,29 +158,9 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 
 	var rendered []homeSectionData
 	for _, sec := range sections {
-		c, err := s.store.Collections.ByID(u.ID, sec.RefID)
-		if err != nil {
-			continue // collection deleted since it was pinned
+		if d, ok := s.homeSectionData(u, sec); ok {
+			rendered = append(rendered, d)
 		}
-		sort := homeSort(sec.Sort)
-		filter := store.ItemFilter{
-			CollectionID: c.ID, UnreadOnly: true, Limit: homeSectionLimit,
-		}
-		switch sort {
-		case sortOldest:
-			filter.Ascending = true
-		case sortMagic:
-			filter.Magic = true
-		}
-		items, _, err := s.store.Items.ListPage(u.ID, filter)
-		if err != nil {
-			log.Error("home section", "collection_id", c.ID, "err", err)
-			continue
-		}
-		if len(items) == 0 {
-			continue // hide sections with no unread
-		}
-		rendered = append(rendered, homeSectionData{Collection: c, Items: withTZ(u.Timezone, items), Mode: normalizeHomeMode(sec.Mode), Sort: sort})
 	}
 
 	if len(rendered) == 0 {
@@ -183,6 +169,91 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	web.Render(w, r, basePage("home", u, dashboardPage(dashboardData{Sections: rendered})))
+}
+
+// homeSectionData builds one rendered dashboard section from a pinned config
+// entry, or ok=false when the collection is gone or has no unread items (empty
+// sections are hidden).
+func (s *Server) homeSectionData(u store.User, sec homeSection) (homeSectionData, bool) {
+	c, err := s.store.Collections.ByID(u.ID, sec.RefID)
+	if err != nil {
+		return homeSectionData{}, false // collection deleted since it was pinned
+	}
+	sort := homeSort(sec.Sort)
+	filter := store.ItemFilter{
+		CollectionID: c.ID, UnreadOnly: true, Limit: homeSectionLimit,
+	}
+	switch sort {
+	case sortOldest:
+		filter.Ascending = true
+	case sortMagic:
+		filter.Magic = true
+	}
+	items, _, err := s.store.Items.ListPage(u.ID, filter)
+	if err != nil {
+		log.Error("home section", "collection_id", c.ID, "err", err)
+		return homeSectionData{}, false
+	}
+	if len(items) == 0 {
+		return homeSectionData{}, false // hide sections with no unread
+	}
+	return homeSectionData{Collection: c, Items: withTZ(u.Timezone, items), Mode: normalizeHomeMode(sec.Mode), Sort: sort}, true
+}
+
+// homeSectionUpdate changes one pinned section's render mode or sort from the
+// dashboard header and re-renders just that section (the picker's htmx target).
+// The mutation is the same home_config write the settings card performs, so the
+// two stay in sync.
+func (s *Server) homeSectionUpdate(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	full, err := s.store.Users.ByID(u.ID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	sections := parseHomeConfig(full.HomeConfig)
+
+	found := false
+	var updated homeSection
+	for i := range sections {
+		if sections[i].RefID != id {
+			continue
+		}
+		switch r.FormValue("action") {
+		case "mode":
+			sections[i].Mode = normalizeHomeMode(r.FormValue("mode"))
+		case "sort":
+			sections[i].Sort = normalizeHomeSort(r.FormValue("sort"))
+		default:
+			http.Error(w, "invalid action", http.StatusBadRequest)
+			return
+		}
+		updated = sections[i]
+		found = true
+		break
+	}
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.Users.SetHomeConfig(u.ID, marshalHomeConfig(sections)); err != nil {
+		log.Error("set home config", "err", err)
+		http.Error(w, "could not save home screen", http.StatusInternalServerError)
+		return
+	}
+	sec, ok := s.homeSectionData(full, updated)
+	if !ok {
+		// The section lost all its unread items: an empty outerHTML response
+		// makes htmx remove it from the dashboard.
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	web.Render(w, r, homeSectionBlock(sec))
 }
 
 // unread is the canonical unread page (moved off "/" now that home is a

@@ -68,7 +68,7 @@ templ AuthorsList(rows []authorRow) {
 }
 
 templ AuthorRow(r authorRow) {
-	<li id={ "author-" + strconv.FormatInt(r.ID, 10) } data-name={ r.Name } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Unread) }>
+	<li id={ "author-" + strconv.FormatInt(r.ID, 10) } data-name={ r.Name } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Unread) } data-taste={ strconv.Itoa(r.Taste) }>
 		<div class="row">
 			<a href={ "/authors/" + strconv.FormatInt(r.ID, 10) }>
 				if r.AvatarKey != "" {
@@ -101,11 +101,42 @@ templ authorEditPage(u store.User, d authorsData) {
 	if len(d.Feeds) > 0 {
 		<div class="author-feeds">
 			<h2>feeds</h2>
-			@CollectionFeedCards(d.Feeds, true)
+			// Each feed is an accordion panel; its settings load into the body
+			// the first time it is opened (or inline when ?feed= selected it),
+			// so an author with many feeds does not render every form at once.
+			<div class="feed-accordion">
+				for _, r := range d.Feeds {
+					{{ id := strconv.FormatInt(r.ID, 10) }}
+					{{ selected := d.Editor != nil && d.Editor.Form.ID == r.ID }}
+					<details class="feed-accordion-item" name="author-feeds" id={ "feed-acc-" + id } if selected { open }>
+						<summary>
+							@web.SourceIcon(feedIconURL(r.Feed))
+							<span class="feed-accordion-title">{ r.Title }</span>
+							if !r.Enabled {
+								if r.DisabledReason != "" {
+									<span class="badge danger" title={ r.DisabledReason }>disabled</span>
+								} else {
+									<span class="badge">paused</span>
+								}
+							}
+							if r.LastError != "" {
+								<span class="badge danger" title={ r.LastError }>last poll failed</span>
+							}
+							if r.Cooling() {
+								<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited</span>
+							}
+						</summary>
+						if selected {
+							<div class="feed-accordion-body">@feedEditorBody(*d.Editor)</div>
+						} else {
+							<div class="feed-accordion-body" hx-get={ "/feeds/" + id + "/edit-fragment" } hx-trigger="toggle from:closest details once" hx-swap="innerHTML">
+								<p class="muted small">loading…</p>
+							</div>
+						}
+					</details>
+				}
+			</div>
 		</div>
-	}
-	if d.Editor != nil {
-		@feedEditor(*d.Editor)
 	}
 }
 
@@ -202,6 +233,12 @@ templ authorPageLinks(links []store.AuthorLink) {
 	}
 }
 
+// authorTagURL builds the link that filters an author's item list to one tag,
+// the same ?tags= the scoped tag picker uses.
+func authorTagURL(authorID int64, tag string) string {
+	return "/authors/" + strconv.FormatInt(authorID, 10) + "?tags=" + url.QueryEscape(tag)
+}
+
 templ authorPage(u store.User, d authorData) {
 	<section class="card">
 		<div class="author-head">
@@ -223,11 +260,25 @@ templ authorPage(u store.User, d authorData) {
 			<p>{ d.Author.Description }</p>
 		}
 		@authorStats(d.Stats, len(d.Rows), d.Frequency, d.Timezone)
+		if len(d.Categories) > 0 {
+			<div class="author-tags" aria-label="tags across this author's feeds">
+				for _, c := range d.Categories {
+					<a class="tag" href={ templ.URL(authorTagURL(d.Author.ID, c.Category)) } title={ strconv.Itoa(c.Count) + " items" }>#{ c.Category }</a>
+				}
+			</div>
+		}
+		if len(d.Rows) > 0 {
+			<details class="author-feeds">
+				<summary>feeds ({ strconv.Itoa(len(d.Rows)) })</summary>
+				<div class="author-feeds-body">
+					@FeedsList(d.Rows)
+					<button type="button" class="link" data-open="add-author-feed-dialog">+ add feed</button>
+				</div>
+			</details>
+		} else {
+			<button type="button" class="link" data-open="add-author-feed-dialog">+ add feed</button>
+		}
 	</section>
-	<div class="author-feeds">
-		@FeedsList(d.Rows)
-		<button type="button" class="link" data-open="add-author-feed-dialog">+ add feed</button>
-	</div>
 	<div class="author-items">
 		@ScopedItems(d.Scoped)
 	</div>
