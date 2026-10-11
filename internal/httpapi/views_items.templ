@@ -449,9 +449,6 @@ templ scopedItemsInner(d scopedItemsData) {
 			if d.FavTab {
 				@scopedTab(d.Path, d.ItemsPath, "favorites", "favorites", strconv.Itoa(d.FavCount), d.View == "favorites", d.Sort, d.Tags, d.FeedID)
 			}
-			if d.BookmarkTab {
-				@scopedTab(d.Path, d.ItemsPath, "bookmarks", "bookmarks", strconv.Itoa(d.BookCount), d.View == "bookmarks", d.Sort, d.Tags, d.FeedID)
-			}
 		</nav>
 		if d.View != "feeds" {
 			<div class="row-actions">
