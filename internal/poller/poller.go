@@ -26,7 +26,7 @@ const (
 	// rateLimitFloor is the minimum spacing the poller enforces between two
 	// requests to a host that has rate-limited it. Hosts report their own window
 	// (Retry-After / x-ratelimit-reset); this floor covers a missing or tiny
-	// hint. Reddit's anonymous .rss limit is ~1 request per minute.
+	// hint. The tightest known hosts allow only ~1 anonymous request per minute.
 	rateLimitFloor = 60 * time.Second
 
 	// minWake is the smallest next-wake delay, so a just-cleared backoff can't
@@ -37,8 +37,8 @@ const (
 	// requests to the same registrable host even when the host has never
 	// rate-limited it. It stops a domain with many due feeds from bursting all
 	// of them in one cycle, which is what tends to trigger the first 429. 60s
-	// matches reddit's anonymous per-IP window, the tightest host we know of. A
-	// learned rate-limit window overrides it when larger. Configured via
+	// matches the tightest anonymous per-IP window we know of. A learned
+	// rate-limit window overrides it when larger. Configured via
 	// NF_POLL_HOST_SPACING; 0 disables the default spacing.
 	defaultHostSpacing = 60 * time.Second
 )
@@ -748,8 +748,8 @@ func (p *Poller) cacheItemImages(ctx context.Context, f store.Feed, it feedparse
 }
 
 // storeEnclosures copies a newly inserted item's media attachments into the
-// item_enclosures table. The item may be owned by another feed (a reddit post
-// seen through two subscriptions), so it is resolved by the user's cross-feed
+// item_enclosures table. The item may be owned by another feed (seen through two
+// subscriptions), so it is resolved by the user's cross-feed
 // identity too. cacheKeys/cacheSizes, when non-empty, carry the object-storage
 // key and byte size of each enclosure's cached image (parallel to
 // it.Enclosures); ReplaceEnclosures carries an existing slot's key and size

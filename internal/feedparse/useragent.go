@@ -3,8 +3,8 @@ package feedparse
 import "os"
 
 // UserAgent identifies nanoflux to the feeds and pages it fetches. A
-// descriptive agent is good citizenship: some hosts (notably reddit) rate-limit
-// or block opaque clients. Overridable with NF_USER_AGENT, e.g. to add a
+// descriptive agent is good citizenship: some hosts rate-limit or block opaque
+// clients. Overridable with NF_USER_AGENT, e.g. to add a
 // contact URL for a large instance.
 func UserAgent() string {
 	if v := os.Getenv("NF_USER_AGENT"); v != "" {

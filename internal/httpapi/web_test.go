@@ -902,31 +902,10 @@ func TestItemViewToggles(t *testing.T) {
 	}
 }
 
-func TestYouTubeEmbedURL(t *testing.T) {
-	cases := []struct {
-		link string
-		want string
-	}{
-		{"https://www.youtube.com/watch?v=H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
-		{"https://m.youtube.com/watch?v=H0KAi8AWsnM&t=10s", "https://www.youtube.com/embed/H0KAi8AWsnM"},
-		{"https://youtu.be/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
-		{"https://www.youtube.com/shorts/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
-		{"https://www.youtube.com/live/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
-		{"https://www.youtube.com/embed/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
-		{"https://example.com/post/1", ""},
-		{"https://youtube.com/watch", ""},
-		{"not a url", ""},
-	}
-	for _, c := range cases {
-		if got := web.YoutubeEmbedURL(c.link); got != c.want {
-			t.Errorf("YoutubeEmbedURL(%q) = %q, want %q", c.link, got, c.want)
-		}
-	}
-}
-
 func TestItemViewYouTubeEmbed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
+	useYouTubePlugin(t, s)
 
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "bigboxSWE", "", "")
@@ -955,7 +934,7 @@ func TestItemViewYouTubeEmbed(t *testing.T) {
 func TestItemCardsRenderThumbnails(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
-	useRedditPlugin(t, s)
+	useRedditAndYouTube(t, s)
 
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "bigboxSWE", "", "")

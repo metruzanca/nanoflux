@@ -546,27 +546,26 @@ func TestFeedDeleteRehomesSharedItem(t *testing.T) {
 func TestMergeCrossFeedDuplicates(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
-	a1, _ := s.Authors.Create(u.ID, "r/cats", "", "")
-	a2, _ := s.Authors.Create(u.ID, "sam", "", "")
-	subFeed, _ := s.Feeds.Create(u.ID, a1.ID, "r/cats", "https://www.reddit.com/r/cats.rss", "", "", 900)
-	userFeed, _ := s.Feeds.Create(u.ID, a2.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
+	a1, _ := s.Authors.Create(u.ID, "One", "", "")
+	a2, _ := s.Authors.Create(u.ID, "Two", "", "")
+	subFeed, _ := s.Feeds.Create(u.ID, a1.ID, "One", "https://one.example/rss", "", "", 900)
+	userFeed, _ := s.Feeds.Create(u.ID, a2.ID, "Two", "https://two.example/rss", "", "", 900)
 
-	// Simulate two pre-existing rows: same reddit post, different owner feeds.
-	// Insert directly so cross_key is not set on the second (as a pre-V38 row).
+	// Two rows for the same post, reached through different owner feeds, both
+	// carrying the plugin-supplied cross-feed identity.
 	if ins, err := s.Items.Upsert(subFeed.ID, Item{
-		GUID: "t3_old", Title: "Old post", Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now(),
+		GUID: "old", Title: "Old post", Categories: []string{"one", "two"}, FetchedAt: db.Now(),
 	}); err != nil || !ins {
 		t.Fatalf("sub ingest: inserted=%v err=%v", ins, err)
 	}
-	oldID, _ := s.Items.ByFeedIdentity(subFeed.ID, "t3_old")
+	oldID, _ := s.Items.ByFeedIdentity(subFeed.ID, "old")
 	if err := s.Items.SetRead(u.ID, oldID, true); err != nil {
 		t.Fatal(err)
 	}
-	// Clear cross_key to emulate the pre-migration shape, then add the twin.
-	if _, err := s.db.Exec(`UPDATE items SET cross_key = '' WHERE id = ?`, oldID); err != nil {
+	if _, err := s.db.Exec(`UPDATE items SET cross_key = 'site:old' WHERE id = ?`, oldID); err != nil {
 		t.Fatal(err)
 	}
-	res, err := s.db.Exec(`INSERT INTO items (feed_id, user_id, guid, dedup_key, title, fetched_at) VALUES (?, ?, 't3_old', 't3_old', 'Old post', ?)`,
+	res, err := s.db.Exec(`INSERT INTO items (feed_id, user_id, guid, dedup_key, cross_key, title, fetched_at) VALUES (?, ?, 'old', 'old', 'site:old', 'Old post', ?)`,
 		userFeed.ID, u.ID, "2026-09-26 00:00:00")
 	if err != nil {
 		t.Fatal(err)

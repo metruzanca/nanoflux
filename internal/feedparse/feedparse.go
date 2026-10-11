@@ -128,10 +128,9 @@ type Item struct {
 	DurationSec int
 	Enclosures  []Enclosure
 	// Categories are the feed-provided categories the entry was published
-	// under: its RSS/Atom <category> values plus its author name(s). Reddit
-	// uses both (an entry on r/golang carries label "r/golang" and author
-	// "/u/poster"), which is why its subreddit/author become filterable
-	// without any site-specific code.
+	// under: its RSS/Atom <category> values plus its author name(s). A feed may
+	// carry both (a label and an author), which is why a site's section/author
+	// become filterable without any site-specific code.
 	Categories []string
 }
 
@@ -421,9 +420,9 @@ func normalizeItem(it *gofeed.Item) Item {
 }
 
 // itemCategories collects an entry's feed-provided categories: its RSS/Atom
-// <category> values (gofeed already prefers the atom label, e.g. reddit's
-// "r/golang") plus its author name(s). A leading slash is dropped so reddit's
-// "/u/name" author becomes "u/name"; duplicates are removed, order preserved.
+// <category> values (gofeed already prefers the atom label) plus its author
+// name(s). A leading slash is dropped ("/u/name" becomes "u/name"); duplicates
+// are removed, order preserved.
 func itemCategories(it *gofeed.Item) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -494,10 +493,9 @@ func imageURL(img *gofeed.Image) string {
 }
 
 // mediaThumbnailURL returns the first media:thumbnail URL on an item, from a
-// direct <media:thumbnail> child or nested inside <media:group> (the shape
-// YouTube uses). gofeed's Item.Image ignores media:thumbnail, so feeds that
-// advertise their artwork only through it (YouTube, podcasts, ...) need this
-// fallback.
+// direct <media:thumbnail> child or nested inside a <media:group>. gofeed's
+// Item.Image ignores media:thumbnail, so feeds that advertise their artwork only
+// through it (many video and podcast feeds) need this fallback.
 func mediaThumbnailURL(it *gofeed.Item) string {
 	media, ok := it.Extensions["media"]
 	if !ok {

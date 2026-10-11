@@ -10,9 +10,9 @@ import (
 // dedupItems collapses a page of items that are the same content across
 // different feeds into a single row: the newest item survives and the others
 // are listed as alternate sources. Two items match when a plugin decorator gave
-// them the same DedupeKey (the same content reposted under different titles,
-// e.g. a reddit link post crossposted to several subreddits), or when their
-// titles are near-identical. Items within the same feed are never merged,
+// them the same DedupeKey (the same content reposted under different titles, a
+// link post crossposted to several places), or when their titles are
+// near-identical. Items within the same feed are never merged,
 // because two distinct posts in one feed can legitimately share a title. This
 // is a view-time transformation only — nothing is written back.
 func dedupItems(items []store.ItemWithFeed) []store.ItemWithFeed {
@@ -36,8 +36,8 @@ func dedupItems(items []store.ItemWithFeed) []store.ItemWithFeed {
 		for i := range groups {
 			// A plugin's content identity wins: it merges the same content
 			// reposted under different titles, including cross-feed posts (a
-			// reddit CrossKey marks distinct posts that may still share an
-			// external link).
+			// CrossKey marks distinct posts that may still share an external
+			// link).
 			if linkKey != "" && groups[i].link != "" && groups[i].link == linkKey {
 				matched = &groups[i]
 				break

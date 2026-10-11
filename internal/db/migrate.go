@@ -565,11 +565,11 @@ CREATE UNIQUE INDEX idx_items_dedup ON items(feed_id, dedup_key);
 `
 
 // schemaV36 adds items.categories: the feed-provided categories an item was
-// published under, newline-joined (e.g. a reddit entry's subreddit "r/golang"
-// and author "u/someuser"). They are matched by an ingest filter rule's
-// "category" field, so context a feed already carries (which subreddit, whose
-// post) becomes filterable without any site-specific code. Denormalized because
-// categories are only read at ingest time.
+// published under, newline-joined (e.g. a section "r/golang" and author
+// "u/someuser"). They are matched by an ingest filter rule's "category" field,
+// so context a feed already carries (which section, whose post) becomes
+// filterable without any site-specific code. Denormalized because categories
+// are only read at ingest time.
 const schemaV36 = `
 ALTER TABLE items ADD COLUMN categories TEXT NOT NULL DEFAULT '';
 `
@@ -583,12 +583,12 @@ ALTER TABLE items ADD COLUMN duration_sec INTEGER;
 `
 
 // schemaV38 makes an item a member of one or more feeds, so the same post seen
-// through two subscriptions (a reddit user feed and the subreddit feed the post
-// went to) is one row with shared read/favorite/list/share state instead of two.
+// through two subscriptions is one row with shared read/favorite/list/share
+// state instead of two.
 //
 // items.user_id denormalizes the owning user (items.feed_id stays the owner /
 // display feed). items.cross_key holds the per-user cross-feed identity
-// ("reddit:t3_<id>", empty when the item cannot be cross-deduped). item_feeds
+// ("site:type_<id>", empty when the item cannot be cross-deduped). item_feeds
 // is the membership set. cross_key is deliberately NOT backfilled here: pre-
 // existing duplicates would violate the unique index, so it is derived and
 // merged at startup by ItemStore.MergeCrossFeedDuplicates, which then creates

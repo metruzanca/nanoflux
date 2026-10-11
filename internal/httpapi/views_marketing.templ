@@ -32,9 +32,9 @@ templ landingPage(d landingData) {
 						<p class="mkt-eyebrow">a feed reader for the way you actually read</p>
 						<h1>all your feeds. one quiet place.</h1>
 						<p class="mkt-lede">
-							nanoflux pulls youtube, reddit, bluesky, blogs and more into a single
-							fast timeline. favorites, collections, lists, full-text search and a
-							browser extension come built in. self-host it, or bring your own.
+							nanoflux pulls every feed you follow into a single fast timeline.
+							favorites, collections, lists, full-text search and a browser
+							extension come built in. self-host it, or bring your own.
 						</p>
 						<div class="mkt-cta">
 							if d.Demo {
@@ -81,10 +81,10 @@ templ landingPage(d landingData) {
 					@mktFeature(feature{
 						Title: "every source, one timeline",
 						Body: "Site-specific plugins rebuild rich entries where the plain feed falls " +
-							"short: YouTube durations, Bluesky images, video and quotes, reddit posts " +
-							"shared once across every feed you follow them in.",
+							"short: video durations, images, quotes, and the same post shared once " +
+							"across every feed you follow it in.",
 						Image: "/static/marketing-plugins.svg",
-						Alt:   "cards from youtube, bluesky and reddit side by side",
+						Alt:   "cards from several sources side by side",
 						Reverse: true,
 					})
 					@mktFeature(feature{

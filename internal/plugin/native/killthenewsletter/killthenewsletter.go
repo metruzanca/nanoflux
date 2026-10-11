@@ -5,7 +5,7 @@
 // returns an inbox address ({publicId}@{host}) and an Atom URL
 // ({host}/feeds/{publicId}.xml); that URL is the only credential. The Atom feeds
 // are standard and are read by nanoflux's generic parser, so this plugin does
-// NOT claim CapFetch (feeds.plugin_name stays empty, exactly like reddit).
+// NOT claim CapFetch (feeds.plugin_name stays empty).
 //
 // Instead it owns the service-specific behavior through URL-matched
 // capabilities:

@@ -106,8 +106,8 @@ func Load() Config {
 		LogLevel:     getenv("NF_LOG_LEVEL", "info"),
 		PollInterval: durationEnv("NF_POLL_INTERVAL", 15*time.Minute),
 		PollWorkers:  intEnv("NF_POLL_WORKERS", 4),
-		// 60s matches reddit's anonymous per-IP window (the tightest host we
-		// know of); 0 disables the default spacing.
+		// 60s matches the tightest anonymous per-IP window we know of; 0
+		// disables the default spacing.
 		PollHostSpacing: durationEnv("NF_POLL_HOST_SPACING", 60*time.Second),
 		PluginsDir:      getenv("NF_PLUGINS_DIR", "./plugins"),
 		PProfAddr:       os.Getenv("NF_PPROF_ADDR"),

@@ -30,7 +30,7 @@ var ErrNotFound = errors.New("no oEmbed endpoint")
 const bodyCap = 4 << 20
 
 // BrowserUserAgent is used for oEmbed discovery requests; some providers
-// (reddit) reject generic crawler agents.
+// reject generic crawler agents.
 const BrowserUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 
 // Embed is an embeddable third-party player.

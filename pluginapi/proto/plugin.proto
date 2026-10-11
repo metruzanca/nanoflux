@@ -107,10 +107,10 @@ message Candidate {
   string icon_url = 3;
   string home_url = 4;
   // Preferred new-author name when the site suggests one different from the
-  // feed title (reddit users: "spez" rather than "u/spez").
+  // feed title (a bare username, not its decorated form).
   string author_name = 5;
   // The feed URL follows from the page URL alone; the host must not fetch the
-  // page to validate the feed or gather its metadata (reddit's tight limit).
+  // page to validate the feed or gather its metadata (a site on a tight budget).
   bool derived = 6;
 }
 
@@ -151,7 +151,7 @@ message Item {
   // Feed-provided labels the host stores and matches filter rules against.
   repeated string categories = 10;
   // Identity shared across a user's feeds (set by a SharedKeyer; e.g.
-  // "reddit:t3_<id>"). Empty means not cross-deduplicated.
+  // "site:type_<id>"). Empty means not cross-deduplicated.
   string shared_key = 11;
 }
 

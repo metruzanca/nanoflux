@@ -20,7 +20,7 @@ type itemVisuals struct {
 
 func visualsOf(it store.ItemWithFeed) itemVisuals {
 	return itemVisuals{
-		Video:   it.Kind == store.KindVideo || web.YoutubeEmbedURL(it.Link) != "",
+		Video:   it.Kind == store.KindVideo,
 		Image:   it.Kind == store.KindImage || (it.Kind == store.KindText && web.IsSingleImagePost(it.Summary, it.ImageURL, it.Title)),
 		Link:    it.Kind == store.KindLink,
 		Gallery: it.Kind == store.KindGallery,
@@ -32,7 +32,7 @@ func visualsOf(it store.ItemWithFeed) itemVisuals {
 // classified it).
 func visualsFromKind(d itemViewData) itemVisuals {
 	return itemVisuals{
-		Video:   d.Kind == store.KindVideo || web.YoutubeEmbedURL(d.Link) != "",
+		Video:   d.Kind == store.KindVideo,
 		Image:   d.Kind == store.KindImage || (d.Kind == store.KindText && web.IsSingleImagePost(d.Summary, d.ImageURL, d.Title)),
 		Link:    d.Kind == store.KindLink,
 		Gallery: d.Kind == store.KindGallery,
@@ -770,14 +770,10 @@ templ itemContent(d itemViewData, v itemVisuals) {
 		</div>
 	} else if d.EmbedSrc != "" {
 		<div class="video-embed">
-			<iframe src={ templ.URL(d.EmbedSrc) } title={ d.Title } frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>
-		</div>
-	} else if d.EmbedURL != "" {
-		<div class="video-embed">
 			<!-- The app's global Referrer-Policy: no-referrer would strip the
-			     Referer the YouTube player needs (error 153). Override it here
-			     so only the embedding origin is sent. -->
-			<iframe src={ templ.URL(d.EmbedURL) } title={ d.Title } frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="origin"></iframe>
+			     Referer some players (YouTube, error 153) require. Override it
+			     here so only the embedding origin is sent. -->
+			<iframe src={ templ.URL(d.EmbedSrc) } title={ d.Title } frameborder="0" allow="autoplay; fullscreen; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="origin"></iframe>
 		</div>
 	} else if v.Image {
 		<div class="image-lightbox">

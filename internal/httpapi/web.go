@@ -93,9 +93,9 @@ type feedForm struct {
 type feedsData struct {
 	Collections []store.Collection
 	Form        feedForm
-	// DocsPlugin is the loaded plugin that documents this feed's URL (matched
-	// on CapDocs, so a generic-parser feed like reddit's still finds it), or ""
-	// when none does. It drives the "plugin docs" button on the editor.
+	// DocsPlugin is the loaded plugin that documents this feed's URL (matched on
+	// CapDocs, so a generic-parser feed still finds it), or "" when none does.
+	// It drives the "plugin docs" button on the editor.
 	DocsPlugin string
 	// Panel is the "managed feed" card for a feed a plugin manages remotely
 	// (a Kill the Newsletter inbox): its display fields and the title-sync
@@ -646,10 +646,9 @@ type itemViewData struct {
 	DurationSec   int
 	Link          string
 	Body          template.HTML
-	EmbedURL      string
-	SourceURL     string                  // external destination of a reddit link post
+	SourceURL     string                  // external destination of a link post
 	EmbedSrc      string                  // iframe src from the destination's oEmbed
-	Gallery       []string                // full-res images of a reddit gallery post
+	Gallery       []string                // full-res images of a gallery post
 	FeedIsSystem  bool                    // true for a saved page (hidden feed/author, no internal links)
 	Attribution   []store.AttributionPart // source line from the item's decoration; author/feed when empty
 	Enclosures    []store.Enclosure
@@ -757,7 +756,6 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		DurationSec:   it.DurationSec,
 		Link:          it.Link,
 		Body:          template.HTML(itemBody(it)),
-		EmbedURL:      web.YoutubeEmbedURL(it.Link),
 		Timezone:      u.Timezone,
 		Favorite:      it.Favorite,
 		Bookmark:      it.Bookmark,
@@ -871,7 +869,6 @@ func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
 		DurationSec:   it.DurationSec,
 		Link:          it.Link,
 		Body:          template.HTML(itemBody(it)),
-		EmbedURL:      web.YoutubeEmbedURL(it.Link),
 	}
 	data.Enclosures, _ = s.store.Items.Enclosures(it.ID)
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
@@ -1280,9 +1277,9 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 	}
 	// Auto-cache the site's favicon when the form supplied a home url. Best
 	// effort and bounded so a slow site can't stall the create response. A
-	// plugin-owned page is skipped: a page fetch shares the host's request
-	// budget with the feed's .rss (reddit's tight anonymous limit), and the
-	// immediate poll needs that budget more.
+	// plugin-owned page is skipped: a page fetch shares the host's request budget
+	// with the feed (a tight anonymous limit), and the immediate poll needs that
+	// budget more.
 	if homeURL != "" && !s.urlPolicyOwned(homeURL) {
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		s.autoCacheFeedIcon(ctx, userID, homeURL)
@@ -1548,9 +1545,9 @@ func normalizeURL(s string) string {
 // preview form's feed/home fields, new-author prefill) are
 // cleaned through this so "https://www.example.com" shows up as
 // "https://example.com". A URL a plugin owns is exempt: its canonical shape
-// (reddit's www host, which serves a feed without a redirect) must be preserved,
-// so rewriting it would spend a request from the host's tight rate-limit budget.
-// Returns s unchanged when it can't be parsed.
+// (which serves a feed without a redirect) must be preserved, so rewriting it
+// would spend a request from the host's tight rate-limit budget. Returns s
+// unchanged when it can't be parsed.
 func (s *Server) stripWWW(raw string) string {
 	if s.urlPolicyKeepsHost(raw) {
 		return raw
@@ -1566,8 +1563,8 @@ func (s *Server) urlPolicyKeepsHost(raw string) bool {
 }
 
 // urlPolicyOwned reports whether a plugin owns URL rules for raw. A plugin-owned
-// page shares its request budget with the feed (reddit's tight anonymous
-// limit), so page metadata fetches for icon/avatar discovery must be skipped.
+// page shares its request budget with the feed (a tight anonymous limit), so
+// page metadata fetches for icon/avatar discovery must be skipped.
 func (s *Server) urlPolicyOwned(raw string) bool {
 	if s.plugins == nil || s.plugins.Empty() {
 		return false

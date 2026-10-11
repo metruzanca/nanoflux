@@ -580,10 +580,10 @@ type Candidate struct {
 	IconUrl string                 `protobuf:"bytes,3,opt,name=icon_url,json=iconUrl,proto3" json:"icon_url,omitempty"`
 	HomeUrl string                 `protobuf:"bytes,4,opt,name=home_url,json=homeUrl,proto3" json:"home_url,omitempty"`
 	// Preferred new-author name when the site suggests one different from the
-	// feed title (reddit users: "spez" rather than "u/spez").
+	// feed title (a bare username, not its decorated form).
 	AuthorName string `protobuf:"bytes,5,opt,name=author_name,json=authorName,proto3" json:"author_name,omitempty"`
 	// The feed URL follows from the page URL alone; the host must not fetch the
-	// page to validate the feed or gather its metadata (reddit's tight limit).
+	// page to validate the feed or gather its metadata (a site on a tight budget).
 	Derived       bool `protobuf:"varint,6,opt,name=derived,proto3" json:"derived,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -869,7 +869,7 @@ type Item struct {
 	// Feed-provided labels the host stores and matches filter rules against.
 	Categories []string `protobuf:"bytes,10,rep,name=categories,proto3" json:"categories,omitempty"`
 	// Identity shared across a user's feeds (set by a SharedKeyer; e.g.
-	// "reddit:t3_<id>"). Empty means not cross-deduplicated.
+	// "site:type_<id>"). Empty means not cross-deduplicated.
 	SharedKey     string `protobuf:"bytes,11,opt,name=shared_key,json=sharedKey,proto3" json:"shared_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

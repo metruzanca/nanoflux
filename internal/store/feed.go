@@ -270,8 +270,8 @@ func (s *FeedStore) SetCacheImages(userID, id int64, on bool) error {
 }
 
 // Delete removes a feed. Items the feed owns that are also members of another
-// feed are re-homed to that feed first (so deleting the subreddit feed does not
-// delete a post still reachable through a user feed); items whose only
+// feed are re-homed to that feed first (so deleting one feed does not delete a
+// post still reachable through another); items whose only
 // membership is this feed are removed with it. Both the feed's membership rows
 // and its remaining items cascade. It returns the object-storage keys of the
 // cached media it removed, so the caller can purge those blobs.
@@ -379,8 +379,8 @@ func (s *FeedStore) SetLastItemAt(id int64, t string) error {
 }
 
 // CanonicalizeFeedURLs rewrites stored feed URLs to their canonical form via the
-// installed URL policy (the plugin layer's per-URL site rules, e.g. reddit's
-// redirect-free shape). It is idempotent and runs once at startup so feeds added
+// installed URL policy (the plugin layer's per-URL site rules). It is idempotent
+// and runs once at startup so feeds added
 // before canonicalization start working.
 func (s *FeedStore) CanonicalizeFeedURLs() (int, error) {
 	feeds, err := s.ListAll()

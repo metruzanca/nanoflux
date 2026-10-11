@@ -1,7 +1,7 @@
 -- name: UpsertItem :execresult
 -- dedup_key is the stable per-feed identity (the plugin's Identity, else the
 -- GUID); guid is the display identity and may legitimately change shape.
--- cross_key is the per-user cross-feed identity ("reddit:t3_<id>" or "").
+-- cross_key is the per-user cross-feed identity ("site:type_<id>" or "").
 INSERT INTO items (feed_id, user_id, guid, dedup_key, cross_key, title, link, summary, categories, image_url, duration_sec, published_at, fetched_at, read, read_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (feed_id, dedup_key) DO NOTHING;
@@ -61,18 +61,6 @@ JOIN feeds f ON f.id = mf.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE mf.item_id IN (sqlc.slice('itemIDs'))
 ORDER BY mf.item_id, f.title;
-
--- name: CountItemsMissingYouTubeThumbnail :one
-SELECT COUNT(*) FROM items
-WHERE image_url IS NULL AND guid LIKE 'yt:video:%';
-
--- name: BackfillYouTubeThumbnails :execresult
--- Fill image_url for YouTube items stored before the media:thumbnail fix.
--- The thumbnail is deterministic from the video id in the GUID, so no fetch is
--- needed. Only rows with a NULL image_url are touched.
-UPDATE items
-SET image_url = 'https://i.ytimg.com/vi/' || substr(guid, length('yt:video:') + 1) || '/hqdefault.jpg'
-WHERE image_url IS NULL AND guid LIKE 'yt:video:%';
 
 -- name: ListItems :many
 -- The display feed is the item's owner (i.feed_id); feed/author/collection

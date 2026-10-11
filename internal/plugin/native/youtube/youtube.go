@@ -44,7 +44,11 @@ const (
 // Plugin is the YouTube Fetcher.
 type Plugin struct{}
 
-var _ pluginapi.Fetcher = Plugin{}
+var (
+	_ pluginapi.Fetcher    = Plugin{}
+	_ pluginapi.Renderer   = Plugin{}
+	_ pluginapi.Decoration = Plugin{}
+)
 
 func (Plugin) Meta() pluginapi.Meta {
 	return pluginapi.Meta{
@@ -57,20 +61,84 @@ func (Plugin) Meta() pluginapi.Meta {
 // Docs returns this plugin's Markdown documentation.
 func (Plugin) Docs() string { return readme }
 
-// Match handles discovery on any YouTube host, and fetch for the channel RSS
-// URL (whose 404 fallback requires the plugin to own the fetch).
+// Match handles discovery on any YouTube host, fetch for the channel RSS URL
+// (whose 404 fallback requires the plugin to own the fetch), and the item-link
+// capabilities: a YouTube video link renders as an embeddable player
+// (CapRender) and is classified as a video card (CapDecorate), from any feed.
 func (Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
-	if !isYouTubeHost(u.Hostname()) {
-		return false
+	if isYouTubeHost(u.Hostname()) {
+		switch cap {
+		case pluginapi.CapDiscover:
+			return true
+		case pluginapi.CapFetch:
+			return isChannelFeedURL(u)
+		}
 	}
 	switch cap {
-	case pluginapi.CapDiscover:
-		return true
-	case pluginapi.CapFetch:
-		return isChannelFeedURL(u)
+	case pluginapi.CapRender, pluginapi.CapDecorate:
+		return videoID(u) != ""
 	default:
 		return false
 	}
+}
+
+// Render resolves a YouTube video link to its embeddable player, so any feed's
+// item that links to a video (not just a YouTube feed) opens with the player.
+func (Plugin) Render(_ context.Context, req pluginapi.RenderRequest, _ pluginapi.Host) (pluginapi.Media, error) {
+	u, err := url.Parse(req.Link)
+	if err != nil {
+		return pluginapi.Media{}, nil
+	}
+	id := videoID(u)
+	if id == "" {
+		return pluginapi.Media{}, nil
+	}
+	return pluginapi.Media{EmbedSrc: "https://www.youtube.com/embed/" + id}, nil
+}
+
+// Decorate classifies a YouTube video link as a video card and supplies its
+// thumbnail, so a stored video shows the play badge and poster even when its
+// image_url is missing (a row stored before thumbnails were parsed).
+func (Plugin) Decorate(_ context.Context, req pluginapi.DecorateRequest) ([]pluginapi.Decorated, error) {
+	out := make([]pluginapi.Decorated, 0, len(req.Items))
+	for i, it := range req.Items {
+		u, err := url.Parse(it.Link)
+		if err != nil {
+			continue
+		}
+		id := videoID(u)
+		if id == "" {
+			continue
+		}
+		dec := pluginapi.Decorated{Index: i, Kind: pluginapi.KindVideo}
+		// Supply a thumbnail only when the stored one is missing, so a real
+		// (higher-res) thumbnail the feed already carried is not overridden.
+		if it.ImageURL == "" {
+			dec.ThumbURL = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"
+		}
+		out = append(out, dec)
+	}
+	return out, nil
+}
+
+// videoID extracts a video id from the link forms a video can take: /watch?v=,
+// youtu.be/<id>, and /shorts|/live|/embed/<id>. It returns "" for anything else.
+func videoID(u *url.URL) string {
+	host := strings.ToLower(u.Hostname())
+	if host == "youtu.be" || strings.HasSuffix(host, ".youtu.be") {
+		return strings.Trim(u.Path, "/")
+	}
+	if !strings.HasSuffix(host, "youtube.com") {
+		return ""
+	}
+	if u.Path == "/watch" {
+		return u.Query().Get("v")
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) == 2 && (parts[0] == "shorts" || parts[0] == "live" || parts[0] == "embed") {
+		return parts[1]
+	}
+	return ""
 }
 
 func isYouTubeHost(host string) bool {

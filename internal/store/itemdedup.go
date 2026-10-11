@@ -203,23 +203,10 @@ func exec(ctx context.Context, tx *sql.Tx, query string, args ...any) error {
 	return err
 }
 
-// crossKeyBackfillSQL adopts a shared cross-feed identity on every reddit post
-// stored before plugins supplied SharedKey. This is a one-time legacy backfill:
-// a reddit post's identity is derived from its GUID (t3_<id>), a pure SQL prefix
-// test. The reddit plugin now sets SharedKey at ingest, so this only matters for
-// rows written by an older build.
-const crossKeyBackfillSQL = `
-UPDATE items
-SET cross_key = 'reddit:' || guid
-WHERE cross_key = ''
-  AND guid GLOB 't3_*'
-  AND length(guid) > 3
-  AND substr(guid, 4) NOT GLOB '*[^0-9a-zA-Z]*'`
-
 // crossDuplicatesSQL finds rows that share a per-user cross-feed identity but
-// are still stored separately (a subreddit feed and a user feed both holding the
-// same reddit post), plus the surviving row's id: the newest fetched_at, then
-// the highest id. It ignores the owner feed and returns every member row.
+// are still stored separately (the same post reached through two subscriptions),
+// plus the surviving row's id: the newest fetched_at, then the highest id. It
+// ignores the owner feed and returns every member row.
 const crossDuplicatesSQL = `
 SELECT i.id, i.user_id, i.feed_id, i.cross_key, i.fetched_at
 FROM items i
@@ -233,18 +220,13 @@ WHERE i.cross_key <> ''
 ORDER BY i.user_id, i.cross_key, i.fetched_at, i.id`
 
 // MergeCrossFeedDuplicates brings already-stored rows onto the cross-feed model:
-// it derives cross_key for every reddit item written before plugins supplied
-// SharedKey, merges rows that share a per-user cross-feed identity into one row
-// (carrying read/favorite state, memberships, enclosures, lists and shares), and
-// only then creates the partial unique index that keeps them merged. Idempotent
-// and cheap to call on every startup: with nothing to merge it is one UPDATE and
-// one scan.
+// rows that share a per-user cross-feed identity (set by a plugin's SharedKey at
+// ingest) are merged into one row, carrying read/favorite state, memberships,
+// enclosures, lists and shares, and then the partial unique index that keeps
+// them merged is created. Idempotent and cheap to call on every startup: with
+// nothing to merge it is one scan.
 func (s *ItemStore) MergeCrossFeedDuplicates(dryRun bool) (DedupReport, error) {
 	ctx := context.Background()
-	if _, err := s.db.ExecContext(ctx, crossKeyBackfillSQL); err != nil {
-		return DedupReport{}, err
-	}
-
 	rows, err := s.db.QueryContext(ctx, crossDuplicatesSQL)
 	if err != nil {
 		return DedupReport{}, err
