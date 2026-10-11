@@ -138,8 +138,7 @@ templ appearanceAccent(d settingsAccentData) {
 templ appearanceUnreadCounts(d settingsAppearanceData) {
 	<div id="settings-unread-counts-section">
 		<form class="stack" hx-post="/settings/appearance/unread-counts" hx-trigger="change" hx-target="#settings-unread-counts-section" hx-swap="outerHTML">
-			@switchField("hide_unread_counts", "hide global unread counts", d.HideUnreadCounts, nil)
-			<p class="muted small">Hide the numbers next to unread and authors in the navbar. Great if they cause anxiety.</p>
+			@switchField("hide_unread_counts", "hide global unread counts", d.HideUnreadCounts, "Hide the numbers next to unread and authors in the navbar. Great if they cause anxiety.", nil)
 		</form>
 	</div>
 }
@@ -147,8 +146,7 @@ templ appearanceUnreadCounts(d settingsAppearanceData) {
 templ appearanceUnreadNav(d settingsAppearanceData) {
 	<div id="settings-unread-nav-section">
 		<form class="stack" hx-post="/settings/appearance/unread-nav" hx-trigger="change" hx-target="#settings-unread-nav-section" hx-swap="outerHTML">
-			@switchField("hide_unread_nav", "hide unread from nav", d.HideUnreadNav, nil)
-			<p class="muted small">Move the "unread" link out of the navbar and into the user menu.</p>
+			@switchField("hide_unread_nav", "hide unread from nav", d.HideUnreadNav, "Move the \"unread\" link out of the navbar and into the user menu.", nil)
 		</form>
 	</div>
 }

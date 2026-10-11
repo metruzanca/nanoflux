@@ -886,7 +886,7 @@ func AdminInstanceCard(d adminData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = switchField("allow", "signups", d.AllowSignup, templ.Attributes{
+		templ_7745c5c3_Err = switchField("allow", "signups", d.AllowSignup, "", templ.Attributes{
 			"hx-post":    "/admin/settings/signup",
 			"hx-target":  "#admin-instance-card",
 			"hx-swap":    "outerHTML",

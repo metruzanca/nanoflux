@@ -199,7 +199,7 @@ templ AdminInstanceCard(d adminData) {
 		if !d.AllowSignup {
 			<p class="muted small">Registration is closed. Existing accounts can still sign in.</p>
 		}
-		@switchField("allow", "signups", d.AllowSignup, templ.Attributes{
+		@switchField("allow", "signups", d.AllowSignup, "", templ.Attributes{
 			"hx-post":   "/admin/settings/signup",
 			"hx-target": "#admin-instance-card",
 			"hx-swap":   "outerHTML",
