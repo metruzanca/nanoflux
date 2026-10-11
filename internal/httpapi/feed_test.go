@@ -49,10 +49,17 @@ func TestFeedErrorSurface(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The author's feeds list card carries the error text on its badge.
+	// The author's feeds list card carries the error text.
 	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
 	if !strings.Contains(body, "last poll failed") || !strings.Contains(body, "boom: dns lookup failed") {
 		t.Fatalf("author page feeds list missing error badge: %s", body)
+	}
+
+	// The feed settings panel shows the full error (not just a badge) so a
+	// cryptic failure like a plugin's config error is visible.
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
+	if !strings.Contains(edit, `class="feed-error"`) || !strings.Contains(edit, "boom: dns lookup failed") {
+		t.Fatalf("feed settings missing the fetch-error section: %s", edit)
 	}
 }
 

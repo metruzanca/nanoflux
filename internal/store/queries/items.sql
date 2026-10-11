@@ -595,6 +595,21 @@ WHERE i.user_id = sqlc.arg('userID')
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
     WHERE f.user_id = sqlc.arg('userID') AND f.author_id = sqlc.arg('authorID'));
 
+-- name: GetFeedItemStats :one
+-- Aggregate stats for one feed (by item membership): all-time post counts
+-- (read/unread split) and the first/last post times, for the feed settings'
+-- history card. COUNT stays 0 on an empty set; MIN/MAX stay NULL (cast to '').
+SELECT
+    COUNT(i.id) AS total_posts,
+    COUNT(CASE WHEN i.read = 0 THEN 1 END) AS unread_posts,
+    COUNT(CASE WHEN i.read = 1 THEN 1 END) AS read_posts,
+    CAST(COALESCE(MIN(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS first_post_at,
+    CAST(COALESCE(MAX(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS last_post_at
+FROM items i
+WHERE i.user_id = sqlc.arg('userID')
+  AND i.id IN (
+    SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = sqlc.arg('feedID'));
+
 -- name: CountAllItems :one
 SELECT COUNT(*) FROM items;
 

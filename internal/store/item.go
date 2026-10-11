@@ -811,6 +811,34 @@ func (s *ItemStore) StatsAuthor(userID, authorID int64) (AuthorItemStats, error)
 	}, nil
 }
 
+// FeedItemStats aggregates one feed's posts (by item membership).
+type FeedItemStats struct {
+	Total   int    // all-time posts in the feed
+	Unread  int    // unread posts
+	Read    int    // read posts
+	FirstAt string // oldest post time, "" when the feed has no posts
+	LastAt  string // newest post time, "" when the feed has no posts
+}
+
+// StatsFeed returns all-time aggregate stats for one feed: total/read/unread
+// counts and the first and last post times, for the settings history card.
+func (s *ItemStore) StatsFeed(userID, feedID int64) (FeedItemStats, error) {
+	r, err := s.q.GetFeedItemStats(context.Background(), sqlcgen.GetFeedItemStatsParams{
+		UserID: userID,
+		FeedID: feedID,
+	})
+	if err != nil {
+		return FeedItemStats{}, err
+	}
+	return FeedItemStats{
+		Total:   int(r.TotalPosts),
+		Unread:  int(r.UnreadPosts),
+		Read:    int(r.ReadPosts),
+		FirstAt: r.FirstPostAt,
+		LastAt:  r.LastPostAt,
+	}, nil
+}
+
 // ReplaceEnclosures deletes and re-inserts an item's enclosures. A previous
 // slot's cache_key is carried forward when the incoming enclosure has none, so
 // a re-poll does not drop an already-cached image (which is what keeps a

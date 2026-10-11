@@ -67,6 +67,9 @@ templ FeedRow(r feedRow) {
 						· cached media { web.FormatBytes(r.Storage) }
 					}
 				</div>
+				if r.LastError != "" {
+					<p class="feed-card-error" title={ r.LastError }>{ r.LastError }</p>
+				}
 			</div>
 			<div class="feed-card-side">
 				<div class="row-actions">
@@ -205,17 +208,32 @@ templ feedEditorBody(d feedsData) {
 			<button type="button" class="link" data-plugin={ d.DocsPlugin } title="read this feed's plugin documentation" data-plugin-docs>plugin docs</button>
 		</div>
 	}
+	if d.LastError != "" {
+		<div class="feed-error" role="alert">
+			<div class="feed-error-head">
+				<span class="badge danger">last poll failed</span>
+				if d.PluginName != "" {
+					<span class="muted small">via the { d.PluginName } plugin</span>
+				}
+				if d.LastPolledAt != "" {
+					<span class="muted small">last polled { web.TimeFmt(d.Timezone, d.LastPolledAt) }</span>
+				}
+				if d.Form.Enabled {
+					<button type="button" class="link" title="retry the fetch now" hx-post={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/refresh" } hx-swap="none" data-reload-on-success>refresh now</button>
+				}
+			</div>
+			<p class="feed-error-msg">{ d.LastError }</p>
+		</div>
+	}
 	<form class="stack" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
 		@csrfField()
 		@feedFields(d)
 		<button type="submit">save</button>
 	</form>
-	if d.NextPageURL != "" {
-		<div class="feed-history">
-			<span class="muted small">older history</span>
-			@feedOlderControl(feedOlderData{FeedID: d.Form.ID, NextPageURL: d.NextPageURL})
-		</div>
-	}
+	@feedHistoryCard(feedHistoryData{
+		FeedID: d.Form.ID, Unread: d.Stats.Unread, Read: d.Stats.Read,
+		OldestAt: d.Stats.FirstAt, Timezone: d.Timezone, NextPageURL: d.NextPageURL,
+	})
 	<form class="stack delete-form" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this feed?">
 		@csrfField()
 		if d.Panel != nil {
@@ -268,35 +286,50 @@ templ feedFields(d feedsData) {
 	</div>
 }
 
-// feedOlderData drives the "load older items" control in a feed's settings
-// panel. NextPageURL empty means the history is exhausted; Message reports a
+// feedHistoryData backs a feed's history card in its settings panel: the feed's
+// unread/read counts and oldest post, plus the "load older items" control.
+// NextPageURL empty means the history is exhausted; Message reports a
 // successful load; Err reports a failed one.
-type feedOlderData struct {
+type feedHistoryData struct {
 	FeedID      int64
+	Unread      int
+	Read        int
+	OldestAt    string
+	Timezone    string
 	NextPageURL string
 	Message     string
 	Err         string
 }
 
-// feedOlderControl is the "load older items" control on a feed's settings
-// panel. It is the htmx swap target for POST /feeds/{id}/older: the response
-// replaces it, advancing the button (or showing "full history loaded" once
-// pages run out), reporting how many items/unread the load produced, or showing
-// a fetch error so a failed load is visible instead of silent.
-templ feedOlderControl(d feedOlderData) {
+// feedHistoryCard is the small history card in a feed's settings panel. It is
+// the htmx swap target for POST /feeds/{id}/older, so a load refreshes the
+// counts and the oldest-post date along with the control, and a failed fetch
+// shows an inline error instead of failing silently.
+templ feedHistoryCard(d feedHistoryData) {
 	{{ id := strconv.FormatInt(d.FeedID, 10) }}
-	<div id={ "feed-older-" + id } class="feed-older">
-		if d.NextPageURL != "" {
-			<button class="link" hx-post={ "/feeds/" + id + "/older" } hx-target={ "#feed-older-" + id } hx-swap="outerHTML">load older items</button>
-		} else {
-			<span class="muted small">full history loaded</span>
-		}
-		if d.Message != "" {
-			<span class="muted small">{ d.Message }</span>
-		}
-		if d.Err != "" {
-			<span class="error" role="alert">{ d.Err }</span>
-		}
+	<div id={ "feed-history-" + id } class="feed-history-card">
+		<div class="feed-history-stats">
+			<span><strong>{ strconv.Itoa(d.Unread) }</strong> unread</span>
+			<span><strong>{ strconv.Itoa(d.Read) }</strong> read</span>
+			if d.OldestAt != "" {
+				<span>oldest { web.TimeFmt(d.Timezone, d.OldestAt) }</span>
+			} else {
+				<span>no posts yet</span>
+			}
+		</div>
+		<div class="feed-history-actions">
+			if d.NextPageURL != "" {
+				<button class="link" hx-post={ "/feeds/" + id + "/older" } hx-target={ "#feed-history-" + id } hx-swap="outerHTML">load older items</button>
+			} else {
+				<span class="muted small">full history loaded</span>
+			}
+			if d.Message != "" {
+				<span class="muted small">{ d.Message }</span>
+			}
+			if d.Err != "" {
+				<span class="error" role="alert">{ d.Err }</span>
+			}
+		</div>
 	</div>
 }
 
