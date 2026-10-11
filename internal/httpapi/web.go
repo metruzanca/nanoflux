@@ -104,6 +104,16 @@ type feedsData struct {
 	// NextPageURL is the feed's older-history cursor; non-empty renders the
 	// "load older items" control in the settings panel.
 	NextPageURL string
+	// Stats backs the settings panel's history card (unread/read/oldest post).
+	Stats store.FeedItemStats
+	// Timezone is the user's IANA timezone for relative dates in the card.
+	Timezone string
+	// LastError/LastPolledAt/PluginName back the settings panel's fetch-error
+	// section, so a failed poll shows the underlying message (e.g. a plugin's
+	// configuration error) instead of a bare "last poll failed".
+	LastError    string
+	LastPolledAt string
+	PluginName   string
 }
 
 type authorRow struct {
@@ -1410,7 +1420,12 @@ func (s *Server) feedEditorData(u store.User, f store.Feed) *feedsData {
 	if p, ok := s.feedPanel(f, ""); ok {
 		panel = &p
 	}
-	return &feedsData{Collections: collections, Form: form, DocsPlugin: s.pluginDocNameFor(f.FeedURL), Panel: panel, NextPageURL: f.NextPageURL}
+	stats, _ := s.store.Items.StatsFeed(u.ID, f.ID)
+	return &feedsData{
+		Collections: collections, Form: form, DocsPlugin: s.pluginDocNameFor(f.FeedURL), Panel: panel,
+		NextPageURL: f.NextPageURL, Stats: stats, Timezone: u.Timezone,
+		LastError: f.LastError, LastPolledAt: f.LastPolledAt, PluginName: f.PluginName,
+	}
 }
 
 func (s *Server) collectionIDsForFeed(userID, feedID int64) []int64 {
@@ -1684,43 +1699,53 @@ func (s *Server) feedOlder(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	data := feedOlderData{FeedID: f.ID, NextPageURL: f.NextPageURL}
-	renderControl := func(status int) {
+	data := s.feedHistoryData(u.ID, f, u.Timezone)
+	renderCard := func(status int) {
 		if status != http.StatusOK {
 			w.WriteHeader(status)
 		}
-		web.Render(w, r, feedOlderControl(data))
+		web.Render(w, r, feedHistoryCard(data))
 	}
 	if f.NextPageURL == "" {
 		// History already exhausted: keep "full history loaded" without an error.
-		renderControl(http.StatusOK)
+		renderCard(http.StatusOK)
 		return
 	}
 	if s.poller == nil {
 		data.Err = "could not load older items"
-		renderControl(http.StatusBadRequest)
+		renderCard(http.StatusBadRequest)
 		return
 	}
 	newItems, _, err := s.poller.PollOlder(r.Context(), f)
 	if err != nil {
 		log.Error("load older items", "feed_id", id, "err", err)
 		data.Err = "could not load older items"
-		renderControl(http.StatusBadRequest)
+		renderCard(http.StatusBadRequest)
 		return
 	}
 	if newItems > 0 {
 		log.Info("loaded older items", "feed_id", id, "new_items", newItems)
 	}
-	// Re-read the feed: PollOlder advanced (or cleared) the next-page cursor.
+	// Re-read the feed and its stats: PollOlder advanced (or cleared) the
+	// next-page cursor and the load changed the counts and oldest post.
 	f, err = s.store.Feeds.ByID(u.ID, id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	unread, _ := s.store.Items.CountUnread(u.ID, f.ID)
-	data.NextPageURL = f.NextPageURL
-	data.Message = "loaded " + strconv.Itoa(newItems) + " items · " + strconv.Itoa(unread) + " unread"
-	renderControl(http.StatusOK)
+	data = s.feedHistoryData(u.ID, f, u.Timezone)
+	data.Message = "loaded " + strconv.Itoa(newItems) + " items · " + strconv.Itoa(data.Unread) + " unread"
+	renderCard(http.StatusOK)
+}
+
+// feedHistoryData assembles a feed's history card data (counts, oldest post and
+// the older-history cursor).
+func (s *Server) feedHistoryData(userID int64, f store.Feed, tz string) feedHistoryData {
+	stats, _ := s.store.Items.StatsFeed(userID, f.ID)
+	return feedHistoryData{
+		FeedID: f.ID, Unread: stats.Unread, Read: stats.Read,
+		OldestAt: stats.FirstAt, Timezone: tz, NextPageURL: f.NextPageURL,
+	}
 }
 
 // feedToggle pauses or resumes a feed's polling and re-renders its row.

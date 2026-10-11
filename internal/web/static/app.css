@@ -315,10 +315,11 @@ main:has(#home-sections) {
 .field-group { display: flex; flex-direction: column; gap: 0.75rem; }
 .field-group > h3 {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--muted);
+  color: var(--fg);
 }
 .field-group + .field-group { border-top: 1px solid var(--border); padding-top: 0.85rem; }
 label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; color: var(--muted); }
@@ -617,9 +618,58 @@ ul.feed-cards .card { margin-bottom: 0; }
   flex: none;
 }
 .feed-card-side .feed-collections { margin: 0; justify-content: flex-end; }
-/* "load older items" lives in the feed's settings panel. */
-.feed-history { display: flex; align-items: center; gap: 0.5rem; }
-.feed-older { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+/* Feed settings: a small card with the feed's history counts and oldest post,
+   plus the "load older items" control. */
+.feed-history-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+}
+.feed-history-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.feed-history-stats strong { color: var(--fg); }
+.feed-history-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+
+/* Feed fetch-error section: the full last_error message (a plugin's config
+   error, an HTTP failure, a parse error) instead of a bare "last poll failed". */
+.feed-error {
+  border: 1px solid rgba(255, 107, 107, 0.35);
+  background: rgba(255, 107, 107, 0.1);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+}
+.feed-error-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+.feed-error-head > .link { margin-left: auto; }
+.feed-error-msg {
+  margin: 0.45rem 0 0;
+  color: var(--fg);
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+/* The author page card shows the same error text compactly under the meta. */
+.feed-card-error {
+  margin: 0.3rem 0 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+  word-break: break-word;
+}
 .error.banner { padding: 0.7rem 0.9rem; }
 .badge.danger { background: rgba(255, 107, 107, 0.18); color: var(--fg); }
 

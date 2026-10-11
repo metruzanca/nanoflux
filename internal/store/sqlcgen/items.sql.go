@@ -427,6 +427,48 @@ func (q *Queries) GetAuthorItemStats(ctx context.Context, arg GetAuthorItemStats
 	return i, err
 }
 
+const getFeedItemStats = `-- name: GetFeedItemStats :one
+SELECT
+    COUNT(i.id) AS total_posts,
+    COUNT(CASE WHEN i.read = 0 THEN 1 END) AS unread_posts,
+    COUNT(CASE WHEN i.read = 1 THEN 1 END) AS read_posts,
+    CAST(COALESCE(MIN(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS first_post_at,
+    CAST(COALESCE(MAX(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS last_post_at
+FROM items i
+WHERE i.user_id = ?1
+  AND i.id IN (
+    SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = ?2)
+`
+
+type GetFeedItemStatsParams struct {
+	UserID int64 `json:"userID"`
+	FeedID int64 `json:"feedID"`
+}
+
+type GetFeedItemStatsRow struct {
+	TotalPosts  int64  `json:"total_posts"`
+	UnreadPosts int64  `json:"unread_posts"`
+	ReadPosts   int64  `json:"read_posts"`
+	FirstPostAt string `json:"first_post_at"`
+	LastPostAt  string `json:"last_post_at"`
+}
+
+// Aggregate stats for one feed (by item membership): all-time post counts
+// (read/unread split) and the first/last post times, for the feed settings'
+// history card. COUNT stays 0 on an empty set; MIN/MAX stay NULL (cast to ”).
+func (q *Queries) GetFeedItemStats(ctx context.Context, arg GetFeedItemStatsParams) (GetFeedItemStatsRow, error) {
+	row := q.db.QueryRowContext(ctx, getFeedItemStats, arg.UserID, arg.FeedID)
+	var i GetFeedItemStatsRow
+	err := row.Scan(
+		&i.TotalPosts,
+		&i.UnreadPosts,
+		&i.ReadPosts,
+		&i.FirstPostAt,
+		&i.LastPostAt,
+	)
+	return i, err
+}
+
 const getItem = `-- name: GetItem :one
 SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url, i.image_cache_key, i.image_cache_size,
        i.published_at, i.fetched_at, i.read, i.read_at, i.favorite, i.bookmark
