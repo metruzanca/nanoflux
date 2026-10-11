@@ -165,36 +165,6 @@ func Initial(s string) string {
 	return "?"
 }
 
-// YoutubeEmbedURL returns the embeddable player URL for a YouTube video link
-// (watch, youtu.be, shorts, live, embed), or "" for anything else.
-func YoutubeEmbedURL(link string) string {
-	u, err := url.Parse(link)
-	if err != nil {
-		return ""
-	}
-	host := strings.ToLower(u.Hostname())
-	if strings.HasSuffix(host, "youtu.be") {
-		if id := strings.Trim(u.Path, "/"); id != "" {
-			return "https://www.youtube.com/embed/" + id
-		}
-	}
-	if !strings.HasSuffix(host, "youtube.com") {
-		return ""
-	}
-	switch u.Path {
-	case "/watch":
-		if id := u.Query().Get("v"); id != "" {
-			return "https://www.youtube.com/embed/" + id
-		}
-	default:
-		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-		if len(parts) == 2 && (parts[0] == "shorts" || parts[0] == "live" || parts[0] == "embed") {
-			return "https://www.youtube.com/embed/" + parts[1]
-		}
-	}
-	return ""
-}
-
 // IsSingleImagePost reports whether an item's primary content is a single image:
 // the summary is exactly one <img> (optionally wrapped in a link) with no real
 // text beyond the image's alt text. imageURL is required so items whose

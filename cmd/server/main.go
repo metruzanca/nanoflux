@@ -92,9 +92,9 @@ func runServer() {
 		log.Fatal("migrate legacy files", "err", err)
 	}
 
-	// Merge the same reddit post stored once per subscription (a subreddit feed
-	// and a user feed) into one item with shared read/favorite state, then
-	// create the cross-feed unique index. Idempotent; a no-op after the first
+	// Merge the same post stored once per subscription into one item with shared
+	// read/favorite state, then create the cross-feed unique index. Idempotent;
+	// a no-op after the first
 	// run on an already-merged database.
 	if rep, err := st.Items.MergeCrossFeedDuplicates(false); err != nil {
 		log.Error("merge cross-feed duplicates", "err", err)
@@ -130,8 +130,8 @@ func runServer() {
 
 	// With the plugins loaded, hand the store their per-URL site rules so feed
 	// create/edit and the canonicalize pass defer site-specific URL handling to
-	// the owning plugin (e.g. reddit's redirect-free shape), and their view-time
-	// item decoration so lists render plugin-owned attribution and card kinds.
+	// the owning plugin (its redirect-free shape), and their view-time item
+	// decoration so lists render plugin-owned attribution and card kinds.
 	st.SetURLPolicy(plugin.NewStoreURLPolicy(plugins.Registry))
 	st.SetItemDecorator(plugin.NewStoreDecorator(plugins.Registry))
 	// A plugin may enrich a newly stored item's body (full text, translation,
@@ -142,9 +142,9 @@ func runServer() {
 	// cache/<plugin>/. A plugin that claims CapImageCache forces it on; a user
 	// may also enable it per feed.
 	p.SetImageCache(imagecache.New(files, p.Client(), plugins.Registry.CachesImages, plugins.Registry.ImageCacheFolder))
-	// Rewrite stored feed URLs to their canonical form (e.g. old.reddit.com and
-	// bare reddit.com -> www.reddit.com, /u/ -> /user/, a user's bare feed ->
-	// /submitted.rss). Idempotent; fixes feeds added before canonicalization.
+	// Rewrite stored feed URLs to their canonical form (each plugin's
+	// redirect-free shape). Idempotent; fixes feeds added before
+	// canonicalization.
 	if n, err := st.Feeds.CanonicalizeFeedURLs(); err != nil {
 		log.Error("canonicalize feed urls", "err", err)
 	} else if n > 0 {

@@ -34,12 +34,65 @@ func TestMatch(t *testing.T) {
 		{"https://example.com/x", pluginapi.CapDiscover, false},
 		{"https://www.youtube.com/feeds/videos.xml?channel_id=UC5--wS0Ljbin1TjWQX6eafA", pluginapi.CapFetch, true},
 		{"https://www.youtube.com/@SomeChannel", pluginapi.CapFetch, false},
+		// Item-link capabilities match any video link, from any host.
+		{"https://www.youtube.com/watch?v=H0KAi8AWsnM", pluginapi.CapRender, true},
+		{"https://youtu.be/H0KAi8AWsnM", pluginapi.CapDecorate, true},
+		{"https://example.com/post/1", pluginapi.CapRender, false},
+		{"https://www.youtube.com/@SomeChannel", pluginapi.CapDecorate, false},
 	}
 	for _, c := range cases {
 		u, _ := url.Parse(c.raw)
 		if got := p.Match(u, c.cap); got != c.want {
 			t.Errorf("Match(%s, cap=%d) = %v, want %v", c.raw, c.cap, got, c.want)
 		}
+	}
+}
+
+func TestRenderVideoLinks(t *testing.T) {
+	p := Plugin{}
+	cases := []struct{ link, want string }{
+		{"https://www.youtube.com/watch?v=H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://m.youtube.com/watch?v=H0KAi8AWsnM&t=10s", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://youtu.be/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://www.youtube.com/shorts/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://www.youtube.com/live/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://www.youtube.com/embed/H0KAi8AWsnM", "https://www.youtube.com/embed/H0KAi8AWsnM"},
+		{"https://example.com/post/1", ""},
+		{"https://youtube.com/watch", ""},
+		{"not a url", ""},
+	}
+	for _, c := range cases {
+		req := pluginapi.RenderRequest{Link: c.link}
+		got, err := p.Render(context.Background(), req, nil)
+		if err != nil {
+			t.Fatalf("Render(%q): %v", c.link, err)
+		}
+		if got.EmbedSrc != c.want {
+			t.Errorf("Render(%q).EmbedSrc = %q, want %q", c.link, got.EmbedSrc, c.want)
+		}
+	}
+}
+
+func TestDecorateVideoLinks(t *testing.T) {
+	p := Plugin{}
+	decs, err := p.Decorate(context.Background(), pluginapi.DecorateRequest{Items: []pluginapi.Item{
+		{Link: "https://www.youtube.com/watch?v=H0KAi8AWsnM"},
+		{Link: "https://example.com/post/1"},
+		{Link: "https://youtu.be/pHfG0oxgshA", ImageURL: "https://i.ytimg.com/vi/pHfG0oxgshA/hq720.jpg"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decs) != 2 {
+		t.Fatalf("decorated %d items, want 2", len(decs))
+	}
+	if decs[0].Index != 0 || decs[0].Kind != pluginapi.KindVideo ||
+		decs[0].ThumbURL != "https://i.ytimg.com/vi/H0KAi8AWsnM/hqdefault.jpg" {
+		t.Fatalf("unexpected decoration: %+v", decs[0])
+	}
+	// A stored thumbnail is kept: the plugin supplies a URL only when missing.
+	if decs[1].Index != 2 || decs[1].Kind != pluginapi.KindVideo || decs[1].ThumbURL != "" {
+		t.Fatalf("stored thumbnail should not be overridden: %+v", decs[1])
 	}
 }
 

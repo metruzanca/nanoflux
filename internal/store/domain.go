@@ -54,9 +54,9 @@ func hostname(s string) string {
 // dispatched by URL (the plugin layer matches the URL to the owning plugin), so
 // the store holds one value that already knows every loaded site's rules.
 type URLPolicy interface {
-	// CanonicalizeFeedURL returns the preferred stored shape of a feed URL
-	// (reddit: www host, /user/{name}, posts-only /submitted.rss). It returns
-	// the input unchanged when no plugin has a rule for it.
+	// CanonicalizeFeedURL returns the preferred stored shape of a feed URL (www
+	// host, canonical user path, redirect-free feed form). It returns the input
+	// unchanged when no plugin has a rule for it.
 	CanonicalizeFeedURL(raw string) string
 	// FeedToken returns the token a feed URL represents ("r/cats", "u/sam"),
 	// used to match an item's tokens back to the user's subscribed feed, or ""

@@ -33,15 +33,15 @@ const (
 	// cannot be represented on a stored Item.
 	CapRender
 	// CapDocs asks whether the plugin documents u. It is how a docs affordance
-	// reaches a feed the plugin does not own the fetch of: a reddit feed is
-	// fetched by the generic parser (so feeds.plugin_name is empty), yet the
-	// reddit plugin still documents its category filters for reddit URLs.
+	// reaches a feed the plugin does not own the fetch of: a feed fetched by the
+	// generic parser (so feeds.plugin_name is empty) can still be documented by
+	// the plugin that knows its URL.
 	CapDocs
 	// CapSharedKey asks whether the plugin assigns a cross-feed SharedKey to a
 	// feed's freshly parsed items at ingest time. It runs after either fetch
 	// path (plugin or generic parser), so a plugin can give items it does not
-	// fetch an identity shared across a user's feeds — reddit sets
-	// "reddit:t3_<id>" on the generic parser's items.
+	// fetch an identity shared across a user's feeds — the plugin sets it on the
+	// generic parser's items.
 	CapSharedKey
 	// CapDecorate asks whether the plugin decorates stored items for display
 	// (source attribution, card kind, thumbnail). It is view-time and batched,
@@ -50,8 +50,8 @@ const (
 	// CapURLPolicy asks whether the plugin knows URL rules for a site: the
 	// canonical feed shape, the token a feed URL represents, and a feed
 	// derivable from a page URL with no request. It lets a site's URL handling
-	// live in the plugin instead of the core (reddit is the case that matters:
-	// its .rss sits behind a tight rate limit, so discovery must not probe it).
+	// live in the plugin instead of the core (a site whose feed sits behind a
+	// tight rate limit, so discovery must not probe it).
 	CapURLPolicy
 	// CapEnrich asks whether the plugin can enrich an item's body at ingest
 	// time: full-text extraction, a translation, a transcript. It runs on newly
@@ -130,13 +130,13 @@ type Candidate struct {
 	IconURL string // author avatar / site icon, resolved to an absolute URL
 	HomeURL string
 	// AuthorName is the preferred name for a newly created author when the site
-	// suggests one that differs from the feed title (reddit users: "spez"
-	// rather than "u/spez"). Empty means the host falls back to Title.
+	// suggests one that differs from the feed title (a bare username, not its
+	// decorated form). Empty means the host falls back to Title.
 	AuthorName string
 	// Derived means the feed URL follows from the page URL alone, so the host
-	// must not fetch the page to validate the feed or gather its metadata.
-	// reddit is the case: its .rss sits behind a tight anonymous rate limit,
-	// and probing it would spend the host's request budget on discovery.
+	// must not fetch the page to validate the feed or gather its metadata. A
+	// site whose feed sits behind a tight anonymous rate limit needs this:
+	// probing it would spend the host's request budget on discovery.
 	Derived bool
 }
 
@@ -195,7 +195,7 @@ type Item struct {
 	// SharedKey is the identity an item shares across a user's feeds, so the
 	// same entry seen through two subscriptions is stored once with shared
 	// read/favorite/list state. It is set by a SharedKeyer (not authored on a
-	// fetched Item), e.g. reddit's post fullname "reddit:t3_<id>". Empty means
+	// fetched Item), e.g. a site's post fullname "site:type_<id>". Empty means
 	// the item is not cross-deduplicated.
 	SharedKey   string
 	Title       string
@@ -208,7 +208,7 @@ type Item struct {
 	DurationSec int
 	// Categories are feed-provided labels the host stores (items.categories) and
 	// matches filter rules against (field = "category"). Set them when the site
-	// carries context worth filtering on, e.g. a subreddit, an author, or a
+	// carries context worth filtering on, e.g. a site's section, an author, or a
 	// reblog marker. The generic RSS/Atom parser fills the equivalent from
 	// <category> values; a plugin that reads a site's own API sets them directly.
 	Categories []string
@@ -294,8 +294,8 @@ type Fetcher interface {
 }
 
 // Renderer is an optional capability a plugin may implement to resolve
-// view-time media for an item. Some sites (reddit) mark a post's real content —
-// an external destination, an embeddable player, a multi-image gallery — only in
+// view-time media for an item. Some sites mark a post's real content — an
+// external destination, an embeddable player, a multi-image gallery — only in
 // the item's HTML, and enumerating it needs live lookups the stored Item cannot
 // carry. Such a plugin answers Match(u, CapRender) for the item's link, and
 // Render resolves the media when the item modal opens.
@@ -311,7 +311,7 @@ type Renderer interface {
 // Docser is an optional capability a plugin may implement to document itself.
 // Docs returns Markdown describing the plugin — typically how it maps a site's
 // context into item categories, so a user can write filter rules against them
-// (reddit, for example, exposes each post's subreddit and author as categories).
+// (a plugin exposes each post's section and author as categories, say).
 //
 // Docs must return promptly and must not perform network I/O: the host calls it
 // while rendering a modal. Returning "" means "no documentation".
@@ -323,9 +323,9 @@ type Docser interface {
 // cross-feed SharedKey to a feed's freshly parsed items at ingest time. It runs
 // after either fetch path (the plugin's own Fetch, or the generic parser for a
 // feed the plugin does not own), matched on the feed URL via CapSharedKey. It
-// lets a plugin give per-item identity to items it does not fetch: reddit sets
-// each post's cross-feed key so the same post seen through a subreddit feed and
-// the poster's user feed is stored once.
+// lets a plugin give per-item identity to items it does not fetch: it sets each
+// post's cross-feed key so the same post seen through two subscriptions is
+// stored once.
 //
 // SharedKeys must be pure with respect to the items it returns and must not
 // reorder or drop them: it returns entries addressed by Index, and the host
@@ -390,8 +390,8 @@ type Enriched struct {
 // core. It is gated by CapURLPolicy and matched on the URL in question, and none
 // of its methods may perform network I/O.
 type URLPolicy interface {
-	// CanonicalizeFeedURL returns the preferred stored shape of a feed URL
-	// (reddit: the www host, /user/{name}, a user's bare feed -> /submitted.rss).
+	// CanonicalizeFeedURL returns the preferred stored shape of a feed URL (the
+	// www host, a user's canonical path, a bare feed -> its redirect-free form).
 	// It is idempotent and returns the input unchanged when it has no rule.
 	CanonicalizeFeedURL(raw string) string
 	// FeedToken returns the token a feed URL represents ("r/cats" for
@@ -402,7 +402,7 @@ type URLPolicy interface {
 }
 
 // Decoration is an optional capability a plugin may implement to render a
-// stored item's source attribution at view time (reddit's "r/cats by u/sam").
+// stored item's source attribution at view time (a site's "section by author").
 // It is gated by CapDecorate and matched on the item's link, is batched per
 // page, and must not perform network I/O.
 //
@@ -437,9 +437,9 @@ type Decorated struct {
 	ThumbURL string
 	// DedupeKey is a view-time content identity for cross-feed deduplication:
 	// two items with the same key, seen in different feeds, collapse into one
-	// row. Use it for the same content reposted under different titles (reddit
-	// link posts crossposted to several subreddits share their external URL),
-	// keyed by both the content and its author so unrelated posts that merely
+	// row. Use it for the same content reposted under different titles (a link
+	// post crossposted to several places shares its external URL), keyed by both
+	// the content and its author so unrelated posts that merely
 	// share a URL are not merged. Empty keeps the default title-only dedupe.
 	DedupeKey string
 }

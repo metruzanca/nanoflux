@@ -76,19 +76,6 @@ func (q *Queries) AllCacheKeys(ctx context.Context) ([]sql.NullString, error) {
 	return items, nil
 }
 
-const backfillYouTubeThumbnails = `-- name: BackfillYouTubeThumbnails :execresult
-UPDATE items
-SET image_url = 'https://i.ytimg.com/vi/' || substr(guid, length('yt:video:') + 1) || '/hqdefault.jpg'
-WHERE image_url IS NULL AND guid LIKE 'yt:video:%'
-`
-
-// Fill image_url for YouTube items stored before the media:thumbnail fix.
-// The thumbnail is deterministic from the video id in the GUID, so no fetch is
-// needed. Only rows with a NULL image_url are touched.
-func (q *Queries) BackfillYouTubeThumbnails(ctx context.Context) (sql.Result, error) {
-	return q.db.ExecContext(ctx, backfillYouTubeThumbnails)
-}
-
 const countAllItems = `-- name: CountAllItems :one
 SELECT COUNT(*) FROM items
 `
@@ -184,18 +171,6 @@ type CountFavoriteItemsByAuthorParams struct {
 
 func (q *Queries) CountFavoriteItemsByAuthor(ctx context.Context, arg CountFavoriteItemsByAuthorParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countFavoriteItemsByAuthor, arg.UserID, arg.AuthorID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countItemsMissingYouTubeThumbnail = `-- name: CountItemsMissingYouTubeThumbnail :one
-SELECT COUNT(*) FROM items
-WHERE image_url IS NULL AND guid LIKE 'yt:video:%'
-`
-
-func (q *Queries) CountItemsMissingYouTubeThumbnail(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countItemsMissingYouTubeThumbnail)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -2109,7 +2084,7 @@ type UpsertItemParams struct {
 
 // dedup_key is the stable per-feed identity (the plugin's Identity, else the
 // GUID); guid is the display identity and may legitimately change shape.
-// cross_key is the per-user cross-feed identity ("reddit:t3_<id>" or "").
+// cross_key is the per-user cross-feed identity ("site:type_<id>" or "").
 func (q *Queries) UpsertItem(ctx context.Context, arg UpsertItemParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, upsertItem,
 		arg.FeedID,

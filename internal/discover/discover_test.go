@@ -165,7 +165,6 @@ func TestDiscoverSurfacesHostRuleRateLimit(t *testing.T) {
 	}
 }
 
-
 func TestHostSpecificURLs(t *testing.T) {
 	u := func(s string) *url.URL {
 		parsed, err := url.Parse(s)
@@ -188,7 +187,6 @@ func TestHostSpecificURLs(t *testing.T) {
 			"https://github.com/spf13/cobra/tags.atom",
 		}, nil},
 		{"https://example.com/anything", nil, nil},
-		{"https://www.youtube.com/watch?v=x", nil, nil}, // needs channel_id scraping
 	}
 	for _, c := range cases {
 		got := hostSpecificURLs(u(c.page))
@@ -212,68 +210,6 @@ func TestHostSpecificURLs(t *testing.T) {
 				}
 			}
 		}
-	}
-}
-
-func TestChannelIDFromPath(t *testing.T) {
-	cases := []struct {
-		path string
-		want string
-	}{
-		{"/channel/UC5--wS0Ljbin1TjWQX6eafA", "UC5--wS0Ljbin1TjWQX6eafA"},
-		{"/@bigboxSWE", ""},
-		{"/user/foo", ""},
-		{"/channel/short", ""}, // not a channel id shape
-		{"", ""},
-	}
-	for _, c := range cases {
-		if got := channelIDFromPath(c.path); got != c.want {
-			t.Errorf("channelIDFromPath(%q) = %q, want %q", c.path, got, c.want)
-		}
-	}
-}
-
-func TestYouTubeChannelID(t *testing.T) {
-	const id = "UC5--wS0Ljbin1TjWQX6eafA"
-	handlePage := `<html><head>
-	  <title>bigboxSWE</title>
-	  <link rel="canonical" href="https://www.youtube.com/channel/` + id + `">
-	  <script>var ytInitialData = {"header":{"externalId":"` + id + `"}}</script>
-	</head></html>`
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(handlePage))
-	}))
-	defer srv.Close()
-
-	d := New(srv.Client())
-
-	// /channel/<id> resolves from the path alone, no fetch.
-	if got := d.youtubeChannelID(context.Background(), srv.URL+"/channel/"+id); got != id {
-		t.Fatalf("/channel id = %q", got)
-	}
-	// A handle page resolves via the canonical link.
-	if got := d.youtubeChannelID(context.Background(), srv.URL+"/@bigboxSWE"); got != id {
-		t.Fatalf("handle page id = %q", got)
-	}
-	// The legacy channelId JSON key still works when no canonical/externalId.
-	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<script>var ytInitialData = {"header":{"channelId":"UCrLkzvXK6fN4oD9XVjvjKxQ"}}</script>`))
-	}))
-	defer srv2.Close()
-	if got := New(srv2.Client()).youtubeChannelID(context.Background(), srv2.URL); got != "UCrLkzvXK6fN4oD9XVjvjKxQ" {
-		t.Fatalf("legacy channelId = %q", got)
-	}
-	// A non-channel page yields nothing.
-	srv3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<html><head><title>nope</title></head></html>`))
-	}))
-	defer srv3.Close()
-	if got := New(srv3.Client()).youtubeChannelID(context.Background(), srv3.URL); got != "" {
-		t.Fatalf("non-channel id = %q", got)
 	}
 }
 
@@ -316,8 +252,8 @@ func TestPageMetaFallbackIcon(t *testing.T) {
 }
 
 // hostRewriter is a RoundTripper that redirects every request to base, letting
-// tests serve a page under a "real" hostname (e.g. youtube.com) that isYouTube
-// recognizes while actually hitting the test server.
+// tests serve a page under a "real" hostname the discoverer recognizes while
+// actually hitting the test server.
 type hostRewriter struct {
 	base *url.URL
 	rt   http.RoundTripper
@@ -398,32 +334,8 @@ func TestPatreonStructuredAvatar(t *testing.T) {
 	}
 }
 
-// TestPageMetaYouTubeAvatar asserts that for a YouTube channel page the real
-// channel avatar (og:image, yt3.googleusercontent.com) wins over the generic,
-// hash-addressed favicon.
-func TestPageMetaYouTubeAvatar(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<html><head>
-		  <title>Gopher Hour</title>
-		  <meta property="og:image" content="https://yt3.googleusercontent.com/abc=s900-c-k-c0x00ffffff-no-rj">
-		  <link rel="shortcut icon" href="https://www.youtube.com/s/desktop/hash/img/favicon.ico">
-		</head><body>hi</body></html>`))
-	}))
-	defer srv.Close()
-
-	meta, err := New(clientTo(srv)).PageMeta(context.Background(), "https://www.youtube.com/@GopherHourYT")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "https://yt3.googleusercontent.com/abc=s900-c-k-c0x00ffffff-no-rj"
-	if meta.IconURL != want {
-		t.Fatalf("icon = %q, want the channel avatar %q", meta.IconURL, want)
-	}
-}
-
-// TestPageMetaOgImageNotPreferred asserts the og:image preference is YouTube
-// only — other sites keep their <link rel=icon> favicon.
+// TestPageMetaOgImageNotPreferred asserts a site keeps its <link rel=icon>
+// favicon even when it advertises an og:image.
 func TestPageMetaOgImageNotPreferred(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -440,7 +352,7 @@ func TestPageMetaOgImageNotPreferred(t *testing.T) {
 		t.Fatal(err)
 	}
 	if meta.IconURL != srv.URL+"/favicon.png" {
-		t.Fatalf("non-youtube icon = %q, want the favicon", meta.IconURL)
+		t.Fatalf("icon = %q, want the favicon", meta.IconURL)
 	}
 }
 
@@ -479,11 +391,9 @@ func TestStripCDATA(t *testing.T) {
 	}
 }
 
-func TestPageTitleYouTube(t *testing.T) {
+func TestPageTitle(t *testing.T) {
 	cases := []struct{ page, title, want string }{
-		{"https://youtube.com/@GopherDev", "Gopher Dev - YouTube", "Gopher Dev"},
-		{"https://www.youtube.com/channel/UCx", "Some Channel - YouTube", "Some Channel"},
-		{"https://youtube.com/@x", "Just A Name", "Just A Name"},
+		{"https://www.patreon.com/cw/x", "Just A Name", "Just A Name"},
 		{"https://example.com", "Example - Home", "Example - Home"},
 	}
 	for _, c := range cases {

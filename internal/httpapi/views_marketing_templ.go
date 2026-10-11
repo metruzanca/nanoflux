@@ -54,7 +54,7 @@ func landingPage(d landingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" alt=\"\" width=\"20\" height=\"20\"> <span>nanoflux</span></a><div class=\"mkt-nav-right\"><a href=\"https://github.com/metruzanca/nanoflux\" class=\"external\" target=\"_blank\" rel=\"noopener noreferrer\" referrerpolicy=\"no-referrer\">github ↗</a> <a href=\"/login\">log in</a></div></header><main class=\"mkt-main\"><section class=\"mkt-hero\"><div class=\"mkt-hero-copy\"><p class=\"mkt-eyebrow\">a feed reader for the way you actually read</p><h1>all your feeds. one quiet place.</h1><p class=\"mkt-lede\">nanoflux pulls youtube, reddit, bluesky, blogs and more into a single fast timeline. favorites, collections, lists, full-text search and a browser extension come built in. self-host it, or bring your own.</p><div class=\"mkt-cta\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" alt=\"\" width=\"20\" height=\"20\"> <span>nanoflux</span></a><div class=\"mkt-nav-right\"><a href=\"https://github.com/metruzanca/nanoflux\" class=\"external\" target=\"_blank\" rel=\"noopener noreferrer\" referrerpolicy=\"no-referrer\">github ↗</a> <a href=\"/login\">log in</a></div></header><main class=\"mkt-main\"><section class=\"mkt-hero\"><div class=\"mkt-hero-copy\"><p class=\"mkt-eyebrow\">a feed reader for the way you actually read</p><h1>all your feeds. one quiet place.</h1><p class=\"mkt-lede\">nanoflux pulls every feed you follow into a single fast timeline. favorites, collections, lists, full-text search and a browser extension come built in. self-host it, or bring your own.</p><div class=\"mkt-cta\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -109,10 +109,10 @@ func landingPage(d landingData) templ.Component {
 		templ_7745c5c3_Err = mktFeature(feature{
 			Title: "every source, one timeline",
 			Body: "Site-specific plugins rebuild rich entries where the plain feed falls " +
-				"short: YouTube durations, Bluesky images, video and quotes, reddit posts " +
-				"shared once across every feed you follow them in.",
+				"short: video durations, images, quotes, and the same post shared once " +
+				"across every feed you follow it in.",
 			Image:   "/static/marketing-plugins.svg",
-			Alt:     "cards from youtube, bluesky and reddit side by side",
+			Alt:     "cards from several sources side by side",
 			Reverse: true,
 		}).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {

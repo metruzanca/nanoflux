@@ -174,12 +174,12 @@ site's real author name and avatar instead of a generic favicon.
 ### URL rules (`URLPolicy`)
 
 A site whose feed URL has a known shape — and whose endpoints are rate-limited —
-should own those rules, so the host never probes the site during discovery. The
-reddit plugin is the reference: `Match` returns true for `CapURLPolicy` on reddit
-hosts, `CanonicalizeFeedURL` rewrites every stored reddit URL to the shape reddit
-answers without a redirect, `FeedToken` maps a feed URL to the `r/<sub>` /
-`u/<name>` token its items carry, and `Discover` derives the feed from the page
-URL with no request (`Candidate.Derived`).
+should own those rules, so the host never probes the site during discovery.
+`Match` returns true for `CapURLPolicy` on the plugin's hosts,
+`CanonicalizeFeedURL` rewrites every stored URL to the shape the site answers
+without a redirect, `FeedToken` maps a feed URL to the token its items carry, and
+`Discover` derives the feed from the page URL with no request
+(`Candidate.Derived`).
 
 ```go
 func (AppC) CanonicalizeFeedURL(raw string) string { /* redirect-free shape */ }
@@ -197,8 +197,8 @@ item.
 the generic parser did — and returns the `SharedKey` for the items it can resolve
 (each addressed by index, so items are never reordered or dropped). The host
 stores one item per `(user, SharedKey)`, so the same entry seen through two
-subscriptions shares read/favorite/list state. reddit uses it for the post
-fullname `t3_<id>`. This is separate from `Enrich` (full text, translation): an
+subscriptions shares read/favorite/list state — a plugin sets the key to the
+post's stable fullname. This is separate from `Enrich` (full text, translation): an
 `Enricher` produces a body, whereas `SharedKeys` only assigns identity.
 
 ### Ingest content enrichment (`Enrich`)
@@ -240,17 +240,17 @@ body. `examples/plugin-enrich` is a minimal reference.
 `Decorate` runs on a page's stored items and returns each item's source
 attribution and card kind. The parts carry tokens; the host resolves a token to
 the user's subscribed feed (via the same plugin's `FeedToken`) for the internal
-link, falling back to the part's URL (the external site). That is how reddit
-renders "r/cats by u/sam": the sub and the poster link internally when
-subscribed, else to reddit. `Kind` picks the row card
+link, falling back to the part's URL (the external site). A plugin renders its
+own source line this way: the section and the author link internally when
+subscribed, else externally. `Kind` picks the row card
 (`KindText`/`KindImage`/`KindGallery`/`KindLink`/`KindVideo`/`KindAudio`), and
 `ThumbURL` overrides the row thumbnail (a gallery's full-res first image).
 `DedupeKey` is an optional view-time content identity: two items seen in
 different feeds with the same key collapse into one row, so the same content
 reposted under different titles shows once. Derive it from the content (and its
 author, so unrelated items that merely share a URL stay apart) using only the
-stored fields — `Decorate` must stay pure. Reddit keys it by the poster plus the
-`[link]` anchor's destination. It applies to cross-feed posts too, which the
+stored fields — `Decorate` must stay pure. A plugin keys it by the author plus
+the post's external destination. It applies to cross-feed posts too, which the
 title-based fallback deliberately leaves alone; same-feed items are never
 merged.
 
@@ -300,17 +300,16 @@ func (AppC) Docs() string { return readme }
 Two things make `Docs` different from the other optional capabilities:
 
 - **It is keyed on `CapDocs`, not on ownership.** A plugin that does not own a
-  feed's fetch can still document it. reddit is the case that matters: reddit
-  feeds are plain RSS fetched by the generic parser, so `feeds.plugin_name` is
-  empty, yet the reddit plugin documents the subreddit/author categories it
-  adds. Its `Match` returns true for `CapDocs` on reddit hosts, so the feed
-  edit page finds it by URL:
+  feed's fetch can still document it: a site's feed may be plain RSS fetched by
+  the generic parser, so `feeds.plugin_name` is empty, yet the plugin documents
+  the categories its parser adds. Its `Match` returns true for `CapDocs` on the
+  plugin's hosts, so the feed edit page finds it by URL:
 
   ```go
   func (*Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
       switch cap {
       case pluginapi.CapRender, pluginapi.CapDocs:
-          return isRedditHost(u.Hostname())
+          return isSiteHost(u.Hostname())
       }
       return false
   }
@@ -492,14 +491,14 @@ each entry.
 ### Categories (`Categories`)
 
 Set `Item.Categories` to feed-provided labels when the site carries context
-worth surfacing: a subreddit, an author, a post kind. The host stores them
+worth surfacing: a section, an author, a post kind. The host stores them
 (`items.categories`) and exposes them to the in-feed tag filter, so a user can
-narrow a list to (or exclude) a label such as a subreddit or an author without
-any site-specific host code.
+narrow a list to (or exclude) a label such as a section or an author without any
+site-specific host code.
 
 The generic RSS/Atom parser fills the equivalent from an entry's `<category>`
-values and author names, which is how reddit's `r/<sub>` and `u/<name>` work.
-A plugin that reads a site's own API sets the slice directly. Keep values clean
+values and author names (a section and a username). A plugin that reads a site's
+own API sets the slice directly. Keep values clean
 (no leading slash, no surrounding whitespace) so a tag matches predictably.
 Leave it `nil` when the site offers nothing to surface.
 
@@ -564,23 +563,21 @@ list memberships and share links carry over. Run it inside the container
 Identity dedup is per feed: two subscriptions that both see the same post store
 two rows even when `Identity` matches. A plugin's `SharedKeyer` can collapse a
 post seen through a user's feeds by returning an `ItemSharedKey` (addressed by
-index) whose `SharedKey` the feeds share. reddit sets it to the post
-fullname `reddit:t3_<id>`, identical in a subreddit feed and the user feed, so
-the host stores one row both feeds are members of (shared read/favorite/list/
-share state).
+index) whose `SharedKey` the feeds share. Set it to the post's stable fullname,
+identical in every feed that carries it, so the host stores one row both feeds
+are members of (shared read/favorite/list/share state).
 
 `SharedKey` is the plugin-owned generalization of the old core "cross-feed key":
 the plugin decides what a shared identity is, and the host only deduplicates on
 it. `nanoflux item cross-dedup` reports/merges any rows stored before this (and
-the server runs the same merge at startup, deriving the reddit key for legacy
-rows). See the "Cross-feed items" note in `AGENTS.md`.
+the server runs the same merge at startup). See the "Cross-feed items" note in
+`AGENTS.md`.
 
 `Render` runs in the item-view path with a 4-second timeout, once per modal
 open. Use `h.Do` for any lookup (oEmbed discovery, an embed page) so the host
 still paces and inspects the requests. `Decorate` is view-time and pure: it must
-not use `h.Do`. The native reddit plugin
-(`internal/plugin/native/reddit`) is the reference implementation for all of
-these.
+not use `h.Do`. The native plugins under `internal/plugin/native/` are the
+reference implementations for all of these.
 
 ## HTTP: `Host.Do` vs `RawNetwork`
 
@@ -683,6 +680,7 @@ against the matching `pluginapi` release when you upgrade nanoflux.
 - **View-time rendering is opt-in.** A plugin may resolve an item's view-time
   media through the optional `Render` capability (see above); a plugin that
   does not implement it still just provides data, and nanoflux renders the item.
-  Brand chrome (the YouTube embed player and icon) remains core.
+  The player chrome (a URL a plugin returns) is core; the embed URL itself comes
+  from the plugin.
 - The plugin API is intended to be iterated on; breaking changes are expected
   until v1.0.0.

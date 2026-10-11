@@ -454,7 +454,7 @@ func (r *Registry) Docs(name string) (string, error) {
 
 // MatchDocs returns the name of the first plugin that documents u, or "" when
 // none does. It is how a docs affordance is found for a URL a plugin does not
-// own the fetch of (a reddit feed).
+// own the fetch of.
 func (r *Registry) MatchDocs(u *url.URL) string {
 	if f := r.Match(u, pluginapi.CapDocs); f != nil {
 		return f.Meta().Name

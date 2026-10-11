@@ -23,11 +23,11 @@ type Item struct {
 	// Empty means "use GUID". Stored as items.dedup_key.
 	Identity string
 	// SharedKey is the cross-feed identity a plugin's SharedKeyer supplied for the
-	// item (e.g. "reddit:t3_<id>"). It is the input Upsert turns into the stored
+	// item (e.g. "site:type_<id>"). It is the input Upsert turns into the stored
 	// items.cross_key; on a read it is empty (CrossKey carries the stored value).
 	SharedKey string
-	// CrossKey is the per-user cross-feed identity ("reddit:t3_<id>" for a
-	// reddit post); empty when the item cannot be shared between feeds. Stored
+	// CrossKey is the per-user cross-feed identity ("site:type_<id>"); empty when
+	// the item cannot be shared between feeds. Stored
 	// as items.cross_key and unique per user. Populated on read; Upsert derives
 	// it from SharedKey.
 	CrossKey string
@@ -94,8 +94,8 @@ func dedupKey(it Item) string {
 
 // crossFeedKey normalizes an item's plugin-supplied SharedKey into the stored
 // items.cross_key, or "" when the item is not cross-deduplicated. The plugin
-// owns what a shared key looks like (e.g. reddit's "reddit:t3_<id>"); the store
-// only trims it and treats an empty value as "not shared".
+// owns what a shared key looks like (e.g. "site:type_<id>"); the store only
+// trims it and treats an empty value as "not shared".
 func crossFeedKey(sharedKey string) string {
 	return strings.TrimSpace(sharedKey)
 }
@@ -124,9 +124,9 @@ type ItemWithFeed struct {
 	// stored ImageURL).
 	ThumbURL string
 	// DedupeKey is the plugin decorator's view-time content identity, consumed by
-	// httpapi.dedupItems to collapse the same content (e.g. a reddit link post
-	// crossposted to several subreddits under different titles) into one row.
-	// Empty falls back to the legacy title-based collapse.
+	// httpapi.dedupItems to collapse the same content (a link post crossposted to
+	// several places under different titles) into one row. Empty falls back to
+	// the legacy title-based collapse.
 	DedupeKey string
 	Timezone  string // user's IANA timezone, for relative timestamps in templates
 }
@@ -137,7 +137,7 @@ type ItemWithFeed struct {
 type ItemSource struct {
 	FeedID     int64
 	FeedTitle  string
-	AuthorID   int64  // the source feed's author, for reddit "r/x by u/y" links
+	AuthorID   int64  // the source feed's author, for the source line's internal link
 	AuthorName string // "" when the source feed has no author
 	Link       string
 }
@@ -177,11 +177,10 @@ type ItemStore struct {
 
 // Upsert stores an item for feedID, deduplicating within the feed on
 // (feed_id, dedup_key) — the item's stable Identity, or its GUID when none is
-// set. An item whose SharedKey is set (a plugin's SharedKeyer supplied it, e.g. a
-// reddit post's fullname) additionally carries a per-user cross_key, so the same
-// post arriving through two subscriptions (a subreddit feed and a user feed)
-// resolves to one row with two memberships rather than two rows: read/favorite/
-// list/share state is then shared automatically.
+// set. An item whose SharedKey is set (a plugin's SharedKeyer supplied it)
+// additionally carries a per-user cross_key, so the same post arriving through
+// two subscriptions resolves to one row with two memberships rather than two
+// rows: read/favorite/list/share state is then shared automatically.
 //
 // It reports whether the item is new to feedID (a new row or a new membership),
 // which the poller uses to detect an exhausted history. When the item already
@@ -690,29 +689,6 @@ func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]Ite
 		return nil, false, err
 	}
 	return out, hasMore, nil
-}
-
-// BackfillYouTubeThumbnails fills image_url for YouTube items stored before the
-// plugin's media:thumbnail fix (their feed advertises thumbnails only through
-// media:group, which the generic parser did not map). The URL is deterministic
-// from the video id in the GUID, so no network is involved. It returns how many
-// rows were updated.
-func (s *ItemStore) BackfillYouTubeThumbnails() (int64, error) {
-	res, err := s.q.BackfillYouTubeThumbnails(context.Background())
-	if err != nil {
-		return 0, err
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, err
-	}
-	return n, nil
-}
-
-// CountItemsMissingYouTubeThumbnail counts YouTube items with no image_url,
-// i.e. the rows BackfillYouTubeThumbnails would fix.
-func (s *ItemStore) CountItemsMissingYouTubeThumbnail() (int64, error) {
-	return s.q.CountItemsMissingYouTubeThumbnail(context.Background())
 }
 
 // Enclosure is one media attachment (podcast, video) on an item.

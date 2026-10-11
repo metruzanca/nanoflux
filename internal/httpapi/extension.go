@@ -35,9 +35,9 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 	if s.demoFeedLimitReached(u.ID) {
 		return apiFeed{}, errDemoFeedLimit
 	}
-	// A derived feed (reddit) needs no validation fetch: its .rss sits behind a
-	// tight anonymous rate limit, so the candidate supplies the title and home
-	// and the host's budget is saved for the first poll.
+	// A derived feed needs no validation fetch: its feed sits behind a tight
+	// anonymous rate limit, so the candidate supplies the title and home and the
+	// host's budget is saved for the first poll.
 	pageURL := homeURL // the page the user was on, before the feed-home fallback
 	var derivedAuthor string
 	if c, ok := s.derivedCandidate(ctx, feedURL); ok {
@@ -107,8 +107,8 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 // adding the feed — the site favicon, or the channel's og:image on YouTube. It
 // returns "" when no page URL is known or the fetch fails, so a feed added
 // without a page is still created. A plugin-owned page is skipped: a page fetch
-// shares the host's request budget with the feed's .rss (reddit's tight
-// anonymous limit), so discovery and add stay request-free.
+// shares the host's request budget with the feed, so discovery and add stay
+// request-free.
 func (s *Server) pageIconURL(ctx context.Context, pageURL string) string {
 	if pageURL == "" || s.urlPolicyOwned(pageURL) {
 		return ""

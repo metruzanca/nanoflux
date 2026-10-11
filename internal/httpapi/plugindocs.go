@@ -49,8 +49,8 @@ func (s *Server) pluginDocsFragment(w http.ResponseWriter, r *http.Request) {
 
 // pluginDocNameFor reports the name of the loaded plugin that documents the
 // feed URL, or "" when none does. Unlike the owning plugin, this is matched on
-// CapDocs, so a feed fetched by the generic parser (a reddit .rss) still finds
-// the plugin that explains its categories.
+// CapDocs, so a feed fetched by the generic parser still finds the plugin that
+// explains its categories.
 func (s *Server) pluginDocNameFor(feedURL string) string {
 	if s.plugins == nil || s.plugins.Empty() {
 		return ""

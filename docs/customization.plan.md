@@ -221,7 +221,7 @@ that already exists and lowers the cost. Effort is a rough S/M/L.
   framework already probe arbitrary pages; this adds a snapshot/diff store on
   top.
 - **More social sources as plugins (M per network).** Inoreader and Feedly win
-  on Mastodon, Bluesky, Reddit, and Telegram. Native plugins exist for YouTube,
+  on Mastodon, Bluesky, Telegram, and more. Native plugins exist for several
   Instagram, and Patreon, so the framework is proven; each new network is a
   plugin rather than core work.
 - **Bookmarklet plus the extension (S).** The extension only installs on
@@ -368,9 +368,9 @@ Three shapes of idea are worth distinguishing:
 
 ### Source plugins - need a key or auth (per-plugin env var, as `docs/writing-plugins.md` describes)
 
-- **Reddit.** Already a recurring rate-limit story (see `AGENTS.md`); a plugin
-  with OAuth could do better than anonymous `.rss`, which the host currently
-  paces. Worth it given how common it is.
+- **Rate-limited social sites.** A recurring story (see `AGENTS.md`); a plugin
+  with OAuth could do better than an anonymous feed, which the host currently
+  paces. Worth it given how common these sites are.
 - **GitHub Releases / Issues / Commits.** Atom feeds exist, but an API-backed
   plugin can follow a whole org or a search, which the generic parser cannot.
 - **Mastodon / Misskey.** `@user.rss` exists; an API plugin handles arbitrary
@@ -404,7 +404,7 @@ Three shapes of idea are worth distinguishing:
 - Add capability kinds beyond `CapDiscover`/`CapFetch` (`pluginapi.go:26`):
   a post-fetch transform and an outbound action, each with its own Match gate.
 - `FetchRequest.Config` (`pluginapi.go:97`) is the natural place for per-feed
-  plugin settings (subreddit, channel, extraction depth) once it is persisted.
+  plugin settings (a section, a channel, extraction depth) once it is persisted.
 - Consider a plugin-declared settings schema so each plugin renders its own
   config fields in the feed-edit form, instead of hardcoding them per plugin.
 
@@ -418,7 +418,7 @@ as RSS (small, distinctive).
 
 For plugins specifically: **Hacker News** (keyless, replaces the fragile X
 plugin), **AO3 / Royal Road** (the serialized-fiction niche nanoflux already
-serves), a **Reddit OAuth plugin** (kills the recurring 429 story), and the
+serves), a **social-site OAuth plugin** (kills the recurring 429 story), and the
 **extractor/sink capability kinds** (unlocks full-text and save-to without
 growing core). **Bluesky** is done.
 

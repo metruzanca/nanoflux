@@ -1,9 +1,9 @@
 // Package discover finds the RSS/Atom/JSON-feed for a web page. It tries, in
-// order: parsing the URL itself, host-specific rules (YouTube, GitHub), scanning
-// the page's HTML for feed <link>s, and common feed paths. Candidates are only
+// order: parsing the URL itself, host-specific rules (GitHub), scanning the
+// page's HTML for feed <link>s, and common feed paths. Candidates are only
 // returned after they are fetched and parsed. Sites with a native plugin
-// (reddit, Bluesky, Instagram, …) supply their candidates from the plugin's own
-// Discover instead, so none of their URL shapes live here.
+// supply their candidates from the plugin's own Discover instead, so none of
+// their URL shapes live here.
 package discover
 
 import (
@@ -31,8 +31,8 @@ type Candidate struct {
 	HomeURL  string `json:"home_url,omitempty"`
 	Strategy string `json:"strategy"`
 	// AuthorName is the preferred name for a newly created author, when the
-	// site suggests one that differs from the feed title (reddit users: "spez"
-	// rather than "u/spez"). Empty means fall back to Title.
+	// site suggests one that differs from the feed title (a bare username, not
+	// its decorated form). Empty means fall back to Title.
 	AuthorName string `json:"author_name,omitempty"`
 	// Derived marks a candidate whose feed URL follows from the page URL alone
 	// (a plugin's site rules), so the host must not fetch the page to validate
@@ -67,10 +67,10 @@ func (d *Discoverer) Discover(ctx context.Context, pageURL string) ([]Candidate,
 		return []Candidate{c}, nil
 	}
 
-	// 2. Host-specific rules (GitHub, Bluesky, YouTube). These are the site's
-	// canonical feeds (e.g. a GitHub profile's activity atom, a repo's
-	// releases/commits/tags), so they take precedence over whatever the page's
-	// HTML advertises — and may carry a fixed display title.
+	// 2. Host-specific rules (GitHub). These are the site's canonical feeds
+	// (a GitHub profile's activity atom, a repo's releases/commits/tags), so
+	// they take precedence over whatever the page's HTML advertises — and may
+	// carry a fixed display title.
 	cs, hostErr := d.hostSpecific(ctx, pageURL)
 	if len(cs) > 0 {
 		return dedup(cs), nil
@@ -169,13 +169,10 @@ type PageMeta struct {
 	ImageURL    string // og:image, for a saved page's thumbnail
 }
 
-// pageTitle returns a page's display title with YouTube's " - YouTube" and
-// Patreon's " — creating … | Patreon" suffixes trimmed, so it can name an
-// author cleanly. Other sites are untouched.
+// pageTitle returns a page's display title with Patreon's " — creating … |
+// Patreon" suffix trimmed, so it can name an author cleanly. Other sites are
+// untouched.
 func pageTitle(rawurl, title string) string {
-	if isYouTubePage(rawurl) {
-		return strings.TrimSuffix(title, " - YouTube")
-	}
 	if isPatreonPage(rawurl) {
 		return patreonPageName(title)
 	}
@@ -230,7 +227,6 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 	defer body.Close()
 
 	meta := PageMeta{HomeURL: pageURL}
-	isYT := isYouTubePage(pageURL)
 	isPatreon := isPatreonPage(pageURL)
 	z := html.NewTokenizer(io.LimitReader(body, maxBody))
 	inTitle := false
@@ -240,19 +236,12 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 		tt := z.Next()
 		switch tt {
 		case html.ErrorToken:
-			// YouTube channel pages title themselves "<Channel> - YouTube";
-			// drop the suffix so it can name the author cleanly. A feed served
-			// directly may wrap its <title> in CDATA, which the HTML tokenizer
-			// passes through raw.
+			// A feed served directly may wrap its <title> in CDATA, which the
+			// HTML tokenizer passes through raw.
 			meta.Title = stripCDATA(pageTitle(pageURL, meta.Title))
 			meta.Description = strings.TrimSpace(description)
 			if ogImage != "" {
 				meta.ImageURL = ogImage
-			}
-			// A YouTube channel page's real avatar is its og:image
-			// (yt3.googleusercontent.com), not the hashed build favicon.
-			if isYT && ogImage != "" {
-				meta.IconURL = ogImage
 			}
 			// A Patreon creator page exposes its avatar only in its
 			// structured-data JSON-LD; the generic favicon would otherwise win.

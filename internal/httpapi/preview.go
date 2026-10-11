@@ -133,8 +133,8 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 
 // derivedCandidate returns the first plugin candidate for pageURL marked
 // Derived: a feed URL that follows from the page URL alone, so the add flow must
-// not fetch the page (reddit is the case: its .rss shares a tight anonymous rate
-// limit with the page). Returns (zero, false) when no plugin derives one.
+// not fetch the page (its feed shares a tight anonymous rate limit with the
+// page). Returns (zero, false) when no plugin derives one.
 func (s *Server) derivedCandidate(ctx context.Context, pageURL string) (discover.Candidate, bool) {
 	if s.plugins == nil || s.plugins.Empty() {
 		return discover.Candidate{}, false
@@ -155,9 +155,9 @@ func (s *Server) derivedCandidate(ctx context.Context, pageURL string) (discover
 }
 
 // previewHome returns the home page to pre-fill for a candidate: a direct or
-// derived feed URL carries its own home (a derived reddit feed's canonical
-// page, not the possibly-old./np. URL the user entered), while a feed found on
-// a page keeps the page the user entered as home.
+// derived feed URL carries its own home (the canonical page, not the possibly
+// variant URL the user entered), while a feed found on a page keeps the page the
+// user entered as home.
 func previewHome(c discover.Candidate, pageURL string) string {
 	if c.Strategy == "direct" || c.Derived {
 		return c.HomeURL
@@ -258,10 +258,9 @@ func (s *Server) discoverCandidates(ctx context.Context, pageURL string) ([]disc
 		}
 	}
 
-	// A plugin candidate marked Derived follows from the page URL alone (reddit,
-	// whose .rss sits behind a tight anonymous rate limit). Return it without
-	// fetching the page: the URL is enough and the host's budget is left for
-	// polling.
+	// A plugin candidate marked Derived follows from the page URL alone, its feed
+	// sitting behind a tight anonymous rate limit. Return it without fetching the
+	// page: the URL is enough and the host's budget is left for polling.
 	for _, c := range pluginCandidates {
 		if c.Derived {
 			return []discover.Candidate{c}, nil
@@ -360,9 +359,9 @@ func feedPreviewError(err error) string {
 // global add flow (no fixed author) sends the saved feed to its author page;
 // the author-scoped flow appends the new feed row in place.
 func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c discover.Candidate, pageURL, homeURL string, authors []store.Author, selectedAuthor int64, fixedAuthor *store.Author) {
-	// A derived candidate (reddit) already carries a clean title and home URL,
-	// and the page must not be fetched: that request shares the host's tight
-	// anonymous rate limit with the feed's .rss (which the immediate poll needs).
+	// A derived candidate already carries a clean title and home URL, and the
+	// page must not be fetched: that request shares the host's tight anonymous
+	// rate limit with the feed (which the immediate poll needs).
 	var meta discover.PageMeta
 	if !c.Derived {
 		meta, _ = s.discoverer.PageMeta(r.Context(), pageURL)
@@ -381,7 +380,7 @@ func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c
 		}
 	}
 	// A derived candidate may suggest a cleaner author name than the feed title
-	// (a reddit user is "spez", not "u/spez").
+	// (a bare username, not its decorated form).
 	if c.AuthorName != "" {
 		name = c.AuthorName
 	}

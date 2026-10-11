@@ -24,9 +24,8 @@ Every feed is fetched through the same entry point, `feedparse.Fetch` (via
 
 Both paths end with a **cross-feed key pass**: a plugin that matches the feed URL
 for `CapSharedKey` is offered the parsed items and may return each item's
-`SharedKey` (cross-feed identity). reddit uses this to make the same post stored
-once across a subreddit feed and the poster's user feed, without owning the
-fetch.
+`SharedKey` (cross-feed identity). A plugin uses this to make the same post
+stored once across two subscriptions, without owning the fetch.
 
 Newly stored items are then offered to any **content enricher** (`CapEnrich`)
 matching each item's link: a plugin may resolve a body (full text, translation,
@@ -114,18 +113,18 @@ skipping`, `host spaced` and `next wake from paced host` at Debug
 
 ### Feed URLs are canonicalized by the owning plugin
 
-Some sites have a redirect-free URL shape the reader should store (reddit, for
-example: the `www.reddit.com` host, `/user/{name}`, a user's posts-only
-`/submitted.rss`). `Store.SetURLPolicy` installs the plugin layer's per-URL
-rules, so feed create, feed edit and a startup pass ask the owning plugin for
-the canonical shape via `pluginapi.URLPolicy.CanonicalizeFeedURL`. A site with no
-plugin that owns its URL is left untouched.
+Some sites have a redirect-free URL shape the reader should store (the `www`
+host, a canonical user path, a posts-only feed form). `Store.SetURLPolicy`
+installs the plugin layer's per-URL rules, so feed create, feed edit and a
+startup pass ask the owning plugin for the canonical shape via
+`pluginapi.URLPolicy.CanonicalizeFeedURL`. A site with no plugin that owns its
+URL is left untouched.
 
-Reddit's anonymous `.rss` sits behind a ~1 request/IP/minute limit, and each
-redirect hop spends one of those requests, so the reddit plugin rewrites every
-reddit URL to the shape reddit answers without a redirect: `/u/{name}` becomes
-`/user/{name}` (reddit 301s the short form) and a user's bare feed becomes
-`/user/{name}/submitted.rss`. Because a plugin owns these URLs, discovery never
+A site's anonymous feed may sit behind a ~1 request/IP/minute limit, and each
+redirect hop spends one of those requests, so the plugin rewrites every URL to
+the shape the site answers without a redirect (a short user path to its canonical
+form, a bare user feed to its posts-only feed). Because a plugin owns these URLs,
+discovery never
 probes them either: the plugin derives the feed from the page URL with no
 request (`Candidate.Derived`).
 
@@ -151,7 +150,7 @@ adaptive interval. A successful poll (or a `304`) clears `next_poll_at`.
 
 ### Per-host pacing and fair rotation
 
-Feeds are grouped by **registrable host** (e.g. all `reddit.com` feeds are one
+Feeds are grouped by **registrable host** (all feeds on one domain are one
 group). Three rules keep a host from being hammered:
 
 - **One host at a time.** Feeds in a group are fetched sequentially, while
@@ -159,8 +158,8 @@ group). Three rules keep a host from being hammered:
   bursting a single site.
 - **Default spacing.** Even a host that has never rate-limited the poller is
   spaced: after fetching one of its feeds, the next same-host fetch waits
-  `NF_POLL_HOST_SPACING` (default **60 seconds**, matching reddit's anonymous
-  per-IP window, the tightest host we know of). This stops a domain with many
+  `NF_POLL_HOST_SPACING` (default **60 seconds**, matching the tightest
+  anonymous per-IP window we know of). This stops a domain with many
   due feeds from firing them all in one cycle, which is what tends to trigger
   the first `429`. A single-feed host is never delayed, and a host's last
   waiting feed is fetched promptly once the window clears. Set the variable to
@@ -271,12 +270,11 @@ while"), which is not a failure.
 Feeds carry context that surfaces without any site-specific code. Categories are
 normalized at parse time from:
 
-- each RSS/Atom `<category>` value (gofeed prefers the atom `label`, e.g.
-  reddit's `r/golang`),
-- each item author name (reddit's `/u/poster`; the leading slash is dropped).
+- each RSS/Atom `<category>` value (gofeed prefers the atom `label`),
+- each item author name (a leading slash is dropped).
 
-A subreddit feed therefore gives each item the subreddit as a category and the
-poster as its author; a user feed gives the destination subreddit. Categories are
+One feed therefore gives each item its section as a category and its poster as
+the author; another gives the destination section. Categories are
 stored newline-joined in `items.categories` (schemaV36) and refreshed on re-poll,
 so an item already stored gains them without a re-fetch. They power the in-feed
 tag filter (and are available to plugins via `pluginapi.Item.Categories`); the

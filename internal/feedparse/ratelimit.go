@@ -77,7 +77,7 @@ func retryHint(resp *http.Response) time.Duration {
 		}
 	}
 	if v := strings.TrimSpace(resp.Header.Get("x-ratelimit-reset")); v != "" {
-		// Reddit sends a float (e.g. "18.0") or an integer number of seconds.
+		// Some hosts send a float (e.g. "18.0") or an integer number of seconds.
 		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
 			return time.Duration(f * float64(time.Second))
 		}
