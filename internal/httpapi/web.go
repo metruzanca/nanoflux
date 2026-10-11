@@ -101,6 +101,9 @@ type feedsData struct {
 	// (a Kill the Newsletter inbox): its display fields and the title-sync
 	// action, shown on the edit page. nil when no plugin manages the feed.
 	Panel *feedPanelData
+	// NextPageURL is the feed's older-history cursor; non-empty renders the
+	// "load older items" control in the settings panel.
+	NextPageURL string
 }
 
 type authorRow struct {
@@ -1409,7 +1412,7 @@ func (s *Server) feedEditorData(u store.User, f store.Feed) *feedsData {
 	if p, ok := s.feedPanel(f, ""); ok {
 		panel = &p
 	}
-	return &feedsData{Collections: collections, Form: form, DocsPlugin: s.pluginDocNameFor(f.FeedURL), Panel: panel}
+	return &feedsData{Collections: collections, Form: form, DocsPlugin: s.pluginDocNameFor(f.FeedURL), Panel: panel, NextPageURL: f.NextPageURL}
 }
 
 func (s *Server) collectionIDsForFeed(userID, feedID int64) []int64 {
@@ -1667,11 +1670,10 @@ func cooling(nextPollAt string) bool {
 	return time.Now().Before(t)
 }
 
-// feedOlder fetches the next page of a paginated feed ("load older items"),
-// stores its items, and re-renders the feed page's item list and the
-// load-older control. The control is the htmx target (preview-style swap);
-// the refreshed list arrives as an out-of-band swap so both update in one
-// round trip.
+// feedOlder fetches the next page of a paginated feed ("load older items") and
+// re-renders the control in the feed's settings panel. The response reports how
+// many items and unread the load produced, or an error when the fetch fails, so
+// a click always gives visible feedback.
 func (s *Server) feedOlder(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -1684,18 +1686,28 @@ func (s *Server) feedOlder(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	data := feedOlderData{FeedID: f.ID, NextPageURL: f.NextPageURL}
+	renderControl := func(status int) {
+		if status != http.StatusOK {
+			w.WriteHeader(status)
+		}
+		web.Render(w, r, feedOlderControl(data))
+	}
 	if f.NextPageURL == "" {
-		renderError(w, r, "no more items to load")
+		// History already exhausted: keep "full history loaded" without an error.
+		renderControl(http.StatusOK)
 		return
 	}
 	if s.poller == nil {
-		renderError(w, r, "could not load older items")
+		data.Err = "could not load older items"
+		renderControl(http.StatusBadRequest)
 		return
 	}
 	newItems, _, err := s.poller.PollOlder(r.Context(), f)
 	if err != nil {
 		log.Error("load older items", "feed_id", id, "err", err)
-		renderError(w, r, "could not load older items")
+		data.Err = "could not load older items"
+		renderControl(http.StatusBadRequest)
 		return
 	}
 	if newItems > 0 {
@@ -1707,32 +1719,10 @@ func (s *Server) feedOlder(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
 	unread, _ := s.store.Items.CountUnread(u.ID, f.ID)
-	row := s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread)
-	row.Storage, _ = s.store.Items.StorageByFeed(f.ID)
-	// The control lives on the author page's feed card, so the out-of-band swap
-	// is the author's item list with the active view/sort/tag/feed filter, read
-	// back from htmx's current-URL.
-	var view string
-	var sort itemSort
-	var tags []string
-	feedID := int64(0)
-	if cur, err := url.Parse(r.Header.Get("HX-Current-URL")); err == nil {
-		q := cur.Query()
-		view = normalizeAuthorView(q.Get("view"))
-		sort = itemSortFromParam(q.Get("sort"))
-		tags = tagsFromValues(q)
-		if n, err := strconv.ParseInt(q.Get("feed"), 10, 64); err == nil {
-			feedID = n
-		}
-	} else {
-		view = "unread"
-		sort = sortNewest
-	}
-	scoped := s.authorScopedItems(u.ID, f.AuthorID, feedID, view, sort, u.Timezone, tags)
-	scoped.SwapOOB = true
-	web.Render(w, r, templ.Join(feedOlderControl(row), ScopedItems(scoped)))
+	data.NextPageURL = f.NextPageURL
+	data.Message = "loaded " + strconv.Itoa(newItems) + " items · " + strconv.Itoa(unread) + " unread"
+	renderControl(http.StatusOK)
 }
 
 // feedToggle pauses or resumes a feed's polling and re-renders its row.

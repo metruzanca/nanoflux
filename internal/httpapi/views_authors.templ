@@ -85,7 +85,10 @@ templ AuthorRow(r authorRow) {
 
 templ authorEditPage(u store.User, d authorsData) {
 	<section class="card">
-		<h1>edit author</h1>
+		<div class="row">
+			<h1>edit author</h1>
+			<a class="button small" href={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) }>back to author</a>
+		</div>
 		<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
 			@csrfField()
 			@authorFields(d)

@@ -309,6 +309,18 @@ main:has(#home-sections) {
 
 .login { max-width: 22rem; margin: 4rem auto; }
 .login form, form.stack { display: flex; flex-direction: column; gap: 0.75rem; }
+
+/* Grouped form fields (e.g. feed settings): a small titled cluster with its
+   fields stacked; groups are separated by a hairline. */
+.field-group { display: flex; flex-direction: column; gap: 0.75rem; }
+.field-group > h3 {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.field-group + .field-group { border-top: 1px solid var(--border); padding-top: 0.85rem; }
 label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; color: var(--muted); }
 label.check { flex-direction: row; align-items: center; gap: 0.35rem; }
 
@@ -581,31 +593,33 @@ ul.feed-cards {
 }
 ul.feed-cards > li { display: block; }
 ul.feed-cards .card { margin-bottom: 0; }
-.feed-card-head { align-items: center; }
+/* Full-width feed card: content on the left, and the actions plus the
+   collection tags in a right-aligned column so the tags line up under the
+   action icons. */
+.feed-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.feed-card-main { min-width: 0; }
 .feed-card-title {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  min-width: 0;
 }
-.feed-card-meta {
+.feed-card-side {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 0.75rem;
-  margin-top: 0.35rem;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  flex: none;
 }
-.feed-card-meta .item-meta { margin: 0; }
-.feed-card-right {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.75rem;
-  margin-left: auto;
-}
-.feed-card-right .feed-collections { margin: 0; }
-.feed-card-right .feed-older { margin: 0; }
+.feed-card-side .feed-collections { margin: 0; justify-content: flex-end; }
+/* "load older items" lives in the feed's settings panel. */
+.feed-history { display: flex; align-items: center; gap: 0.5rem; }
+.feed-older { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 .error.banner { padding: 0.7rem 0.9rem; }
 .badge.danger { background: rgba(255, 107, 107, 0.18); color: var(--fg); }
 
@@ -1479,10 +1493,26 @@ details.feeds-section summary:hover { color: var(--accent); }
 .combo-field > label { font-size: 0.85rem; color: var(--muted); }
 .combo { display: block; }
 
-/* Vaadin switch (form control): sit inline at its natural width rather than
-   stretching to the stacked form's full width, and keep the filter row's
-   baseline alignment. */
-.switch-field { display: flex; align-items: center; }
+/* Vaadin switch (form control): a two-column grid so the label and an optional
+   help line sit together, both starting at the same left edge (the switch
+   track stays in the first column). */
+.switch-field {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.6rem;
+  align-items: start;
+}
+.switch-field > vaadin-switch { grid-column: 1; grid-row: 1; }
+.switch-field-text {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.switch-field-label { font-size: 0.9rem; }
+.switch-field-help { margin: 0; }
 vaadin-switch {
   --vaadin-field-default-width: auto;
   --vaadin-switch-label-font-size: 0.9rem;

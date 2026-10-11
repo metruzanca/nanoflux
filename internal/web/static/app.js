@@ -1544,4 +1544,48 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
       window.location.reload();
     }
   });
+
+  // Author edit: expanding a feed accordion scrolls the panel fully into view on
+  // wide screens; on small screens/mobile it is left alone (the panel is taller
+  // than the viewport and scrolling would fight the user). The panel body is
+  // lazy-loaded, so when it is not yet rendered we wait for its htmx swap before
+  // measuring, then scroll once per open.
+  (function setupFeedAccordionFit() {
+    var wide = window.matchMedia('(min-width: 721px)');
+    function fit(details) {
+      if (!wide.matches) return;
+      var margin = 16;
+      var rect = details.getBoundingClientRect();
+      var vh = window.innerHeight;
+      if (rect.top >= margin && rect.bottom <= vh - margin) return; // already fully visible
+      var top;
+      if (rect.height <= vh - 2 * margin) {
+        top = window.scrollY + rect.top - (vh - rect.height) / 2; // center when it fits
+      } else {
+        top = window.scrollY + rect.top - margin; // tall panel: align its top
+      }
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    }
+    var pending = null;
+    document.addEventListener('toggle', function (e) {
+      var d = e.target;
+      if (!d.classList || !d.classList.contains('feed-accordion-item') || !d.open) return;
+      var body = d.querySelector('.feed-accordion-body');
+      if (body && body.querySelector('form')) {
+        // Already rendered (inline ?feed= editor or a reopened panel).
+        requestAnimationFrame(function () { fit(d); });
+        return;
+      }
+      pending = d;
+    }, true);
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      if (!pending) return;
+      var t = e.detail && e.detail.target;
+      if (t && pending.contains(t)) {
+        var d = pending;
+        pending = null;
+        if (d.open) requestAnimationFrame(function () { fit(d); });
+      }
+    });
+  })();
 })();

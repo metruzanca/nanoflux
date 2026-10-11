@@ -99,20 +99,21 @@ func TestFeedOlder(t *testing.T) {
 	}
 	f, _ = s.store.Feeds.ByID(u.ID, f.ID)
 
-	// The feed's card on the author page shows the "load older items" button.
-	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	// The feed's settings panel shows the "load older items" control.
+	body := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
 	if !strings.Contains(body, "load older items") {
-		t.Fatalf("author feed card missing load-older button: %s", body)
+		t.Fatalf("feed settings missing load-older control: %s", body)
 	}
 
-	// Clicking it imports page 2 and reports exhaustion in the fragment.
+	// Clicking it imports page 2 and reports how many items/unread it produced;
+	// the cursor is now exhausted.
 	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/older", nil, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("POST /older status = %d, want 200: %s", rr.Code, rr.Body.String())
 	}
 	out := rr.Body.String()
-	if !strings.Contains(out, `hx-swap-oob="outerHTML"`) || !strings.Contains(out, `id="scoped-items"`) {
-		t.Fatalf("older response missing OOB item list: %s", out)
+	if !strings.Contains(out, "loaded 2 items") || !strings.Contains(out, "2 unread") {
+		t.Fatalf("older response missing load feedback: %s", out)
 	}
 	if !strings.Contains(out, "full history loaded") {
 		t.Fatalf("older response missing exhausted note: %s", out)
@@ -131,13 +132,13 @@ func TestFeedOlder(t *testing.T) {
 		t.Fatalf("NextPageURL = %q, want cleared", f.NextPageURL)
 	}
 
-	// Another click is refused with a visible error.
+	// Another click is a no-op: still "full history loaded", no error.
 	rr = doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/older", nil, cookie)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("POST /older status = %d, want 400", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("POST /older status = %d, want 200", rr.Code)
 	}
-	if !strings.Contains(rr.Body.String(), `role="alert"`) || !strings.Contains(rr.Body.String(), "no more items") {
-		t.Fatalf("exhausted error missing alert fragment: %s", rr.Body.String())
+	if !strings.Contains(rr.Body.String(), "full history loaded") || strings.Contains(rr.Body.String(), `role="alert"`) {
+		t.Fatalf("exhausted response should show the note, not an error: %s", rr.Body.String())
 	}
 }
 
@@ -147,7 +148,7 @@ func TestFeedOlderNoButtonWhenNotPaginated(t *testing.T) {
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Flat", "https://flat.dev/feed.xml", "", "", 900)
-	body := doGet(h, "/authors/"+itoa(a.ID)+"?feed="+itoa(f.ID), cookie).Body.String()
+	body := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
 	if strings.Contains(body, "load older items") {
 		t.Fatalf("non-paginated feed should not show load-older button: %s", body)
 	}

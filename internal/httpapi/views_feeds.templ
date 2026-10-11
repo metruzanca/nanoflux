@@ -27,8 +27,8 @@ templ FeedRow(r feedRow) {
 	{{ authorID := strconv.FormatInt(r.AuthorID, 10) }}
 	{{ feedURL := "/authors/" + authorID + "?feed=" + id }}
 	<li id={ "feed-" + id } class="feed-card-item">
-		<div class="card">
-			<div class="row feed-card-head">
+		<div class="card feed-card">
+			<div class="feed-card-main">
 				<div class="feed-card-title">
 					<a href={ templ.URL(feedURL) }>
 						<strong>
@@ -51,23 +51,7 @@ templ FeedRow(r feedRow) {
 					}
 					@staleBadge(r.Feed, r.Timezone)
 				</div>
-				<div class="row-actions">
-					<button
-						class="link"
-						title="refresh"
-						hx-post={ "/feeds/" + id + "/refresh" }
-						hx-target={ "#feed-" + id }
-						hx-swap="outerHTML"
-						if r.Cooling() {
-							disabled
-						}
-					>@web.Lucide("refresh-cw")</button>
-					@markAllReadControl(markAllReadData{Action: "/feeds/" + id + "/read-all", Unread: r.Unread})
-					<a class="small" title="edit feed" href={ templ.URL("/authors/" + authorID + "/edit?feed=" + id) }>@web.EditIcon()</a>
-				</div>
-			</div>
-			<div class="feed-card-meta">
-				<span class="item-meta">
+				<div class="item-meta">
 					if home := strings.TrimSpace(r.HomeURL); home != "" {
 						<a href={ templ.URL(home) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home</a>
 					} else {
@@ -82,19 +66,30 @@ templ FeedRow(r feedRow) {
 					if r.Storage > 0 {
 						· cached media { web.FormatBytes(r.Storage) }
 					}
-				</span>
-				<div class="feed-card-right">
-					if len(r.Collections) > 0 {
-						<div class="feed-collections">
-							for _, c := range r.Collections {
-								<a class="tag" href={ "/collections/" + strconv.FormatInt(c.ID, 10) } title={ c.Name }>#{ c.Name }</a>
-							}
-						</div>
-					}
-					if r.NextPageURL != "" {
-						@feedOlderControl(r)
-					}
 				</div>
+			</div>
+			<div class="feed-card-side">
+				<div class="row-actions">
+					<button
+						class="link"
+						title="refresh"
+						hx-post={ "/feeds/" + id + "/refresh" }
+						hx-target={ "#feed-" + id }
+						hx-swap="outerHTML"
+						if r.Cooling() {
+							disabled
+						}
+					>@web.Lucide("refresh-cw")</button>
+					@markAllReadControl(markAllReadData{Action: "/feeds/" + id + "/read-all", Unread: r.Unread})
+					<a class="small" title="edit feed" href={ templ.URL("/authors/" + authorID + "/edit?feed=" + id) }>@web.EditIcon()</a>
+				</div>
+				if len(r.Collections) > 0 {
+					<div class="feed-collections">
+						for _, c := range r.Collections {
+							<a class="tag" href={ "/collections/" + strconv.FormatInt(c.ID, 10) } title={ c.Name }>#{ c.Name }</a>
+						}
+					</div>
+				}
 			</div>
 		</div>
 	</li>
@@ -215,6 +210,12 @@ templ feedEditorBody(d feedsData) {
 		@feedFields(d)
 		<button type="submit">save</button>
 	</form>
+	if d.NextPageURL != "" {
+		<div class="feed-history">
+			<span class="muted small">older history</span>
+			@feedOlderControl(feedOlderData{FeedID: d.Form.ID, NextPageURL: d.NextPageURL})
+		</div>
+	}
 	<form class="stack delete-form" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this feed?">
 		@csrfField()
 		if d.Panel != nil {
@@ -230,47 +231,71 @@ templ feedEditorBody(d feedsData) {
 	}
 }
 
+// feedFields is a feed's editable settings, grouped by concern: how nanoflux
+// fetches the feed, and how the feed is presented in the app.
 templ feedFields(d feedsData) {
-	@switchField("enabled", "enabled (poll this feed)", d.Form.Enabled, nil)
-	@switchField("cache_images", "cache images locally", d.Form.CacheImages || d.Form.CacheForced, nil)
+	{{ cacheHelp := "download this feed's images into nanoflux so they keep working if the site's image links expire." }}
 	if d.Form.CacheForced {
-		<p class="muted small">on for this site: its plugin serves image links that expire, so nanoflux keeps a copy. it cannot be turned off.</p>
-	} else {
-		<p class="muted small">download this feed's images into nanoflux so they keep working if the site's image links expire.</p>
+		{{ cacheHelp = "on for this site: its plugin serves image links that expire, so nanoflux keeps a copy. it cannot be turned off." }}
 	}
-	<label>
-		title
-		<input name="title" value={ d.Form.Title } required/>
-	</label>
-	<label>
-		feed url
-		<input name="feed_url" type="text" value={ d.Form.FeedURL } required/>
-	</label>
-	<label>
-		home url
-		<input name="home_url" type="url" value={ d.Form.HomeURL }/>
-	</label>
-	@switchField("poll_interval_auto", "auto-adjust poll interval", d.Form.PollIntervalAuto, nil)
-	<label>
-		poll interval (seconds) — used when auto-adjust is off
-		<input name="poll_interval_sec" type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min="60"/>
-	</label>
-	if len(d.Collections) > 0 {
-		@comboMulti("collections", "collections", nonAutoCollectionValues(d.Collections, d.Form.CollectionIDs), nonAutoCollections(d.Collections))
-	}
+	<div class="field-group">
+		<h3>fetching</h3>
+		@switchField("enabled", "enabled (poll this feed)", d.Form.Enabled, "", nil)
+		@switchField("poll_interval_auto", "auto-adjust poll interval", d.Form.PollIntervalAuto, "", nil)
+		<label>
+			poll interval (seconds) — used when auto-adjust is off
+			<input name="poll_interval_sec" type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min="60"/>
+		</label>
+		<label>
+			feed url
+			<input name="feed_url" type="text" value={ d.Form.FeedURL } required/>
+		</label>
+		@switchField("cache_images", "cache images locally", d.Form.CacheImages || d.Form.CacheForced, cacheHelp, nil)
+	</div>
+	<div class="field-group">
+		<h3>display</h3>
+		<label>
+			title
+			<input name="title" value={ d.Form.Title } required/>
+		</label>
+		<label>
+			home url
+			<input name="home_url" type="url" value={ d.Form.HomeURL }/>
+		</label>
+		if len(d.Collections) > 0 {
+			@comboMulti("collections", "collections", nonAutoCollectionValues(d.Collections, d.Form.CollectionIDs), nonAutoCollections(d.Collections))
+		}
+	</div>
 }
 
-// feedOlderControl is the "load older items" control inside a feed card. It is
-// the htmx swap target for POST /feeds/{id}/older: the response replaces it
-// (the button advances to the next page, or becomes a "history complete" note
-// once pages run out) and out-of-band swaps the item list.
-templ feedOlderControl(f feedRow) {
-	{{ id := strconv.FormatInt(f.ID, 10) }}
+// feedOlderData drives the "load older items" control in a feed's settings
+// panel. NextPageURL empty means the history is exhausted; Message reports a
+// successful load; Err reports a failed one.
+type feedOlderData struct {
+	FeedID      int64
+	NextPageURL string
+	Message     string
+	Err         string
+}
+
+// feedOlderControl is the "load older items" control on a feed's settings
+// panel. It is the htmx swap target for POST /feeds/{id}/older: the response
+// replaces it, advancing the button (or showing "full history loaded" once
+// pages run out), reporting how many items/unread the load produced, or showing
+// a fetch error so a failed load is visible instead of silent.
+templ feedOlderControl(d feedOlderData) {
+	{{ id := strconv.FormatInt(d.FeedID, 10) }}
 	<div id={ "feed-older-" + id } class="feed-older">
-		if f.NextPageURL != "" {
+		if d.NextPageURL != "" {
 			<button class="link" hx-post={ "/feeds/" + id + "/older" } hx-target={ "#feed-older-" + id } hx-swap="outerHTML">load older items</button>
 		} else {
 			<span class="muted small">full history loaded</span>
+		}
+		if d.Message != "" {
+			<span class="muted small">{ d.Message }</span>
+		}
+		if d.Err != "" {
+			<span class="error" role="alert">{ d.Err }</span>
 		}
 	</div>
 }
