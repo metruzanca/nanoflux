@@ -1681,16 +1681,57 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 	// Respect a rate-limit backoff: don't re-hit a host that asked us to wait.
 	// The row already shows the retry deadline, so a click during the window is
 	// a no-op rather than another 429.
+	newItems := 0
 	if !cooling(f.NextPollAt) && s.poller != nil {
-		if _, err := s.poller.PollOne(r.Context(), f); err != nil {
+		if n, err := s.poller.PollOne(r.Context(), f); err != nil {
 			log.Error("refresh feed", "feed_id", id, "err", err)
+		} else {
+			newItems = n
 		}
 		f, _ = s.store.Feeds.ByID(u.ID, id)
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
 	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
 	row := s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread)
+	// A refresh that stored new posts also updates the author page's item list
+	// (the feed "on the author"), so the new posts appear without a reload. Only
+	// when the visitor is on this feed's author page: the list is rebuilt from
+	// htmx's HX-Current-URL so its view, sort, feed filter and tag filters are
+	// preserved rather than reset. The row is the primary swap; the list rides
+	// along as an out-of-band swap.
+	if newItems > 0 {
+		if scoped, ok := s.authorScopedFromCurrentURL(u.ID, u.Timezone, r, f.AuthorID); ok {
+			web.Render(w, r, templ.Join(FeedRow(row), ScopedItems(scoped)))
+			return
+		}
+	}
 	web.Render(w, r, FeedRow(row))
+}
+
+// authorScopedFromCurrentURL rebuilds the author page's current scoped item list
+// from htmx's HX-Current-URL, so a manual refresh can out-of-band replace the
+// list the visitor is looking at (honoring its view, sort, feed filter and tag
+// filters) instead of resetting it to the default. ok is false when the current
+// page is not this author's page, so no list is swapped (e.g. a refresh from the
+// feed settings page or a collection).
+func (s *Server) authorScopedFromCurrentURL(userID int64, tz string, r *http.Request, authorID int64) (scopedItemsData, bool) {
+	raw := r.Header.Get("HX-Current-URL")
+	if raw == "" {
+		return scopedItemsData{}, false
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return scopedItemsData{}, false
+	}
+	if u.Path != "/authors/"+strconv.FormatInt(authorID, 10) {
+		return scopedItemsData{}, false
+	}
+	view := normalizeAuthorView(u.Query().Get("view"))
+	sort := itemSortFromParam(u.Query().Get("sort"))
+	feedID := feedFilterID(raw)
+	scoped := s.authorScopedItems(userID, authorID, feedID, view, sort, tz, tagsFromValues(u.Query()))
+	scoped.SwapOOB = true
+	return scoped, true
 }
 
 // cooling reports whether a feed's stored NextPollAt is in the future, i.e. the
