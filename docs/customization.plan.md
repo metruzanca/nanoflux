@@ -95,11 +95,13 @@ plugins list + per-domain reset (`internal/httpapi/admin.go:100`).
 
 ### Filters / search / tags
 
-- The per-feed ingest filter-rule system was removed for a clean
-  reimplementation; schemaV53 drops the `filters` table and `feeds.filter_mode`.
-  There is no rule editor or retroactive application today. The categories the
-  parser/plugins surface remain and power the tag filter (see
-  `docs/fetching.md`).
+- Per-feed, view-level content filters (schemaV54): rules in `feed_filters`,
+  `feeds.filter_mode` (`off`/`block`/`allow`) and `feeds.filter_combine`
+  (`any`/`all`), evaluated by `internal/feedfilter`. Nothing is deleted; the
+  verdict is stored per membership on `item_feeds.filtered` and recomputed on
+  poll and on rule changes. Editor in the feed settings panel; preview at
+  `GET /feeds/{id}/filter-preview`. The categories the parser/plugins surface
+  remain and power the tag filter (see `docs/fetching.md`).
 - Search is stateless FTS5 (`items_fts`, schemaV10) with `title:`, `author:`,
   `feed:`, `unread:` qualifiers (`search.go:73`). No saved searches.
 - Tags: item categories are surfaced as tags in the item modal and a scoped
@@ -130,9 +132,9 @@ swipe gestures, deep-link item modal, load-more.
 
 - No font size/family/density/reader-width preference; no serif variants.
 - List/grid and authors-sort are per-browser, not per-account (`todo.md:6`).
-- No ingest filter rules: the previous per-feed rule system was removed for a
-  reimplementation, so there is no rule editor, retroactive application, or
-  delete/mark_read action today.
+- Content filters are per-feed and view-level (schemaV54); there are no
+  cross-feed/global rules and no delete/mark_read action (filters hide, never
+  modify).
 - Tags exist (item categories surfaced as tags); no saved searches.
 - No unread-count badges across all scopes.
 - No tracking-param stripping / referrer policy / media proxy.

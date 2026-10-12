@@ -102,7 +102,7 @@ const countBookmarkItems = `-- name: CountBookmarkItems :one
 SELECT COUNT(*) FROM items i
 WHERE i.user_id = ?1 AND i.bookmark = 1
   AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
-        SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(?2 AS INTEGER)))
+        SELECT mf.item_id FROM item_feeds mf WHERE mf.filtered = 0 AND mf.feed_id = CAST(?2 AS INTEGER)))
 `
 
 type CountBookmarkItemsParams struct {
@@ -122,7 +122,7 @@ SELECT COUNT(*) FROM items i
 WHERE i.user_id = ?1 AND i.bookmark = 1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    WHERE f.user_id = ?1 AND mf.filtered = 0 AND f.author_id = ?2)
 `
 
 type CountBookmarkItemsByAuthorParams struct {
@@ -141,7 +141,7 @@ const countFavoriteItems = `-- name: CountFavoriteItems :one
 SELECT COUNT(*) FROM items i
 WHERE i.user_id = ?1 AND i.favorite = 1
   AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
-        SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(?2 AS INTEGER)))
+        SELECT mf.item_id FROM item_feeds mf WHERE mf.filtered = 0 AND mf.feed_id = CAST(?2 AS INTEGER)))
 `
 
 type CountFavoriteItemsParams struct {
@@ -161,7 +161,7 @@ SELECT COUNT(*) FROM items i
 WHERE i.user_id = ?1 AND i.favorite = 1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    WHERE f.user_id = ?1 AND mf.filtered = 0 AND f.author_id = ?2)
 `
 
 type CountFavoriteItemsByAuthorParams struct {
@@ -181,7 +181,7 @@ SELECT COUNT(*) FROM items i
 WHERE i.user_id = ?1 AND i.read = 1
   AND i.feed_id NOT IN (SELECT f.id FROM feeds f WHERE f.is_system = 1)
   AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
-        SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(?2 AS INTEGER)))
+        SELECT mf.item_id FROM item_feeds mf WHERE mf.filtered = 0 AND mf.feed_id = CAST(?2 AS INTEGER)))
 `
 
 type CountReadItemsParams struct {
@@ -201,7 +201,7 @@ SELECT COUNT(*) FROM items i
 WHERE i.user_id = ?1 AND i.read = 1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    WHERE f.user_id = ?1 AND mf.filtered = 0 AND f.author_id = ?2)
 `
 
 type CountReadItemsByAuthorParams struct {
@@ -221,7 +221,7 @@ SELECT COUNT(*) FROM items i
 WHERE i.user_id = ?1 AND i.read = 1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf
-    WHERE mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?2))
+    WHERE mf.filtered = 0 AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?2))
 `
 
 type CountReadItemsByCollectionParams struct {
@@ -241,7 +241,7 @@ SELECT COUNT(*) FROM items i
 WHERE i.user_id = ?1 AND i.read = 0
   AND i.feed_id NOT IN (SELECT f.id FROM feeds f WHERE f.is_system = 1)
   AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
-        SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(?2 AS INTEGER)))
+        SELECT mf.item_id FROM item_feeds mf WHERE mf.filtered = 0 AND mf.feed_id = CAST(?2 AS INTEGER)))
 `
 
 type CountUnreadItemsParams struct {
@@ -264,7 +264,7 @@ SELECT COUNT(*) FROM items i
 WHERE i.user_id = ?1 AND i.read = 0
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    WHERE f.user_id = ?1 AND mf.filtered = 0 AND f.author_id = ?2)
 `
 
 type CountUnreadItemsByAuthorParams struct {
@@ -284,7 +284,7 @@ SELECT COUNT(*) FROM items i
 WHERE i.user_id = ?1 AND i.read = 0
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf
-    WHERE mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?2))
+    WHERE mf.filtered = 0 AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?2))
 `
 
 type CountUnreadItemsByCollectionParams struct {
@@ -365,7 +365,7 @@ FROM items i
 WHERE i.user_id = ?1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    WHERE f.user_id = ?1 AND mf.filtered = 0 AND f.author_id = ?2)
 `
 
 type GetAuthorItemStatsParams struct {
@@ -412,7 +412,7 @@ SELECT
 FROM items i
 WHERE i.user_id = ?1
   AND i.id IN (
-    SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = ?2)
+    SELECT mf.item_id FROM item_feeds mf WHERE mf.filtered = 0 AND mf.feed_id = ?2)
 `
 
 type GetFeedItemStatsParams struct {
@@ -719,7 +719,7 @@ FROM items i
 WHERE i.user_id = ?1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    WHERE f.user_id = ?1 AND mf.filtered = 0 AND f.author_id = ?2)
 ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
 LIMIT ?3
 `
@@ -803,7 +803,7 @@ const listCategoriesForCollection = `-- name: ListCategoriesForCollection :many
 SELECT ic.category, COUNT(*) AS item_count
 FROM item_categories ic
 JOIN item_feeds mf ON mf.item_id = ic.item_id
-WHERE mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?1)
+WHERE mf.filtered = 0 AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?1)
   AND EXISTS (SELECT 1 FROM collections c WHERE c.id = ?1 AND c.user_id = ?2)
 GROUP BY ic.category
 ORDER BY item_count DESC, ic.category ASC
@@ -848,7 +848,7 @@ SELECT ic.category, COUNT(*) AS item_count
 FROM item_categories ic
 JOIN item_feeds mf ON mf.item_id = ic.item_id
 JOIN feeds f ON f.id = mf.feed_id
-WHERE mf.feed_id = ?1 AND f.user_id = ?2
+WHERE mf.filtered = 0 AND mf.feed_id = ?1 AND f.user_id = ?2
 GROUP BY ic.category
 ORDER BY item_count DESC, ic.category ASC
 `
@@ -970,6 +970,101 @@ func (q *Queries) ListFeedCacheKeys(ctx context.Context, feedid int64) ([]sql.Nu
 			return nil, err
 		}
 		items = append(items, obj_key)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFeedItemsForFilter = `-- name: ListFeedItemsForFilter :many
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
+       a.id AS author_id, a.name AS author_name,
+       mf.filtered AS filtered
+FROM item_feeds mf
+JOIN items i ON i.id = mf.item_id
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE mf.feed_id = ?1 AND i.user_id = ?2
+ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
+`
+
+type ListFeedItemsForFilterParams struct {
+	FeedID int64 `json:"feedID"`
+	UserID int64 `json:"userID"`
+}
+
+type ListFeedItemsForFilterRow struct {
+	ID            int64          `json:"id"`
+	FeedID        int64          `json:"feed_id"`
+	Guid          string         `json:"guid"`
+	Title         string         `json:"title"`
+	Link          string         `json:"link"`
+	Summary       string         `json:"summary"`
+	Categories    string         `json:"categories"`
+	ImageUrl      sql.NullString `json:"image_url"`
+	ImageCacheKey sql.NullString `json:"image_cache_key"`
+	DurationSec   sql.NullInt64  `json:"duration_sec"`
+	PublishedAt   sql.NullString `json:"published_at"`
+	FetchedAt     string         `json:"fetched_at"`
+	Read          bool           `json:"read"`
+	Favorite      bool           `json:"favorite"`
+	Bookmark      bool           `json:"bookmark"`
+	ReadAt        sql.NullString `json:"read_at"`
+	FeedTitle     string         `json:"feed_title"`
+	FeedUrl       string         `json:"feed_url"`
+	FeedHomeUrl   sql.NullString `json:"feed_home_url"`
+	FeedIsSystem  int64          `json:"feed_is_system"`
+	AuthorID      sql.NullInt64  `json:"author_id"`
+	AuthorName    sql.NullString `json:"author_name"`
+	Filtered      int64          `json:"filtered"`
+}
+
+// Every membership of a feed with the fields its rules match against (and the
+// current verdict), for the recompute pass and the filter-preview view.
+func (q *Queries) ListFeedItemsForFilter(ctx context.Context, arg ListFeedItemsForFilterParams) ([]ListFeedItemsForFilterRow, error) {
+	rows, err := q.db.QueryContext(ctx, listFeedItemsForFilter, arg.FeedID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFeedItemsForFilterRow
+	for rows.Next() {
+		var i ListFeedItemsForFilterRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FeedID,
+			&i.Guid,
+			&i.Title,
+			&i.Link,
+			&i.Summary,
+			&i.Categories,
+			&i.ImageUrl,
+			&i.ImageCacheKey,
+			&i.DurationSec,
+			&i.PublishedAt,
+			&i.FetchedAt,
+			&i.Read,
+			&i.Favorite,
+			&i.Bookmark,
+			&i.ReadAt,
+			&i.FeedTitle,
+			&i.FeedUrl,
+			&i.FeedHomeUrl,
+			&i.FeedIsSystem,
+			&i.AuthorID,
+			&i.AuthorName,
+			&i.Filtered,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -1113,12 +1208,12 @@ JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE i.user_id = ?1
   AND (CAST(?2 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?2 AS INTEGER)))
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf.feed_id = CAST(?2 AS INTEGER)))
   AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
         SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
-        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?3 AS INTEGER)))
+        WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf2.author_id = CAST(?3 AS INTEGER)))
   AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf.feed_id IN (
           SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(?4 AS INTEGER))))
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
@@ -1243,12 +1338,12 @@ JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE i.user_id = ?1
   AND (CAST(?2 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?2 AS INTEGER)))
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf.feed_id = CAST(?2 AS INTEGER)))
   AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
         SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
-        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?3 AS INTEGER)))
+        WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf2.author_id = CAST(?3 AS INTEGER)))
   AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf.feed_id IN (
           SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(?4 AS INTEGER))))
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
@@ -1375,12 +1470,12 @@ LEFT JOIN (
 ) fc ON fc.feed_id = i.feed_id
 WHERE i.user_id = ?1
   AND (CAST(?2 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?2 AS INTEGER)))
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf.feed_id = CAST(?2 AS INTEGER)))
   AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
         SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
-        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?3 AS INTEGER)))
+        WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf2.author_id = CAST(?3 AS INTEGER)))
   AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf.feed_id IN (
           SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(?4 AS INTEGER))))
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
@@ -1633,7 +1728,7 @@ const listRecentItemTimes = `-- name: ListRecentItemTimes :many
 SELECT COALESCE(i.published_at, i.fetched_at) AS t
 FROM items i
 JOIN item_feeds mf ON mf.item_id = i.id
-WHERE mf.feed_id = ?1
+WHERE mf.filtered = 0 AND mf.feed_id = ?1
 ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
 LIMIT ?2
 `
@@ -1707,7 +1802,8 @@ WHERE items.user_id = ?2
   AND items.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
     WHERE f.user_id = ?2 AND f.is_system = 0
-      AND (CAST(?3 AS INTEGER) = 0 OR mf.feed_id = CAST(?3 AS INTEGER)))
+      AND (CAST(?3 AS INTEGER) = 0 OR mf.feed_id = CAST(?3 AS INTEGER))
+      AND mf.filtered = 0)
 `
 
 type MarkAllItemsReadParams struct {
@@ -1731,7 +1827,8 @@ WHERE items.user_id = ?1
   AND items.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
     WHERE f.user_id = ?1 AND f.is_system = 0
-      AND (CAST(?2 AS INTEGER) = 0 OR mf.feed_id = CAST(?2 AS INTEGER)))
+      AND (CAST(?2 AS INTEGER) = 0 OR mf.feed_id = CAST(?2 AS INTEGER))
+      AND mf.filtered = 0)
 `
 
 type MarkAllItemsUnreadParams struct {
@@ -1752,7 +1849,7 @@ WHERE read = 0
   AND items.id IN (
     SELECT mf.item_id FROM item_feeds mf
     JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?2
+    WHERE f.user_id = ?2 AND mf.filtered = 0
       AND f.author_id = (
         SELECT fa.author_id FROM feeds fa
         JOIN item_feeds mfx ON mfx.feed_id = fa.id
@@ -1782,7 +1879,7 @@ WHERE read = 0
   AND items.id IN (
     SELECT mf.item_id FROM item_feeds mf
     JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?2
+    WHERE f.user_id = ?2 AND mf.filtered = 0
       AND f.author_id = (
         SELECT fa.author_id FROM feeds fa
         JOIN item_feeds mfx ON mfx.feed_id = fa.id
@@ -1813,7 +1910,7 @@ WHERE items.user_id = ?2
   AND items.id IN (
     SELECT mf.item_id FROM item_feeds mf
     JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?2 AND f.author_id = ?3
+    WHERE f.user_id = ?2 AND mf.filtered = 0 AND f.author_id = ?3
   )
 `
 
@@ -1835,7 +1932,7 @@ SET read = 1, read_at = ?1
 WHERE read = 0
   AND items.id IN (
     SELECT mf.item_id FROM item_feeds mf
-    WHERE mf.feed_id = (CASE WHEN CAST(?2 AS INTEGER) = 0
+    WHERE mf.filtered = 0 AND mf.feed_id = (CASE WHEN CAST(?2 AS INTEGER) = 0
                              THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
                              ELSE CAST(?2 AS INTEGER) END))
   AND EXISTS (SELECT 1 FROM feeds f WHERE f.id = (CASE WHEN CAST(?2 AS INTEGER) = 0
@@ -1871,7 +1968,7 @@ SET read = 1, read_at = ?1
 WHERE read = 0
   AND items.id IN (
     SELECT mf.item_id FROM item_feeds mf
-    WHERE mf.feed_id = (CASE WHEN CAST(?2 AS INTEGER) = 0
+    WHERE mf.filtered = 0 AND mf.feed_id = (CASE WHEN CAST(?2 AS INTEGER) = 0
                              THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
                              ELSE CAST(?2 AS INTEGER) END))
   AND EXISTS (SELECT 1 FROM feeds f WHERE f.id = (CASE WHEN CAST(?2 AS INTEGER) = 0
@@ -2010,6 +2107,24 @@ func (q *Queries) SetItemFavorite(ctx context.Context, arg SetItemFavoriteParams
 	return q.db.ExecContext(ctx, setItemFavorite, arg.Favorite, arg.ID, arg.UserID)
 }
 
+const setItemFeedFiltered = `-- name: SetItemFeedFiltered :exec
+UPDATE item_feeds SET filtered = ? WHERE item_id = ? AND feed_id = ?
+`
+
+type SetItemFeedFilteredParams struct {
+	Filtered int64 `json:"filtered"`
+	ItemID   int64 `json:"item_id"`
+	FeedID   int64 `json:"feed_id"`
+}
+
+// Record whether a feed's content filter hides one of its member items. The
+// verdict is per membership, so the same post can be hidden in one feed and
+// shown in another.
+func (q *Queries) SetItemFeedFiltered(ctx context.Context, arg SetItemFeedFilteredParams) error {
+	_, err := q.db.ExecContext(ctx, setItemFeedFiltered, arg.Filtered, arg.ItemID, arg.FeedID)
+	return err
+}
+
 const setItemImageCacheKey = `-- name: SetItemImageCacheKey :exec
 UPDATE items
 SET image_cache_key = ?1,
@@ -2082,13 +2197,13 @@ SELECT CAST(COALESCE(SUM(sz), 0) AS INTEGER) AS bytes FROM (
   WHERE i.user_id = ?1 AND i.image_cache_size > 0
     AND i.id IN (
       SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-      WHERE f.user_id = ?1 AND f.author_id = ?2)
+      WHERE f.user_id = ?1 AND mf.filtered = 0 AND f.author_id = ?2)
   UNION ALL
   SELECT e.cache_size AS sz FROM item_enclosures e
   WHERE e.cache_size > 0
     AND e.item_id IN (
       SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-      WHERE f.user_id = ?1 AND f.author_id = ?2)
+      WHERE f.user_id = ?1 AND mf.filtered = 0 AND f.author_id = ?2)
 )
 `
 

@@ -64,6 +64,7 @@ var migrations = []migration{
 	{51, schemaV51},
 	{52, schemaV52},
 	{53, schemaV53},
+	{54, schemaV54},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -764,6 +765,29 @@ ALTER TABLE feeds DROP COLUMN hide_followed_authors;
 const schemaV53 = `
 DROP TABLE filters;
 ALTER TABLE feeds DROP COLUMN filter_mode;
+`
+
+// schemaV54 rebuilds content filters as a per-feed, view-level system. Rules
+// live in feed_filters; feeds carry the mode ('off'/'block'/'allow') and how the
+// rules combine ('any'/'all'). Nothing is deleted: the verdict is stored per
+// membership on item_feeds.filtered, so relaxing a rule re-shows items.
+const schemaV54 = `
+ALTER TABLE feeds ADD COLUMN filter_mode TEXT NOT NULL DEFAULT 'off';
+ALTER TABLE feeds ADD COLUMN filter_combine TEXT NOT NULL DEFAULT 'any';
+
+CREATE TABLE feed_filters (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    feed_id    INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    field      TEXT NOT NULL,
+    op         TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_feed_filters_feed ON feed_filters(feed_id);
+
+ALTER TABLE item_feeds ADD COLUMN filtered INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX idx_item_feeds_feed_filtered ON item_feeds(feed_id, filtered);
 `
 
 // Migrate applies any pending migrations in order, recording each in

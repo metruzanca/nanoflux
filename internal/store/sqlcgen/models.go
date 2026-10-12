@@ -65,7 +65,19 @@ type Feed struct {
 	IsSystem         int64          `json:"is_system"`
 	Rank             int64          `json:"rank"`
 	CacheImages      int64          `json:"cache_images"`
+	FilterMode       string         `json:"filter_mode"`
+	FilterCombine    string         `json:"filter_combine"`
 	CreatedAt        string         `json:"created_at"`
+}
+
+type FeedFilter struct {
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	FeedID    int64  `json:"feed_id"`
+	Field     string `json:"field"`
+	Op        string `json:"op"`
+	Value     string `json:"value"`
+	CreatedAt string `json:"created_at"`
 }
 
 type Item struct {
@@ -114,6 +126,7 @@ type ItemEnclosure struct {
 type ItemFeed struct {
 	ItemID    int64  `json:"item_id"`
 	FeedID    int64  `json:"feed_id"`
+	Filtered  int64  `json:"filtered"`
 	CreatedAt string `json:"created_at"`
 }
 

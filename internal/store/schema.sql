@@ -89,11 +89,28 @@ CREATE TABLE feeds (
     is_system         INTEGER NOT NULL DEFAULT 0,
     rank              INTEGER NOT NULL DEFAULT 0,
     cache_images      INTEGER NOT NULL DEFAULT 0,
+    filter_mode       TEXT NOT NULL DEFAULT 'off',
+    filter_combine    TEXT NOT NULL DEFAULT 'any',
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_feeds_user ON feeds(user_id);
 CREATE INDEX idx_feeds_author ON feeds(author_id);
 CREATE UNIQUE INDEX idx_feeds_system ON feeds(user_id) WHERE is_system = 1;
+
+-- Per-feed, view-level content filters (schemaV54). Each row is one rule; the
+-- feed's filter_mode ('off'/'block'/'allow') and filter_combine ('any'/'all')
+-- decide how the rules are applied. Nothing is deleted: the verdict is stored
+-- on item_feeds.filtered per membership.
+CREATE TABLE feed_filters (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    feed_id    INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    field      TEXT NOT NULL,
+    op         TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_feed_filters_feed ON feed_filters(feed_id);
 
 CREATE TABLE items (
     id           INTEGER PRIMARY KEY,
@@ -136,14 +153,19 @@ CREATE INDEX idx_items_user_favorite ON items(user_id) WHERE favorite = 1;
 CREATE INDEX idx_items_user_bookmark ON items(user_id) WHERE bookmark = 1;
 
 -- Membership: an item belongs to its owner feed (items.feed_id) plus any other
--- feeds it was also seen in. Feeds list items through this table.
+-- feeds it was also seen in. Feeds list items through this table. `filtered` is
+-- the per-membership view verdict from the feed's content filters (schemaV54):
+-- 1 means hidden from this feed's streams (and every list that reaches the item
+-- through it). It is recomputed on poll and whenever the feed's rules change.
 CREATE TABLE item_feeds (
     item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
     feed_id    INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    filtered   INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (item_id, feed_id)
 );
 CREATE INDEX idx_item_feeds_feed ON item_feeds(feed_id);
+CREATE INDEX idx_item_feeds_feed_filtered ON item_feeds(feed_id, filtered);
 
 -- Normalized item categories/tags (schemaV48): one row per tag. Lets a list be
 -- filtered by tag with an exact, indexed match. Populated by ItemStore.Upsert

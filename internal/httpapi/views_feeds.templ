@@ -228,6 +228,7 @@ templ feedEditorBody(d feedsData) {
 		@feedFields(d)
 		<button type="submit">save</button>
 	</form>
+	@feedFiltersSection(d)
 	@feedHistoryCard(feedHistoryData{
 		FeedID: d.Form.ID, Unread: d.Stats.Unread, Read: d.Stats.Read,
 		OldestAt: d.Stats.FirstAt, Timezone: d.Timezone, NextPageURL: d.NextPageURL,

@@ -642,6 +642,14 @@ ul.feed-cards .card { margin-bottom: 0; }
 .feed-history-stats strong { color: var(--fg); }
 .feed-history-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 
+/* Per-feed content filters in the feed settings panel. */
+.feed-filters { border-top: 1px solid var(--border); padding-top: 0.85rem; }
+.feed-filters-head { align-items: center; }
+.feed-filter-list { display: flex; flex-direction: column; gap: 0.35rem; margin: 0; }
+.feed-filter-list li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.feed-filter-rule code { background: var(--bg); border-radius: 4px; padding: 0 0.3rem; }
+.feed-filter-add { align-items: flex-end; gap: 0.5rem; }
+
 /* Feed fetch-error section: the full last_error message (a plugin's config
    error, an HTTP failure, a parse error) instead of a bare "last poll failed". */
 .feed-error {

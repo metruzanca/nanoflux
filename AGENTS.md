@@ -272,6 +272,38 @@ the search-palette feed entity and the provision success link at
 is omitted on the author's own page). Display-mode scopes drop `/feeds/{id}`;
 the author page's scope stays `/authors/{id}`.
 
+## Content filters (per feed, view-level)
+
+A feed can filter its items without deleting them. Rules live in `feed_filters`
+(a field, op, value per row); the feed carries `feeds.filter_mode`
+(`off`/`block`/`allow`) and `feeds.filter_combine` (`any`/`all`). SchemaV54.
+
+- The evaluator is `internal/feedfilter` (stdlib only, so the store and poller
+  can both use it). `Allowed(mode, combine, rules, fields)` decides visibility:
+  `off` or no rules keeps everything; `allow` keeps only items satisfying the
+  rules; `block` hides items satisfying them. `combine` is OR (`any`) or AND
+  (`all`). Fields are `category` (matches any of the item's categories),
+  `title`, `link`, `summary`; ops are `is`, `contains`, `starts with`, `regex`
+  (regex invalid ⇒ no match).
+- The verdict is stored per **membership** on `item_feeds.filtered` (schemaV54),
+  so a post crossposted into a blocked feed still shows through another feed.
+  Every list/count membership predicate adds `AND mf.filtered = 0`
+  (`queries/items.sql`, `store/item.go`'s `listPageTagged`/`SearchPage`, and
+  `unreadFilteredQuery`); the tag options and author/feed stats do too. Filtered
+  items are hidden everywhere (streams, favorites, bookmarks, search) except the
+  preview. `ListFeedItemsForFilter` deliberately does not filter.
+- `ItemStore.RecomputeFeedFilter(userID, feedID)` re-evaluates a feed's items
+  after any rule/mode/combine change; `poller.ingest` sets the verdict for the
+  items it stores each poll. Relaxing a rule re-shows items because nothing was
+  ever deleted.
+- UI: the feed's settings panel has a "filters" group (mode/combine pickers,
+  rule list, add form): `POST /feeds/{id}/filters`,
+  `POST /feeds/{id}/filters/{ruleID}/delete`, `POST /feeds/{id}/filter-config`.
+  `GET /feeds/{id}/filter-preview` shows the feed's items split shown/hidden.
+  `internal/httpapi/feedfilters.go` + `views_feedfilters.templ` are the
+  handlers/templates; `filterModeOptions`/`filterCombineOptions` carry the other
+  setting so a picker changes only one.
+
 ## Appearance
 
 Per-user display preferences live in the settings "appearance" card and are

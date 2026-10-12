@@ -18,6 +18,7 @@ func TestMigrate(t *testing.T) {
 	tables := []string{
 		"users", "sessions", "authors", "feeds",
 		"items", "collections", "collection_feeds", "schema_migrations",
+		"feed_filters",
 	}
 	for _, name := range tables {
 		var n int
@@ -31,25 +32,32 @@ func TestMigrate(t *testing.T) {
 		}
 	}
 
-	// The ingest filter-rule system (schemaV53) is gone: no filters table and no
-	// filter_mode column on feeds.
-	var filtersTable int
+	// The old ingest filter table (schemaV53) stays gone; schemaV54 rebuilds
+	// content filters as feed_filters plus feeds.filter_mode/filter_combine and
+	// item_feeds.filtered.
+	var oldFilters int
 	if err := sqldb.QueryRow(
 		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='filters'`,
-	).Scan(&filtersTable); err != nil {
+	).Scan(&oldFilters); err != nil {
 		t.Fatal(err)
 	}
-	if filtersTable != 0 {
-		t.Errorf("filters table should not exist after schemaV53")
+	if oldFilters != 0 {
+		t.Errorf("old filters table should not exist after schemaV53")
 	}
-	var hasFilterMode int
-	if err := sqldb.QueryRow(
-		`SELECT COUNT(*) FROM pragma_table_info('feeds') WHERE name='filter_mode'`,
-	).Scan(&hasFilterMode); err != nil {
-		t.Fatal(err)
-	}
-	if hasFilterMode != 0 {
-		t.Errorf("feeds.filter_mode should not exist after schemaV53")
+	for _, col := range []struct{ table, name string }{
+		{"feeds", "filter_mode"},
+		{"feeds", "filter_combine"},
+		{"item_feeds", "filtered"},
+	} {
+		var n int
+		if err := sqldb.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`, col.table, col.name,
+		).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Errorf("%s.%s should exist after schemaV54", col.table, col.name)
+		}
 	}
 
 	// Second run must be a no-op.

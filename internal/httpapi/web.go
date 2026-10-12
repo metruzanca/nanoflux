@@ -17,6 +17,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/feedfilter"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 	"github.com/metruzanca/nanoflux/pluginapi"
@@ -113,6 +114,10 @@ type feedsData struct {
 	LastError    string
 	LastPolledAt string
 	PluginName   string
+	// FilterMode/FilterCombine/FilterRules back the per-feed content filters.
+	FilterMode    string
+	FilterCombine string
+	FilterRules   []store.FeedFilter
 }
 
 type authorRow struct {
@@ -1445,10 +1450,13 @@ func (s *Server) feedEditorData(u store.User, f store.Feed) *feedsData {
 		panel = &p
 	}
 	stats, _ := s.store.Items.StatsFeed(u.ID, f.ID)
+	rules, _ := s.store.FeedFilters.List(u.ID, f.ID)
 	return &feedsData{
 		Collections: collections, Form: form, DocsPlugin: s.pluginDocNameFor(f.FeedURL), Panel: panel,
 		NextPageURL: f.NextPageURL, Stats: stats, Timezone: u.Timezone,
 		LastError: f.LastError, LastPolledAt: f.LastPolledAt, PluginName: f.PluginName,
+		FilterMode: feedfilter.NormalizeMode(f.FilterMode), FilterCombine: feedfilter.NormalizeCombine(f.FilterCombine),
+		FilterRules: rules,
 	}
 }
 

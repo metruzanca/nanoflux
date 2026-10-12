@@ -139,6 +139,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /feeds/{id}/older", s.auth.Require(http.HandlerFunc(s.feedOlder)))
 	mux.Handle("POST /feeds/{id}/toggle", s.auth.Require(http.HandlerFunc(s.feedToggle)))
 	mux.Handle("POST /feeds/{id}/rank", s.auth.Require(http.HandlerFunc(s.feedRank)))
+	// Per-feed, view-level content filters.
+	mux.Handle("POST /feeds/{id}/filters", s.auth.Require(http.HandlerFunc(s.feedFilterAdd)))
+	mux.Handle("POST /feeds/{id}/filters/{ruleID}/delete", s.auth.Require(http.HandlerFunc(s.feedFilterDelete)))
+	mux.Handle("POST /feeds/{id}/filter-config", s.auth.Require(http.HandlerFunc(s.feedFilterConfig)))
+	mux.Handle("GET /feeds/{id}/filter-preview", s.auth.Require(http.HandlerFunc(s.feedFilterPreview)))
 
 	// Authors.
 	mux.Handle("GET /authors", s.auth.Require(http.HandlerFunc(s.authors)))

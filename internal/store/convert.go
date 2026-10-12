@@ -94,6 +94,8 @@ func toFeed(f sqlcgen.Feed) Feed {
 		IsSystem:         f.IsSystem != 0,
 		Rank:             int(f.Rank),
 		CacheImages:      f.CacheImages != 0,
+		FilterMode:       f.FilterMode,
+		FilterCombine:    f.FilterCombine,
 		CreatedAt:        f.CreatedAt,
 	}
 }

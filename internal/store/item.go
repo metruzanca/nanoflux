@@ -536,10 +536,10 @@ JOIN items_fts fts ON fts.rowid = i.id
 WHERE i.user_id = ?1
   AND items_fts MATCH ?2
   AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?3 AS INTEGER)))
+        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf.feed_id = CAST(?3 AS INTEGER)))
   AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
         SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
-        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?4 AS INTEGER)))
+        WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf2.author_id = CAST(?4 AS INTEGER)))
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR
        (COALESCE(i.published_at, i.fetched_at), i.id) <
@@ -640,15 +640,15 @@ func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]Ite
 	b.WriteString(" WHERE i.user_id = ?")
 	args = append(args, userID)
 	if f.FeedID != 0 {
-		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = ?)")
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf.feed_id = ?)")
 		args = append(args, f.FeedID)
 	}
 	if f.AuthorID != 0 {
-		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id WHERE mf.item_id = i.id AND mf2.author_id = ?)")
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf2.author_id = ?)")
 		args = append(args, f.AuthorID)
 	}
 	if f.CollectionID != 0 {
-		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))")
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.filtered = 0 AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))")
 		args = append(args, f.CollectionID)
 	}
 	if f.UnreadOnly {
@@ -1471,7 +1471,7 @@ func unreadFilteredQuery(userID int64, f ItemFilter, mark bool) (string, []any) 
 	}
 	b.WriteString(` AND items.id IN (
 		SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-		WHERE f.user_id = ? AND f.is_system = 0`)
+		WHERE f.user_id = ? AND f.is_system = 0 AND mf.filtered = 0`)
 	args = append(args, userID)
 	if f.FeedID != 0 {
 		b.WriteString(" AND mf.feed_id = ?")

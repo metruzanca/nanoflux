@@ -39,7 +39,11 @@ type Feed struct {
 	// for sites whose image URLs are short-lived. Forced on (and not user-
 	// disableable) when the feed's plugin claims CapImageCache.
 	CacheImages bool
-	CreatedAt   string
+	// FilterMode ("off"/"block"/"allow") and FilterCombine ("any"/"all") drive the
+	// per-feed, view-level content filters (feed_filters). See internal/feedfilter.
+	FilterMode    string
+	FilterCombine string
+	CreatedAt     string
 }
 
 // FeedWithFavorites joins a feed with its author name and its owner-feed

@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/feedfilter"
 	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/imagecache"
 	"github.com/metruzanca/nanoflux/internal/safedial"
@@ -631,6 +632,15 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 		return newItems, err
 	}
 
+	// View-level content filters: record each item's verdict on its membership
+	// so lists can hide it. Rules are loaded once per poll; with no filter mode
+	// or no rules every membership stays visible (0).
+	filterMode := feedfilter.NormalizeMode(f.FilterMode)
+	var filterRules []feedfilter.Rule
+	if filterMode != feedfilter.ModeOff {
+		filterRules, _ = p.store.FeedFilters.Rules(f.UserID, f.ID)
+	}
+
 	var stored []store.Item
 	for i, inc := range incomingItems {
 		res := results[i]
@@ -640,6 +650,17 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 		// The upsert returns the stored id, so enclosures and the image cache do
 		// not need a separate lookup (the old IngestItemID query).
 		itemID := res.ItemID
+		if filterMode != feedfilter.ModeOff && itemID != 0 {
+			allowed := feedfilter.Allowed(filterMode, f.FilterCombine, filterRules, feedfilter.Fields{
+				Title:      inc.item.Title,
+				Link:       inc.item.Link,
+				Summary:    inc.item.Summary,
+				Categories: inc.it.Categories,
+			})
+			if err := p.store.Items.SetItemFeedFiltered(itemID, f.ID, !allowed); err != nil {
+				log.Error("set item filter verdict", "feed_id", f.ID, "item_id", itemID, "err", err)
+			}
+		}
 		var enclosureKeys []string
 		var enclosureSizes []int64
 		if cacheImages && itemID != 0 {

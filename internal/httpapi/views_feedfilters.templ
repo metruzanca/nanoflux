@@ -1,0 +1,96 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/feedfilter"
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+// feedFiltersSection is a feed's content filters in its settings panel: the
+// mode (off/block/allow), how the rules combine (any/all), the rule list, and
+// an add form. It is the htmx swap target for the filter endpoints.
+templ feedFiltersSection(d feedsData) {
+	{{ id := strconv.FormatInt(d.Form.ID, 10) }}
+	<div class="field-group feed-filters" id="feed-filters">
+		<div class="row feed-filters-head">
+			<h3>filters</h3>
+			<div class="row-actions">
+				@PickerControl("filter-mode-"+id, "how the filters apply", feedfilter.NormalizeMode(d.FilterMode), "", filterModeOptions(d))
+				@PickerControl("filter-combine-"+id, "how the rules combine", feedfilter.NormalizeCombine(d.FilterCombine), "", filterCombineOptions(d))
+				<a class="small" href={ templ.URL("/feeds/" + id + "/filter-preview") }>view results</a>
+			</div>
+		</div>
+		<p class="muted small">{ filterHelp(d) }</p>
+		if len(d.FilterRules) > 0 {
+			<ul class="plain feed-filter-list">
+				for _, r := range d.FilterRules {
+					<li>
+						<span class="feed-filter-rule"><strong>{ r.Field }</strong> { filterOpLabel(r.Op) } <code>{ r.Value }</code></span>
+						<button
+							class="link danger"
+							title="remove rule"
+							hx-post={ "/feeds/" + id + "/filters/" + strconv.FormatInt(r.ID, 10) + "/delete" }
+							hx-target="#feed-filters"
+							hx-swap="outerHTML"
+						>@web.Lucide("x")</button>
+					</li>
+				}
+			</ul>
+		}
+		<form class="stack" hx-post={ "/feeds/" + id + "/filters" } hx-target="#feed-filters" hx-swap="outerHTML">
+			<div class="row feed-filter-add">
+				@comboSelect("field", feedfilter.FieldCategory, "field", "field", filterFieldItems, nil)
+				@comboSelect("op", feedfilter.OpContains, "match", "match", filterOpItems, nil)
+				<label>value
+					<input name="value" required placeholder="e.g. r/golang"/>
+				</label>
+			</div>
+			<div id="feed-filters-error" class="error"></div>
+			<button type="submit">add rule</button>
+		</form>
+	</div>
+}
+
+// feedFilterPreviewPage lists a feed's items grouped by the filter verdict, so
+// a user can see at any time what is shown and what the filters hide.
+templ feedFilterPreviewPage(u store.User, d feedFilterPreviewData) {
+	<div class="row">
+		<h1>filters: { d.Feed.Title }</h1>
+		<div class="row-actions">
+			<a class="button small" href={ templ.URL("/authors/" + strconv.FormatInt(d.Feed.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(d.Feed.ID, 10)) }>back to settings</a>
+		</div>
+	</div>
+	<p class="muted small">
+		mode <strong>{ d.Mode }</strong>, rules combine with <strong>{ d.Combine }</strong>.
+		{ len(d.Allowed) } shown · { len(d.Blocked) } hidden. filters are view-level: hidden items stay stored and reappear if you relax the rules.
+	</p>
+	if len(d.Rules) > 0 {
+		<div class="chips">
+			for _, r := range d.Rules {
+				<span class="tag">{ r.Field } { filterOpLabel(r.Op) } { r.Value }</span>
+			}
+		</div>
+	}
+	<h2>shown ({ len(d.Allowed) })</h2>
+	if len(d.Allowed) == 0 {
+		<p class="muted">nothing is shown by this feed's filters.</p>
+	} else {
+		<ul class="items">
+			for _, it := range d.Allowed {
+				@ItemRow(it, false)
+			}
+		</ul>
+	}
+	<h2>hidden ({ len(d.Blocked) })</h2>
+	if len(d.Blocked) == 0 {
+		<p class="muted">nothing is hidden.</p>
+	} else {
+		<ul class="items">
+			for _, it := range d.Blocked {
+				@ItemRow(it, false)
+			}
+		</ul>
+	}
+}
