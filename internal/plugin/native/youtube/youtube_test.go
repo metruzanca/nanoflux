@@ -34,6 +34,9 @@ func TestMatch(t *testing.T) {
 		{"https://example.com/x", pluginapi.CapDiscover, false},
 		{"https://www.youtube.com/feeds/videos.xml?channel_id=UC5--wS0Ljbin1TjWQX6eafA", pluginapi.CapFetch, true},
 		{"https://www.youtube.com/@SomeChannel", pluginapi.CapFetch, false},
+		{"https://youtube.com/feeds/videos.xml?channel_id=UC5--wS0Ljbin1TjWQX6eafA", pluginapi.CapURLPolicy, true},
+		{"https://www.youtube.com/@SomeChannel", pluginapi.CapURLPolicy, true},
+		{"https://example.com/x", pluginapi.CapURLPolicy, false},
 		// Item-link capabilities match any video link, from any host.
 		{"https://www.youtube.com/watch?v=H0KAi8AWsnM", pluginapi.CapRender, true},
 		{"https://youtu.be/H0KAi8AWsnM", pluginapi.CapDecorate, true},
@@ -256,6 +259,43 @@ func TestParseDuration(t *testing.T) {
 		got, ok := parseDuration(c.in)
 		if got != c.want || ok != c.ok {
 			t.Errorf("parseDuration(%q) = %d, %v; want %d, %v", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// TestFetchUsesWwwOriginForBareHost asserts a stored bare youtube.com feed URL
+// is still fetched on www.youtube.com, the host YouTube answers for browse (the
+// bare host returns 400).
+func TestFetchUsesWwwOriginForBareHost(t *testing.T) {
+	var got string
+	h := hostFunc{do: func(_ context.Context, req pluginapi.HTTPRequest) (pluginapi.HTTPResponse, error) {
+		got = req.URL
+		return browseHost(t, browseLockup("abc", "Video One", "5:41", "1M views", "3 days ago")).do(context.Background(), req)
+	}}
+	if _, err := (Plugin{}).Fetch(context.Background(), pluginapi.FetchRequest{
+		URL: "https://youtube.com/feeds/videos.xml?channel_id=UCx",
+	}, h); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got, "https://www.youtube.com/youtubei/v1/browse") {
+		t.Fatalf("browse origin = %q, want https://www.youtube.com/youtubei/v1/browse", got)
+	}
+}
+
+// TestCanonicalizeFeedURL covers the www-host canonicalization and its
+// idempotence, plus the hosts it leaves alone.
+func TestCanonicalizeFeedURL(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://youtube.com/feeds/videos.xml?channel_id=UCx", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		{"https://www.youtube.com/feeds/videos.xml?channel_id=UCx", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		{"https://m.youtube.com/feeds/videos.xml?channel_id=UCx", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		{"http://youtube.com/feeds/videos.xml?channel_id=UCx", "https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
+		{"https://youtu.be/H0KAi8AWsnM", "https://youtu.be/H0KAi8AWsnM"},
+		{"https://example.com/feed", "https://example.com/feed"},
+	}
+	for _, c := range cases {
+		if got := (Plugin{}).CanonicalizeFeedURL(c.in); got != c.want {
+			t.Errorf("CanonicalizeFeedURL(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }

@@ -14,6 +14,9 @@ than the channel RSS. The RSS carries no video duration; browse returns duration
   feed is polled, so a stored item never shows a frozen "3 days ago".
 - Any channel URL form is resolved to its channel id, so the feed keeps working
   regardless of how the channel was linked.
+- Channel feeds are stored on `www.youtube.com`. YouTube answers its internal
+  browse endpoint only on that host (a request to the bare `youtube.com` returns
+  HTTP 400), so the plugin owns the feed URL shape and rewrites the bare host.
 
 ## Filtering
 

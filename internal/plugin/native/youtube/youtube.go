@@ -48,6 +48,7 @@ var (
 	_ pluginapi.Fetcher    = Plugin{}
 	_ pluginapi.Renderer   = Plugin{}
 	_ pluginapi.Decoration = Plugin{}
+	_ pluginapi.URLPolicy  = Plugin{}
 )
 
 func (Plugin) Meta() pluginapi.Meta {
@@ -62,13 +63,14 @@ func (Plugin) Meta() pluginapi.Meta {
 func (Plugin) Docs() string { return readme }
 
 // Match handles discovery on any YouTube host, fetch for the channel RSS URL
-// (whose 404 fallback requires the plugin to own the fetch), and the item-link
-// capabilities: a YouTube video link renders as an embeddable player
+// (whose 404 fallback requires the plugin to own the fetch), the channel feed
+// URL rules (so a stored feed keeps the www host YouTube answers), and the
+// item-link capabilities: a YouTube video link renders as an embeddable player
 // (CapRender) and is classified as a video card (CapDecorate), from any feed.
 func (Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
 	if isYouTubeHost(u.Hostname()) {
 		switch cap {
-		case pluginapi.CapDiscover:
+		case pluginapi.CapDiscover, pluginapi.CapURLPolicy:
 			return true
 		case pluginapi.CapFetch:
 			return isChannelFeedURL(u)
@@ -81,6 +83,14 @@ func (Plugin) Match(u *url.URL, cap pluginapi.Capability) bool {
 		return false
 	}
 }
+
+// CanonicalizeFeedURL keeps a channel feed on the www host (the one YouTube
+// answers for its internal browse endpoint), rewriting a bare youtube.com URL
+// that the add form's www-stripping once produced.
+func (Plugin) CanonicalizeFeedURL(raw string) string { return canonicalFeedURL(raw) }
+
+// FeedToken is unsupported: YouTube items carry no attribution tokens.
+func (Plugin) FeedToken(feedURL string) string { return feedToken(feedURL) }
 
 // Render resolves a YouTube video link to its embeddable player, so any feed's
 // item that links to a video (not just a YouTube feed) opens with the player.
@@ -181,8 +191,9 @@ func (p Plugin) Discover(ctx context.Context, pageURL string, h pluginapi.Host) 
 // Fetch reads the channel's recent videos through the browse API. The channel
 // feed URL carries the channel id; anything else is rejected. The browse origin
 // is taken from the request URL, so the plugin talks to the same YouTube origin
-// the feed URL names (www.youtube.com in production) and a test can point it at
-// a mock host without any env plumbing.
+// the feed URL names and a test can point it at a mock host without any env
+// plumbing. A bare youtube.com host is upgraded to www.youtube.com (see
+// browseOrigin): YouTube rejects a browse POST on the bare host with 400.
 func (p Plugin) Fetch(ctx context.Context, req pluginapi.FetchRequest, h pluginapi.Host) (pluginapi.Result, error) {
 	u, perr := url.Parse(req.URL)
 	if perr != nil {
@@ -192,8 +203,22 @@ func (p Plugin) Fetch(ctx context.Context, req pluginapi.FetchRequest, h plugina
 	if channelID == "" {
 		return pluginapi.Result{}, &pluginapi.StatusError{Code: 400, URL: req.URL}
 	}
-	base := u.Scheme + "://" + u.Host
-	return p.fetchViaBrowse(ctx, channelID, base, h)
+	return p.fetchViaBrowse(ctx, channelID, browseOrigin(u), h)
+}
+
+// browseOrigin returns the origin the browse API is called on, derived from the
+// feed URL so a test can point it at a mock host. A bare youtube.com feed URL
+// (which YouTube answers with 400) is upgraded to www.youtube.com, the host that
+// works, so an already-stored feed recovers on its next poll even before the
+// startup URL canonicalization runs.
+func browseOrigin(u *url.URL) string {
+	if strings.ToLower(u.Hostname()) == "youtube.com" {
+		if port := u.Port(); port != "" {
+			return u.Scheme + "://www.youtube.com:" + port
+		}
+		return u.Scheme + "://www.youtube.com"
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // fetchViaBrowse pulls a channel's recent videos through youtubei/v1/browse on
