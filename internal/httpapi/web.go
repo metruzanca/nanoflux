@@ -2271,6 +2271,11 @@ func (s *Server) authorFormFragment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
+	// Refresh the synthetic "no-collection" so its card lists the feeds that
+	// are still ungrouped.
+	if _, err := s.store.Collections.SyncNoCollection(u.ID); err != nil {
+		log.Error("sync no-collection", "err", err)
+	}
 	rows, _ := s.store.Collections.ListWithCounts(u.ID)
 	web.Render(w, r, basePage("collections", u, collectionsPage(u, rows)))
 }
@@ -2334,6 +2339,11 @@ func (s *Server) collectionDataFor(userID, id int64, view string, sort itemSort,
 	c, err := s.store.Collections.ByID(userID, id)
 	if err != nil {
 		return collectionData{}, err
+	}
+	// The no-collection is computed, not user-managed: refresh it before reading
+	// its feeds so the page matches the current grouping.
+	if c.IsNoCollection() {
+		s.store.Collections.SyncNoCollection(userID)
 	}
 	feeds, _ := s.store.Collections.Feeds(userID, id)
 	allFeeds, _ := s.store.Feeds.ListWithUnread(userID)

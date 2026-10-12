@@ -25,6 +25,30 @@ func (q *Queries) AddFeedToCollection(ctx context.Context, arg AddFeedToCollecti
 	return q.db.ExecContext(ctx, addFeedToCollection, arg.CollectionID, arg.FeedID)
 }
 
+const addFeedsWithoutUserCollection = `-- name: AddFeedsWithoutUserCollection :exec
+INSERT OR IGNORE INTO collection_feeds (collection_id, feed_id)
+SELECT ?1, f.id
+FROM feeds f
+WHERE f.user_id = ?2 AND f.is_system = 0
+  AND NOT EXISTS (
+    SELECT 1 FROM collection_feeds cf
+    JOIN collections c ON c.id = cf.collection_id
+    WHERE cf.feed_id = f.id AND c.user_id = ?2 AND c.is_auto = 0)
+`
+
+type AddFeedsWithoutUserCollectionParams struct {
+	CollectionID int64 `json:"collectionID"`
+	UserID       int64 `json:"userID"`
+}
+
+// Add every non-system feed the user has that is not in any user-created
+// (non-auto) collection to the given collection. Recomputes the synthetic
+// "no-collection" so it always lists precisely the ungrouped feeds.
+func (q *Queries) AddFeedsWithoutUserCollection(ctx context.Context, arg AddFeedsWithoutUserCollectionParams) error {
+	_, err := q.db.ExecContext(ctx, addFeedsWithoutUserCollection, arg.CollectionID, arg.UserID)
+	return err
+}
+
 const collectionIDsForFeed = `-- name: CollectionIDsForFeed :many
 SELECT cf.collection_id
 FROM collection_feeds cf
@@ -97,6 +121,15 @@ type DeleteCollectionParams struct {
 
 func (q *Queries) DeleteCollection(ctx context.Context, arg DeleteCollectionParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, deleteCollection, arg.ID, arg.UserID)
+}
+
+const deleteCollectionFeeds = `-- name: DeleteCollectionFeeds :exec
+DELETE FROM collection_feeds WHERE collection_id = ?
+`
+
+func (q *Queries) DeleteCollectionFeeds(ctx context.Context, collectionID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteCollectionFeeds, collectionID)
+	return err
 }
 
 const getAutoCollection = `-- name: GetAutoCollection :one

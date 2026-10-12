@@ -43,6 +43,41 @@ func (s *CollectionStore) Create(userID int64, name string) (Collection, error) 
 	return toCollection(c), nil
 }
 
+// NoCollectionName is the reserved name of the synthetic auto collection that
+// lists every feed the user has not put into a collection of their own. It is
+// not a hostname (RegistrableDomain never yields it), so it cannot collide with
+// a per-site auto collection.
+const NoCollectionName = "no-collection"
+
+// IsNoCollection reports whether c is the synthetic "no-collection".
+func (c Collection) IsNoCollection() bool { return c.IsAuto && c.Name == NoCollectionName }
+
+// EnsureNoCollection returns the user's no-collection, creating it if needed.
+func (s *CollectionStore) EnsureNoCollection(userID int64) (Collection, error) {
+	return s.EnsureAuto(userID, NoCollectionName)
+}
+
+// SyncNoCollection recomputes the no-collection's membership: every non-system
+// feed the user has that is not in any user-created collection. Idempotent, and
+// run when the collections index/page is rendered so it reflects recent feed or
+// collection changes. It returns the collection's id.
+func (s *CollectionStore) SyncNoCollection(userID int64) (int64, error) {
+	c, err := s.EnsureNoCollection(userID)
+	if err != nil {
+		return 0, err
+	}
+	if err := s.q.DeleteCollectionFeeds(context.Background(), c.ID); err != nil {
+		return 0, err
+	}
+	if err := s.q.AddFeedsWithoutUserCollection(context.Background(), sqlcgen.AddFeedsWithoutUserCollectionParams{
+		CollectionID: c.ID,
+		UserID:       userID,
+	}); err != nil {
+		return 0, err
+	}
+	return c.ID, nil
+}
+
 // EnsureAuto returns the auto collection for a hostname, creating it if it
 // does not exist. A user-created collection with the same name is left alone;
 // auto collections are always separate rows.
