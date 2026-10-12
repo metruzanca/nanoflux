@@ -36,7 +36,6 @@ const pageSize = 25
 type readData struct {
 	Read      []store.ItemWithFeed
 	ReadCount int
-	Sort      itemSort
 	More      *loadMoreData
 	Mode      string // saved display mode for "/read"
 }
@@ -484,17 +483,35 @@ func (s *Server) authorReadAll(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// readPage is the history page: the user's read items, most recently read
+// first. It has no sort control (the order is fixed to read_at), so it pages by
+// offset rather than a sort-keyed cursor.
 func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	sort := itemSortOf(r)
-	items, more, _ := s.store.Items.ListPage(u.ID, scopedFilter("read", sort, cursorID(r, sort), 0, 0, 0))
+	offset := historyOffset(r)
+	items, more, _ := s.store.Items.ListReadHistory(u.ID, offset, pageSize)
 	count, _ := s.store.Items.CountRead(u.ID, 0)
-	mode := s.store.ViewPrefs.Mode(u.ID, "/read")
-	base := "/items?read=1&sort=" + sort.param()
 	web.Render(w, r, basePage("history", u, readPage(readData{
-		Read: withTZ(u.Timezone, items), ReadCount: count, Sort: sort,
-		More: pageCursorFor(base, items, more, sort, int(cursorID(r, sort))), Mode: mode,
+		Read: withTZ(u.Timezone, items), ReadCount: count,
+		More: historyMore("/items?read=1", more, offset), Mode: s.store.ViewPrefs.Mode(u.ID, "/read"),
 	})))
+}
+
+// historyOffset reads the history page's offset cursor.
+func historyOffset(r *http.Request) int {
+	n, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if n < 0 {
+		return 0
+	}
+	return n
+}
+
+// historyMore builds the load-more cursor for the offset-paged history list.
+func historyMore(base string, hasMore bool, offset int) *loadMoreData {
+	if !hasMore {
+		return nil
+	}
+	return &loadMoreData{URL: moreURLFor(base, sortMagic, int64(offset+pageSize))}
 }
 
 func (s *Server) favoritesPage(w http.ResponseWriter, r *http.Request) {
@@ -579,10 +596,9 @@ func validViewScope(scope string) bool {
 }
 
 func (s *Server) renderReadItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
-	sort := itemSortOf(r)
-	items, more, _ := s.store.Items.ListPage(userID, scopedFilter("read", sort, cursorID(r, sort), 0, 0, 0))
-	base := "/items?read=1&sort=" + sort.param()
-	web.Render(w, r, ItemsSection(withTZ(tz, items), pageCursorFor(base, items, more, sort, int(cursorID(r, sort))), false, s.store.ViewPrefs.Mode(userID, "/read")))
+	offset := historyOffset(r)
+	items, more, _ := s.store.Items.ListReadHistory(userID, offset, pageSize)
+	web.Render(w, r, ItemsSection(withTZ(tz, items), historyMore("/items?read=1", more, offset), false, s.store.ViewPrefs.Mode(userID, "/read")))
 }
 
 func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
@@ -596,6 +612,19 @@ func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID 
 // bookmarks lists. The fragment targets the existing #items-list element.
 func (s *Server) itemsFragment(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
+	// The history list is ordered by read_at and offset-paged, so it does not
+	// share the sort-keyed cursor path below.
+	if r.URL.Query().Get("read") == "1" {
+		offset := historyOffset(r)
+		items, more, err := s.store.Items.ListReadHistory(u.ID, offset, pageSize)
+		if err != nil {
+			log.Error("history fragment", "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), historyMore("/items?read=1", more, offset), false))
+		return
+	}
 	sort := itemSortOf(r)
 	base := "/items"
 	view := "unread"
@@ -604,8 +633,6 @@ func (s *Server) itemsFragment(w http.ResponseWriter, r *http.Request) {
 		view, base = "favorites", "/items?fav=1"
 	case r.URL.Query().Get("bookmark") == "1":
 		view, base = "bookmarks", "/items?bookmark=1"
-	case r.URL.Query().Get("read") == "1":
-		view, base = "read", "/items?read=1"
 	}
 	filter := scopedFilter(view, sort, cursorID(r, sort), 0, 0, 0)
 	base += "&sort=" + sort.param()

@@ -126,6 +126,26 @@ WHERE i.user_id = sqlc.arg('userID')
 ORDER BY COALESCE(i.published_at, i.fetched_at) ASC, i.id ASC
 LIMIT sqlc.arg('limit');
 
+-- name: ListItemsReadHistory :many
+-- The history page: the user's read items ordered by when they were read (most
+-- recently read first). Offset-paged (read_at is not unique, so a keyset cursor
+-- would need two values). read_at is NULL only for a read row written by an
+-- older build; those sort last. Saved pages (system feed) are excluded, like the
+-- other streams.
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE i.user_id = sqlc.arg('userID')
+  AND i.read = 1
+  AND f.is_system = 0
+ORDER BY i.read_at DESC, i.id DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
 -- name: ListItemsMagic :many
 -- The magic sort: rank feeds by the user's taste instead of strict time. Manual
 -- raise/lower dominates in hard tiers (raised before neutral before lowered);
