@@ -2104,18 +2104,16 @@ func TestFeedEditDeleteFlow(t *testing.T) {
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "https://b.dev", "", 900)
 
-	// The author page's feed card carries the refresh and edit actions (moved
-	// off the removed feed page) but not the pause/delete controls.
+	// The author page's feed card carries refresh only: editing moved to the
+	// author edit page, and the feed-scoped mark-all was removed in favor of the
+	// author page's filter-aware one. No pause/delete either.
 	author := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
-	for _, want := range []string{
-		`/feeds/` + itoa(f.ID) + `/refresh`,
-		`/authors/` + itoa(a.ID) + `/edit?feed=` + itoa(f.ID),
-	} {
-		if !strings.Contains(author, want) {
-			t.Fatalf("author feed card should link to %s: %s", want, author)
-		}
+	if !strings.Contains(author, `/feeds/`+itoa(f.ID)+`/refresh`) {
+		t.Fatalf("author feed card should offer refresh: %s", author)
 	}
 	for _, dead := range []string{
+		`/authors/` + itoa(a.ID) + `/edit?feed=` + itoa(f.ID),
+		`/feeds/` + itoa(f.ID) + `/read-all`,
 		`/feeds/` + itoa(f.ID) + `/toggle`,
 		`/feeds/` + itoa(f.ID) + `/delete`,
 	} {

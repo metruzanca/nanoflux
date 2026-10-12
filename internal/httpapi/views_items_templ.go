@@ -4147,10 +4147,11 @@ func sharedItemPage(it store.ItemWithFeed, d itemViewData) templ.Component {
 }
 
 // markAllReadControl is the check-check button plus its confirmation dialog,
-// shown in the header of a feed page and an author page. It marks every unread
-// item in scope read; the dialog gates it because the action is not one-click
-// reversible. Only one control renders per page, so the dialog is reached
-// relative to the button rather than by a page-unique id.
+// shown in the author page header. Its action already carries the active
+// feed/tag filter, so it marks every unread item the list shows read; the dialog
+// gates it because the action is not one-click reversible. Only one control
+// renders per page, so the dialog is reached relative to the button rather than
+// by a page-unique id.
 func markAllReadControl(d markAllReadData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -4180,7 +4181,7 @@ func markAllReadControl(d markAllReadData) templ.Component {
 			var templ_7745c5c3_Var188 string
 			templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.ResolveAttributeValue("mark all " + strconv.Itoa(d.Unread) + " items as read")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_items.templ`, Line: 941, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_items.templ`, Line: 942, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var188)
 			if templ_7745c5c3_Err != nil {
@@ -4216,7 +4217,7 @@ func markAllReadControl(d markAllReadData) templ.Component {
 				var templ_7745c5c3_Var189 string
 				templ_7745c5c3_Var189, templ_7745c5c3_Err = templ.JoinStringErrs(d.Unread)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_items.templ`, Line: 951, Col: 25}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_items.templ`, Line: 952, Col: 25}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var189))
 				if templ_7745c5c3_Err != nil {
@@ -4237,7 +4238,7 @@ func markAllReadControl(d markAllReadData) templ.Component {
 				var templ_7745c5c3_Var190 string
 				templ_7745c5c3_Var190, templ_7745c5c3_Err = templ.ResolveAttributeValue(d.Action)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_items.templ`, Line: 957, Col: 46}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_items.templ`, Line: 958, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var190)
 				if templ_7745c5c3_Err != nil {

@@ -928,10 +928,11 @@ templ sharedItemPage(it store.ItemWithFeed, d itemViewData) {
 }
 
 // markAllReadControl is the check-check button plus its confirmation dialog,
-// shown in the header of a feed page and an author page. It marks every unread
-// item in scope read; the dialog gates it because the action is not one-click
-// reversible. Only one control renders per page, so the dialog is reached
-// relative to the button rather than by a page-unique id.
+// shown in the author page header. Its action already carries the active
+// feed/tag filter, so it marks every unread item the list shows read; the dialog
+// gates it because the action is not one-click reversible. Only one control
+// renders per page, so the dialog is reached relative to the button rather than
+// by a page-unique id.
 templ markAllReadControl(d markAllReadData) {
 	if d.Action != "" {
 		<div class="mark-all-read">

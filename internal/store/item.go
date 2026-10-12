@@ -1430,6 +1430,69 @@ func (s *ItemStore) MarkAllRead(userID, feedID int64) error {
 	})
 }
 
+// MarkAllReadFiltered marks every unread item matching f read: the feed/author/
+// collection scope is matched by item membership, and each tag is an extra AND
+// predicate over item_categories. Only unread rows are touched, so an already-
+// read item's read_at (which orders the history list) is never re-stamped. It
+// returns how many rows were marked.
+func (s *ItemStore) MarkAllReadFiltered(userID int64, f ItemFilter) (int64, error) {
+	q, args := unreadFilteredQuery(userID, f, true)
+	res, err := s.db.ExecContext(context.Background(), q, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// CountUnreadFiltered counts unread items matching f (same predicates as
+// MarkAllReadFiltered).
+func (s *ItemStore) CountUnreadFiltered(userID int64, f ItemFilter) (int, error) {
+	q, args := unreadFilteredQuery(userID, f, false)
+	var n int
+	if err := s.db.QueryRowContext(context.Background(), q, args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+// unreadFilteredQuery builds the scoped "unread items matching f" statement. When
+// mark is true it is the UPDATE that marks them read; otherwise it is the COUNT.
+// The scope joins feeds so system-feed (saved page) items are excluded, matching
+// the streams; tags are AND-ed via item_categories.
+func unreadFilteredQuery(userID int64, f ItemFilter, mark bool) (string, []any) {
+	var b strings.Builder
+	var args []any
+	if mark {
+		b.WriteString(`UPDATE items SET read = 1, read_at = ? WHERE user_id = ? AND read = 0`)
+		args = append(args, ns(db.Now()), userID)
+	} else {
+		b.WriteString(`SELECT COUNT(*) FROM items WHERE user_id = ? AND read = 0`)
+		args = append(args, userID)
+	}
+	b.WriteString(` AND items.id IN (
+		SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
+		WHERE f.user_id = ? AND f.is_system = 0`)
+	args = append(args, userID)
+	if f.FeedID != 0 {
+		b.WriteString(" AND mf.feed_id = ?")
+		args = append(args, f.FeedID)
+	}
+	if f.AuthorID != 0 {
+		b.WriteString(" AND f.author_id = ?")
+		args = append(args, f.AuthorID)
+	}
+	if f.CollectionID != 0 {
+		b.WriteString(" AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?)")
+		args = append(args, f.CollectionID)
+	}
+	b.WriteString(")")
+	for _, tag := range f.Tags {
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = items.id AND ic.category = ?)")
+		args = append(args, tag)
+	}
+	return b.String(), args
+}
+
 // MarkAuthorRead marks every item read across all of an author's feeds.
 func (s *ItemStore) MarkAuthorRead(userID, authorID int64) error {
 	return s.q.MarkAuthorItemsRead(context.Background(), sqlcgen.MarkAuthorItemsReadParams{
