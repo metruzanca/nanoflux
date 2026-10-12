@@ -58,6 +58,22 @@ WHERE collection_feeds.collection_id = ?
   AND collection_feeds.collection_id IN (SELECT c.id FROM collections c WHERE c.user_id = ?)
   AND collection_feeds.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?);
 
+-- name: DeleteCollectionFeeds :exec
+DELETE FROM collection_feeds WHERE collection_id = ?;
+
+-- name: AddFeedsWithoutUserCollection :exec
+-- Add every non-system feed the user has that is not in any user-created
+-- (non-auto) collection to the given collection. Recomputes the synthetic
+-- "no-collection" so it always lists precisely the ungrouped feeds.
+INSERT OR IGNORE INTO collection_feeds (collection_id, feed_id)
+SELECT sqlc.arg('collectionID'), f.id
+FROM feeds f
+WHERE f.user_id = sqlc.arg('userID') AND f.is_system = 0
+  AND NOT EXISTS (
+    SELECT 1 FROM collection_feeds cf
+    JOIN collections c ON c.id = cf.collection_id
+    WHERE cf.feed_id = f.id AND c.user_id = sqlc.arg('userID') AND c.is_auto = 0);
+
 -- name: ListFeedsInCollection :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
        f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at

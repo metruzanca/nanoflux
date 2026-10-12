@@ -86,6 +86,9 @@ templ CollectionRow(c store.CollectionWithCounts) {
 			<div class="item-meta">
 				{ c.FeedCount } feeds · { c.Unread } unread
 			</div>
+			if c.IsNoCollection() {
+				<p class="muted small">feeds you have not added to any collection.</p>
+			}
 		</div>
 	</li>
 }
@@ -103,7 +106,9 @@ templ collectionPage(u store.User, d collectionData) {
 			}
 		</div>
 	</div>
-	if d.Collection.IsAuto {
+	if d.Collection.IsNoCollection() {
+		<p class="muted small">feeds you have not added to a collection of your own. Add one to a collection to move it out of here.</p>
+	} else if d.Collection.IsAuto {
 		<p class="muted small">auto collections are created from a feed's site and update automatically. Use edit to see every feed in this collection.</p>
 	}
 	@ScopedItems(d.Scoped)

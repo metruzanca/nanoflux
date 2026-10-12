@@ -2223,6 +2223,39 @@ func TestCollectionsIndexSectionsAndOrder(t *testing.T) {
 	}
 }
 
+// TestNoCollection covers the synthetic auto collection that lists the feeds a
+// user has not put in any collection of their own.
+func TestNoCollection(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
+	f1, _ := s.store.Feeds.Create(u.ID, a.ID, "Grouped", "https://one.dev/rss", "", "", 900)
+	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Orphan", "https://two.dev/rss", "", "", 900)
+	dev, _ := s.store.Collections.Create(u.ID, "dev")
+	s.store.Collections.AddFeed(u.ID, dev.ID, f1.ID)
+
+	// The index shows a no-collection card counting the one ungrouped feed.
+	body := doGet(h, "/collections", cookie).Body.String()
+	if !strings.Contains(body, "no-collection") || !strings.Contains(body, "1 feeds · 0 unread") {
+		t.Fatalf("no-collection card missing: %s", body)
+	}
+
+	// Its feeds tab lists the orphan feed, not the grouped one.
+	nc, _ := s.store.Collections.EnsureNoCollection(u.ID)
+	page := doGet(h, "/collections/"+itoa(nc.ID)+"?view=feeds", cookie).Body.String()
+	if !strings.Contains(page, "Orphan") || strings.Contains(page, "Grouped") {
+		t.Fatalf("no-collection feeds tab wrong feeds: %s", page)
+	}
+
+	// Grouping the orphan removes it from no-collection on the next render.
+	s.store.Collections.AddFeed(u.ID, dev.ID, f2.ID)
+	body = doGet(h, "/collections", cookie).Body.String()
+	if !strings.Contains(body, "0 feeds · 0 unread") {
+		t.Fatalf("no-collection should be empty after grouping both feeds: %s", body)
+	}
+}
+
 func TestAuthorEditHasAvatarFields(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
