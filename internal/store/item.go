@@ -578,6 +578,37 @@ LIMIT ?7`
 	return out, hasMore, nil
 }
 
+// ListReadHistory returns a page of the user's read items, most recently read
+// first (read_at desc, id desc), for the history page. Offset-paged, since
+// read_at is not unique.
+func (s *ItemStore) ListReadHistory(userID int64, offset, limit int) ([]ItemWithFeed, bool, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	rows, err := s.q.ListItemsReadHistory(context.Background(), sqlcgen.ListItemsReadHistoryParams{
+		UserID: userID,
+		Limit:  int64(limit) + 1,
+		Offset: int64(offset),
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	out := make([]ItemWithFeed, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
+			r.ImageUrl, r.ImageCacheKey, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
+			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
+	}
+	if err := s.attachSources(userID, out); err != nil {
+		return nil, false, err
+	}
+	return out, hasMore, nil
+}
+
 // itemListColumns is the shared SELECT list for the item list queries (the
 // generated ListItems* and the hand-written tagged variant), so both scan the
 // same sqlcgen.ListItemsRow shape.

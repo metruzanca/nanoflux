@@ -1494,6 +1494,104 @@ func (q *Queries) ListItemsMagic(ctx context.Context, arg ListItemsMagicParams) 
 	return items, nil
 }
 
+const listItemsReadHistory = `-- name: ListItemsReadHistory :many
+SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
+       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
+       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
+       f.is_system AS feed_is_system,
+       a.id AS author_id, a.name AS author_name
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+WHERE i.user_id = ?1
+  AND i.read = 1
+  AND f.is_system = 0
+ORDER BY i.read_at DESC, i.id DESC
+LIMIT ?3 OFFSET ?2
+`
+
+type ListItemsReadHistoryParams struct {
+	UserID int64 `json:"userID"`
+	Offset int64 `json:"offset"`
+	Limit  int64 `json:"limit"`
+}
+
+type ListItemsReadHistoryRow struct {
+	ID            int64          `json:"id"`
+	FeedID        int64          `json:"feed_id"`
+	Guid          string         `json:"guid"`
+	Title         string         `json:"title"`
+	Link          string         `json:"link"`
+	Summary       string         `json:"summary"`
+	Categories    string         `json:"categories"`
+	ImageUrl      sql.NullString `json:"image_url"`
+	ImageCacheKey sql.NullString `json:"image_cache_key"`
+	DurationSec   sql.NullInt64  `json:"duration_sec"`
+	PublishedAt   sql.NullString `json:"published_at"`
+	FetchedAt     string         `json:"fetched_at"`
+	Read          bool           `json:"read"`
+	Favorite      bool           `json:"favorite"`
+	Bookmark      bool           `json:"bookmark"`
+	ReadAt        sql.NullString `json:"read_at"`
+	FeedTitle     string         `json:"feed_title"`
+	FeedUrl       string         `json:"feed_url"`
+	FeedHomeUrl   sql.NullString `json:"feed_home_url"`
+	FeedIsSystem  int64          `json:"feed_is_system"`
+	AuthorID      sql.NullInt64  `json:"author_id"`
+	AuthorName    sql.NullString `json:"author_name"`
+}
+
+// The history page: the user's read items ordered by when they were read (most
+// recently read first). Offset-paged (read_at is not unique, so a keyset cursor
+// would need two values). read_at is NULL only for a read row written by an
+// older build; those sort last. Saved pages (system feed) are excluded, like the
+// other streams.
+func (q *Queries) ListItemsReadHistory(ctx context.Context, arg ListItemsReadHistoryParams) ([]ListItemsReadHistoryRow, error) {
+	rows, err := q.db.QueryContext(ctx, listItemsReadHistory, arg.UserID, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListItemsReadHistoryRow
+	for rows.Next() {
+		var i ListItemsReadHistoryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FeedID,
+			&i.Guid,
+			&i.Title,
+			&i.Link,
+			&i.Summary,
+			&i.Categories,
+			&i.ImageUrl,
+			&i.ImageCacheKey,
+			&i.DurationSec,
+			&i.PublishedAt,
+			&i.FetchedAt,
+			&i.Read,
+			&i.Favorite,
+			&i.Bookmark,
+			&i.ReadAt,
+			&i.FeedTitle,
+			&i.FeedUrl,
+			&i.FeedHomeUrl,
+			&i.FeedIsSystem,
+			&i.AuthorID,
+			&i.AuthorName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listItemsWithCategories = `-- name: ListItemsWithCategories :many
 SELECT id, categories FROM items
 WHERE categories <> ''

@@ -771,6 +771,10 @@ func TestReadPage(t *testing.T) {
 	if !strings.Contains(body, `class="read-at"`) {
 		t.Fatalf("read page missing read-at timestamp: %s", body)
 	}
+	// The history page has no sort control: its order is fixed to read_at.
+	if strings.Contains(body, `data-picker="sort"`) {
+		t.Fatalf("history page should not offer a sort control: %s", body)
+	}
 	if body := doGet(h, "/", cookie).Body.String(); strings.Contains(body, `data-item-link="https://b.dev/1"`) {
 		t.Fatal("unread page should not show read item")
 	}

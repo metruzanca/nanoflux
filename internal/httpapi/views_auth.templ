@@ -80,7 +80,6 @@ templ readPage(d readData) {
 	<div class="row">
 		<h1>history ({ d.ReadCount })</h1>
 		<div class="row-actions">
-			@SimpleSortControl("/read", d.Sort)
 			@DisplayModeControl("/read", d.Mode)
 			if d.ReadCount > 0 {
 				<button hx-post="/items/unread-all" hx-target="#items-section" hx-swap="outerHTML">mark all unread</button>

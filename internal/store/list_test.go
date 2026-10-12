@@ -597,6 +597,58 @@ func TestMergeCrossFeedDuplicates(t *testing.T) {
 	}
 }
 
+// TestListReadHistory asserts the history list is ordered by when items were
+// read (most recent first), not by post time, and that un-reading drops an item.
+func TestListReadHistory(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "A", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "B", "https://b.dev/rss", "", "", 900)
+
+	ids := map[string]int64{}
+	for _, g := range []string{"a", "b", "c"} {
+		if _, err := s.Items.Upsert(f.ID, Item{GUID: g, Title: g, Link: "https://b.dev/" + g, FetchedAt: db.Now()}); err != nil {
+			t.Fatal(err)
+		}
+		id, _ := s.Items.ByFeedIdentity(f.ID, g)
+		if err := s.Items.SetRead(u.ID, id, true); err != nil {
+			t.Fatal(err)
+		}
+		ids[g] = id
+	}
+	// Give each a distinct read time: b first, then a, then c (newest).
+	for g, ts := range map[string]string{
+		"b": "2026-01-01 00:00:00", "a": "2026-01-02 00:00:00", "c": "2026-01-03 00:00:00",
+	} {
+		if _, err := s.db.Exec(`UPDATE items SET read_at = ? WHERE id = ?`, ts, ids[g]); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, more, err := s.Items.ListReadHistory(u.ID, 0, 10)
+	if err != nil || more {
+		t.Fatalf("ListReadHistory: %v more=%v", err, more)
+	}
+	var order []string
+	for _, it := range got {
+		order = append(order, it.GUID)
+	}
+	if len(order) != 3 || order[0] != "c" || order[1] != "a" || order[2] != "b" {
+		t.Fatalf("history order = %v, want [c a b]", order)
+	}
+
+	// Un-reading removes the item from history.
+	if err := s.Items.SetRead(u.ID, ids["a"], false); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ = s.Items.ListReadHistory(u.ID, 0, 10)
+	for _, it := range got {
+		if it.GUID == "a" {
+			t.Fatalf("un-read item still in history: %v", got)
+		}
+	}
+}
+
 // DeduplicateItems merges same-feed/same-link/same-time duplicates, keeps the
 // newest-fetched row and carries over read/favorite state.
 func TestDeduplicateItems(t *testing.T) {
