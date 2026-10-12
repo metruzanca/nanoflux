@@ -344,6 +344,49 @@ func TestFeedListMarksErrors(t *testing.T) {
 	}
 }
 
+func TestFeedRefetchDryRun(t *testing.T) {
+	h := newCLI(t)
+	u := createUser(t, h.st, "alice")
+	a, _ := h.st.Authors.Create(u.ID, "Example", "", "")
+	f, err := h.st.Feeds.Create(u.ID, a.ID, "YT", "https://youtube.com/feeds/videos.xml?channel_id=UCx", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.st.Feeds.SetPollMeta(f.ID, "", "", db.Now(), "get https://youtube.com: status 400"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.st.Feeds.Create(u.ID, a.ID, "Healthy", "https://example.com/feed.xml", "", "", 900); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.exec(t, "feed", "refetch", "--dry-run"); err != nil {
+		t.Fatal(err)
+	}
+	out := h.stdout.String()
+	if !strings.Contains(out, "1 feed(s) to refetch") || !strings.Contains(out, "YT") {
+		t.Fatalf("dry-run output: %q", out)
+	}
+	if strings.Contains(out, "Healthy") {
+		t.Fatalf("dry-run should only list the 400 feed: %q", out)
+	}
+}
+
+func TestErrorFeeds(t *testing.T) {
+	feeds := []store.FeedWithOwner{
+		{Feed: store.Feed{ID: 1, Title: "a", LastError: "get https://youtube.com: status 400", Enabled: true}},
+		{Feed: store.Feed{ID: 2, Title: "b", LastError: "timeout", Enabled: true}},
+		{Feed: store.Feed{ID: 3, Title: "c", LastError: "get https://x: status 400", Enabled: false}},
+		{Feed: store.Feed{ID: 4, Title: "d", LastError: "", Enabled: true}},
+	}
+	got := errorFeeds(feeds, "status 400")
+	if len(got) != 1 || got[0].ID != 1 {
+		t.Fatalf("errorFeeds = %+v, want only feed 1", got)
+	}
+	if all := errorFeeds(feeds, ""); len(all) != 2 {
+		t.Fatalf("empty needle = %d feeds, want 2 (the enabled errored ones)", len(all))
+	}
+}
+
 func TestBackupRestoreRoundtrip(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "data", "rss.db")
