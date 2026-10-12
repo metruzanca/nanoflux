@@ -136,7 +136,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /feeds/{id}/edit", s.auth.Require(http.HandlerFunc(s.feedUpdate)))
 	mux.Handle("POST /feeds/{id}/delete", s.auth.Require(http.HandlerFunc(s.feedDelete)))
 	mux.Handle("POST /feeds/{id}/refresh", s.auth.Require(http.HandlerFunc(s.feedRefresh)))
-	mux.Handle("POST /feeds/{id}/read-all", s.auth.Require(http.HandlerFunc(s.feedReadAll)))
 	mux.Handle("POST /feeds/{id}/older", s.auth.Require(http.HandlerFunc(s.feedOlder)))
 	mux.Handle("POST /feeds/{id}/toggle", s.auth.Require(http.HandlerFunc(s.feedToggle)))
 	mux.Handle("POST /feeds/{id}/rank", s.auth.Require(http.HandlerFunc(s.feedRank)))

@@ -441,27 +441,6 @@ func (s *Server) itemsReadAll(w http.ResponseWriter, r *http.Request) {
 	s.renderItemsList(w, r, u.ID, u.Timezone)
 }
 
-// feedReadAll marks every item in one feed read ("mark all as read" on the feed
-// page). The client reloads the page on success.
-func (s *Server) feedReadAll(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if _, err := s.store.Feeds.ByID(u.ID, id); err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if err := s.store.Items.MarkAllRead(u.ID, id); err != nil {
-		log.Error("mark feed read", "feed_id", id, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // authorReadAll marks every item across all of an author's feeds read ("mark all
 // as read" on the author page). The client reloads the page on success.
 func (s *Server) authorReadAll(w http.ResponseWriter, r *http.Request) {
@@ -475,12 +454,33 @@ func (s *Server) authorReadAll(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.Items.MarkAuthorRead(u.ID, id); err != nil {
+	// The author page's mark-all honors the active feed/tag filter, so a click
+	// marks exactly the items the filtered list shows (unread ones).
+	feedID := s.authorFeedFilter(u.ID, id, r)
+	tags := tagParams(r)
+	if _, err := s.store.Items.MarkAllReadFiltered(u.ID, store.ItemFilter{AuthorID: id, FeedID: feedID, Tags: tags}); err != nil {
 		log.Error("mark author read", "author_id", id, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// authorReadAllURL is the author mark-all action, carrying the active feed/tag
+// filter (as query params the POST re-reads) so it marks the shown items only.
+func authorReadAllURL(authorID, feedID int64, tags []string) string {
+	action := "/authors/" + strconv.FormatInt(authorID, 10) + "/read-all"
+	q := url.Values{}
+	if feedID != 0 {
+		q.Set("feed", strconv.FormatInt(feedID, 10))
+	}
+	for _, t := range tags {
+		q.Add("tags", t)
+	}
+	if len(q) > 0 {
+		action += "?" + q.Encode()
+	}
+	return action
 }
 
 // readPage is the history page: the user's read items, most recently read
@@ -1917,7 +1917,8 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 	}
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, id)
 	feedID := s.authorFeedFilter(u.ID, id, r)
-	scoped := s.authorScopedItems(u.ID, id, feedID, authorView(r), itemSortOf(r), u.Timezone, tagParams(r))
+	tags := tagParams(r)
+	scoped := s.authorScopedItems(u.ID, id, feedID, authorView(r), itemSortOf(r), u.Timezone, tags)
 	stats, _ := s.store.Items.StatsAuthor(u.ID, id)
 	frequency := ""
 	if times, err := s.store.Items.AuthorRecentTimes(u.ID, id, 30); err == nil {
@@ -1925,16 +1926,10 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 			frequency = web.PostFrequency(gap)
 		}
 	}
-	// The header's "mark all read" scopes to the whole author. With a single-feed
-	// filter active it is omitted: the feed's own card carries the feed-scoped
-	// control, so the header would just duplicate it.
-	markAll := markAllReadData{
-		Action: "/authors/" + strconv.FormatInt(id, 10) + "/read-all",
-		Unread: stats.Unread,
-	}
-	if feedID != 0 {
-		markAll = markAllReadData{}
-	}
+	// The header's "mark all read" is always shown and honors the active
+	// feed/tag filter, so it marks exactly the unread items the list shows.
+	unread, _ := s.store.Items.CountUnreadFiltered(u.ID, store.ItemFilter{AuthorID: id, FeedID: feedID, Tags: tags})
+	markAll := markAllReadData{Action: authorReadAllURL(id, feedID, tags), Unread: unread}
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
 		Author: a, Rows: rows, Links: links, Scoped: scoped, Collections: authorCollections(rows),
 		Stats: stats, Frequency: frequency, Timezone: u.Timezone,

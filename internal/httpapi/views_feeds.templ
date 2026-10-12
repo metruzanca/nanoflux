@@ -16,12 +16,12 @@ templ FeedsList(rows []feedRow) {
 	</ul>
 }
 
-// FeedRow is one of an author's feeds as a card. It carries everything that used
-// to live on the feed's own page (which was folded into the author page): the
-// link to the feed's scoped item list, the refresh and mark-all-read actions,
-// the "load older items" control, the external feed/home link, the last-polled
+// FeedRow is one of an author's feeds as a card: the link to the feed's scoped
+// item list, the refresh action, the external feed/home link, the last-polled
 // line and the cached-media stat. It is the htmx swap target for the add /
-// refresh / toggle fragments, which re-render a single row.
+// refresh / toggle fragments, which re-render a single row. Editing a feed and
+// marking it read live on the author edit page / the author card's filter-aware
+// mark-all, not here.
 templ FeedRow(r feedRow) {
 	{{ id := strconv.FormatInt(r.ID, 10) }}
 	{{ authorID := strconv.FormatInt(r.AuthorID, 10) }}
@@ -83,8 +83,6 @@ templ FeedRow(r feedRow) {
 							disabled
 						}
 					>@web.Lucide("refresh-cw")</button>
-					@markAllReadControl(markAllReadData{Action: "/feeds/" + id + "/read-all", Unread: r.Unread})
-					<a class="small" title="edit feed" href={ templ.URL("/authors/" + authorID + "/edit?feed=" + id) }>@web.EditIcon()</a>
 				</div>
 				if len(r.Collections) > 0 {
 					<div class="feed-collections">

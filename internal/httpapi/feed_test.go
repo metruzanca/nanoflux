@@ -297,46 +297,51 @@ func TestFeedRefreshRespectsBackoff(t *testing.T) {
 	}
 }
 
-// TestMarkAllReadControls covers the feed- and author-page "mark all as read"
-// controls: the button renders with the scope's unread count, its confirmation
-// dialog is present, and the POST endpoints clear the scope.
+// TestMarkAllReadControls covers the author-page mark-all-read control: it is
+// always shown, honors the active feed/tag filter (naming and marking only the
+// items that filter shows), and its POST endpoints clear the scope.
 func TestMarkAllReadControls(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
 	f1, _ := s.store.Feeds.Create(u.ID, a.ID, "One", "https://one.dev/feed.xml", "", "", 900)
+	f3, _ := s.store.Feeds.Create(u.ID, a.ID, "Three", "https://three.dev/feed.xml", "", "", 900)
 	a2, _ := s.store.Authors.Create(u.ID, "Other", "", "")
 	f2, _ := s.store.Feeds.Create(u.ID, a2.ID, "Two", "https://two.dev/feed.xml", "", "", 900)
 	for _, f := range []struct {
 		id   int64
 		guid string
-	}{{f1.ID, "a1"}, {f1.ID, "a2"}, {f2.ID, "b1"}} {
-		if _, err := s.store.Items.Upsert(f.id, store.Item{GUID: f.guid, Title: f.guid, Link: "https://x/" + f.guid, FetchedAt: db.Now()}); err != nil {
+		cats []string
+	}{
+		{f1.ID, "a1", []string{"r/golang"}},
+		{f1.ID, "a2", []string{"r/rust"}},
+		{f3.ID, "a3", []string{"r/rust"}},
+		{f2.ID, "b1", []string{"r/golang"}},
+	} {
+		if _, err := s.store.Items.Upsert(f.id, store.Item{GUID: f.guid, Title: f.guid, Link: "https://x/" + f.guid, Categories: f.cats, FetchedAt: db.Now()}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	// The feed's card on the author page shows the button and dialog naming its
-	// 2 unread items.
-	body := doGet(h, "/authors/"+itoa(a.ID)+"?feed="+itoa(f1.ID), cookie).Body.String()
-	if !strings.Contains(body, `title="mark all 2 items as read"`) {
-		t.Fatalf("author feed card missing mark-all-read button: %s", body)
-	}
-	if !strings.Contains(body, "mark 2 items as read?") {
-		t.Fatalf("author feed card dialog should name 2 items: %s", body)
-	}
-	if !strings.Contains(body, `hx-post="/feeds/`+itoa(f1.ID)+`/read-all"`) {
-		t.Fatalf("author feed card missing read-all action: %s", body)
+	// No filter: the header names all of the author's unread.
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if !strings.Contains(body, `hx-post="/authors/`+itoa(a.ID)+`/read-all"`) ||
+		!strings.Contains(body, "mark 3 items as read?") {
+		t.Fatalf("author mark-all should name 3 items: %s", body)
 	}
 
-	// An author page with unread items names them in its own dialog.
-	body = doGet(h, "/authors/"+itoa(a2.ID), cookie).Body.String()
-	if !strings.Contains(body, `hx-post="/authors/`+itoa(a2.ID)+`/read-all"`) {
-		t.Fatalf("author page should render the action: %s", body)
+	// Feed filter: still shown, scoped to that feed.
+	body = doGet(h, "/authors/"+itoa(a.ID)+"?feed="+itoa(f1.ID), cookie).Body.String()
+	if !strings.Contains(body, `hx-post="/authors/`+itoa(a.ID)+`/read-all?feed=`+itoa(f1.ID)+`"`) ||
+		!strings.Contains(body, "mark 2 items as read?") {
+		t.Fatalf("feed-filtered mark-all should scope to the feed: %s", body)
 	}
-	if !strings.Contains(body, "mark 1 items as read?") {
-		t.Fatalf("author page dialog should name its 1 unread item: %s", body)
+
+	// Tag filter: carries the tags and counts only the tagged unread.
+	body = doGet(h, "/authors/"+itoa(a.ID)+"?tags=r%2Fgolang", cookie).Body.String()
+	if !strings.Contains(body, "tags=r%2Fgolang") || !strings.Contains(body, "mark 1 items as read?") {
+		t.Fatalf("tag-filtered mark-all should count only tagged unread: %s", body)
 	}
 
 	// An author with nothing unread renders the button disabled and no dialog.
@@ -349,18 +354,26 @@ func TestMarkAllReadControls(t *testing.T) {
 		t.Fatalf("empty author should not render a confirmation dialog: %s", body)
 	}
 
-	// POST the feed scope: only that feed's items are marked read.
-	if rr := doForm(h, "POST", "/feeds/"+itoa(f1.ID)+"/read-all", nil, cookie); rr.Code != http.StatusNoContent {
-		t.Fatalf("feed read-all: %d %s", rr.Code, rr.Body.String())
+	// POST the tag filter: only the author's tagged item is marked (2 left).
+	if rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/read-all?tags=r%2Fgolang", nil, cookie); rr.Code != http.StatusNoContent {
+		t.Fatalf("tag-filtered read-all: %d %s", rr.Code, rr.Body.String())
 	}
-	if n, _ := s.store.Items.CountUnread(u.ID, f1.ID); n != 0 {
-		t.Fatalf("feed unread = %d, want 0", n)
+	if n, _ := s.store.Items.CountUnreadAuthor(u.ID, a.ID); n != 2 {
+		t.Fatalf("author unread = %d, want 2 (only tagged marked)", n)
+	}
+
+	// POST the feed filter: only that feed's remaining item is marked (1 left).
+	if rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/read-all?feed="+itoa(f1.ID), nil, cookie); rr.Code != http.StatusNoContent {
+		t.Fatalf("feed-filtered read-all: %d %s", rr.Code, rr.Body.String())
+	}
+	if n, _ := s.store.Items.CountUnreadAuthor(u.ID, a.ID); n != 1 {
+		t.Fatalf("author unread = %d, want 1", n)
 	}
 	if n, _ := s.store.Items.CountUnread(u.ID, f2.ID); n != 1 {
 		t.Fatalf("other feed unread = %d, want 1 (untouched)", n)
 	}
 
-	// POST the author scope clears the other author's feed too.
+	// POST the whole author scope clears the other author's feed too.
 	if rr := doForm(h, "POST", "/authors/"+itoa(a2.ID)+"/read-all", nil, cookie); rr.Code != http.StatusNoContent {
 		t.Fatalf("author read-all: %d %s", rr.Code, rr.Body.String())
 	}
@@ -369,7 +382,7 @@ func TestMarkAllReadControls(t *testing.T) {
 	}
 }
 
-// A missing feed/author id is a 404, and read-all never crosses users.
+// A missing author id is a 404, and read-all never crosses users.
 func TestMarkAllReadScoping(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
@@ -378,9 +391,6 @@ func TestMarkAllReadScoping(t *testing.T) {
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "One", "https://one.dev/feed.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "g", Link: "https://x/g", FetchedAt: db.Now()})
 
-	if rr := doForm(h, "POST", "/feeds/999999/read-all", nil, cookie); rr.Code != http.StatusNotFound {
-		t.Fatalf("unknown feed read-all = %d, want 404", rr.Code)
-	}
 	if rr := doForm(h, "POST", "/authors/999999/read-all", nil, cookie); rr.Code != http.StatusNotFound {
 		t.Fatalf("unknown author read-all = %d, want 404", rr.Code)
 	}
