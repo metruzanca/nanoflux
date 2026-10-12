@@ -251,6 +251,42 @@ func TestFeedRefreshUpdatesRow(t *testing.T) {
 	}
 }
 
+// TestFeedRefreshUpdatesAuthorList asserts that a refresh which stores new posts
+// also out-of-band replaces the author page's item list, so the new posts appear
+// without a reload. The list is rebuilt from htmx's HX-Current-URL, preserving
+// the page's state.
+func TestFeedRefreshUpdatesAuthorList(t *testing.T) {
+	s, h := newTestServer(t)
+	s.SetPoller(poller.New(s.store, time.Minute, 1))
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>Blog</title><item><guid>g1</guid><title>Fresh one</title><link>https://b.dev/1</link></item></channel></rss>`)
+	}))
+	defer srv.Close()
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
+
+	req := httptest.NewRequest("POST", "/feeds/"+itoa(f.ID)+"/refresh", strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	req.Header.Set("X-CSRF-Token", csrfToken(cookie.Value))
+	req.Header.Set("HX-Current-URL", "http://example.com/authors/"+itoa(a.ID))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("refresh: %d %s", rr.Code, rr.Body.String())
+	}
+	out := rr.Body.String()
+	if !strings.Contains(out, `id="scoped-items" hx-swap-oob="outerHTML"`) {
+		t.Fatalf("refresh with new items on the author page should OOB-update its item list: %s", out)
+	}
+	if !strings.Contains(out, "Fresh one") {
+		t.Fatalf("author item list should show the new post: %s", out)
+	}
+}
+
 // TestFeedRefreshRespectsBackoff asserts that a manual refresh during a
 // rate-limit backoff does not fetch (so it can't hammer the host) and the row
 // shows the retry deadline with the refresh button disabled.
