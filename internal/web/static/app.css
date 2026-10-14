@@ -32,6 +32,10 @@ body {
   background: var(--bg);
   color: var(--fg);
   line-height: 1.5;
+  /* User-supplied names and titles must wrap, not force horizontal scroll.
+     anywhere (not break-word) also lowers min-content, so a flex/grid text
+     child can shrink below an unbroken word instead of widening its row. */
+  overflow-wrap: anywhere;
 }
 
 a { color: var(--accent); text-decoration: none; }
