@@ -70,10 +70,7 @@ templ feedPluginPanel(d feedPanelData) {
 		}
 		<p class="muted small">sync the feed title to the remote service. to remove the feed there too, use the delete form above.</p>
 		<div class="row-actions">
-			<form hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/plugin-admin" } hx-target={ "#feed-plugin-panel-" + strconv.FormatInt(d.FeedID, 10) } hx-swap="outerHTML">
-				<input type="hidden" name="action" value="save"/>
-				<button type="submit" class="small">sync title</button>
-			</form>
+			<button type="button" class="small" hx-post={ "/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/plugin-admin" } hx-params="action" hx-vals='{"action":"save"}' hx-target={ "#feed-plugin-panel-" + strconv.FormatInt(d.FeedID, 10) } hx-swap="outerHTML">sync title</button>
 		</div>
 	</section>
 }

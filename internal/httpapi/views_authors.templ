@@ -83,64 +83,74 @@ templ AuthorRow(r authorRow) {
 	</li>
 }
 
+// authorEditPage is one form: the author's own fields and every feed's settings
+// are submitted together, so a user can change several feeds (or the author and
+// a feed) and save them in one request. Collapsed feed panels load their fields
+// on demand (see the accordion below) and only a loaded panel is part of the
+// submission; feedFieldPrefix namespaces each feed's fields, and each panel
+// carries a hidden feed_ids marker so the handler knows what it received. Feed
+// deletion is a formaction button within this form; the author's own delete form
+// stays a separate form after it.
 templ authorEditPage(u store.User, d authorsData) {
-	<section class="card">
-		<div class="row">
-			<h1>edit author</h1>
-			<a class="button small" href={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) }>back to author</a>
-		</div>
-		<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
-			@csrfField()
+	<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
+		@csrfField()
+		<section class="card">
+			<div class="row">
+				<h1>edit author</h1>
+				<a class="button small" href={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) }>back to author</a>
+			</div>
 			@authorAvatarFields(d.AvatarCard)
 			@authorFields(d)
 			@authorLinkFields(d)
-			<button type="submit">save</button>
-		</form>
-		<form class="stack delete-form" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this author and their feeds?">
-			@csrfField()
-			<button type="submit" class="danger">delete</button>
-		</form>
-	</section>
-	if len(d.Feeds) > 0 {
-		<div class="author-feeds">
-			<h2>feeds</h2>
-			// Each feed is an accordion panel; its settings load into the body
-			// the first time it is opened (or inline when ?feed= selected it),
-			// so an author with many feeds does not render every form at once.
-			<div class="feed-accordion">
-				for _, r := range d.Feeds {
-					{{ id := strconv.FormatInt(r.ID, 10) }}
-					{{ selected := d.Editor != nil && d.Editor.Form.ID == r.ID }}
-					<details class="feed-accordion-item" name="author-feeds" id={ "feed-acc-" + id } if selected { open }>
-						<summary>
-							@web.SourceIcon(feedIconURL(r.Feed))
-							<span class="feed-accordion-title">{ r.Title }</span>
-							if !r.Enabled {
-								if r.DisabledReason != "" {
-									<span class="badge danger" title={ r.DisabledReason }>disabled</span>
-								} else {
-									<span class="badge">paused</span>
+		</section>
+		if len(d.Feeds) > 0 {
+			<div class="author-feeds">
+				<h2>feeds</h2>
+				// Each feed is an accordion panel; its settings load into the body
+				// the first time it is opened (or inline when ?feed= selected it),
+				// so an author with many feeds does not render every form at once.
+				<div class="feed-accordion">
+					for _, r := range d.Feeds {
+						{{ id := strconv.FormatInt(r.ID, 10) }}
+						{{ selected := d.Editor != nil && d.Editor.Form.ID == r.ID }}
+						<details class="feed-accordion-item" name="author-feeds" id={ "feed-acc-" + id } if selected { open }>
+							<summary>
+								@web.SourceIcon(feedIconURL(r.Feed))
+								<span class="feed-accordion-title">{ r.Title }</span>
+								if !r.Enabled {
+									if r.DisabledReason != "" {
+										<span class="badge danger" title={ r.DisabledReason }>disabled</span>
+									} else {
+										<span class="badge">paused</span>
+									}
 								}
+								if r.LastError != "" {
+									<span class="badge danger" title={ r.LastError }>last poll failed</span>
+								}
+								if r.Cooling() {
+									<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited</span>
+								}
+							</summary>
+							if selected {
+								<div class="feed-accordion-body">@feedEditorBody(*d.Editor)</div>
+							} else {
+								<div class="feed-accordion-body" hx-get={ "/feeds/" + id + "/edit-fragment" } hx-trigger="toggle from:closest details once" hx-swap="innerHTML">
+									<p class="muted small">loading…</p>
+								</div>
 							}
-							if r.LastError != "" {
-								<span class="badge danger" title={ r.LastError }>last poll failed</span>
-							}
-							if r.Cooling() {
-								<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited</span>
-							}
-						</summary>
-						if selected {
-							<div class="feed-accordion-body">@feedEditorBody(*d.Editor)</div>
-						} else {
-							<div class="feed-accordion-body" hx-get={ "/feeds/" + id + "/edit-fragment" } hx-trigger="toggle from:closest details once" hx-swap="innerHTML">
-								<p class="muted small">loading…</p>
-							</div>
-						}
-					</details>
-				}
+						</details>
+					}
+				</div>
 			</div>
+		}
+		<div class="form-save-bar">
+			<button type="submit">save author and feeds</button>
 		</div>
-	}
+	</form>
+	<form class="stack delete-form" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this author and their feeds?">
+		@csrfField()
+		<button type="submit" class="danger">delete</button>
+	</form>
 }
 
 // authorAvatarFields renders the avatar section at the top of the edit form:
@@ -152,7 +162,7 @@ templ authorAvatarFields(d authorAvatarCardData) {
 	<div class="avatar-edit">
 		@authorAvatarCard(d)
 		<input class="avatar-edit-url" name="avatar_url" type="url" value={ d.AvatarURL } placeholder="avatar url" aria-label="avatar url"/>
-		<button type="button" class="link" title="re-fetch the avatar from its url" hx-post={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar-refresh" } hx-target="#author-avatar-card" hx-swap="outerHTML">refetch avatar</button>
+		<button type="button" class="link" title="re-fetch the avatar from its url" hx-post={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar-refresh" } hx-params="none" hx-target="#author-avatar-card" hx-swap="outerHTML">refetch avatar</button>
 	</div>
 }
 

@@ -196,11 +196,16 @@ templ noFeedFound(d noFeedFoundData) {
 	</div>
 }
 
-// feedEditorBody is the feed edit form on its own: the fields + save form, the
-// delete form, the plugin panel, and a plugin docs link. It is what the author
-// edit page's feed accordion loads into each panel (lazily via
-// /feeds/{id}/edit-fragment), so it carries no card chrome or title.
+// feedEditorBody is one feed's settings as fields, with no <form> of its own:
+// it is what the author edit page's feed accordion loads into each panel
+// (lazily via /feeds/{id}/edit-fragment), and that page submits every panel in
+// one form. Its fields are namespaced with feedFieldPrefix so several feeds can
+// share the form. The hidden feed_ids marker is what tells the combined handler
+// which feeds this submission actually carries.
 templ feedEditorBody(d feedsData) {
+	{{ id := strconv.FormatInt(d.Form.ID, 10) }}
+	{{ p := feedFieldPrefix(d.Form.ID) }}
+	<input type="hidden" name="feed_ids" value={ id }/>
 	if d.DocsPlugin != "" {
 		<div class="row">
 			<button type="button" class="link" data-plugin={ d.DocsPlugin } title="read this feed's plugin documentation" data-plugin-docs>plugin docs</button>
@@ -217,69 +222,66 @@ templ feedEditorBody(d feedsData) {
 					<span class="muted small">last polled { web.TimeFmt(d.Timezone, d.LastPolledAt) }</span>
 				}
 				if d.Form.Enabled {
-					<button type="button" class="link" title="retry the fetch now" hx-post={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/refresh" } hx-swap="none" data-reload-on-success>refresh now</button>
+					<button type="button" class="link" title="retry the fetch now" hx-post={ "/feeds/" + id + "/refresh" } hx-params="none" hx-swap="none" data-reload-on-success>refresh now</button>
 				}
 			</div>
 			<p class="feed-error-msg">{ d.LastError }</p>
 		</div>
 	}
-	<form class="stack" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
-		@csrfField()
-		@feedFields(d)
-		<button type="submit">save</button>
-	</form>
+	@feedFields(d, p)
 	@feedHistoryCard(feedHistoryData{
 		FeedID: d.Form.ID, Unread: d.Stats.Unread, Read: d.Stats.Read,
 		OldestAt: d.Stats.FirstAt, Timezone: d.Timezone, NextPageURL: d.NextPageURL,
 	})
-	<form class="stack delete-form" method="post" action={ "/feeds/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this feed?">
-		@csrfField()
+	<div class="stack delete-form">
 		if d.Panel != nil {
 			<label class="check">
-				<input type="checkbox" name="delete_remote" value="1"/>
+				<input type="checkbox" name={ "delete_remote_" + id } value="1"/>
 				also delete it on the remote service
 			</label>
 		}
-		<button type="submit" class="danger">delete</button>
-	</form>
+		<button type="submit" class="danger" formaction={ "/feeds/" + id + "/delete" } data-confirm="delete this feed?">delete</button>
+	</div>
 	if d.Panel != nil {
 		@feedPluginPanel(*d.Panel)
 	}
 }
 
 // feedFields is a feed's editable settings, grouped by concern: how nanoflux
-// fetches the feed, and how the feed is presented in the app.
-templ feedFields(d feedsData) {
+// fetches the feed, and how the feed is presented in the app. p is the field
+// name prefix (feedFieldPrefix) so the combined author edit form can carry
+// several feeds' settings at once; the standalone feed form passes "".
+templ feedFields(d feedsData, p string) {
 	{{ cacheHelp := "download this feed's images into nanoflux so they keep working if the site's image links expire." }}
 	if d.Form.CacheForced {
 		{{ cacheHelp = "on for this site: its plugin serves image links that expire, so nanoflux keeps a copy. it cannot be turned off." }}
 	}
 	<div class="field-group">
 		<h3>fetching</h3>
-		@switchField("enabled", "enabled (poll this feed)", d.Form.Enabled, "", nil)
-		@switchField("poll_interval_auto", "auto-adjust poll interval", d.Form.PollIntervalAuto, "", nil)
+		@switchField(p+"enabled", "enabled (poll this feed)", d.Form.Enabled, "", nil)
+		@switchField(p+"poll_interval_auto", "auto-adjust poll interval", d.Form.PollIntervalAuto, "", nil)
 		<label>
 			poll interval (seconds) — used when auto-adjust is off
-			<input name="poll_interval_sec" type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min="60"/>
+			<input name={ p + "poll_interval_sec" } type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min="60"/>
 		</label>
 		<label>
 			feed url
-			<input name="feed_url" type="text" value={ d.Form.FeedURL } required/>
+			<input name={ p + "feed_url" } type="text" value={ d.Form.FeedURL } required/>
 		</label>
-		@switchField("cache_images", "cache images locally", d.Form.CacheImages || d.Form.CacheForced, cacheHelp, nil)
+		@switchField(p+"cache_images", "cache images locally", d.Form.CacheImages || d.Form.CacheForced, cacheHelp, nil)
 	</div>
 	<div class="field-group">
 		<h3>display</h3>
 		<label>
 			title
-			<input name="title" value={ d.Form.Title } required/>
+			<input name={ p + "title" } value={ d.Form.Title } required/>
 		</label>
 		<label>
 			home url
-			<input name="home_url" type="url" value={ d.Form.HomeURL }/>
+			<input name={ p + "home_url" } type="url" value={ d.Form.HomeURL }/>
 		</label>
 		if len(d.Collections) > 0 {
-			@comboMulti("collections", "collections", nonAutoCollectionValues(d.Collections, d.Form.CollectionIDs), nonAutoCollections(d.Collections))
+			@comboMulti(p+"collections", "collections", nonAutoCollectionValues(d.Collections, d.Form.CollectionIDs), nonAutoCollections(d.Collections))
 		}
 	</div>
 }
@@ -317,7 +319,7 @@ templ feedHistoryCard(d feedHistoryData) {
 		</div>
 		<div class="feed-history-actions">
 			if d.NextPageURL != "" {
-				<button class="link" hx-post={ "/feeds/" + id + "/older" } hx-target={ "#feed-history-" + id } hx-swap="outerHTML">load older items</button>
+				<button type="button" class="link" hx-post={ "/feeds/" + id + "/older" } hx-params="none" hx-target={ "#feed-history-" + id } hx-swap="outerHTML">load older items</button>
 			} else {
 				<span class="muted small">full history loaded</span>
 			}

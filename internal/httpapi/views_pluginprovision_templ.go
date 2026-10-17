@@ -301,33 +301,33 @@ func feedPluginPanel(d feedPanelData) templ.Component {
 				}
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<p class=\"muted small\">sync the feed title to the remote service. to remove the feed there too, use the delete form above.</p><div class=\"row-actions\"><form hx-post=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<p class=\"muted small\">sync the feed title to the remote service. to remove the feed there too, use the delete form above.</p><div class=\"row-actions\"><button type=\"button\" class=\"small\" hx-post=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue("/feeds/" + strconv.FormatInt(d.FeedID, 10) + "/plugin-admin")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_pluginprovision.templ`, Line: 73, Col: 80}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_pluginprovision.templ`, Line: 73, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\" hx-target=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\" hx-params=\"action\" hx-vals='{\"action\":\"save\"}' hx-target=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue("#feed-plugin-panel-" + strconv.FormatInt(d.FeedID, 10))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_pluginprovision.templ`, Line: 73, Col: 150}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_pluginprovision.templ`, Line: 73, Col: 227}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" hx-swap=\"outerHTML\"><input type=\"hidden\" name=\"action\" value=\"save\"> <button type=\"submit\" class=\"small\">sync title</button></form></div></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\" hx-swap=\"outerHTML\">sync title</button></div></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

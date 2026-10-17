@@ -1543,9 +1543,12 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
 
   document.addEventListener('submit', function (e) {
     var f = e.target;
-    if (f && f.hasAttribute && f.hasAttribute('data-confirm')) {
-      if (!window.confirm(f.getAttribute('data-confirm'))) e.preventDefault();
-    }
+    var btn = e.submitter;
+    // A button may carry its own data-confirm (e.g. a delete button using
+    // formaction inside a shared form); otherwise fall back to the form's.
+    var msg = (btn && btn.getAttribute && btn.getAttribute('data-confirm')) ||
+      (f && f.hasAttribute && f.hasAttribute('data-confirm') && f.getAttribute('data-confirm'));
+    if (msg && !window.confirm(msg)) e.preventDefault();
   }, true);
 
   // Broken images marked data-hide-on-error hide themselves (was onerror=).
