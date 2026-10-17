@@ -2129,11 +2129,12 @@ func TestFeedEditDeleteFlow(t *testing.T) {
 		t.Fatalf("author feed row should not link to the feed URL: %s", author)
 	}
 
-	// The feed edit page carries the delete form.
+	// The feed edit page carries the delete action (a formaction button inside
+	// the page's single form, since the delete form is not nested).
 	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
-	if !strings.Contains(edit, `action="/feeds/`+itoa(f.ID)+`/delete"`) ||
+	if !strings.Contains(edit, `formaction="/feeds/`+itoa(f.ID)+`/delete"`) ||
 		!strings.Contains(edit, `class="danger"`) {
-		t.Fatalf("feed edit page should carry a delete form: %s", edit)
+		t.Fatalf("feed edit page should carry a delete action: %s", edit)
 	}
 
 	// Deleting redirects back to the author page and removes the feed.
@@ -2286,10 +2287,14 @@ func TestAuthorEditListsFeedsWithEditLinks(t *testing.T) {
 	}
 	// Opening a panel lazily loads the feed's editor body.
 	body := doGet(h, "/feeds/"+itoa(f.ID)+"/edit-fragment", cookie).Body.String()
-	for _, want := range []string{`action="/feeds/` + itoa(f.ID) + `/edit"`, `name="feed_url"`} {
+	for _, want := range []string{`name="feed_ids"`, `name="feed_` + itoa(f.ID) + `_feed_url"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("edit fragment missing %q: %s", want, body)
 		}
+	}
+	// The fragment carries fields only: the author edit page owns the one form.
+	if strings.Contains(body, "<form") {
+		t.Fatalf("edit fragment should not carry its own form: %s", body)
 	}
 }
 
@@ -2314,8 +2319,8 @@ func TestFeedEditRedirectsToCombinedAuthorEdit(t *testing.T) {
 	for _, want := range []string{
 		`name="name"`,
 		`id="feed-acc-` + itoa(f.ID) + `"`,
-		`action="/feeds/` + itoa(f.ID) + `/edit"`,
-		`name="feed_url"`,
+		`name="feed_ids"`,
+		`name="feed_` + itoa(f.ID) + `_feed_url"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("combined edit page missing %q: %s", want, body)
@@ -2325,10 +2330,11 @@ func TestFeedEditRedirectsToCombinedAuthorEdit(t *testing.T) {
 	if strings.Contains(body, `name="author_id"`) {
 		t.Fatalf("combined feed editor should not carry an author picker: %s", body)
 	}
+
 	// An unknown or foreign feed id yields no editor (and no author picker).
 	other, _ := s.store.Authors.Create(u.ID, "Other", "", "")
 	body = doGet(h, "/authors/"+itoa(other.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
-	if strings.Contains(body, `name="feed_url"`) {
+	if strings.Contains(body, `name="feed_ids"`) {
 		t.Fatalf("a feed not owned by the author should not render an editor: %s", body)
 	}
 }
@@ -2527,7 +2533,7 @@ func TestFeedEditAutoInterval(t *testing.T) {
 
 	// Edit form shows the auto checkbox (new feeds default to on).
 	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
-	if !strings.Contains(edit, `name="poll_interval_auto"`) {
+	if !strings.Contains(edit, `name="feed_`+itoa(f.ID)+`_poll_interval_auto"`) {
 		t.Fatalf("edit form should render the auto-adjust checkbox: %s", edit)
 	}
 
@@ -2560,6 +2566,50 @@ func TestFeedEditAutoInterval(t *testing.T) {
 	after, _ = s.store.Feeds.ByID(u.ID, f.ID)
 	if after.PollIntervalSec != 600 || after.PollIntervalAuto {
 		t.Fatalf("auto off should use the manual interval: %+v", after)
+	}
+}
+
+func TestAuthorEditSavesMultipleFeedsInOneRequest(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f1, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "News", "https://n.dev/rss.xml", "", "", 900)
+	untouched, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
+
+	// The combined page's one form carries both loaded panels, namespaced, plus
+	// a feed_ids marker per panel. A feed that was never opened is absent and
+	// must not be touched.
+	vals := url.Values{
+		"name":     {"Metru renamed"},
+		"feed_ids": {itoa(f1.ID), itoa(f2.ID)},
+	}
+	for _, f := range []store.Feed{f1, f2} {
+		p := "feed_" + itoa(f.ID) + "_"
+		vals.Set(p+"title", f.Title+" renamed")
+		vals.Set(p+"feed_url", f.FeedURL)
+		vals.Set(p+"poll_interval_sec", "1800")
+		vals.Set(p+"enabled", "1")
+	}
+	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/edit", vals, cookie)
+	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/authors/"+itoa(a.ID) {
+		t.Fatalf("combined save: %d %q", rr.Code, rr.Header().Get("Location"))
+	}
+
+	got, _ := s.store.Authors.ByID(u.ID, a.ID)
+	if got.Name != "Metru renamed" {
+		t.Fatalf("author name not saved: %+v", got)
+	}
+	for _, f := range []store.Feed{f1, f2} {
+		after, _ := s.store.Feeds.ByID(u.ID, f.ID)
+		if after.Title != f.Title+" renamed" || after.PollIntervalSec != 1800 {
+			t.Fatalf("feed %d not saved: %+v", f.ID, after)
+		}
+	}
+	after, _ := s.store.Feeds.ByID(u.ID, untouched.ID)
+	if after.Title != "Other" || after.PollIntervalSec != 900 {
+		t.Fatalf("unopened feed should be untouched: %+v", after)
 	}
 }
 

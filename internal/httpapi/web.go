@@ -1471,55 +1471,74 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	title := r.FormValue("title")
-	feedURL := normalizeURL(r.FormValue("feed_url"))
-	interval, _ := strconv.Atoi(r.FormValue("poll_interval_sec"))
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	back := "/authors/" + strconv.FormatInt(old.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(id, 10)
+	if ok, err := s.applyFeedForm(u, old, "", r.Form); err != nil {
+		log.Error("update feed", "feed_id", id, "err", err)
+		http.Error(w, "update failed", http.StatusInternalServerError)
+		return
+	} else if !ok {
+		http.Redirect(w, r, back, http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, back, http.StatusFound)
+}
+
+// applyFeedForm persists one feed's settings from form values. prefix namespaces
+// the fields: "" for the standalone feed form (POST /feeds/{id}/edit), and
+// feedFieldPrefix(id) for the combined author edit form, which carries every
+// loaded feed at once. It reports ok=false when the form is incomplete (a blank
+// title or url), leaving the feed untouched.
+func (s *Server) applyFeedForm(u store.User, old store.Feed, prefix string, form url.Values) (bool, error) {
+	id := old.ID
+	title := strings.TrimSpace(form.Get(prefix + "title"))
+	feedURL := normalizeURL(form.Get(prefix + "feed_url"))
+	if title == "" || feedURL == "" {
+		return false, nil
+	}
+	interval, _ := strconv.Atoi(form.Get(prefix + "poll_interval_sec"))
 	if interval <= 0 {
 		interval = 900
 	}
-	auto := r.FormValue("poll_interval_auto") == "1"
+	auto := form.Get(prefix+"poll_interval_auto") == "1"
 	if auto {
 		// Adaptive polling owns the interval; keep the stored value.
 		interval = old.PollIntervalSec
 	}
-	back := "/authors/" + strconv.FormatInt(old.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(id, 10)
-	if title == "" || feedURL == "" {
-		http.Redirect(w, r, back, http.StatusFound)
-		return
-	}
+	homeURL := form.Get(prefix + "home_url")
 	// Editing happens on the feed's author's page, so the feed keeps its author.
-	authorID := old.AuthorID
-	cacheImages := r.FormValue("cache_images") == "1" || s.imageCacheForced(feedURL)
-	if err := s.store.Feeds.Update(u.ID, id, authorID, title, feedURL,
-		r.FormValue("home_url"), "", interval, auto, r.FormValue("enabled") == "1", cacheImages); err != nil {
-		log.Error("update feed", "err", err)
-		http.Error(w, "update failed", http.StatusInternalServerError)
-		return
+	cacheImages := form.Get(prefix+"cache_images") == "1" || s.imageCacheForced(feedURL)
+	if err := s.store.Feeds.Update(u.ID, id, old.AuthorID, title, feedURL,
+		homeURL, "", interval, auto, form.Get(prefix+"enabled") == "1", cacheImages); err != nil {
+		return false, err
 	}
 	// Auto collections track the feed's website; re-assign when its host
 	// changes, and drop the feed from its old site collection.
 	if err := s.store.Collections.UnassignAuto(u.ID, id, old.HomeURL, old.FeedURL); err != nil {
 		log.Error("unassign auto collection", "feed_id", id, "err", err)
 	}
-	if err := s.store.Collections.AssignAuto(u.ID, id, r.FormValue("home_url"), feedURL); err != nil {
+	if err := s.store.Collections.AssignAuto(u.ID, id, homeURL, feedURL); err != nil {
 		log.Error("assign auto collection", "feed_id", id, "err", err)
 	}
 	// Sync collection memberships.
-	form := feedForm{}
-	collections, _ := s.store.Collections.List(u.ID)
-	for _, cid := range r.Form["collections"] {
+	want := make([]int64, 0, len(form[prefix+"collections"]))
+	for _, cid := range form[prefix+"collections"] {
 		if n, err := strconv.ParseInt(cid, 10, 64); err == nil {
-			form.CollectionIDs = append(form.CollectionIDs, n)
+			want = append(want, n)
 		}
 	}
-	form.CollectionIDs = unique(form.CollectionIDs)
+	want = unique(want)
+	collections, _ := s.store.Collections.List(u.ID)
 	for _, c := range collections {
 		if c.IsAuto {
 			continue
 		}
 		has := false
-		for _, want := range form.CollectionIDs {
-			if want == c.ID {
+		for _, w := range want {
+			if w == c.ID {
 				has = true
 				break
 			}
@@ -1539,7 +1558,13 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 			s.store.Collections.RemoveFeed(u.ID, c.ID, id)
 		}
 	}
-	http.Redirect(w, r, "/authors/"+strconv.FormatInt(authorID, 10)+"/edit?feed="+strconv.FormatInt(id, 10), http.StatusFound)
+	return true, nil
+}
+
+// feedFieldPrefix namespaces a feed's fields in the combined author edit form,
+// so several feeds can share one form without name collisions.
+func feedFieldPrefix(id int64) string {
+	return "feed_" + strconv.FormatInt(id, 10) + "_"
 }
 
 func unique(ids []int64) []int64 {
@@ -1656,7 +1681,7 @@ func (s *Server) feedDelete(w http.ResponseWriter, r *http.Request) {
 	// When the user opted in and a plugin manages this feed, delete the remote
 	// feed too. Best-effort, after the local delete: a remote failure must not
 	// block removing the feed from nanoflux, so it is only logged.
-	if deleteRemoteRequested(r) {
+	if deleteRemoteRequested(r, id) {
 		if fa, pf := s.feedAdmin(f.FeedURL); fa != nil {
 			if _, err := fa.Action(r.Context(), pluginapi.FeedActionRequest{
 				FeedURL: f.FeedURL, Action: "delete",
@@ -2243,6 +2268,10 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
 	name := r.FormValue("name")
 	if name == "" {
 		http.Redirect(w, r, "/authors", http.StatusFound)
@@ -2260,6 +2289,24 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reconcileAuthorLinks(u.ID, id, r)
+	// The combined edit form carries every feed panel the user loaded, each
+	// namespaced by feedFieldPrefix and marked with a hidden feed_ids value.
+	// Feeds not present (never opened) are left untouched.
+	for _, raw := range r.Form["feed_ids"] {
+		fid, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			continue
+		}
+		f, err := s.store.Feeds.ByID(u.ID, fid)
+		if err != nil || f.AuthorID != id {
+			continue
+		}
+		if _, err := s.applyFeedForm(u, f, feedFieldPrefix(fid), r.Form); err != nil {
+			log.Error("update feed", "feed_id", fid, "err", err)
+			http.Error(w, "update failed", http.StatusInternalServerError)
+			return
+		}
+	}
 	if avatarURL != "" {
 		a, _ := s.store.Authors.ByID(u.ID, id)
 		if a.ID != 0 {

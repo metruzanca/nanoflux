@@ -297,6 +297,22 @@ older items" (`POST /feeds/{id}/older`, which appends OOB to the author's item
 list), the external home/feed link, the last-polled line and the cached-media
 stat. `GET /feeds/{id}/edit` still redirects to the author edit page.
 
+The author edit page is **one form**: the author's fields and every loaded feed
+panel submit together to `POST /authors/{id}/edit`, so a user can change several
+feeds (or the author and a feed) and save once. `feedEditorBody` therefore
+carries no `<form>` of its own; `feedFields` takes a name prefix
+(`feedFieldPrefix(id)`, `feed_<id>_title` etc.) and each panel has a hidden
+`feed_ids` marker, so `authorUpdate` only touches the feeds present in the
+submission (a collapsed, never-opened panel is left untouched). `applyFeedForm`
+is the shared per-feed writer, called with prefix `""` by the standalone
+`POST /feeds/{id}/edit`. Nested forms are avoided: the feed delete control is a
+`formaction="/feeds/{id}/delete"` submit button inside the page form (with a
+per-button `data-confirm`, honoured by `app.js` via `e.submitter`), the remote
+opt-in is `delete_remote_<id>`, and the plugin panel's sync is an htmx button
+(`hx-params="action"`, `hx-vals`) rather than a form. htmx-in-panel actions
+(refetch, refresh now, load older) use `hx-params="none"` so clicking them does
+not post the whole page form.
+
 A feed's item list is the author page filtered with `?feed={id}`
 (`Server.authorFeedFilter` validates ownership; `authorScopedItems` sets
 `ItemFilter.FeedID`), which scopes the tabs, counts, sort, tags, pagination and

@@ -1364,8 +1364,24 @@ dialog.modal.wide[open] {
 /* Author page: external bookmark links rendered inline under the home url. */
 .author-links { margin: 0.35rem 0 0; }
 
-/* A destructive action separated from the edit form above it. */
-form.delete-form {
+/* The single save bar of a long combined form (the author edit page, whose one
+   form spans the author and every feed panel). Sticky so the save stays
+   reachable without scrolling back to the bottom. */
+.form-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+
+/* A destructive action separated from the edit form above it. Applied to the
+   standalone delete form and to the in-form feed delete block. */
+.delete-form {
   margin-top: 0.75rem;
   border-top: 1px solid var(--border);
   padding-top: 0.75rem;

@@ -247,7 +247,12 @@ func pluginPanelErrorID(feedID int64) string {
 
 // deleteRemoteRequested reports whether the feed-delete form opted in to also
 // deleting the remote feed. The checkbox is off by default, so an absent field
-// means no.
-func deleteRemoteRequested(r *http.Request) bool {
+// means no. On the combined author edit form the opt-in is per feed
+// (delete_remote_<id>) because one form carries every feed's panel; the
+// unprefixed name is still honored for the standalone delete route.
+func deleteRemoteRequested(r *http.Request, feedID int64) bool {
+	if r.FormValue("delete_remote_"+strconv.FormatInt(feedID, 10)) == "1" {
+		return true
+	}
 	return r.FormValue("delete_remote") == "1"
 }

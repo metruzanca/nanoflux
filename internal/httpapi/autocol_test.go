@@ -217,7 +217,7 @@ func TestAutoCollectionHiddenFromFeedEditCheckboxes(t *testing.T) {
 	// collection's id must not appear as a selectable item or a selected value.
 	// Scope to the collections combo payload so the author combo (which can
 	// share the id space) doesn't interfere.
-	collectionsPayload := body[strings.Index(body, `data-vaadin-name="collections"`):]
+	collectionsPayload := body[strings.Index(body, `data-vaadin-name="feed_`+itoa(f.ID)+`_collections"`):]
 	collectionsPayload = collectionsPayload[:strings.Index(collectionsPayload, "</div>")]
 	if strings.Contains(collectionsPayload, `"`+itoa(yt.ID)+`"`) {
 		t.Fatalf("auto collection should not appear in the edit combo: %s", collectionsPayload)
