@@ -1233,6 +1233,17 @@ dialog.modal.wide[open] {
   flex-direction: column;
 }
 
+/* A preview with an embedded player gets a wider stage than a normal post. */
+#item-dialog:has(.video-embed) {
+  width: min(88rem, calc(100vw - 2rem));
+}
+/* Cap the player by the viewport height so it stays 16:9 and centered on a
+   short/wide window instead of overflowing the header and footer. */
+#item-dialog:has(.video-embed) .video-embed {
+  max-width: calc((100dvh - 9rem) * 16 / 9);
+  margin-inline: auto;
+}
+
 .item-view h1 { font-size: 1.3rem; margin: 0 0 0.25rem; line-height: 1.3; }
 #item-dialog-body { flex: 1; min-height: 0; overflow-y: auto; }
 
@@ -1514,6 +1525,7 @@ details.feeds-section summary:hover { color: var(--accent); }
      the screen edges and drop the rounded frame. */
   #item-dialog:has(.video-embed) .video-embed {
     margin: 0 -0.75rem;
+    max-width: none;
     border: 0;
     border-radius: 0;
     background: #000;
