@@ -452,6 +452,29 @@ if (itemDialog) {
   // shouldn't dismiss the item (and would stop embedded video playback).
 }
 
+// activeEmbed reports whether the open preview contains a video/embed player.
+// Arrow and j/k navigation yield to it so playback isn't interrupted; once the
+// user clicks into the player, the cross-origin iframe owns the keys anyway.
+function activeEmbed() {
+  return !!(itemDialog && itemDialog.open && itemDialog.querySelector('.video-embed iframe'));
+}
+
+// When a cross-origin embed iframe enters fullscreen, the parent's fullscreen
+// element becomes the <iframe>. Try to rotate to landscape (Android Chrome/Edge).
+// iOS Safari ignores orientation.lock and its native video fullscreen fires no
+// fullscreenchange, so this is a no-op there.
+document.addEventListener('fullscreenchange', function () {
+  if (!itemDialog || !itemDialog.open) return;
+  var embed = itemDialog.querySelector('.video-embed iframe');
+  if (document.fullscreenElement && document.fullscreenElement === embed) {
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(function () {});
+    }
+  } else if (screen.orientation && screen.orientation.unlock) {
+    screen.orientation.unlock();
+  }
+});
+
 // Browser back/forward reconciles the modal with the hash.
 window.addEventListener('popstate', function () {
   if (!itemDialog) return;
@@ -741,6 +764,8 @@ document.addEventListener('keydown', function (e) {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   var dialog = document.getElementById('item-dialog');
   if (!dialog || !dialog.open || !currentItemId) return;
+  // A video/embed preview owns the arrows; don't switch items under it.
+  if (activeEmbed()) return;
   if (e.target.closest && e.target.closest('input, textarea, select')) return;
   var dir = e.key === 'ArrowRight' ? 1 : -1;
   if (itemNav(dir)) e.preventDefault();
@@ -1145,14 +1170,16 @@ document.addEventListener('keydown', function (e) {
 
   switch (e.key) {
     case 'j':
-      move(1);
+      // A video/embed preview owns the whole keyboard while it's open.
+      if (!activeEmbed()) move(1);
       break;
     case 'k':
-      move(-1);
+      if (!activeEmbed()) move(-1);
       break;
     case 'ArrowDown':
       // While the item modal is open, leave the arrows to the browser so they
-      // scroll the post's body; j/k still move between items.
+      // scroll the post's body; j/k still move between items (unless a player
+      // is embedded).
       if (!inDialog) move(1);
       break;
     case 'ArrowUp':
