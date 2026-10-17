@@ -27,10 +27,14 @@ type Feed struct {
 	PollIntervalAuto bool   // derive poll_interval_sec from the posting cadence
 	LastItemAt       string // newest item time (published or fetched); "" when none
 	NextPollAt       string // "do not poll before" deadline after a rate limit; "" when unset
-	PluginName       string // plugin that owns this feed, "" for the generic parser
-	DisabledReason   string // why the feed is disabled (e.g. its plugin is missing); "" when enabled or user-paused
-	Enabled          bool
-	IsSystem         bool // hidden feed holding saved pages; never listed or polled
+	// NextPollScheduled marks NextPollAt as a scheduled, clock-aligned fetch
+	// (derived from when the author usually posts) rather than a rate-limit
+	// backoff, so the UI can distinguish a planned poll from a retry.
+	NextPollScheduled bool
+	PluginName        string // plugin that owns this feed, "" for the generic parser
+	DisabledReason    string // why the feed is disabled (e.g. its plugin is missing); "" when enabled or user-paused
+	Enabled           bool
+	IsSystem          bool // hidden feed holding saved pages; never listed or polled
 	// Rank is the user's manual lever for the magic sort: -1 lowered, 0 neutral,
 	// +1 raised. It dominates the favorite-count tier.
 	Rank int
@@ -413,6 +417,32 @@ func (s *FeedStore) SetNextPollAt(id int64, t string) error {
 	})
 }
 
+// SetNextPollScheduled marks a feed's next_poll_at as a scheduled fetch (true)
+// rather than a rate-limit backoff (false).
+func (s *FeedStore) SetNextPollScheduled(id int64, scheduled bool) error {
+	return s.q.SetFeedNextPollScheduled(context.Background(), sqlcgen.SetFeedNextPollScheduledParams{
+		NextPollScheduled: boolInt(scheduled),
+		ID:                id,
+	})
+}
+
+// EarliestNextPollAt returns the soonest future next_poll_at among due-eligible
+// feeds, formatted as stored, or "" when none. The poller folds it into its next
+// wake so a scheduled fetch is hit close to its target time.
+func (s *FeedStore) EarliestNextPollAt(now string) (string, error) {
+	t, err := s.q.EarliestNextPollAt(context.Background(), now)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if !t.Valid {
+		return "", nil
+	}
+	return t.String, nil
+}
+
 // SetPluginName records which plugin owns a feed ("" = the generic parser).
 func (s *FeedStore) SetPluginName(id int64, name string) error {
 	return s.q.SetFeedPluginName(context.Background(), sqlcgen.SetFeedPluginNameParams{
@@ -513,7 +543,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.NextPollScheduled, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

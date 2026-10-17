@@ -78,6 +78,37 @@ it (`is_system = 0`). Nothing else in this document applies to it.
   around once a day. This is the "automatic adjusting of delay."
 - If adaptive polling is turned off, the interval stays whatever the user set.
 
+### Scheduled to the author's time of day
+
+The interval measures *how often* a feed posts, not *when*. A feed that posts
+every day at 3pm but was first polled at 10am would otherwise be polled at 10am
+forever, so its 3pm post is seen up to a day late.
+
+To fix that, after every successful poll (including a `304`) an adaptive feed
+whose recent posts **cluster at a time of day** gets a scheduled `next_poll_at`
+just after that time, instead of waiting out its interval:
+
+- `preferredFetchTime` takes the circular mean of the newest ~20 posts' UTC
+  times of day. The circular resultant (0..1) measures concentration: a daily
+  poster at a fixed hour is near 1; posts spread across the day are near 0. A
+  schedule is set only with at least 6 posts and a resultant of 0.5.
+- The target is that time plus a 5-minute buffer (so the item is already in the
+  feed) plus a per-feed jitter of up to 10 minutes (`feed id mod 10m`), so feeds
+  that share a posting hour don't all fetch at once. Per-host spacing and fair
+  rotation still spread a host's feeds (see below).
+- The target is never later than `last_polled + poll_interval_sec`, so a schedule
+  only ever brings a fetch **forward**; frequent feeds keep their cadence and a
+  mis-timed daily feed realigns in one hop.
+- Stale feeds and feeds with adaptive polling off are never scheduled. A poll
+  that brings no new items (the author was late, or a `304`) keeps the plan: the
+  next fetch is recomputed from the actual poll time, so the alignment does not
+  drift.
+
+Because `next_poll_at` also holds a rate-limit backoff, `feeds.next_poll_scheduled`
+(schemaV54) marks which it is: a scheduled deadline shows no "rate limited"
+badge and a manual refresh may override it. `EarliestNextPollAt` lets the poller
+wake close to a scheduled target rather than on the next base tick.
+
 ### Quiet (stale) feeds
 
 If a feed's newest item is **older than 7 days**, its interval is forced to the
@@ -148,6 +179,11 @@ a feed whose `next_poll_at` has passed **is due even if its normal interval has
 not elapsed**. This prevents a short "retry in 60s" from being masked by a long
 adaptive interval. A successful poll (or a `304`) clears `next_poll_at`.
 
+The time-of-day scheduler above stores its planned fetch in the same column, and
+`feeds.next_poll_scheduled` says which one it is: a scheduled deadline is not a
+backoff (no retry badge, and a manual refresh may override it), whereas a
+rate-limit deadline disables the refresh button.
+
 ### Per-host pacing and fair rotation
 
 Feeds are grouped by **registrable host** (all feeds on one domain are one
@@ -183,7 +219,9 @@ Because a paced host must be revisited promptly, the poller does not simply slee
 for the base interval. After each pass it wakes at the **earliest** of:
 
 - the base interval (`NF_POLL_INTERVAL`), or
-- the next moment a paced host becomes hittable,
+- the next moment a paced host becomes hittable, or
+- the soonest planned `next_poll_at` (a scheduled time-of-day fetch or a
+  rate-limit retry),
 
 floored at 30 seconds so a just-cleared backoff cannot make the loop spin.
 
@@ -192,9 +230,11 @@ all across roughly twenty minutes, continuously, instead of one per day.
 
 ### The manual refresh button
 
-The refresh button and its handler respect `next_poll_at`. While a feed is
-cooling, the row shows a **"rate limited · retry in …"** badge and the button is
-disabled; a click during the window is a no-op rather than another request.
+The refresh button and its handler respect a **rate-limit** `next_poll_at`. While
+a feed is cooling, the row shows a **"rate limited · retry in …"** badge and the
+button is disabled; a click during the window is a no-op rather than another
+request. A *scheduled* deadline (`next_poll_scheduled`) is not a backoff, so the
+button stays enabled and a manual refresh overrides the plan.
 
 ### Errors are explained
 
@@ -305,11 +345,11 @@ var.
 
 | Concern | File |
 | --- | --- |
-| Background loop, per-host pacing, rotation, dynamic wake | `internal/poller/poller.go` |
-| Adaptive interval, stale thresholds | `internal/poller/interval.go` |
+| Background loop, per-host pacing, rotation, dynamic wake, `scheduleNextPoll` | `internal/poller/poller.go` |
+| Adaptive interval, time-of-day detection (`preferredFetchTime`), stale thresholds | `internal/poller/interval.go` |
 | Rate-limit detection, `Retry-After` / `x-ratelimit-reset` parsing | `internal/feedparse/ratelimit.go` |
 | Generic fetch: conditional GET, parse, pagination cursor | `internal/feedparse/feedparse.go` |
 | Host-mediated HTTP + rate-limit cooling for plugins | `internal/plugin/host.go`, `internal/plugin/cooldown.go` |
 | Ingest cross-feed key pass and dispatch to plugins | `internal/plugin/dispatch.go`, `internal/feedparse/feedparse.go` |
 | Per-URL site rules (canonical shape, feed token) from plugins | `internal/plugin/urlpolicy.go`, `internal/store/domain.go` |
-| `next_poll_at` storage and `ListFeedsDue` | `internal/store/feed.go`, `internal/store/queries/feeds.sql` |
+| `next_poll_at` / `next_poll_scheduled` storage, `ListFeedsDue`, `EarliestNextPollAt` | `internal/store/feed.go`, `internal/store/queries/feeds.sql` |

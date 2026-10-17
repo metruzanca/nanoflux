@@ -59,6 +59,42 @@ reject polling with 429. The app treats this as pacing, not failure:
   adding a feed at limit says "rate-limiting requests (HTTP 429)" rather than a
   bare "no feed found".
 
+## Time-of-day polling
+
+A feed's adaptive interval measures *how often* it posts, not *when*, so a daily
+poster first polled at 10am would stay on 10am and its 3pm post would be seen up
+to a day late. `poller.scheduleNextPoll` fixes that by planning the next fetch
+just after the author's typical posting time, stored in the existing
+`feeds.next_poll_at` "do not poll before" gate:
+
+- Detection (`preferredFetchTime`, `internal/poller/interval.go`): circular mean
+  of the newest ~20 item times of day **in UTC** (an author's absolute rhythm; no
+  user-timezone plumbing). Requires at least `scheduleMinSamples` (6) posts and a
+  circular resultant of at least `scheduleMinStrength` (0.5), so only a clear
+  single-slot rhythm is scheduled. Spread-out or bimodal feeds keep pure interval
+  polling.
+- Target: next occurrence of the preferred time + `scheduleBuffer` (5m) + a
+  deterministic per-feed jitter (`feedID mod scheduleJitter`, 10m) so feeds that
+  share an hour don't all fetch at once. Per-host spacing and fair rotation still
+  enforce the hard minimum.
+- The target is `min(next occurrence, last_polled + poll_interval_sec)`: a
+  schedule only ever brings a fetch **forward**, never delays it beyond the
+  interval. Only adaptive (`poll_interval_auto`) and non-stale feeds are
+  scheduled.
+- It runs on every successful poll, **including `304`**, recomputing from the
+  actual poll time so wake jitter cannot drift the alignment. A non-rate-limit
+  error clears the schedule so the feed retries on its normal interval.
+- `feeds.next_poll_scheduled` (schemaV54) marks the deadline as a schedule rather
+  than a rate-limit backoff. `feedRow.Cooling()` and the `feedRefresh` guard must
+  treat a scheduled deadline as **not** cooling: no "rate limited" badge, and a
+  manual refresh may override it. `ListFeedsDue` itself is unchanged; the rate
+  limit invariant above still holds.
+- `FeedStore.EarliestNextPollAt` seeds `pollDue`'s wake so a scheduled fetch is
+  hit near its target instead of on the next base tick.
+- Constants (`scheduleBuffer`, `scheduleJitter`, `scheduleMinSamples`,
+  `scheduleMinStrength`) are in `internal/poller/interval.go`; see
+  `docs/fetching.md` ("Scheduled to the author's time of day").
+
 ## Plugins own site-specific behavior
 
 Site-specific logic lives in a plugin, not the core, through URL-matched

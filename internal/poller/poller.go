@@ -135,11 +135,11 @@ func (p *Poller) SetImageCache(c itemImageCacher) { p.imgCache = c }
 // the same transport and timeout policy.
 func (p *Poller) Client() *http.Client { return p.client }
 
-// Run polls due feeds, then wakes at the earliest of the base interval or the
-// next moment a paced host becomes hittable, whichever is sooner (floored at
-// minWake). The dynamic wake is what lets a rate-limited host's feeds rotate:
-// after a 429 the poller returns when the host's window clears, for the next
-// feed in line, rather than waiting out the whole base interval.
+// Run polls due feeds, then wakes at the earliest of the base interval, the
+// next moment a paced host becomes hittable, or the soonest planned deadline
+// (scheduled fetch or rate-limit retry), whichever is sooner (floored at
+// minWake). The dynamic wake is what lets a rate-limited host's feeds rotate and
+// a scheduled fetch land close to its target instead of on the next base tick.
 func (p *Poller) Run(ctx context.Context) {
 	log.Info("poller starting", "interval", p.interval)
 	for {
@@ -148,10 +148,10 @@ func (p *Poller) Run(ctx context.Context) {
 			log.Error("poll due", "err", err)
 		}
 		delay := wake.Sub(time.Now())
-		// A paced host can pull the next wake in sooner than the base interval;
-		// record why, so logs show the rotation rather than a bare sleep.
+		// A planned deadline or paced host can pull the next wake in sooner than
+		// the base interval; record why, so logs show the reason for the sleep.
 		if !wake.IsZero() && delay > 0 && delay <= p.interval {
-			log.Debug("next wake from paced host", "delay", delay.Round(time.Second), "at", wake.Round(time.Second))
+			log.Debug("next wake from deadline", "delay", delay.Round(time.Second), "at", wake.Round(time.Second))
 		}
 		if delay <= 0 || delay > p.interval {
 			delay = p.interval
@@ -186,22 +186,31 @@ func (p *Poller) PollDue(ctx context.Context) (int, error) {
 // window; its remaining feeds stay due and are picked up when the window
 // clears.
 func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
-	feeds, err := p.store.Feeds.ListDue(db.Now())
+	now := db.Now()
+	feeds, err := p.store.Feeds.ListDue(now)
 	if err != nil {
 		return 0, time.Time{}, err
 	}
+	// Seed the wake with the soonest planned deadline (a scheduled time-of-day
+	// fetch or a rate-limit retry), so the loop returns close to it even when
+	// nothing is due right now; Run caps it at the base interval.
+	var wake time.Time
+	if earliest, err := p.store.Feeds.EarliestNextPollAt(now); err == nil && earliest != "" {
+		if t, err := db.ParseTime(earliest); err == nil {
+			wake = t
+		}
+	}
 	if len(feeds) == 0 {
-		return 0, time.Time{}, nil
+		return 0, wake, nil
 	}
 
 	groups := groupByHost(feeds)
 
 	var (
-		wg   sync.WaitGroup
-		sem  = make(chan struct{}, p.workers)
-		mu   sync.Mutex
-		sum  cycleSummary
-		wake time.Time // earliest paced-host next-hit across groups
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, p.workers)
+		mu  sync.Mutex
+		sum cycleSummary
 	)
 	for _, group := range groups {
 		wg.Add(1)
@@ -422,8 +431,12 @@ func (p *Poller) learnWindow(host string, retryAfter time.Duration) {
 func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 	res, err := feedparse.Fetch(ctx, f.FeedURL, p.client, f.ETag, f.LastModified)
 	if errors.Is(err, feedparse.ErrNotModified) {
-		p.store.Feeds.SetPollMeta(f.ID, f.ETag, f.LastModified, db.Now(), "")
-		p.store.Feeds.SetNextPollAt(f.ID, "")
+		fetched := db.Now()
+		p.store.Feeds.SetPollMeta(f.ID, f.ETag, f.LastModified, fetched, "")
+		// Recompute the schedule so a 304 (no content change) still re-anchors
+		// the planned fetch time instead of drifting with the wake.
+		p.clearSchedule(f.ID)
+		p.updateCadence(f, fetched, 0)
 		return 0, nil
 	}
 	fetched := db.Now()
@@ -437,6 +450,7 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 		if errors.As(err, &rl) {
 			until := time.Now().Add(rl.RetryAfter)
 			p.store.Feeds.SetNextPollAt(f.ID, db.FormatTime(until))
+			p.store.Feeds.SetNextPollScheduled(f.ID, false)
 			host := store.RegistrableDomain(f.FeedURL)
 			if host != "" {
 				p.learnWindow(host, rl.RetryAfter)
@@ -460,6 +474,7 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 			return 0, err
 		}
 		p.store.Feeds.SetPollMeta(f.ID, "", "", fetched, truncateError(err.Error()))
+		p.clearSchedule(f.ID)
 		return 0, err
 	}
 
@@ -470,8 +485,10 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 	if err := p.store.Feeds.SetPollMeta(f.ID, res.ETag, res.LastModified, fetched, ""); err != nil {
 		return newItems, err
 	}
-	// A successful poll clears any rate-limit backoff.
-	p.store.Feeds.SetNextPollAt(f.ID, "")
+	// A successful poll clears any previous deadline (rate-limit backoff or a
+	// planned time-of-day fetch); updateCadence sets a new schedule if the feed
+	// has a preferred posting time.
+	p.clearSchedule(f.ID)
 	// Record the feed's newest item time and adjust its poll interval (adaptive
 	// cadence, or back a quiet feed off to once a day). Both run on every
 	// successful poll so a feed that goes silent is caught even though no new
@@ -501,6 +518,10 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 //
 // last_item_at only moves forward; it is separate from the poll time, so "no
 // new posts in a while" is distinct from a feed error.
+//
+// It also plans the next fetch for a feed whose posts cluster at a time of day,
+// so a daily poster is polled just after its usual hour instead of whenever its
+// interval happens to elapse (see scheduleNextPoll).
 func (p *Poller) updateCadence(f store.Feed, now string, newItems int) {
 	times, err := p.store.Items.RecentTimes(f.ID, 20)
 	if err != nil || len(times) == 0 {
@@ -527,14 +548,57 @@ func (p *Poller) updateCadence(f store.Feed, now string, newItems int) {
 			want = sec
 		}
 	}
-	if want == 0 || want == f.PollIntervalSec {
-		return // nothing to change, or no cadence computable yet
+	if want != 0 && want != f.PollIntervalSec {
+		if err := p.store.Feeds.SetPollInterval(f.ID, want); err != nil {
+			log.Error("set poll interval", "feed_id", f.ID, "err", err)
+			return
+		}
+		log.Info("adjusted poll interval", "feed_id", f.ID, "from", f.PollIntervalSec, "to", want)
+		f.PollIntervalSec = want
 	}
-	if err := p.store.Feeds.SetPollInterval(f.ID, want); err != nil {
-		log.Error("set poll interval", "feed_id", f.ID, "err", err)
+
+	p.scheduleNextPoll(f, times, now)
+}
+
+// scheduleNextPoll plans the feed's next fetch for just after the time of day
+// its recent posts cluster at, so a daily poster is caught minutes after it
+// posts rather than up to a day later. It applies only to adaptive feeds that
+// are not stale and have a clear time-of-day signal; any other feed is left on
+// its interval (PollOne has already cleared any previous deadline). The plan is
+// never later than the feed's own interval would have polled, so a schedule only
+// ever brings a fetch forward.
+func (p *Poller) scheduleNextPoll(f store.Feed, times []string, now string) {
+	if !f.PollIntervalAuto || isStale(f.LastItemAt, now, staleAfter) {
 		return
 	}
-	log.Info("adjusted poll interval", "feed_id", f.ID, "from", f.PollIntervalSec, "to", want)
+	sec, ok := preferredFetchTime(times)
+	if !ok {
+		return
+	}
+	nowT, err := db.ParseTime(now)
+	if err != nil {
+		return
+	}
+	target := nextFetchTime(nowT, sec, f.ID)
+	if gate := nowT.Add(time.Duration(f.PollIntervalSec) * time.Second); gate.Before(target) {
+		target = gate
+	}
+	if err := p.store.Feeds.SetNextPollAt(f.ID, db.FormatTime(target)); err != nil {
+		log.Error("schedule next poll", "feed_id", f.ID, "err", err)
+		return
+	}
+	if err := p.store.Feeds.SetNextPollScheduled(f.ID, true); err != nil {
+		log.Error("schedule next poll flag", "feed_id", f.ID, "err", err)
+		return
+	}
+	log.Debug("scheduled next poll", "feed_id", f.ID, "at", target.Round(time.Second))
+}
+
+// clearSchedule drops any planned deadline (rate-limit backoff or time-of-day
+// schedule) on a feed, leaving it on its normal interval.
+func (p *Poller) clearSchedule(id int64) {
+	p.store.Feeds.SetNextPollAt(id, "")
+	p.store.Feeds.SetNextPollScheduled(id, false)
 }
 
 // maxBackfillPages caps how many pages a single "load older items" click
