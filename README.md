@@ -20,7 +20,7 @@ storage.
 - **Magic sort** — order any list by feed taste instead of time: favorites rank feeds up, and you can raise or lower a feed manually from the algorithm editor.
 - **Optional S3 support** — Nanoflux uses local file storage by default, but supports S3.
 - **Backups** — Configurable Automatic backup every 1 day, keeping the 7 most recent or trigger them manually.
-- **Polite fetching** — per-feed adaptive intervals, conditional GET, and per-host rate-limit backoff, so a throttled site never starves the rest of your feeds. See [`docs/fetching.md`](docs/fetching.md).
+- **Polite fetching** — per-feed adaptive intervals, conditional GET, and per-host rate-limit backoff, so a throttled site never starves the rest of your feeds. Feeds that post at a regular time of day are fetched just after it, so new posts arrive minutes late instead of up to a day. See [`docs/fetching.md`](docs/fetching.md).
 - **Auto-read** — old unread items are marked read automatically (3, 7, 30, or 60 days; off), so a backlog you never cared about fades away. Reversible with "mark all unread".
 
 ## Usage

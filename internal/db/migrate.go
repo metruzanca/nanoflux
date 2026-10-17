@@ -64,6 +64,7 @@ var migrations = []migration{
 	{51, schemaV51},
 	{52, schemaV52},
 	{53, schemaV53},
+	{54, schemaV54},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -764,6 +765,15 @@ ALTER TABLE feeds DROP COLUMN hide_followed_authors;
 const schemaV53 = `
 DROP TABLE filters;
 ALTER TABLE feeds DROP COLUMN filter_mode;
+`
+
+// schemaV54 marks a feed whose next_poll_at is a scheduled, clock-aligned fetch
+// (derived from when the author usually posts) rather than a rate-limit backoff.
+// The two share the "do not poll before" column so ListFeedsDue needs no change;
+// the flag lets the UI (and the manual-refresh guard) tell a real backoff apart
+// from a planned poll.
+const schemaV54 = `
+ALTER TABLE feeds ADD COLUMN next_poll_scheduled INTEGER NOT NULL DEFAULT 0;
 `
 
 // Migrate applies any pending migrations in order, recording each in

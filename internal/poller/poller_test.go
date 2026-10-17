@@ -124,6 +124,130 @@ func TestPollOneAdaptiveInterval(t *testing.T) {
 	}
 }
 
+// fixedHourServer serves n items published one day apart at the same UTC hour,
+// so a feed's recent posts cluster at a time of day.
+func fixedHourServer(t *testing.T, n, hour int) *httptest.Server {
+	t.Helper()
+	now := time.Now().UTC()
+	base := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, time.UTC)
+	if base.After(now) {
+		base = base.Add(-24 * time.Hour)
+	}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var items strings.Builder
+		for i := 0; i < n; i++ {
+			pub := base.Add(-time.Duration(i) * 24 * time.Hour)
+			items.WriteString(fmt.Sprintf(
+				`<item><guid>%d</guid><title>t%d</title><link>https://b.dev/%d</link><pubDate>%s</pubDate></item>`,
+				i, i, i, pub.Format(time.RFC1123Z)))
+		}
+		fmt.Fprintf(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>B</title>%s</channel></rss>`, items.String())
+	}))
+}
+
+// spacedServer serves n items spaced by gap ending at now, so their times of day
+// are spread around the clock.
+func spacedServer(t *testing.T, n int, gap time.Duration) *httptest.Server {
+	t.Helper()
+	now := time.Now().UTC()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var items strings.Builder
+		for i := 0; i < n; i++ {
+			pub := now.Add(-gap * time.Duration(i))
+			items.WriteString(fmt.Sprintf(
+				`<item><guid>%d</guid><title>t%d</title><link>https://b.dev/%d</link><pubDate>%s</pubDate></item>`,
+				i, i, i, pub.Format(time.RFC1123Z)))
+		}
+		fmt.Fprintf(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>B</title>%s</channel></rss>`, items.String())
+	}))
+}
+
+// A daily feed that always posts at the same hour is scheduled just after that
+// hour, not whenever its 1-day interval happens to elapse.
+func TestPollOneSchedulesToPostingHour(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
+
+	const hour = 15
+	srv := fixedHourServer(t, 8, hour)
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL, "", "", 900)
+	p := New(st, time.Minute, 1)
+	ctx := context.Background()
+	if _, err := p.PollOne(ctx, f); err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.PollIntervalSec != adaptiveCeil {
+		t.Fatalf("interval = %d, want the 1-day ceiling (%d) for a daily feed", got.PollIntervalSec, adaptiveCeil)
+	}
+	if !got.NextPollScheduled || got.NextPollAt == "" {
+		t.Fatalf("daily feed should be scheduled: scheduled=%v next=%q", got.NextPollScheduled, got.NextPollAt)
+	}
+	target, err := db.ParseTime(got.NextPollAt)
+	if err != nil {
+		t.Fatalf("parse next_poll_at: %v", err)
+	}
+	if target.UTC().Hour() != hour {
+		t.Errorf("scheduled hour = %d, want %d", target.UTC().Hour(), hour)
+	}
+	// 5m buffer plus up to 10m of deterministic jitter.
+	if m := target.UTC().Minute(); m < 5 || m >= 15 {
+		t.Errorf("scheduled minute = %d, want within [5, 15)", m)
+	}
+	if !target.After(time.Now()) {
+		t.Errorf("scheduled target %s should be in the future", target)
+	}
+
+	// A second poll with no new items keeps the schedule (no drift).
+	if _, err := p.PollOne(ctx, f); err != nil {
+		t.Fatalf("PollOne again: %v", err)
+	}
+	got, _ = st.Feeds.ByID(u.ID, f.ID)
+	if !got.NextPollScheduled || got.NextPollAt == "" {
+		t.Fatalf("schedule should survive a poll with no new items: %+v", got)
+	}
+}
+
+// A feed whose posts are spread around the clock gets no time-of-day schedule.
+func TestPollOneDoesNotScheduleSpreadFeed(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
+
+	srv := spacedServer(t, 6, 4*time.Hour)
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL, "", "", 900)
+	p := New(st, time.Minute, 1)
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.NextPollScheduled || got.NextPollAt != "" {
+		t.Fatalf("spread feed should not be scheduled: scheduled=%v next=%q", got.NextPollScheduled, got.NextPollAt)
+	}
+}
+
 // A feed whose newest post is 8 days old is backed off to a 1-day poll
 // interval regardless of the adaptive toggle.
 func TestPollOneStaleBacksOff(t *testing.T) {

@@ -37,7 +37,7 @@ const createFeed = `-- name: CreateFeed :one
 INSERT INTO feeds (user_id, author_id, title, feed_url, home_url, description, poll_interval_sec, plugin_name)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, user_id, author_id, title, feed_url, home_url, description,
-         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
+         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 `
 
 type CreateFeedParams struct {
@@ -80,6 +80,7 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		&i.PollIntervalAuto,
 		&i.LastItemAt,
 		&i.NextPollAt,
+		&i.NextPollScheduled,
 		&i.PluginName,
 		&i.DisabledReason,
 		&i.Enabled,
@@ -95,7 +96,7 @@ const createSystemFeed = `-- name: CreateSystemFeed :one
 INSERT INTO feeds (user_id, author_id, title, feed_url, description, poll_interval_sec, plugin_name, enabled, is_system)
 VALUES (?, ?, ?, ?, ?, 0, '', 0, 1)
 RETURNING id, user_id, author_id, title, feed_url, home_url, description,
-         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
+         etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 `
 
 type CreateSystemFeedParams struct {
@@ -134,6 +135,7 @@ func (q *Queries) CreateSystemFeed(ctx context.Context, arg CreateSystemFeedPara
 		&i.PollIntervalAuto,
 		&i.LastItemAt,
 		&i.NextPollAt,
+		&i.NextPollScheduled,
 		&i.PluginName,
 		&i.DisabledReason,
 		&i.Enabled,
@@ -159,9 +161,26 @@ func (q *Queries) DeleteFeed(ctx context.Context, arg DeleteFeedParams) (sql.Res
 	return q.db.ExecContext(ctx, deleteFeed, arg.ID, arg.UserID)
 }
 
+const earliestNextPollAt = `-- name: EarliestNextPollAt :one
+SELECT next_poll_at FROM feeds
+WHERE enabled = 1 AND is_system = 0
+  AND next_poll_at IS NOT NULL AND next_poll_at > CAST(?1 AS TEXT)
+ORDER BY next_poll_at ASC
+LIMIT 1
+`
+
+// The soonest future next_poll_at across due-eligible feeds, so the poller can
+// wake at a scheduled fetch time instead of on the next base tick.
+func (q *Queries) EarliestNextPollAt(ctx context.Context, now string) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, earliestNextPollAt, now)
+	var next_poll_at sql.NullString
+	err := row.Scan(&next_poll_at)
+	return next_poll_at, err
+}
+
 const getFeed = `-- name: GetFeed :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE id = ? AND user_id = ?
 `
@@ -191,6 +210,7 @@ func (q *Queries) GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error) 
 		&i.PollIntervalAuto,
 		&i.LastItemAt,
 		&i.NextPollAt,
+		&i.NextPollScheduled,
 		&i.PluginName,
 		&i.DisabledReason,
 		&i.Enabled,
@@ -204,7 +224,7 @@ func (q *Queries) GetFeed(ctx context.Context, arg GetFeedParams) (Feed, error) 
 
 const getFeedAny = `-- name: GetFeedAny :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE id = ?
 `
@@ -229,6 +249,7 @@ func (q *Queries) GetFeedAny(ctx context.Context, id int64) (Feed, error) {
 		&i.PollIntervalAuto,
 		&i.LastItemAt,
 		&i.NextPollAt,
+		&i.NextPollScheduled,
 		&i.PluginName,
 		&i.DisabledReason,
 		&i.Enabled,
@@ -242,7 +263,7 @@ func (q *Queries) GetFeedAny(ctx context.Context, id int64) (Feed, error) {
 
 const getFeedByTitle = `-- name: GetFeedByTitle :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE user_id = ? AND title = ? COLLATE NOCASE
 `
@@ -272,6 +293,7 @@ func (q *Queries) GetFeedByTitle(ctx context.Context, arg GetFeedByTitleParams) 
 		&i.PollIntervalAuto,
 		&i.LastItemAt,
 		&i.NextPollAt,
+		&i.NextPollScheduled,
 		&i.PluginName,
 		&i.DisabledReason,
 		&i.Enabled,
@@ -285,7 +307,7 @@ func (q *Queries) GetFeedByTitle(ctx context.Context, arg GetFeedByTitleParams) 
 
 const getSystemFeed = `-- name: GetSystemFeed :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE user_id = ? AND is_system = 1
 LIMIT 1
@@ -312,6 +334,7 @@ func (q *Queries) GetSystemFeed(ctx context.Context, userID int64) (Feed, error)
 		&i.PollIntervalAuto,
 		&i.LastItemAt,
 		&i.NextPollAt,
+		&i.NextPollScheduled,
 		&i.PluginName,
 		&i.DisabledReason,
 		&i.Enabled,
@@ -325,7 +348,7 @@ func (q *Queries) GetSystemFeed(ctx context.Context, userID int64) (Feed, error)
 
 const listAllFeeds = `-- name: ListAllFeeds :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
        u.username AS owner
 FROM feeds f
 JOIN users u ON u.id = f.user_id
@@ -334,30 +357,31 @@ ORDER BY u.username, f.title
 `
 
 type ListAllFeedsRow struct {
-	ID               int64          `json:"id"`
-	UserID           int64          `json:"user_id"`
-	AuthorID         int64          `json:"author_id"`
-	Title            string         `json:"title"`
-	FeedUrl          string         `json:"feed_url"`
-	HomeUrl          sql.NullString `json:"home_url"`
-	Description      sql.NullString `json:"description"`
-	Etag             sql.NullString `json:"etag"`
-	LastModified     sql.NullString `json:"last_modified"`
-	LastPolledAt     sql.NullString `json:"last_polled_at"`
-	LastError        sql.NullString `json:"last_error"`
-	NextPageUrl      string         `json:"next_page_url"`
-	PollIntervalSec  int64          `json:"poll_interval_sec"`
-	PollIntervalAuto int64          `json:"poll_interval_auto"`
-	LastItemAt       sql.NullString `json:"last_item_at"`
-	NextPollAt       sql.NullString `json:"next_poll_at"`
-	PluginName       string         `json:"plugin_name"`
-	DisabledReason   sql.NullString `json:"disabled_reason"`
-	Enabled          bool           `json:"enabled"`
-	IsSystem         int64          `json:"is_system"`
-	Rank             int64          `json:"rank"`
-	CacheImages      int64          `json:"cache_images"`
-	CreatedAt        string         `json:"created_at"`
-	Owner            string         `json:"owner"`
+	ID                int64          `json:"id"`
+	UserID            int64          `json:"user_id"`
+	AuthorID          int64          `json:"author_id"`
+	Title             string         `json:"title"`
+	FeedUrl           string         `json:"feed_url"`
+	HomeUrl           sql.NullString `json:"home_url"`
+	Description       sql.NullString `json:"description"`
+	Etag              sql.NullString `json:"etag"`
+	LastModified      sql.NullString `json:"last_modified"`
+	LastPolledAt      sql.NullString `json:"last_polled_at"`
+	LastError         sql.NullString `json:"last_error"`
+	NextPageUrl       string         `json:"next_page_url"`
+	PollIntervalSec   int64          `json:"poll_interval_sec"`
+	PollIntervalAuto  int64          `json:"poll_interval_auto"`
+	LastItemAt        sql.NullString `json:"last_item_at"`
+	NextPollAt        sql.NullString `json:"next_poll_at"`
+	NextPollScheduled int64          `json:"next_poll_scheduled"`
+	PluginName        string         `json:"plugin_name"`
+	DisabledReason    sql.NullString `json:"disabled_reason"`
+	Enabled           bool           `json:"enabled"`
+	IsSystem          int64          `json:"is_system"`
+	Rank              int64          `json:"rank"`
+	CacheImages       int64          `json:"cache_images"`
+	CreatedAt         string         `json:"created_at"`
+	Owner             string         `json:"owner"`
 }
 
 func (q *Queries) ListAllFeeds(ctx context.Context) ([]ListAllFeedsRow, error) {
@@ -386,6 +410,7 @@ func (q *Queries) ListAllFeeds(ctx context.Context) ([]ListAllFeedsRow, error) {
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
 			&i.NextPollAt,
+			&i.NextPollScheduled,
 			&i.PluginName,
 			&i.DisabledReason,
 			&i.Enabled,
@@ -410,7 +435,7 @@ func (q *Queries) ListAllFeeds(ctx context.Context) ([]ListAllFeedsRow, error) {
 
 const listFeeds = `-- name: ListFeeds :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE user_id = ? AND is_system = 0
 ORDER BY title
@@ -442,6 +467,7 @@ func (q *Queries) ListFeeds(ctx context.Context, userID int64) ([]Feed, error) {
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
 			&i.NextPollAt,
+			&i.NextPollScheduled,
 			&i.PluginName,
 			&i.DisabledReason,
 			&i.Enabled,
@@ -465,7 +491,7 @@ func (q *Queries) ListFeeds(ctx context.Context, userID int64) ([]Feed, error) {
 
 const listFeedsByAuthor = `-- name: ListFeedsByAuthor :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE user_id = ? AND author_id = ? AND is_system = 0
 ORDER BY title
@@ -502,6 +528,7 @@ func (q *Queries) ListFeedsByAuthor(ctx context.Context, arg ListFeedsByAuthorPa
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
 			&i.NextPollAt,
+			&i.NextPollScheduled,
 			&i.PluginName,
 			&i.DisabledReason,
 			&i.Enabled,
@@ -525,7 +552,7 @@ func (q *Queries) ListFeedsByAuthor(ctx context.Context, arg ListFeedsByAuthorPa
 
 const listFeedsByAuthorWithUnread = `-- name: ListFeedsByAuthorWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i JOIN item_feeds mf ON mf.item_id = i.id
         WHERE mf.feed_id = f.id AND i.read = 0) AS unread
@@ -541,31 +568,32 @@ type ListFeedsByAuthorWithUnreadParams struct {
 }
 
 type ListFeedsByAuthorWithUnreadRow struct {
-	ID               int64          `json:"id"`
-	UserID           int64          `json:"user_id"`
-	AuthorID         int64          `json:"author_id"`
-	Title            string         `json:"title"`
-	FeedUrl          string         `json:"feed_url"`
-	HomeUrl          sql.NullString `json:"home_url"`
-	Description      sql.NullString `json:"description"`
-	Etag             sql.NullString `json:"etag"`
-	LastModified     sql.NullString `json:"last_modified"`
-	LastPolledAt     sql.NullString `json:"last_polled_at"`
-	LastError        sql.NullString `json:"last_error"`
-	NextPageUrl      string         `json:"next_page_url"`
-	PollIntervalSec  int64          `json:"poll_interval_sec"`
-	PollIntervalAuto int64          `json:"poll_interval_auto"`
-	LastItemAt       sql.NullString `json:"last_item_at"`
-	NextPollAt       sql.NullString `json:"next_poll_at"`
-	PluginName       string         `json:"plugin_name"`
-	DisabledReason   sql.NullString `json:"disabled_reason"`
-	Enabled          bool           `json:"enabled"`
-	IsSystem         int64          `json:"is_system"`
-	Rank             int64          `json:"rank"`
-	CacheImages      int64          `json:"cache_images"`
-	CreatedAt        string         `json:"created_at"`
-	AuthorName       sql.NullString `json:"author_name"`
-	Unread           int64          `json:"unread"`
+	ID                int64          `json:"id"`
+	UserID            int64          `json:"user_id"`
+	AuthorID          int64          `json:"author_id"`
+	Title             string         `json:"title"`
+	FeedUrl           string         `json:"feed_url"`
+	HomeUrl           sql.NullString `json:"home_url"`
+	Description       sql.NullString `json:"description"`
+	Etag              sql.NullString `json:"etag"`
+	LastModified      sql.NullString `json:"last_modified"`
+	LastPolledAt      sql.NullString `json:"last_polled_at"`
+	LastError         sql.NullString `json:"last_error"`
+	NextPageUrl       string         `json:"next_page_url"`
+	PollIntervalSec   int64          `json:"poll_interval_sec"`
+	PollIntervalAuto  int64          `json:"poll_interval_auto"`
+	LastItemAt        sql.NullString `json:"last_item_at"`
+	NextPollAt        sql.NullString `json:"next_poll_at"`
+	NextPollScheduled int64          `json:"next_poll_scheduled"`
+	PluginName        string         `json:"plugin_name"`
+	DisabledReason    sql.NullString `json:"disabled_reason"`
+	Enabled           bool           `json:"enabled"`
+	IsSystem          int64          `json:"is_system"`
+	Rank              int64          `json:"rank"`
+	CacheImages       int64          `json:"cache_images"`
+	CreatedAt         string         `json:"created_at"`
+	AuthorName        sql.NullString `json:"author_name"`
+	Unread            int64          `json:"unread"`
 }
 
 func (q *Queries) ListFeedsByAuthorWithUnread(ctx context.Context, arg ListFeedsByAuthorWithUnreadParams) ([]ListFeedsByAuthorWithUnreadRow, error) {
@@ -594,6 +622,7 @@ func (q *Queries) ListFeedsByAuthorWithUnread(ctx context.Context, arg ListFeeds
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
 			&i.NextPollAt,
+			&i.NextPollScheduled,
 			&i.PluginName,
 			&i.DisabledReason,
 			&i.Enabled,
@@ -619,7 +648,7 @@ func (q *Queries) ListFeedsByAuthorWithUnread(ctx context.Context, arg ListFeeds
 
 const listFeedsDue = `-- name: ListFeedsDue :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE enabled = 1 AND is_system = 0
   AND (
@@ -660,6 +689,7 @@ func (q *Queries) ListFeedsDue(ctx context.Context, now string) ([]Feed, error) 
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
 			&i.NextPollAt,
+			&i.NextPollScheduled,
 			&i.PluginName,
 			&i.DisabledReason,
 			&i.Enabled,
@@ -683,7 +713,7 @@ func (q *Queries) ListFeedsDue(ctx context.Context, now string) ([]Feed, error) 
 
 const listFeedsWithFavoriteCounts = `-- name: ListFeedsWithFavoriteCounts :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.favorite = 1) AS favorite_count
 FROM feeds f
@@ -693,31 +723,32 @@ ORDER BY favorite_count DESC, f.title
 `
 
 type ListFeedsWithFavoriteCountsRow struct {
-	ID               int64          `json:"id"`
-	UserID           int64          `json:"user_id"`
-	AuthorID         int64          `json:"author_id"`
-	Title            string         `json:"title"`
-	FeedUrl          string         `json:"feed_url"`
-	HomeUrl          sql.NullString `json:"home_url"`
-	Description      sql.NullString `json:"description"`
-	Etag             sql.NullString `json:"etag"`
-	LastModified     sql.NullString `json:"last_modified"`
-	LastPolledAt     sql.NullString `json:"last_polled_at"`
-	LastError        sql.NullString `json:"last_error"`
-	NextPageUrl      string         `json:"next_page_url"`
-	PollIntervalSec  int64          `json:"poll_interval_sec"`
-	PollIntervalAuto int64          `json:"poll_interval_auto"`
-	LastItemAt       sql.NullString `json:"last_item_at"`
-	NextPollAt       sql.NullString `json:"next_poll_at"`
-	PluginName       string         `json:"plugin_name"`
-	DisabledReason   sql.NullString `json:"disabled_reason"`
-	Enabled          bool           `json:"enabled"`
-	IsSystem         int64          `json:"is_system"`
-	Rank             int64          `json:"rank"`
-	CacheImages      int64          `json:"cache_images"`
-	CreatedAt        string         `json:"created_at"`
-	AuthorName       sql.NullString `json:"author_name"`
-	FavoriteCount    int64          `json:"favorite_count"`
+	ID                int64          `json:"id"`
+	UserID            int64          `json:"user_id"`
+	AuthorID          int64          `json:"author_id"`
+	Title             string         `json:"title"`
+	FeedUrl           string         `json:"feed_url"`
+	HomeUrl           sql.NullString `json:"home_url"`
+	Description       sql.NullString `json:"description"`
+	Etag              sql.NullString `json:"etag"`
+	LastModified      sql.NullString `json:"last_modified"`
+	LastPolledAt      sql.NullString `json:"last_polled_at"`
+	LastError         sql.NullString `json:"last_error"`
+	NextPageUrl       string         `json:"next_page_url"`
+	PollIntervalSec   int64          `json:"poll_interval_sec"`
+	PollIntervalAuto  int64          `json:"poll_interval_auto"`
+	LastItemAt        sql.NullString `json:"last_item_at"`
+	NextPollAt        sql.NullString `json:"next_poll_at"`
+	NextPollScheduled int64          `json:"next_poll_scheduled"`
+	PluginName        string         `json:"plugin_name"`
+	DisabledReason    sql.NullString `json:"disabled_reason"`
+	Enabled           bool           `json:"enabled"`
+	IsSystem          int64          `json:"is_system"`
+	Rank              int64          `json:"rank"`
+	CacheImages       int64          `json:"cache_images"`
+	CreatedAt         string         `json:"created_at"`
+	AuthorName        sql.NullString `json:"author_name"`
+	FavoriteCount     int64          `json:"favorite_count"`
 }
 
 // Every non-system feed of a user with its owner-feed favorite count, for the
@@ -749,6 +780,7 @@ func (q *Queries) ListFeedsWithFavoriteCounts(ctx context.Context, userID int64)
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
 			&i.NextPollAt,
+			&i.NextPollScheduled,
 			&i.PluginName,
 			&i.DisabledReason,
 			&i.Enabled,
@@ -774,7 +806,7 @@ func (q *Queries) ListFeedsWithFavoriteCounts(ctx context.Context, userID int64)
 
 const listFeedsWithUnread = `-- name: ListFeedsWithUnread :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
-       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
        a.name AS author_name,
        (SELECT COUNT(*) FROM items i JOIN item_feeds mf ON mf.item_id = i.id
         WHERE mf.feed_id = f.id AND i.read = 0) AS unread
@@ -785,31 +817,32 @@ ORDER BY f.title
 `
 
 type ListFeedsWithUnreadRow struct {
-	ID               int64          `json:"id"`
-	UserID           int64          `json:"user_id"`
-	AuthorID         int64          `json:"author_id"`
-	Title            string         `json:"title"`
-	FeedUrl          string         `json:"feed_url"`
-	HomeUrl          sql.NullString `json:"home_url"`
-	Description      sql.NullString `json:"description"`
-	Etag             sql.NullString `json:"etag"`
-	LastModified     sql.NullString `json:"last_modified"`
-	LastPolledAt     sql.NullString `json:"last_polled_at"`
-	LastError        sql.NullString `json:"last_error"`
-	NextPageUrl      string         `json:"next_page_url"`
-	PollIntervalSec  int64          `json:"poll_interval_sec"`
-	PollIntervalAuto int64          `json:"poll_interval_auto"`
-	LastItemAt       sql.NullString `json:"last_item_at"`
-	NextPollAt       sql.NullString `json:"next_poll_at"`
-	PluginName       string         `json:"plugin_name"`
-	DisabledReason   sql.NullString `json:"disabled_reason"`
-	Enabled          bool           `json:"enabled"`
-	IsSystem         int64          `json:"is_system"`
-	Rank             int64          `json:"rank"`
-	CacheImages      int64          `json:"cache_images"`
-	CreatedAt        string         `json:"created_at"`
-	AuthorName       sql.NullString `json:"author_name"`
-	Unread           int64          `json:"unread"`
+	ID                int64          `json:"id"`
+	UserID            int64          `json:"user_id"`
+	AuthorID          int64          `json:"author_id"`
+	Title             string         `json:"title"`
+	FeedUrl           string         `json:"feed_url"`
+	HomeUrl           sql.NullString `json:"home_url"`
+	Description       sql.NullString `json:"description"`
+	Etag              sql.NullString `json:"etag"`
+	LastModified      sql.NullString `json:"last_modified"`
+	LastPolledAt      sql.NullString `json:"last_polled_at"`
+	LastError         sql.NullString `json:"last_error"`
+	NextPageUrl       string         `json:"next_page_url"`
+	PollIntervalSec   int64          `json:"poll_interval_sec"`
+	PollIntervalAuto  int64          `json:"poll_interval_auto"`
+	LastItemAt        sql.NullString `json:"last_item_at"`
+	NextPollAt        sql.NullString `json:"next_poll_at"`
+	NextPollScheduled int64          `json:"next_poll_scheduled"`
+	PluginName        string         `json:"plugin_name"`
+	DisabledReason    sql.NullString `json:"disabled_reason"`
+	Enabled           bool           `json:"enabled"`
+	IsSystem          int64          `json:"is_system"`
+	Rank              int64          `json:"rank"`
+	CacheImages       int64          `json:"cache_images"`
+	CreatedAt         string         `json:"created_at"`
+	AuthorName        sql.NullString `json:"author_name"`
+	Unread            int64          `json:"unread"`
 }
 
 func (q *Queries) ListFeedsWithUnread(ctx context.Context, userID int64) ([]ListFeedsWithUnreadRow, error) {
@@ -838,6 +871,7 @@ func (q *Queries) ListFeedsWithUnread(ctx context.Context, userID int64) ([]List
 			&i.PollIntervalAuto,
 			&i.LastItemAt,
 			&i.NextPollAt,
+			&i.NextPollScheduled,
 			&i.PluginName,
 			&i.DisabledReason,
 			&i.Enabled,
@@ -1051,6 +1085,24 @@ type SetFeedNextPollAtParams struct {
 
 func (q *Queries) SetFeedNextPollAt(ctx context.Context, arg SetFeedNextPollAtParams) error {
 	_, err := q.db.ExecContext(ctx, setFeedNextPollAt, arg.NextPollAt, arg.ID)
+	return err
+}
+
+const setFeedNextPollScheduled = `-- name: SetFeedNextPollScheduled :exec
+UPDATE feeds
+SET next_poll_scheduled = ?
+WHERE id = ?
+`
+
+type SetFeedNextPollScheduledParams struct {
+	NextPollScheduled int64 `json:"next_poll_scheduled"`
+	ID                int64 `json:"id"`
+}
+
+// Mark a feed's next_poll_at as a scheduled, clock-aligned fetch (1) rather than
+// a rate-limit backoff (0), so the UI can tell them apart.
+func (q *Queries) SetFeedNextPollScheduled(ctx context.Context, arg SetFeedNextPollScheduledParams) error {
+	_, err := q.db.ExecContext(ctx, setFeedNextPollScheduled, arg.NextPollScheduled, arg.ID)
 	return err
 }
 

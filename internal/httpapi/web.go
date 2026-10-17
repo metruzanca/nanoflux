@@ -69,8 +69,10 @@ type feedRow struct {
 }
 
 // Cooling reports whether the feed is currently inside a rate-limit backoff, so
-// the row can show a retry badge and disable its refresh button.
-func (r feedRow) Cooling() bool { return cooling(r.NextPollAt) }
+// the row can show a retry badge and disable its refresh button. A scheduled
+// time-of-day deadline (NextPollScheduled) is not a backoff: it is not a retry
+// and a manual refresh may override it.
+func (r feedRow) Cooling() bool { return cooling(r.NextPollAt) && !r.NextPollScheduled }
 
 type feedForm struct {
 	ID               int64
@@ -1682,7 +1684,7 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 	// The row already shows the retry deadline, so a click during the window is
 	// a no-op rather than another 429.
 	newItems := 0
-	if !cooling(f.NextPollAt) && s.poller != nil {
+	if (!cooling(f.NextPollAt) || f.NextPollScheduled) && s.poller != nil {
 		if n, err := s.poller.PollOne(r.Context(), f); err != nil {
 			log.Error("refresh feed", "feed_id", id, "err", err)
 		} else {
