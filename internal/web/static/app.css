@@ -1332,15 +1332,34 @@ dialog.modal.wide[open] {
 #authors-list li { padding: 0.9rem 0; }
 
 /* Editable author link rows on the edit form: label/url side by side with a
-   remove ✕. */
+   trash button. The placeholders name the fields, so no per-row labels. */
 .author-link-row {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 0.5rem;
 }
-.author-link-row label { flex: 1; }
-.author-link-row label:first-of-type { flex: 0 1 10rem; }
-.author-link-row .danger { padding-bottom: 0.6rem; }
+.author-link-row input[name="link_label"] { flex: 0 1 10rem; }
+.author-link-row input[name="link_url"] { flex: 1; min-width: 0; }
+.author-link-row button { flex: none; }
+.author-link-row .ic { width: 14px; height: 14px; }
+
+/* Avatar block atop the author edit form: the image spans both rows on the
+   left, with the url input (row 1) and cache status (row 2) to its right and
+   the refetch button at the far right. #author-avatar-card is the outerHTML
+   swap target, so it is display:contents and its children join this grid. */
+.avatar-edit {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.75rem;
+  row-gap: 0.15rem;
+}
+.avatar-edit-card { display: contents; }
+.avatar-edit-card > .error { grid-column: 1 / -1; }
+.avatar-edit-visual { grid-column: 1; grid-row: 1 / span 2; }
+.avatar-edit-status { grid-column: 2; grid-row: 2; }
+.avatar-edit-url { grid-column: 2; grid-row: 1; }
+.avatar-edit > button { grid-column: 3; grid-row: 1; }
 
 /* Author page: external bookmark links rendered inline under the home url. */
 .author-links { margin: 0.35rem 0 0; }

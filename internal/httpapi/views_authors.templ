@@ -91,9 +91,9 @@ templ authorEditPage(u store.User, d authorsData) {
 		</div>
 		<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
 			@csrfField()
+			@authorAvatarFields(d.AvatarCard)
 			@authorFields(d)
 			@authorLinkFields(d)
-			@authorAvatarFields(d.AvatarCard)
 			<button type="submit">save</button>
 		</form>
 		<form class="stack delete-form" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this author and their feeds?">
@@ -143,41 +143,42 @@ templ authorEditPage(u store.User, d authorsData) {
 	}
 }
 
-// authorAvatarFields renders the avatar section inside the edit form: the
-// image, its cache status, the refetch button, and the avatar url input sit
-// together. The refetch button swaps only the inner #author-avatar-card (image
-// + status + button), leaving the avatar url input's unsaved value alone.
+// authorAvatarFields renders the avatar section at the top of the edit form:
+// the image (with its cache status) sits to the left, and the avatar url input
+// and refetch button inline to its right. The url input lives outside
+// #author-avatar-card so a refetch (which swaps the card via outerHTML) leaves
+// the input's unsaved value alone.
 templ authorAvatarFields(d authorAvatarCardData) {
-	<h2>avatar</h2>
-	<div id="author-avatar-card">
+	<div class="avatar-edit">
+		@authorAvatarCard(d)
+		<input class="avatar-edit-url" name="avatar_url" type="url" value={ d.AvatarURL } placeholder="avatar url" aria-label="avatar url"/>
+		<button type="button" class="link" title="re-fetch the avatar from its url" hx-post={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar-refresh" } hx-target="#author-avatar-card" hx-swap="outerHTML">refetch avatar</button>
+	</div>
+}
+
+// authorAvatarCard is the swap target for the refetch button: the flash, the
+// avatar image (or its placeholder) and the cached/not-cached status. It is a
+// display:contents box so its children lay out inside .avatar-edit's grid.
+templ authorAvatarCard(d authorAvatarCardData) {
+	<div id="author-avatar-card" class="avatar-edit-card">
 		if d.Flash != "" {
 			<div class="error" role="alert">{ d.Flash }</div>
 		}
-		<div class="row">
-			<div class="row">
-				if d.AvatarKey != "" {
-					<img class="avatar avatar-lg" src={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar?v=" + url.QueryEscape(d.LastFetchedAt) } alt=""/>
-				} else if d.AvatarURL != "" {
-					<img class="avatar avatar-lg" src={ web.ProxiedImageURL(d.AvatarURL) } data-hide-on-error alt=""/>
-				} else {
-					<span class="muted">no avatar url set</span>
-				}
-				<span class="muted small">
-					if d.AvatarKey != "" {
-						cached { web.TimeFmt(d.Timezone, d.LastFetchedAt) }
-					} else {
-						not cached yet
-					}
-				</span>
-			</div>
-			<div class="row-actions">
-				<button type="button" class="link" title="re-fetch the avatar from its url" hx-post={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar-refresh" } hx-target="#author-avatar-card" hx-swap="outerHTML">refetch avatar</button>
-			</div>
-		</div>
+		if d.AvatarKey != "" {
+			<img class="avatar avatar-lg avatar-edit-visual" src={ "/authors/" + strconv.FormatInt(d.ID, 10) + "/avatar?v=" + url.QueryEscape(d.LastFetchedAt) } alt=""/>
+		} else if d.AvatarURL != "" {
+			<img class="avatar avatar-lg avatar-edit-visual" src={ web.ProxiedImageURL(d.AvatarURL) } data-hide-on-error alt=""/>
+		} else {
+			<span class="muted avatar-edit-visual">no avatar url set</span>
+		}
+		<span class="muted small avatar-edit-status">
+			if d.AvatarKey != "" {
+				cached { web.TimeFmt(d.Timezone, d.LastFetchedAt) }
+			} else {
+				not cached yet
+			}
+		</span>
 	</div>
-	<label>avatar url
-		<input name="avatar_url" type="url" value={ d.AvatarURL }/>
-	</label>
 }
 
 templ authorFields(d authorsData) {
@@ -192,17 +193,20 @@ templ authorFields(d authorsData) {
 // authorLinkFields renders an author's external bookmarks as editable form
 // rows. Each row is a hidden link id plus label/url; a row with no id creates a
 // new link, an existing id updates in place, and a link whose row was removed
-// from the form (its ✕) is deleted on save. The blank row is a <template>
-// cloned client-side by addAuthorLinkRow.
+// from the form (its trash button) is deleted on save. The blank row is a
+// <template> cloned client-side by addAuthorLinkRow. With no links the section
+// collapses to the heading and add button on one line.
 templ authorLinkFields(d authorsData) {
-	<h2>links</h2>
+	<div class="row author-links-edit">
+		<h2>links</h2>
+		<button type="button" class="link" data-add-author-link>+ add link</button>
+	</div>
 	<input type="hidden" name="links_present" value="1"/>
 	<div id="author-link-fields" class="stack">
 		for _, l := range d.Links {
 			@authorLinkFieldRow(strconv.FormatInt(l.ID, 10), l.Label, l.URL)
 		}
 	</div>
-	<button type="button" class="link" data-add-author-link>+ add link</button>
 	<template id="author-link-row-template">
 		@authorLinkFieldRow("", "", "")
 	</template>
@@ -211,13 +215,9 @@ templ authorLinkFields(d authorsData) {
 templ authorLinkFieldRow(id, label, linkURL string) {
 	<div class="author-link-row">
 		<input type="hidden" name="link_id" value={ id }/>
-		<label>label
-			<input name="link_label" type="text" value={ label } placeholder="optional"/>
-		</label>
-		<label>url
-			<input name="link_url" type="text" value={ linkURL } placeholder="https://..."/>
-		</label>
-		<button type="button" class="link danger" title="remove link" data-remove-closest=".author-link-row">@web.Lucide("x")</button>
+		<input name="link_label" type="text" value={ label } placeholder="label (optional)" aria-label="link label"/>
+		<input name="link_url" type="text" value={ linkURL } placeholder="https://..." aria-label="link url"/>
+		<button type="button" class="link danger" title="remove link" data-remove-closest=".author-link-row">@web.Lucide("trash-2")</button>
 	</div>
 }
 

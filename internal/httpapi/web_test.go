@@ -2262,9 +2262,9 @@ func TestAuthorEditHasAvatarFields(t *testing.T) {
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit", cookie).Body.String()
-	// The avatar url input lives with the avatar image/heading inside the form.
+	// The avatar url input sits inline with the avatar image/card in the form.
 	if !strings.Contains(edit, `name="avatar_url"`) ||
-		!strings.Contains(edit, `<h2>avatar</h2>`) ||
+		!strings.Contains(edit, `class="avatar-edit"`) ||
 		!strings.Contains(edit, `id="author-avatar-card"`) ||
 		!strings.Contains(edit, `hx-target="#author-avatar-card"`) {
 		t.Fatalf("author edit should group the avatar url with the avatar section: %s", edit)
