@@ -79,6 +79,13 @@ const (
 	// storage and renders the cached copy. Default (no plugin) is remote loading,
 	// and a user may opt an individual feed in without a plugin.
 	CapImageCache
+	// CapBypassProxy asks whether an image URL should be loaded directly by the
+	// browser instead of through the host's image proxy. Some sites serve images
+	// with permissive hotlinking but refuse the server-side request the proxy
+	// makes (a browser User-Agent is fine, a datacenter one is rejected), so the
+	// proxied request fails while a direct one works. It is matched on the image
+	// URL and must be pure and cheap.
+	CapBypassProxy
 )
 
 // Meta describes a plugin to the host.
@@ -631,20 +638,4 @@ type Configurable interface {
 	Settings() []SettingField
 	// Configure receives the stored values, keyed by SettingField.Name.
 	Configure(values map[string]string)
-}
-
-// ProxyBypasser is an optional capability a plugin may implement to have its
-// image URLs loaded directly by the browser instead of through the host's image
-// proxy. Some sites serve images with permissive hotlinking but block the
-// server-side requests the proxy makes (a browser User-Agent is fine, a
-// datacenter one is refused), so the proxied request fails while a direct one
-// works. A plugin whose site behaves that way returns true for its image hosts.
-//
-// It is not matched on a URL capability: the host asks every plugin that
-// implements it, and any true answer wins. BypassProxy must be pure (no network
-// I/O) and cheap; it runs for every rendered image URL.
-type ProxyBypasser interface {
-	// BypassProxy reports whether rawurl should be loaded directly rather than
-	// through the host's image proxy.
-	BypassProxy(rawurl string) bool
 }

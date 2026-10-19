@@ -54,6 +54,10 @@ type managedExternal struct {
 	matchMu sync.Mutex
 	matches map[matchKey]bool
 
+	// config is the last value set pushed by Configure. It is re-pushed when
+	// the subprocess is respawned after being reaped.
+	config map[string]string
+
 	stop     chan struct{}
 	stopOnce sync.Once
 }
@@ -83,7 +87,12 @@ func (m *managedExternal) spawnLocked() error {
 	}
 	m.client = client
 	m.inner = f
-	if m.meta.Name == "" {
+	if m.config != nil {
+		if c, ok := f.(pluginapi.Configurable); ok {
+			c.Configure(m.config)
+		}
+	}
+	if m.meta.Name == "" || m.config != nil {
 		m.meta = f.Meta()
 	}
 	m.lastUsed = time.Now()
@@ -343,12 +352,37 @@ func (m *managedExternal) Settings() []pluginapi.SettingField {
 }
 
 func (m *managedExternal) Configure(values map[string]string) {
+	// Keep a copy so a respawned subprocess starts configured again.
+	stored := make(map[string]string, len(values))
+	for k, v := range values {
+		stored[k] = v
+	}
+	m.mu.Lock()
+	m.config = stored
+	m.mu.Unlock()
+
+	var meta pluginapi.Meta
 	_ = m.call(true, func(f pluginapi.Fetcher) error {
 		if c, ok := f.(pluginapi.Configurable); ok {
 			c.Configure(values)
 		}
+		// Configuration can change Meta (a User-Agent derived from a setting,
+		// for example), and the host reads Meta per request.
+		meta = f.Meta()
 		return nil
 	})
+
+	// A configured value can change which URLs a plugin matches (a service
+	// base URL, say). Drop answers cached against the old configuration.
+	m.matchMu.Lock()
+	m.matches = map[matchKey]bool{}
+	m.matchMu.Unlock()
+
+	if meta.Name != "" {
+		m.mu.Lock()
+		m.meta = meta
+		m.mu.Unlock()
+	}
 }
 
 // Compile-time proof that the wrapper satisfies every interface the gRPC client

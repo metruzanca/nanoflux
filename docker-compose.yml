@@ -38,9 +38,8 @@ services:
       NF_BACKUP_DIR: "${NF_BACKUP_DIR:-/backups}"
       NF_BACKUP_INTERVAL: "${NF_BACKUP_INTERVAL:-24h}"
       NF_BACKUP_KEEP: "${NF_BACKUP_KEEP:-7}"
-      # External feed plugins are executables in this directory; drop them in
-      # ./plugins on the host and restart. Native plugins (YouTube, etc.) are
-      # always available.
+      # Feed plugins are executables in this directory; drop them in ./plugins
+      # on the host and restart. All site integrations are external plugins.
       NF_PLUGINS_DIR: "${NF_PLUGINS_DIR:-/plugins}"
     volumes:
       - nanoflux-db:/data

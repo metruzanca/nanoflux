@@ -116,7 +116,8 @@ backup/restore, JSON API.
 ### Plugins
 
 `pluginapi.Fetcher` (`Meta/Match/Discover/Fetch`), capabilities, host-mediated
-HTTP, native plugins (YouTube, Bluesky, Patreon) + external. `feeds.plugin_name`
+HTTP, external plugin modules (`plugins/<name>`) loaded over gRPC. The core
+compiles no site integrations in. `feeds.plugin_name`
 (schemaV31), `ReconcileFeeds` auto-disable/re-enable. `FetchRequest.Config`
 (`pluginapi.go:97`) is plumbed but **never populated or persisted** — a hook for
 per-feed plugin config.
@@ -335,9 +336,10 @@ that already exists and lowers the cost. Effort is a rough S/M/L.
 
 The plugin system is a URL-shaped source adapter: `Match(url, cap)` decides what
 it handles, and `Fetch` returns normalized items through host-mediated HTTP
-(`pluginapi/pluginapi.go:145`). Native plugins are compiled in; external ones are
-executables in `NF_PLUGINS_DIR` and may read their own env vars for API keys
-(see `docs/writing-plugins.md`). Native coverage today: YouTube, Bluesky, Patreon.
+(`pluginapi/pluginapi.go:145`). Plugins are executables in `NF_PLUGINS_DIR` and
+may read their own env vars for API keys
+(see `docs/writing-plugins.md`). All default integrations are external plugins
+today; the core compiles none in.
 
 Three shapes of idea are worth distinguishing:
 

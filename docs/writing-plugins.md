@@ -10,13 +10,12 @@ This is the authoring guide for the system described in
 [`plugin-architecture.md`](plugin-architecture.md); read that for the rationale
 (host-mediated HTTP, host-owned rate limiting, why go-plugin).
 
-A working example ships in `examples/`: `plugin-youtube` serves nanoflux's native YouTube integration
-over gRPC and is deliberately **identical** to the native plugin
-(`internal/plugin/native/youtube`) — it imports that very package rather than
-copying it, so the native and external forms cannot drift. At the time of
-writing they are the same code; only the packaging differs. `plugin-render` and
-`plugin-enrich` are minimal single-capability examples (view-time `Render` and
-ingest-time `Enrich`).
+The default integrations (YouTube, Bluesky, Patreon, Reddit, Kill the
+Newsletter, Instagram) are themselves external plugins, each in its own module
+under `plugins/<name>/`. `examples/plugin-render` and `examples/plugin-enrich`
+are minimal single-capability examples (view-time `Render` and ingest-time
+`Enrich`); `examples/plugin-fetch` is the test fixture used by the host's gRPC
+tests.
 
 ## Where plugins live
 
@@ -129,19 +128,18 @@ a feed it does not fetch at all.
   into its own object storage (under `cache/<plugin>/`) and renders the cached
   copy. It is forced on for those feeds and the user cannot disable it. A user
   may also enable caching per feed without a plugin.
-- **`BypassProxy` (optional)** — if the site's images hotlink freely in a browser
-  but refuse the host's server-side `/img` request, implement `ProxyBypasser` and
-  return true for that host. Matching image URLs then load directly. Pure (no
-  network I/O); it is not URL-capability matched, the host asks every plugin that
-  implements it.
+- **Image proxy bypass (capability only, no method)** — if the site's images
+  hotlink freely in a browser but refuse the host's server-side `/img` request,
+  claim `Match(u, CapBypassProxy)` for those image hosts. Matching URLs then
+  load directly. Pure (no network I/O); it runs for every rendered image URL.
 - **`URLPolicy` (optional)** — pure site URL rules: the canonical feed shape
   (`CanonicalizeFeedURL`) and the token a feed URL represents (`FeedToken`).
 - **`Docs` (optional)** — return Markdown describing the plugin, shown from the
   admin plugin card and from a feed's edit page. `Match(u, CapDocs)` decides
   which URLs it documents.
 - **`Provision` (optional)** — create a feed on the remote service on the user's
-  behalf, so a user never leaves nanoflux (the native Kill the Newsletter
-  plugin creates a newsletter inbox). Advertised by a non-empty
+  behalf, so a user never leaves nanoflux (the Kill the Newsletter plugin creates
+  a newsletter inbox). Advertised by a non-empty
   `Meta.ProvisionLabel`, which is the nav "add" menu entry; there is no URL to
   match.
 - **`FeedAdmin` (optional)** — read a feed's display-only fields and perform
@@ -431,12 +429,13 @@ Delivery is a **push**: the host calls `Configure` once at load with the stored
 values (so `Match` can rely on configuration — it receives no `Host`) and again
 whenever an admin saves. `Configure` must tolerate an incomplete map: missing
 fields arrive as empty strings, so a plugin can start unconfigured and report
-what is missing when it is used. A native plugin caches the values; guard them
-if `Match` reads them from another goroutine.
+what is missing when it is used. The host re-pushes the stored values when a
+reaped plugin subprocess is respawned, so a long-idle plugin starts configured
+again.
 
-The native Kill the Newsletter plugin (`internal/plugin/native/killthenewsletter`)
-is the reference for all three capabilities: it provisions, manages and takes its
-instance base URL from a setting.
+The Kill the Newsletter plugin (`plugins/killthenewsletter`) is the reference for
+all three capabilities: it provisions, manages and takes its instance base URL
+from a setting.
 
 ### Item identity (`Identity`)
 
@@ -484,9 +483,9 @@ a text post, a site that does not expose it. It is part of the item snapshot, so
 a later re-poll can fill it in on an existing row without changing identity or
 read state.
 
-The native YouTube plugin is the reference: its channel RSS carries no duration,
-so it fetches through YouTube's browse API, which returns the runtime alongside
-each entry.
+The YouTube plugin (`plugins/youtube`) is the reference: its channel RSS carries
+no duration, so it fetches through YouTube's browse API, which returns the
+runtime alongside each entry.
 
 ### Categories (`Categories`)
 
@@ -535,8 +534,9 @@ The host ships the players, so a plugin only describes the media:
 - anything else, or `link`, becomes a download link.
 
 Because the core resolves the kind, a directly playable file (e.g. an `mp4`)
-still works, but an HLS manifest is now fully supported. The native Bluesky
-plugin is the reference for reconstructing media from a site's own records: its
+still works, but an HLS manifest is now fully supported. The Bluesky plugin
+(`plugins/bluesky`) is the reference for reconstructing media from a site's own
+records: its
 profile RSS carries no media, so it reads `app.bsky.feed.post` records and
 resolves each blob to a full-size image, or attaches an HLS enclosure for a
 video (with the video thumbnail as the item's `ImageURL`).
@@ -576,8 +576,8 @@ the server runs the same merge at startup). See the "Cross-feed items" note in
 `Render` runs in the item-view path with a 4-second timeout, once per modal
 open. Use `h.Do` for any lookup (oEmbed discovery, an embed page) so the host
 still paces and inspects the requests. `Decorate` is view-time and pure: it must
-not use `h.Do`. The native plugins under `internal/plugin/native/` are the
-reference implementations for all of these.
+not use `h.Do`. The default plugins under `plugins/` are the reference
+implementations for all of these.
 
 ## HTTP: `Host.Do` vs `RawNetwork`
 
@@ -612,7 +612,8 @@ This is what keeps nanoflux the source of truth for:
 logic: it can inspect a 404 and try another endpoint, or serve from its own
 cache. When the host rate-limits a request it cools the host **and** returns the
 response normally with `RateLimited: true` (not as an error) — this inline
-signal is deliberate so a native and an external plugin behave identically. A
+signal is deliberate so an in-process and an out-of-process plugin behave
+identically. A
 plugin that cannot avoid the limit returns a `RateLimit` so nanoflux parks the
 feed; a plugin that recovered from its cache returns its result as usual.
 
@@ -655,13 +656,13 @@ At startup, and only when `NF_PLUGINS_DIR` exists:
    that plugin is **skipped** — a broken plugin cannot crash nanoflux.
 3. **Dispense** the `Fetcher` over gRPC, and keep the subprocess alive across
    polls.
-4. **Register** it alongside the native plugins.
+4. **Register** it as an external plugin.
 
 At **add time**, `Discover` runs for matching plugins to propose feeds. At
 **poll time**, the poller asks the registry which plugin matches the feed URL;
 the first match fetches it, otherwise the generic feed parser runs. If two
-plugins match, the host orders them (native before external, then by name) and
-logs the conflict.
+plugins match, the host orders them (in-process before external, then by name)
+and logs the conflict.
 
 ## Versioning
 

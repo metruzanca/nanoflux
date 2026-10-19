@@ -297,7 +297,7 @@ func isImageHref(href string) bool {
 
 // proxyBypass, when installed by the host, reports whether an image URL should
 // be loaded directly instead of through /img. It is the plugin layer's
-// ProxyBypasser decision; nil means "always proxy".
+// CapBypassProxy decision; nil means "always proxy".
 var proxyBypass func(rawurl string) bool
 
 // SetProxyBypass installs the host's plugin-driven image-proxy bypass. It is set
@@ -308,7 +308,7 @@ func SetProxyBypass(fn func(rawurl string) bool) { proxyBypass = fn }
 // proxy. Some hosts (Instagram's CDN) answer with
 // Cross-Origin-Resource-Policy: same-origin, which blocks a direct browser
 // hotlink; fetching server-side and re-serving from our own origin avoids it.
-// A plugin may instead opt a host out (ProxyBypasser): the proxy's server-side
+// A plugin may instead opt a host out (CapBypassProxy): the proxy's server-side
 // request is refused there while a direct load works. Non-http(s) sources
 // (data: URIs, relative paths) are returned unchanged, as are URLs that cannot
 // be parsed.

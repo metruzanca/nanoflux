@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -558,70 +557,52 @@ func TestPluginLoggerQuietByDefault(t *testing.T) {
 	}
 }
 
-// TestLoadExternalEndToEnd builds the example plugin and loads it over gRPC,
+// TestLoadExternalEndToEnd builds the fixture plugin and loads it over gRPC,
 // exercising handshake, version check, dispense, Match, and Fetch through the
-// broker, including the host-mediated HTTP path and the item's image and
-// duration surviving the gRPC boundary.
+// broker, including the host-mediated HTTP path and the item fields surviving
+// the gRPC boundary.
 func TestLoadExternalEndToEnd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a plugin binary")
 	}
-	// A local upstream serving a browse response the plugin fetches through
-	// Host.Do. The plugin always browses (the channel RSS carries no duration).
+	var hits int
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{
-			"metadata": map[string]any{"channelMetadataRenderer": map[string]any{"title": "External Channel"}},
-			"contents": []any{map[string]any{"lockupViewModel": map[string]any{
-				"contentId": "abc",
-				"metadata": map[string]any{"lockupMetadataViewModel": map[string]any{
-					"title": map[string]any{"content": "Video One"},
-				}},
-				"contentImage": map[string]any{"thumbnailViewModel": map[string]any{
-					"image": map[string]any{"sources": []any{
-						map[string]any{"url": "https://i.ytimg.com/vi/abc/hqdefault.jpg"},
-					}},
-					"overlays": []any{map[string]any{"thumbnailBottomOverlayViewModel": map[string]any{
-						"badges": []any{map[string]any{"thumbnailBadgeViewModel": map[string]any{"text": "5:41"}}},
-					}}},
-				}},
-			}}},
-		})
+		hits++
+		w.Write([]byte("ok"))
 	}))
 	defer upstream.Close()
 
-	bin := buildExamplePlugin(t, "plugin-youtube", "nanoflux-plugin-youtube")
+	bin := buildExamplePlugin(t, "plugin-fetch", "nanoflux-plugin-fetch")
 
 	reg := NewRegistry()
 	hosts := NewHosts(upstream.Client(), NewCooldown())
 	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
 	defer cleanup()
 
-	if len(reg.Names()) != 1 || reg.Names()[0] != "youtube" {
-		t.Fatalf("loaded plugins = %v, want [youtube]", reg.Names())
+	if len(reg.Names()) != 1 || reg.Names()[0] != "fetch-example" {
+		t.Fatalf("loaded plugins = %v, want [fetch-example]", reg.Names())
 	}
 
-	u, _ := url.Parse("https://www.youtube.com/feeds/videos.xml?channel_id=UCx")
+	u, _ := url.Parse(upstream.URL + "/feed")
 	f := reg.Match(u, pluginapi.CapFetch)
 	if f == nil {
-		t.Fatal("youtube plugin should match the channel feed URL")
+		t.Fatal("fetch plugin should match its feed URL")
 	}
-	// Fetch goes: plugin -> gRPC -> host.Do -> upstream -> back to the plugin.
-	// The feed URL carries the mock host, so the plugin's browse request lands
-	// on the upstream too (it derives the browse origin from the feed URL).
-	res, err := f.Fetch(context.Background(), pluginapi.FetchRequest{
-		URL: upstream.URL + "/feeds/videos.xml?channel_id=UCx",
-	}, hosts.For(f))
+	res, err := f.Fetch(context.Background(), pluginapi.FetchRequest{URL: upstream.URL + "/feed"}, hosts.For(f))
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
-	if res.Feed.Title != "External Channel" || len(res.Items) != 1 || res.Items[0].GUID != "yt:video:abc" {
+	if hits != 1 {
+		t.Fatalf("Host.Do should have reached the upstream once, got %d", hits)
+	}
+	if res.Feed.Title != "Fetch Example" || len(res.Items) != 1 || res.Items[0].GUID != "fetch:1" {
 		t.Fatalf("fetch result = %+v", res)
 	}
-	if got := res.Items[0].ImageURL; got != "https://i.ytimg.com/vi/abc/hqdefault.jpg" {
-		t.Fatalf("image = %q, want the thumbnail to survive gRPC", got)
+	if got := res.Items[0].ImageURL; got != "https://cdn.example/pic.jpg" {
+		t.Fatalf("image = %q, want it to survive gRPC", got)
 	}
-	if got := res.Items[0].DurationSec; got != 5*60+41 {
-		t.Fatalf("duration = %d, want 341 (5:41) to survive gRPC", got)
+	if got := res.Items[0].DurationSec; got != 42 {
+		t.Fatalf("duration = %d, want 42 to survive gRPC", got)
 	}
 }
 
@@ -720,43 +701,35 @@ func TestManagedExternalIdleShutdown(t *testing.T) {
 	}
 }
 
-// TestLoadExternalYouTubeExample loads the example that serves the native
-// YouTube plugin over gRPC, proving the two forms are the same behaviour: the
-// external plugin matches the same URLs as the native one.
-func TestLoadExternalYouTubeExample(t *testing.T) {
+// TestLoadExternalMetaAndDocs proves Meta and Docs cross the wire: the host
+// sees the summary, that the plugin documents itself, and the readme.
+func TestLoadExternalMetaAndDocs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a plugin binary")
 	}
-	bin := buildExamplePlugin(t, "plugin-youtube", "nanoflux-plugin-youtube")
+	bin := buildExamplePlugin(t, "plugin-fetch", "nanoflux-plugin-fetch")
 
 	reg := NewRegistry()
 	hosts := NewHosts(http.DefaultClient, NewCooldown())
 	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
 	defer cleanup()
 
-	if len(reg.Names()) != 1 || reg.Names()[0] != "youtube" {
-		t.Fatalf("loaded plugins = %v, want [youtube]", reg.Names())
+	if len(reg.Names()) != 1 || reg.Names()[0] != "fetch-example" {
+		t.Fatalf("loaded plugins = %v, want [fetch-example]", reg.Names())
 	}
-	// The external YouTube plugin must match discover on a channel page and
-	// fetch on the channel RSS URL, exactly like the native plugin.
-	discoverURL, _ := url.Parse("https://www.youtube.com/@SomeChannel")
-	if f := reg.Match(discoverURL, pluginapi.CapDiscover); f == nil {
-		t.Fatal("external youtube plugin should match discover on a channel page")
-	}
-	feedURL, _ := url.Parse("https://www.youtube.com/feeds/videos.xml?channel_id=UC5--wS0Ljbin1TjWQX6eafA")
-	if f := reg.Match(feedURL, pluginapi.CapFetch); f == nil {
-		t.Fatal("external youtube plugin should match the channel feed URL")
-	}
-
-	// Meta and Docs cross the wire: the host sees the summary and that the
-	// plugin documents itself, and Docs returns the readme.
 	info := reg.Infos()[0]
 	if info.Summary == "" || !info.HasDocs {
 		t.Fatalf("external meta should carry summary and has-docs: %+v", info)
 	}
-	docs, err := reg.Docs("youtube")
-	if err != nil || !strings.Contains(docs, "# youtube") {
+	docs, err := reg.Docs("fetch-example")
+	if err != nil || !strings.Contains(docs, "# fetch-example") {
 		t.Fatalf("external Docs = %q, err %v", docs, err)
+	}
+	if f := reg.Match(mustParse("https://example.test/feed"), pluginapi.CapFetch); f == nil {
+		t.Fatal("fetch plugin should match /feed")
+	}
+	if f := reg.Match(mustParse("https://example.test/other"), pluginapi.CapFetch); f != nil {
+		t.Fatal("fetch plugin should not match /other")
 	}
 }
 
@@ -769,6 +742,52 @@ func TestLoadExternalIgnoresNonExecutable(t *testing.T) {
 	LoadExternal(context.Background(), dir, reg, NewHosts(http.DefaultClient, NewCooldown()).For)
 	if !reg.Empty() {
 		t.Fatalf("expected no plugins, got %v", reg.Names())
+	}
+}
+
+// TestManagedExternalConfigSurvivesRespawn proves a reaped plugin is
+// re-configured when it comes back, and that its cached Meta follows the
+// configuration.
+func TestManagedExternalConfigSurvivesRespawn(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a plugin binary")
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	}))
+	defer upstream.Close()
+
+	bin := buildExamplePlugin(t, "plugin-fetch", "nanoflux-plugin-fetch")
+
+	reg := NewRegistry()
+	hosts := NewHosts(upstream.Client(), NewCooldown())
+	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
+	defer cleanup()
+
+	if !reg.Configure("fetch-example", map[string]string{"user_agent": "Configured-UA"}) {
+		t.Fatal("Configure should reach the plugin")
+	}
+	me, ok := reg.external[0].(*managedExternal)
+	if !ok {
+		t.Fatalf("external plugin is %T", reg.external[0])
+	}
+	if got := me.Meta().UserAgent; got != "Configured-UA" {
+		t.Fatalf("meta user agent = %q, want Configured-UA", got)
+	}
+
+	// Simulate the idle reaper killing the subprocess.
+	me.mu.Lock()
+	me.client.Kill()
+	me.client = nil
+	me.inner = nil
+	me.mu.Unlock()
+
+	// A real call respawns it, and the stored configuration must be pushed again.
+	if _, err := me.Fetch(context.Background(), pluginapi.FetchRequest{URL: upstream.URL + "/feed"}, hosts.For(me)); err != nil {
+		t.Fatalf("fetch after respawn: %v", err)
+	}
+	if got := me.Meta().UserAgent; got != "Configured-UA" {
+		t.Fatalf("meta user agent after respawn = %q, want Configured-UA", got)
 	}
 }
 
@@ -785,20 +804,20 @@ func TestExternalRateLimitParity(t *testing.T) {
 	}))
 	defer limited.Close()
 
-	bin := buildExamplePlugin(t, "plugin-youtube", "nanoflux-plugin-youtube")
+	bin := buildExamplePlugin(t, "plugin-fetch", "nanoflux-plugin-fetch")
 
 	reg := NewRegistry()
 	hosts := NewHosts(limited.Client(), NewCooldown())
 	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
 	defer cleanup()
 
-	u, _ := url.Parse("https://www.youtube.com/feeds/videos.xml?channel_id=UCx")
+	u, _ := url.Parse(limited.URL + "/feed")
 	f := reg.Match(u, pluginapi.CapFetch)
 	if f == nil {
 		t.Fatal("plugin not matched")
 	}
 	_, err := f.Fetch(context.Background(), pluginapi.FetchRequest{
-		URL: limited.URL + "/feeds/videos.xml?channel_id=UCx",
+		URL: limited.URL + "/feed",
 	}, hosts.For(f))
 	var rl *pluginapi.RateLimit
 	if !errors.As(err, &rl) {
@@ -833,24 +852,18 @@ func TestRegistryImageCache(t *testing.T) {
 	}
 }
 
-// fakeBypasser is a fakeFetcher that also implements ProxyBypasser.
-type fakeBypasser struct {
-	fakeFetcher
-	host string
-}
-
-func (f fakeBypasser) BypassProxy(rawurl string) bool {
-	u, err := url.Parse(rawurl)
-	return err == nil && u.Hostname() == f.host
-}
-
 // TestRegistryBypassesProxy covers the plugin-driven /img proxy opt-out: a
-// plugin implementing ProxyBypasser wins for its hosts, and a plugin that does
-// not implement it never bypasses.
+// plugin claiming CapBypassProxy wins for its hosts, and a plugin that does not
+// claim it never bypasses.
 func TestRegistryBypassesProxy(t *testing.T) {
 	reg := NewRegistry()
-	reg.RegisterNative(fakeBypasser{fakeFetcher: fakeFetcher{name: "media"}, host: "i.example"})
-	reg.RegisterNative(fakeFetcher{name: "plain"})
+	reg.RegisterNative(fakeFetcher{
+		name: "media",
+		match: func(u *url.URL, cap pluginapi.Capability) bool {
+			return cap == pluginapi.CapBypassProxy && u.Hostname() == "i.example"
+		},
+	})
+	reg.RegisterNative(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
 
 	if !reg.BypassesProxy("https://i.example/a.jpg") {
 		t.Error("plugin host should bypass the proxy")
