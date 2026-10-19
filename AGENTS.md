@@ -154,14 +154,14 @@ needs no isolation; external when it is opt-in, fragile, or ToS-sensitive.
   `items.summary` because `UpdateItemSnapshotByID` refreshes the summary every
   poll; `httpapi.itemBody` renders content when present, else the summary.
   `examples/plugin-enrich` is the reference.
-- **`ProxyBypasser`** (no capability constant): a plugin whose image hosts
-  hotlink freely but refuse the host's server-side `/img` request implements
-  `BypassProxy(rawurl) bool`. `plugin.Registry.BypassesProxy` asks every plugin
-  that implements it and any true answer makes `web.ProxiedImageURL` return the
-  raw URL. `httpapi.Server.SetPlugins` installs the predicate into `web`
+- **`CapBypassProxy`** (URL-matched capability): a plugin whose image hosts
+  hotlink freely but refuse the host's server-side `/img` request claims this
+  capability for those image hosts. `plugin.Registry.BypassesProxy` matches the
+  URL, and any true answer makes `web.ProxiedImageURL` return the raw URL.
+  `httpapi.Server.SetPlugins` installs the predicate into `web`
   (`web.SetProxyBypass`) once at startup. Pure; a plugin lists the media hosts
-  that hotlink freely. External plugins are the gRPC client, which does not
-  implement this, so only native plugins can bypass today.
+  that hotlink freely. This works for external plugins because it rides the
+  existing `Match` RPC.
 
 `Match` **must honour the capability it is asked about**: return false for any
 capability the plugin does not claim. A plugin that ignores it (an early
@@ -172,7 +172,7 @@ cap-aware. Optional capabilities that pair `Match` with a type assertion are
 tolerant (a non-implementer is skipped; the external gRPC client's unsupported
 RPC is handled), but Match-only ones are not.
 
-A native plugin that owns URL-matched capabilities is the reference for all of
+A plugin that owns URL-matched capabilities is the reference for all of
 these: `Match` returns true only for the
 capabilities it claims (`CapSharedKey`, `CapDecorate`, `CapURLPolicy`,
 `CapDiscover`, `CapRender`, `CapDocs`) on its hosts; it does **not** claim
@@ -533,7 +533,7 @@ and manage one the user already subscribed to. Both are URL-matched capabilities
   feed's **edit** page, not its regular page; remote deletion is the delete
   form's opt-in "also delete it on the remote service" checkbox (`feedDelete`),
   so the card itself has no destructive action.
-- Reference: `internal/plugin/native/killthenewsletter`. It does **not** claim
+- Reference: `plugins/killthenewsletter`. It does **not** claim
   `CapFetch` (its Atom feeds are read by the generic parser), so
   `feeds.plugin_name` stays empty and `ReconcileFeeds` is untouched. Its
   instance is a plugin setting (see below).
@@ -558,7 +558,7 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
   (`POST /admin/plugins/{name}/settings`); a `password` field shows only whether
   a value is set and offers a "clear" checkbox, so a secret is never rendered
   back. Saving stores, calls `Configure`, and re-renders the card.
-- `internal/plugin/native/killthenewsletter` is the reference: its `base_url`
+- `plugins/killthenewsletter` is the reference: its `base_url`
   setting selects the public or a self-hosted instance, and changes both what
   `Match` recognizes and what `Provision`/`Action` call.
 
@@ -586,10 +586,10 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
 - Markdown is rendered by `web.Markdown` (goldmark, raw HTML disabled; anchors
   get `class="external"` + `target/rel`). goldmark is a root-module dep only;
   `pluginapi` stays dependency-free.
-- Native readmes live beside their plugin code (`readme.md`, `//go:embed`):
-  youtube, bluesky, and the other native plugins.
+- Plugin readmes live beside their plugin code (`readme.md`, `//go:embed`):
+  `plugins/youtube`, `plugins/bluesky`, and the other default plugins.
 
-### The native YouTube plugin
+### The YouTube plugin
 
 - The plugin fetches a channel's recent videos through YouTube's internal
   browse API (`youtubei/v1/browse`), not the channel RSS. The RSS carries no
@@ -601,9 +601,9 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
   the same origin the feed names and a test can point it at a mock host with no
   env plumbing.
 
-### The native Bluesky plugin
+### The Bluesky plugin
 
-- The plugin (`internal/plugin/native/bluesky`) replaces the profile RSS feed
+- The plugin (`plugins/bluesky`) replaces the profile RSS feed
   (`bsky.app/profile/{handle}/rss`), which is text-only: no item titles, no
   media, no author, and it drops an image/video post down to its caption. It
   reads the raw `app.bsky.feed.post` records through `com.atproto.repo.listRecords`

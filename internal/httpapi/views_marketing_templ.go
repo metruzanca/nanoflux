@@ -185,7 +185,7 @@ func landingPage(d landingData) templ.Component {
 }
 
 // pluginSnippet is a condensed excerpt of the bundled native Bluesky plugin
-// (internal/plugin/native/bluesky). It shows the real shape: the profile RSS
+// (plugins/bluesky). It shows the real shape: the profile RSS
 // feed the plugin replaces is text-only, so the plugin reads app.bsky.feed.post
 // records straight from the AT Protocol repository and rebuilds rich entries.
 // Kept as a Go constant so the templ stays markup-only; highlight.js colors it.

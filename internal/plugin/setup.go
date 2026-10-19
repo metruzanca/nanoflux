@@ -6,11 +6,6 @@ import (
 
 	"github.com/charmbracelet/log"
 
-	"github.com/metruzanca/nanoflux/internal/plugin/native/bluesky"
-	"github.com/metruzanca/nanoflux/internal/plugin/native/killthenewsletter"
-	"github.com/metruzanca/nanoflux/internal/plugin/native/patreon"
-	"github.com/metruzanca/nanoflux/internal/plugin/native/reddit"
-	"github.com/metruzanca/nanoflux/internal/plugin/native/youtube"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
@@ -41,9 +36,9 @@ type Runtime struct {
 	cleanup  func()
 }
 
-// Setup builds the plugin system: it registers the native plugins, loads any
-// external plugins from pluginsDir, installs the fetch dispatcher hook, and
-// reconciles stored feeds against the loaded plugins. The returned Runtime is
+// Setup builds the plugin system: it loads the external plugins from
+// pluginsDir, installs the fetch dispatcher hook, and reconciles stored feeds
+// against the loaded plugins. The returned Runtime is
 // always non-nil; a broken plugin is logged and skipped. cool is the shared
 // rate-limit cooldown (the poller holds the same one, so a limit seen by either
 // paces both); a nil cool creates a fresh one.
@@ -53,8 +48,6 @@ func Setup(ctx context.Context, st *store.Store, client *http.Client, pluginsDir
 	}
 	reg := NewRegistry()
 	hosts := NewHosts(client, cool)
-
-	registerNative(reg)
 
 	cleanup := LoadExternal(ctx, pluginsDir, reg, hosts.For)
 	d := NewDispatcher(reg, hosts.For)
@@ -150,14 +143,4 @@ func (r *Runtime) Close() {
 	if r != nil && r.cleanup != nil {
 		r.cleanup()
 	}
-}
-
-// registerNative adds the plugins compiled into nanoflux. A native plugin wins
-// over an external one when both match the same URL.
-func registerNative(reg *Registry) {
-	reg.RegisterNative(youtube.Plugin{})
-	reg.RegisterNative(bluesky.Plugin{})
-	reg.RegisterNative(patreon.Plugin{})
-	reg.RegisterNative(&reddit.Plugin{})
-	reg.RegisterNative(killthenewsletter.New())
 }

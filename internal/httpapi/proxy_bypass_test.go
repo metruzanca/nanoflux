@@ -4,17 +4,17 @@ import (
 	"testing"
 
 	"github.com/metruzanca/nanoflux/internal/plugin"
-	"github.com/metruzanca/nanoflux/internal/plugin/native/reddit"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
 
 // TestSetPluginsInstallsProxyBypass proves the plugin layer's proxy bypass is
-// wired end to end: once a registry containing the reddit plugin is attached,
-// reddit's media hosts render directly while everything else is still proxied.
+// wired end to end: once a registry containing a plugin that claims
+// CapBypassProxy is attached, its media hosts render directly while everything
+// else is still proxied.
 func TestSetPluginsInstallsProxyBypass(t *testing.T) {
 	s, _ := newTestServer(t)
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(&reddit.Plugin{})
+	reg.RegisterNative(fakeRedditPlugin{})
 	s.SetPlugins(reg, nil)
 	defer web.SetProxyBypass(nil)
 

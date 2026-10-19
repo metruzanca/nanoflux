@@ -244,7 +244,7 @@ func TestProxiedImageURL(t *testing.T) {
 			t.Errorf("ProxiedImageURL(%q) = %q, want unchanged", raw, got)
 		}
 	}
-	// A host-installed bypass predicate (the plugin layer's ProxyBypasser) makes
+	// A host-installed bypass predicate (the plugin layer's CapBypassProxy) makes
 	// matching image URLs load directly instead of through /img.
 	SetProxyBypass(func(raw string) bool { return strings.HasPrefix(raw, "https://i.example/") })
 	defer SetProxyBypass(nil)

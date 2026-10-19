@@ -15,9 +15,8 @@ rest of the feed list.
 Every feed is fetched through the same entry point, `feedparse.Fetch` (via
 `FetchFeed`), so all callers behave identically. It routes in order:
 
-1. **A matching plugin.** Plugins (native, compiled in, or external, loaded over
-   gRPC from `NF_PLUGINS_DIR`) declare which URLs they handle. If one matches,
-   it fetches the feed. See [`writing-plugins.md`](writing-plugins.md) and
+1. **A matching plugin.** Plugins loaded over gRPC from `NF_PLUGINS_DIR`
+   declare which URLs they handle. If one matches, it fetches the feed. See [`writing-plugins.md`](writing-plugins.md) and
    [`plugin-architecture.md`](plugin-architecture.md).
 2. **The generic parser.** Otherwise nanoflux fetches the URL and parses it as
    RSS / Atom / JSON-feed with `gofeed`.
@@ -245,7 +244,7 @@ leak into user-facing messages.
 
 ### Plugins
 
-External and native plugins never see raw networking. Their `Host.Do` calls go
+Plugins never see raw networking. Their `Host.Do` calls go
 through the host, which applies the same User-Agent and timeout policy and
 inspects every response for limits, cooling the request host. A plugin that
 cannot avoid a limit returns a `RateLimit`, and the poller applies exactly the

@@ -473,19 +473,18 @@ func (r *Registry) CachesImages(feedURL string) bool {
 }
 
 // BypassesProxy reports whether any loaded plugin wants an image URL loaded
-// directly instead of through the host's /img proxy. A plugin implements
-// ProxyBypasser for a site whose images hotlink freely but block the proxy's
-// server-side requests. Any true answer wins; the default is to proxy.
+// directly instead of through the host's /img proxy. A plugin claims
+// CapBypassProxy for a site whose images hotlink freely but block the proxy's
+// server-side requests. The default is to proxy.
 func (r *Registry) BypassesProxy(rawurl string) bool {
 	if rawurl == "" {
 		return false
 	}
-	for _, f := range r.all() {
-		if p, ok := f.(pluginapi.ProxyBypasser); ok && p.BypassProxy(rawurl) {
-			return true
-		}
+	u, err := url.Parse(rawurl)
+	if err != nil || u.Host == "" {
+		return false
 	}
-	return false
+	return r.Match(u, pluginapi.CapBypassProxy) != nil
 }
 
 // ImageCacheFolder returns the storage folder a feed's cached images live under:

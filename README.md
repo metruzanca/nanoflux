@@ -152,8 +152,10 @@ Installing nanoflux as a PWA also registers it as a **share target** allowing yo
 
 ## Plugins
 
-nanoflux supports external feed plugins — small executables dropped into
-`plugins/` that add site-specific sources. Build them with `make plugins`. See
+nanoflux's site integrations are external feed plugins: small executables
+dropped into `plugins/` that add site-specific sources. The default YouTube,
+Bluesky, Patreon, Reddit, Kill the Newsletter and Instagram plugins live in
+`plugins/<name>/` as their own modules. Build them with `make plugins`. See
 [`docs/writing-plugins.md`](docs/writing-plugins.md) to write your own.
 
 > **Security: plugins are arbitrary executables.** An external plugin runs as a
