@@ -1,0 +1,116 @@
+package httpapi
+
+import (
+	"strconv"
+	"strings"
+
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+// feedsBrowsePage is the feed-first browser: every feed grouped into folders
+// by the user's collections, so a reader can open a folder and work through
+// its feeds. Feeds in several collections repeat under each folder.
+templ feedsBrowsePage(d feedsBrowseData) {
+	<div class="row">
+		<h1>feeds</h1>
+		<div class="row-actions">
+			@FeedSortControl()
+			<button type="button" class="link" data-toggle-feed-empty aria-pressed="false">hide empty</button>
+		</div>
+	</div>
+	if len(d.Folders) == 0 {
+		<p class="muted">no feeds yet. add a feed, then group it into a collection.</p>
+	}
+	for _, f := range d.Folders {
+		@FeedFolder(f)
+	}
+	<p class="muted" id="feeds-all-hidden" hidden>every feed is caught up. turn off hide empty to see them.</p>
+}
+
+// FeedFolder is one collection as a collapsible folder. Ungrouped is the
+// synthetic last folder for feeds no user collection contains.
+templ FeedFolder(f *feedFolder) {
+	<details class="feed-folder" data-feed-folder open>
+		<summary>
+			<span class="feed-folder-name">
+				if f.IsUngrouped {
+					ungrouped
+				} else {
+					<a href={ "/collections/" + strconv.FormatInt(f.ID, 10) }>{ f.Name }</a>
+				}
+			</span>
+			<span class="item-meta">{ f.FeedCount } feeds · { f.Unread } unread</span>
+		</summary>
+		if len(f.Feeds) == 0 {
+			<p class="muted">no feeds in this folder</p>
+		} else {
+			<ul class="feed-cards" data-feed-sort-list>
+				for _, r := range f.Feeds {
+					@FeedBrowseCard(r)
+				}
+			</ul>
+		}
+	</details>
+}
+
+// FeedBrowseCard is a feed on the feed-first browser. It deliberately has no
+// DOM id: a feed can appear in several folders, and the author page's shared
+// FeedRow ids would collide. The card links to the feed's scoped item list.
+templ FeedBrowseCard(r feedRow) {
+	{{ id := strconv.FormatInt(r.ID, 10) }}
+	{{ authorID := strconv.FormatInt(r.AuthorID, 10) }}
+	{{ feedURL := "/authors/" + authorID + "?feed=" + id }}
+	<li class="feed-card-item" data-title={ r.Title } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Unread) }>
+		<div class="card feed-card">
+			<div class="feed-card-main">
+				<div class="feed-card-title">
+					<a href={ templ.URL(feedURL) }>
+						<strong>
+							@web.SourceIcon(feedIconURL(r.Feed))
+							{ r.Title }
+						</strong>
+					</a>
+					if !r.Enabled {
+						if r.DisabledReason != "" {
+							<span class="badge danger" title={ r.DisabledReason }>disabled · { r.DisabledReason }</span>
+						} else {
+							<span class="badge">paused</span>
+						}
+					}
+					if r.LastError != "" {
+						<span class="badge danger" title={ r.LastError }>last poll failed</span>
+					}
+					if r.Cooling() {
+						<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited · retry { web.Until(r.NextPollAt) }</span>
+					}
+					@staleBadge(r.Feed, r.Timezone)
+				</div>
+				<div class="item-meta">
+					if r.AuthorName != "" {
+						<a href={ "/authors/" + authorID }>{ r.AuthorName }</a>
+						· 
+					}
+					<span class="unread-count">{ r.Unread } unread</span>
+					· 
+					if home := strings.TrimSpace(r.HomeURL); home != "" {
+						<a href={ templ.URL(home) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">home</a>
+					} else {
+						<a href={ templ.URL(r.FeedURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">feed</a>
+					}
+				</div>
+				if r.LastError != "" {
+					<p class="feed-card-error" title={ r.LastError }>{ r.LastError }</p>
+				}
+			</div>
+			<div class="feed-card-side">
+				if len(r.Collections) > 0 {
+					<div class="feed-collections">
+						for _, c := range r.Collections {
+							<a class="tag" href={ "/collections/" + strconv.FormatInt(c.ID, 10) } title={ c.Name }>#{ c.Name }</a>
+						}
+					</div>
+				}
+			</div>
+		</div>
+	</li>
+}

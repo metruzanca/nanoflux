@@ -319,25 +319,27 @@ function setAuthorSort(sort, e) {
   closePickers();
 }
 
-// Collection feeds sort (abc / newest / unread). Client-side (localStorage),
-// reorders the rendered feed cards, mirroring the authors sort. The default is
-// "abc" to match the server's title order. Only runs where the feeds picker is
-// present, so the author edit page's feed list is left alone.
+// Feed-card sort (abc / newest / unread ascending / unread descending).
+// Client-side (localStorage), reorders every list marked data-feed-sort-list,
+// so it works on a collection's feeds tab and on /feeds' folders alike. The
+// default is "abc" to match the server's title order. "unread" is the legacy
+// most-unread value kept for an existing saved preference.
 var FEED_SORT_KEY = 'nanoflux.feeds.sort';
 function feedSort() {
   var s = localStorage.getItem(FEED_SORT_KEY);
-  if (s === 'newest' || s === 'unread') return s;
+  if (s === 'newest' || s === 'unread' || s === 'unread_asc') return s;
   return 'abc';
 }
 function applyFeedSort() {
-  if (!document.querySelector('.picker[data-picker="feeds"]')) return;
   var sort = feedSort();
-  var list = document.getElementById('collection-feeds-list');
-  if (list) {
+  document.querySelectorAll('[data-feed-sort-list]').forEach(function (list) {
     var rows = Array.prototype.slice.call(list.children);
     rows.sort(function (a, b) {
       if (sort === 'newest') {
         return (b.dataset.created || '').localeCompare(a.dataset.created || '');
+      }
+      if (sort === 'unread_asc') {
+        return (parseInt(a.dataset.unread, 10) || 0) - (parseInt(b.dataset.unread, 10) || 0);
       }
       if (sort === 'unread') {
         return (parseInt(b.dataset.unread, 10) || 0) - (parseInt(a.dataset.unread, 10) || 0);
@@ -345,7 +347,7 @@ function applyFeedSort() {
       return (a.dataset.title || '').localeCompare(b.dataset.title || '');
     });
     rows.forEach(function (r) { list.appendChild(r); });
-  }
+  });
   setPickerState('feeds', sort);
 }
 function setFeedSort(sort, e) {
@@ -355,8 +357,57 @@ function setFeedSort(sort, e) {
   closePickers();
 }
 
+// "Hide empty" hides feeds with no unread items on the feed-first browser, so
+// a reader can see what is left to check off. Persisted per browser; folders
+// whose every feed is hidden disappear too.
+var FEED_HIDE_EMPTY_KEY = 'nanoflux.feeds.hideEmpty';
+function feedHideEmpty() {
+  return localStorage.getItem(FEED_HIDE_EMPTY_KEY) === '1';
+}
+function applyFeedEmptyFilter() {
+  var hide = feedHideEmpty();
+  var anyVisible = false;
+  document.querySelectorAll('[data-feed-sort-list]').forEach(function (list) {
+    Array.prototype.forEach.call(list.children, function (row) {
+      row.hidden = hide && row.dataset.unread === '0';
+      if (!row.hidden) anyVisible = true;
+    });
+  });
+  document.querySelectorAll('[data-feed-folder]').forEach(function (folder) {
+    var list = folder.querySelector('[data-feed-sort-list]');
+    var any = false;
+    if (list) {
+      Array.prototype.forEach.call(list.children, function (row) {
+        if (!row.hidden) any = true;
+      });
+    }
+    folder.hidden = hide && !any;
+  });
+  var btn = document.querySelector('[data-toggle-feed-empty]');
+  if (btn) {
+    btn.setAttribute('aria-pressed', String(hide));
+    btn.textContent = hide ? 'show all' : 'hide empty';
+  }
+  var note = document.getElementById('feeds-all-hidden');
+  if (note) note.hidden = !(hide && !anyVisible);
+}
+function setFeedHideEmpty(hide, e) {
+  if (e) e.stopPropagation();
+  if (hide) localStorage.setItem(FEED_HIDE_EMPTY_KEY, '1');
+  else localStorage.removeItem(FEED_HIDE_EMPTY_KEY);
+  applyFeedEmptyFilter();
+}
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest('[data-toggle-feed-empty]');
+  if (!btn) return;
+  e.preventDefault();
+  setFeedHideEmpty(!feedHideEmpty(), e);
+});
+
 applyDisplayMode();
 applyAuthorSort();
+applyFeedSort();
+applyFeedEmptyFilter();
 
 // Author edit form: clone the blank link row <template> to add another.
 function addAuthorLinkRow() {
@@ -1060,6 +1111,7 @@ document.body.addEventListener('htmx:afterSwap', function (e) {
   applyDisplayMode();
   applyAuthorSort();
   applyFeedSort();
+  applyFeedEmptyFilter();
   refreshNavCounts();
   // A "load more" page arrived into the list: release the guard and, if the
   // reader reached the end to fetch it, advance into the newly appended rows.

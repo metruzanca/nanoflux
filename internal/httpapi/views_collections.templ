@@ -179,7 +179,7 @@ templ CollectionFeedCards(rows []feedRow, showEdit bool) {
 		<p class="muted">no feeds in this collection</p>
 		return
 	}
-	<ul class="plain" id="collection-feeds-list">
+	<ul class="plain" id="collection-feeds-list" data-feed-sort-list>
 		for _, r := range rows {
 			@CollectionFeedCard(r, showEdit)
 		}

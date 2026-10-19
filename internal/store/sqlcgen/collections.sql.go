@@ -387,6 +387,44 @@ func (q *Queries) ListFeedsInCollection(ctx context.Context, arg ListFeedsInColl
 	return items, nil
 }
 
+const listUserFeedCollectionIDs = `-- name: ListUserFeedCollectionIDs :many
+SELECT cf.feed_id, cf.collection_id
+FROM collection_feeds cf
+JOIN collections c ON c.id = cf.collection_id
+WHERE c.user_id = ? AND c.is_auto = 0
+ORDER BY c.name
+`
+
+type ListUserFeedCollectionIDsRow struct {
+	FeedID       int64 `json:"feed_id"`
+	CollectionID int64 `json:"collection_id"`
+}
+
+// The user's own (non-auto) collection memberships, used to group feeds into
+// folders without an N+1 query per collection.
+func (q *Queries) ListUserFeedCollectionIDs(ctx context.Context, userID int64) ([]ListUserFeedCollectionIDsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUserFeedCollectionIDs, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserFeedCollectionIDsRow
+	for rows.Next() {
+		var i ListUserFeedCollectionIDsRow
+		if err := rows.Scan(&i.FeedID, &i.CollectionID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const removeFeedFromCollection = `-- name: RemoveFeedFromCollection :execresult
 DELETE FROM collection_feeds
 WHERE collection_feeds.collection_id = ?

@@ -74,6 +74,21 @@ type feedRow struct {
 // and a manual refresh may override it.
 func (r feedRow) Cooling() bool { return cooling(r.NextPollAt) && !r.NextPollScheduled }
 
+// feedFolder is one collection on the feed-first browser. ID is 0 for the
+// synthetic "ungrouped" folder that holds feeds in no user collection.
+type feedFolder struct {
+	ID          int64
+	Name        string
+	IsUngrouped bool
+	Feeds       []feedRow
+	Unread      int
+	FeedCount   int
+}
+
+type feedsBrowseData struct {
+	Folders []*feedFolder
+}
+
 type feedForm struct {
 	ID               int64
 	Title            string
@@ -2357,6 +2372,78 @@ func (s *Server) authorFormFragment(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, authorCreateFields(authorPreviewForm{
 		Name: name, AvatarURL: avatar,
 	}))
+}
+
+// feedsBrowse is the feed-first view: every feed grouped into folders by the
+// user's own collections, with an "ungrouped" folder for feeds no user
+// collection contains. A feed in several collections appears in each folder.
+// Auto/site collections are left to /collections so the folders stay the
+// user's own organization.
+func (s *Server) feedsBrowse(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	cols, err := s.store.Collections.ListWithCounts(u.ID)
+	if err != nil {
+		log.Error("list collections for feeds page", "err", err)
+	}
+	feeds, err := s.store.Feeds.ListWithUnread(u.ID)
+	if err != nil {
+		log.Error("list feeds for feeds page", "err", err)
+	}
+	memberOf, err := s.store.Collections.UserCollectionIDsByFeed(u.ID)
+	if err != nil {
+		log.Error("list feed collection memberships", "err", err)
+	}
+
+	byID := make(map[int64]store.Collection, len(cols))
+	folders := make(map[int64]*feedFolder, len(cols))
+	order := make([]*feedFolder, 0, len(cols))
+	for _, c := range cols {
+		if c.IsAuto {
+			continue
+		}
+		byID[c.ID] = c.Collection
+		f := &feedFolder{ID: c.ID, Name: c.Name, Unread: c.Unread}
+		folders[c.ID] = f
+		order = append(order, f)
+	}
+	sort.SliceStable(order, func(i, j int) bool {
+		return strings.ToLower(order[i].Name) < strings.ToLower(order[j].Name)
+	})
+
+	ungrouped := &feedFolder{Name: "ungrouped", IsUngrouped: true}
+	for _, fw := range feeds {
+		row := feedRow{
+			Feed: fw.Feed, AuthorName: fw.AuthorName, Unread: fw.Unread,
+			Timezone: u.Timezone,
+		}
+		ids := memberOf[fw.ID]
+		if len(ids) == 0 {
+			ungrouped.Feeds = append(ungrouped.Feeds, row)
+			ungrouped.Unread += row.Unread
+			continue
+		}
+		for _, id := range ids {
+			if c, ok := byID[id]; ok {
+				row.Collections = append(row.Collections, c)
+			}
+		}
+		for _, id := range ids {
+			f, ok := folders[id]
+			if !ok {
+				continue
+			}
+			f.Feeds = append(f.Feeds, row)
+		}
+	}
+	ungrouped.FeedCount = len(ungrouped.Feeds)
+	for _, f := range order {
+		f.FeedCount = len(f.Feeds)
+	}
+	if len(ungrouped.Feeds) > 0 {
+		order = append(order, ungrouped)
+	}
+
+	web.Render(w, r, basePage("feeds", u, feedsBrowsePage(feedsBrowseData{Folders: order})))
 }
 
 func (s *Server) collections(w http.ResponseWriter, r *http.Request) {

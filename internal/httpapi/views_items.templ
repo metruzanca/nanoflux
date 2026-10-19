@@ -626,15 +626,17 @@ templ AuthorSortControl() {
 	})
 }
 
-// FeedSortControl sorts a collection's feeds list alphabetically ("abc"), by
-// newest first, or by most unread items. Client-side: app.js reorders the
-// rendered cards, mirroring AuthorSortControl. The default is "abc" to match
-// the server's title order.
+// FeedSortControl sorts feed cards alphabetically ("abc"), by newest first, by
+// fewest unread items, or by most unread items. Client-side: app.js reorders
+// every rendered feed list, mirroring AuthorSortControl. The default is "abc"
+// to match the server's title order. "unread" is kept as the legacy
+// most-unread value so an existing saved preference keeps working.
 templ FeedSortControl() {
 	@PickerControl("feeds", "sort", "abc", "", []pickerOption{
 		{Value: "abc", Label: "abc"},
 		{Value: "newest", Label: "newest"},
-		{Value: "unread", Label: "unread"},
+		{Value: "unread_asc", Label: "unread ↑"},
+		{Value: "unread", Label: "unread ↓"},
 	})
 }
 
