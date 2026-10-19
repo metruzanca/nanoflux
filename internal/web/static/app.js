@@ -586,8 +586,8 @@ document.body.addEventListener('item-lists-saved', function () {
   var d = document.getElementById('item-lists-dialog');
   if (d && d.open) d.close();
 });
-// A saved page was hard-deleted: drop its row, close the modal if it was open,
-// and clear the row cursor. The server signals this with HX-Trigger: item-deleted.
+// A saved page was hard-deleted: drop its row and close the modal if it was
+// open. The server signals this with HX-Trigger: item-deleted.
 document.body.addEventListener('item-deleted', function (e) {
   var id = e.detail && e.detail.id;
   if (!id) return;
@@ -595,7 +595,6 @@ document.body.addEventListener('item-deleted', function (e) {
   if (row) row.remove();
   var d = document.getElementById('item-dialog');
   if (d && d.open) d.close();
-  if (activeItemId === '#item-' + id) activeItemId = null;
 });
 document.addEventListener('keydown', function (e) {
   if (e.key === 'Escape') closeItemMenus();
@@ -786,44 +785,18 @@ document.addEventListener('keydown', function (e) {
   if (itemNav(dir)) e.preventDefault();
 });
 
-// "/" focuses the search box.
-document.addEventListener('keydown', function (e) {
-  if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
-  var t = e.target;
-  if (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return;
-  var input = document.getElementById('search-input');
-  if (!input) return;
-  e.preventDefault();
-  input.focus();
-  input.select();
-});
-
-// Command palette (ctrl/cmd+p) and unified entity search (ctrl/cmd+shift+p).
-// The palette engine renders a filtered, keyboard-navigable list into a
-// <dialog class="palette">; Enter activates the highlighted row, Escape and
-// backdrop-click close it (Escape natively, backdrop via the handler below).
-var SIGILS = { author: '@', collection: '#', feed: '!' };
-
+// Command palette (ctrl/cmd+p). The palette engine renders a filtered,
+// keyboard-navigable list into a <dialog class="palette">; Enter activates the
+// highlighted row, Escape and backdrop-click close it (Escape natively,
+// backdrop via the handler below).
 function paletteItemEl(row) {
   var li = document.createElement('li');
   li.className = 'palette-item';
   li.setAttribute('role', 'option');
-  if (row.sigil) {
-    var s = document.createElement('span');
-    s.className = 'palette-sigil sigil-' + row.kind;
-    s.textContent = row.sigil;
-    li.appendChild(s);
-  }
   var name = document.createElement('span');
   name.className = 'palette-name';
   name.textContent = row.label;
   li.appendChild(name);
-  if (row.count > 0) {
-    var count = document.createElement('span');
-    count.className = 'palette-count';
-    count.textContent = row.count + ' unread';
-    li.appendChild(count);
-  }
   if (row.hint) {
     var hint = document.createElement('span');
     hint.className = 'palette-hint';
@@ -1032,49 +1005,8 @@ function postForm(path) {
 var commandPalette = wirePalette('command-palette', 'command-input', 'command-results',
   filterCommands, function (row) { row.run(); });
 
-// Unified entity search. Entities are fetched when the palette opens (and
-// cached for the session); a leading @/#/! narrows to one kind without the
-// sigil counting as part of the query.
-var ENTITY_CACHE = null;
-function fetchEntities() {
-  return fetch('/api/entities', { credentials: 'same-origin' })
-    .then(function (r) { return r.ok ? r.json() : { entities: [] }; })
-    .then(function (d) { ENTITY_CACHE = d.entities || []; return ENTITY_CACHE; })
-    .catch(function () { ENTITY_CACHE = []; return ENTITY_CACHE; });
-}
-function filterEntities(q) {
-  var entities = ENTITY_CACHE || [];
-  q = q.trim();
-  var kind = null;
-  var first = q.charAt(0);
-  if (first === '@') { kind = 'author'; q = q.slice(1).trim(); }
-  else if (first === '#') { kind = 'collection'; q = q.slice(1).trim(); }
-  else if (first === '!') { kind = 'feed'; q = q.slice(1).trim(); }
-  var needle = q.toLowerCase();
-  return entities.filter(function (e) {
-    if (kind && e.kind !== kind) return false;
-    return !needle || e.name.toLowerCase().indexOf(needle) !== -1;
-  }).map(function (e) {
-    return {
-      kind: e.kind, sigil: SIGILS[e.kind], label: e.name, count: e.unread,
-      hint: e.kind, url: e.url,
-    };
-  });
-}
-var entityPalette = wirePalette('entity-palette', 'entity-input', 'entity-results',
-  filterEntities, function (row) { window.location.href = row.url; });
-if (entityPalette) {
-  var openEntity = entityPalette.open;
-  entityPalette.open = function () {
-    fetchEntities().then(function () { openEntity(); });
-  };
-}
-
 // Keep the topbar badges in sync after an htmx swap (mark read/unread, mark all
-// read) that changes the totals without a full page load. The palette caches
-// entities for the session, so drop that cache when a count moved and the
-// palette will refetch on its next open.
-var NAV_COUNTS = null;
+// read) that changes the totals without a full page load.
 function refreshNavCounts() {
   // The appearance pref hides every badge; do not recreate them client-side.
   if (document.body.classList.contains('hide-counts')) return;
@@ -1082,12 +1014,8 @@ function refreshNavCounts() {
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (d) {
       if (!d) return;
-      var unread = d.unread || 0, authors = d.authors || 0;
-      setNavBadge('nav-unread', 'nav-unread-count', unread);
-      setNavBadge('nav-authors', 'nav-authors-count', authors);
-      var sig = unread + ':' + authors;
-      if (NAV_COUNTS !== null && NAV_COUNTS !== sig) ENTITY_CACHE = null;
-      NAV_COUNTS = sig;
+      setNavBadge('nav-unread', 'nav-unread-count', d.unread || 0);
+      setNavBadge('nav-authors', 'nav-authors-count', d.authors || 0);
     })
     .catch(function () {});
 }
@@ -1110,10 +1038,9 @@ function setNavBadge(linkId, spanId, n) {
 }
 
 document.addEventListener('keydown', function (e) {
-  if (e.code !== 'KeyP' || !(e.ctrlKey || e.metaKey)) return;
+  if (e.code !== 'KeyP' || !(e.ctrlKey || e.metaKey) || e.shiftKey) return;
   e.preventDefault();
-  if (e.shiftKey) { if (entityPalette) entityPalette.open(); }
-  else if (commandPalette) commandPalette.open();
+  if (commandPalette) commandPalette.open();
 });
 
 // A command that opens a page dialog ("add feed", ...) sets a pendingDialog
@@ -1127,133 +1054,13 @@ document.addEventListener('DOMContentLoaded', function () {
   if (d) d.showModal();
 });
 
-// Keyboard shortcuts: j/k move a row cursor, o/Enter open, v opens the
-// original, s toggles favorite, m toggles read, g/G jump to first/last,
-// ? shows the shortcut sheet.
-var currentRow = null;
-var activeItemId = null;
-
-function itemRows() {
-  var list = document.querySelector('ul.items');
-  return list ? Array.prototype.slice.call(list.querySelectorAll('li[id^="item-"]')) : [];
-}
-function setActiveRow(row) {
-  if (currentRow) currentRow.classList.remove('active-row');
-  currentRow = row;
-  activeItemId = row ? row.id : null;
-  if (row) row.classList.add('active-row');
-}
-function activeRow() {
-  if (currentRow && currentRow.isConnected) return currentRow;
-  if (activeItemId) {
-    var r = document.getElementById(activeItemId);
-    if (r) { currentRow = r; r.classList.add('active-row'); return r; }
-  }
-  return null;
-}
-function openRow(row) {
-  var link = row.querySelector('[data-item-id]');
-  if (!link) return false;
-  link.click();
-  return true;
-}
-function toggleHelp() {
-  var d = document.getElementById('shortcuts-dialog');
-  if (!d) return;
-  if (d.open) d.close();
-  else d.showModal();
-}
-
-document.addEventListener('keydown', function (e) {
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-  var t = e.target;
-  if (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return;
-  var rows = itemRows();
-  if (!rows.length) return;
-  var dialog = document.getElementById('item-dialog');
-  var inDialog = dialog && dialog.open;
-
-  var move = function (dir) {
-    e.preventDefault();
-    var idx = rows.indexOf(activeRow());
-    var next = idx === -1 ? (dir > 0 ? 0 : rows.length - 1) : idx + dir;
-    if (next < 0 || next >= rows.length) return;
-    var row = rows[next];
-    setActiveRow(row);
-    if (inDialog) openRow(row);
-  };
-
-  switch (e.key) {
-    case 'j':
-      // A YouTube preview owns the whole keyboard while it's open.
-      if (!activeEmbed()) move(1);
-      break;
-    case 'k':
-      if (!activeEmbed()) move(-1);
-      break;
-    case 'ArrowDown':
-      // While the item modal is open, leave the arrows to the browser so they
-      // scroll the post's body; j/k still move between items (unless a YouTube
-      // player is embedded).
-      if (!inDialog) move(1);
-      break;
-    case 'ArrowUp':
-      if (!inDialog) move(-1);
-      break;
-    case 'g':
-      if (!inDialog) { e.preventDefault(); setActiveRow(rows[0]); }
-      break;
-    case 'G':
-      if (!inDialog) { e.preventDefault(); setActiveRow(rows[rows.length - 1]); }
-      break;
-    case 'o':
-      if (activeRow()) { e.preventDefault(); openRow(activeRow()); }
-      break;
-    case 'Enter':
-      // Leave Enter alone when a control is focused so buttons still work.
-      if (t && t.closest && t.closest('button, a, input, textarea, select')) return;
-      if (activeRow()) { e.preventDefault(); openRow(activeRow()); }
-      break;
-    case 'v':
-      if (activeRow()) {
-        var a = activeRow().querySelector('[data-item-link]');
-        if (a && a.dataset.itemLink) {
-          e.preventDefault();
-          window.open(a.dataset.itemLink, '_blank', 'noopener');
-        }
-      }
-      break;
-    case 's':
-      if (activeRow()) {
-        var fav = activeRow().querySelector('.fav-btn');
-        if (fav) { e.preventDefault(); fav.click(); }
-      }
-      break;
-    case 'm':
-      if (activeRow()) {
-        var rd = activeRow().querySelector('.read-btn');
-        if (rd) { e.preventDefault(); rd.click(); }
-      }
-      break;
-    case '?':
-      e.preventDefault();
-      toggleHelp();
-      break;
-  }
-});
-
-// Keep the row cursor highlighted when htmx re-renders the row (favorite/read
-// toggles swap it via outerHTML), and re-apply the client-side pickers after any
-// swap that recreates a list (tab switch, mark all read, load-more, author add).
+// Keep the client-side pickers applied after any htmx swap that recreates a
+// list (tab switch, mark all read, load-more, author add).
 document.body.addEventListener('htmx:afterSwap', function (e) {
   applyDisplayMode();
   applyAuthorSort();
   applyFeedSort();
   refreshNavCounts();
-  if (activeItemId) {
-    var r = document.getElementById(activeItemId);
-    if (r) r.classList.add('active-row');
-  }
   // A "load more" page arrived into the list: release the guard and, if the
   // reader reached the end to fetch it, advance into the newly appended rows.
   if (loadMoreBusy && e.detail && e.detail.target && e.detail.target.id === 'items-list') {

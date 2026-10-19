@@ -90,7 +90,7 @@ func TestAPIEntitiesRequiresAuth(t *testing.T) {
 	}
 }
 
-func TestPaletteRendered(t *testing.T) {
+func TestCommandPaletteRendered(t *testing.T) {
 	_, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 
@@ -98,9 +98,6 @@ func TestPaletteRendered(t *testing.T) {
 	for _, want := range []string{
 		`id="command-palette"`,
 		`id="command-input"`,
-		`id="entity-palette"`,
-		`id="entity-input"`,
-		`ctrl/⌘ + p`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("page missing palette markup %q", want)
