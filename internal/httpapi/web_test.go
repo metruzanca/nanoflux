@@ -2405,19 +2405,43 @@ func TestAuthorPageAddFeed(t *testing.T) {
 	}
 }
 
-func TestFeedsPageRemoved(t *testing.T) {
-	_, h := newTestServer(t)
+func TestFeedsBrowsePage(t *testing.T) {
+	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	tech, _ := s.store.Collections.Create(u.ID, "Tech")
+	news, _ := s.store.Collections.Create(u.ID, "News")
+	one, _ := s.store.Feeds.Create(u.ID, a.ID, "One", "https://one.dev/rss.xml", "", "", 900)
+	two, _ := s.store.Feeds.Create(u.ID, a.ID, "Two", "https://two.dev/rss.xml", "", "", 900)
+	s.store.Feeds.Create(u.ID, a.ID, "Three", "https://three.dev/rss.xml", "", "", 900)
+	s.store.Collections.AddFeed(u.ID, tech.ID, one.ID)
+	s.store.Collections.AddFeed(u.ID, tech.ID, two.ID)
+	s.store.Collections.AddFeed(u.ID, news.ID, two.ID)
+	auto, _ := s.store.Collections.EnsureAuto(u.ID, "auto.dev")
+	s.store.Collections.AddFeed(u.ID, auto.ID, one.ID)
 
-	// The top-level feeds listing page is gone.
 	rr := doGet(h, "/feeds", cookie)
-	if rr.Code != http.StatusNotFound && rr.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("/feeds should no longer serve a page, got %d", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("/feeds = %d, want 200: %s", rr.Code, rr.Body.String())
 	}
-	// The topbar no longer links to it.
-	home := doGet(h, "/", cookie).Body.String()
-	if strings.Contains(home, `href="/feeds"`) {
-		t.Fatal("topbar should not link to a feeds page")
+	body := rr.Body.String()
+	if !strings.Contains(body, `href="/feeds"`) {
+		t.Fatal("topbar should link to the feeds page")
+	}
+	for _, want := range []string{"Tech", "News", "ungrouped", "One", "Two", "Three"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("feeds page missing %q: %s", want, body)
+		}
+	}
+	// Two belongs to both collections, so its feed link is rendered twice.
+	link := "/authors/" + itoa(a.ID) + "?feed=" + itoa(two.ID)
+	if got := strings.Count(body, link); got != 2 {
+		t.Fatalf("multi-collection feed link count = %d, want 2: %s", got, body)
+	}
+	// Auto/site collections stay on /collections, not this page's folders.
+	if strings.Contains(body, "/collections/"+itoa(auto.ID)) {
+		t.Fatalf("feeds page should not render auto collection %d: %s", auto.ID, body)
 	}
 }
 
@@ -2443,9 +2467,9 @@ func TestErrorPagesStyled(t *testing.T) {
 
 	// A path registered only for POST is a styled 405, not plain text, and keeps
 	// its Allow header.
-	rr = doGet(h, "/feeds", cookie)
+	rr = doGet(h, "/collections/1/delete", cookie)
 	if rr.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("GET /feeds = %d, want 405", rr.Code)
+		t.Fatalf("GET /collections/1/delete = %d, want 405", rr.Code)
 	}
 	if got := rr.Header().Get("Allow"); !strings.Contains(got, http.MethodPost) {
 		t.Fatalf("405 should keep Allow, got %q", got)

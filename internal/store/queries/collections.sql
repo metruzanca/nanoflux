@@ -97,3 +97,12 @@ JOIN collections c ON c.id = cf.collection_id
 JOIN feeds f ON f.id = cf.feed_id
 WHERE c.user_id = ? AND f.user_id = ? AND f.author_id = ? AND c.is_auto = 0
 ORDER BY c.name;
+
+-- name: ListUserFeedCollectionIDs :many
+-- The user's own (non-auto) collection memberships, used to group feeds into
+-- folders without an N+1 query per collection.
+SELECT cf.feed_id, cf.collection_id
+FROM collection_feeds cf
+JOIN collections c ON c.id = cf.collection_id
+WHERE c.user_id = ? AND c.is_auto = 0
+ORDER BY c.name;

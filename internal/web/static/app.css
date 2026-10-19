@@ -597,6 +597,28 @@ ul.feed-cards {
 }
 ul.feed-cards > li { display: block; }
 ul.feed-cards .card { margin-bottom: 0; }
+.feed-card-item[hidden], .feed-folder[hidden] { display: none; }
+
+/* Feed-first browser: each collection is a collapsible folder of feed cards,
+   with the collection's counts in the summary line. */
+.feed-folder {
+  margin: 0 0 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+.feed-folder > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  cursor: pointer;
+  list-style: none;
+}
+.feed-folder > summary::-webkit-details-marker { display: none; }
+.feed-folder > summary::after { content: "▸"; margin-left: auto; color: var(--muted); }
+.feed-folder[open] > summary::after { content: "▾"; }
+.feed-folder-name { font-size: 1.15rem; font-weight: 600; }
+.feed-folder ul.feed-cards { margin-top: 0.5rem; }
 /* Full-width feed card: content on the left, and the actions plus the
    collection tags in a right-aligned column so the tags line up under the
    action icons. */
