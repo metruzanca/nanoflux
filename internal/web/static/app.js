@@ -452,11 +452,26 @@ if (itemDialog) {
   // shouldn't dismiss the item (and would stop embedded video playback).
 }
 
-// activeEmbed reports whether the open preview contains a video/embed player.
+// youtubeEmbed reports whether an iframe is a YouTube player. Only YouTube's
+// player owns the arrow and j/k keys while the preview is open; other embeds
+// (Vimeo, Imgur, ...) leave item navigation working.
+function youtubeEmbed(frame) {
+  if (!frame) return false;
+  var host;
+  try {
+    host = new URL(frame.src, location.href).hostname.toLowerCase();
+  } catch (e) {
+    return false;
+  }
+  return host === 'youtu.be' || /(^|\.)youtube(-nocookie)?\.com$/.test(host);
+}
+
+// activeEmbed reports whether the open preview contains a YouTube player.
 // Arrow and j/k navigation yield to it so playback isn't interrupted; once the
 // user clicks into the player, the cross-origin iframe owns the keys anyway.
 function activeEmbed() {
-  return !!(itemDialog && itemDialog.open && itemDialog.querySelector('.video-embed iframe'));
+  if (!itemDialog || !itemDialog.open) return false;
+  return youtubeEmbed(itemDialog.querySelector('.video-embed iframe'));
 }
 
 // When a cross-origin embed iframe enters fullscreen, the parent's fullscreen
@@ -764,7 +779,7 @@ document.addEventListener('keydown', function (e) {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
   var dialog = document.getElementById('item-dialog');
   if (!dialog || !dialog.open || !currentItemId) return;
-  // A video/embed preview owns the arrows; don't switch items under it.
+  // A YouTube preview owns the arrows; don't switch items under it.
   if (activeEmbed()) return;
   if (e.target.closest && e.target.closest('input, textarea, select')) return;
   var dir = e.key === 'ArrowRight' ? 1 : -1;
@@ -1170,7 +1185,7 @@ document.addEventListener('keydown', function (e) {
 
   switch (e.key) {
     case 'j':
-      // A video/embed preview owns the whole keyboard while it's open.
+      // A YouTube preview owns the whole keyboard while it's open.
       if (!activeEmbed()) move(1);
       break;
     case 'k':
@@ -1178,8 +1193,8 @@ document.addEventListener('keydown', function (e) {
       break;
     case 'ArrowDown':
       // While the item modal is open, leave the arrows to the browser so they
-      // scroll the post's body; j/k still move between items (unless a player
-      // is embedded).
+      // scroll the post's body; j/k still move between items (unless a YouTube
+      // player is embedded).
       if (!inDialog) move(1);
       break;
     case 'ArrowUp':
