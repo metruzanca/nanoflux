@@ -123,8 +123,8 @@ per-feed plugin config.
 
 ### Keyboard / interaction
 
-`j/k o/Enter v s m g/G arrows`, `/` search, `Ctrl/⌘+P` palette, `?` help,
-swipe gestures, deep-link item modal, load-more.
+`←/→` previous/next while reading, `Ctrl/⌘+P` command palette, `Esc` closes
+dialogs, swipe gestures, deep-link item modal, load-more.
 
 ## Gaps
 

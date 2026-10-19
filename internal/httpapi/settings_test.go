@@ -47,8 +47,8 @@ func TestSettingsPage(t *testing.T) {
 		"profile picture",
 		"timezone",
 		"keyboard shortcuts",
-		`<td>j / k</td><td>next / previous item</td>`,
-		`<td>/</td><td>focus the search box</td>`,
+		`<td>← / →</td><td>previous / next while reading</td>`,
+		`<td>ctrl/⌘ + p</td><td>command palette</td>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("settings page missing %q", want)

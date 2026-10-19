@@ -474,7 +474,6 @@ ul.items li {
   border-bottom: 1px solid var(--border);
 }
 ul.items li:last-child { border-bottom: none; }
-ul.items li.active-row { box-shadow: inset 3px 0 0 var(--accent); }
 /* While an item's "⋯" menu is open, let its dropdown escape the row's
    overflow:hidden (the swipe container) and stack above the neighbors. */
 ul.items li.menu-open { overflow: visible; z-index: 20; }
