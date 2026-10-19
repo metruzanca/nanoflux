@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/plugin/native/bluesky"
-	"github.com/metruzanca/nanoflux/internal/plugin/native/instagram"
 	"github.com/metruzanca/nanoflux/internal/plugin/native/killthenewsletter"
 	"github.com/metruzanca/nanoflux/internal/plugin/native/patreon"
 	"github.com/metruzanca/nanoflux/internal/plugin/native/reddit"
@@ -158,7 +157,6 @@ func (r *Runtime) Close() {
 func registerNative(reg *Registry) {
 	reg.RegisterNative(youtube.Plugin{})
 	reg.RegisterNative(bluesky.Plugin{})
-	reg.RegisterNative(instagram.Plugin{})
 	reg.RegisterNative(patreon.Plugin{})
 	reg.RegisterNative(&reddit.Plugin{})
 	reg.RegisterNative(killthenewsletter.New())

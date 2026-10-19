@@ -116,7 +116,7 @@ backup/restore, JSON API.
 ### Plugins
 
 `pluginapi.Fetcher` (`Meta/Match/Discover/Fetch`), capabilities, host-mediated
-HTTP, native plugins (YouTube, Instagram, Patreon) + external. `feeds.plugin_name`
+HTTP, native plugins (YouTube, Bluesky, Patreon) + external. `feeds.plugin_name`
 (schemaV31), `ReconcileFeeds` auto-disable/re-enable. `FetchRequest.Config`
 (`pluginapi.go:97`) is plumbed but **never populated or persisted** — a hook for
 per-feed plugin config.
@@ -221,9 +221,9 @@ that already exists and lowers the cost. Effort is a rough S/M/L.
   framework already probe arbitrary pages; this adds a snapshot/diff store on
   top.
 - **More social sources as plugins (M per network).** Inoreader and Feedly win
-  on Mastodon, Bluesky, Telegram, and more. Native plugins exist for several
-  Instagram, and Patreon, so the framework is proven; each new network is a
-  plugin rather than core work.
+  on Mastodon, Bluesky, Telegram, and more. Plugin support exists for several
+  networks, so the framework is proven; each new network is a plugin rather
+  than core work.
 - **Bookmarklet plus the extension (S).** The extension only installs on
   Chromium browsers; a bookmarklet is a zero-install fallback for Firefox,
   Safari, and mobile.
@@ -337,8 +337,7 @@ The plugin system is a URL-shaped source adapter: `Match(url, cap)` decides what
 it handles, and `Fetch` returns normalized items through host-mediated HTTP
 (`pluginapi/pluginapi.go:145`). Native plugins are compiled in; external ones are
 executables in `NF_PLUGINS_DIR` and may read their own env vars for API keys
-(see `docs/writing-plugins.md`). Native coverage today: YouTube, Bluesky,
-Instagram, Patreon.
+(see `docs/writing-plugins.md`). Native coverage today: YouTube, Bluesky, Patreon.
 
 Three shapes of idea are worth distinguishing:
 
