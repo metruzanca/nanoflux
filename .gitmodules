@@ -1,0 +1,18 @@
+[submodule "plugins/youtube"]
+	path = plugins/youtube
+	url = https://github.com/metruzanca/nanoflux-plugin-youtube.git
+[submodule "plugins/bluesky"]
+	path = plugins/bluesky
+	url = https://github.com/metruzanca/nanoflux-plugin-bluesky.git
+[submodule "plugins/patreon"]
+	path = plugins/patreon
+	url = https://github.com/metruzanca/nanoflux-plugin-patreon.git
+[submodule "plugins/reddit"]
+	path = plugins/reddit
+	url = https://github.com/metruzanca/nanoflux-plugin-reddit.git
+[submodule "plugins/killthenewsletter"]
+	path = plugins/killthenewsletter
+	url = https://github.com/metruzanca/nanoflux-plugin-killthenewsletter.git
+[submodule "plugins/instagram"]
+	path = plugins/instagram
+	url = https://github.com/metruzanca/nanoflux-plugin-instagram.git
