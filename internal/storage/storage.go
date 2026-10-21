@@ -16,7 +16,7 @@ import (
 const cachePrefix = "cache/"
 
 // Group is one bucket of storage: a top-level kind ("avatars", "icons", ...) or
-// a cache plugin folder ("cache/tumblr").
+// a cache plugin folder ("cache/mysite").
 type Group struct {
 	Label         string
 	Bytes         int64

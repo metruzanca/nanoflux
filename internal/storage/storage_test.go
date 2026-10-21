@@ -35,7 +35,7 @@ func TestAuditAndOrphans(t *testing.T) {
 		t.Fatalf("upsert: %v", err)
 	}
 	itemID, _ := st.Items.ByFeedIdentity(f.ID, "g1")
-	if err := st.Items.SetItemImageCacheKey(itemID, "cache/tumblr/1/0.png", 1000); err != nil {
+	if err := st.Items.SetItemImageCacheKey(itemID, "cache/mysite/1/0.png", 1000); err != nil {
 		t.Fatalf("set cache key: %v", err)
 	}
 
@@ -46,7 +46,7 @@ func TestAuditAndOrphans(t *testing.T) {
 			t.Fatalf("put %s: %v", key, err)
 		}
 	}
-	put("cache/tumblr/1/0.png", 1000) // referenced
+	put("cache/mysite/1/0.png", 1000) // referenced
 	put("cache/feeds/2/0.png", 500)   // orphaned
 	put("avatars/1", 10)              // not cache
 
@@ -64,8 +64,8 @@ func TestAuditAndOrphans(t *testing.T) {
 	for _, g := range rep.Groups {
 		byLabel[g.Label] = g
 	}
-	if g := byLabel["cache/tumblr"]; g.Bytes != 1000 || g.OrphanBytes != 0 {
-		t.Fatalf("cache/tumblr = %+v", g)
+	if g := byLabel["cache/mysite"]; g.Bytes != 1000 || g.OrphanBytes != 0 {
+		t.Fatalf("cache/mysite = %+v", g)
 	}
 	if g := byLabel["cache/feeds"]; g.Bytes != 500 || g.OrphanBytes != 500 {
 		t.Fatalf("cache/feeds = %+v", g)
