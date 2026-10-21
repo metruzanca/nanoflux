@@ -501,6 +501,43 @@ own API sets the slice directly. Keep values clean
 (no leading slash, no surrounding whitespace) so a tag matches predictably.
 Leave it `nil` when the site offers nothing to surface.
 
+#### Recommended conventions
+
+Two labels are worth adding whenever the site has the data, because they make
+the feed searchable and filterable in the app without any host-side special
+cases:
+
+- **Site tags.** Map a post's tags into `Categories`. Trim each tag, collapse
+  internal whitespace, drop blanks, and de-duplicate while preserving order.
+  The resulting tags become the item's chips and the values the tag filter
+  matches, so do not also repeat them as `#tag` links in `Summary`.
+- **Reblogs and reposts.** Add the exact category `reblog` when an entry
+  reblogs or reposts another post. A user can then hide reblogs with one
+  category filter regardless of the site.
+
+```go
+// postCategories returns the site's tags plus the reblog marker.
+func postCategories(p *post) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(raw string) {
+		c := strings.Join(strings.Fields(raw), " ")
+		if c == "" || seen[c] {
+			return
+		}
+		seen[c] = true
+		out = append(out, c)
+	}
+	for _, t := range p.Tags {
+		add(t)
+	}
+	if p.IsReblog {
+		add("reblog")
+	}
+	return out
+}
+```
+
 ### Media and enclosures (`Enclosures`, `ImageURL`)
 
 `Item.Enclosures` attaches media to an entry; set `Enclosures` for anything the
