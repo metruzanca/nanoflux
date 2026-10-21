@@ -49,6 +49,7 @@ func TestSettingsPage(t *testing.T) {
 		"keyboard shortcuts",
 		`<td>← / →</td><td>previous / next while reading</td>`,
 		`<td>ctrl/⌘ + p</td><td>command palette</td>`,
+		`<td>ctrl/⌘ + shift + p</td><td>search authors, collections, feeds</td>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("settings page missing %q", want)
