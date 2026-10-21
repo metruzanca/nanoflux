@@ -13,6 +13,7 @@ update both when a binding changes.
 | --- | --- | --- |
 | `←` / `→` | Previous / next item | Item preview is open |
 | `Ctrl+P` / `⌘P` | Open the command palette | Anywhere |
+| `Ctrl+Shift+P` / `⌘Shift+P` | Search authors, collections, and feeds | Anywhere |
 | `Esc` | Close the active dialog, menu, or picker | Anywhere |
 
 ## Item preview
@@ -29,12 +30,20 @@ update both when a binding changes.
 - `Ctrl+P` / `⌘P` opens the command palette anywhere in the app.
 - Inside the palette, `↑` / `↓` move through the results, `Enter` runs the
   selected command, and `Esc` closes the palette.
-- The palette lists navigation targets and common actions. It is the only
-  command entry point with a global keybinding.
+- The palette lists navigation targets and common actions.
+
+## Entity search
+
+- `Ctrl+Shift+P` / `⌘Shift+P` opens the entity search palette.
+- It searches the user's authors, collections, and feeds, with an unread count
+  for each row.
+- Prefix the query with `@`, `#`, or `!` to search only authors, collections,
+  or feeds. Without a prefix it searches all three.
+- The same `↑` / `↓`, `Enter`, and `Esc` controls as the command palette apply.
 
 ## Removed bindings
 
 There are no other global shortcuts. The previous row-cursor and item-action
 keys (`j`/`k`, `o`/`Enter`, `v`, `s`, `m`, `g`/`G`, `ArrowUp`/`ArrowDown`),
-`/` search focus, `?` help, and `Ctrl/Cmd+Shift+P` entity search were removed
-to leave a clean slate for rebuilding the keymap.
+`/` search focus, and `?` help were removed to leave a clean slate for
+rebuilding the keymap.

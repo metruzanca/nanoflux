@@ -168,10 +168,16 @@ templ topbar(u store.User) {
 	     a plugin's documentation (plugin-docs-dialog) into it before showing. -->
 	<dialog id="plugin-docs-dialog" class="modal wide"></dialog>
 
-	<!-- Command palette (ctrl/cmd+p). Filled client-side by app.js. -->
+	<!-- Command palette (ctrl/cmd+p) and unified entity search
+	     (ctrl/cmd+shift+p). Both are filled client-side by app.js. -->
 	<dialog id="command-palette" class="palette">
 		<input id="command-input" type="text" placeholder="run a command…" autocomplete="off" spellcheck="false"/>
 		<ul id="command-results" class="palette-results" role="listbox"></ul>
+	</dialog>
+
+	<dialog id="entity-palette" class="palette">
+		<input id="entity-input" type="text" placeholder="search… @ authors  # collections  ! feeds" autocomplete="off" spellcheck="false"/>
+		<ul id="entity-results" class="palette-results" role="listbox"></ul>
 	</dialog>
 }
 
@@ -181,6 +187,7 @@ templ shortcutsTable() {
 	<table class="shortcuts">
 		<tr><td>← / →</td><td>previous / next while reading</td></tr>
 		<tr><td>ctrl/⌘ + p</td><td>command palette</td></tr>
+		<tr><td>ctrl/⌘ + shift + p</td><td>search authors, collections, feeds</td></tr>
 		<tr><td>Esc</td><td>close dialog</td></tr>
 	</table>
 }

@@ -836,18 +836,32 @@ document.addEventListener('keydown', function (e) {
   if (itemNav(dir)) e.preventDefault();
 });
 
-// Command palette (ctrl/cmd+p). The palette engine renders a filtered,
-// keyboard-navigable list into a <dialog class="palette">; Enter activates the
-// highlighted row, Escape and backdrop-click close it (Escape natively,
-// backdrop via the handler below).
+// Command palette (ctrl/cmd+p) and unified entity search (ctrl/cmd+shift+p).
+// The palette engine renders a filtered, keyboard-navigable list into a
+// <dialog class="palette">; Enter activates the highlighted row, Escape and
+// backdrop-click close it (Escape natively, backdrop via the handler below).
+var SIGILS = { author: '@', collection: '#', feed: '!' };
+
 function paletteItemEl(row) {
   var li = document.createElement('li');
   li.className = 'palette-item';
   li.setAttribute('role', 'option');
+  if (row.sigil) {
+    var s = document.createElement('span');
+    s.className = 'palette-sigil sigil-' + row.kind;
+    s.textContent = row.sigil;
+    li.appendChild(s);
+  }
   var name = document.createElement('span');
   name.className = 'palette-name';
   name.textContent = row.label;
   li.appendChild(name);
+  if (row.count > 0) {
+    var count = document.createElement('span');
+    count.className = 'palette-count';
+    count.textContent = row.count + ' unread';
+    li.appendChild(count);
+  }
   if (row.hint) {
     var hint = document.createElement('span');
     hint.className = 'palette-hint';
@@ -1056,8 +1070,49 @@ function postForm(path) {
 var commandPalette = wirePalette('command-palette', 'command-input', 'command-results',
   filterCommands, function (row) { row.run(); });
 
+// Unified entity search. Entities are fetched when the palette opens (and
+// cached for the session); a leading @/#/! narrows to one kind without the
+// sigil counting as part of the query.
+var ENTITY_CACHE = null;
+function fetchEntities() {
+  return fetch('/api/entities', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : { entities: [] }; })
+    .then(function (d) { ENTITY_CACHE = d.entities || []; return ENTITY_CACHE; })
+    .catch(function () { ENTITY_CACHE = []; return ENTITY_CACHE; });
+}
+function filterEntities(q) {
+  var entities = ENTITY_CACHE || [];
+  q = q.trim();
+  var kind = null;
+  var first = q.charAt(0);
+  if (first === '@') { kind = 'author'; q = q.slice(1).trim(); }
+  else if (first === '#') { kind = 'collection'; q = q.slice(1).trim(); }
+  else if (first === '!') { kind = 'feed'; q = q.slice(1).trim(); }
+  var needle = q.toLowerCase();
+  return entities.filter(function (e) {
+    if (kind && e.kind !== kind) return false;
+    return !needle || e.name.toLowerCase().indexOf(needle) !== -1;
+  }).map(function (e) {
+    return {
+      kind: e.kind, sigil: SIGILS[e.kind], label: e.name, count: e.unread,
+      hint: e.kind, url: e.url,
+    };
+  });
+}
+var entityPalette = wirePalette('entity-palette', 'entity-input', 'entity-results',
+  filterEntities, function (row) { window.location.href = row.url; });
+if (entityPalette) {
+  var openEntity = entityPalette.open;
+  entityPalette.open = function () {
+    fetchEntities().then(function () { openEntity(); });
+  };
+}
+
 // Keep the topbar badges in sync after an htmx swap (mark read/unread, mark all
-// read) that changes the totals without a full page load.
+// read) that changes the totals without a full page load. The palette caches
+// entities for the session, so drop that cache when a count moved and the
+// palette will refetch on its next open.
+var NAV_COUNTS = null;
 function refreshNavCounts() {
   // The appearance pref hides every badge; do not recreate them client-side.
   if (document.body.classList.contains('hide-counts')) return;
@@ -1065,8 +1120,12 @@ function refreshNavCounts() {
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (d) {
       if (!d) return;
-      setNavBadge('nav-unread', 'nav-unread-count', d.unread || 0);
-      setNavBadge('nav-authors', 'nav-authors-count', d.authors || 0);
+      var unread = d.unread || 0, authors = d.authors || 0;
+      setNavBadge('nav-unread', 'nav-unread-count', unread);
+      setNavBadge('nav-authors', 'nav-authors-count', authors);
+      var sig = unread + ':' + authors;
+      if (NAV_COUNTS !== null && NAV_COUNTS !== sig) ENTITY_CACHE = null;
+      NAV_COUNTS = sig;
     })
     .catch(function () {});
 }
@@ -1089,9 +1148,10 @@ function setNavBadge(linkId, spanId, n) {
 }
 
 document.addEventListener('keydown', function (e) {
-  if (e.code !== 'KeyP' || !(e.ctrlKey || e.metaKey) || e.shiftKey) return;
+  if (e.code !== 'KeyP' || !(e.ctrlKey || e.metaKey)) return;
   e.preventDefault();
-  if (commandPalette) commandPalette.open();
+  if (e.shiftKey) { if (entityPalette) entityPalette.open(); }
+  else if (commandPalette) commandPalette.open();
 });
 
 // A command that opens a page dialog ("add feed", ...) sets a pendingDialog
