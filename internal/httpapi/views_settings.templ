@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"strconv"
+
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
 )
@@ -9,6 +11,7 @@ templ settingsPage(u store.User, d settingsData) {
 	<h1>settings</h1>
 	@settingsAvatar(d.settingsAvatarData)
 	@settingsHomeCard(d.Home)
+	@settingsAlgorithmCard(d.Algorithm)
 	@settingsTimezone(d.Timezone)
 	@settingsAppearance(d.Appearance)
 	@settingsAutoRead(d.AutoRead)
@@ -19,6 +22,30 @@ templ settingsPage(u store.User, d settingsData) {
 	@settingsShortcuts()
 	@passwordDialog(d.Password)
 	@footer()
+}
+
+// settingsAlgorithmCard links to the magic-sort editor and summarizes what is
+// teaching the ranking: how many feeds are in play, how many favorites they
+// carry, and how many feeds are manually raised or lowered.
+templ settingsAlgorithmCard(d settingsAlgorithmData) {
+	<section class="card" id="settings-algorithm-card">
+		<h2>magic sort</h2>
+		<p class="muted small">
+			The magic sort orders items by feed taste. Your favorites are the signal;
+			a feed's manual rank can override it. Use edit algorithm to see every feed
+			and raise or lower it.
+		</p>
+		if d.FeedCount == 0 {
+			<p class="muted">no feeds yet — add a feed and favorite some posts to teach the algorithm.</p>
+		} else {
+			<p class="item-meta">
+				{ strconv.Itoa(d.FeedCount) } feeds · { strconv.Itoa(d.FavoriteCount) } favorites · { strconv.Itoa(d.Raised) } raised · { strconv.Itoa(d.Lowered) } lowered
+			</p>
+		}
+		<div class="row">
+			<a class="button" href="/settings/algorithm">edit algorithm</a>
+		</div>
+	</section>
 }
 
 // settingsExtension is the browser-extension download card: the extension is
