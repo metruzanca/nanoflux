@@ -12,54 +12,40 @@ import (
 )
 
 // Registry holds the loaded plugins and routes discovery/fetch to the first
-// matching one. Native plugins are registered first (they take precedence over
-// external ones), then name order is stable within each group.
+// matching one, in registration order.
 type Registry struct {
-	native   []pluginapi.Fetcher
 	external []pluginapi.Fetcher
 }
 
 // NewRegistry returns an empty Registry.
 func NewRegistry() *Registry { return &Registry{} }
 
-// RegisterNative adds an in-process plugin. Native plugins win over external
-// ones when several match the same URL.
-func (r *Registry) RegisterNative(f pluginapi.Fetcher) {
+// RegisterExternal adds a plugin loaded over gRPC.
+func (r *Registry) RegisterExternal(f pluginapi.Fetcher) {
 	name := f.Meta().Name
-	for _, existing := range r.native {
+	for _, existing := range r.external {
 		if existing.Meta().Name == name {
-			log.Warn("duplicate native plugin name; keeping the first", "plugin", name)
+			log.Warn("duplicate plugin name; keeping the first", "plugin", name)
 			return
 		}
 	}
-	r.native = append(r.native, f)
-	log.Info("registered native plugin", "plugin", describe(f))
-}
-
-// RegisterExternal adds a plugin loaded over gRPC.
-func (r *Registry) RegisterExternal(f pluginapi.Fetcher) {
 	r.external = append(r.external, f)
 	log.Info("registered external plugin", "plugin", describe(f))
 }
 
 // Empty reports whether no plugin is registered (so callers can bypass the
 // registry entirely).
-func (r *Registry) Empty() bool { return len(r.native) == 0 && len(r.external) == 0 }
+func (r *Registry) Empty() bool { return len(r.external) == 0 }
 
-// all returns native then external plugins, each group in registration order.
-func (r *Registry) all() []pluginapi.Fetcher {
-	out := make([]pluginapi.Fetcher, 0, len(r.native)+len(r.external))
-	out = append(out, r.native...)
-	out = append(out, r.external...)
-	return out
-}
+// all returns the plugins in registration order.
+func (r *Registry) all() []pluginapi.Fetcher { return r.external }
 
 // Match returns the first plugin handling u for cap, or nil.
 func (r *Registry) Match(u *url.URL, cap pluginapi.Capability) pluginapi.Fetcher {
 	if u == nil {
 		return nil
 	}
-	for _, f := range r.all() {
+	for _, f := range r.external {
 		if f.Match(u, cap) {
 			return f
 		}
@@ -149,8 +135,9 @@ func (r *Registry) RenderItem(ctx context.Context, req pluginapi.RenderRequest, 
 }
 
 // Discover runs every plugin that handles discovery for pageURL and merges the
-// candidates, de-duplicating by FeedURL (first wins, so native metadata sets
-// the preview). Errors from individual plugins are logged and skipped.
+// candidates, de-duplicating by FeedURL (first wins, so the first plugin's
+// metadata sets the preview). Errors from individual plugins are logged and
+// skipped.
 func (r *Registry) Discover(ctx context.Context, pageURL string, hosts func(pluginapi.Fetcher) pluginapi.Host) []pluginapi.Candidate {
 	u, err := url.Parse(pageURL)
 	if err != nil {
@@ -183,8 +170,8 @@ func (r *Registry) Discover(ctx context.Context, pageURL string, hosts func(plug
 
 // Names returns the registered plugin names, sorted (for admin/debug output).
 func (r *Registry) Names() []string {
-	names := make([]string, 0, len(r.native)+len(r.external))
-	for _, f := range r.all() {
+	names := make([]string, 0, len(r.external))
+	for _, f := range r.external {
 		names = append(names, f.Meta().Name)
 	}
 	sort.Strings(names)
@@ -194,7 +181,6 @@ func (r *Registry) Names() []string {
 // Info describes one loaded plugin for display (admin page, debug output).
 type Info struct {
 	Name      string
-	Kind      string // "native" or "external"
 	Version   string // plugin API version the plugin reported
 	RawNet    bool   // plugin opted out of host-mediated HTTP
 	UserAgent string // per-plugin User-Agent override, "" for the app default
@@ -211,56 +197,35 @@ type Info struct {
 	HasSettings bool
 }
 
-// Infos returns a description of every loaded plugin: native first, then
-// external, each group in registration order (native wins matches).
+// Infos returns a description of every loaded plugin in registration order.
 func (r *Registry) Infos() []Info {
-	out := make([]Info, 0, len(r.native)+len(r.external))
-	for _, f := range r.native {
-		out = append(out, info(f, "native"))
-	}
+	out := make([]Info, 0, len(r.external))
 	for _, f := range r.external {
-		out = append(out, info(f, "external"))
+		out = append(out, info(f))
 	}
 	return out
 }
 
-func info(f pluginapi.Fetcher, kind string) Info {
+func info(f pluginapi.Fetcher) Info {
 	m := f.Meta()
-	// Trust the reported HasDocs. For an external plugin that value arrives over
-	// the wire from the real implementation; the gRPC client wrapper always
-	// satisfies Docser, so asserting on f would report docs for every external
-	// plugin. Only a native plugin needs the type assertion, since its authored
-	// Meta does not fill HasDocs.
-	hasDocs := m.HasDocs
-	hasFeedAdmin := m.HasFeedAdmin
-	hasSettings := m.HasSettings
-	if kind == "native" {
-		if !hasDocs {
-			_, hasDocs = f.(pluginapi.Docser)
-		}
-		if !hasFeedAdmin {
-			_, hasFeedAdmin = f.(pluginapi.FeedAdmin)
-		}
-		if !hasSettings {
-			_, hasSettings = f.(pluginapi.Configurable)
-		}
-	}
+	// Trust the capability flags reported over the gRPC boundary. The client
+	// wrapper satisfies every optional interface unconditionally, so asserting
+	// on f would report every capability for every plugin; the plugin's gRPC
+	// server computes these flags from its real implementation instead.
 	return Info{
 		Name:           m.Name,
-		Kind:           kind,
 		Version:        m.APIVersion,
 		RawNet:         m.RawNetwork,
 		UserAgent:      m.UserAgent,
 		Summary:        m.Summary,
-		HasDocs:        hasDocs,
+		HasDocs:        m.HasDocs,
 		ProvisionLabel: m.ProvisionLabel,
-		CanManageFeeds: hasFeedAdmin,
-		HasSettings:    hasSettings,
+		CanManageFeeds: m.HasFeedAdmin,
+		HasSettings:    m.HasSettings,
 	}
 }
 
-// ByName returns the loaded plugin with the given name, or nil. Native
-// plugins are searched first (they win URL matches).
+// ByName returns the loaded plugin with the given name, or nil.
 func (r *Registry) ByName(name string) pluginapi.Fetcher {
 	if name == "" {
 		return nil
@@ -313,23 +278,14 @@ func (r *Registry) FeedToken(feedURL string) string {
 // (nil, nil). It is gated by CapFeedAdmin and requires a genuine FeedAdmin
 // implementation.
 //
-// Feed management is opt-in, and an external plugin appears to the host as the
-// gRPC client, which satisfies every optional interface unconditionally. A type
-// assertion therefore cannot tell whether the remote plugin implements
-// FeedAdmin. So a native plugin is checked by the assertion (real), and an
-// external one by Meta.HasFeedAdmin — which the gRPC server computes from the
-// remote implementation — plus its Match for the URL.
+// Feed management is opt-in. A plugin appears to the host as the gRPC client,
+// which satisfies every optional interface unconditionally, so a type assertion
+// cannot tell whether the remote plugin implements FeedAdmin. The registry
+// trusts Meta.HasFeedAdmin, which the plugin's gRPC server computes from its
+// real implementation, plus the plugin's Match for the URL.
 func (r *Registry) MatchFeedAdmin(u *url.URL) (pluginapi.FeedAdmin, pluginapi.Fetcher) {
 	if u == nil {
 		return nil, nil
-	}
-	for _, f := range r.native {
-		if !f.Match(u, pluginapi.CapFeedAdmin) {
-			continue
-		}
-		if fa, ok := f.(pluginapi.FeedAdmin); ok {
-			return fa, f
-		}
 	}
 	for _, f := range r.external {
 		if !f.Meta().HasFeedAdmin || !f.Match(u, pluginapi.CapFeedAdmin) {
@@ -361,8 +317,8 @@ type Provisioner struct {
 	F     pluginapi.Fetcher
 }
 
-// Provisioners returns the loaded plugins that advertise a create option,
-// native first then external, in registration order.
+// Provisioners returns the loaded plugins that advertise a create option, in
+// registration order.
 func (r *Registry) Provisioners() []Provisioner {
 	var out []Provisioner
 	for _, f := range r.all() {

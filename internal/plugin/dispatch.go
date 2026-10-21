@@ -28,7 +28,7 @@ type Dispatcher struct {
 }
 
 // NewDispatcher builds a Dispatcher over reg. hosts supplies the Host a plugin
-// uses (in-process for native, brokered for external).
+// uses for brokered calls back to the host.
 func NewDispatcher(reg *Registry, hosts func(pluginapi.Fetcher) pluginapi.Host) *Dispatcher {
 	return &Dispatcher{reg: reg, hosts: hosts}
 }

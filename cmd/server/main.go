@@ -118,15 +118,15 @@ func runServer() {
 	cooldown := plugin.NewCooldown()
 	p.SetHostCooler(cooldown)
 
-	// Load feed plugins (native + external), route fetches through them, and
-	// reconcile stored feeds against the loaded set. This must finish before the
+	// Load feed plugins, route fetches through them, and reconcile stored feeds
+	// against the loaded set. This must finish before the
 	// poller starts: a feed due at boot would otherwise be fetched through the
 	// generic parser while its plugin was still loading, and a plugin-only feed
 	// would fail to parse and record a spurious "last poll failed".
 	// External plugins are subprocesses; keep them only while in use so a
 	// constrained host is not charged for every plugin's resident memory.
 	plugin.SetIdleTimeout(cfg.PluginIdleTimeout)
-	plugins := plugin.Setup(ctx, st, p.Client(), cfg.PluginsDir, cooldown)
+	plugins := plugin.Setup(st, p.Client(), cfg.PluginsDir, cooldown)
 
 	// With the plugins loaded, hand the store their per-URL site rules so feed
 	// create/edit and the canonicalize pass defer site-specific URL handling to

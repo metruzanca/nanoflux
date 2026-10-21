@@ -135,7 +135,7 @@ func refetchFeeds(ctx context.Context, st *store.Store, targets []store.Feed, de
 	p := poller.New(st, cfg.PollInterval, 1)
 	p.SetHostSpacing(cfg.PollHostSpacing)
 	p.SetHostCooler(cooldown)
-	rt := plugin.Setup(ctx, st, p.Client(), cfg.PluginsDir, cooldown)
+	rt := plugin.Setup(st, p.Client(), cfg.PluginsDir, cooldown)
 	defer rt.Close()
 	// Own the URL rules, then rewrite stored feed URLs to their canonical shape
 	// so a feed whose URL a fix changes is fetched in its working form.

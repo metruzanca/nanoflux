@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,12 +31,10 @@ var pluginLogger = hclog.New(&hclog.LoggerOptions{
 // A plugin that fails to start, handshakes wrong, reports an incompatible
 // APIVersion, or does not implement Fetcher is logged and skipped — a broken
 // plugin never prevents nanoflux from starting.
-func LoadExternal(ctx context.Context, dir string, reg *Registry, hosts func(pluginapi.Fetcher) pluginapi.Host) func() {
+func LoadExternal(dir string, reg *Registry) func() {
 	if dir == "" {
 		return func() {}
 	}
-	_ = ctx
-	_ = hosts
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -73,7 +70,7 @@ func LoadExternal(ctx context.Context, dir string, reg *Registry, hosts func(plu
 }
 
 // loadOne starts one plugin subprocess and dispenses its Fetcher.
-func loadOne(ctx context.Context, path string) (pluginapi.Fetcher, *goplugin.Client, error) {
+func loadOne(path string) (pluginapi.Fetcher, *goplugin.Client, error) {
 	// go-plugin's handshake cookie proves this process was launched by the host
 	// and keeps a plugin from doing work if run by hand.
 	cmd := exec.Command(path)

@@ -43,7 +43,7 @@ func TestAdminPluginBoolSetting(t *testing.T) {
 	s, _ := newTestServer(t)
 	fp := &fakeConfigurable{}
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(fp)
+	reg.RegisterExternal(fp)
 	s.plugins = reg
 
 	save := func(form url.Values) *httptest.ResponseRecorder {

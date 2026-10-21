@@ -184,7 +184,7 @@ func landingPage(d landingData) templ.Component {
 	})
 }
 
-// pluginSnippet is a condensed excerpt of the bundled native Bluesky plugin
+// pluginSnippet is a condensed excerpt of the bundled Bluesky plugin
 // (plugins/bluesky). It shows the real shape: the profile RSS
 // feed the plugin replaces is text-only, so the plugin reads app.bsky.feed.post
 // records straight from the AT Protocol repository and rebuilds rich entries.

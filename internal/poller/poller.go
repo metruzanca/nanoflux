@@ -710,8 +710,9 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 			enclosureKeys, enclosureSizes = p.cacheItemImages(ctx, f, inc.it, itemID)
 		}
 		// Enclosures are stored whenever the item carries them, not only when it
-		// is new: a feed polled before its parser learned to expose media (the
-		// native Bluesky plugin, say) gains its attachments on the next poll.
+		// is new: a feed polled before its parser learned to expose media (a
+		// plugin that started returning them, say) gains its attachments on the
+		// next poll.
 		// ReplaceEnclosures is delete-then-insert, so this keeps them current.
 		if len(inc.it.Enclosures) > 0 {
 			if err := p.storeEnclosures(f, inc.it, itemID, enclosureKeys, enclosureSizes); err != nil {

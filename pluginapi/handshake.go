@@ -19,7 +19,7 @@ var Handshake = goplugin.HandshakeConfig{
 const PluginKey = "fetcher"
 
 // PluginSet wraps a Fetcher as the go-plugin PluginSet a host dispenses and a
-// plugin serves. Both native (in-process) and external plugins use it.
+// plugin executable serves.
 func PluginSet(f Fetcher) goplugin.PluginSet {
 	return goplugin.PluginSet{
 		PluginKey: &fetcherPlugin{impl: f},

@@ -9,10 +9,9 @@ import (
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
-// TestHostDoRateLimitedNative proves the in-process host returns the rate-limit
-// signal inline (not as an error), which is what lets it survive the gRPC
-// boundary for external plugins.
-func TestHostDoRateLimitedNative(t *testing.T) {
+// TestHostDoRateLimited proves the host returns the rate-limit signal inline
+// (not as an error), which is what lets it survive the gRPC boundary.
+func TestHostDoRateLimited(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "120")
 		w.WriteHeader(http.StatusTooManyRequests)

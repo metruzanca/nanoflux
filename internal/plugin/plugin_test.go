@@ -19,7 +19,7 @@ import (
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
-// fakeFetcher is an in-process plugin for registry tests.
+// fakeFetcher is a plugin stub for registry tests.
 type fakeFetcher struct {
 	name     string
 	match    func(*url.URL, pluginapi.Capability) bool
@@ -64,6 +64,11 @@ type fakeDocser struct {
 	docs string
 }
 
+func (f fakeDocser) Meta() pluginapi.Meta {
+	m := f.fakeFetcher.Meta()
+	m.HasDocs = true
+	return m
+}
 func (f fakeDocser) Docs() string { return f.docs }
 
 // TestRegistryDocs covers the docs lookup and URL matching: Info reports a
@@ -72,7 +77,7 @@ func (f fakeDocser) Docs() string { return f.docs }
 // documenting plugin for a URL the plugin does not own the fetch of.
 func TestRegistryDocs(t *testing.T) {
 	reg := NewRegistry()
-	reg.RegisterNative(fakeDocser{
+	reg.RegisterExternal(fakeDocser{
 		fakeFetcher: fakeFetcher{
 			name: "d",
 			match: func(u *url.URL, cap pluginapi.Capability) bool {
@@ -81,7 +86,7 @@ func TestRegistryDocs(t *testing.T) {
 		},
 		docs: "# docs",
 	})
-	reg.RegisterNative(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
+	reg.RegisterExternal(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
 
 	infos := reg.Infos()
 	if infos[0].Name != "d" || !infos[0].HasDocs {
@@ -145,6 +150,11 @@ type fakeConfigurable struct {
 	gotValue string
 }
 
+func (f *fakeConfigurable) Meta() pluginapi.Meta {
+	m := f.fakeFetcher.Meta()
+	m.HasSettings = true
+	return m
+}
 func (f *fakeConfigurable) Settings() []pluginapi.SettingField { return f.fields }
 func (f *fakeConfigurable) Configure(values map[string]string) { f.gotValue = values["base_url"] }
 
@@ -156,8 +166,8 @@ func TestRegistrySettings(t *testing.T) {
 		fakeFetcher: fakeFetcher{name: "cfg", match: func(*url.URL, pluginapi.Capability) bool { return false }},
 		fields:      []pluginapi.SettingField{{Name: "base_url", Kind: "url"}},
 	}
-	reg.RegisterNative(cfg)
-	reg.RegisterNative(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
+	reg.RegisterExternal(cfg)
+	reg.RegisterExternal(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
 
 	if got := reg.SettingsSchema("cfg"); len(got) != 1 || got[0].Name != "base_url" {
 		t.Fatalf("SettingsSchema = %+v", got)
@@ -186,14 +196,15 @@ func TestRegistrySettings(t *testing.T) {
 // without either is not.
 func TestRegistryProvisionersAndFeedAdmin(t *testing.T) {
 	reg := NewRegistry()
-	reg.RegisterNative(fakeProvisioner{
+	reg.RegisterExternal(fakeProvisioner{
 		fakeFetcher: fakeFetcher{name: "p", match: func(u *url.URL, cap pluginapi.Capability) bool {
 			return u.Hostname() == "site.example"
 		}},
-		label:  "newsletter",
-		fields: []pluginapi.Field{{Name: "email", Value: "abc@site.example"}},
+		label:    "newsletter",
+		hasAdmin: true,
+		fields:   []pluginapi.Field{{Name: "email", Value: "abc@site.example"}},
 	})
-	reg.RegisterNative(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
+	reg.RegisterExternal(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
 
 	ps := reg.Provisioners()
 	if len(ps) != 1 || ps[0].Label != "newsletter" || ps[0].F.Meta().Name != "p" {
@@ -228,16 +239,16 @@ func TestRegistryProvisionersAndFeedAdmin(t *testing.T) {
 	}
 }
 
-// TestMatchFeedAdminOptIn guards that feed management is opt-in for external
-// plugins: the gRPC client wrapper always satisfies FeedAdmin, so the host must
-// trust the capability the plugin reported (Meta.HasFeedAdmin), not a type
-// assertion. A plugin whose Match returns true for CapFeedAdmin but that does
-// not declare the capability must not be matched.
+// TestMatchFeedAdminOptIn guards that feed management is opt-in: the gRPC
+// client wrapper always satisfies FeedAdmin, so the host must trust the
+// capability the plugin reported (Meta.HasFeedAdmin), not a type assertion. A
+// plugin whose Match returns true for CapFeedAdmin but that does not declare
+// the capability must not be matched.
 func TestMatchFeedAdminOptIn(t *testing.T) {
 	matches := func(*url.URL, pluginapi.Capability) bool { return true }
 
-	// External plugin that matches the URL for every capability but does not
-	// report FeedAdmin: must not be treated as a feed admin.
+	// Plugin that matches the URL for every capability but does not report
+	// FeedAdmin: must not be treated as a feed admin.
 	reg := NewRegistry()
 	reg.RegisterExternal(fakeProvisioner{
 		fakeFetcher: fakeFetcher{name: "nooptin", match: matches},
@@ -246,13 +257,13 @@ func TestMatchFeedAdminOptIn(t *testing.T) {
 	})
 	u, _ := url.Parse("https://anywhere.example/feed.xml")
 	if fa, _ := reg.MatchFeedAdmin(u); fa != nil {
-		t.Fatal("external plugin without HasFeedAdmin must not match FeedAdmin")
+		t.Fatal("plugin without HasFeedAdmin must not match FeedAdmin")
 	}
 	if got := reg.FeedAdminSettings("https://anywhere.example/feed.xml"); got != nil {
 		t.Fatalf("FeedAdminSettings = %+v, want nil", got)
 	}
 
-	// External plugin that reports FeedAdmin is matched.
+	// Plugin that reports FeedAdmin is matched.
 	reg2 := NewRegistry()
 	reg2.RegisterExternal(fakeProvisioner{
 		fakeFetcher: fakeFetcher{name: "optin", match: matches},
@@ -260,17 +271,7 @@ func TestMatchFeedAdminOptIn(t *testing.T) {
 		fields:      []pluginapi.Field{{Name: "email", Value: "x@h"}},
 	})
 	if fa, _ := reg2.MatchFeedAdmin(u); fa == nil {
-		t.Fatal("external plugin with HasFeedAdmin should match FeedAdmin")
-	}
-
-	// A native plugin is matched by the real type assertion even though its
-	// authored Meta does not report the capability (the host fills it).
-	reg3 := NewRegistry()
-	reg3.RegisterNative(fakeProvisioner{
-		fakeFetcher: fakeFetcher{name: "native", match: matches},
-	})
-	if fa, _ := reg3.MatchFeedAdmin(u); fa == nil {
-		t.Fatal("native plugin implementing FeedAdmin should match")
+		t.Fatal("plugin with HasFeedAdmin should match FeedAdmin")
 	}
 }
 
@@ -280,7 +281,7 @@ func TestMatchFeedAdminOptIn(t *testing.T) {
 func TestFetchPluginCarriesCategories(t *testing.T) {
 	hosts := func(pluginapi.Fetcher) pluginapi.Host { return nil }
 	reg := NewRegistry()
-	reg.RegisterNative(fakeFetcher{
+	reg.RegisterExternal(fakeFetcher{
 		name: "c", result: pluginapi.Result{Items: []pluginapi.Item{
 			{GUID: "g1", Categories: []string{"reblog"}},
 			{GUID: "g2"},
@@ -309,7 +310,7 @@ func TestRegistryRenderItem(t *testing.T) {
 	renderURL, _ := url.Parse("https://posts.example/1")
 
 	reg := NewRegistry()
-	reg.RegisterNative(fakeRenderer{
+	reg.RegisterExternal(fakeRenderer{
 		fakeFetcher: fakeFetcher{name: "r", match: func(u *url.URL, cap pluginapi.Capability) bool {
 			return cap == pluginapi.CapRender && u != nil && u.Hostname() == "posts.example"
 		}},
@@ -329,7 +330,7 @@ func TestRegistryRenderItem(t *testing.T) {
 
 	// Unsupported maps to empty media.
 	reg2 := NewRegistry()
-	reg2.RegisterNative(fakeRenderer{
+	reg2.RegisterExternal(fakeRenderer{
 		fakeFetcher: fakeFetcher{name: "r2", match: func(*url.URL, pluginapi.Capability) bool { return true }},
 		err:         pluginapi.ErrUnsupportedCapability,
 	})
@@ -339,7 +340,7 @@ func TestRegistryRenderItem(t *testing.T) {
 
 	// A real error is surfaced.
 	reg3 := NewRegistry()
-	reg3.RegisterNative(fakeRenderer{
+	reg3.RegisterExternal(fakeRenderer{
 		fakeFetcher: fakeFetcher{name: "r3", match: func(*url.URL, pluginapi.Capability) bool { return true }},
 		err:         errors.New("boom"),
 	})
@@ -348,25 +349,25 @@ func TestRegistryRenderItem(t *testing.T) {
 	}
 }
 
-func TestRegistryMatchPrecedence(t *testing.T) {
+func TestRegistryMatchOrder(t *testing.T) {
 	reg := NewRegistry()
-	native := fakeFetcher{name: "native", match: func(*url.URL, pluginapi.Capability) bool { return true }}
-	external := fakeFetcher{name: "external", match: func(*url.URL, pluginapi.Capability) bool { return true }}
-	reg.RegisterExternal(external)
-	reg.RegisterNative(native)
+	first := fakeFetcher{name: "first", match: func(*url.URL, pluginapi.Capability) bool { return true }}
+	second := fakeFetcher{name: "second", match: func(*url.URL, pluginapi.Capability) bool { return true }}
+	reg.RegisterExternal(first)
+	reg.RegisterExternal(second)
 
 	u, _ := url.Parse("https://example.com")
-	if got := reg.Match(u, pluginapi.CapFetch); got == nil || got.Meta().Name != "native" {
-		t.Fatalf("native should win, got %v", got)
+	if got := reg.Match(u, pluginapi.CapFetch); got == nil || got.Meta().Name != "first" {
+		t.Fatalf("first registered plugin should win, got %v", got)
 	}
 }
 
 func TestRegistryDiscoverDedup(t *testing.T) {
 	reg := NewRegistry()
-	reg.RegisterNative(fakeFetcher{name: "a", discover: func() []pluginapi.Candidate {
+	reg.RegisterExternal(fakeFetcher{name: "a", discover: func() []pluginapi.Candidate {
 		return []pluginapi.Candidate{{FeedURL: "https://x/feed", Title: "From A"}}
 	}})
-	reg.RegisterNative(fakeFetcher{name: "b", discover: func() []pluginapi.Candidate {
+	reg.RegisterExternal(fakeFetcher{name: "b", discover: func() []pluginapi.Candidate {
 		return []pluginapi.Candidate{{FeedURL: "https://x/feed", Title: "From B"}, {FeedURL: "https://y/feed"}}
 	}})
 	cs := reg.Discover(context.Background(), "https://x", func(pluginapi.Fetcher) pluginapi.Host { return nil })
@@ -407,7 +408,7 @@ func TestReconcileFeeds(t *testing.T) {
 	// Plugin returns: the auto-disabled feed is re-enabled; the user-paused one
 	// stays disabled.
 	reg := NewRegistry()
-	reg.RegisterNative(fakeFetcher{name: "zorg", match: func(u *url.URL, _ pluginapi.Capability) bool {
+	reg.RegisterExternal(fakeFetcher{name: "zorg", match: func(u *url.URL, _ pluginapi.Capability) bool {
 		return u != nil && u.Hostname() == "example.org"
 	}})
 	ReconcileFeeds(st, reg)
@@ -428,7 +429,7 @@ func TestReconcileAdoptsFeed(t *testing.T) {
 	st, u, a := newPluginStore(t)
 	f, _ := st.Feeds.Create(u.ID, a.ID, "z", "https://example.org/z", "", "", 900)
 	reg := NewRegistry()
-	reg.RegisterNative(fakeFetcher{name: "zorg", match: func(u *url.URL, _ pluginapi.Capability) bool {
+	reg.RegisterExternal(fakeFetcher{name: "zorg", match: func(u *url.URL, _ pluginapi.Capability) bool {
 		return u != nil && u.Hostname() == "example.org"
 	}})
 	ReconcileFeeds(st, reg)
@@ -448,7 +449,7 @@ func TestReconcileAdoptsRenamedPlugin(t *testing.T) {
 	st.Feeds.DisableForMissingPlugin(f.ID, "oldname")
 
 	reg := NewRegistry()
-	reg.RegisterNative(fakeFetcher{name: "newname", match: func(u *url.URL, _ pluginapi.Capability) bool {
+	reg.RegisterExternal(fakeFetcher{name: "newname", match: func(u *url.URL, _ pluginapi.Capability) bool {
 		return u != nil && u.Hostname() == "example.org"
 	}})
 	ReconcileFeeds(st, reg)
@@ -486,7 +487,7 @@ func TestReconcileAfterDomainReset(t *testing.T) {
 
 	// A matching plugin adopts it again.
 	reg := NewRegistry()
-	reg.RegisterNative(fakeFetcher{name: "zorg", match: func(u *url.URL, _ pluginapi.Capability) bool {
+	reg.RegisterExternal(fakeFetcher{name: "zorg", match: func(u *url.URL, _ pluginapi.Capability) bool {
 		return u != nil && u.Hostname() == "example.org"
 	}})
 	ReconcileFeeds(st, reg)
@@ -576,7 +577,7 @@ func TestLoadExternalEndToEnd(t *testing.T) {
 
 	reg := NewRegistry()
 	hosts := NewHosts(upstream.Client(), NewCooldown())
-	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
+	cleanup := LoadExternal(filepath.Dir(bin), reg)
 	defer cleanup()
 
 	if len(reg.Names()) != 1 || reg.Names()[0] != "fetch-example" {
@@ -618,7 +619,7 @@ func TestLoadExternalRenderExample(t *testing.T) {
 
 	reg := NewRegistry()
 	hosts := NewHosts(http.DefaultClient, NewCooldown())
-	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
+	cleanup := LoadExternal(filepath.Dir(bin), reg)
 	defer cleanup()
 
 	if len(reg.Names()) != 1 || reg.Names()[0] != "render-example" {
@@ -661,7 +662,7 @@ func TestManagedExternalIdleShutdown(t *testing.T) {
 
 	reg := NewRegistry()
 	hosts := NewHosts(http.DefaultClient, NewCooldown())
-	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
+	cleanup := LoadExternal(filepath.Dir(bin), reg)
 	defer cleanup()
 
 	if len(reg.external) != 1 {
@@ -710,8 +711,7 @@ func TestLoadExternalMetaAndDocs(t *testing.T) {
 	bin := buildExamplePlugin(t, "plugin-fetch", "nanoflux-plugin-fetch")
 
 	reg := NewRegistry()
-	hosts := NewHosts(http.DefaultClient, NewCooldown())
-	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
+	cleanup := LoadExternal(filepath.Dir(bin), reg)
 	defer cleanup()
 
 	if len(reg.Names()) != 1 || reg.Names()[0] != "fetch-example" {
@@ -733,13 +733,13 @@ func TestLoadExternalMetaAndDocs(t *testing.T) {
 	}
 }
 
-// TestLoadExternalVersionMismatch is covered by the in-process pluginapi tests;
+// TestLoadExternalVersionMismatch is covered by the pluginapi tests;
 // here we assert a non-executable file in the dir is ignored.
 func TestLoadExternalIgnoresNonExecutable(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hi"), 0o644)
 	reg := NewRegistry()
-	LoadExternal(context.Background(), dir, reg, NewHosts(http.DefaultClient, NewCooldown()).For)
+	LoadExternal(dir, reg)
 	if !reg.Empty() {
 		t.Fatalf("expected no plugins, got %v", reg.Names())
 	}
@@ -761,7 +761,7 @@ func TestManagedExternalConfigSurvivesRespawn(t *testing.T) {
 
 	reg := NewRegistry()
 	hosts := NewHosts(upstream.Client(), NewCooldown())
-	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
+	cleanup := LoadExternal(filepath.Dir(bin), reg)
 	defer cleanup()
 
 	if !reg.Configure("fetch-example", map[string]string{"user_agent": "Configured-UA"}) {
@@ -791,9 +791,8 @@ func TestManagedExternalConfigSurvivesRespawn(t *testing.T) {
 	}
 }
 
-// TestExternalRateLimitParity proves an external plugin sees a rate limit the
-// same way a native one does: the host returns it inline (not as a gRPC error),
-// so the plugin can turn it into a RateLimit that the poller understands.
+// TestExternalRateLimitParity proves a plugin sees a rate limit inline (not as
+// a gRPC error), so it can turn it into a RateLimit that the poller understands.
 func TestExternalRateLimitParity(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a plugin binary")
@@ -808,7 +807,7 @@ func TestExternalRateLimitParity(t *testing.T) {
 
 	reg := NewRegistry()
 	hosts := NewHosts(limited.Client(), NewCooldown())
-	cleanup := LoadExternal(context.Background(), filepath.Dir(bin), reg, hosts.For)
+	cleanup := LoadExternal(filepath.Dir(bin), reg)
 	defer cleanup()
 
 	u, _ := url.Parse(limited.URL + "/feed")
@@ -832,7 +831,7 @@ func TestExternalRateLimitParity(t *testing.T) {
 // a feed's plugin forces image caching, and the storage folder derived from it.
 func TestRegistryImageCache(t *testing.T) {
 	reg := NewRegistry()
-	reg.RegisterNative(fakeFetcher{
+	reg.RegisterExternal(fakeFetcher{
 		name: "pics",
 		match: func(u *url.URL, cap pluginapi.Capability) bool {
 			return cap == pluginapi.CapImageCache && strings.HasSuffix(u.Hostname(), "pics.example")
@@ -857,13 +856,13 @@ func TestRegistryImageCache(t *testing.T) {
 // claim it never bypasses.
 func TestRegistryBypassesProxy(t *testing.T) {
 	reg := NewRegistry()
-	reg.RegisterNative(fakeFetcher{
+	reg.RegisterExternal(fakeFetcher{
 		name: "media",
 		match: func(u *url.URL, cap pluginapi.Capability) bool {
 			return cap == pluginapi.CapBypassProxy && u.Hostname() == "i.example"
 		},
 	})
-	reg.RegisterNative(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
+	reg.RegisterExternal(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
 
 	if !reg.BypassesProxy("https://i.example/a.jpg") {
 		t.Error("plugin host should bypass the proxy")

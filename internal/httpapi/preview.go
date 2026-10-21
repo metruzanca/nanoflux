@@ -243,7 +243,7 @@ func fillCandidate(c discover.Candidate, feedTitle, pageURL string) discover.Can
 // discoverCandidates resolves the feeds for a page URL: the direct URL is tried
 // as a feed, then discovery runs.
 func (s *Server) discoverCandidates(ctx context.Context, pageURL string) ([]discover.Candidate, error) {
-	// Plugin discovery (native + external) runs first and contributes candidates
+	// Plugin discovery runs first and contributes candidates
 	// with their own preview metadata. It is independent of the generic page
 	// crawl, so a page that cannot be fetched (or a host the plugin knows
 	// without a live page) still yields the plugin's feeds. It runs before the

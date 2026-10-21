@@ -7,9 +7,9 @@
 - Do not mention any external plugins in internal code, comments or docs
 - Prefer extending `pluginapi` over site-specific core changes. When a request
   concerns one site and the direct fix would add a special case to the core app,
-  stop and extend `pluginapi` instead, then have the core call into a native or
-  external plugin. Core should not accumulate per-site edge cases. (See "Plugins
-  own site-specific behavior".)
+  stop and extend `pluginapi` instead, then have the core call into a plugin.
+  Core should not accumulate per-site edge cases. (See "Plugins own
+  site-specific behavior".)
 - Do not run `make` or `podman` or `docker` commands without user's approval. The container is likely the user's production deployment. Use go to run the app locally instead e.g. go run cmd/server/main.go which runs on 8080. You may kill port 8080 if necessary.
 - we're pre v1 so breaking changes are allowed/expected if they make v1 better.
 
@@ -105,11 +105,11 @@ generic parser, so `feeds.plugin_name` stays empty:
 
 When a site-specific need appears, the default is a plugin, not core. Reach for
 a new `pluginapi.Capability` (URL-matched when the behavior is keyed to a URL) or
-an optional interface advertised by a host-filled `Meta` flag, and wire the core
+an optional interface advertised by a `Meta` flag, and wire the core
 to call the registry at one chokepoint. Keep anything that runs per render pure
 and cheap (a Match-only capability needs the plugin's `Match` to be
-capability-aware; see the invariant below). Native when the logic is general or
-needs no isolation; external when it is opt-in, fragile, or ToS-sensitive.
+capability-aware; see the invariant below). All plugins are external
+executables loaded from `NF_PLUGINS_DIR`.
 
 - **`URLPolicy`** (`CapURLPolicy`): `CanonicalizeFeedURL(raw)` returns the
   redirect-free stored shape, and `FeedToken(feedURL)` the `r/<sub>` / `u/<name>`
@@ -519,14 +519,15 @@ and manage one the user already subscribed to. Both are URL-matched capabilities
   `"delete"` (`Deleted: true` drops the local feed too). (Named `FeedFields`, not
   `Settings`, so a plugin can also implement `Configurable`.)
   **Feed management is opt-in**: `Registry.MatchFeedAdmin` checks a *genuine*
-  implementation, never a bare type assertion. An external plugin is reached as
-  the gRPC client, which satisfies every optional interface, so the host trusts
-  the capability the plugin reported (`Meta.HasFeedAdmin`, computed by the gRPC
-  server from the remote implementation); a native plugin is checked by the real
-  assertion. Only KTN manages feeds today, so no other feed shows the UI.
+  implementation, never a bare type assertion. A plugin is reached as the gRPC
+  client, which satisfies every optional interface, so the host trusts the
+  capability the plugin reported (`Meta.HasFeedAdmin`, computed by the plugin's
+  gRPC server from its implementation). Only KTN manages feeds today, so no
+  other feed shows the UI.
 - Host wiring: `Registry.Provisioners()` / `ProvisionerByName(name)` and
   `Registry.MatchFeedAdmin(u)` / `FeedAdminSettings(feedURL)`. `Info` gained
-  `ProvisionLabel` and `CanManageFeeds` (host-filled, like `HasDocs`).
+  `ProvisionLabel` and `CanManageFeeds` (plugin-reported for the latter, with
+  `HasDocs`).
 - UI: `GET /fragments/provision-form?plugin=` and `POST /feeds/provision` (add
   flow, `views_pluginprovision.templ`), and `POST /feeds/{id}/plugin-admin` for
   the title-sync action. The "managed feed" card (`feedPluginPanel`) lives on a
@@ -544,7 +545,7 @@ A plugin can declare admin-editable configuration (a service base URL, API
 tokens, session cookies) instead of reading env vars or a sidecar config file.
 
 - `pluginapi.Configurable` (`Settings() []SettingField`, `Configure(values)`),
-  advertised by host-filled `Meta.HasSettings`. `SettingField.Kind` is `text`,
+  advertised by `Meta.HasSettings`. `SettingField.Kind` is `text`,
   `password` (write-only), `url`, or `bool` (a checkbox, delivered to `Configure`
   as `"1"`/`"0"`). Added in APIVersion 0.5; `bool` is a later additive kind.
 - **Delivery is a push.** `plugin.ConfigureAll` (called in `Setup`, before
@@ -566,8 +567,8 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
 
 - A plugin may implement `pluginapi.Docser` (`Docs() string`, Markdown) to
   document itself; `Meta.Summary` is its one-line admin-card description.
-  `HasDocs` on `Meta` is host-filled (native: type assertion; external: the
-  wire), not authored.
+  `HasDocs` on `Meta` is filled by the plugin's gRPC server from its
+  implementation, not authored.
 - Docs are matched on `CapDocs`, **not** on feed ownership, so a plugin that
   does not own a feed's fetch can still document it: a feed fetched by the
   generic parser (`plugin_name` empty) can still be documented by the plugin
@@ -645,8 +646,8 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
 ### Item media duration
 
 - `items.duration_sec` (schemaV37) is a media item's runtime in seconds, NULL
-  when unknown. `pluginapi.Item.DurationSec` carries it across native and gRPC
-  plugin boundaries; `store.Item.DurationSec` and `poller.ingest` pass it through.
+  when unknown. `pluginapi.Item.DurationSec` carries it across the gRPC plugin
+  boundary; `store.Item.DurationSec` and `poller.ingest` pass it through.
 - It is part of the upsert snapshot, so re-polling refreshes it on an existing
   row (`UpdateItemSnapshot`). Cards show it as a bottom-right pill
   (`web.FormatDuration`); 0/unknown renders nothing.

@@ -1,9 +1,9 @@
 // Package discover finds the RSS/Atom/JSON-feed for a web page. It tries, in
 // order: parsing the URL itself, host-specific rules (GitHub), scanning the
 // page's HTML for feed <link>s, and common feed paths. Candidates are only
-// returned after they are fetched and parsed. Sites with a native plugin
-// supply their candidates from the plugin's own Discover instead, so none of
-// their URL shapes live here.
+// returned after they are fetched and parsed. Sites with a plugin supply their
+// candidates from the plugin's own Discover instead, so none of their URL
+// shapes live here.
 package discover
 
 import (

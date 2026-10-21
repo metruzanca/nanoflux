@@ -10,8 +10,8 @@ import (
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
-// docsStub is a native plugin that documents itself and matches docs on a host,
-// mirroring how the reddit plugin reaches a feed the generic parser fetches.
+// docsStub is a plugin stub that documents itself and matches docs on a host,
+// mirroring how a plugin reaches a feed the generic parser fetches.
 type docsStub struct{}
 
 func (docsStub) Meta() pluginapi.Meta {
@@ -19,6 +19,7 @@ func (docsStub) Meta() pluginapi.Meta {
 		Name:       "docsstub",
 		APIVersion: pluginapi.APIVersion,
 		Summary:    "a stub that documents itself",
+		HasDocs:    true,
 	}
 }
 func (docsStub) Match(u *url.URL, cap pluginapi.Capability) bool {
@@ -38,7 +39,7 @@ func (docsStub) Docs() string { return "# docsstub\n\nUse the **category** field
 func TestPluginDocsFragment(t *testing.T) {
 	s, h := newTestServer(t)
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(docsStub{})
+	reg.RegisterExternal(docsStub{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 
 	cookie := sessionCookie(t, h) // alice, not an admin
@@ -72,7 +73,7 @@ func TestAdminPluginCardShowsSummaryAndDocs(t *testing.T) {
 	cookie := adminSession(t, s, "root")
 
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(docsStub{})
+	reg.RegisterExternal(docsStub{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 
 	body := doGet(h, "/admin", cookie).Body.String()
@@ -92,7 +93,7 @@ func TestFeedEditShowsDocsButton(t *testing.T) {
 	cookie := adminSession(t, s, "feeduser")
 
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(docsStub{})
+	reg.RegisterExternal(docsStub{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 
 	author, _ := s.store.Authors.Create(u.ID, "A", "", "")

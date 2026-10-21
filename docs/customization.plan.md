@@ -352,7 +352,7 @@ Three shapes of idea are worth distinguishing:
 
 ### Source plugins - easy (public API or feed, no key)
 
-- **Bluesky.** Done: the native `bluesky` plugin reads `app.bsky.feed.post`
+- **Bluesky.** Done: the `bluesky` plugin reads `app.bsky.feed.post`
   records through the public AT Protocol endpoints and resolves media via
   `com.atproto.sync.getBlob`, replacing the text-only profile RSS.
 - **Hacker News.** Official Firebase API and Algolia search API are open and
@@ -384,8 +384,8 @@ Three shapes of idea are worth distinguishing:
 
 - **Full-text extraction.** The Tier 3 readability work as a plugin, so the
   core stays lean and users choose per-feed extraction. Needs a post-fetch hook.
-- **YouTube transcripts / video description expansion.** The native YouTube
-  plugin exists; a transcript enricher adds real reading material.
+- **YouTube transcripts / video description expansion.** The YouTube plugin
+  exists; a transcript enricher adds real reading material.
 - **Translation.** Machine-translate an item body on demand or at ingest;
   needs the same post-fetch transform point.
 - **Paywall / archive resolver.** Try archive.today or a reader-mode URL when

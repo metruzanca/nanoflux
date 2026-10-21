@@ -12,7 +12,7 @@ import (
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
-// stubPlugin is a native Fetcher used to prove plugin discovery flows into the
+// stubPlugin is a Fetcher stub used to prove plugin discovery flows into the
 // add-feed preview with its own metadata.
 type stubPlugin struct{}
 
@@ -69,7 +69,7 @@ func TestPluginMetadataWinsOverDirectFetch(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(sameURLPlugin{})
+	reg.RegisterExternal(sameURLPlugin{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 
 	// Install the plugin dispatcher process-wide for this test so the direct
@@ -104,7 +104,7 @@ func TestPluginDiscoveryInAddFlow(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(stubPlugin{})
+	reg.RegisterExternal(stubPlugin{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 
 	// The stub matches any host name "plugin.example"; the preview must not need
@@ -129,7 +129,7 @@ func TestPluginDiscoveryInAddFlow(t *testing.T) {
 }
 
 // TestAdminPluginsCard proves the admin page lists the loaded plugins with
-// their kind and API version, and explains the empty state when none load.
+// their API version, and explains the empty state when none load.
 func TestAdminPluginsCard(t *testing.T) {
 	s, h := newTestServer(t)
 	root := createUser(t, s, "root")
@@ -145,12 +145,11 @@ func TestAdminPluginsCard(t *testing.T) {
 	}
 
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(stubPlugin{})
 	reg.RegisterExternal(stubPlugin{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 
 	body = doGet(h, "/admin", cookie).Body.String()
-	for _, want := range []string{"plugins", "stub", "native", "external", pluginapi.APIVersion} {
+	for _, want := range []string{"plugins", "stub", pluginapi.APIVersion} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("plugins card missing %q", want)
 		}
@@ -178,7 +177,7 @@ func TestAdminPluginDomainReset(t *testing.T) {
 	// Re-adoption needs a loaded plugin matching the domain. stubPlugin matches
 	// plugin.example.
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(stubPlugin{})
+	reg.RegisterExternal(stubPlugin{})
 	plugin.NewDispatcher(reg, plugin.NewHosts(s.client, plugin.NewCooldown()).For).Install()
 	defer feedparse.SetPlugin(nil)
 

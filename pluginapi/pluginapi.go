@@ -1,8 +1,6 @@
 // Package pluginapi defines the interface between nanoflux (the host) and feed
-// plugins. A plugin may be built into nanoflux ("native") or distributed as an
-// out-of-process executable that nanoflux loads at runtime ("external"). Both
-// implement the same Fetcher interface; the host adapts external plugins over
-// gRPC.
+// plugins. A plugin is an executable that nanoflux loads over gRPC at runtime
+// and that implements the Fetcher interface.
 //
 // The API is versioned: APIVersion is reported by every plugin and checked by
 // the host. Breaking changes are expected until v1.0.0.
@@ -106,25 +104,25 @@ type Meta struct {
 	// Summary is a one-line description of what the plugin does, shown on its
 	// card in the admin panel. Empty hides the line.
 	Summary string
-	// HasDocs reports whether the plugin implements Docser. It is filled in by
-	// the host (from a type assertion for native plugins, or from the wire for
-	// external ones) — a plugin does not set it. It lets a UI offer a docs
-	// button without calling Docs() just to find out there is nothing.
+	// HasDocs reports whether the plugin implements Docser. The plugin's gRPC
+	// server fills it from the implementation, so a plugin does not set it. It
+	// lets a UI offer a docs button without calling Docs() just to find out
+	// there is nothing.
 	HasDocs bool
 	// ProvisionLabel, when non-empty, advertises the plugin in the add-feed
 	// flow's "create" menu: the label is the menu entry ("newsletter (Kill the
 	// Newsletter)"). A plugin that implements Provisioner but leaves this empty
 	// is never offered as a create option, so provisioning stays opt-in.
 	ProvisionLabel string
-	// HasFeedAdmin reports whether the plugin implements FeedAdmin. It is filled
-	// in by the host (from a type assertion for native plugins, or from the wire
-	// for external ones) — a plugin does not set it. Like HasDocs, it exists so
-	// a UI can advertise remote feed management without probing.
+	// HasFeedAdmin reports whether the plugin implements FeedAdmin. The plugin's
+	// gRPC server fills it from the implementation, so a plugin does not set it.
+	// Like HasDocs, it exists so a UI can advertise remote feed management
+	// without probing.
 	HasFeedAdmin bool
-	// HasSettings reports whether the plugin implements Configurable. It is
-	// filled in by the host (a type assertion for native plugins, the wire for
-	// external ones) — a plugin does not set it. It lets the admin page offer a
-	// settings form without asking every plugin for its schema.
+	// HasSettings reports whether the plugin implements Configurable. The
+	// plugin's gRPC server fills it from the implementation, so a plugin does
+	// not set it. It lets the admin page offer a settings form without asking
+	// every plugin for its schema.
 	HasSettings bool
 }
 
@@ -260,10 +258,9 @@ type HTTPRequest struct {
 // headers, and body and owns its own interpretation.
 //
 // A rate-limited response carries the limit inline (RateLimited/RetryAfter)
-// rather than as an error, so it transports identically whether the plugin is
-// native (in-process) or external (over gRPC). The plugin decides how to react;
-// if it cannot avoid the limit it returns a RateLimit error so the host parks
-// the feed.
+// rather than as an error, so it transports over gRPC without losing the
+// signal. The plugin decides how to react; if it cannot avoid the limit it
+// returns a RateLimit error so the host parks the feed.
 type HTTPResponse struct {
 	Status      int
 	Headers     map[string]string
@@ -272,14 +269,13 @@ type HTTPResponse struct {
 	RetryAfter  time.Duration // meaningful when RateLimited
 }
 
-// Host is what the plugin uses to talk back to nanoflux. It is fulfilled
-// in-process for native plugins and over gRPC for external ones.
+// Host is what the plugin uses to talk back to nanoflux. It is fulfilled over
+// gRPC.
 type Host interface {
 	// Do performs an HTTP request on the plugin's behalf. The host applies the
 	// shared User-Agent and timeout policy and inspects every response for rate
 	// limits, cooling the request host as needed. A rate-limited response is
-	// returned normally with RateLimited set (not as an error), so behavior is
-	// identical for native and external plugins.
+	// returned normally with RateLimited set (not as an error).
 	Do(ctx context.Context, req HTTPRequest) (HTTPResponse, error)
 	// Now returns the current time (UTC).
 	Now() time.Time

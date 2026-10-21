@@ -21,15 +21,15 @@ templ adminPage(u store.User, d adminData) {
 	</section>
 }
 
-// AdminPluginsCard lists the feed plugins the host loaded at startup, with the
-// kind (native vs external) and API version each reported. Below them it lists
-// the domains currently owned by a plugin, each with a "reset" action: clearing
-// a domain's owner and re-reconciling lets the loaded registry re-derive it, the
-// escape hatch when a plugin is removed, renamed, or swapped.
+// AdminPluginsCard lists the feed plugin executables the host loaded at
+// startup, with the API version each reported. Below them it lists the domains
+// currently owned by a plugin, each with a "reset" action: clearing a domain's
+// owner and re-reconciling lets the loaded registry re-derive it, the escape
+// hatch when a plugin is removed, renamed, or swapped.
 templ AdminPluginsCard(rows []adminPluginRow, domains []adminPluginDomain) {
 	<section class="card" id="admin-plugins-card">
 		<h2>plugins</h2>
-		<p class="muted small">Feed plugins loaded at startup. Native plugins are compiled into nanoflux and take precedence over external ones when both match a URL.</p>
+		<p class="muted small">Feed plugins loaded from the plugins directory at startup.</p>
 		if len(rows) == 0 {
 			<p class="muted small">no plugins loaded.</p>
 		} else {
@@ -38,7 +38,6 @@ templ AdminPluginsCard(rows []adminPluginRow, domains []adminPluginDomain) {
 					<div class="plugin-card">
 						<div class="plugin-card-head">
 							<strong>{ r.Name }</strong>
-							<span class="badge">{ r.Kind }</span>
 							<span class="badge" title="plugin API version the plugin reported">api { r.Version }</span>
 							if r.RawNet {
 								<span class="badge warn" title="plugin uses its own HTTP client and surfaces rate limits itself">raw network</span>

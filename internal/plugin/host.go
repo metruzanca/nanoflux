@@ -1,8 +1,7 @@
-// Package plugin hosts feed integrations. A plugin implements
-// pluginapi.Fetcher; it may be "native" (compiled into nanoflux and called
-// in-process) or "external" (an executable loaded over gRPC at startup). The
-// Registry holds both behind one interface, and Host implements pluginapi.Host
-// so every outbound request is mediated and rate-limit aware.
+// Package plugin hosts feed integrations. A plugin is an executable that
+// implements pluginapi.Fetcher and is loaded over gRPC at startup. Host
+// implements pluginapi.Host so every outbound request is mediated and
+// rate-limit aware.
 package plugin
 
 import (
@@ -19,9 +18,9 @@ import (
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
-// Host implements pluginapi.Host for native plugins: HTTP goes through the
-// shared client and every response is checked for rate limits, which cool the
-// request's registrable host.
+// Host implements pluginapi.Host for a plugin's brokered calls: HTTP goes
+// through the shared client and every response is checked for rate limits,
+// which cool the request's registrable host.
 type Host struct {
 	client *http.Client
 	cool   *Cooldown

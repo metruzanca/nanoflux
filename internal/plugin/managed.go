@@ -81,7 +81,7 @@ func newManagedExternal(path string) (*managedExternal, error) {
 // spawnLocked starts the subprocess and dispenses its Fetcher. Caller holds mu
 // (or is the constructor before the value is shared).
 func (m *managedExternal) spawnLocked() error {
-	f, client, err := loadOne(context.Background(), m.path)
+	f, client, err := loadOne(m.path)
 	if err != nil {
 		return err
 	}
