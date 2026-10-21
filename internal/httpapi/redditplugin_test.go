@@ -11,9 +11,9 @@ import (
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
-// The HTTP layer's contract with site plugins is tested with small in-process
-// fakes. The real reddit and YouTube implementations live in their own plugin
-// modules and test their own behavior there.
+// The HTTP layer's contract with site plugins is tested with small plugin
+// fakes. The real implementations live in their own plugin modules and test
+// their own behavior there.
 
 // fakeRedditPlugin implements the URL policy, discovery, decoration and proxy
 // bypass behavior the httpapi tests need. Media rendering is tested in the
@@ -281,7 +281,7 @@ func fakeVideoID(u *url.URL) string {
 func useRedditPlugin(t *testing.T, s *Server) {
 	t.Helper()
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(fakeRedditPlugin{})
+	reg.RegisterExternal(fakeRedditPlugin{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 	s.store.SetURLPolicy(plugin.NewStoreURLPolicy(reg))
 	s.store.SetItemDecorator(plugin.NewStoreDecorator(reg))
@@ -290,7 +290,7 @@ func useRedditPlugin(t *testing.T, s *Server) {
 func useYouTubePlugin(t *testing.T, s *Server) {
 	t.Helper()
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(fakeYouTubePlugin{})
+	reg.RegisterExternal(fakeYouTubePlugin{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 	s.store.SetItemDecorator(plugin.NewStoreDecorator(reg))
 }
@@ -298,8 +298,8 @@ func useYouTubePlugin(t *testing.T, s *Server) {
 func useRedditAndYouTube(t *testing.T, s *Server) {
 	t.Helper()
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(fakeRedditPlugin{})
-	reg.RegisterNative(fakeYouTubePlugin{})
+	reg.RegisterExternal(fakeRedditPlugin{})
+	reg.RegisterExternal(fakeYouTubePlugin{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 	s.store.SetURLPolicy(plugin.NewStoreURLPolicy(reg))
 	s.store.SetItemDecorator(plugin.NewStoreDecorator(reg))

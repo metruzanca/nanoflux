@@ -39,11 +39,9 @@ type adminStorage struct {
 	OrphanObjects int
 }
 
-// adminPluginRow is one loaded plugin shown in the plugins card. Kind is
-// "native" (compiled in) or "external" (loaded over gRPC).
+// adminPluginRow is one loaded plugin shown in the plugins card.
 type adminPluginRow struct {
 	Name      string
-	Kind      string
 	Version   string
 	RawNet    bool
 	UserAgent string
@@ -277,7 +275,6 @@ func (s *Server) adminPluginRows() []adminPluginRow {
 	for _, in := range infos {
 		row := adminPluginRow{
 			Name:           in.Name,
-			Kind:           in.Kind,
 			Version:        in.Version,
 			RawNet:         in.RawNet,
 			UserAgent:      in.UserAgent,

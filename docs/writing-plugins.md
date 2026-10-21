@@ -11,8 +11,8 @@ This is the authoring guide for the system described in
 (host-mediated HTTP, host-owned rate limiting, why go-plugin).
 
 The default integrations (YouTube, Bluesky, Patreon, Reddit, Kill the
-Newsletter, Instagram) are themselves external plugins, each in its own module
-under `plugins/<name>/`. `examples/plugin-render` and `examples/plugin-enrich`
+Newsletter, Instagram) are also plugin executables, each in its own module under
+`plugins/<name>/`; none are compiled into the host. `examples/plugin-render` and `examples/plugin-enrich`
 are minimal single-capability examples (view-time `Render` and ingest-time
 `Enrich`); `examples/plugin-fetch` is the test fixture used by the host's gRPC
 tests.
@@ -389,9 +389,9 @@ read them from `req.Action`. Return `Deleted: true` when the remote feed no
 longer exists, and the host removes the local feed too.
 
 Feed management is **opt-in**: implementing `FeedAdmin` is the opt-in, and the
-host only honors a genuine implementation. An external plugin is reached as the
-gRPC client, which satisfies every optional interface unconditionally, so the
-host uses the capability your plugin reports on the wire (`Meta.HasFeedAdmin`,
+host only honors a genuine implementation. Your plugin is reached as the gRPC
+client, which satisfies every optional interface unconditionally, so the host
+uses the capability your plugin reports on the wire (`Meta.HasFeedAdmin`,
 computed by the gRPC server from your implementation) rather than a type
 assertion. A plugin that does not implement `FeedAdmin` never shows the card, so
 its `Match` may safely ignore `CapFeedAdmin`.
@@ -648,11 +648,10 @@ This is what keeps nanoflux the source of truth for:
 `h.Do` returns the raw status, headers, and body so the plugin still owns its
 logic: it can inspect a 404 and try another endpoint, or serve from its own
 cache. When the host rate-limits a request it cools the host **and** returns the
-response normally with `RateLimited: true` (not as an error) — this inline
-signal is deliberate so an in-process and an out-of-process plugin behave
-identically. A
-plugin that cannot avoid the limit returns a `RateLimit` so nanoflux parks the
-feed; a plugin that recovered from its cache returns its result as usual.
+response normally with `RateLimited: true` (not as an error) so the plugin can
+recover from its own cache. A plugin that cannot avoid the limit returns a
+`RateLimit` so nanoflux parks the feed; a plugin that recovered from its cache
+returns its result as usual.
 
 ```go
 resp, _ := h.Do(ctx, pluginapi.HTTPRequest{Method: "GET", URL: url})
@@ -681,7 +680,7 @@ type AppC struct {
 A cold `Fetch` might resolve an ID, then fetch metadata + activity; subsequent
 polls hit the cache and make only the uncached call. A plugin that cannot avoid
 a limit returns `RateLimit{RetryAfter: d}` so nanoflux parks the feed and cools
-the host, exactly like the built-in integrations.
+the host, exactly like the default plugins.
 
 ## How nanoflux loads a plugin
 
@@ -693,13 +692,12 @@ At startup, and only when `NF_PLUGINS_DIR` exists:
    that plugin is **skipped** — a broken plugin cannot crash nanoflux.
 3. **Dispense** the `Fetcher` over gRPC, and keep the subprocess alive across
    polls.
-4. **Register** it as an external plugin.
+4. **Register** it with the registry.
 
 At **add time**, `Discover` runs for matching plugins to propose feeds. At
 **poll time**, the poller asks the registry which plugin matches the feed URL;
-the first match fetches it, otherwise the generic feed parser runs. If two
-plugins match, the host orders them (in-process before external, then by name)
-and logs the conflict.
+the first registered match fetches it, otherwise the generic feed parser runs.
+Plugins load in filename order, so that order is stable.
 
 ## Versioning
 

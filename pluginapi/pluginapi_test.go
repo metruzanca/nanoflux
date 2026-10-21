@@ -107,8 +107,7 @@ func TestItemRoundTrip(t *testing.T) {
 }
 
 // TestControlPlaneConversions asserts the provisioning/feed-admin display
-// fields round-trip across the gRPC helpers, so a native and an external plugin
-// surface identical values.
+// fields round-trip across the gRPC helpers.
 func TestControlPlaneConversions(t *testing.T) {
 	in := []Field{{Name: "email", Label: "subscribe", Value: "a1@h", Kind: "email"}}
 	out := fromPBFields(toPBFields(in))

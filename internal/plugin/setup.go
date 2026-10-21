@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/charmbracelet/log"
@@ -10,8 +9,7 @@ import (
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
-// Hosts builds the in-process Host for a plugin. The same factory serves native
-// plugins (called directly) and external ones (serialized over the broker).
+// Hosts builds the Host a plugin uses for brokered calls back to the host.
 type Hosts struct {
 	client *http.Client
 	cool   *Cooldown
@@ -42,14 +40,14 @@ type Runtime struct {
 // always non-nil; a broken plugin is logged and skipped. cool is the shared
 // rate-limit cooldown (the poller holds the same one, so a limit seen by either
 // paces both); a nil cool creates a fresh one.
-func Setup(ctx context.Context, st *store.Store, client *http.Client, pluginsDir string, cool *Cooldown) *Runtime {
+func Setup(st *store.Store, client *http.Client, pluginsDir string, cool *Cooldown) *Runtime {
 	if cool == nil {
 		cool = NewCooldown()
 	}
 	reg := NewRegistry()
 	hosts := NewHosts(client, cool)
 
-	cleanup := LoadExternal(ctx, pluginsDir, reg, hosts.For)
+	cleanup := LoadExternal(pluginsDir, reg)
 	d := NewDispatcher(reg, hosts.For)
 	d.Install()
 

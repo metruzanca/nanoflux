@@ -14,7 +14,7 @@ import (
 func TestSetPluginsInstallsProxyBypass(t *testing.T) {
 	s, _ := newTestServer(t)
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(fakeRedditPlugin{})
+	reg.RegisterExternal(fakeRedditPlugin{})
 	s.SetPlugins(reg, nil)
 	defer web.SetProxyBypass(nil)
 

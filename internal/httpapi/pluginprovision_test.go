@@ -11,11 +11,14 @@ import (
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
-// stubProvisioner is a native plugin that can create a feed and manage it.
+// stubProvisioner is a plugin stub that can create a feed and manage it.
 type stubProvisioner struct{ deleted bool }
 
 func (stubProvisioner) Meta() pluginapi.Meta {
-	return pluginapi.Meta{Name: "mailsite", APIVersion: pluginapi.APIVersion, ProvisionLabel: "newsletter"}
+	return pluginapi.Meta{
+		Name: "mailsite", APIVersion: pluginapi.APIVersion,
+		ProvisionLabel: "newsletter", HasFeedAdmin: true,
+	}
 }
 func (stubProvisioner) Match(u *url.URL, cap pluginapi.Capability) bool {
 	switch cap {
@@ -51,7 +54,7 @@ func (stubProvisioner) Action(_ context.Context, req pluginapi.FeedActionRequest
 func withProvisioner(t *testing.T, s *Server, p pluginapi.Fetcher) {
 	t.Helper()
 	reg := plugin.NewRegistry()
-	reg.RegisterNative(p)
+	reg.RegisterExternal(p)
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 }
 
@@ -164,6 +167,11 @@ type configurableStub struct {
 	got map[string]string
 }
 
+func (c *configurableStub) Meta() pluginapi.Meta {
+	m := c.stubProvisioner.Meta()
+	m.HasSettings = true
+	return m
+}
 func (c *configurableStub) Settings() []pluginapi.SettingField {
 	return []pluginapi.SettingField{
 		{Name: "base_url", Label: "instance url", Kind: "url"},
