@@ -43,9 +43,38 @@ var accentPresets = []string{
 	"#f5c542",
 }
 
+// settingsAlgorithmData summarizes the magic-sort editor for the settings card:
+// the feeds in play, the favorites that rank them, and the manual overrides.
+type settingsAlgorithmData struct {
+	FeedCount     int
+	FavoriteCount int
+	Raised        int
+	Lowered       int
+}
+
+func (s *Server) settingsAlgorithmData(userID int64) settingsAlgorithmData {
+	rows, err := s.store.Feeds.ListWithFavorites(userID)
+	if err != nil {
+		log.Error("load algorithm summary", "user_id", userID, "err", err)
+		return settingsAlgorithmData{}
+	}
+	d := settingsAlgorithmData{FeedCount: len(rows)}
+	for _, row := range rows {
+		d.FavoriteCount += row.FavoriteCount
+		switch {
+		case row.Rank > 0:
+			d.Raised++
+		case row.Rank < 0:
+			d.Lowered++
+		}
+	}
+	return d
+}
+
 type settingsData struct {
 	settingsAvatarData
 	Home       settingsHomeData
+	Algorithm  settingsAlgorithmData
 	Timezone   settingsTimezoneData
 	Appearance settingsAppearanceData
 	AutoRead   settingsAutoReadData
@@ -176,6 +205,7 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage("settings", u, settingsPage(u, settingsData{
 		settingsAvatarData: settingsAvatarData{HasAvatar: u.HasAvatar, Username: u.Username},
 		Home:               s.settingsHomeData(u.ID, ""),
+		Algorithm:          s.settingsAlgorithmData(u.ID),
 		Timezone:           settingsTimezoneData{Timezone: u.Timezone, Items: timezoneItems()},
 		Appearance:         settingsAppearanceData{Theme: u.Theme, Accent: u.AccentColor, HideUnreadCounts: u.HideUnreadCounts, HideUnreadNav: u.HideUnreadNav, GridMaxColumns: store.ClampGridColumns(u.GridMaxColumns)},
 		AutoRead:           settingsAutoReadData{Value: autoReadValue(u.AutoReadAfterDays)},

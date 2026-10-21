@@ -347,16 +347,20 @@ func TestFavoritesAlgorithm(t *testing.T) {
 	// Favorite the item so its feed shows a count.
 	doForm(h, "POST", "/items/"+itoa(item.ID)+"/favorite", url.Values{}, cookie)
 
-	body := doGet(h, "/favorites/algorithm", cookie).Body.String()
+	body := doGet(h, "/settings/algorithm", cookie).Body.String()
 	if !strings.Contains(body, "favorites algorithm") || !strings.Contains(body, "Blog") {
 		t.Fatalf("algorithm page should list the feed: %s", body)
 	}
 	if !strings.Contains(body, "1 favorites") {
 		t.Fatalf("algorithm page should show the favorite count: %s", body)
 	}
-	// The lists index links to the editor from the special favorites card.
-	if lists := doGet(h, "/lists", cookie).Body.String(); !strings.Contains(lists, "/favorites/algorithm") {
-		t.Fatalf("lists page should link to the algorithm editor: %s", lists)
+	// The settings page links to the editor from its magic sort card.
+	if settings := doGet(h, "/settings", cookie).Body.String(); !strings.Contains(settings, "/settings/algorithm") {
+		t.Fatalf("settings page should link to the algorithm editor: %s", settings)
+	}
+	// The lists index no longer carries the editor button.
+	if lists := doGet(h, "/lists", cookie).Body.String(); strings.Contains(lists, "/settings/algorithm") || strings.Contains(lists, "edit algorithm") {
+		t.Fatalf("lists page should not link to the algorithm editor: %s", lists)
 	}
 
 	feedID := item.FeedID

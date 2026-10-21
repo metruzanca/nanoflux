@@ -21,10 +21,10 @@ type algorithmData struct {
 	Rows []store.FeedWithFavorites
 }
 
-// favoritesAlgorithmPage is the "edit algorithm" sub-page of /favorites. It
-// makes the magic sort transparent: feeds are listed most-favorited first, and
-// each can be manually raised or lowered. The two levers together decide the
-// ranking (see store.ListItemsMagic).
+// favoritesAlgorithmPage is the magic-sort editor under /settings. It makes
+// the magic sort transparent: feeds are listed most-favorited first, and each
+// can be manually raised or lowered. The two levers together decide the ranking
+// (see store.ListItemsMagic).
 func favoritesAlgorithmPage(u store.User, d algorithmData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -46,7 +46,7 @@ func favoritesAlgorithmPage(u store.User, d algorithmData) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"row\"><h1>favorites algorithm</h1><div class=\"row-actions\"><a class=\"small\" href=\"/favorites\">back to favorites</a></div></div><p class=\"muted small\">The magic sort orders items by feed. Your favorites are the signal: feeds you favorite more rank higher. The manual lever overrides that: a raised feed always outranks a neutral one, a lowered feed always ranks below. Ties break by newest.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"row\"><h1>favorites algorithm</h1><div class=\"row-actions\"><a class=\"small\" href=\"/settings\">back to settings</a></div></div><p class=\"muted small\">The magic sort orders items by feed. Your favorites are the signal: feeds you favorite more rank higher. The manual lever overrides that: a raised feed always outranks a neutral one, a lowered feed always ranks below. Ties break by newest.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

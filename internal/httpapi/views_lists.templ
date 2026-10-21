@@ -50,9 +50,7 @@ templ ListsList(d listsPageData) {
 
 // FavoritesListRow is the special favorites list as a card. Unlike a normal
 // list it is not created by the user: it is every item marked favorite, and it
-// is the taste signal that drives the "magic" sort, so its card explains that
-// and offers the algorithm editor here rather than on the cluttered favorites
-// page.
+// is the taste signal that drives the "magic" sort.
 templ FavoritesListRow(d listsPageData) {
 	<li id="favorites-list">
 		<div class="card">
@@ -62,12 +60,11 @@ templ FavoritesListRow(d listsPageData) {
 					<span class="muted">({ d.FavoritesCount })</span>
 				</div>
 				<div class="row-actions">
-					<a class="button small" title="edit the magic sort" href="/favorites/algorithm">edit algorithm</a>
 					@favoritesShareControl(d.FavoritesShareTok)
 				</div>
 			</div>
 			<div class="item-meta">
-				favorites are the taste signal behind the “magic” sort: use edit algorithm to raise or lower a feed, and magic will rank its items higher or lower.
+				favorites are the taste signal behind the “magic” sort: feeds you favorite more rank higher. adjust the ranking from the magic sort card in settings.
 			</div>
 		</div>
 	</li>

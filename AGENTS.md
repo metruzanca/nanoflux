@@ -391,9 +391,11 @@ to `ListItemsMagic` (offset-paged, no keyset cursor; `?sort=magic`).
   `COALESCE(published_at, fetched_at) DESC`.
 - `feeds.rank` (schemaV42) is the per-feed manual lever: -1 lowered, 0 neutral,
   +1 raised. `FeedStore.SetRank` clamps to that range.
-- `GET /favorites/algorithm` is the editor (`favoritesAlgorithmPage`): feeds
+- `GET /settings/algorithm` is the editor (`favoritesAlgorithmPage`): feeds
   listed by favorite count with a three-state `rankControl`; `POST
   /feeds/{id}/rank` swaps the control. `FeedStore.ListWithFavorites` backs it.
+  The settings page's magic sort card summarizes it (feed, favorite, raised and
+  lowered counts) and links to it; the lists page no longer links to the editor.
 - The sort picker (`SortControl`/`SimpleSortControl`) replaces the old two-way
   `?dir=` control on every item list. `itemSortOf` still reads legacy `?dir=asc`
   as `oldest`.

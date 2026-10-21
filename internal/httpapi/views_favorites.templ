@@ -13,15 +13,15 @@ type algorithmData struct {
 	Rows []store.FeedWithFavorites
 }
 
-// favoritesAlgorithmPage is the "edit algorithm" sub-page of /favorites. It
-// makes the magic sort transparent: feeds are listed most-favorited first, and
-// each can be manually raised or lowered. The two levers together decide the
-// ranking (see store.ListItemsMagic).
+// favoritesAlgorithmPage is the magic-sort editor under /settings. It makes
+// the magic sort transparent: feeds are listed most-favorited first, and each
+// can be manually raised or lowered. The two levers together decide the ranking
+// (see store.ListItemsMagic).
 templ favoritesAlgorithmPage(u store.User, d algorithmData) {
 	<div class="row">
 		<h1>favorites algorithm</h1>
 		<div class="row-actions">
-			<a class="small" href="/favorites">back to favorites</a>
+			<a class="small" href="/settings">back to settings</a>
 		</div>
 	</div>
 	<p class="muted small">
