@@ -34,8 +34,8 @@ func TestImgProxy(t *testing.T) {
 		t.Fatalf("body mismatch: %x", rr.Body.Bytes())
 	}
 
-	// An image mislabeled as application/octet-stream (Bluesky's video
-	// thumbnails) is accepted by sniffing, and the real type is echoed so the
+	// An image mislabeled as application/octet-stream (for example, a video
+	// thumbnail) is accepted by sniffing, and the real type is echoed so the
 	// browser renders it rather than downloading it.
 	jpeg := []byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}
 	octet := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

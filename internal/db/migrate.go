@@ -575,10 +575,10 @@ const schemaV36 = `
 ALTER TABLE items ADD COLUMN categories TEXT NOT NULL DEFAULT '';
 `
 
-// schemaV37 adds items.duration_sec: a media item's runtime in seconds (a
-// YouTube video's length), denormalized so a card can show it without a
-// view-time lookup. NULL means unknown; the YouTube plugin fills it from the
-// browse API, whose channel RSS carries no duration.
+// schemaV37 adds items.duration_sec: a media item's runtime in seconds (for
+// example, a video's length), denormalized so a card can show it without a
+// view-time lookup. NULL means unknown; a plugin that knows the runtime fills
+// it in when it fetches the item.
 const schemaV37 = `
 ALTER TABLE items ADD COLUMN duration_sec INTEGER;
 `

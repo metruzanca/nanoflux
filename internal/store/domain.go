@@ -9,8 +9,8 @@ import (
 )
 
 // RegistrableDomain returns the registrable domain (eTLD+1) of a URL or bare
-// hostname, ignoring subdomains: "https://www.youtube.com/feeds" and
-// "https://m.youtube.com" both map to "youtube.com". It returns "" for empty
+// hostname, ignoring subdomains: "https://www.example.com/feeds" and
+// "https://m.example.com" both map to "example.com". It returns "" for empty
 // or unparseable input.
 func RegistrableDomain(s string) string {
 	s = strings.TrimSpace(s)

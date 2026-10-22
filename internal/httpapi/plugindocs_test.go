@@ -85,8 +85,8 @@ func TestAdminPluginCardShowsSummaryAndDocs(t *testing.T) {
 }
 
 // TestFeedEditShowsDocsButton proves the feed edit page offers the documenting
-// plugin's docs next to the filter rules — including for a feed the plugin does
-// not own the fetch of (matched on CapDocs, the reddit case).
+// plugin's docs next to the filter rules, including for a feed the plugin does
+// not own the fetch of (matched on CapDocs).
 func TestFeedEditShowsDocsButton(t *testing.T) {
 	s, h := newTestServer(t)
 	u := createUser(t, s, "feeduser")
@@ -97,7 +97,7 @@ func TestFeedEditShowsDocsButton(t *testing.T) {
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 
 	author, _ := s.store.Authors.Create(u.ID, "A", "", "")
-	// A feed the generic parser fetches (plugin_name empty), like reddit's .rss.
+	// A feed the generic parser fetches (plugin_name empty).
 	feed, _ := s.store.Feeds.CreateWithPlugin(u.ID, author.ID, "d",
 		"https://docs.example/feed.xml", "", "", "", 900)
 

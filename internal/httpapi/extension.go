@@ -29,8 +29,8 @@ var errDemoFeedLimit = errors.New(demoAddFeedMessage())
 //
 // homeURL is the page the user was on when adding the feed (what the web flow
 // calls the home page) and takes precedence over the feed's own advertised
-// home — e.g. a YouTube @handle page rather than the feed's /channel/UC...
-// URL. When empty it falls back to res.Feed.HomeURL.
+// home, for example a site's handle page rather than its canonical feed URL.
+// When empty it falls back to res.Feed.HomeURL.
 func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, title string, authorID int64) (apiFeed, error) {
 	if s.demoFeedLimitReached(u.ID) {
 		return apiFeed{}, errDemoFeedLimit
@@ -104,11 +104,10 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 }
 
 // pageIconURL derives an author avatar URL from the page the user was on when
-// adding the feed — the site favicon, or the channel's og:image on YouTube. It
-// returns "" when no page URL is known or the fetch fails, so a feed added
-// without a page is still created. A plugin-owned page is skipped: a page fetch
-// shares the host's request budget with the feed, so discovery and add stay
-// request-free.
+// adding the feed: the site favicon, or the page's og:image. It returns "" when
+// no page URL is known or the fetch fails, so a feed added without a page is
+// still created. A plugin-owned page is skipped: a page fetch shares the host's
+// request budget with the feed, so discovery and add stay request-free.
 func (s *Server) pageIconURL(ctx context.Context, pageURL string) string {
 	if pageURL == "" || s.urlPolicyOwned(pageURL) {
 		return ""
@@ -203,7 +202,7 @@ func (s *Server) feedURLExists(userID int64, feedURL string) bool {
 
 // normExtKey normalizes a URL for "already saved" matching: lowercase host
 // without a leading www., the path with a trailing slash trimmed, and the query
-// string (feeds like YouTube's differ only by channel_id=…).
+// string (some feeds differ only by a query parameter).
 func normExtKey(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {

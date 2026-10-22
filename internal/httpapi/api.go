@@ -226,8 +226,8 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "could not read a feed at that url"})
 			return
 		}
-		// The entered page URL wins over the feed's own advertised home (e.g. a
-		// YouTube @handle page rather than the /channel/UC... URL).
+		// The entered page URL wins over the feed's own advertised home (for
+		// example, a site's handle page rather than its canonical feed URL).
 		if homeURL == "" {
 			homeURL = res.Feed.HomeURL
 		}

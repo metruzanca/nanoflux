@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"testing"
 
 	"github.com/metruzanca/nanoflux/internal/feedparse"
@@ -138,81 +137,6 @@ func TestDiscoverSurfacesPageError(t *testing.T) {
 	}
 }
 
-// TestDiscoverSurfacesHostRuleRateLimit asserts that when a known host rule's
-// feed probe is rate-limited, the rate-limit error is returned rather than a
-// bare "no feed found", so the add flow can explain it.
-func TestDiscoverSurfacesHostRuleRateLimit(t *testing.T) {
-	// All paths 429, including the github profile atom the host rule probes.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Retry-After", "60")
-		w.WriteHeader(http.StatusTooManyRequests)
-	}))
-	defer srv.Close()
-
-	// Serve the test server under a github hostname so the host rule applies.
-	d := New(clientTo(srv))
-	cs, err := d.Discover(context.Background(), "https://github.com/metru")
-	if len(cs) != 0 {
-		t.Fatalf("expected no candidates, got %+v", cs)
-	}
-	if err == nil {
-		t.Fatal("a rate-limited host rule should surface the error")
-	}
-	var rl *feedparse.RateLimitError
-	var se *feedparse.StatusError
-	if !errors.As(err, &rl) && !errors.As(err, &se) {
-		t.Fatalf("error should be a rate-limit/status error, got %T %v", err, err)
-	}
-}
-
-func TestHostSpecificURLs(t *testing.T) {
-	u := func(s string) *url.URL {
-		parsed, err := url.Parse(s)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return parsed
-	}
-
-	cases := []struct {
-		page   string
-		want   []string
-		titles map[string]string
-	}{
-		{"https://bsky.app/profile/metru.dev", nil, nil}, // owned by a plugin
-		{"https://github.com/metru", []string{"https://github.com/metru.atom"}, map[string]string{"https://github.com/metru.atom": "metru's Github activity"}},
-		{"https://github.com/spf13/cobra", []string{
-			"https://github.com/spf13/cobra/releases.atom",
-			"https://github.com/spf13/cobra/commits.atom",
-			"https://github.com/spf13/cobra/tags.atom",
-		}, nil},
-		{"https://example.com/anything", nil, nil},
-	}
-	for _, c := range cases {
-		got := hostSpecificURLs(u(c.page))
-		if c.want == nil {
-			if len(got) != 0 {
-				t.Errorf("%s: got %v, want none", c.page, got)
-			}
-			continue
-		}
-		if len(got) != len(c.want) {
-			t.Errorf("%s: got %d candidates %v, want %d", c.page, len(got), got, len(c.want))
-			continue
-		}
-		for i, w := range c.want {
-			if got[i].URL != w {
-				t.Errorf("%s[%d]: url = %q, want %q", c.page, i, got[i].URL, w)
-			}
-			if c.titles != nil {
-				if want := c.titles[w]; got[i].Title != want {
-					t.Errorf("%s[%d]: title = %q, want %q", c.page, i, got[i].Title, want)
-				}
-			}
-		}
-	}
-}
-
 func TestPageMeta(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -248,89 +172,6 @@ func TestPageMetaFallbackIcon(t *testing.T) {
 	}
 	if meta.IconURL != srv.URL+"/favicon.ico" {
 		t.Fatalf("fallback icon = %q", meta.IconURL)
-	}
-}
-
-// hostRewriter is a RoundTripper that redirects every request to base, letting
-// tests serve a page under a "real" hostname the discoverer recognizes while
-// actually hitting the test server.
-type hostRewriter struct {
-	base *url.URL
-	rt   http.RoundTripper
-}
-
-func (h hostRewriter) RoundTrip(req *http.Request) (*http.Response, error) {
-	r := req.Clone(req.Context())
-	r.URL.Scheme = h.base.Scheme
-	r.URL.Host = h.base.Host
-	return h.rt.RoundTrip(r)
-}
-
-// clientTo serves youtube.com via the test server.
-func clientTo(srv *httptest.Server) *http.Client {
-	transport := srv.Client().Transport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-	return &http.Client{Transport: hostRewriter{base: mustURL(srv.URL), rt: transport}}
-}
-
-func mustURL(s string) *url.URL {
-	u, err := url.Parse(s)
-	if err != nil {
-		panic(err)
-	}
-	return u
-}
-
-// TestPageMetaPatreon asserts that a Patreon creator page yields a clean author
-// name (the "— creating … | Patreon" suffix stripped) and the creator avatar
-// from the page's structured-data JSON-LD rather than the generic favicon.
-func TestPageMetaPatreon(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<html><head>
-		  <title>Chris &amp; Jack — creating Sketch Comedy Videos | Patreon</title>
-		  <link rel="shortcut icon" href="https://www.patreon.com/favicon.ico">
-		  <script type="application/ld+json">{"@type":"ProfilePage","mainEntity":{"name":"Chris & Jack","image":{"contentUrl":"https://c10.patreonusercontent.com/avatar.jpg"}}}</script>
-		</head><body>hi</body></html>`))
-	}))
-	defer srv.Close()
-
-	meta, err := New(clientTo(srv)).PageMeta(context.Background(), "https://www.patreon.com/cw/chrisandjack")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if meta.Title != "Chris & Jack" {
-		t.Fatalf("title = %q, want Chris & Jack", meta.Title)
-	}
-	if meta.IconURL != "https://c10.patreonusercontent.com/avatar.jpg" {
-		t.Fatalf("icon = %q, want the creator avatar", meta.IconURL)
-	}
-}
-
-func TestPatreonPageName(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"Chris & Jack — creating Sketch Comedy Videos | Patreon", "Chris & Jack"},
-		{"Smarter Every Day | Creating Science Videos | Patreon", "Smarter Every Day"},
-		{"Just A Name", "Just A Name"},
-	}
-	for _, c := range cases {
-		if got := patreonPageName(c.in); got != c.want {
-			t.Errorf("patreonPageName(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-func TestPatreonStructuredAvatar(t *testing.T) {
-	if got := patreonStructuredAvatar(`{"mainEntity":{"image":{"contentUrl":"https://c.test/a.jpg"}}}`); got != "https://c.test/a.jpg" {
-		t.Errorf("contentUrl = %q", got)
-	}
-	if got := patreonStructuredAvatar(`{"mainEntity":{"image":{"thumbnailUrl":"https://c.test/t.jpg"}}}`); got != "https://c.test/t.jpg" {
-		t.Errorf("thumbnailUrl = %q", got)
-	}
-	if got := patreonStructuredAvatar("not json"); got != "" {
-		t.Errorf("non-json = %q", got)
 	}
 }
 
@@ -387,18 +228,6 @@ func TestStripCDATA(t *testing.T) {
 	for _, c := range cases {
 		if got := stripCDATA(c.in); got != c.want {
 			t.Errorf("stripCDATA(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-func TestPageTitle(t *testing.T) {
-	cases := []struct{ page, title, want string }{
-		{"https://www.patreon.com/cw/x", "Just A Name", "Just A Name"},
-		{"https://example.com", "Example - Home", "Example - Home"},
-	}
-	for _, c := range cases {
-		if got := pageTitle(c.page, c.title); got != c.want {
-			t.Errorf("pageTitle(%q, %q) = %q, want %q", c.page, c.title, got, c.want)
 		}
 	}
 }

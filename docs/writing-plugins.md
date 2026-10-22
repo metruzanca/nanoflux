@@ -132,14 +132,16 @@ a feed it does not fetch at all.
   hotlink freely in a browser but refuse the host's server-side `/img` request,
   claim `Match(u, CapBypassProxy)` for those image hosts. Matching URLs then
   load directly. Pure (no network I/O); it runs for every rendered image URL.
+- **`Icon` (optional)** — return a built-in source icon (MIME type and bytes)
+  for a site URL via `Match(u, CapIcon)`. The host uses it when no cached favicon
+  exists. Pure (no network I/O); it runs while serving an icon request.
 - **`URLPolicy` (optional)** — pure site URL rules: the canonical feed shape
   (`CanonicalizeFeedURL`) and the token a feed URL represents (`FeedToken`).
 - **`Docs` (optional)** — return Markdown describing the plugin, shown from the
   admin plugin card and from a feed's edit page. `Match(u, CapDocs)` decides
   which URLs it documents.
-- **`Provision` (optional)** — create a feed on the remote service on the user's
-  behalf, so a user never leaves nanoflux (the Kill the Newsletter plugin creates
-  a newsletter inbox). Advertised by a non-empty
+- **`Provision` (optional)** — create a feed on a remote service on the user's
+  behalf, so a user never leaves nanoflux. Advertised by a non-empty
   `Meta.ProvisionLabel`, which is the nav "add" menu entry; there is no URL to
   match.
 - **`FeedAdmin` (optional)** — read a feed's display-only fields and perform
@@ -433,9 +435,9 @@ what is missing when it is used. The host re-pushes the stored values when a
 reaped plugin subprocess is respawned, so a long-idle plugin starts configured
 again.
 
-The Kill the Newsletter plugin (`plugins/killthenewsletter`) is the reference for
-all three capabilities: it provisions, manages and takes its instance base URL
-from a setting.
+For example, the Kill the Newsletter plugin (`plugins/killthenewsletter`)
+implements all three capabilities: it provisions, manages and takes its instance
+base URL from a setting.
 
 ### Item identity (`Identity`)
 
@@ -483,9 +485,8 @@ a text post, a site that does not expose it. It is part of the item snapshot, so
 a later re-poll can fill it in on an existing row without changing identity or
 read state.
 
-The YouTube plugin (`plugins/youtube`) is the reference: its channel RSS carries
-no duration, so it fetches through YouTube's browse API, which returns the
-runtime alongside each entry.
+For example, the YouTube plugin (`plugins/youtube`) reads the runtime from its
+browse API because the channel RSS carries no duration.
 
 ### Categories (`Categories`)
 
@@ -571,9 +572,8 @@ The host ships the players, so a plugin only describes the media:
 - anything else, or `link`, becomes a download link.
 
 Because the core resolves the kind, a directly playable file (e.g. an `mp4`)
-still works, but an HLS manifest is now fully supported. The Bluesky plugin
-(`plugins/bluesky`) is the reference for reconstructing media from a site's own
-records: its
+still works, but an HLS manifest is now fully supported. For example, the Bluesky
+plugin (`plugins/bluesky`) reconstructs media from a site's own records: its
 profile RSS carries no media, so it reads `app.bsky.feed.post` records and
 resolves each blob to a full-size image, or attaches an HLS enclosure for a
 video (with the video thumbnail as the item's `ImageURL`).

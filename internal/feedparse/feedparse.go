@@ -176,8 +176,8 @@ func SetPlugin(p Plugin) { installedPlugin = p }
 // Fetch retrieves and parses feedURL. When etag or lastModified are non-empty
 // they are sent as conditional-GET headers; a 304 returns ErrNotModified.
 //
-// Site-specific integrations (X, Instagram, Patreon, …) are handled by plugins,
-// installed via SetPlugin; this generic path covers standard RSS/Atom/JSON feeds.
+// Site-specific integrations are handled by plugins installed via SetPlugin;
+// this generic path covers standard RSS/Atom/JSON feeds.
 func Fetch(ctx context.Context, feedURL string, client *http.Client, etag, lastModified string) (Result, error) {
 	return FetchFeed(ctx, FetchRequest{URL: feedURL, ETag: etag, LastModified: lastModified}, client)
 }

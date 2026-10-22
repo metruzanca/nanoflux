@@ -113,13 +113,14 @@ func (c *countingTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, fmt.Errorf("unexpected request")
 }
 
-// TestFeedPreviewRedditDerived asserts the reddit add path is request-free: the
-// feed is derived from the URL and no reddit page or .rss is fetched, leaving
-// the host's tight anonymous rate limit for the immediate poll.
-func TestFeedPreviewRedditDerived(t *testing.T) {
+// TestFeedPreviewDerivedFeed asserts a derived add path is request-free: the
+// feed comes from the URL and no page or feed is fetched, leaving the host's
+// tight anonymous rate limit for the immediate poll. The fixture uses reddit
+// URLs as an example.
+func TestFeedPreviewDerivedFeed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
-	useRedditPlugin(t, s)
+	useSitePlugin(t, s)
 
 	ct := &countingTransport{}
 	client := &http.Client{Transport: ct}

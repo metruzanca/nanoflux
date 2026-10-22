@@ -195,7 +195,7 @@ func TestAutoCollectionHiddenFromFeedEditCheckboxes(t *testing.T) {
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 
-	// A youtube feed creates the auto collection; a manual collection also exists.
+	// A feed creates the auto collection; a manual collection also exists.
 	rr := doForm(h, "POST", "/feeds", url.Values{
 		"title":     {"Channel"},
 		"feed_url":  {"https://www.youtube.com/feeds/videos.xml?channel_id=UCx"},
@@ -360,7 +360,7 @@ func TestOpmlExportExcludesAutoCollections(t *testing.T) {
 	if !strings.Contains(body, `text="tech"`) {
 		t.Fatalf("export should include manual collections: %s", body)
 	}
-	// The youtube feed falls back to an ungrouped outline.
+	// The feed falls back to an ungrouped outline.
 	if !strings.Contains(body, `xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCx"`) {
 		t.Fatalf("export should still include the youtube feed ungrouped: %s", body)
 	}

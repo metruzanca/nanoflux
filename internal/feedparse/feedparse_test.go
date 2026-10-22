@@ -500,9 +500,9 @@ func TestNextPageParamFallback(t *testing.T) {
 }
 
 // TestFetchExtractsCategories asserts an item's feed-provided categories are
-// normalized into Item.Categories: atom <category> labels (reddit's "r/<sub>")
-// plus the author name (reddit's "/u/<user>", stored without the leading
-// slash). This is what makes a reddit feed's subreddit and poster filterable.
+// normalized into Item.Categories: atom <category> labels plus the author name
+// (stored without a leading slash). The fixture uses reddit-shaped section and
+// user tokens as an example. This is what makes those labels filterable.
 func TestFetchExtractsCategories(t *testing.T) {
 	const atom = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">

@@ -60,8 +60,8 @@ const (
 	// Capabilities are transmitted as integers across the gRPC boundary, so new
 	// ones are appended: never insert one between existing values.
 	CapEnrich
-	// CapProvision asks whether the plugin can create a new feed on the remote
-	// service on the user's behalf (a Kill the Newsletter inbox, say), returning
+	// CapProvision asks whether the plugin can create a new feed on a remote
+	// service on the user's behalf (for example, a newsletter inbox), returning
 	// its feed URL plus display-only fields. There is no URL to match on: the
 	// registry offers a plugin whose Meta.ProvisionLabel is non-empty.
 	CapProvision
@@ -84,6 +84,10 @@ const (
 	// proxied request fails while a direct one works. It is matched on the image
 	// URL and must be pure and cheap.
 	CapBypassProxy
+	// CapIcon asks whether the plugin supplies a built-in icon for a site URL,
+	// used as the source-icon fallback when no cached favicon exists. It is
+	// matched on the site URL and must be pure and cheap.
+	CapIcon
 )
 
 // Meta describes a plugin to the host.
@@ -98,8 +102,8 @@ type Meta struct {
 	RawNetwork bool
 	// UserAgent overrides the User-Agent the host sends for this plugin's
 	// mediated requests. Empty uses the app default. Some sites require a
-	// specific identity (e.g. Instagram serves the logged-out post grid only to
-	// crawler agents), so a plugin that needs one sets it here.
+	// specific identity (for example, a site that serves a logged-out page only
+	// to crawler agents), so a plugin that needs one sets it here.
 	UserAgent string
 	// Summary is a one-line description of what the plugin does, shown on its
 	// card in the admin panel. Empty hides the line.
@@ -110,9 +114,10 @@ type Meta struct {
 	// there is nothing.
 	HasDocs bool
 	// ProvisionLabel, when non-empty, advertises the plugin in the add-feed
-	// flow's "create" menu: the label is the menu entry ("newsletter (Kill the
-	// Newsletter)"). A plugin that implements Provisioner but leaves this empty
-	// is never offered as a create option, so provisioning stays opt-in.
+	// flow's "create" menu: the label is the menu entry (for example,
+	// "newsletter" or "newsletter (Example Service)"). A plugin that implements
+	// Provisioner but leaves this empty is never offered as a create option, so
+	// provisioning stays opt-in.
 	ProvisionLabel string
 	// HasFeedAdmin reports whether the plugin implements FeedAdmin. The plugin's
 	// gRPC server fills it from the implementation, so a plugin does not set it.
@@ -322,6 +327,15 @@ type Docser interface {
 	Docs() string
 }
 
+// IconProvider is an optional capability a plugin may implement to supply a
+// built-in source icon for a site. It is matched on the site URL via CapIcon
+// and used when no cached favicon exists. Icon must be pure and cheap: it runs
+// while rendering an icon request and must not perform network I/O.
+type IconProvider interface {
+	// Icon returns the icon's MIME type and bytes for rawURL.
+	Icon(rawURL string) (mimeType string, data []byte)
+}
+
 // SharedKeyer is an optional capability a plugin may implement to assign a
 // cross-feed SharedKey to a feed's freshly parsed items at ingest time. It runs
 // after either fetch path (the plugin's own Fetch, or the generic parser for a
@@ -513,7 +527,7 @@ type Media struct {
 }
 
 // Field is one display-only key/value a plugin surfaces for a feed it manages,
-// e.g. the inbox address a newsletter feed is subscribed with. It is rendered
+// for example the address a newsletter feed is subscribed with. It is rendered
 // read-only so a user can copy it; a plugin that wants an editable value
 // describes it in FeedAdmin.Settings and reads it back from the action's
 // Fields.
@@ -588,8 +602,8 @@ type FeedActionRequest struct {
 
 // FeedActionResult is a completed management action.
 type FeedActionResult struct {
-	// Message is a short user-facing confirmation ("feed deleted on Kill the
-	// Newsletter").
+	// Message is a short user-facing confirmation ("feed deleted on the remote
+	// service").
 	Message string
 	// Deleted reports that the remote feed no longer exists.
 	Deleted bool

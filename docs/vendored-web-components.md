@@ -12,8 +12,9 @@ covered at the end.
 
 ## hls.js (HLS video)
 
-Bluesky videos are stored as HLS enclosures (an `.m3u8` manifest), which Chrome
-and Firefox cannot play natively. `internal/web/static/hls.light.min.js` is the
+Some plugin videos are stored as HLS enclosures (an `.m3u8` manifest), for
+example Bluesky videos, which Chrome and Firefox cannot play natively.
+`internal/web/static/hls.light.min.js` is the
 pinned hls.js **light** build (VOD playback; the full build is not needed), and
 `internal/web/static/hls-video.js` is the small committed glue that attaches it
 to any `video[data-hls]` (Safari is left to play HLS natively).

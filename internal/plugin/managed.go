@@ -351,6 +351,18 @@ func (m *managedExternal) Settings() []pluginapi.SettingField {
 	return out
 }
 
+func (m *managedExternal) Icon(rawURL string) (string, []byte) {
+	var mime string
+	var data []byte
+	_ = m.call(false, func(f pluginapi.Fetcher) error {
+		if ip, ok := f.(pluginapi.IconProvider); ok {
+			mime, data = ip.Icon(rawURL)
+		}
+		return nil
+	})
+	return mime, data
+}
+
 func (m *managedExternal) Configure(values map[string]string) {
 	// Keep a copy so a respawned subprocess starts configured again.
 	stored := make(map[string]string, len(values))
@@ -398,4 +410,5 @@ var (
 	_ pluginapi.Provisioner  = (*managedExternal)(nil)
 	_ pluginapi.FeedAdmin    = (*managedExternal)(nil)
 	_ pluginapi.Configurable = (*managedExternal)(nil)
+	_ pluginapi.IconProvider = (*managedExternal)(nil)
 )

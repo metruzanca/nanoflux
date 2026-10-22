@@ -1,14 +1,12 @@
 // Package discover finds the RSS/Atom/JSON-feed for a web page. It tries, in
-// order: parsing the URL itself, host-specific rules (GitHub), scanning the
-// page's HTML for feed <link>s, and common feed paths. Candidates are only
-// returned after they are fetched and parsed. Sites with a plugin supply their
-// candidates from the plugin's own Discover instead, so none of their URL
-// shapes live here.
+// order: parsing the URL itself, scanning the page's HTML for feed <link>s, and
+// common feed paths. Candidates are only returned after they are fetched and
+// parsed. Sites with a plugin supply their candidates from the plugin's own
+// Discover instead, so none of their URL shapes live here.
 package discover
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -67,37 +65,22 @@ func (d *Discoverer) Discover(ctx context.Context, pageURL string) ([]Candidate,
 		return []Candidate{c}, nil
 	}
 
-	// 2. Host-specific rules (GitHub). These are the site's canonical feeds
-	// (a GitHub profile's activity atom, a repo's releases/commits/tags), so
-	// they take precedence over whatever the page's HTML advertises — and may
-	// carry a fixed display title.
-	cs, hostErr := d.hostSpecific(ctx, pageURL)
-	if len(cs) > 0 {
-		return dedup(cs), nil
-	}
-
-	// 3. Scan the page HTML for feed <link>s.
+	// 2. Scan the page HTML for feed <link>s.
 	title, links, pageErr := d.htmlLinks(ctx, pageURL)
 	if cs := d.validateAll(ctx, links, "html", pageURL, title); len(cs) > 0 {
 		return dedup(cs), nil
 	}
 
-	// 4. Common feed paths on the same origin.
+	// 3. Common feed paths on the same origin.
 	var probes []string
 	for _, p := range commonPaths {
 		probes = append(probes, base.ResolveReference(&url.URL{Path: p}).String())
 	}
-	cs = d.validateAll(ctx, probes, "paths", pageURL, "")
-	if len(cs) == 0 {
-		// Nothing found: surface why when we can, instead of a bare "no feed
-		// found". A known host rule that failed takes precedence, then a
-		// page-fetch failure (e.g. 429).
-		if hostErr != nil {
-			return nil, hostErr
-		}
-		if pageErr != nil {
-			return nil, pageErr
-		}
+	cs := d.validateAll(ctx, probes, "paths", pageURL, "")
+	if len(cs) == 0 && pageErr != nil {
+		// Nothing found: surface why when we can (e.g. 429), instead of a bare
+		// "no feed found".
+		return nil, pageErr
 	}
 	return dedup(cs), nil
 }
@@ -169,31 +152,6 @@ type PageMeta struct {
 	ImageURL    string // og:image, for a saved page's thumbnail
 }
 
-// pageTitle returns a page's display title with Patreon's " — creating … |
-// Patreon" suffix trimmed, so it can name an author cleanly. Other sites are
-// untouched.
-func pageTitle(rawurl, title string) string {
-	if isPatreonPage(rawurl) {
-		return patreonPageName(title)
-	}
-	return title
-}
-
-// patreonPageName strips the suffix Patreon appends to a creator page's
-// <title> so the author prefill reads cleanly. Two shapes appear:
-// "Chris & Jack — creating Sketch Comedy Videos | Patreon" and
-// "Smarter Every Day | Creating Science Videos | Patreon"; the creator name is
-// everything before the first " | " (then before any " — ").
-func patreonPageName(title string) string {
-	if i := strings.Index(title, " | "); i >= 0 {
-		title = title[:i]
-	}
-	if i := strings.Index(title, " — "); i >= 0 {
-		title = title[:i]
-	}
-	return strings.TrimSpace(title)
-}
-
 // stripCDATA unwraps raw CDATA sections from text extracted by the HTML
 // tokenizer. When the fetched URL is itself an XML feed, a `<title>` may be
 // served as `<![CDATA[name]]>`; the tokenizer hands that through verbatim, so
@@ -227,28 +185,19 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 	defer body.Close()
 
 	meta := PageMeta{HomeURL: pageURL}
-	isPatreon := isPatreonPage(pageURL)
 	z := html.NewTokenizer(io.LimitReader(body, maxBody))
 	inTitle := false
-	inStructured := false
-	var ogImage, structured, description string
+	var ogImage, description string
 	for {
 		tt := z.Next()
 		switch tt {
 		case html.ErrorToken:
 			// A feed served directly may wrap its <title> in CDATA, which the
 			// HTML tokenizer passes through raw.
-			meta.Title = stripCDATA(pageTitle(pageURL, meta.Title))
+			meta.Title = stripCDATA(meta.Title)
 			meta.Description = strings.TrimSpace(description)
 			if ogImage != "" {
 				meta.ImageURL = ogImage
-			}
-			// A Patreon creator page exposes its avatar only in its
-			// structured-data JSON-LD; the generic favicon would otherwise win.
-			if isPatreon {
-				if avatar := patreonStructuredAvatar(structured); avatar != "" {
-					meta.IconURL = avatar
-				}
 			}
 			if meta.IconURL == "" {
 				meta.IconURL = fallbackIcon(pageURL)
@@ -258,22 +207,11 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 			if inTitle && meta.Title == "" {
 				meta.Title = strings.TrimSpace(z.Token().Data)
 			}
-			if inStructured && structured == "" {
-				structured = z.Token().Data
-			}
 		case html.StartTagToken, html.SelfClosingTagToken:
 			t := z.Token()
 			switch t.Data {
 			case "title":
 				inTitle = true
-			case "script":
-				if isPatreon {
-					for _, a := range t.Attr {
-						if a.Key == "type" && strings.Contains(strings.ToLower(a.Val), "ld+json") {
-							inStructured = true
-						}
-					}
-				}
 			case "link":
 				var rel, href string
 				for _, a := range t.Attr {
@@ -313,63 +251,11 @@ func (d *Discoverer) PageMeta(ctx context.Context, pageURL string) (PageMeta, er
 				}
 			}
 		case html.EndTagToken:
-			switch z.Token().Data {
-			case "title":
+			if z.Token().Data == "title" {
 				inTitle = false
-			case "script":
-				inStructured = false
 			}
 		}
 	}
-}
-
-// isPatreonPage reports whether a URL points at a Patreon creator page.
-func isPatreonPage(rawurl string) bool {
-	u, err := url.Parse(rawurl)
-	if err != nil {
-		return false
-	}
-	host := strings.ToLower(u.Hostname())
-	if host != "patreon.com" && host != "www.patreon.com" {
-		return false
-	}
-	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) == 2 && parts[0] == "cw" && parts[1] != "" {
-		return true
-	}
-	if len(parts) == 1 && parts[0] != "" {
-		switch parts[0] {
-		case "api", "user", "posts", "login", "signup", "join", "home",
-			"explore", "search", "settings", "notifications", "messages":
-			return false
-		}
-		return true
-	}
-	return false
-}
-
-// patreonStructuredAvatar extracts the creator avatar from a Patreon page's
-// structured-data JSON-LD mainEntity image. It returns "" when absent.
-func patreonStructuredAvatar(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
-	}
-	var doc struct {
-		MainEntity struct {
-			Image struct {
-				ContentURL   string `json:"contentUrl"`
-				ThumbnailURL string `json:"thumbnailUrl"`
-			} `json:"image"`
-		} `json:"mainEntity"`
-	}
-	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
-		return ""
-	}
-	if doc.MainEntity.Image.ContentURL != "" {
-		return doc.MainEntity.Image.ContentURL
-	}
-	return doc.MainEntity.Image.ThumbnailURL
 }
 
 // openPage fetches pageURL and returns its body, the resolved base URL, and an

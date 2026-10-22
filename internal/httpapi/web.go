@@ -113,9 +113,9 @@ type feedsData struct {
 	// CapDocs, so a generic-parser feed still finds it), or "" when none does.
 	// It drives the "plugin docs" button on the editor.
 	DocsPlugin string
-	// Panel is the "managed feed" card for a feed a plugin manages remotely
-	// (a Kill the Newsletter inbox): its display fields and the title-sync
-	// action, shown on the edit page. nil when no plugin manages the feed.
+	// Panel is the "managed feed" card for a feed a plugin manages remotely:
+	// its display fields and the title-sync action, shown on the edit page.
+	// nil when no plugin manages the feed.
 	Panel *feedPanelData
 	// NextPageURL is the feed's older-history cursor; non-empty renders the
 	// "load older items" control in the settings panel.
