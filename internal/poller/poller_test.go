@@ -544,12 +544,13 @@ func TestPollOne(t *testing.T) {
 	}
 }
 
-// The same reddit post polled through a subreddit feed and a user feed is
-// stored once and is a member of both; the second poll reports it as new to the
-// second feed (so paging continues) without duplicating the row.
+// The same post polled through two feeds is stored once and is a member of
+// both; the second poll reports it as new to the second feed (so paging
+// continues) without duplicating the row. The fixture uses reddit-shaped posts
+// as an example.
 //
-// fakeSharedKeyer plays the role of the reddit plugin's SharedKeys: it gives
-// every t3_ post the cross-feed SharedKey the store persists as cross_key.
+// fakeSharedKeyer plays the role of a plugin's SharedKeys: it gives every
+// matching post the cross-feed SharedKey the store persists as cross_key.
 type fakeSharedKeyer struct{}
 
 func (fakeSharedKeyer) MatchFetch(feedparse.FetchRequest) bool      { return false }
@@ -600,9 +601,9 @@ func TestPollCrossFeedSharedItem(t *testing.T) {
 	userFeed, _ := st.Feeds.Create(u.ID, userAuthor.ID, "u/sam", srv.URL, "", "", 900)
 
 	// The cross-feed identity now comes from a plugin's SharedKeys pass rather
-	// than the store sniffing the GUID. Install a fake that marks t3_ posts the
-	// way the reddit plugin does, so the generic parse still yields one shared
-	// row across the two feeds.
+	// than the store sniffing the GUID. Install a fake that marks the fixture's
+	// posts, so the generic parse still yields one shared row across the two
+	// feeds.
 	feedparse.SetPlugin(fakeSharedKeyer{})
 	defer feedparse.SetPlugin(nil)
 

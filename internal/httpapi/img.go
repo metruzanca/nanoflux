@@ -65,7 +65,7 @@ func (s *Server) serveRemoteImage(w http.ResponseWriter, r *http.Request, rawURL
 	}
 
 	// Trust the upstream type when it is an image; otherwise sniff the bytes.
-	// Many CDNs mislabel images (Bluesky's video thumbnails come back as
+	// Many CDNs mislabel images (for example, a video thumbnail served as
 	// application/octet-stream), which would otherwise show as a broken image.
 	// Sniffing also lets us echo the real type, so the browser renders the
 	// image instead of downloading it.

@@ -374,14 +374,15 @@ func TestCollectionPageDedups(t *testing.T) {
 	}
 }
 
-// A user who reposts the same external link to several subreddits under
-// different titles is collapsed to one row on a collection page: the reddit
-// plugin keys each link post by its poster and destination, and dedupItems
-// merges them even though their titles (and CrossKeys) differ.
-func TestCollectionDedupsRedditCrosspostsByLink(t *testing.T) {
+// A user who reposts the same external link to several feeds under different
+// titles is collapsed to one row on a collection page: the plugin keys each
+// link post by its poster and destination, and dedupItems merges them even
+// though their titles (and CrossKeys) differ. The fixture uses reddit URLs as an
+// example.
+func TestCollectionDedupsCrosspostsByLink(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
-	useRedditPlugin(t, s)
+	useSitePlugin(t, s)
 	u, _ := s.store.Users.ByUsername("alice")
 	oneA, _ := s.store.Authors.Create(u.ID, "r/one", "", "")
 	twoA, _ := s.store.Authors.Create(u.ID, "r/two", "", "")
@@ -412,13 +413,13 @@ func TestCollectionDedupsRedditCrosspostsByLink(t *testing.T) {
 	}
 }
 
-// A reddit post seen through both a subreddit feed and a user feed renders once
+// A cross-posted item seen through both feeds renders once
 // on each feed page, attributed as "r/cats by u/sam" with both parts linked
 // internally, and reading it on one page is reflected on the other.
-func TestCrossFeedRedditItem(t *testing.T) {
+func TestCrossFeedItem(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
-	useRedditPlugin(t, s)
+	useSitePlugin(t, s)
 	u, _ := s.store.Users.ByUsername("alice")
 	subA, _ := s.store.Authors.Create(u.ID, "r/cats", "", "")
 	userA, _ := s.store.Authors.Create(u.ID, "sam", "", "")
@@ -461,15 +462,15 @@ func TestCrossFeedRedditItem(t *testing.T) {
 	}
 }
 
-// A reddit post seen only through the subreddit feed still links its poster to
+// A cross-posted item seen only through one feed still links its poster to
 // the internal user feed when the user subscribes to it, even though that feed
 // has not polled the post yet (so no item_feeds membership exists for it). This
 // is the "same feed, same poster, only one linked" bug: attribution resolves
 // the poster against the subscription list, not the item's memberships.
-func TestRedditAttributionLinksUnpolledUserFeed(t *testing.T) {
+func TestAttributionLinksUnpolledUserFeed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
-	useRedditPlugin(t, s)
+	useSitePlugin(t, s)
 	u, _ := s.store.Users.ByUsername("alice")
 	subA, _ := s.store.Authors.Create(u.ID, "r/cats", "", "")
 	userA, _ := s.store.Authors.Create(u.ID, "sam", "", "")
@@ -906,10 +907,10 @@ func TestItemViewToggles(t *testing.T) {
 	}
 }
 
-func TestItemViewYouTubeEmbed(t *testing.T) {
+func TestItemViewVideoEmbed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
-	useYouTubePlugin(t, s)
+	useVideoPlugin(t, s)
 
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "bigboxSWE", "", "")
@@ -938,7 +939,7 @@ func TestItemViewYouTubeEmbed(t *testing.T) {
 func TestItemCardsRenderThumbnails(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
-	useRedditAndYouTube(t, s)
+	useSiteAndVideoPlugins(t, s)
 
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "bigboxSWE", "", "")

@@ -237,7 +237,7 @@ button stays enabled and a manual refresh overrides the plan.
 
 ### Errors are explained
 
-If discovery or a host-specific rule probe hits a limit, that reason is surfaced
+If a discovery probe hits a limit, that reason is surfaced
 to the user (e.g. *"the site is rate-limiting requests (HTTP 429) — wait a bit
 and try again"*) instead of a misleading "no feed found". Raw fetch URLs never
 leak into user-facing messages.

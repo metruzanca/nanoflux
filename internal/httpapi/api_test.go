@@ -184,8 +184,8 @@ func TestAPISave(t *testing.T) {
 
 func TestAPISaveHomeURL(t *testing.T) {
 	// A provided home_url (the page the user was on) must win over the feed's
-	// own advertised home — e.g. a YouTube @handle page rather than its
-	// /channel/UC... URL.
+	// own advertised home, for example a site's handle page rather than its
+	// canonical feed URL.
 	s, h := newTestServer(t)
 	token := apiToken(t, s, h, "alice", "secret")
 	u, _ := s.store.Users.ByUsername("alice")
@@ -247,13 +247,14 @@ func TestAPIExtSaveHomeURL(t *testing.T) {
 	}
 }
 
-// TestAPIExtSaveRedditDerived asserts the extension save path derives reddit
-// feeds without a validation fetch (which would spend the host's tight rate
-// limit) and stores the canonical .rss url, derived title and home url.
-func TestAPIExtSaveRedditDerived(t *testing.T) {
+// TestAPIExtSaveDerivedFeed asserts the extension save path derives a feed
+// without a validation fetch (which would spend the host's tight rate limit)
+// and stores the canonical feed URL, derived title and home URL. The fixture
+// uses reddit URLs as an example of a derived feed.
+func TestAPIExtSaveDerivedFeed(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
-	useRedditPlugin(t, s)
+	useSitePlugin(t, s)
 	u, _ := s.store.Users.ByUsername("alice")
 
 	ct := &countingTransport{}
@@ -460,7 +461,7 @@ func TestSavedFeedsNoFalsePositive(t *testing.T) {
 	}
 }
 
-// Feeds that differ only by query string (e.g. YouTube channel_id=…) must not
+// Feeds that differ only by query string (for example, a channel id) must not
 // collide under normalization.
 func TestSavedFeedsDistinguishesQueryParams(t *testing.T) {
 	s, _ := newTestServer(t)

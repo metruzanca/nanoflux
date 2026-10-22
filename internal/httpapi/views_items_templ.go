@@ -18,7 +18,7 @@ import (
 
 // itemVisuals is an item's rendering classification for a row. The plugin's
 // Kind (from the item's decoration) decides when set; otherwise a generic
-// baseline detects a single-image post, and YouTube links render as video.
+// baseline detects a single-image post and video links render as video.
 type itemVisuals struct {
 	Video   bool
 	Image   bool
@@ -3433,7 +3433,7 @@ func itemContent(d itemViewData, v itemVisuals) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else if d.EmbedSrc != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 237, "<div class=\"video-embed\"><!-- The app's global Referrer-Policy: no-referrer would strip the\n\t\t\t     Referer some players (YouTube, error 153) require. Override it\n\t\t\t     here so only the embedding origin is sent. --><iframe src=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 237, "<div class=\"video-embed\"><!-- The app's global Referrer-Policy: no-referrer would strip the\n\t\t\t     Referer some players require (for example, YouTube error 153).\n\t\t\t     Override it here so only the embedding origin is sent. --><iframe src=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

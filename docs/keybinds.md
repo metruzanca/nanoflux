@@ -22,8 +22,9 @@ update both when a binding changes.
 - At the end of the loaded rows, `→` fetches the next page and continues into
   it, so reading does not stop at a page boundary.
 - The modal pager buttons and horizontal swipe use the same navigation.
-- Navigation pauses while a YouTube embed is open so the player keeps the arrow
-  keys. Other embed players do not block item navigation.
+- Navigation pauses while an embed player is open so the player keeps the arrow
+  keys (for example, a YouTube embed). Other embed players do not block item
+  navigation.
 
 ## Command palette
 

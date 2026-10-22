@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -15,64 +16,64 @@ import (
 // fakes. The real implementations live in their own plugin modules and test
 // their own behavior there.
 
-// fakeRedditPlugin implements the URL policy, discovery, decoration and proxy
-// bypass behavior the httpapi tests need. Media rendering is tested in the
-// reddit plugin module.
-type fakeRedditPlugin struct{}
+// fakeSitePlugin implements the URL policy, discovery, decoration and proxy
+// bypass behavior the httpapi tests need, using reddit URL shapes as fixtures.
+// The real implementation lives in its own plugin module.
+type fakeSitePlugin struct{}
 
-func (fakeRedditPlugin) Meta() pluginapi.Meta {
+func (fakeSitePlugin) Meta() pluginapi.Meta {
 	return pluginapi.Meta{Name: "reddit", APIVersion: pluginapi.APIVersion}
 }
 
-func (fakeRedditPlugin) Match(u *url.URL, cap pluginapi.Capability) bool {
+func (fakeSitePlugin) Match(u *url.URL, cap pluginapi.Capability) bool {
 	if u == nil {
 		return false
 	}
 	switch cap {
 	case pluginapi.CapBypassProxy:
-		return fakeRedditMediaHost(u.Hostname())
+		return fakeMediaHost(u.Hostname())
 	case pluginapi.CapDiscover, pluginapi.CapURLPolicy, pluginapi.CapDecorate,
 		pluginapi.CapSharedKey, pluginapi.CapRender, pluginapi.CapDocs:
-		return fakeRedditHost(u.Hostname())
+		return fakeSiteHost(u.Hostname())
 	default:
 		return false
 	}
 }
 
-func (fakeRedditPlugin) Discover(_ context.Context, pageURL string, _ pluginapi.Host) ([]pluginapi.Candidate, error) {
-	c, ok := fakeDeriveReddit(pageURL)
+func (fakeSitePlugin) Discover(_ context.Context, pageURL string, _ pluginapi.Host) ([]pluginapi.Candidate, error) {
+	c, ok := fakeDeriveSite(pageURL)
 	if !ok {
 		return nil, pluginapi.ErrUnsupportedCapability
 	}
 	return []pluginapi.Candidate{c}, nil
 }
 
-func (fakeRedditPlugin) Fetch(context.Context, pluginapi.FetchRequest, pluginapi.Host) (pluginapi.Result, error) {
+func (fakeSitePlugin) Fetch(context.Context, pluginapi.FetchRequest, pluginapi.Host) (pluginapi.Result, error) {
 	return pluginapi.Result{}, pluginapi.ErrUnsupportedCapability
 }
 
-func (fakeRedditPlugin) CanonicalizeFeedURL(raw string) string {
-	if c, ok := fakeDeriveReddit(raw); ok {
+func (fakeSitePlugin) CanonicalizeFeedURL(raw string) string {
+	if c, ok := fakeDeriveSite(raw); ok {
 		return c.FeedURL
 	}
 	return raw
 }
 
-func (fakeRedditPlugin) FeedToken(raw string) string {
+func (fakeSitePlugin) FeedToken(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return ""
 	}
-	if name, ok := fakeRedditUser(u); ok {
+	if name, ok := fakeUserURL(u); ok {
 		return "u/" + name
 	}
-	if sub, ok := fakeRedditSub(u); ok {
+	if sub, ok := fakeSectionURL(u); ok {
 		return "r/" + sub
 	}
 	return ""
 }
 
-func (fakeRedditPlugin) SharedKeys(_ context.Context, req pluginapi.SharedKeyRequest, _ pluginapi.Host) ([]pluginapi.ItemSharedKey, error) {
+func (fakeSitePlugin) SharedKeys(_ context.Context, req pluginapi.SharedKeyRequest, _ pluginapi.Host) ([]pluginapi.ItemSharedKey, error) {
 	var out []pluginapi.ItemSharedKey
 	for i, it := range req.Items {
 		if strings.HasPrefix(it.GUID, "t3_") {
@@ -84,7 +85,7 @@ func (fakeRedditPlugin) SharedKeys(_ context.Context, req pluginapi.SharedKeyReq
 
 var fakeLinkAnchorRe = regexp.MustCompile(`href="([^"]+)"[^>]*>\s*\[link\]\s*</a>`)
 
-func (fakeRedditPlugin) Decorate(_ context.Context, req pluginapi.DecorateRequest) ([]pluginapi.Decorated, error) {
+func (fakeSitePlugin) Decorate(_ context.Context, req pluginapi.DecorateRequest) ([]pluginapi.Decorated, error) {
 	out := make([]pluginapi.Decorated, 0, len(req.Items))
 	for i, it := range req.Items {
 		var sub, user string
@@ -97,7 +98,7 @@ func (fakeRedditPlugin) Decorate(_ context.Context, req pluginapi.DecorateReques
 			}
 		}
 		d := pluginapi.Decorated{Index: i}
-		d.Kind, d.ThumbURL = fakeRedditKind(it)
+		d.Kind, d.ThumbURL = fakeSiteKind(it)
 		if sub != "" && user != "" {
 			d.Attribution = []pluginapi.SourcePart{
 				{Text: sub, Token: sub, URL: "https://www.reddit.com/" + sub + "/"},
@@ -113,13 +114,13 @@ func (fakeRedditPlugin) Decorate(_ context.Context, req pluginapi.DecorateReques
 	return out, nil
 }
 
-func (fakeRedditPlugin) Render(context.Context, pluginapi.RenderRequest, pluginapi.Host) (pluginapi.Media, error) {
+func (fakeSitePlugin) Render(context.Context, pluginapi.RenderRequest, pluginapi.Host) (pluginapi.Media, error) {
 	return pluginapi.Media{}, nil
 }
 
-// fakeRedditKind classifies an item from its stored thumbnail, matching the
-// reddit plugin's view-time classification closely enough for the row tests.
-func fakeRedditKind(it pluginapi.Item) (pluginapi.ItemKind, string) {
+// fakeSiteKind classifies an item from its stored thumbnail, matching the
+// fixture plugin's view-time classification closely enough for the row tests.
+func fakeSiteKind(it pluginapi.Item) (pluginapi.ItemKind, string) {
 	u, err := url.Parse(it.ImageURL)
 	if err != nil || u.Host == "" {
 		return pluginapi.KindText, ""
@@ -147,12 +148,12 @@ func fakeRedditKind(it pluginapi.Item) (pluginapi.ItemKind, string) {
 	return pluginapi.KindText, ""
 }
 
-func fakeRedditHost(host string) bool {
+func fakeSiteHost(host string) bool {
 	host = strings.ToLower(host)
 	return host == "reddit.com" || strings.HasSuffix(host, ".reddit.com")
 }
 
-func fakeRedditMediaHost(host string) bool {
+func fakeMediaHost(host string) bool {
 	host = strings.ToLower(host)
 	for _, h := range []string{"redd.it", "redditmedia.com", "redditstatic.com"} {
 		if host == h || strings.HasSuffix(host, "."+h) {
@@ -162,7 +163,7 @@ func fakeRedditMediaHost(host string) bool {
 	return false
 }
 
-func fakeRedditUser(u *url.URL) (string, bool) {
+func fakeUserURL(u *url.URL) (string, bool) {
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	if len(parts) >= 2 && (parts[0] == "u" || parts[0] == "user") && parts[1] != "" {
 		return parts[1], true
@@ -170,7 +171,7 @@ func fakeRedditUser(u *url.URL) (string, bool) {
 	return "", false
 }
 
-func fakeRedditSub(u *url.URL) (string, bool) {
+func fakeSectionURL(u *url.URL) (string, bool) {
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
 	if len(parts) >= 2 && parts[0] == "r" && parts[1] != "" {
 		return strings.TrimSuffix(parts[1], ".rss"), true
@@ -178,12 +179,12 @@ func fakeRedditSub(u *url.URL) (string, bool) {
 	return "", false
 }
 
-func fakeDeriveReddit(raw string) (pluginapi.Candidate, bool) {
+func fakeDeriveSite(raw string) (pluginapi.Candidate, bool) {
 	u, err := url.Parse(raw)
-	if err != nil || !fakeRedditHost(u.Hostname()) {
+	if err != nil || !fakeSiteHost(u.Hostname()) {
 		return pluginapi.Candidate{}, false
 	}
-	if name, ok := fakeRedditUser(u); ok {
+	if name, ok := fakeUserURL(u); ok {
 		home := "https://www.reddit.com/user/" + name
 		return pluginapi.Candidate{
 			FeedURL:    home + "/submitted.rss",
@@ -193,7 +194,7 @@ func fakeDeriveReddit(raw string) (pluginapi.Candidate, bool) {
 			Derived:    true,
 		}, true
 	}
-	if sub, ok := fakeRedditSub(u); ok {
+	if sub, ok := fakeSectionURL(u); ok {
 		home := "https://www.reddit.com/r/" + sub
 		return pluginapi.Candidate{
 			FeedURL: home + "/.rss",
@@ -205,15 +206,15 @@ func fakeDeriveReddit(raw string) (pluginapi.Candidate, bool) {
 	return pluginapi.Candidate{}, false
 }
 
-// fakeYouTubePlugin covers the view-time render and card classification the
+// fakeVideoPlugin covers the view-time render and card classification the
 // httpapi tests assert. The real implementation lives in its own plugin module.
-type fakeYouTubePlugin struct{}
+type fakeVideoPlugin struct{}
 
-func (fakeYouTubePlugin) Meta() pluginapi.Meta {
+func (fakeVideoPlugin) Meta() pluginapi.Meta {
 	return pluginapi.Meta{Name: "youtube", APIVersion: pluginapi.APIVersion}
 }
 
-func (fakeYouTubePlugin) Match(u *url.URL, cap pluginapi.Capability) bool {
+func (fakeVideoPlugin) Match(u *url.URL, cap pluginapi.Capability) bool {
 	if u == nil {
 		return false
 	}
@@ -225,15 +226,15 @@ func (fakeYouTubePlugin) Match(u *url.URL, cap pluginapi.Capability) bool {
 	}
 }
 
-func (fakeYouTubePlugin) Discover(context.Context, string, pluginapi.Host) ([]pluginapi.Candidate, error) {
+func (fakeVideoPlugin) Discover(context.Context, string, pluginapi.Host) ([]pluginapi.Candidate, error) {
 	return nil, pluginapi.ErrUnsupportedCapability
 }
 
-func (fakeYouTubePlugin) Fetch(context.Context, pluginapi.FetchRequest, pluginapi.Host) (pluginapi.Result, error) {
+func (fakeVideoPlugin) Fetch(context.Context, pluginapi.FetchRequest, pluginapi.Host) (pluginapi.Result, error) {
 	return pluginapi.Result{}, pluginapi.ErrUnsupportedCapability
 }
 
-func (fakeYouTubePlugin) Render(_ context.Context, req pluginapi.RenderRequest, _ pluginapi.Host) (pluginapi.Media, error) {
+func (fakeVideoPlugin) Render(_ context.Context, req pluginapi.RenderRequest, _ pluginapi.Host) (pluginapi.Media, error) {
 	u, _ := url.Parse(req.Link)
 	id := fakeVideoID(u)
 	if id == "" {
@@ -242,7 +243,7 @@ func (fakeYouTubePlugin) Render(_ context.Context, req pluginapi.RenderRequest, 
 	return pluginapi.Media{EmbedSrc: "https://www.youtube.com/embed/" + id}, nil
 }
 
-func (fakeYouTubePlugin) Decorate(_ context.Context, req pluginapi.DecorateRequest) ([]pluginapi.Decorated, error) {
+func (fakeVideoPlugin) Decorate(_ context.Context, req pluginapi.DecorateRequest) ([]pluginapi.Decorated, error) {
 	out := make([]pluginapi.Decorated, 0, len(req.Items))
 	for i, it := range req.Items {
 		u, _ := url.Parse(it.Link)
@@ -278,29 +279,62 @@ func fakeVideoID(u *url.URL) string {
 	return ""
 }
 
-func useRedditPlugin(t *testing.T, s *Server) {
+func useSitePlugin(t *testing.T, s *Server) {
 	t.Helper()
 	reg := plugin.NewRegistry()
-	reg.RegisterExternal(fakeRedditPlugin{})
+	reg.RegisterExternal(fakeSitePlugin{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 	s.store.SetURLPolicy(plugin.NewStoreURLPolicy(reg))
 	s.store.SetItemDecorator(plugin.NewStoreDecorator(reg))
 }
 
-func useYouTubePlugin(t *testing.T, s *Server) {
+func useVideoPlugin(t *testing.T, s *Server) {
 	t.Helper()
 	reg := plugin.NewRegistry()
-	reg.RegisterExternal(fakeYouTubePlugin{})
+	reg.RegisterExternal(fakeVideoPlugin{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 	s.store.SetItemDecorator(plugin.NewStoreDecorator(reg))
 }
 
-func useRedditAndYouTube(t *testing.T, s *Server) {
+func useSiteAndVideoPlugins(t *testing.T, s *Server) {
 	t.Helper()
 	reg := plugin.NewRegistry()
-	reg.RegisterExternal(fakeRedditPlugin{})
-	reg.RegisterExternal(fakeYouTubePlugin{})
+	reg.RegisterExternal(fakeSitePlugin{})
+	reg.RegisterExternal(fakeVideoPlugin{})
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 	s.store.SetURLPolicy(plugin.NewStoreURLPolicy(reg))
 	s.store.SetItemDecorator(plugin.NewStoreDecorator(reg))
+}
+
+// fakeIconPlugin supplies a built-in site icon for one host.
+type fakeIconPlugin struct{ fakeSitePlugin }
+
+func (fakeIconPlugin) Meta() pluginapi.Meta {
+	return pluginapi.Meta{Name: "icons", APIVersion: pluginapi.APIVersion}
+}
+func (fakeIconPlugin) Match(u *url.URL, cap pluginapi.Capability) bool {
+	return u != nil && cap == pluginapi.CapIcon && u.Hostname() == "icons.example"
+}
+func (fakeIconPlugin) Icon(string) (string, []byte) {
+	return "image/svg+xml", []byte("<svg>plugin icon</svg>")
+}
+
+// TestSourceIconFromPlugin proves the /icons route falls back to a plugin's
+// built-in icon before the generic globe.
+func TestSourceIconFromPlugin(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	reg := plugin.NewRegistry()
+	reg.RegisterExternal(fakeIconPlugin{})
+	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
+
+	got := doGet(h, "/icons/icons.example", cookie)
+	if got.Code != http.StatusOK || strings.TrimSpace(got.Body.String()) != "<svg>plugin icon</svg>" {
+		t.Fatalf("plugin icon = %d %q", got.Code, got.Body.String())
+	}
+	fallback := doGet(h, "/icons/plain.example", cookie)
+	if fallback.Code != http.StatusOK || !strings.Contains(fallback.Body.String(), "<svg") ||
+		strings.Contains(fallback.Body.String(), "plugin icon") {
+		t.Fatalf("fallback icon = %d %q", fallback.Code, fallback.Body.String())
+	}
 }

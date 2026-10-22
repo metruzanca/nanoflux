@@ -443,6 +443,28 @@ func (r *Registry) BypassesProxy(rawurl string) bool {
 	return r.Match(u, pluginapi.CapBypassProxy) != nil
 }
 
+// Icon returns the built-in source icon a plugin supplies for rawURL, or
+// ok=false when no plugin provides one. It is matched on CapIcon.
+func (r *Registry) Icon(rawURL string) (mimeType string, data []byte, ok bool) {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return "", nil, false
+	}
+	f := r.Match(u, pluginapi.CapIcon)
+	if f == nil {
+		return "", nil, false
+	}
+	ip, ok := f.(pluginapi.IconProvider)
+	if !ok {
+		return "", nil, false
+	}
+	mimeType, data = ip.Icon(rawURL)
+	if len(data) == 0 {
+		return "", nil, false
+	}
+	return mimeType, data, true
+}
+
 // ImageCacheFolder returns the storage folder a feed's cached images live under:
 // the owning plugin's name, or "feeds" for a feed with no plugin (a user-enabled
 // cache on a generic feed). Admins remove a plugin's cache by dropping

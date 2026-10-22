@@ -22,7 +22,8 @@ Decisions already made:
 - Removes pixel trackers, strips tracking params (`utm_*`, `fbclid`, ...),
   rewrites FeedBurner links to the original, sets
   `rel="noopener noreferrer"` + `Referrer-Policy: no-referrer`.
-- Media proxy and `youtube-nocookie.com`, optional Invidious player.
+- Media proxy and privacy-friendly embed hosts (for example,
+  `youtube-nocookie.com`), optional alternative frontends.
 - Readability full-text extraction, per-feed custom CSS-selector scraper
   rules, and regex include/exclude filters.
 - Custom stylesheets and JavaScript to personalize the UI.
@@ -176,8 +177,8 @@ Pure presets; no new concepts; low migration risk. This is the honest
 Each independent and larger; sequence separately.
 
 - Privacy pass: strip `utm_*`/`fbclid` etc. on ingest, `rel="noopener
-  noreferrer"`, `Referrer-Policy: no-referrer`, `youtube-nocookie` rewrite,
-  optional media proxy.
+  noreferrer"`, `Referrer-Policy: no-referrer`, privacy-friendly embed
+  rewrites, optional media proxy.
 - Full-text extraction: per-feed "fetch original article" toggle + readability
   pass with per-feed CSS-selector scraper rules; pairs with the plugin system.
 - Notifications/webhooks: per-user webhook + ntfy/Apprise-style hooks on new

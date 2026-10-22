@@ -24,8 +24,8 @@ func sourceIconHost(rawurl string) string {
 }
 
 // SourceIcon renders a source-type icon for a feed URL. Icons are resolved
-// server-side by /icons/{domain}, which prefers the user's cached custom icon
-// for the domain and falls back to the built-in X/YouTube/globe icons.
+// server-side by /icons/{domain}, which prefers the user's cached custom icon,
+// then a plugin-supplied site icon, then the generic globe.
 func SourceIcon(rawurl string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context

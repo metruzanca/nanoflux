@@ -143,6 +143,31 @@ func (f fakeProvisioner) Action(context.Context, pluginapi.FeedActionRequest, pl
 	return pluginapi.FeedActionResult{Deleted: f.deleted}, nil
 }
 
+// fakeIconer is a fakeFetcher that also implements IconProvider.
+type fakeIconer struct {
+	fakeFetcher
+	icon []byte
+}
+
+func (f fakeIconer) Icon(string) (string, []byte) { return "image/svg+xml", f.icon }
+
+// TestRegistryIcon covers the plugin-supplied source icon capability.
+func TestRegistryIcon(t *testing.T) {
+	reg := NewRegistry()
+	reg.RegisterExternal(fakeIconer{
+		fakeFetcher: fakeFetcher{name: "icons", match: func(u *url.URL, cap pluginapi.Capability) bool {
+			return cap == pluginapi.CapIcon && u.Hostname() == "icons.example"
+		}},
+		icon: []byte("<svg/>"),
+	})
+	if mime, data, ok := reg.Icon("https://icons.example/"); !ok || mime != "image/svg+xml" || string(data) != "<svg/>" {
+		t.Fatalf("icon = %q %q %v", mime, data, ok)
+	}
+	if _, _, ok := reg.Icon("https://other.example/"); ok {
+		t.Fatal("unrelated host should not have a plugin icon")
+	}
+}
+
 // fakeConfigurable is a fakeFetcher that also implements Configurable.
 type fakeConfigurable struct {
 	fakeFetcher

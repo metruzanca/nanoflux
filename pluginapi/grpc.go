@@ -251,6 +251,15 @@ func (s *grpcFetcherServer) Configure(_ context.Context, req *pb.ConfigureReques
 	return &pb.ConfigureResponse{}, nil
 }
 
+func (s *grpcFetcherServer) Icon(_ context.Context, req *pb.IconRequest) (*pb.IconResponse, error) {
+	ip, ok := s.impl.(IconProvider)
+	if !ok {
+		return &pb.IconResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	mime, data := ip.Icon(req.Url)
+	return &pb.IconResponse{MimeType: mime, Data: data}, nil
+}
+
 func (s *grpcFetcherServer) FeedAction(ctx context.Context, req *pb.FeedActionRequest) (*pb.FeedActionResponse, error) {
 	fa, ok := s.impl.(FeedAdmin)
 	if !ok {
@@ -532,6 +541,14 @@ func (c *grpcFetcherClient) Configure(values map[string]string) {
 	_, _ = c.client.Configure(context.Background(), &pb.ConfigureRequest{Values: values})
 }
 
+func (c *grpcFetcherClient) Icon(rawURL string) (string, []byte) {
+	resp, err := c.client.Icon(context.Background(), &pb.IconRequest{Url: rawURL})
+	if err != nil || resp.Error != nil {
+		return "", nil
+	}
+	return resp.MimeType, resp.Data
+}
+
 func (c *grpcFetcherClient) FeedFields(feedURL string) []Field {
 	resp, err := c.client.FeedSettings(context.Background(), &pb.FeedSettingsRequest{FeedUrl: feedURL})
 	if err != nil || resp.Error != nil {
@@ -570,6 +587,7 @@ var (
 	_ Provisioner  = (*grpcFetcherClient)(nil)
 	_ FeedAdmin    = (*grpcFetcherClient)(nil)
 	_ Configurable = (*grpcFetcherClient)(nil)
+	_ IconProvider = (*grpcFetcherClient)(nil)
 )
 
 // ---- conversions ----

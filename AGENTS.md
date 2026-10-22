@@ -160,17 +160,20 @@ executables loaded from `NF_PLUGINS_DIR`.
   URL, and any true answer makes `web.ProxiedImageURL` return the raw URL.
   `httpapi.Server.SetPlugins` installs the predicate into `web`
   (`web.SetProxyBypass`) once at startup. Pure; a plugin lists the media hosts
-  that hotlink freely. This works for external plugins because it rides the
-  existing `Match` RPC.
+  that hotlink freely.
+- **`CapIcon`** (URL-matched capability): a plugin may supply a built-in source
+  icon for its site when no cached favicon exists. `Registry.Icon` matches the
+  URL and calls `IconProvider.Icon`, and `httpapi` uses it before the generic
+  globe fallback. Pure and cheap; it runs while serving an icon request.
 
 `Match` **must honour the capability it is asked about**: return false for any
 capability the plugin does not claim. A plugin that ignores it (an early
 `func Match(u, _ Capability) bool { return isSiteURL(u) }`) spuriously claims
-URL-matched capabilities the registry asks about — which broke the Match-only
-`CapImageCache` for Instagram/Patreon feeds until their `Match` was made
-cap-aware. Optional capabilities that pair `Match` with a type assertion are
-tolerant (a non-implementer is skipped; the external gRPC client's unsupported
-RPC is handled), but Match-only ones are not.
+URL-matched capabilities the registry asks about. For example, a Match-only
+image-cache capability broke for feeds whose plugin ignored the capability until
+its `Match` was made capability-aware. Optional capabilities that pair `Match`
+with a type assertion are tolerant (a non-implementer is skipped; the external
+gRPC client's unsupported RPC is handled), but Match-only ones are not.
 
 A plugin that owns URL-matched capabilities is the reference for all of
 these: `Match` returns true only for the
@@ -524,8 +527,8 @@ and manage one the user already subscribed to. Both are URL-matched capabilities
   implementation, never a bare type assertion. A plugin is reached as the gRPC
   client, which satisfies every optional interface, so the host trusts the
   capability the plugin reported (`Meta.HasFeedAdmin`, computed by the plugin's
-  gRPC server from its implementation). Only KTN manages feeds today, so no
-  other feed shows the UI.
+  gRPC server from its implementation). Only a plugin that reports this
+  capability shows the UI.
 - Host wiring: `Registry.Provisioners()` / `ProvisionerByName(name)` and
   `Registry.MatchFeedAdmin(u)` / `FeedAdminSettings(feedURL)`. `Info` gained
   `ProvisionLabel` and `CanManageFeeds` (plugin-reported for the latter, with
@@ -536,10 +539,10 @@ and manage one the user already subscribed to. Both are URL-matched capabilities
   feed's **edit** page, not its regular page; remote deletion is the delete
   form's opt-in "also delete it on the remote service" checkbox (`feedDelete`),
   so the card itself has no destructive action.
-- Reference: `plugins/killthenewsletter`. It does **not** claim
-  `CapFetch` (its Atom feeds are read by the generic parser), so
-  `feeds.plugin_name` stays empty and `ReconcileFeeds` is untouched. Its
-  instance is a plugin setting (see below).
+- A plugin may implement the control plane without claiming `CapFetch` when its
+  feeds are read by the generic parser, so `feeds.plugin_name` stays empty and
+  `ReconcileFeeds` is untouched. Such a plugin's service instance is normally a
+  plugin setting (see below).
 
 ### Plugin settings
 
@@ -554,16 +557,16 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
   `ReconcileFeeds`) reads each configurable plugin's stored values and calls
   `Configure`, and the admin save handler re-pushes after a write. Push is what
   lets `Match` honor configuration: `Match` receives no Host, so a plugin that
-  matches URLs by a configured host (KTN) caches the value in `Configure`.
+  matches URLs by a configured host caches the value in `Configure`.
 - **Storage** reuses the global `settings` table, keyed `plugin.<name>.<field>`
   (`SettingStore.PluginSettings`/`SetPluginSettings`). No migration.
 - **UI**: the admin plugins card renders a settings form per configurable plugin
   (`POST /admin/plugins/{name}/settings`); a `password` field shows only whether
   a value is set and offers a "clear" checkbox, so a secret is never rendered
   back. Saving stores, calls `Configure`, and re-renders the card.
-- `plugins/killthenewsletter` is the reference: its `base_url`
-  setting selects the public or a self-hosted instance, and changes both what
-  `Match` recognizes and what `Provision`/`Action` call.
+- A plugin whose service base URL is configurable updates what `Match`
+  recognizes and what `Provision`/`Action` call when `Configure` pushes a new
+  value. Plugin-specific settings belong in that plugin's own repository docs.
 
 ### Plugin docs
 
@@ -590,60 +593,9 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
   get `class="external"` + `target/rel`). goldmark is a root-module dep only;
   `pluginapi` stays dependency-free.
 - Plugin readmes live beside their plugin code (`readme.md`, `//go:embed`):
-  `plugins/youtube`, `plugins/bluesky`, and the other default plugins.
-
-### The YouTube plugin
-
-- The plugin fetches a channel's recent videos through YouTube's internal
-  browse API (`youtubei/v1/browse`), not the channel RSS. The RSS carries no
-  video duration; browse returns duration (and views) for every entry in the
-  same request. Browse reports publish times only as relative text ("3 days
-  ago"), which the plugin converts to an absolute UTC timestamp at fetch time,
-  so a stored item never shows a frozen relative date.
-- The plugin derives the browse origin from the feed URL's host, so it talks to
-  the same origin the feed names and a test can point it at a mock host with no
-  env plumbing.
-
-### The Bluesky plugin
-
-- The plugin (`plugins/bluesky`) replaces the profile RSS feed
-  (`bsky.app/profile/{handle}/rss`), which is text-only: no item titles, no
-  media, no author, and it drops an image/video post down to its caption. It
-  reads the raw `app.bsky.feed.post` records through `com.atproto.repo.listRecords`
-  and rebuilds entries from them. The stored feed URL stays the `/rss` shape
-  (what discovery has always produced) and is never parsed; its handle/DID only
-  selects the repository to read.
-- Two origins are involved and they are **not** interchangeable:
-  `public.api.bsky.app` answers `app.bsky.actor.getProfile` but returns **501**
-  for `com.atproto.repo.listRecords`; `bsky.social` answers `com.atproto.repo`
-  calls but **401**s `getProfile`. The plugin's `apiBase`, `repoBase`, `imgBase`
-  and `videoBase` vars encode this so a test can point them at a mock host.
-- Media: images use `cdn.bsky.app/img/feed_fullsize/plain/{did}/{cid}` (direct,
-  cacheable). Video is attached as an **HLS** enclosure
-  (`application/vnd.apple.mpegurl`, URL
-  `video.bsky.app/watch/{did}/{cid}/playlist.m3u8`); the raw
-  `com.atproto.sync.getBlob` MP4 is not used because it returns the whole file
-  and ignores `Range`, so seeking is limited. HLS segments are CORS-open and
-  Range-capable, and the stored master playlist is fetched fresh at play time
-  (its session-scoped rendition URLs need no storage). The video's poster frame
-  (`video.bsky.app/watch/.../thumbnail.jpg`) is the item thumbnail; it is served
-  as `application/octet-stream`, so `imgProxy` sniffs the bytes (see below).
-  The enclosure sets `Kind: pluginapi.EnclosureKindHLS`; `web.EnclosureKind`
-  resolves it to `hls`, the template renders `data-hls`, and a lazily-loaded
-  hls.js (`static/hls-video.js`) plays it (`docs/vendored-web-components.md`).
-- The `/img` proxy trusts an upstream `image/*` Content-Type but otherwise sniffs
-  the first bytes with `http.DetectContentType`, echoing the real type. Without
-  this, hosts that mislabel images (Bluesky's video thumbnails) render as broken.
-- Replies are skipped, matching the RSS feed's original-posts-only behavior.
-  Quotes are rendered as a link to the quoted post (not expanded: hydrating each
-  quoted record would cost one request per quote). Facets (mentions, links,
-  tags) are rendered as anchors from the record's byte offsets.
-- Existing stored bsky feeds are adopted by `ReconcileFeeds` at startup (the URL
-  shape matches), and `poller.ingest` now stores enclosures on **every** poll
-  (not only on insert), so an already-stored feed gains its media on the next
-  poll. The generic `discover.hostSpecificURLs` bsky rule was removed so
-  discovery no longer spends an extra `/rss` fetch; the plugin's `Discover`
-  supplies the candidate and its preview metadata.
+  `plugins/<name>`. The readme is user-facing and rendered in the docs modal;
+  implementation notes and site-specific invariants belong in the plugin
+  repository's own `AGENTS.md`.
 
 ### Item media duration
 

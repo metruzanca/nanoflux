@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	pb "github.com/metruzanca/nanoflux/pluginapi/gen"
 )
 
 func TestErrorRoundTrip(t *testing.T) {
@@ -167,6 +169,27 @@ func (configPlugin) Configure(map[string]string) {
 }
 
 var _ Configurable = configPlugin{}
+
+type iconPlugin struct{ plainPlugin }
+
+func (iconPlugin) Icon(string) (string, []byte) { return "image/svg+xml", []byte("<svg/>") }
+
+var _ IconProvider = iconPlugin{}
+
+// TestIconServer asserts the optional icon capability crosses the gRPC server
+// boundary and that a plugin without it reports unsupported.
+func TestIconServer(t *testing.T) {
+	srv := &grpcFetcherServer{impl: iconPlugin{}}
+	resp, err := srv.Icon(context.Background(), &pb.IconRequest{Url: "https://example.com/"})
+	if err != nil || resp.Error != nil || resp.MimeType != "image/svg+xml" || string(resp.Data) != "<svg/>" {
+		t.Fatalf("icon = %+v, err %v", resp, err)
+	}
+	plain := &grpcFetcherServer{impl: plainPlugin{}}
+	resp, err = plain.Icon(context.Background(), &pb.IconRequest{Url: "https://example.com/"})
+	if err != nil || resp.Error == nil || !resp.Error.Unsupported {
+		t.Fatalf("plain icon = %+v, err %v", resp, err)
+	}
+}
 
 // TestEnrichConversions asserts an enricher's items convert across the gRPC
 // helpers and that an Enriched entry addresses an item by index.
