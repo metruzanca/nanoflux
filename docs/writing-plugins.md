@@ -627,13 +627,19 @@ type Host interface {
 	Now() time.Time
 	Logf(format string, args ...any)
 }
-type HTTPRequest  struct{ Method, URL string; Headers map[string]string; Body []byte }
+type HTTPRequest struct {
+	Method, URL string
+	Headers     map[string]string
+	Body        []byte
+	NoRedirect  bool // return a 3xx instead of following it
+}
 type HTTPResponse struct {
 	Status      int
 	Headers     map[string]string
 	Body        []byte
 	RateLimited bool
 	RetryAfter  time.Duration
+	SetCookies  []string // every Set-Cookie value (Headers keeps only the first)
 }
 ```
 
@@ -647,7 +653,8 @@ This is what keeps nanoflux the source of truth for:
 
 `h.Do` returns the raw status, headers, and body so the plugin still owns its
 logic: it can inspect a 404 and try another endpoint, or serve from its own
-cache. When the host rate-limits a request it cools the host **and** returns the
+cache. `NoRedirect` and `SetCookies` exist for login-form flows, where the
+session cookie is set on an intermediate 3xx response. When the host rate-limits a request it cools the host **and** returns the
 response normally with `RateLimited: true` (not as an error) so the plugin can
 recover from its own cache. A plugin that cannot avoid the limit returns a
 `RateLimit` so nanoflux parks the feed; a plugin that recovered from its cache
