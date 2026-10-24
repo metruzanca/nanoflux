@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
-	"github.com/metruzanca/nanoflux/internal/plugin"
 	"github.com/metruzanca/nanoflux/internal/storage"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
@@ -19,14 +19,13 @@ import (
 )
 
 type adminData struct {
-	Stats        adminStats
-	Storage      adminStorage
-	AllowSignup  bool
-	BannerShown  bool
-	Users        []adminUserRow
-	Backup       adminBackup
-	Plugins      []adminPluginRow
-	PluginOwners []adminPluginDomain
+	Stats       adminStats
+	Storage     adminStorage
+	AllowSignup bool
+	BannerShown bool
+	Users       []adminUserRow
+	Backup      adminBackup
+	Plugins     []adminPluginRow
 }
 
 // adminStorage is the object-store breakdown shown on /admin: bytes per kind
@@ -56,8 +55,19 @@ type adminPluginRow struct {
 	// HasSettings reports whether the plugin declares admin-editable settings.
 	HasSettings bool
 	// Settings are the plugin's declared fields with their stored values, for
-	// the inline settings form on the card.
+	// the settings modal opened from the card.
 	Settings []adminPluginSetting
+	// Owned is the debug view of the feeds this plugin currently fetches: the
+	// registrable domains and the distinct feed URLs. Ownership is derived on
+	// every startup, so this is the live answer, not a stored lock.
+	Owned adminPluginOwnership
+}
+
+// adminPluginOwnership summarizes the feeds whose URL a plugin matches.
+type adminPluginOwnership struct {
+	Feeds   int
+	Domains []string // registrable domains, sorted and unique
+	URLs    []string // distinct feed URLs, sorted
 }
 
 // adminPluginSetting is one plugin setting field with its current value. A
@@ -73,15 +83,6 @@ type adminPluginSetting struct {
 	Value       string // empty for a password field
 	Set         bool   // for a password field: a value is stored
 	Checked     bool   // for a bool field: the stored value is on
-}
-
-// adminPluginDomain is one registrable domain owned by a plugin, with the number
-// of feeds on it. It is the unit of the "reset plugin" escape hatch: clearing the
-// domain's owner lets the loaded registry re-derive it.
-type adminPluginDomain struct {
-	Domain string
-	Plugin string
-	Feeds  int
 }
 
 // adminBackup is the backup status shown on /admin. Enabled is false when
@@ -140,12 +141,11 @@ func (s *Server) adminOnly(next http.Handler) http.Handler {
 func (s *Server) adminPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	d := adminData{
-		Stats:        s.adminStats(r.Context()),
-		Storage:      s.adminStorageData(r.Context()),
-		Users:        s.adminUserRows(u.ID, u.Timezone),
-		Backup:       s.adminBackupData(u.Timezone),
-		Plugins:      s.adminPluginRows(),
-		PluginOwners: s.adminPluginDomains(),
+		Stats:   s.adminStats(r.Context()),
+		Storage: s.adminStorageData(r.Context()),
+		Users:   s.adminUserRows(u.ID, u.Timezone),
+		Backup:  s.adminBackupData(u.Timezone),
+		Plugins: s.adminPluginRows(),
 	}
 	d.AllowSignup = s.allowSignup()
 	if d.AllowSignup {
@@ -289,7 +289,66 @@ func (s *Server) adminPluginRows() []adminPluginRow {
 		}
 		rows = append(rows, row)
 	}
+	s.fillPluginOwnership(rows)
 	return rows
+}
+
+// fillPluginOwnership matches every stored feed against the loaded registry and
+// records, per plugin, which feeds it would fetch right now. This replaces the
+// old stored-domain reset view: ownership is always derived, and this is the
+// debugging surface for seeing what each plugin actually handles.
+func (s *Server) fillPluginOwnership(rows []adminPluginRow) {
+	if s.plugins == nil || s.store == nil || len(rows) == 0 {
+		return
+	}
+	feeds, err := s.store.Feeds.ListAll()
+	if err != nil {
+		log.Error("admin: list feeds for plugin ownership", "err", err)
+		return
+	}
+	index := make(map[string]int, len(rows))
+	for i, r := range rows {
+		index[r.Name] = i
+	}
+	domains := make([]map[string]bool, len(rows))
+	urls := make([]map[string]bool, len(rows))
+	for i := range rows {
+		domains[i] = map[string]bool{}
+		urls[i] = map[string]bool{}
+	}
+	for _, f := range feeds {
+		u, err := url.Parse(f.FeedURL)
+		if err != nil {
+			continue
+		}
+		p := s.plugins.Match(u, pluginapi.CapFetch)
+		if p == nil {
+			continue
+		}
+		i, ok := index[p.Meta().Name]
+		if !ok {
+			continue
+		}
+		rows[i].Owned.Feeds++
+		urls[i][f.FeedURL] = true
+		if d := store.RegistrableDomain(f.FeedURL); d != "" {
+			domains[i][d] = true
+		}
+	}
+	for i := range rows {
+		rows[i].Owned.Domains = sortedKeys(domains[i])
+		rows[i].Owned.URLs = sortedKeys(urls[i])
+	}
+}
+
+// sortedKeys returns a map's keys sorted.
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // adminPluginSettings builds the settings form for one configurable plugin: its
@@ -323,65 +382,6 @@ func (s *Server) adminPluginSettings(name string) []adminPluginSetting {
 	return out
 }
 
-// adminPluginDomains groups plugin-owned feeds by registrable domain, so the
-// plugins card can offer a per-domain "reset to generic parser" action. It reads
-// only feeds that already recorded an owner (plugin_name), sorted by domain then
-// plugin.
-func (s *Server) adminPluginDomains() []adminPluginDomain {
-	feeds, err := s.store.Feeds.ListAll()
-	if err != nil {
-		log.Error("admin: list feeds for plugin domains", "err", err)
-		return nil
-	}
-	type key struct{ domain, plugin string }
-	counts := map[key]int{}
-	for _, f := range feeds {
-		if f.PluginName == "" {
-			continue
-		}
-		domain := store.RegistrableDomain(f.FeedURL)
-		if domain == "" {
-			continue
-		}
-		counts[key{domain, f.PluginName}]++
-	}
-	rows := make([]adminPluginDomain, 0, len(counts))
-	for k, n := range counts {
-		rows = append(rows, adminPluginDomain{Domain: k.domain, Plugin: k.plugin, Feeds: n})
-	}
-	sort.Slice(rows, func(i, j int) bool {
-		if rows[i].Domain != rows[j].Domain {
-			return rows[i].Domain < rows[j].Domain
-		}
-		return rows[i].Plugin < rows[j].Plugin
-	})
-	return rows
-}
-
-// adminResetPluginDomain clears the owning plugin for every feed on a domain and
-// re-runs the reconciler, so the domain is re-owned by whichever plugin the
-// loaded registry currently matches (or falls back to the generic parser when
-// none does). It is the escape hatch for a plugin that was removed, renamed, or
-// swapped for another. The card re-renders with the result.
-func (s *Server) adminResetPluginDomain(w http.ResponseWriter, r *http.Request) {
-	domain := store.RegistrableDomain(r.FormValue("domain"))
-	if domain == "" {
-		writeFormError(w, r, "admin-plugins-error", "invalid domain")
-		return
-	}
-	n, err := s.store.Feeds.ResetPluginForDomain(domain)
-	if err != nil {
-		log.Error("admin: reset plugin domain", "domain", domain, "err", err)
-		writeFormError(w, r, "admin-plugins-error", "could not reset the domain")
-		return
-	}
-	if s.plugins != nil {
-		plugin.ReconcileFeeds(s.store, s.plugins)
-	}
-	log.Info("admin: reset plugin domain", "domain", domain, "feeds", n)
-	web.Render(w, r, AdminPluginsCard(s.adminPluginRows(), s.adminPluginDomains()))
-}
-
 // adminSavePluginSettings validates and stores a plugin's settings, then pushes
 // them to the plugin so its behavior (and URL matching) updates immediately. The
 // card re-renders with the result.
@@ -400,6 +400,7 @@ func (s *Server) adminSavePluginSettings(w http.ResponseWriter, r *http.Request)
 		writeFormError(w, r, "admin-plugins-error", "that plugin has no settings")
 		return
 	}
+	errTarget := "plugin-settings-error-" + name
 	values := make(map[string]string, len(schema))
 	for _, f := range schema {
 		v := strings.TrimSpace(r.FormValue("setting_" + f.Name))
@@ -414,7 +415,7 @@ func (s *Server) adminSavePluginSettings(w http.ResponseWriter, r *http.Request)
 			continue
 		}
 		if f.Required && v == "" {
-			writeFormError(w, r, "admin-plugins-error", f.Label+" is required")
+			writeFormError(w, r, errTarget, f.Label+" is required")
 			return
 		}
 		// A write-only password field is left unchanged when blank, so the
@@ -434,7 +435,7 @@ func (s *Server) adminSavePluginSettings(w http.ResponseWriter, r *http.Request)
 	}
 	s.plugins.Configure(name, s.store.Settings.PluginSettings(name, settingNames(schema)))
 	log.Info("admin: saved plugin settings", "plugin", name)
-	web.Render(w, r, AdminPluginsCard(s.adminPluginRows(), s.adminPluginDomains()))
+	web.Render(w, r, AdminPluginsCard(s.adminPluginRows()))
 }
 
 // settingNames extracts the field names from a settings schema.

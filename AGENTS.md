@@ -483,22 +483,22 @@ CTA differs. The demo is a real temporary account, not a shared sandbox.
 
 ## Plugins
 
-- `feeds.plugin_name` (schemaV31) records which plugin owns a feed; empty means
-  the generic parser. Set on create via `FeedStore.CreateWithPlugin` (callers
-  use `Server.pluginNameFor`) and adopted by `plugin.ReconcileFeeds` at startup.
-- `plugin.ReconcileFeeds` runs after plugins load: it adopts feeds whose plugin
-  is present, auto-disables feeds whose plugin is missing
-  (`feeds.disabled_reason = 'plugin not loaded: <name>'`), and auto-re-enables
-  those exact feeds when the plugin returns. Re-enable is keyed to the reason
-  (`store.IsPluginMissingReason`), so a **user-paused** feed (no reason) is never
-  resumed, and to the owner adopted *this boot*, so a renamed/swapped plugin
-  resumes its feeds. `UpdateFeed` clears `disabled_reason`, so a user save takes
-  ownership back.
-- Escape hatch: `POST /admin/plugins/reset` (admin only) takes a `domain`,
-  clears `plugin_name` for that registrable domain's feeds
-  (`FeedStore.ResetPluginForDomain`, un-parking auto-disabled ones), then
-  re-runs `ReconcileFeeds` so the loaded registry re-derives the owner. The
-  plugins card lists owned domains with a reset button.
+- `feeds.plugin_name` (schemaV31) records which plugin currently owns a feed;
+  empty means the generic parser. Set on create via
+  `FeedStore.CreateWithPlugin` (callers use `Server.pluginNameFor`). Ownership
+  is **derived, never locked**: `plugin.ReconcileFeeds` re-matches every feed's
+  URL at startup, writes the winning plugin's name (or clears it when none
+  matches) and never parks a feed just because a plugin is missing. A feed whose
+  plugin disappeared therefore falls back to the generic parser. Feeds parked by
+  older builds (`feeds.disabled_reason = 'plugin not loaded: <name>'`) are
+  re-enabled once (`store.IsPluginMissingReason`/`ReenableAutoDisabled`); a
+  **user-paused** feed (no reason) is never resumed.
+- There is no reset action: `POST /admin/plugins/reset` and the
+  "plugin-owned domains" card section are gone. The plugins card shows, per
+  loaded plugin, the domains and distinct feed URLs it currently matches, which
+  is the debug view for ownership, including plugins that match only part of a
+  shared domain. Routing at fetch time was already by URL match, so the stored
+  name is display/bookkeeping only.
 - See `docs/fetching.md` (how fetching works) and
   `docs/writing-plugins.md` (author guide).
 

@@ -12,7 +12,7 @@ templ adminPage(u store.User, d adminData) {
 	@AdminInstanceCard(d)
 	@AdminStats(d.Stats)
 	@AdminStorageCard(d.Storage)
-	@AdminPluginsCard(d.Plugins, d.PluginOwners)
+	@AdminPluginsCard(d.Plugins)
 	@AdminBackupCard(d.Backup)
 	<section class="card">
 		<h2>users</h2>
@@ -22,88 +22,101 @@ templ adminPage(u store.User, d adminData) {
 }
 
 // AdminPluginsCard lists the feed plugin executables the host loaded at
-// startup, with the API version each reported. Below them it lists the domains
-// currently owned by a plugin, each with a "reset" action: clearing a domain's
-// owner and re-reconciling lets the loaded registry re-derive it, the escape
-// hatch when a plugin is removed, renamed, or swapped.
-templ AdminPluginsCard(rows []adminPluginRow, domains []adminPluginDomain) {
+// startup, with the API version each reported and the feeds it currently
+// handles. Ownership is re-derived at boot, so the owned list is the debugging
+// surface for seeing which plugin takes which domains and URLs.
+templ AdminPluginsCard(rows []adminPluginRow) {
 	<section class="card" id="admin-plugins-card">
 		<h2>plugins</h2>
-		<p class="muted small">Feed plugins loaded from the plugins directory at startup.</p>
+		<p class="muted small">Feed plugins loaded from the plugins directory at startup. Ownership is re-derived on every launch; expand a plugin to see the domains and feed URLs it currently matches.</p>
 		if len(rows) == 0 {
 			<p class="muted small">no plugins loaded.</p>
 		} else {
-			<div class="plugin-grid" id="admin-plugins-list">
+			<ul class="plain plugin-list" id="admin-plugins-list">
 				for _, r := range rows {
-					<div class="plugin-card">
-						<div class="plugin-card-head">
-							<strong>{ r.Name }</strong>
-							<span class="badge" title="plugin API version the plugin reported">api { r.Version }</span>
-							if r.RawNet {
-								<span class="badge warn" title="plugin uses its own HTTP client and surfaces rate limits itself">raw network</span>
-							}
-							if r.ProvisionLabel != "" {
-								<span class="badge" title={"can create a feed for you: " + r.ProvisionLabel}>creates feeds</span>
-							}
-							if r.CanManageFeeds {
-								<span class="badge" title="can manage your subscribed feeds on the site (sync, delete)">manages feeds</span>
-							}
-						</div>
-						if r.Summary != "" || r.HasDocs {
-							<p class="plugin-summary muted small">
-								if r.Summary != "" {
-									{ r.Summary }
+					<li class="plugin-row">
+						<div class="plugin-row-main">
+							<div class="plugin-row-head">
+								<strong>{ r.Name }</strong>
+								<span class="badge" title="plugin API version the plugin reported">api { r.Version }</span>
+								if r.RawNet {
+									<span class="badge warn" title="plugin uses its own HTTP client and surfaces rate limits itself">raw network</span>
 								}
-								if r.HasDocs {
-									{ " " }
-									<a href="#" data-plugin={ r.Name } title="read this plugin's documentation" data-plugin-docs>read more</a>
+								if r.ProvisionLabel != "" {
+									<span class="badge" title={"can create a feed for you: " + r.ProvisionLabel}>creates feeds</span>
 								}
-							</p>
-						}
-						if len(r.Settings) > 0 {
-							@adminPluginSettingsForm(r)
-						}
-					</div>
-				}
-			</div>
-		}
-		<div id="admin-plugins-error" class="error"></div>
-		if len(domains) > 0 {
-			<h3>plugin-owned domains</h3>
-			<p class="muted small">Reset a domain to clear its plugin owner and re-derive it from the loaded plugins. Use this after removing, renaming, or swapping a plugin: feeds on the domain are re-owned automatically, or fall back to the generic parser when no plugin matches.</p>
-			<ul class="plain" id="admin-plugin-domains">
-				for _, d := range domains {
-					<li>
-						<div class="row">
-							<div>
-								<strong>{ d.Domain }</strong>
-								<span class="badge">{ d.Plugin }</span>
-								<span class="muted small">
-									if d.Feeds == 1 {
-										1 feed
-									} else {
-										{ strconv.Itoa(d.Feeds) } feeds
+								if r.CanManageFeeds {
+									<span class="badge" title="can manage your subscribed feeds on the site (sync, delete)">manages feeds</span>
+								}
+							</div>
+							if r.Summary != "" || r.HasDocs {
+								<p class="plugin-summary muted small">
+									if r.Summary != "" {
+										{ r.Summary }
 									}
-								</span>
-							</div>
-							<div class="row-actions">
-								<button class="link" hx-post="/admin/plugins/reset" hx-vals={ "{\"domain\": " + strconv.Quote(d.Domain) + "}" } hx-target="#admin-plugins-card" hx-swap="outerHTML" hx-confirm={ "reset the plugin for " + d.Domain + "? its feeds will be re-owned by the loaded plugins" }>reset</button>
-							</div>
+									if r.HasDocs {
+										{ " " }
+										<a href="#" data-plugin={ r.Name } title="read this plugin's documentation" data-plugin-docs>read more</a>
+									}
+								</p>
+							}
+							if r.Owned.Feeds > 0 {
+								<details class="plugin-owned">
+									<summary class="muted small">
+										owns { strconv.Itoa(r.Owned.Feeds) }
+										if r.Owned.Feeds == 1 {
+											feed
+										} else {
+											feeds
+										}
+										on { " " }
+										for i, d := range r.Owned.Domains {
+											if i > 0 {
+												{ ", " }
+											}
+											{ d }
+										}
+									</summary>
+									<ul class="plain plugin-owned-urls">
+										for _, u := range r.Owned.URLs {
+											<li><code>{ u }</code></li>
+										}
+									</ul>
+								</details>
+							} else {
+								<p class="muted small">no feeds use this plugin</p>
+							}
 						</div>
+						if len(r.Settings) > 0 {
+							<button type="button" class="link plugin-settings-btn" data-open={ "plugin-settings-" + r.Name } title={ "settings for " + r.Name } aria-label={ "settings for " + r.Name }>@web.Lucide("settings")</button>
+						}
 					</li>
 				}
 			</ul>
+			for _, r := range rows {
+				if len(r.Settings) > 0 {
+					<dialog id={ "plugin-settings-" + r.Name } class="modal">
+						<div class="row">
+							<h2>{ r.Name } settings</h2>
+							<button type="button" class="link" title="close" data-close={ "plugin-settings-" + r.Name }>@web.Lucide("x")</button>
+						</div>
+						<div id={ "plugin-settings-error-" + r.Name } class="error"></div>
+						@adminPluginSettingsForm(r)
+					</dialog>
+				}
+			}
 		}
+		<div id="admin-plugins-error" class="error"></div>
 	</section>
 }
 
-// adminPluginSettingsForm is the inline settings form for one configurable
-// plugin, rendered from its declared schema. A password field is write-only: it
-// shows whether a value is set and never renders the stored secret back; a
-// "clear" checkbox unsets it. Submitting re-renders the whole plugins card.
+// adminPluginSettingsForm is the settings form for one configurable plugin,
+// rendered inside that plugin's modal from its declared schema. A password field
+// is write-only: it shows whether a value is set and never renders the stored
+// secret back; a "clear" checkbox unsets it. Submitting re-renders the whole
+// plugins card.
 templ adminPluginSettingsForm(r adminPluginRow) {
 	<form class="stack plugin-settings" hx-post={ "/admin/plugins/" + r.Name + "/settings" } hx-target="#admin-plugins-card" hx-swap="outerHTML">
-		<h4>settings</h4>
 		for _, s := range r.Settings {
 			<label>
 				{ s.Label }

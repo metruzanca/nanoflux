@@ -156,10 +156,10 @@ func TestAdminPluginsCard(t *testing.T) {
 	}
 }
 
-// TestAdminPluginDomainReset covers the per-domain escape hatch: the admin card
-// lists plugin-owned domains and the reset button clears the owner, re-enables a
-// parked feed, and re-adopts it from the loaded registry.
-func TestAdminPluginDomainReset(t *testing.T) {
+// TestAdminPluginOwnership proves the plugins card shows the domains and feed
+// URLs each loaded plugin currently handles, so an admin can debug ownership
+// without a stored owner/reset view.
+func TestAdminPluginOwnership(t *testing.T) {
 	s, h := newTestServer(t)
 	root := createUser(t, s, "root")
 	if err := s.store.Users.SetAdmin(root.ID, true); err != nil {
@@ -168,44 +168,26 @@ func TestAdminPluginDomainReset(t *testing.T) {
 	cookie := adminSession(t, s, "root")
 
 	author, _ := s.store.Authors.Create(root.ID, "A", "", "")
-	feed, _ := s.store.Feeds.CreateWithPlugin(root.ID, author.ID, "z",
-		"https://plugin.example/z", "", "", "stub", 900)
-	if err := s.store.Feeds.DisableForMissingPlugin(feed.ID, "stub"); err != nil {
+	if _, err := s.store.Feeds.CreateWithPlugin(root.ID, author.ID, "z",
+		"https://plugin.example/z", "", "", "", 900); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.store.Feeds.CreateWithPlugin(root.ID, author.ID, "other",
+		"https://generic.example/feed.xml", "", "", "", 900); err != nil {
 		t.Fatal(err)
 	}
 
-	// Re-adoption needs a loaded plugin matching the domain. stubPlugin matches
-	// plugin.example.
 	reg := plugin.NewRegistry()
 	reg.RegisterExternal(stubPlugin{})
-	plugin.NewDispatcher(reg, plugin.NewHosts(s.client, plugin.NewCooldown()).For).Install()
-	defer feedparse.SetPlugin(nil)
-
 	s.SetPlugins(reg, plugin.NewHosts(s.client, plugin.NewCooldown()))
 
 	body := doGet(h, "/admin", cookie).Body.String()
-	if !strings.Contains(body, "plugin.example") || !strings.Contains(body, "stub") {
-		t.Fatalf("plugins card should list the owned domain: %s", body)
+	for _, want := range []string{"plugin.example", "https://plugin.example/z", "owns 1 feed"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("plugins card missing %q: %s", want, body)
+		}
 	}
-
-	rr := doForm(h, "POST", "/admin/plugins/reset", url.Values{
-		"domain": {"plugin.example"},
-	}, cookie)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("reset: %d %s", rr.Code, rr.Body.String())
-	}
-
-	got, _ := s.store.Feeds.ByID(root.ID, feed.ID)
-	if got.PluginName != "stub" {
-		t.Fatalf("feed should be re-owned by the plugin after reset: %q", got.PluginName)
-	}
-	if !got.Enabled || got.DisabledReason != "" {
-		t.Fatalf("feed should be re-enabled after reset: %+v", got)
-	}
-
-	// An invalid domain is rejected with an error fragment.
-	rr = doForm(h, "POST", "/admin/plugins/reset", url.Values{"domain": {""}}, cookie)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "invalid domain") {
-		t.Fatalf("empty domain should error: %d %s", rr.Code, rr.Body.String())
+	if strings.Contains(body, "plugin-owned domains") {
+		t.Fatalf("the old reset/domain section should be gone: %s", body)
 	}
 }
