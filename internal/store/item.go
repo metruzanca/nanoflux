@@ -161,8 +161,12 @@ type ItemFilter struct {
 	// Tags filters the list to items carrying every listed category (AND). An
 	// item matches when its tag set is a superset of Tags. Empty means no tag
 	// filter. Matching is exact and case-sensitive (tags are stored verbatim).
-	Tags  []string
-	Limit int
+	Tags []string
+	// ExcludeTags hides items carrying any listed category (OR exclusion).
+	ExcludeTags []string
+	// ExcludeFeedID hides items seen through that feed. 0 means no exclusion.
+	ExcludeFeedID int64
+	Limit         int
 }
 
 type ItemStore struct {
@@ -354,10 +358,11 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	// Tag filtering is AND over an arbitrary set of tags, which the generated
-	// queries (fixed placeholder shapes) cannot express, so it uses a
-	// hand-written dynamic query. sqlc owns the rest of the list paths.
-	if len(f.Tags) > 0 {
+	// Tag exclusion and feed exclusion are variable-shape predicates the
+	// generated queries (fixed placeholders) cannot express, so any active tag
+	// filter or negative filter uses the hand-written dynamic query. sqlc owns
+	// the rest of the list paths.
+	if len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 {
 		return s.listPageTagged(userID, f, limit)
 	}
 	if f.Magic {
@@ -671,6 +676,14 @@ func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]Ite
 	for _, tag := range f.Tags {
 		b.WriteString(" AND EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = i.id AND ic.category = ?)")
 		args = append(args, tag)
+	}
+	for _, tag := range f.ExcludeTags {
+		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = i.id AND ic.category = ?)")
+		args = append(args, tag)
+	}
+	if f.ExcludeFeedID != 0 {
+		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_feeds mfx WHERE mfx.item_id = i.id AND mfx.feed_id = ?)")
+		args = append(args, f.ExcludeFeedID)
 	}
 	switch {
 	case f.Magic:
@@ -1489,6 +1502,14 @@ func unreadFilteredQuery(userID int64, f ItemFilter, mark bool) (string, []any) 
 	for _, tag := range f.Tags {
 		b.WriteString(" AND EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = items.id AND ic.category = ?)")
 		args = append(args, tag)
+	}
+	for _, tag := range f.ExcludeTags {
+		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = items.id AND ic.category = ?)")
+		args = append(args, tag)
+	}
+	if f.ExcludeFeedID != 0 {
+		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_feeds mfx WHERE mfx.item_id = items.id AND mfx.feed_id = ?)")
+		args = append(args, f.ExcludeFeedID)
 	}
 	return b.String(), args
 }

@@ -267,7 +267,7 @@ func (s *Server) unread(w http.ResponseWriter, r *http.Request) {
 func (s *Server) renderUnread(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	sort := itemSortOf(r)
-	items, more, _ := s.store.Items.ListPage(u.ID, scopedFilter("unread", sort, cursorID(r, sort), 0, 0, 0))
+	items, more, _ := s.store.Items.ListPage(u.ID, scopedFilter("unread", sort, cursorID(r, sort), 0, 0, nil))
 	unread, _ := s.store.Items.CountUnread(u.ID, 0)
 	base := "/items?sort=" + sort.param()
 	web.Render(w, r, basePage("unread", u, homePage(homeData{

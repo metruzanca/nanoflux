@@ -104,8 +104,10 @@ plugins list with per-plugin owned domains/URLs (`internal/httpapi/admin.go`).
 - Search is stateless FTS5 (`items_fts`, schemaV10) with `title:`, `author:`,
   `feed:`, `unread:` qualifiers (`search.go:73`). No saved searches.
 - Tags: item categories are surfaced as tags in the item modal and a scoped
-  tag-filter dialog on feed/author/collection lists, backed by
-  `item_categories`. Collection name pills remain on feed rows.
+  filter dialog on feed/author/collection lists, backed by `item_categories`.
+  Each applied tag or feed filter has a `show`/`hide` action (hide excludes
+  matching items); the dialog lists applied filters as editable rows. Collection
+  name pills remain on feed rows.
 - Unread counts exist per scope but are not surfaced on every scope.
 
 ### Sharing / export
