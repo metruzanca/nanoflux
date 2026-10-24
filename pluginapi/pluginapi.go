@@ -257,6 +257,9 @@ type HTTPRequest struct {
 	URL     string
 	Headers map[string]string
 	Body    []byte
+	// NoRedirect asks the host to return a 3xx response instead of following
+	// it. A login flow needs the intermediate Set-Cookie headers and Location.
+	NoRedirect bool
 }
 
 // HTTPResponse is the raw response from Host.Do: the plugin sees the status,
@@ -272,6 +275,9 @@ type HTTPResponse struct {
 	Body        []byte
 	RateLimited bool
 	RetryAfter  time.Duration // meaningful when RateLimited
+	// SetCookies carries every Set-Cookie header value. Headers holds only the
+	// first value per header name, which loses all but one cookie.
+	SetCookies []string
 }
 
 // Host is what the plugin uses to talk back to nanoflux. It is fulfilled over

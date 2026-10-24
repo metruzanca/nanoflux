@@ -65,7 +65,16 @@ func (h *Host) Do(ctx context.Context, req pluginapi.HTTPRequest) (pluginapi.HTT
 		return pluginapi.HTTPResponse{Status: http.StatusTooManyRequests, RateLimited: true, RetryAfter: time.Minute}, nil
 	}
 
-	resp, err := h.client.Do(httpReq)
+	client := h.client
+	if req.NoRedirect {
+		// Copy so the per-request policy does not mutate the shared client.
+		c := *h.client
+		c.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		client = &c
+	}
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return pluginapi.HTTPResponse{}, err
 	}
@@ -91,10 +100,13 @@ func (h *Host) Do(ctx context.Context, req pluginapi.HTTPRequest) (pluginapi.HTT
 		// cache. If it cannot, it returns a RateLimit and the feed is parked.
 		return pluginapi.HTTPResponse{
 			Status: resp.StatusCode, Headers: headerMap(resp.Header), Body: data,
-			RateLimited: true, RetryAfter: backoff,
+			RateLimited: true, RetryAfter: backoff, SetCookies: resp.Header.Values("Set-Cookie"),
 		}, nil
 	}
-	return pluginapi.HTTPResponse{Status: resp.StatusCode, Headers: headerMap(resp.Header), Body: data}, nil
+	return pluginapi.HTTPResponse{
+		Status: resp.StatusCode, Headers: headerMap(resp.Header), Body: data,
+		SetCookies: resp.Header.Values("Set-Cookie"),
+	}, nil
 }
 
 func (h *Host) Now() time.Time { return time.Now().UTC() }

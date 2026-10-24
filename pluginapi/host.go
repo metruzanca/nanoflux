@@ -18,6 +18,7 @@ type grpcHostServer struct {
 func (s *grpcHostServer) Do(ctx context.Context, req *pb.HTTPRequest) (*pb.HTTPResponse, error) {
 	resp, err := s.impl.Do(ctx, HTTPRequest{
 		Method: req.Method, URL: req.Url, Headers: req.Headers, Body: req.Body,
+		NoRedirect: req.NoRedirect,
 	})
 	if err != nil {
 		return nil, err
@@ -25,6 +26,7 @@ func (s *grpcHostServer) Do(ctx context.Context, req *pb.HTTPRequest) (*pb.HTTPR
 	return &pb.HTTPResponse{
 		Status: int32(resp.Status), Headers: resp.Headers, Body: resp.Body,
 		RateLimited: resp.RateLimited, RetryAfterMillis: resp.RetryAfter.Milliseconds(),
+		SetCookies: resp.SetCookies,
 	}, nil
 }
 
@@ -41,13 +43,17 @@ func (s *grpcHostServer) Log(_ context.Context, req *pb.LogRequest) (*pb.LogResp
 type grpcHostClient struct{ client pb.HostClient }
 
 func (c *grpcHostClient) Do(ctx context.Context, req HTTPRequest) (HTTPResponse, error) {
-	resp, err := c.client.Do(ctx, &pb.HTTPRequest{Method: req.Method, Url: req.URL, Headers: req.Headers, Body: req.Body})
+	resp, err := c.client.Do(ctx, &pb.HTTPRequest{
+		Method: req.Method, Url: req.URL, Headers: req.Headers, Body: req.Body,
+		NoRedirect: req.NoRedirect,
+	})
 	if err != nil {
 		return HTTPResponse{}, err
 	}
 	return HTTPResponse{
 		Status: int(resp.Status), Headers: resp.Headers, Body: resp.Body,
 		RateLimited: resp.RateLimited, RetryAfter: time.Duration(resp.RetryAfterMillis) * time.Millisecond,
+		SetCookies: resp.SetCookies,
 	}, nil
 }
 
