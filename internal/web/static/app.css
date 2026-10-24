@@ -1126,7 +1126,7 @@ body:has(dialog.palette[open]) {
   overscroll-behavior: contain;
 }
 
-/* Command palette / entity search: a top-anchored overlay (distinct from the
+/* Command palette and search: a top-anchored overlay (distinct from the
    centered .modal dialogs) with an input and a keyboard-navigable list. */
 dialog.palette {
   width: min(38rem, calc(100vw - 2rem));

@@ -836,8 +836,9 @@ document.addEventListener('keydown', function (e) {
   if (itemNav(dir)) e.preventDefault();
 });
 
-// Command palette (ctrl/cmd+p) and unified entity search (ctrl/cmd+shift+p).
-// The palette engine renders a filtered, keyboard-navigable list into a
+// Command palette (ctrl/cmd+p or ctrl/cmd+shift+p, or a downward swipe on the
+// topbar on touch devices). The palette renders commands plus the user's
+// authors, collections, and feeds into a keyboard-navigable list inside a
 // <dialog class="palette">; Enter activates the highlighted row, Escape and
 // backdrop-click close it (Escape natively, backdrop via the handler below).
 var SIGILS = { author: '@', collection: '#', feed: '!' };
@@ -935,7 +936,7 @@ function wirePalette(dialogId, inputId, listId, items, onEnter) {
   // Backdrop click closes (the click target is the dialog itself). Escape is
   // handled natively by <dialog>.
   dialog.addEventListener('click', function (e) { if (e.target === dialog) close(); });
-  return { open: open, close: close };
+  return { open: open, close: close, refresh: render };
 }
 
 // openDialog navigates to a page and opens one of its server-rendered dialogs
@@ -1067,12 +1068,10 @@ function postForm(path) {
   f.submit();
 }
 
-var commandPalette = wirePalette('command-palette', 'command-input', 'command-results',
-  filterCommands, function (row) { row.run(); });
-
-// Unified entity search. Entities are fetched when the palette opens (and
-// cached for the session); a leading @/#/! narrows to one kind without the
-// sigil counting as part of the query.
+// Unified search: commands first, then matching entities. A leading @/#/!
+// narrows to one entity kind without the sigil counting as part of the query.
+// Entities are fetched on every open; a cached list renders immediately so
+// the palette never waits on the network to show commands.
 var ENTITY_CACHE = null;
 function fetchEntities() {
   return fetch('/api/entities', { credentials: 'same-origin' })
@@ -1099,12 +1098,22 @@ function filterEntities(q) {
     };
   });
 }
-var entityPalette = wirePalette('entity-palette', 'entity-input', 'entity-results',
-  filterEntities, function (row) { window.location.href = row.url; });
-if (entityPalette) {
-  var openEntity = entityPalette.open;
-  entityPalette.open = function () {
-    fetchEntities().then(function () { openEntity(); });
+function paletteItems(q) {
+  var first = q.trim().charAt(0);
+  if (first === '@' || first === '#' || first === '!') return filterEntities(q);
+  return filterCommands(q).concat(filterEntities(q));
+}
+
+var commandPalette = wirePalette('command-palette', 'command-input', 'command-results',
+  paletteItems, function (row) {
+    if (row.run) { row.run(); return; }
+    if (row.url) window.location.href = row.url;
+  });
+if (commandPalette) {
+  var openPalette = commandPalette.open;
+  commandPalette.open = function () {
+    openPalette();
+    fetchEntities().then(function () { commandPalette.refresh(); });
   };
 }
 
@@ -1150,9 +1159,66 @@ function setNavBadge(linkId, spanId, n) {
 document.addEventListener('keydown', function (e) {
   if (e.code !== 'KeyP' || !(e.ctrlKey || e.metaKey)) return;
   e.preventDefault();
-  if (e.shiftKey) { if (entityPalette) entityPalette.open(); }
-  else if (commandPalette) commandPalette.open();
+  if (commandPalette) commandPalette.open();
 });
+
+// Swipe down on the topbar (touch devices) opens the same palette. The gesture
+// only starts on the header itself and is ignored while the collapsed mobile
+// nav is open, so it cannot interfere with the menu's own scrolling.
+(function () {
+  var START = 10;   // px of downward travel before it's a swipe
+  var COMMIT = 60;  // px of downward travel to open the palette
+
+  var header = document.querySelector('header.top');
+  if (!header || !commandPalette) return;
+  var startX = 0;
+  var startY = 0;
+  var swiping = false;
+
+  function reset() {
+    startX = 0;
+    startY = 0;
+    swiping = false;
+  }
+
+  header.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1) { reset(); return; }
+    var t = e.touches[0];
+    var nav = document.getElementById('top-nav');
+    if (nav && nav.classList.contains('open')) { reset(); return; }
+    if (t.target.closest && t.target.closest('input, textarea, select, [contenteditable="true"]')) { reset(); return; }
+    startX = t.clientX;
+    startY = t.clientY;
+    swiping = false;
+  }, { passive: true });
+
+  header.addEventListener('touchmove', function (e) {
+    if (e.touches.length !== 1) { reset(); return; }
+    var t = e.touches[0];
+    var dx = t.clientX - startX;
+    var dy = t.clientY - startY;
+    if (!swiping) {
+      if (dy < START || dy <= Math.abs(dx)) return;
+      swiping = true;
+    }
+    // Stop the page from scrolling or pulling to refresh under the gesture.
+    e.preventDefault();
+  }, { passive: false });
+
+  header.addEventListener('touchend', function (e) {
+    if (!swiping) { reset(); return; }
+    var t = e.changedTouches[0];
+    var dx = t.clientX - startX;
+    var dy = t.clientY - startY;
+    reset();
+    if (dy < COMMIT || dy <= Math.abs(dx)) return;
+    // Swallow the synthetic click that could otherwise follow the swipe.
+    header.setAttribute('data-suppress', '1');
+    setTimeout(function () { header.removeAttribute('data-suppress'); }, 400);
+    commandPalette.open();
+  });
+  header.addEventListener('touchcancel', reset);
+})();
 
 // A command that opens a page dialog ("add feed", ...) sets a pendingDialog
 // marker before navigating; open it here once the destination loads.

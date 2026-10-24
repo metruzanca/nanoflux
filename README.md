@@ -13,7 +13,7 @@ storage.
   feed attached.
 - **Collections** — group feeds into folders.
 - **Item preview** — view items without leaving the app.
-- **Keyboard navigation**: arrow keys page through items in the preview, `Ctrl/Cmd+P` opens the command palette, and `Ctrl/Cmd+Shift+P` searches authors, collections, and feeds. See [`docs/keybinds.md`](docs/keybinds.md).
+- **Keyboard navigation**: arrow keys page through items in the preview, and `Ctrl/Cmd+P` (or `Ctrl/Cmd+Shift+P`) opens the command palette and search. See [`docs/keybinds.md`](docs/keybinds.md).
 - **Multi-user** — username/password accounts, per-user data, simple signup page. (no emails)
 - **Multi-user** — Admin panel and admin cli.
 - **Browser Extension** — for quickly adding a new feed, or saving the current page to a list when it has no feed.

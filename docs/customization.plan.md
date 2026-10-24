@@ -127,9 +127,9 @@ per-feed plugin config.
 
 ### Keyboard / interaction
 
-`←/→` previous/next while reading, `Ctrl/⌘+P` command palette,
-`Ctrl/⌘+Shift+P` entity search, `Esc` closes dialogs, swipe gestures,
-deep-link item modal, load-more.
+`←/→` previous/next while reading, `Ctrl/⌘+P` (or `Ctrl/⌘+Shift+P`) command
+palette and search, swipe down from the topbar to open it, `Esc` closes dialogs,
+swipe gestures, deep-link item modal, load-more.
 
 ## Gaps
 

@@ -12,8 +12,7 @@ update both when a binding changes.
 | Key | Action | Context |
 | --- | --- | --- |
 | `←` / `→` | Previous / next item | Item preview is open |
-| `Ctrl+P` / `⌘P` | Open the command palette | Anywhere |
-| `Ctrl+Shift+P` / `⌘Shift+P` | Search authors, collections, and feeds | Anywhere |
+| `Ctrl+P` / `⌘P` or `Ctrl+Shift+P` / `⌘Shift+P` | Open the command palette and search | Anywhere |
 | `Esc` | Close the active dialog, menu, or picker | Anywhere |
 
 ## Item preview
@@ -26,21 +25,17 @@ update both when a binding changes.
   keys (for example, a YouTube embed). Other embed players do not block item
   navigation.
 
-## Command palette
+## Command palette and search
 
-- `Ctrl+P` / `⌘P` opens the command palette anywhere in the app.
+- `Ctrl+P` / `⌘P` and `Ctrl+Shift+P` / `⌘Shift+P` both open the same palette
+  anywhere in the app.
+- On touch devices, swipe down from the topbar to open it.
 - Inside the palette, `↑` / `↓` move through the results, `Enter` runs the
-  selected command, and `Esc` closes the palette.
-- The palette lists navigation targets and common actions.
-
-## Entity search
-
-- `Ctrl+Shift+P` / `⌘Shift+P` opens the entity search palette.
-- It searches the user's authors, collections, and feeds, with an unread count
-  for each row.
+  selected command or opens the selected entity, and `Esc` closes the palette.
+- The palette lists navigation targets and common actions, then the user's
+  authors, collections, and feeds with an unread count for each row.
 - Prefix the query with `@`, `#`, or `!` to search only authors, collections,
-  or feeds. Without a prefix it searches all three.
-- The same `↑` / `↓`, `Enter`, and `Esc` controls as the command palette apply.
+  or feeds. Without a prefix it searches all three (and the actions).
 
 ## Removed bindings
 
