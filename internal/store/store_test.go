@@ -547,6 +547,26 @@ func TestItemTagFiltering(t *testing.T) {
 		t.Fatalf("r/golang+r/rust = %v, want none", got)
 	}
 
+	// Hide filters: exclude items carrying a tag, and items from a feed.
+	excluded, _, err := s.Items.ListPage(u.ID, ItemFilter{FeedID: f.ID, ExcludeTags: []string{"r/golang"}, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListPage excluded tags: %v", err)
+	}
+	if len(excluded) != 1 || excluded[0].GUID != "c" {
+		t.Fatalf("exclude r/golang = %+v, want [c]", excluded)
+	}
+	f2, _ := s.Feeds.Create(u.ID, a.ID, "Notes", "https://notes.dev/rss.xml", "", "", 900)
+	if _, err := s.Items.Upsert(f2.ID, Item{GUID: "d", Title: "d", Link: "https://notes.dev/d", FetchedAt: db.Now()}); err != nil {
+		t.Fatalf("upsert d: %v", err)
+	}
+	hidden, _, err := s.Items.ListPage(u.ID, ItemFilter{AuthorID: a.ID, ExcludeFeedID: f.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListPage excluded feed: %v", err)
+	}
+	if len(hidden) != 1 || hidden[0].GUID != "d" {
+		t.Fatalf("exclude feed = %+v, want [d]", hidden)
+	}
+
 	// The backfill repopulates from items.categories when the rows are missing.
 	if _, err := s.db.Exec(`DELETE FROM item_categories`); err != nil {
 		t.Fatalf("clear categories: %v", err)

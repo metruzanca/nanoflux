@@ -301,9 +301,10 @@ normalized at parse time from:
 One feed therefore gives each item its section as a category and its poster as
 the author; another gives the destination section. Categories are
 stored newline-joined in `items.categories` (schemaV36) and refreshed on re-poll,
-so an item already stored gains them without a re-fetch. They power the in-feed
-tag filter (and are available to plugins via `pluginapi.Item.Categories`); the
-former ingest filter-rule system was removed for a clean reimplementation.
+so an item already stored gains them without a re-fetch. They power the scoped
+show/hide tag filter (and are available to plugins via
+`pluginapi.Item.Categories`); the former ingest filter-rule system was removed
+for a clean reimplementation.
 
 ## Pagination ("load older items")
 

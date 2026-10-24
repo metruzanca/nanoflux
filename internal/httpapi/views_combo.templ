@@ -28,6 +28,20 @@ templ comboSelect(name, value, label, placeholder string, items []comboItem, att
 	</div>
 }
 
+// comboSelectID is comboSelect with an explicit element id, for repeated rows
+// that share a form name (the filter modal's value combos) but need unique ids.
+templ comboSelectID(id, name, value, label, placeholder string, items []comboItem, attrs templ.Attributes) {
+	<div class="combo-field">
+		if label != "" {
+			<label for={ id }>{ label }</label>
+		}
+		<div class="combo" data-vaadin="single">
+			<vaadin-combo-box id={ id } placeholder={ placeholder } items={ comboItemsJSON(items) } value={ value }></vaadin-combo-box>
+			<input type="hidden" data-vaadin-target name={ name } value={ value } { attrs... }/>
+		</div>
+	</div>
+}
+
 // switchField is a Vaadin switch paired with a hidden native mirror. The
 // component is not form-associated, so the mirror carries the field name, the
 // "1"/"" value the server reads, and any hx-* attributes (spread from attrs);

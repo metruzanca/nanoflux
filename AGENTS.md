@@ -279,16 +279,26 @@ Categories are also normalized for tag browsing and list filtering.
 - `ItemStore.ListCategories(userID, ItemFilter{FeedID|AuthorID|CollectionID})`
   returns each distinct tag with its item count, most-used first.
 - `ItemFilter.Tags` filters a list to items carrying **every** listed tag (AND).
-  The generated `ListItems*` queries are fixed-shape, so tag filtering uses the
-  hand-written `ItemStore.listPageTagged` (dynamic `EXISTS` per tag; supports
-  newest/oldest/magic and all scopes), mirroring `SearchPage`'s raw-SQL pattern.
-  The HTTP layer reads repeated `?tags=` (`tagParams`, capped at
-  `maxTagFilters`); tab/sort/pagination links carry them (`appendTags`).
+  `ItemFilter.ExcludeTags` hides items carrying any listed tag, and
+  `ItemFilter.ExcludeFeedID` hides items seen through one feed. The generated
+  `ListItems*` queries are fixed-shape, so any tag or negative filter uses the
+  hand-written `ItemStore.listPageTagged` (dynamic `EXISTS`/`NOT EXISTS`;
+  supports newest/oldest/magic and all scopes), mirroring `SearchPage`'s raw-SQL
+  pattern. `unreadFilteredQuery` (mark-all/count) applies the same predicates.
+- HTTP filters are transient query state (`internal/httpapi/filters.go`): each
+  applied filter has a kind (`tag`/`feed`), an action (`show`/`hide`) and a
+  value. The canonical URL is repeated `?f=tag:show:r/golang`,
+  `?f=tag:hide:r/rust`, `?f=feed:hide:12`; legacy `?tags=`/`?feed=` still parse
+  as show filters, and the modal form posts parallel
+  `filter_kind`/`filter_action`/`filter_value` rows. Tags are capped at
+  `maxTagFilters`; only one show-feed and one hide-feed row are kept. Tab, sort,
+  chip and pagination links carry the filters with `listFilters.appendFilters`.
 - UI: the item modal shows its tags as clickable chips (linking to
-  `/authors/{id}?tags=`); a scoped feed/author/collection list gets a
-  magnifying-glass filter dialog (`comboMulti` over the scope's `ListCategories`
-  options, plus, on author pages, a single-select over the author's feeds that
-  sets `?feed=`) and active-filter chips.
+  `/authors/{id}?tags=`); a scoped feed/author/collection list gets a filter
+  dialog with one editable row per applied tag/feed (value combo + `show`/`hide`
+  dropdown + remove), a blank row to add a filter, and active-filter chips. A
+  hidden filter's chip uses the `chip-hide` style. Author-page feed rows are
+  validated against the author before use (`authorFilters`).
 
 ## Feeds live on the author page
 

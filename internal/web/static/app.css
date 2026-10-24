@@ -824,7 +824,28 @@ a.chip:hover, button.chip:hover { border-color: var(--accent); color: var(--acce
   color: var(--accent);
 }
 .active-tags .chip:hover { border-color: var(--accent); }
+.active-tags .chip-hide {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  color: var(--danger);
+}
+.active-tags .chip-hide:hover { border-color: var(--danger); }
 .active-tags .chip-clear { background: var(--panel); border-color: var(--border); color: var(--muted); }
+
+/* Filter modal: one editable row per applied filter. The combo takes the
+   available width; the action select and remove button stay compact. */
+.filter-rows { display: flex; flex-direction: column; gap: 0.5rem; }
+.filter-row { display: flex; align-items: center; gap: 0.5rem; }
+.filter-row .combo-field { flex: 1; min-width: 0; }
+.filter-row .filter-action {
+  flex: 0 0 auto;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+}
 
 /* Collapsible "all tags seen in this feed" list in the feed filter card. */
 .tag-cloud { margin: 0.75rem 0 0; }
