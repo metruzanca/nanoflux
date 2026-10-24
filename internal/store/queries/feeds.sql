@@ -145,33 +145,17 @@ WHERE id = ? AND user_id = ?;
 -- name: SetFeedPluginName :exec
 UPDATE feeds
 SET plugin_name = ?
-WHERE id = ?;-- name: SetFeedEnabledForPlugin :exec
--- Admin/poller-internal: disable or enable a feed and record why. Not
--- user-scoped because the plugin reconciler owns it.
-UPDATE feeds
-SET enabled = ?, disabled_reason = ?
 WHERE id = ?;
 
 -- name: ReenableAutoDisabledFeed :execrows
--- Auto-re-enable one feed that was disabled because its owning plugin was
--- missing. Keyed to the automatic reason so a user-paused feed (no reason) is
--- never silently resumed. The reconciler calls this for feeds it just adopted,
--- so a plugin that was renamed/replaced still resumes its feeds.
+-- Legacy cleanup: auto-re-enable one feed that an older build disabled because
+-- its owning plugin was missing. Ownership is now re-derived on every boot, so
+-- the reconciler resumes these while never touching a user pause (no reason).
 UPDATE feeds
 SET enabled = 1, disabled_reason = NULL
 WHERE id = ?
   AND enabled = 0
   AND disabled_reason LIKE 'plugin not loaded:%';
-
--- name: ResetFeedPlugin :exec
--- Clear a feed's plugin owner (back to the generic parser). If the feed was
--- auto-disabled because its plugin was missing, un-park it too; a user pause
--- (enabled = 0 with no automatic reason) is preserved.
-UPDATE feeds
-SET plugin_name = '',
-    disabled_reason = CASE WHEN disabled_reason LIKE 'plugin not loaded:%' THEN NULL ELSE disabled_reason END,
-    enabled = CASE WHEN disabled_reason LIKE 'plugin not loaded:%' THEN 1 ELSE enabled END
-WHERE id = ?;
 
 -- name: ListFeedsDue :many
 SELECT id, user_id, author_id, title, feed_url, home_url, description,

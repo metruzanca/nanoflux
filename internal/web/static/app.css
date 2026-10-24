@@ -1717,26 +1717,36 @@ vaadin-multi-select-combo-box-overlay {
 #picker-layer { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
 #picker-layer .mode-menu { pointer-events: auto; }
 
-/* Admin plugin list: one card per loaded plugin, wrapping in a responsive grid
-   so a long summary or user-agent does not stretch a row to full width. */
-.plugin-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-  gap: 0.75rem;
-  margin-top: 0.5rem;
-}
-.plugin-card {
+/* Admin plugin list: one row per loaded plugin, with the gear opening its
+   settings modal. */
+.plugin-list { margin-top: 0.5rem; }
+.plugin-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.75rem 0.85rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border);
 }
-.plugin-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
-.plugin-card-head strong { font-size: 1rem; }
+.plugin-row:last-child { border-bottom: none; }
+.plugin-row-main { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.plugin-row-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.plugin-row-head strong { font-size: 1rem; }
 .plugin-summary { margin: 0; }
+.plugin-owned { margin-top: 0.1rem; }
+.plugin-owned > summary { cursor: pointer; }
+.plugin-owned > summary:hover { color: var(--fg); }
+.plugin-owned-urls { margin: 0.4rem 0 0; padding-left: 0.15rem; }
+.plugin-owned-urls li { padding: 0.15rem 0; }
+.plugin-owned-urls code { word-break: break-all; }
+.plugin-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem;
+  color: var(--muted);
+  flex: none;
+}
+.plugin-settings-btn:hover { color: var(--fg); }
 
 /* Prose: rendered Markdown (plugin docs today, any long-form body later). The
    measure is capped so lines stay readable even in a wide dialog, and spacing

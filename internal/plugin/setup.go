@@ -81,58 +81,48 @@ func ConfigureAll(st *store.Store, reg *Registry) {
 	}
 }
 
-// ReconcileFeeds aligns stored feeds with the loaded plugins. For each feed it
-// records which plugin owns its URL and auto-disables a feed whose owning plugin
-// is no longer loaded (so it stops retrying a URL nothing can fetch). A feed
-// that was parked because its plugin was missing is re-enabled once a plugin
-// owns it again — keyed to the feed now adopted, so a plugin that was renamed or
-// replaced still resumes its feeds. A feed the user paused by hand is never
-// resumed. An empty registry is handled too: if every plugin is gone, every
-// plugin-owned feed is parked.
+// ReconcileFeeds re-derives each stored feed's owning plugin from the loaded
+// registry. Ownership is not sticky: every startup matches the feed's URL
+// against the current plugins, recording the winner (or clearing the owner when
+// none matches, so the generic parser takes over). A feed left parked by an
+// older build for a missing plugin is re-enabled; a feed the user paused by hand
+// is never resumed.
 func ReconcileFeeds(st *store.Store, reg *Registry) {
 	feeds, err := st.Feeds.ListAll()
 	if err != nil {
 		log.Error("plugin reconcile: list feeds", "err", err)
 		return
 	}
-	var adopted, disabled, reenabled int
+	var adopted, cleared, reenabled int
 	for _, f := range feeds {
 		owner := ""
 		if p := reg.Match(mustParse(f.FeedURL), pluginapi.CapFetch); p != nil {
 			owner = p.Meta().Name
 		}
-		switch {
-		case owner != "":
-			// Adopt a feed that now has a plugin, or whose owner changed
-			// (a renamed/replaced plugin).
-			if owner != f.PluginName {
-				if err := st.Feeds.SetPluginName(f.ID, owner); err != nil {
-					log.Error("plugin reconcile: set owner", "feed_id", f.ID, "err", err)
-					continue
-				}
-				adopted++
-			}
-			// Resume a feed parked because its plugin was missing. Matching on
-			// the automatic reason (not the plugin name) is what lets a renamed
-			// plugin bring its feeds back.
-			if store.IsPluginMissingReason(f.DisabledReason) {
-				if n, err := st.Feeds.ReenableAutoDisabled(f.ID); err != nil {
-					log.Error("plugin reconcile: re-enable", "feed_id", f.ID, "err", err)
-				} else {
-					reenabled += n
-				}
-			}
-		case f.PluginName != "" && f.Enabled:
-			// The owning plugin is gone: park the feed instead of retrying.
-			if err := st.Feeds.DisableForMissingPlugin(f.ID, f.PluginName); err != nil {
-				log.Error("plugin reconcile: disable", "feed_id", f.ID, "err", err)
+		if owner != f.PluginName {
+			if err := st.Feeds.SetPluginName(f.ID, owner); err != nil {
+				log.Error("plugin reconcile: set owner", "feed_id", f.ID, "err", err)
 				continue
 			}
-			disabled++
+			if owner == "" {
+				cleared++
+			} else {
+				adopted++
+			}
+		}
+		// Legacy cleanup: builds before ownership became purely derived parked a
+		// feed when its plugin was missing. Resume those now that a missing
+		// plugin no longer means a dead feed (the generic parser can try it).
+		if store.IsPluginMissingReason(f.DisabledReason) {
+			if n, err := st.Feeds.ReenableAutoDisabled(f.ID); err != nil {
+				log.Error("plugin reconcile: re-enable", "feed_id", f.ID, "err", err)
+			} else {
+				reenabled += n
+			}
 		}
 	}
-	if adopted > 0 || disabled > 0 || reenabled > 0 {
-		log.Info("plugin reconcile", "adopted", adopted, "disabled", disabled, "reenabled", reenabled)
+	if adopted > 0 || cleared > 0 || reenabled > 0 {
+		log.Info("plugin reconcile", "adopted", adopted, "cleared", cleared, "reenabled", reenabled)
 	}
 }
 

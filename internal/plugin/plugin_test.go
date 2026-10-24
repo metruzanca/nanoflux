@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -404,34 +405,33 @@ func TestRegistryDiscoverDedup(t *testing.T) {
 	}
 }
 
-// TestReconcileFeeds covers auto-disable/re-enable when a feed's plugin comes
-// and goes. A plugin that matches example.org owns its feeds; when absent those
-// feeds are auto-disabled with a reason, and re-enabled when it returns.
+// TestReconcileFeeds covers ownership re-derivation: a feed whose plugin is
+// absent stays enabled on the generic parser (ownership is cleared instead of
+// locking the feed to a plugin), and is adopted when the plugin returns. A
+// user-paused feed stays paused.
 func TestReconcileFeeds(t *testing.T) {
-	st, u, a := newPluginStore(t)
+	st, _, u, a := newPluginStoreWithDB(t)
 
-	// A feed owned by the "zorg" plugin, and a user-paused feed under it.
 	zorgFeed, _ := st.Feeds.CreateWithPlugin(u.ID, a.ID, "z", "https://example.org/z", "", "", "zorg", 900)
 	paused, _ := st.Feeds.CreateWithPlugin(u.ID, a.ID, "u", "https://example.org/u", "", "", "zorg", 900)
 	st.Feeds.SetEnabled(u.ID, paused.ID, false)
 
-	// Plugin absent: the enabled feed is auto-disabled with a reason; the
-	// user-paused one keeps no reason.
+	// Plugin absent: the feed is not locked or parked, it falls back to the
+	// generic parser.
 	ReconcileFeeds(st, NewRegistry())
 	got, _ := st.Feeds.ByID(u.ID, zorgFeed.ID)
-	if got.Enabled || got.DisabledReason == "" {
-		t.Fatalf("feed should be auto-disabled with a reason: %+v", got)
+	if !got.Enabled || got.DisabledReason != "" {
+		t.Fatalf("feed should stay enabled on the generic parser: %+v", got)
 	}
-	if got.PluginName != "zorg" {
-		t.Fatalf("plugin name should be preserved: %q", got.PluginName)
+	if got.PluginName != "" {
+		t.Fatalf("stale plugin owner should be cleared: %q", got.PluginName)
 	}
 	gotPaused, _ := st.Feeds.ByID(u.ID, paused.ID)
-	if gotPaused.DisabledReason != "" {
-		t.Fatalf("user-paused feed should not gain a reason: %q", gotPaused.DisabledReason)
+	if gotPaused.Enabled || gotPaused.DisabledReason != "" {
+		t.Fatalf("user-paused feed should stay paused: %+v", gotPaused)
 	}
 
-	// Plugin returns: the auto-disabled feed is re-enabled; the user-paused one
-	// stays disabled.
+	// Plugin returns: the feed is adopted; the user-paused one stays disabled.
 	reg := NewRegistry()
 	reg.RegisterExternal(fakeFetcher{name: "zorg", match: func(u *url.URL, _ pluginapi.Capability) bool {
 		return u != nil && u.Hostname() == "example.org"
@@ -439,8 +439,8 @@ func TestReconcileFeeds(t *testing.T) {
 	ReconcileFeeds(st, reg)
 
 	got, _ = st.Feeds.ByID(u.ID, zorgFeed.ID)
-	if !got.Enabled || got.DisabledReason != "" {
-		t.Fatalf("feed should be auto-re-enabled: %+v", got)
+	if got.PluginName != "zorg" || !got.Enabled {
+		t.Fatalf("feed should be adopted by the plugin: %+v", got)
 	}
 	gotPaused, _ = st.Feeds.ByID(u.ID, paused.ID)
 	if gotPaused.Enabled {
@@ -464,14 +464,15 @@ func TestReconcileAdoptsFeed(t *testing.T) {
 	}
 }
 
-// TestReconcileAdoptsRenamedPlugin asserts that a feed parked because its
-// plugin was missing is resumed when a plugin that matches its URL returns under
-// a different name. Re-enable is keyed to the adopted owner, not the stale stored
-// plugin name, so a rename or swap brings the feed back.
+// TestReconcileAdoptsRenamedPlugin asserts that a feed parked by an older build
+// for a missing plugin is resumed when a plugin that matches its URL returns
+// under a different name.
 func TestReconcileAdoptsRenamedPlugin(t *testing.T) {
-	st, u, a := newPluginStore(t)
+	st, sqldb, u, a := newPluginStoreWithDB(t)
 	f, _ := st.Feeds.CreateWithPlugin(u.ID, a.ID, "z", "https://example.org/z", "", "", "oldname", 900)
-	st.Feeds.DisableForMissingPlugin(f.ID, "oldname")
+	if _, err := sqldb.Exec("UPDATE feeds SET enabled = 0, disabled_reason = ? WHERE id = ?", "plugin not loaded: oldname", f.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	reg := NewRegistry()
 	reg.RegisterExternal(fakeFetcher{name: "newname", match: func(u *url.URL, _ pluginapi.Capability) bool {
@@ -488,42 +489,33 @@ func TestReconcileAdoptsRenamedPlugin(t *testing.T) {
 	}
 }
 
-// TestReconcileAfterDomainReset asserts the admin escape hatch works end to end:
-// clearing a feed's owner and re-running reconcile re-owns it from the loaded
-// registry, and parks it again when no plugin matches.
-func TestReconcileAfterDomainReset(t *testing.T) {
-	st, u, a := newPluginStore(t)
+// TestReconcileUnparksLegacyMissingPlugin feeds a legacy parked feed through an
+// empty registry: ownership clears and the feed is re-enabled for the generic
+// parser.
+func TestReconcileUnparksLegacyMissingPlugin(t *testing.T) {
+	st, sqldb, u, a := newPluginStoreWithDB(t)
 	f, _ := st.Feeds.CreateWithPlugin(u.ID, a.ID, "z", "https://example.org/z", "", "", "zorg", 900)
-
-	if n, err := st.Feeds.ResetPluginForDomain("example.org"); err != nil || n != 1 {
-		t.Fatalf("reset = %d, %v", n, err)
-	}
-	got, _ := st.Feeds.ByID(u.ID, f.ID)
-	if got.PluginName != "" {
-		t.Fatalf("feed should be ownerless after reset: %q", got.PluginName)
+	if _, err := sqldb.Exec("UPDATE feeds SET enabled = 0, disabled_reason = ? WHERE id = ?", "plugin not loaded: zorg", f.ID); err != nil {
+		t.Fatal(err)
 	}
 
-	// No matching plugin: the feed stays on the generic parser, enabled.
 	ReconcileFeeds(st, NewRegistry())
-	got, _ = st.Feeds.ByID(u.ID, f.ID)
-	if got.PluginName != "" || !got.Enabled {
-		t.Fatalf("ownerless feed should stay generic and enabled: %+v", got)
-	}
 
-	// A matching plugin adopts it again.
-	reg := NewRegistry()
-	reg.RegisterExternal(fakeFetcher{name: "zorg", match: func(u *url.URL, _ pluginapi.Capability) bool {
-		return u != nil && u.Hostname() == "example.org"
-	}})
-	ReconcileFeeds(st, reg)
-	got, _ = st.Feeds.ByID(u.ID, f.ID)
-	if got.PluginName != "zorg" {
-		t.Fatalf("feed should be re-owned after reconcile: %q", got.PluginName)
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.PluginName != "" || !got.Enabled || got.DisabledReason != "" {
+		t.Fatalf("legacy parked feed should return to the generic parser: %+v", got)
 	}
 }
 
 // newPluginStore builds an in-memory store with one user/author.
 func newPluginStore(t *testing.T) (*store.Store, store.User, store.Author) {
+	st, _, u, a := newPluginStoreWithDB(t)
+	return st, u, a
+}
+
+// newPluginStoreWithDB is newPluginStore plus the raw handle, for tests that
+// need to seed legacy rows.
+func newPluginStoreWithDB(t *testing.T) (*store.Store, *sql.DB, store.User, store.Author) {
 	t.Helper()
 	sqldb, err := db.Open(":memory:")
 	if err != nil {
@@ -536,7 +528,7 @@ func newPluginStore(t *testing.T) (*store.Store, store.User, store.Author) {
 	st := store.New(sqldb)
 	u, _ := st.Users.Create("alice", "h")
 	a, _ := st.Authors.Create(u.ID, "A", "", "")
-	return st, u, a
+	return st, sqldb, u, a
 }
 
 func TestCooldown(t *testing.T) {

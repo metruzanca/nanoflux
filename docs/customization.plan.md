@@ -74,7 +74,7 @@ is a special list. Dev via `mise`, selfhost via `make`.
 ### Admin / instance
 
 Global signup toggle (`settings` key `allow_signup`), user management, backups,
-plugins list + per-domain reset (`internal/httpapi/admin.go:100`).
+plugins list with per-plugin owned domains/URLs (`internal/httpapi/admin.go`).
 
 ### Environment (`internal/config/config.go:52`, `.env.example`)
 
@@ -119,7 +119,7 @@ backup/restore, JSON API.
 `pluginapi.Fetcher` (`Meta/Match/Discover/Fetch`), capabilities, host-mediated
 HTTP, external plugin modules (`plugins/<name>`) loaded over gRPC. The core
 compiles no site integrations in. `feeds.plugin_name`
-(schemaV31), `ReconcileFeeds` auto-disable/re-enable. `FetchRequest.Config`
+(schemaV31), `ReconcileFeeds` re-derives ownership each startup. `FetchRequest.Config`
 (`pluginapi.go:97`) is plumbed but **never populated or persisted** — a hook for
 per-feed plugin config.
 

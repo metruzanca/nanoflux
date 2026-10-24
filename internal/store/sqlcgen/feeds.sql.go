@@ -943,32 +943,15 @@ WHERE id = ?
   AND disabled_reason LIKE 'plugin not loaded:%'
 `
 
-// Auto-re-enable one feed that was disabled because its owning plugin was
-// missing. Keyed to the automatic reason so a user-paused feed (no reason) is
-// never silently resumed. The reconciler calls this for feeds it just adopted,
-// so a plugin that was renamed/replaced still resumes its feeds.
+// Legacy cleanup: auto-re-enable one feed that an older build disabled because
+// its owning plugin was missing. Ownership is now re-derived on every boot, so
+// the reconciler resumes these while never touching a user pause (no reason).
 func (q *Queries) ReenableAutoDisabledFeed(ctx context.Context, id int64) (int64, error) {
 	result, err := q.db.ExecContext(ctx, reenableAutoDisabledFeed, id)
 	if err != nil {
 		return 0, err
 	}
 	return result.RowsAffected()
-}
-
-const resetFeedPlugin = `-- name: ResetFeedPlugin :exec
-UPDATE feeds
-SET plugin_name = '',
-    disabled_reason = CASE WHEN disabled_reason LIKE 'plugin not loaded:%' THEN NULL ELSE disabled_reason END,
-    enabled = CASE WHEN disabled_reason LIKE 'plugin not loaded:%' THEN 1 ELSE enabled END
-WHERE id = ?
-`
-
-// Clear a feed's plugin owner (back to the generic parser). If the feed was
-// auto-disabled because its plugin was missing, un-park it too; a user pause
-// (enabled = 0 with no automatic reason) is preserved.
-func (q *Queries) ResetFeedPlugin(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, resetFeedPlugin, id)
-	return err
 }
 
 const setFeedCacheImages = `-- name: SetFeedCacheImages :execresult
@@ -1002,25 +985,6 @@ type SetFeedEnabledParams struct {
 
 func (q *Queries) SetFeedEnabled(ctx context.Context, arg SetFeedEnabledParams) error {
 	_, err := q.db.ExecContext(ctx, setFeedEnabled, arg.Enabled, arg.ID, arg.UserID)
-	return err
-}
-
-const setFeedEnabledForPlugin = `-- name: SetFeedEnabledForPlugin :exec
-UPDATE feeds
-SET enabled = ?, disabled_reason = ?
-WHERE id = ?
-`
-
-type SetFeedEnabledForPluginParams struct {
-	Enabled        bool           `json:"enabled"`
-	DisabledReason sql.NullString `json:"disabled_reason"`
-	ID             int64          `json:"id"`
-}
-
-// Admin/poller-internal: disable or enable a feed and record why. Not
-// user-scoped because the plugin reconciler owns it.
-func (q *Queries) SetFeedEnabledForPlugin(ctx context.Context, arg SetFeedEnabledForPluginParams) error {
-	_, err := q.db.ExecContext(ctx, setFeedEnabledForPlugin, arg.Enabled, arg.DisabledReason, arg.ID)
 	return err
 }
 

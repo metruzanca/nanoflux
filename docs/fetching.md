@@ -255,40 +255,26 @@ The plugin host and the poller share **one** cooldown instance (wired in
 plugin's auxiliary request cannot trip the same host twice in a row. The default
 spacing above is poller-only — it never blocks a plugin request.
 
-### When a plugin goes missing
+### Ownership is derived, not locked
 
-A feed served by a plugin records the owning plugin's name (`feeds.plugin_name`).
-At startup the plugin system reconciles stored feeds against the plugins that
-actually loaded:
+A feed served by a plugin records the owning plugin's name
+(`feeds.plugin_name`). That name is bookkeeping and display only: fetch routing
+always matches the feed URL against the loaded plugins. At startup the plugin
+system re-derives every stored feed's owner against the plugins that actually
+loaded:
 
-- A feed whose plugin is **loaded** is adopted (or kept), and if it had been
-  parked for a missing plugin it is **auto-re-enabled**.
-- A feed whose plugin is **not loaded** is **auto-disabled** with a reason
-  (`plugin not loaded: <name>`), so it stops retrying a URL nothing can fetch.
-  The row shows a `disabled · plugin not loaded: …` badge.
-- Re-enabling is keyed to that exact reason, so a feed the user **paused by
-  hand** is never silently resumed. A user save on the feed edit form also
-  clears any automatic reason.
-- Re-enable is keyed to the plugin the feed is **adopted by** on that boot, not
-  the stale stored name. A plugin that was renamed or replaced (its name changed
-  but it still matches the same URLs) therefore resumes its parked feeds too.
+- A feed whose URL matches a loaded plugin is adopted (or kept).
+- A feed whose URL matches no loaded plugin has its owner cleared and falls back
+  to the **generic parser**; it is not disabled. This is why there is no reset
+  button: removing, renaming, or swapping a plugin is handled on the next
+  launch.
+- A feed a previous build parked for a missing plugin
+  (`plugin not loaded: <name>`) is re-enabled once. A feed the user **paused by
+  hand** is never resumed.
 
-This means removing a plugin parks its feeds instead of leaving them failing
-forever, and restoring the plugin brings them back automatically.
-
-### Resetting a domain (escape hatch)
-
-The admin page's **plugins** card lists the domains a plugin currently owns,
-each with a **reset** button. Reset clears `plugin_name` for every feed on that
-registrable domain and re-runs the reconcile pass, so the domain is re-owned by
-whichever loaded plugin matches it now — the way to detach a domain after a
-plugin is removed, renamed, or swapped for another. Feeds parked for a missing
-plugin are re-enabled; a feed the user paused stays paused.
-
-> Routing at fetch time is by URL shape, not by `feeds.plugin_name`. If the
-> plugin is still loaded and matches the domain, a reset re-adopts it. The reset
-> truly frees a domain to the generic parser only when no loaded plugin matches
-> it (the plugin was removed, renamed, or another plugin now wins precedence).
+The admin plugins card shows, per loaded plugin, the domains and distinct feed
+URLs it currently matches. That is the debug view for ownership, including a
+plugin that matches only part of a shared domain (a URL path or query shape).
 
 ## Failures and their effects
 
