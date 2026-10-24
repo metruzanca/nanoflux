@@ -98,12 +98,14 @@ func TestCommandPaletteRendered(t *testing.T) {
 	for _, want := range []string{
 		`id="command-palette"`,
 		`id="command-input"`,
-		`id="entity-palette"`,
-		`id="entity-input"`,
+		`id="command-results"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("page missing palette markup %q", want)
 		}
+	}
+	if strings.Contains(body, `id="entity-palette"`) {
+		t.Fatal("page still renders the removed entity palette")
 	}
 }
 
