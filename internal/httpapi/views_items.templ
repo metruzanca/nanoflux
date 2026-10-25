@@ -765,11 +765,11 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 			<p class="item-tags muted small">
 				for _, c := range d.Categories {
 					if d.FeedIsSystem {
-						<span class="item-tag">#{ c }</span>
+						<span class="item-tag">#{ c }</span>{ " " }
 					} else if u := authorTagHref(d.AuthorID, c); u != "" {
-						<a class="item-tag" href={ templ.URL(u) } title={ "show items tagged " + c }>#{ c }</a>
+						<a class="item-tag" href={ templ.URL(u) } title={ "show items tagged " + c }>#{ c }</a>{ " " }
 					} else {
-						<span class="item-tag">#{ c }</span>
+						<span class="item-tag">#{ c }</span>{ " " }
 					}
 				}
 			</p>

@@ -62,6 +62,10 @@ func TestTagFilterUI(t *testing.T) {
 	if !strings.Contains(body, "#r/golang") || !strings.Contains(body, "#tutorial") {
 		t.Fatalf("item modal missing tags: %s", body)
 	}
+	// Tags are space-separated, not glued together (#a#b).
+	if !strings.Contains(body, "#r/golang</a> <a") {
+		t.Fatalf("item modal tags should be space-separated: %s", body)
+	}
 	if !strings.Contains(body, "/authors/"+itoa(a.ID)+"?tags=r%2Fgolang") {
 		t.Fatalf("item modal tag should link to the filtered author: %s", body)
 	}
