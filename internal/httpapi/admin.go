@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/log"
 
@@ -22,12 +23,42 @@ import (
 
 type adminData struct {
 	Stats       adminStats
+	Poll        adminPoll
 	Storage     adminStorage
 	AllowSignup bool
 	BannerShown bool
 	Users       []adminUserRow
 	Backup      adminBackup
 	Plugins     []adminPluginRow
+}
+
+// adminPoll is the polling health summary shown on /admin. "Behind" means a
+// feed's last poll is older than its own interval, so it is waiting even if a
+// rate-limit deadline currently keeps the poller from touching it. The per-host
+// demand/capacity ratio is the permanent-lateness signal: when a host needs more
+// fetches per day than its spacing allows, the backlog cannot drain.
+type adminPoll struct {
+	Enabled     int
+	Behind      int
+	OldestTitle string
+	OldestRef   string // stored UTC time of the oldest behind feed
+	Overloaded  int    // hosts whose demand exceeds their capacity
+	Hosts       []adminPollHost
+	Unavailable bool
+}
+
+// adminPollHost is one host's polling load. Demand and Capacity are whole
+// fetches per day; Clear is the estimated time to drain the current backlog at
+// the host's spacing.
+type adminPollHost struct {
+	Host       string
+	Feeds      int
+	Behind     int
+	Spacing    string
+	Demand     string
+	Capacity   string
+	Clear      string
+	Overloaded bool
 }
 
 // adminStorage is the object-store breakdown shown on /admin: bytes per kind
@@ -144,6 +175,7 @@ func (s *Server) adminPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	d := adminData{
 		Stats:   s.adminStats(r.Context()),
+		Poll:    s.adminPollData(),
 		Storage: s.adminStorageData(r.Context()),
 		Users:   s.adminUserRows(u.ID, u.Timezone),
 		Backup:  s.adminBackupData(u.Timezone),
@@ -224,6 +256,167 @@ func (s *Server) adminStats(ctx context.Context) adminStats {
 	st.Objects = stat.Objects
 	st.Storage = web.FormatBytes(stat.Bytes)
 	return st
+}
+
+// adminPollData assembles the polling health card from every enabled feed. It
+// uses the live poller for effective host spacing (which includes a learned
+// rate-limit window), falling back to the configured default when no poller is
+// attached (CLI or tests).
+func (s *Server) adminPollData() adminPoll {
+	rows, err := s.store.Feeds.ListAll()
+	if err != nil {
+		log.Warn("admin: poll stats", "err", err)
+		return adminPoll{Unavailable: true}
+	}
+	feeds := make([]store.Feed, 0, len(rows))
+	for _, f := range rows {
+		feeds = append(feeds, f.Feed)
+	}
+	spacingFor := func(rawURL string) time.Duration {
+		if s.poller != nil {
+			return s.poller.EffectiveSpacing(rawURL)
+		}
+		return s.cfg.PollHostSpacing
+	}
+	return buildAdminPoll(time.Now().UTC(), feeds, spacingFor)
+}
+
+// buildAdminPoll computes the per-host polling load. A feed is behind when its
+// last poll is older than its own interval; a never-polled feed is measured
+// from its creation time so a new feed is not reported as overdue immediately.
+// Demand is the sum of each enabled feed's required polls per day; capacity is
+// what the host's spacing allows. demand > capacity means the host is
+// permanently behind, not merely catching up after downtime.
+func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) time.Duration) adminPoll {
+	type hostAgg struct {
+		feeds   int
+		demand  float64
+		behind  int
+		spacing time.Duration
+	}
+	byHost := map[string]*hostAgg{}
+	var out adminPoll
+	var oldest time.Time
+	for _, f := range feeds {
+		if !f.Enabled || f.IsSystem {
+			continue
+		}
+		out.Enabled++
+		host := store.RegistrableDomain(f.FeedURL)
+		if host == "" {
+			host = f.FeedURL
+		}
+		h := byHost[host]
+		if h == nil {
+			h = &hostAgg{spacing: spacingFor(f.FeedURL)}
+			byHost[host] = h
+		}
+		h.feeds++
+		// The form enforces a 60s minimum; clamp defensively so demand cannot
+		// divide by zero or count a nonsensical interval as infinite load.
+		interval := f.PollIntervalSec
+		if interval < 60 {
+			interval = 60
+		}
+		h.demand += 86400 / float64(interval)
+
+		ref := f.LastPolledAt
+		if ref == "" {
+			ref = f.CreatedAt
+		}
+		refTime, err := db.ParseTime(ref)
+		if err != nil {
+			continue
+		}
+		if now.After(refTime.Add(time.Duration(f.PollIntervalSec) * time.Second)) {
+			h.behind++
+			out.Behind++
+			if oldest.IsZero() || refTime.Before(oldest) {
+				oldest = refTime
+				out.OldestTitle = f.Title
+				out.OldestRef = ref
+			}
+		}
+	}
+
+	for host, h := range byHost {
+		capacity := 0.0
+		if h.spacing > 0 {
+			capacity = 86400 / h.spacing.Seconds()
+		}
+		overloaded := capacity > 0 && h.demand > capacity
+		if overloaded {
+			out.Overloaded++
+		}
+		if !overloaded && h.behind == 0 {
+			continue
+		}
+		row := adminPollHost{
+			Host:       host,
+			Feeds:      h.feeds,
+			Behind:     h.behind,
+			Spacing:    formatPollSpacing(h.spacing),
+			Demand:     formatPollCount(h.demand),
+			Overloaded: overloaded,
+		}
+		if capacity > 0 {
+			row.Capacity = formatPollCount(capacity)
+		} else {
+			row.Capacity = "unlimited"
+		}
+		if h.spacing > 0 && h.behind > 0 {
+			row.Clear = formatPollClear(time.Duration(h.behind) * h.spacing)
+		}
+		out.Hosts = append(out.Hosts, row)
+	}
+
+	sort.Slice(out.Hosts, func(i, j int) bool {
+		a, b := out.Hosts[i], out.Hosts[j]
+		if a.Overloaded != b.Overloaded {
+			return a.Overloaded
+		}
+		if a.Behind != b.Behind {
+			return a.Behind > b.Behind
+		}
+		return a.Host < b.Host
+	})
+	if len(out.Hosts) > 8 {
+		out.Hosts = out.Hosts[:8]
+	}
+	return out
+}
+
+// formatPollSpacing renders a host spacing compactly.
+func formatPollSpacing(d time.Duration) string {
+	switch {
+	case d <= 0:
+		return "off"
+	case d < time.Minute:
+		return strconv.Itoa(int(d.Seconds()+0.5)) + "s"
+	case d < time.Hour:
+		return strconv.Itoa(int(d.Minutes()+0.5)) + "m"
+	default:
+		return strconv.Itoa(int(d.Hours()+0.5)) + "h"
+	}
+}
+
+// formatPollCount renders a daily request rate as a whole number.
+func formatPollCount(f float64) string {
+	return strconv.Itoa(int(f + 0.5))
+}
+
+// formatPollClear renders an estimated drain time.
+func formatPollClear(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "<1m"
+	case d < time.Hour:
+		return strconv.Itoa(int(d.Minutes()+0.5)) + "m"
+	case d < 48*time.Hour:
+		return strconv.Itoa(int(d.Hours()+0.5)) + "h"
+	default:
+		return strconv.Itoa(int(d.Hours()/24+0.5)) + "d"
+	}
 }
 
 // adminStorageData breaks the object store down by kind and cache plugin, and
