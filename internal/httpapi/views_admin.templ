@@ -16,8 +16,8 @@ templ adminPage(u store.User, d adminData) {
 	@AdminBackupCard(d.Backup)
 	<section class="card">
 		<h2>users</h2>
-		<p class="muted small">Manage accounts: reset passwords, grant or revoke the admin flag, or delete users. Deleting a user removes all of their data.</p>
-		@AdminUserList(d.Users)
+		<p class="muted small">Manage accounts: reset a password to a new random value, grant or revoke the admin flag, or delete users. Deleting a user removes all of their data.</p>
+		<div id="admin-users-list">@AdminUserList(d.Users, "")</div>
 	</section>
 }
 
@@ -49,16 +49,8 @@ templ AdminPluginsCard(rows []adminPluginRow) {
 									<span class="badge" title="can manage your subscribed feeds on the site (sync, delete)">manages feeds</span>
 								}
 							</div>
-							if r.Summary != "" || r.HasDocs {
-								<p class="plugin-summary muted small">
-									if r.Summary != "" {
-										{ r.Summary }
-									}
-									if r.HasDocs {
-										{ " " }
-										<a href="#" data-plugin={ r.Name } title="read this plugin's documentation" data-plugin-docs>read more</a>
-									}
-								</p>
+							if r.Summary != "" {
+								<p class="plugin-summary muted small">{ r.Summary }</p>
 							}
 							if r.Owned.Feeds > 0 {
 								<details class="plugin-owned">
@@ -87,9 +79,14 @@ templ AdminPluginsCard(rows []adminPluginRow) {
 								<p class="muted small">no feeds use this plugin</p>
 							}
 						</div>
-						if len(r.Settings) > 0 {
-							<button type="button" class="link plugin-settings-btn" data-open={ "plugin-settings-" + r.Name } title={ "settings for " + r.Name } aria-label={ "settings for " + r.Name }>@web.Lucide("settings")</button>
-						}
+						<div class="plugin-row-actions">
+							if r.HasDocs {
+								<button type="button" class="link plugin-docs-btn" data-plugin={ r.Name } title="read this plugin's documentation" aria-label={ "documentation for " + r.Name } data-plugin-docs>@web.Lucide("info")</button>
+							}
+							if len(r.Settings) > 0 {
+								<button type="button" class="link plugin-settings-btn" data-open={ "plugin-settings-" + r.Name } title={ "settings for " + r.Name } aria-label={ "settings for " + r.Name }>@web.Lucide("settings")</button>
+							}
+						</div>
 					</li>
 				}
 			</ul>
@@ -259,46 +256,53 @@ templ AdminStorageCard(d adminStorage) {
 	</section>
 }
 
-templ AdminUserList(rows []adminUserRow) {
-	<ul class="plain" id="admin-users-list">
-		for _, r := range rows {
-			@AdminUserRow(r)
-		}
-	</ul>
+templ AdminUserList(rows []adminUserRow, notice string) {
+	if notice != "" {
+		<div class="notice admin-users-notice" role="status">{ notice }</div>
+	}
+	<table class="admin-users">
+		<thead>
+			<tr>
+				<th>user</th>
+				<th>joined</th>
+				<th class="col-actions">actions</th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, r := range rows {
+				@AdminUserRow(r)
+			}
+		</tbody>
+	</table>
 }
 
 templ AdminUserRow(r adminUserRow) {
-	<li id={ "admin-user-" + strconv.FormatInt(r.ID, 10) }>
-		<div id={ "admin-user-" + strconv.FormatInt(r.ID, 10) + "-error" } class="error"></div>
-		<div class="row">
-			<div>
-				<strong>{ r.Username }</strong>
-				if r.IsAdmin {
-					<span class="badge">admin</span>
-				}
-				if r.IsSelf {
-					<span class="muted">you</span>
-				}
-				<div class="item-meta muted">joined { web.TimeFmt(r.Timezone, r.CreatedAt) }</div>
-			</div>
-			<div class="row-actions">
-				if !r.IsSelf {
-					<form class="row" hx-post={ "/admin/users/" + strconv.FormatInt(r.ID, 10) + "/reset-password" } hx-target="#admin-users-list" hx-swap="innerHTML">
-						<input name="password" type="password" placeholder="new password" minlength="8" required/>
-						<button type="submit" class="small">reset</button>
-					</form>
-					<button class="link" hx-post={ "/admin/users/" + strconv.FormatInt(r.ID, 10) + "/set-admin" } hx-vals={ "{\"admin\": " + strconv.FormatBool(!r.IsAdmin) + "}" } hx-target="#admin-users-list" hx-swap="innerHTML">
-						if r.IsAdmin {
-							remove admin
-						} else {
-							make admin
-						}
-					</button>
-					<button class="link danger" title="delete" hx-post={ "/admin/users/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#admin-users-list" hx-swap="innerHTML" hx-confirm={ "delete user " + r.Username + "? this removes all of their data" }>@web.Lucide("x")</button>
-				}
-			</div>
-		</div>
-	</li>
+	<tr id={ "admin-user-" + strconv.FormatInt(r.ID, 10) }>
+		<td>
+			<strong>{ r.Username }</strong>
+			if r.IsAdmin {
+				<span class="badge">admin</span>
+			}
+			if r.IsSelf {
+				<span class="muted">you</span>
+			}
+		</td>
+		<td class="muted">{ web.TimeFmt(r.Timezone, r.CreatedAt) }</td>
+		<td class="col-actions">
+			<div id={ "admin-user-" + strconv.FormatInt(r.ID, 10) + "-error" } class="error"></div>
+			if !r.IsSelf {
+				<button type="button" class="link" hx-post={ "/admin/users/" + strconv.FormatInt(r.ID, 10) + "/reset-password" } hx-target="#admin-users-list" hx-swap="innerHTML" hx-confirm={ "reset the password for " + r.Username + "? a new random password will be generated and shown once" }>reset password</button>
+				<button type="button" class="link" hx-post={ "/admin/users/" + strconv.FormatInt(r.ID, 10) + "/set-admin" } hx-vals={ "{\"admin\": " + strconv.FormatBool(!r.IsAdmin) + "}" } hx-target="#admin-users-list" hx-swap="innerHTML">
+					if r.IsAdmin {
+						remove admin
+					} else {
+						make admin
+					}
+				</button>
+				<button type="button" class="link danger" title="delete" hx-post={ "/admin/users/" + strconv.FormatInt(r.ID, 10) + "/delete" } hx-target="#admin-users-list" hx-swap="innerHTML" hx-confirm={ "delete user " + r.Username + "? this removes all of their data" }>@web.Lucide("x")</button>
+			}
+		</td>
+	</tr>
 }
 
 // forbiddenPage is rendered for non-admins hitting an admin route, so the

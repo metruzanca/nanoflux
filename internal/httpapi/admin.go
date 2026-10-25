@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"net/http"
 	"net/url"
 	"sort"
@@ -500,17 +502,24 @@ func (s *Server) adminDismissSignupBanner(w http.ResponseWriter, r *http.Request
 	web.Render(w, r, AdminInstanceCard(s.adminInstanceData(u, r.Context())))
 }
 
-// adminResetPassword sets a new password for a user and logs out all of their
-// sessions.
+// adminResetPassword sets a new random password for a user, logs out all of
+// their sessions, and shows the generated password once so the admin can pass
+// it on.
 func (s *Server) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	userID, ok := adminUserID(w, r)
 	if !ok {
 		return
 	}
-	pw := r.FormValue("password")
-	if len(pw) < 8 {
-		writeFormError(w, r, adminErrorTarget(userID), "password must be at least 8 characters")
+	target, err := s.store.Users.ByID(userID)
+	if err != nil {
+		writeFormError(w, r, adminErrorTarget(userID), "no such user")
+		return
+	}
+	pw, err := randomPassword()
+	if err != nil {
+		log.Error("admin: generate password", "err", err)
+		writeFormError(w, r, adminErrorTarget(userID), "could not reset password")
 		return
 	}
 	hash, err := auth.HashPassword(pw)
@@ -527,7 +536,17 @@ func (s *Server) adminResetPassword(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.Sessions.DeleteUserSessions(userID); err != nil {
 		log.Error("admin: revoke sessions", "user_id", userID, "err", err)
 	}
-	web.Render(w, r, AdminUserList(s.adminUserRows(u.ID, u.Timezone)))
+	notice := "new password for " + target.Username + ": " + pw + " (shown once, share it with them)"
+	web.Render(w, r, AdminUserList(s.adminUserRows(u.ID, u.Timezone), notice))
+}
+
+// randomPassword returns a URL-safe temporary password from crypto/rand.
+func randomPassword() (string, error) {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // adminSetAdmin grants or revokes the admin flag. The last remaining admin
@@ -561,7 +580,7 @@ func (s *Server) adminSetAdmin(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, adminErrorTarget(userID), "could not update admin flag")
 		return
 	}
-	web.Render(w, r, AdminUserList(s.adminUserRows(u.ID, u.Timezone)))
+	web.Render(w, r, AdminUserList(s.adminUserRows(u.ID, u.Timezone), ""))
 }
 
 // adminDeleteUser removes a user and their data, purging avatar/icon blobs
@@ -608,7 +627,7 @@ func (s *Server) adminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, adminErrorTarget(userID), "could not delete user")
 		return
 	}
-	web.Render(w, r, AdminUserList(s.adminUserRows(u.ID, u.Timezone)))
+	web.Render(w, r, AdminUserList(s.adminUserRows(u.ID, u.Timezone), ""))
 }
 
 // adminUserID parses the {id} path value, writing a 400 error fragment and

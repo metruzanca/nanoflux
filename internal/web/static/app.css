@@ -1738,6 +1738,28 @@ vaadin-multi-select-combo-box-overlay {
 #picker-layer { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
 #picker-layer .mode-menu { pointer-events: auto; }
 
+/* Admin user list: one table row per account. The actions re-render the whole
+   list in place; the notice shows a generated password exactly once. */
+.admin-users { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+.admin-users th,
+.admin-users td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.55rem 0.6rem 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.admin-users th { color: var(--muted); font-size: 0.8rem; font-weight: 600; }
+.admin-users tbody tr:last-child td { border-bottom: none; }
+.admin-users .col-actions { text-align: right; white-space: nowrap; }
+.admin-users .col-actions > button + button { margin-left: 0.6rem; }
+.admin-users .error:empty { display: none; }
+.admin-users-notice {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Admin plugin list: one row per loaded plugin, with the gear opening its
    settings modal. */
 .plugin-list { margin-top: 0.5rem; }
@@ -1760,14 +1782,17 @@ vaadin-multi-select-combo-box-overlay {
 .plugin-owned-urls { margin: 0.4rem 0 0; padding-left: 0.15rem; }
 .plugin-owned-urls li { padding: 0.15rem 0; }
 .plugin-owned-urls code { word-break: break-all; }
-.plugin-settings-btn {
+.plugin-row-actions { display: flex; align-items: center; gap: 0.15rem; flex: none; }
+.plugin-settings-btn,
+.plugin-docs-btn {
   display: inline-flex;
   align-items: center;
   padding: 0.3rem;
   color: var(--muted);
   flex: none;
 }
-.plugin-settings-btn:hover { color: var(--fg); }
+.plugin-settings-btn:hover,
+.plugin-docs-btn:hover { color: var(--fg); }
 
 /* Prose: rendered Markdown (plugin docs today, any long-form body later). The
    measure is capped so lines stay readable even in a wide dialog, and spacing

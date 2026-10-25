@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -145,32 +146,35 @@ func TestAdminResetPassword(t *testing.T) {
 	}
 
 	rr := doForm(h, "POST", "/admin/users/"+itoa(bob.ID)+"/reset-password",
-		url.Values{"password": {"newpass123"}}, adminSession(t, s, "root"))
+		url.Values{}, adminSession(t, s, "root"))
 	if rr.Code != http.StatusOK {
 		t.Fatalf("reset-password: got %d, want 200 (body %s)", rr.Code, rr.Body.String())
 	}
 	if _, err := s.store.Sessions.UserByToken(token); err == nil {
 		t.Fatal("bob's session should be revoked after password reset")
 	}
+	m := regexp.MustCompile(`new password for bob: ([A-Za-z0-9_-]+)`).FindStringSubmatch(rr.Body.String())
+	if m == nil {
+		t.Fatalf("response should show the generated password once: %s", rr.Body.String())
+	}
 	got, err := s.store.Users.ByID(bob.ID)
-	if err != nil || !auth.CheckPassword(got.PasswordHash, "newpass123") {
-		t.Fatalf("password not reset: %+v err=%v", got, err)
+	if err != nil || !auth.CheckPassword(got.PasswordHash, m[1]) {
+		t.Fatalf("generated password not stored: %+v err=%v", got, err)
 	}
 }
 
-func TestAdminResetPasswordErrors(t *testing.T) {
+func TestAdminResetPasswordInvalidUser(t *testing.T) {
 	s, h := newTestServer(t)
 	root := createUser(t, s, "root")
 	if err := s.store.Users.SetAdmin(root.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	bob := createUser(t, s, "bob")
 	cookie := adminSession(t, s, "root")
 
-	rr := doForm(h, "POST", "/admin/users/"+itoa(bob.ID)+"/reset-password",
-		url.Values{"password": {"short"}}, cookie)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "8 characters") {
-		t.Fatalf("short password: got %d %s", rr.Code, rr.Body.String())
+	rr := doForm(h, "POST", "/admin/users/999999/reset-password",
+		url.Values{}, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "no such user") {
+		t.Fatalf("unknown user: got %d %s", rr.Code, rr.Body.String())
 	}
 }
 
