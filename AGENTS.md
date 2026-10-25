@@ -295,10 +295,14 @@ Categories are also normalized for tag browsing and list filtering.
   chip and pagination links carry the filters with `listFilters.appendFilters`.
 - UI: the item modal shows its tags as clickable chips (linking to
   `/authors/{id}?tags=`); a scoped feed/author/collection list gets a filter
-  dialog with one editable row per applied tag/feed (value combo + `show`/`hide`
-  dropdown + remove), a blank row to add a filter, and active-filter chips. A
-  hidden filter's chip uses the `chip-hide` style. Author-page feed rows are
-  validated against the author before use (`authorFilters`).
+  dialog with one editable row per applied filter (`show`/`hide` action,
+  `tag`/`feed` kind, value combo) plus x (remove) and + (insert another row)
+  controls; a persistent "add filter" button keeps an empty row list
+  recoverable. Each row's kind change swaps its value options client-side
+  (`#filter-row-template`, `data-add-filter-row`, `data-filter-kind` in
+  `app.js`). Active-filter chips drop one filter; a hidden filter's chip uses
+  the `chip-hide` style. Author-page feed rows are validated against the author
+  before use (`authorFilters`).
 
 ## Feeds live on the author page
 

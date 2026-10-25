@@ -421,18 +421,30 @@ templ scopedTab(path, itemsPath, view, label, count string, active bool, sort it
 	}
 }
 
-// filterRow is one editable row in the filter modal: the kind is fixed (tag or
-// feed), the value is a combo over that kind's options, and the action picks
-// show (default) or hide.
-templ filterRow(id, kind, action, value string, options []comboItem) {
-	<div class="filter-row">
-		<input type="hidden" name="filter_kind" value={ kind }/>
-		<select name="filter_action" class="filter-action" aria-label="filter action">
+// filterRow is one editable row in the filter modal: action, kind, value, then
+// remove/add controls. tagItems/feedItems are the full option lists; the
+// visible combo carries the current kind's list.
+templ filterRow(id, kind, action, value string, tagItems, feedItems []comboItem) {
+	{{ options := tagItems }}
+	if kind == filterKindFeed {
+		{{ options = feedItems }}
+	}
+	<div class="filter-row" data-filter-row>
+		<select name="filter_action" class="filter-select filter-action" aria-label="filter action">
 			<option value={ filterShow } selected?={ action == filterShow }>show</option>
 			<option value={ filterHide } selected?={ action == filterHide }>hide</option>
 		</select>
-		@comboSelectID(id, "filter_value", value, "", filterPlaceholder(kind), options, nil)
+		<select name="filter_kind" class="filter-select filter-kind" aria-label="filter kind" data-filter-kind>
+			if len(tagItems) > 0 {
+				<option value={ filterKindTag } selected?={ kind == filterKindTag }>tag</option>
+			}
+			if len(feedItems) > 0 {
+				<option value={ filterKindFeed } selected?={ kind == filterKindFeed }>feed</option>
+			}
+		</select>
+		@comboSelectID(id+"-value", "filter_value", value, "", filterPlaceholder(kind), options, nil)
 		<button type="button" class="link danger" title="remove filter" data-remove-closest=".filter-row">@web.Lucide("x")</button>
+		<button type="button" class="link" title="add another filter" data-add-filter-row>@web.Lucide("plus")</button>
 	</div>
 }
 
@@ -479,7 +491,8 @@ templ scopedItemsInner(d scopedItemsData) {
 	} else {
 		@ItemsListPage(d.Items, d.More, d.HideAuthor, d.Mode)
 		if len(d.TagOptions) > 0 || len(d.Filters) > 0 || len(d.FeedOptions) > 0 {
-			<dialog id="tag-filter-dialog" class="modal">
+			{{ defaultKind := defaultFilterKind(d.TagOptions, d.FeedOptions) }}
+			<dialog id="tag-filter-dialog" class="modal" data-tag-items={ comboItemsJSON(d.TagOptions) } data-feed-items={ comboItemsJSON(d.FeedOptions) }>
 				<div class="row">
 					<h2>filter</h2>
 					<button type="button" class="link" title="close" data-close-dialog>@web.Lucide("x")</button>
@@ -488,17 +501,18 @@ templ scopedItemsInner(d scopedItemsData) {
 					<input type="hidden" name="view" value={ d.View }/>
 					<input type="hidden" name="sort" value={ d.Sort.param() }/>
 					<p class="muted small">show matching posts, or hide them. tag filters combine: all shown tags match, any hidden tag excludes.</p>
-					<div class="filter-rows">
+					<div class="filter-rows" id="filter-rows">
 						for i, f := range d.Filters {
-							@filterRow("filter-"+strconv.Itoa(i), f.Kind, f.Action, f.Value, d.filterOptions(f.Kind))
+							@filterRow("filter-"+strconv.Itoa(i), f.Kind, f.Action, f.Value, d.TagOptions, d.FeedOptions)
 						}
-						if len(d.TagOptions) > 0 {
-							@filterRow("filter-new-tag", filterKindTag, filterShow, "", d.TagOptions)
-						}
-						if len(d.FeedOptions) > 0 && !d.hasFilterKind(filterKindFeed) {
-							@filterRow("filter-new-feed", filterKindFeed, filterShow, "", d.FeedOptions)
+						if len(d.Filters) == 0 {
+							@filterRow("filter-empty", defaultKind, filterShow, "", d.TagOptions, d.FeedOptions)
 						}
 					</div>
+					<template id="filter-row-template">
+						@filterRow("filter-template", defaultKind, filterShow, "", d.TagOptions, d.FeedOptions)
+					</template>
+					<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 					<div class="row-actions">
 						<button type="button" class="link" data-close-dialog>cancel</button>
 						<button type="submit">apply</button>

@@ -832,12 +832,12 @@ a.chip:hover, button.chip:hover { border-color: var(--accent); color: var(--acce
 .active-tags .chip-hide:hover { border-color: var(--danger); }
 .active-tags .chip-clear { background: var(--panel); border-color: var(--border); color: var(--muted); }
 
-/* Filter modal: one editable row per applied filter. The combo takes the
-   available width; the action select and remove button stay compact. */
+/* Filter modal: one editable row per applied filter. The value combo takes the
+   available width; the action/kind selects and the x/+ buttons stay compact. */
 .filter-rows { display: flex; flex-direction: column; gap: 0.5rem; }
 .filter-row { display: flex; align-items: center; gap: 0.5rem; }
 .filter-row .combo-field { flex: 1; min-width: 0; }
-.filter-row .filter-action {
+.filter-row .filter-select {
   flex: 0 0 auto;
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--border);
@@ -846,6 +846,7 @@ a.chip:hover, button.chip:hover { border-color: var(--accent); color: var(--acce
   color: var(--fg);
   font: inherit;
 }
+.filter-row > .link { flex: 0 0 auto; }
 
 /* Collapsible "all tags seen in this feed" list in the feed filter card. */
 .tag-cloud { margin: 0.75rem 0 0; }

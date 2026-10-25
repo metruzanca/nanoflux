@@ -114,6 +114,9 @@ func TestAuthorFilterShowHide(t *testing.T) {
 	if !strings.Contains(body, `<option value="hide" selected>hide</option>`) {
 		t.Fatalf("modal should select the hide action: %s", body)
 	}
+	if !strings.Contains(body, `id="filter-row-template"`) || !strings.Contains(body, `data-add-filter-row`) {
+		t.Fatalf("modal should render an add-row template and controls: %s", body)
+	}
 
 	// A show tag and a hide tag combine: must have the show tag and not the
 	// hide tag.
@@ -127,8 +130,8 @@ func TestAuthorFilterShowHide(t *testing.T) {
 	if !strings.Contains(body, "Go post") || !strings.Contains(body, "Rust post") || strings.Contains(body, "Note post") {
 		t.Fatalf("hidden feed should exclude its posts: %s", body)
 	}
-	if !strings.Contains(body, `name="filter_kind" value="feed"`) {
-		t.Fatalf("modal should render a feed filter row: %s", body)
+	if !strings.Contains(body, `data-filter-kind`) || !strings.Contains(body, `<option value="feed" selected>feed</option>`) {
+		t.Fatalf("modal should render a feed kind select: %s", body)
 	}
 
 	// Mark-all honors a hidden feed: only the visible feed's unread is marked.
