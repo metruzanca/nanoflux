@@ -1537,3 +1537,51 @@ func TestIngestCachesImages(t *testing.T) {
 		t.Fatalf("cacher called %d times for a feed with caching off", fc.calls)
 	}
 }
+
+// TestNextWakeDelay covers the sleep calculation. A deadline that has already
+// slipped must retry at the minWake floor, not sleep the whole base interval:
+// otherwise a paced host (whose deadline was another host's spacing window) is
+// revisited only once per base tick and its feeds starve for days.
+func TestNextWakeDelay(t *testing.T) {
+	now := time.Date(2026, 10, 25, 6, 0, 0, 0, time.UTC)
+	const interval = 15 * time.Minute
+	cases := []struct {
+		name string
+		wake time.Time
+		want time.Duration
+	}{
+		{"no deadline sleeps base interval", time.Time{}, interval},
+		{"deadline just passed retries at floor", now.Add(-time.Second), minWake},
+		{"deadline exactly now retries at floor", now, minWake},
+		{"near deadline floors at minWake", now.Add(10 * time.Second), minWake},
+		{"future spacing deadline wins", now.Add(60 * time.Second), time.Minute},
+		{"deadline beyond interval is capped", now.Add(time.Hour), interval},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := nextWakeDelay(c.wake, now, interval); got != c.want {
+				t.Fatalf("nextWakeDelay = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// TestEffectiveSpacing exposes what the admin polling card relies on: the
+// configured default until a rate-limit window is learned, then the larger
+// window for the same registrable host.
+func TestEffectiveSpacing(t *testing.T) {
+	p := New(newPollerStore(t), time.Minute, 1)
+	p.SetHostSpacing(45 * time.Second)
+
+	raw := "https://www.reddit.com/r/cats.rss"
+	if got := p.EffectiveSpacing(raw); got != 45*time.Second {
+		t.Fatalf("default EffectiveSpacing = %v, want 45s", got)
+	}
+	p.learnWindow(store.RegistrableDomain(raw), 5*time.Minute)
+	if got := p.EffectiveSpacing(raw); got != 5*time.Minute {
+		t.Fatalf("learned EffectiveSpacing = %v, want 5m", got)
+	}
+	if got := p.EffectiveSpacing("not a url"); got != 0 {
+		t.Fatalf("unparseable URL EffectiveSpacing = %v, want 0", got)
+	}
+}
