@@ -836,8 +836,8 @@ a.item-tag:hover { color: var(--accent); }
 /* Filter modal: one editable row per applied filter. The value combo takes the
    available width; the action/kind selects and the x/+ buttons stay compact. */
 .filter-rows { display: flex; flex-direction: column; gap: 0.5rem; }
-.filter-row { display: flex; align-items: center; gap: 0.5rem; }
-.filter-row .combo-field { flex: 1; min-width: 0; }
+.filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.filter-row .combo-field { flex: 1 1 12rem; min-width: 0; }
 .filter-row .filter-select {
   flex: 0 0 auto;
   padding: 0.45rem 0.6rem;

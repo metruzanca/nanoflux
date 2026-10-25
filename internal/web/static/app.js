@@ -417,8 +417,8 @@ function addAuthorLinkRow() {
   list.appendChild(tpl.content.firstElementChild.cloneNode(true));
 }
 
-// Author-level filter modal: clone a blank row and keep a row's value combo in
-// sync with its tag/feed kind select.
+// Author-level filter modal: clone a blank row, give it a unique row token, and
+// keep its multi-select values in sync with the tag/feed kind.
 var filterRowSeq = 0;
 function addFilterRow(after) {
   var tpl = document.getElementById('filter-row-template');
@@ -426,8 +426,18 @@ function addFilterRow(after) {
   if (!tpl || !list) return null;
   var row = tpl.content.firstElementChild.cloneNode(true);
   filterRowSeq += 1;
-  var combo = row.querySelector('vaadin-combo-box');
-  if (combo) combo.id = 'filter-add-' + filterRowSeq + '-value';
+  var token = 'add' + filterRowSeq;
+  var tokenInput = row.querySelector('input[name="filter_row"]');
+  if (tokenInput) tokenInput.value = token;
+  var combo = row.querySelector('vaadin-multi-select-combo-box');
+  if (combo) combo.id = 'filter-' + token + '-value';
+  var mirrors = row.querySelector('[data-vaadin-mirrors]');
+  if (mirrors) {
+    mirrors.dataset.vaadinName = 'filter_value_' + token;
+    mirrors.querySelectorAll('input').forEach(function (input) {
+      input.name = 'filter_value_' + token;
+    });
+  }
   if (after && after.parentNode === list) after.after(row);
   else list.appendChild(row);
   if (window.nanofluxReinitVaadin) window.nanofluxReinitVaadin(row);
@@ -436,16 +446,16 @@ function addFilterRow(after) {
 function syncFilterRowKind(row) {
   if (!row) return;
   var kind = row.querySelector('[data-filter-kind]');
-  var combo = row.querySelector('vaadin-combo-box');
-  var mirror = row.querySelector('input[name="filter_value"]');
+  var combo = row.querySelector('vaadin-multi-select-combo-box');
+  var mirrors = row.querySelector('[data-vaadin-mirrors]');
   var dialog = row.closest('dialog');
   if (!kind || !combo || !dialog) return;
   var raw = kind.value === 'feed' ? dialog.dataset.feedItems : dialog.dataset.tagItems;
   var items = [];
   try { items = JSON.parse(raw || '[]'); } catch (e) { items = []; }
   combo.items = items;
-  combo.value = '';
-  if (mirror) mirror.value = '';
+  combo.selectedItems = [];
+  if (mirrors) mirrors.textContent = '';
   combo.setAttribute('placeholder', kind.value === 'feed' ? 'feed' : 'tag');
 }
 

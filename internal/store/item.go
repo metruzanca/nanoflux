@@ -142,6 +142,21 @@ type ItemSource struct {
 	Link       string
 }
 
+// TagGroup is one tag predicate from a filter row: its tags are combined with
+// AND (All) or OR (!All), and Exclude hides items that satisfy the predicate.
+type TagGroup struct {
+	Tags    []string
+	All     bool
+	Exclude bool
+}
+
+// FeedGroup is one feed predicate from a filter row, shaped like TagGroup.
+type FeedGroup struct {
+	FeedIDs []int64
+	All     bool
+	Exclude bool
+}
+
 type ItemFilter struct {
 	UnreadOnly    bool
 	ReadOnly      bool
@@ -166,7 +181,12 @@ type ItemFilter struct {
 	ExcludeTags []string
 	// ExcludeFeedID hides items seen through that feed. 0 means no exclusion.
 	ExcludeFeedID int64
-	Limit         int
+	// TagGroups/FeedGroups are per-row predicates with their own any/all and
+	// include/exclude semantics. The flat Tags/ExcludeTags fields remain for
+	// callers that only need the simple forms.
+	TagGroups  []TagGroup
+	FeedGroups []FeedGroup
+	Limit      int
 }
 
 type ItemStore struct {
@@ -362,7 +382,8 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	// generated queries (fixed placeholders) cannot express, so any active tag
 	// filter or negative filter uses the hand-written dynamic query. sqlc owns
 	// the rest of the list paths.
-	if len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 {
+	if len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 ||
+		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 {
 		return s.listPageTagged(userID, f, limit)
 	}
 	if f.Magic {
@@ -685,6 +706,8 @@ func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]Ite
 		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_feeds mfx WHERE mfx.item_id = i.id AND mfx.feed_id = ?)")
 		args = append(args, f.ExcludeFeedID)
 	}
+	appendTagGroups(&b, &args, "i.id", f.TagGroups)
+	appendFeedGroups(&b, &args, "i.id", f.FeedGroups)
 	switch {
 	case f.Magic:
 		b.WriteString(" ORDER BY CASE WHEN f.rank > 0 THEN 0 WHEN f.rank < 0 THEN 2 ELSE 1 END ASC, COALESCE(fc.fav_count, 0) DESC, COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ? OFFSET ?")
@@ -1511,7 +1534,56 @@ func unreadFilteredQuery(userID int64, f ItemFilter, mark bool) (string, []any) 
 		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_feeds mfx WHERE mfx.item_id = items.id AND mfx.feed_id = ?)")
 		args = append(args, f.ExcludeFeedID)
 	}
+	appendTagGroups(&b, &args, "items.id", f.TagGroups)
+	appendFeedGroups(&b, &args, "items.id", f.FeedGroups)
 	return b.String(), args
+}
+
+// appendTagGroups adds one predicate per tag group. itemID is the qualified
+// items.id column for the query being built.
+func appendTagGroups(b *strings.Builder, args *[]any, itemID string, groups []TagGroup) {
+	for _, g := range groups {
+		terms := make([]string, 0, len(g.Tags))
+		for _, tag := range g.Tags {
+			terms = append(terms, "EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = "+itemID+" AND ic.category = ?)")
+			*args = append(*args, tag)
+		}
+		appendGroupPredicate(b, terms, g.All, g.Exclude)
+	}
+}
+
+// appendFeedGroups adds one predicate per feed group.
+func appendFeedGroups(b *strings.Builder, args *[]any, itemID string, groups []FeedGroup) {
+	for _, g := range groups {
+		terms := make([]string, 0, len(g.FeedIDs))
+		for _, feedID := range g.FeedIDs {
+			terms = append(terms, "EXISTS (SELECT 1 FROM item_feeds mfg WHERE mfg.item_id = "+itemID+" AND mfg.feed_id = ?)")
+			*args = append(*args, feedID)
+		}
+		appendGroupPredicate(b, terms, g.All, g.Exclude)
+	}
+}
+
+// appendGroupPredicate joins a group's terms with AND/OR and negates the whole
+// predicate for a hide group.
+func appendGroupPredicate(b *strings.Builder, terms []string, all, exclude bool) {
+	if len(terms) == 0 {
+		return
+	}
+	joiner := " OR "
+	if all {
+		joiner = " AND "
+	}
+	inner := strings.Join(terms, joiner)
+	if exclude {
+		b.WriteString(" AND NOT (")
+		b.WriteString(inner)
+		b.WriteString(")")
+		return
+	}
+	b.WriteString(" AND (")
+	b.WriteString(inner)
+	b.WriteString(")")
 }
 
 // MarkAuthorRead marks every item read across all of an author's feeds.

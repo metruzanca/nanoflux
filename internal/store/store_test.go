@@ -567,6 +567,45 @@ func TestItemTagFiltering(t *testing.T) {
 		t.Fatalf("exclude feed = %+v, want [d]", hidden)
 	}
 
+	// Per-row groups: any/all include and exclude.
+	groupList := func(f ItemFilter) []string {
+		t.Helper()
+		f.Limit = 10
+		items, _, err := s.Items.ListPage(u.ID, f)
+		if err != nil {
+			t.Fatalf("ListPage groups: %v", err)
+		}
+		out := make([]string, 0, len(items))
+		for _, it := range items {
+			out = append(out, it.GUID)
+		}
+		return out
+	}
+	anyShow := groupList(ItemFilter{FeedID: f.ID, TagGroups: []TagGroup{{Tags: []string{"r/golang", "r/rust"}}}})
+	if len(anyShow) != 3 {
+		t.Fatalf("tag any show = %v, want 3", anyShow)
+	}
+	allShow := groupList(ItemFilter{FeedID: f.ID, TagGroups: []TagGroup{{Tags: []string{"r/golang", "tutorial"}, All: true}}})
+	if len(allShow) != 1 || allShow[0] != "a" {
+		t.Fatalf("tag all show = %v, want [a]", allShow)
+	}
+	anyHide := groupList(ItemFilter{FeedID: f.ID, TagGroups: []TagGroup{{Tags: []string{"r/golang"}, Exclude: true}}})
+	if len(anyHide) != 1 || anyHide[0] != "c" {
+		t.Fatalf("tag any hide = %v, want [c]", anyHide)
+	}
+	allHide := groupList(ItemFilter{FeedID: f.ID, TagGroups: []TagGroup{{Tags: []string{"r/golang", "tutorial"}, All: true, Exclude: true}}})
+	if len(allHide) != 2 {
+		t.Fatalf("tag all hide = %v, want 2", allHide)
+	}
+	feedAnyShow := groupList(ItemFilter{AuthorID: a.ID, FeedGroups: []FeedGroup{{FeedIDs: []int64{f.ID, f2.ID}}}})
+	if len(feedAnyShow) != 4 {
+		t.Fatalf("feed any show = %v, want 4", feedAnyShow)
+	}
+	feedAnyHide := groupList(ItemFilter{AuthorID: a.ID, FeedGroups: []FeedGroup{{FeedIDs: []int64{f.ID}, Exclude: true}}})
+	if len(feedAnyHide) != 1 || feedAnyHide[0] != "d" {
+		t.Fatalf("feed any hide = %v, want [d]", feedAnyHide)
+	}
+
 	// The backfill repopulates from items.categories when the rows are missing.
 	if _, err := s.db.Exec(`DELETE FROM item_categories`); err != nil {
 		t.Fatalf("clear categories: %v", err)

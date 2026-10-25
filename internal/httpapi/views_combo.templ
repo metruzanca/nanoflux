@@ -83,6 +83,24 @@ templ comboMulti(name, label string, values []string, items []comboItem) {
 	</div>
 }
 
+// comboMultiID is comboMulti with an explicit element id and mirror name, for
+// repeated rows that need unique ids but per-row field names (the filter modal).
+templ comboMultiID(id, name, label string, values []string, items []comboItem) {
+	<div class="combo-field">
+		if label != "" {
+			<label for={ id }>{ label }</label>
+		}
+		<div class="combo" data-vaadin="multi">
+			<vaadin-multi-select-combo-box id={ id } auto-expand-horizontally auto-expand-vertically placeholder="—" items={ comboItemsJSON(items) } selected-items={ comboSelectionJSON(items, values) }></vaadin-multi-select-combo-box>
+			<div data-vaadin-mirrors data-vaadin-name={ name }>
+				for _, v := range values {
+					<input type="hidden" name={ name } value={ v }/>
+				}
+			</div>
+		</div>
+	</div>
+}
+
 // comboChips is a display-only multi-select used where the current members are
 // shown and removed individually (the collection edit feed list). removeURL is
 // the per-item endpoint prefix; the client appends the removed value's id. When

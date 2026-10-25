@@ -67,9 +67,9 @@ func TestTagFilterUI(t *testing.T) {
 	}
 }
 
-// TestAuthorFilterShowHide covers negative author-level filters: a hidden tag
-// excludes matching posts, a hidden feed excludes that feed, show and hide
-// coexist, and the modal renders applied filters as editable rows.
+// TestAuthorFilterShowHide covers negative and grouped author-level filters:
+// hidden tags/feeds, per-row any/all, cross-row AND/OR behavior, single-feed
+// simplification, and the modal's editable multi-value rows.
 func TestAuthorFilterShowHide(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
@@ -89,6 +89,7 @@ func TestAuthorFilterShowHide(t *testing.T) {
 	upsert(f1.ID, "go", "Go post", "r/golang", "tutorial")
 	upsert(f1.ID, "rust", "Rust post", "r/rust")
 	upsert(f2.ID, "note", "Note post", "r/rust")
+	upsert(f2.ID, "linux", "Linux post", "r/rust", "linux")
 
 	authorURL := "/authors/" + itoa(a.ID)
 	filterURL := func(raw ...string) string {
@@ -98,17 +99,32 @@ func TestAuthorFilterShowHide(t *testing.T) {
 		}
 		return authorURL + "?" + q.Encode()
 	}
+	show := func(body string, titles ...string) {
+		t.Helper()
+		for _, title := range titles {
+			if !strings.Contains(body, title) {
+				t.Fatalf("expected %q in body: %s", title, body)
+			}
+		}
+	}
+	hide := func(body string, titles ...string) {
+		t.Helper()
+		for _, title := range titles {
+			if strings.Contains(body, title) {
+				t.Fatalf("did not expect %q in body: %s", title, body)
+			}
+		}
+	}
 
 	// Hide a tag: matching posts vanish, others stay.
 	body := doGet(h, filterURL("tag:hide:r/rust"), cookie).Body.String()
-	if !strings.Contains(body, "Go post") || strings.Contains(body, "Rust post") || strings.Contains(body, "Note post") {
-		t.Fatalf("hidden tag should exclude both r/rust posts: %s", body)
-	}
+	show(body, "Go post")
+	hide(body, "Rust post", "Note post", "Linux post")
 	if !strings.Contains(body, `chip chip-hide`) {
 		t.Fatalf("hidden filter should render a hide chip: %s", body)
 	}
 	// The modal lists the applied filter with its inputs.
-	if !strings.Contains(body, `name="filter_value" value="r/rust"`) {
+	if !strings.Contains(body, `name="filter_value_0" value="r/rust"`) {
 		t.Fatalf("modal should prefill the hidden tag value: %s", body)
 	}
 	if !strings.Contains(body, `<option value="hide" selected>hide</option>`) {
@@ -117,32 +133,68 @@ func TestAuthorFilterShowHide(t *testing.T) {
 	if !strings.Contains(body, `id="filter-row-template"`) || !strings.Contains(body, `data-add-filter-row`) {
 		t.Fatalf("modal should render an add-row template and controls: %s", body)
 	}
-
-	// A show tag and a hide tag combine: must have the show tag and not the
-	// hide tag.
-	body = doGet(h, filterURL("tag:show:r/golang", "tag:hide:tutorial"), cookie).Body.String()
-	if strings.Contains(body, "Go post") || strings.Contains(body, "Rust post") || strings.Contains(body, "Note post") {
-		t.Fatalf("show+hide tags should keep no post: %s", body)
+	if !strings.Contains(body, `name="filter_combine"`) {
+		t.Fatalf("modal should render a combine select: %s", body)
 	}
 
-	// Hide a feed: only the other feed's posts remain.
-	body = doGet(h, filterURL("feed:hide:"+itoa(f2.ID)), cookie).Body.String()
-	if !strings.Contains(body, "Go post") || !strings.Contains(body, "Rust post") || strings.Contains(body, "Note post") {
-		t.Fatalf("hidden feed should exclude its posts: %s", body)
-	}
+	// any: show the union of two tags.
+	tagAny := `tag:show:any:["r/golang","linux"]`
+	body = doGet(h, filterURL(tagAny), cookie).Body.String()
+	show(body, "Go post", "Linux post")
+	hide(body, "Rust post", "Note post")
+
+	// all: require both tags.
+	body = doGet(h, filterURL(`tag:show:all:["r/golang","tutorial"]`), cookie).Body.String()
+	show(body, "Go post")
+	hide(body, "Rust post", "Note post", "Linux post")
+
+	// Multiple show rows still AND together.
+	body = doGet(h, filterURL(tagAny, `tag:show:all:["tutorial"]`), cookie).Body.String()
+	show(body, "Go post")
+	hide(body, "Rust post", "Note post", "Linux post")
+
+	// Hide any: exclude posts with either tag.
+	body = doGet(h, filterURL(`tag:hide:any:["tutorial","linux"]`), cookie).Body.String()
+	show(body, "Rust post", "Note post")
+	hide(body, "Go post", "Linux post")
+
+	// Hide all: exclude only posts carrying every tag.
+	body = doGet(h, filterURL(`tag:hide:all:["r/rust","linux"]`), cookie).Body.String()
+	show(body, "Go post", "Rust post", "Note post")
+	hide(body, "Linux post")
+
+	// A multi-value feed row works, and the kind select is available with 2
+	// feeds.
+	body = doGet(h, filterURL(`feed:hide:any:["`+itoa(f1.ID)+`"]`), cookie).Body.String()
+	show(body, "Note post", "Linux post")
+	hide(body, "Go post", "Rust post")
 	if !strings.Contains(body, `data-filter-kind`) || !strings.Contains(body, `<option value="feed" selected>feed</option>`) {
 		t.Fatalf("modal should render a feed kind select: %s", body)
 	}
 
 	// Mark-all honors a hidden feed: only the visible feed's unread is marked.
-	if rr := doForm(h, "POST", authorURL+"/read-all?"+url.Values{"f": {"feed:hide:" + itoa(f2.ID)}}.Encode(), nil, cookie); rr.Code != http.StatusNoContent {
+	if rr := doForm(h, "POST", authorURL+"/read-all?"+url.Values{"f": {`feed:hide:any:["` + itoa(f1.ID) + `"]`}}.Encode(), nil, cookie); rr.Code != http.StatusNoContent {
 		t.Fatalf("hide-filtered read-all: %d %s", rr.Code, rr.Body.String())
 	}
-	if n, _ := s.store.Items.CountUnread(u.ID, f1.ID); n != 0 {
+	if n, _ := s.store.Items.CountUnread(u.ID, f1.ID); n != 2 {
+		t.Fatalf("hidden feed unread = %d, want 2 (untouched)", n)
+	}
+	if n, _ := s.store.Items.CountUnread(u.ID, f2.ID); n != 0 {
 		t.Fatalf("visible feed unread = %d, want 0", n)
 	}
-	if n, _ := s.store.Items.CountUnread(u.ID, f2.ID); n != 1 {
-		t.Fatalf("hidden feed unread = %d, want 1 (untouched)", n)
+
+	// With one feed, the feed kind is not offered and a redundant feed filter
+	// is dropped; the hidden kind defaults to tag.
+	one, _ := s.store.Authors.Create(u.ID, "Solo", "", "")
+	only, _ := s.store.Feeds.Create(u.ID, one.ID, "Solo feed", "https://solo.dev/rss.xml", "", "", 900)
+	upsert(only.ID, "solo", "Solo post", "r/solo")
+	oneURL := "/authors/" + itoa(one.ID)
+	body = doGet(h, oneURL+"?f="+url.QueryEscape("feed:show:"+itoa(only.ID)), cookie).Body.String()
+	if strings.Contains(body, `data-filter-kind`) {
+		t.Fatalf("single-feed author should not render a kind select: %s", body)
+	}
+	if strings.Contains(body, `feed:show:`) || !strings.Contains(body, `name="filter_kind" value="tag"`) {
+		t.Fatalf("single-feed feed filter should be dropped and kind default to tag: %s", body)
 	}
 }
 
@@ -153,32 +205,43 @@ func TestFiltersFromValues(t *testing.T) {
 		want listFilters
 	}{
 		{
-			name: "canonical",
+			name: "canonical single",
 			vals: url.Values{"f": {"tag:show:r/golang", "tag:hide:r/rust", "feed:hide:12"}},
 			want: listFilters{
-				{Kind: filterKindTag, Action: filterShow, Value: "r/golang", Label: "r/golang"},
-				{Kind: filterKindTag, Action: filterHide, Value: "r/rust", Label: "r/rust"},
-				{Kind: filterKindFeed, Action: filterHide, Value: "12"},
+				{Kind: filterKindTag, Action: filterShow, Combine: filterAll, Values: []string{"r/golang"}, Labels: []string{"r/golang"}},
+				{Kind: filterKindTag, Action: filterHide, Combine: filterAll, Values: []string{"r/rust"}, Labels: []string{"r/rust"}},
+				{Kind: filterKindFeed, Action: filterHide, Combine: filterAll, Values: []string{"12"}},
+			},
+		},
+		{
+			name: "canonical multi",
+			vals: url.Values{"f": {`tag:show:any:["r/golang","r/rust"]`}},
+			want: listFilters{
+				{Kind: filterKindTag, Action: filterShow, Combine: filterAny, Values: []string{"r/golang", "r/rust"}, Labels: []string{"r/golang", "r/rust"}},
 			},
 		},
 		{
 			name: "legacy",
 			vals: url.Values{"tags": {"r/golang"}, "feed": {"7"}},
 			want: listFilters{
-				{Kind: filterKindTag, Action: filterShow, Value: "r/golang", Label: "r/golang"},
-				{Kind: filterKindFeed, Action: filterShow, Value: "7"},
+				{Kind: filterKindTag, Action: filterShow, Combine: filterAll, Values: []string{"r/golang"}, Labels: []string{"r/golang"}},
+				{Kind: filterKindFeed, Action: filterShow, Combine: filterAll, Values: []string{"7"}},
 			},
 		},
 		{
 			name: "form rows",
 			vals: url.Values{
-				"filter_kind":   {"tag", "tag", "feed"},
-				"filter_action": {"show", "hide", "hide"},
-				"filter_value":  {"r/golang", "", "9"},
+				"filter_row":     {"0", "1", "2"},
+				"filter_kind":    {"tag", "feed", "tag"},
+				"filter_action":  {"show", "hide", "show"},
+				"filter_combine": {"any", "all", "all"},
+				"filter_value_0": {"r/golang", "r/rust"},
+				"filter_value_1": {"9"},
+				"filter_value_2": {""},
 			},
 			want: listFilters{
-				{Kind: filterKindTag, Action: filterShow, Value: "r/golang", Label: "r/golang"},
-				{Kind: filterKindFeed, Action: filterHide, Value: "9"},
+				{Kind: filterKindTag, Action: filterShow, Combine: filterAny, Values: []string{"r/golang", "r/rust"}, Labels: []string{"r/golang", "r/rust"}},
+				{Kind: filterKindFeed, Action: filterHide, Combine: filterAll, Values: []string{"9"}},
 			},
 		},
 	}
@@ -189,7 +252,10 @@ func TestFiltersFromValues(t *testing.T) {
 				t.Fatalf("got %+v, want %+v", got, c.want)
 			}
 			for i := range got {
-				if got[i] != c.want[i] {
+				if got[i].Kind != c.want[i].Kind || got[i].Action != c.want[i].Action ||
+					got[i].Combine != c.want[i].Combine ||
+					strings.Join(got[i].Values, "|") != strings.Join(c.want[i].Values, "|") ||
+					strings.Join(got[i].Labels, "|") != strings.Join(c.want[i].Labels, "|") {
 					t.Fatalf("filter %d = %+v, want %+v", i, got[i], c.want[i])
 				}
 			}
