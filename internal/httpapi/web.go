@@ -1640,7 +1640,13 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 	// a no-op rather than another 429.
 	newItems := 0
 	if (!cooling(f.NextPollAt) || f.NextPollScheduled) && s.poller != nil {
-		if n, err := s.poller.PollOne(r.Context(), f); err != nil {
+		// A manual refresh is a user action, not a page render: do not tie the
+		// fetch to the request context. Navigating away or htmx aborting the
+		// request would otherwise cancel an in-flight plugin login/fetch and
+		// record a bogus "context canceled" poll error on the feed.
+		pollCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+		defer cancel()
+		if n, err := s.poller.PollOne(pollCtx, f); err != nil {
 			log.Error("refresh feed", "feed_id", id, "err", err)
 		} else {
 			newItems = n
