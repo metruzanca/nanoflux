@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -248,6 +249,45 @@ func TestFeedRefreshUpdatesRow(t *testing.T) {
 	}
 	if strings.Contains(out, "hx-swap-oob") {
 		t.Fatalf("feed refresh should render just the row, no OOB swap: %s", out)
+	}
+}
+
+// TestFeedRefreshOutlivesCanceledRequest asserts a manual refresh is not tied
+// to the browser request. A client that navigates away cancels r.Context;
+// that must not cancel the plugin fetch and leave a bogus "context canceled"
+// poll error on the feed.
+func TestFeedRefreshOutlivesCanceledRequest(t *testing.T) {
+	s, h := newTestServer(t)
+	s.SetPoller(poller.New(s.store, time.Minute, 1))
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<?xml version="1.0"?><rss version="2.0"><channel><title>Blog</title><item><guid>g1</guid><title>Fresh one</title><link>https://b.dev/1</link></item></channel></rss>`)
+	}))
+	defer srv.Close()
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest("POST", "/feeds/"+itoa(f.ID)+"/refresh", strings.NewReader(""))
+	req = req.WithContext(ctx)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	req.Header.Set("X-CSRF-Token", csrfToken(cookie.Value))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("refresh: %d %s", rr.Code, rr.Body.String())
+	}
+	got, _ := s.store.Feeds.ByID(u.ID, f.ID)
+	if got.LastError != "" {
+		t.Fatalf("a canceled browser request must not poison the poll: %q", got.LastError)
+	}
+	unread, _ := s.store.Items.CountUnread(u.ID, f.ID)
+	if unread != 1 {
+		t.Fatalf("refresh should have fetched the item, unread = %d", unread)
 	}
 }
 
