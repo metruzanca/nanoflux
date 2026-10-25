@@ -755,24 +755,17 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 			· <a href={ templ.URL(d.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">open live</a>
 		</p>
 		if len(d.Categories) > 0 {
-			<div class="item-tags">
-				<span class="muted small">tags</span>
-				<div class="chips">
+			<p class="item-tags muted small">
+				for _, c := range d.Categories {
 					if d.FeedIsSystem {
-						for _, c := range d.Categories {
-							<span class="chip">{ c }</span>
-						}
+						<span class="item-tag">#{ c }</span>
+					} else if u := authorTagHref(d.AuthorID, c); u != "" {
+						<a class="item-tag" href={ templ.URL(u) } title={ "show items tagged " + c }>#{ c }</a>
 					} else {
-						for _, c := range d.Categories {
-							if u := authorTagHref(d.AuthorID, c); u != "" {
-								<a class="chip" href={ templ.URL(u) } title={ "show items tagged " + c }>{ c }</a>
-							} else {
-								<span class="chip">{ c }</span>
-							}
-						}
+						<span class="item-tag">#{ c }</span>
 					}
-				</div>
-			</div>
+				}
+			</p>
 		}
 		@itemContent(d, v)
 	</div>

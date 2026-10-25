@@ -53,17 +53,17 @@ func TestTagFilterUI(t *testing.T) {
 		t.Fatalf("filter dialog should offer r/rust: %s", body)
 	}
 
-	// Item modal: a tags section with a chip linking to the author filtered by
-	// tag. This runs last because opening the modal marks the item read.
+	// Item modal: a compact #tag list, each tag linking to the author filtered
+	// by tag. This runs last because opening the modal marks the item read.
 	body = doGet(h, "/items/"+itoa(golangID)+"/view", cookie).Body.String()
-	if !strings.Contains(body, `class="item-tags"`) {
+	if !strings.Contains(body, `class="item-tags`) {
 		t.Fatalf("item modal missing tags section: %s", body)
 	}
-	if !strings.Contains(body, "r/golang") || !strings.Contains(body, "tutorial") {
-		t.Fatalf("item modal missing tag chips: %s", body)
+	if !strings.Contains(body, "#r/golang") || !strings.Contains(body, "#tutorial") {
+		t.Fatalf("item modal missing tags: %s", body)
 	}
 	if !strings.Contains(body, "/authors/"+itoa(a.ID)+"?tags=r%2Fgolang") {
-		t.Fatalf("item modal tag chip should link to the filtered author: %s", body)
+		t.Fatalf("item modal tag should link to the filtered author: %s", body)
 	}
 }
 
