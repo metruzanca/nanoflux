@@ -113,6 +113,19 @@ func New(st *store.Store, interval time.Duration, workers int) *Poller {
 // learned rate-limit window still overrides it when larger. Zero disables it.
 func (p *Poller) SetHostSpacing(d time.Duration) { p.hostSpacing = d }
 
+// EffectiveSpacing returns the spacing the poller currently enforces before the
+// next request to rawURL's registrable host: its learned rate-limit window when
+// that is larger than the configured default. Zero means no spacing (the host
+// is never deliberately delayed). It is the read-only view used by the admin
+// polling health card to estimate whether a host can keep up with its feeds.
+func (p *Poller) EffectiveSpacing(rawURL string) time.Duration {
+	host := store.RegistrableDomain(rawURL)
+	if host == "" {
+		return 0
+	}
+	return p.effectiveSpacing(host)
+}
+
 // SetHostCooler shares a rate-limit cooldown with the poller, so a limit seen
 // by a plugin (or by the poller) paces both. A nil cooler is ignored.
 func (p *Poller) SetHostCooler(c hostCooler) {
@@ -135,6 +148,29 @@ func (p *Poller) SetImageCache(c itemImageCacher) { p.imgCache = c }
 // the same transport and timeout policy.
 func (p *Poller) Client() *http.Client { return p.client }
 
+// nextWakeDelay returns how long Run should sleep before the next poll pass.
+// A zero wake means no planned deadline, so it sleeps the base interval. A
+// non-zero wake already at or before now means the deadline slipped while the
+// cycle was running (typically another host's spacing window): it retries at
+// minWake rather than sleeping the whole base interval, which would otherwise
+// collapse a paced host's rotation to one feed per base tick.
+func nextWakeDelay(wake, now time.Time, interval time.Duration) time.Duration {
+	if wake.IsZero() {
+		return interval
+	}
+	delay := wake.Sub(now)
+	if delay <= 0 {
+		delay = minWake
+	}
+	if delay > interval {
+		delay = interval
+	}
+	if delay < minWake {
+		delay = minWake
+	}
+	return delay
+}
+
 // Run polls due feeds, then wakes at the earliest of the base interval, the
 // next moment a paced host becomes hittable, or the soonest planned deadline
 // (scheduled fetch or rate-limit retry), whichever is sooner (floored at
@@ -147,17 +183,16 @@ func (p *Poller) Run(ctx context.Context) {
 		if err != nil {
 			log.Error("poll due", "err", err)
 		}
-		delay := wake.Sub(time.Now())
+		now := time.Now()
+		delay := nextWakeDelay(wake, now, p.interval)
 		// A planned deadline or paced host can pull the next wake in sooner than
 		// the base interval; record why, so logs show the reason for the sleep.
-		if !wake.IsZero() && delay > 0 && delay <= p.interval {
-			log.Debug("next wake from deadline", "delay", delay.Round(time.Second), "at", wake.Round(time.Second))
-		}
-		if delay <= 0 || delay > p.interval {
-			delay = p.interval
-		}
-		if delay < minWake {
-			delay = minWake
+		if !wake.IsZero() && delay <= p.interval {
+			if wake.After(now) {
+				log.Debug("next wake from deadline", "delay", delay.Round(time.Second), "at", wake.Round(time.Second))
+			} else {
+				log.Debug("wake deadline passed, retrying", "delay", delay.Round(time.Second), "wake", wake.Round(time.Second))
+			}
 		}
 		t := time.NewTimer(delay)
 		select {
