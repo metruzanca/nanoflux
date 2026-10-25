@@ -14,7 +14,7 @@ import (
 // maxProxyImageBytes caps how much of an upstream image is proxied. sniffLen is
 // how many bytes are read up front to identify the format by content.
 const (
-	maxProxyImageBytes = 5 << 20
+	maxProxyImageBytes = 10 << 20
 	sniffLen           = 512
 )
 
