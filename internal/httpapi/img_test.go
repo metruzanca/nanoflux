@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -55,6 +56,25 @@ func TestImgProxy(t *testing.T) {
 	}
 	if string(rr.Body.Bytes()) != string(jpeg) {
 		t.Fatalf("octet-stream body mismatch: %x", rr.Body.Bytes())
+	}
+
+	// A large but valid image must be served whole, not truncated mid-file (a
+	// partial WebP renders as a broken image even though the upstream works).
+	big := bytes.Repeat([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, 768*1024) // 6 MiB
+	large := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(big)
+	}))
+	defer large.Close()
+	req = httptest.NewRequest(http.MethodGet, "/img?u="+url.QueryEscape(large.URL+"/large.png"), nil)
+	req.AddCookie(cookie)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("large image: %d", rr.Code)
+	}
+	if got := rr.Body.Len(); got != len(big) {
+		t.Fatalf("large image truncated: got %d bytes, want %d", got, len(big))
 	}
 
 	// Non-image upstream content is rejected.
