@@ -291,27 +291,18 @@ func filterFeedTitles(fs listFilters, titles map[int64]string) listFilters {
 	return out
 }
 
-// filterOptions returns the combo options for a row of the given kind.
-func (d scopedItemsData) filterOptions(kind string) []comboItem {
-	if kind == filterKindFeed {
-		return d.FeedOptions
-	}
-	return d.TagOptions
-}
-
-// hasFilterKind reports whether an applied filter of the given kind exists.
-func (d scopedItemsData) hasFilterKind(kind string) bool {
-	for _, f := range d.Filters {
-		if f.Kind == kind {
-			return true
-		}
-	}
-	return false
-}
-
 func filterPlaceholder(kind string) string {
 	if kind == filterKindFeed {
 		return "feed"
 	}
 	return "tag"
+}
+
+// defaultFilterKind is the kind a fresh row starts with: tag when the scope has
+// tags, otherwise feed.
+func defaultFilterKind(tags, feeds []comboItem) string {
+	if len(tags) > 0 {
+		return filterKindTag
+	}
+	return filterKindFeed
 }
