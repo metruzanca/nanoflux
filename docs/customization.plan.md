@@ -105,9 +105,10 @@ plugins list with per-plugin owned domains/URLs (`internal/httpapi/admin.go`).
   `feed:`, `unread:` qualifiers (`search.go:73`). No saved searches.
 - Tags: item categories are surfaced as tags in the item modal and a scoped
   filter dialog on feed/author/collection lists, backed by `item_categories`.
-  Each applied tag or feed filter has a `show`/`hide` action (hide excludes
-  matching items); the dialog lists applied filters as editable rows. Collection
-  name pills remain on feed rows.
+  Each applied filter row has a `show`/`hide` action, a `tag`/`feed` kind, an
+  `any`/`all` combine mode and multi-select values; hide excludes matching
+  items. The dialog lists applied filters as editable rows. Collection name
+  pills remain on feed rows.
 - Unread counts exist per scope but are not surfaced on every scope.
 
 ### Sharing / export

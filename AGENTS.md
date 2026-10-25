@@ -280,28 +280,34 @@ Categories are also normalized for tag browsing and list filtering.
   returns each distinct tag with its item count, most-used first.
 - `ItemFilter.Tags` filters a list to items carrying **every** listed tag (AND).
   `ItemFilter.ExcludeTags` hides items carrying any listed tag, and
-  `ItemFilter.ExcludeFeedID` hides items seen through one feed. The generated
-  `ListItems*` queries are fixed-shape, so any tag or negative filter uses the
-  hand-written `ItemStore.listPageTagged` (dynamic `EXISTS`/`NOT EXISTS`;
-  supports newest/oldest/magic and all scopes), mirroring `SearchPage`'s raw-SQL
-  pattern. `unreadFilteredQuery` (mark-all/count) applies the same predicates.
+  `ItemFilter.ExcludeFeedID` hides items seen through one feed. Per-row filters
+  use `ItemFilter.TagGroups` / `FeedGroups`: each group has its own values and
+  `All` (AND vs OR) and `Exclude` flags. The generated `ListItems*` queries are
+  fixed-shape, so any tag/group/negative filter uses the hand-written
+  `ItemStore.listPageTagged` (dynamic `EXISTS`/`NOT EXISTS`; supports
+  newest/oldest/magic and all scopes), mirroring `SearchPage`'s raw-SQL pattern.
+  `unreadFilteredQuery` (mark-all/count) applies the same predicates.
 - HTTP filters are transient query state (`internal/httpapi/filters.go`): each
-  applied filter has a kind (`tag`/`feed`), an action (`show`/`hide`) and a
-  value. The canonical URL is repeated `?f=tag:show:r/golang`,
-  `?f=tag:hide:r/rust`, `?f=feed:hide:12`; legacy `?tags=`/`?feed=` still parse
-  as show filters, and the modal form posts parallel
-  `filter_kind`/`filter_action`/`filter_value` rows. Tags are capped at
-  `maxTagFilters`; only one show-feed and one hide-feed row are kept. Tab, sort,
-  chip and pagination links carry the filters with `listFilters.appendFilters`.
+  applied row has a kind (`tag`/`feed`), action (`show`/`hide`), combine
+  (`any`/`all`) and one or more values. A single value uses the legacy URL
+  shape `?f=tag:show:r/golang`; multi-value rows use
+  `?f=tag:show:any:["r/golang","r/rust"]`. Legacy `?tags=`/`?feed=` still parse
+  as show/all filters. Rows are ANDed together for `show` and ORed for `hide`
+  (any matching hide row excludes). The modal form submits one `filter_row`
+  token per row plus repeated `filter_value_<token>` values. Tags are capped at
+  `maxTagFilters`. Tab, sort, chip and pagination links carry the filters with
+  `listFilters.appendFilters`.
 - UI: the item modal shows its tags as clickable chips (linking to
   `/authors/{id}?tags=`); a scoped feed/author/collection list gets a filter
   dialog with one editable row per applied filter (`show`/`hide` action,
-  `tag`/`feed` kind, value combo) plus x (remove) and + (insert another row)
-  controls; a persistent "add filter" button keeps an empty row list
-  recoverable. Each row's kind change swaps its value options client-side
+  `tag`/`feed` kind, `any`/`all` combine, multi-select values) plus x (remove)
+  and + (insert another row) controls; a persistent "add filter" button keeps
+  an empty row list recoverable. The tag/feed select is hidden when only one
+  kind is available; with one feed the kind defaults to `tag` and feed filters
+  are dropped. Each row's kind change swaps its value options client-side
   (`#filter-row-template`, `data-add-filter-row`, `data-filter-kind` in
-  `app.js`). Active-filter chips drop one filter; a hidden filter's chip uses
-  the `chip-hide` style. Author-page feed rows are validated against the author
+  `app.js`). Active-filter chips drop one row; a hidden filter's chip uses the
+  `chip-hide` style. Author-page feed rows are validated against the author
   before use (`authorFilters`).
 
 ## Feeds live on the author page
