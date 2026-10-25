@@ -222,10 +222,33 @@ for the base interval. After each pass it wakes at the **earliest** of:
 - the soonest planned `next_poll_at` (a scheduled time-of-day fetch or a
   rate-limit retry),
 
-floored at 30 seconds so a just-cleared backoff cannot make the loop spin.
+floored at 30 seconds so a just-cleared backoff cannot make the loop spin. If a
+deadline is already in the past by the time a pass finishes (another host's
+spacing window landed a second earlier), the poller retries at that 30-second
+floor rather than sleeping the whole base interval.
 
 The result: a host with, say, twenty feeds and a 1-minute window refreshes them
 all across roughly twenty minutes, continuously, instead of one per day.
+
+### Admin polling health
+
+The admin page's **polling** card shows whether the poller can keep up. A feed is
+**behind** when its last poll is older than its own `poll_interval_sec` (a
+never-polled feed is measured from its creation time), so rate-limited feeds
+still count while they wait. Per host it shows:
+
+- **demand/day**: the sum of every enabled feed's required polls per day
+  (`86400 / poll_interval_sec`).
+- **capacity/day**: what the host's effective spacing allows
+  (`86400 / spacing`), including a learned rate-limit window.
+- **clear**: the estimated time to drain the host's current backlog at that
+  spacing.
+
+When demand exceeds capacity, the host is marked **overloaded**. That is the
+permanent-lateness signal: the backlog cannot drain until feeds are removed from
+that host or their intervals are lengthened. A large backlog with demand below
+capacity is only a transient catch-up, for example after downtime. Active 429
+cooldowns are not included in the estimate.
 
 ### The manual refresh button
 

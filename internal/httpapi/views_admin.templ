@@ -11,6 +11,7 @@ templ adminPage(u store.User, d adminData) {
 	<h1>admin</h1>
 	@AdminInstanceCard(d)
 	@AdminStats(d.Stats)
+	@AdminPollCard(d.Poll, u.Timezone)
 	@AdminStorageCard(d.Storage)
 	@AdminPluginsCard(d.Plugins)
 	@AdminBackupCard(d.Backup)
@@ -229,6 +230,77 @@ templ AdminStats(st adminStats) {
 			<span><strong>{ st.Objects }</strong> objects</span>
 			<span><strong>{ st.Storage }</strong> storage</span>
 		</div>
+	</section>
+}
+
+// AdminPollCard shows whether the poller can keep up. Demand is how many fetches
+// per day the host's feeds ask for at their current intervals; capacity is what
+// the host's spacing allows. Demand above capacity is the permanent-lateness
+// signal: the backlog cannot drain until the load or spacing changes.
+templ AdminPollCard(d adminPoll, tz string) {
+	<section class="card" id="admin-poll-card">
+		<h2>polling</h2>
+		if d.Unavailable {
+			<p class="muted small">polling stats unavailable.</p>
+		} else if d.Enabled == 0 {
+			<p class="muted small">no enabled feeds.</p>
+		} else {
+			<p class="muted small">
+				<strong>{ strconv.Itoa(d.Behind) }</strong> of { strconv.Itoa(d.Enabled) } feeds behind schedule
+				if d.OldestRef != "" {
+					{ " · oldest " }
+					<strong>{ d.OldestTitle }</strong>
+					{ " last polled " }
+					{ web.TimeFmt(tz, d.OldestRef) }
+				}
+			</p>
+			if d.Overloaded > 0 {
+				<div class="error banner" role="alert">
+					<strong>
+						if d.Overloaded == 1 {
+							1 host cannot keep up.
+						} else {
+							{ strconv.Itoa(d.Overloaded) } hosts cannot keep up.
+						}
+					</strong>
+					At their current spacing they cannot fetch every feed as often as its interval asks, so the backlog will keep growing. Reduce the number of feeds on those hosts or lengthen their poll intervals.
+				</div>
+			}
+			if len(d.Hosts) == 0 {
+				<p class="muted small">all feeds are on schedule.</p>
+			} else {
+				<table class="admin-users">
+					<thead>
+						<tr>
+							<th>host</th>
+							<th>behind</th>
+							<th>spacing</th>
+							<th>demand/day</th>
+							<th>capacity/day</th>
+							<th>clear</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, h := range d.Hosts {
+							<tr>
+								<td>
+									<strong>{ h.Host }</strong>
+									if h.Overloaded {
+										<span class="badge warn">overloaded</span>
+									}
+								</td>
+								<td>{ strconv.Itoa(h.Behind) } / { strconv.Itoa(h.Feeds) }</td>
+								<td>{ h.Spacing }</td>
+								<td>{ h.Demand }</td>
+								<td>{ h.Capacity }</td>
+								<td>{ h.Clear }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+				<p class="muted small">Capacity uses the current host spacing, including a learned rate-limit window. Active 429 cooldowns are not included.</p>
+			}
+		}
 	</section>
 }
 

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -310,7 +311,7 @@ func TestAdminStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := doGet(h, "/admin", adminSession(t, s, "root")).Body.String()
-	for _, want := range []string{"users", "feeds", "authors", "items", "unread", "objects", "storage", "10 B"} {
+	for _, want := range []string{"users", "feeds", "authors", "items", "unread", "objects", "storage", "10 B", "polling", "no enabled feeds"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("admin stats missing %q", want)
 		}
@@ -353,5 +354,72 @@ func TestSignupGating(t *testing.T) {
 	rr := doForm(h, "POST", "/signup", url.Values{"username": {"eve"}, "password": {"longenough"}}, nil)
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("signup when disabled: got %d, want 403", rr.Code)
+	}
+}
+
+// TestBuildAdminPoll covers the numbers the polling card shows: grouping by
+// registrable host, counting behind feeds from their interval (falling back to
+// created_at for a never-polled feed), and flagging a host whose daily demand
+// exceeds what its spacing can deliver.
+func TestBuildAdminPoll(t *testing.T) {
+	now := time.Date(2026, 10, 25, 6, 0, 0, 0, time.UTC)
+	ts := func(d time.Duration) string { return db.FormatTime(now.Add(d)) }
+
+	var feeds []store.Feed
+	for i := 0; i < 30; i++ {
+		feeds = append(feeds, store.Feed{
+			Title: "Reddit", FeedURL: "https://www.reddit.com/r/cats.rss",
+			Enabled: true, PollIntervalSec: 900, LastPolledAt: ts(-48 * time.Hour),
+		})
+	}
+	for i := 0; i < 2; i++ {
+		feeds = append(feeds, store.Feed{
+			Title: "Example " + strconv.Itoa(i), FeedURL: "https://example.com/feed" + strconv.Itoa(i),
+			Enabled: true, PollIntervalSec: 86400, LastPolledAt: ts(-5 * 24 * time.Hour),
+		})
+	}
+	feeds = append(feeds, store.Feed{
+		Title: "Never polled", FeedURL: "https://lanhost/feed",
+		Enabled: true, PollIntervalSec: 900, CreatedAt: ts(-time.Hour),
+	})
+	feeds = append(feeds, store.Feed{
+		Title: "Disabled", FeedURL: "https://www.reddit.com/r/off.rss",
+		Enabled: false, PollIntervalSec: 900,
+	})
+
+	spacingFor := func(raw string) time.Duration {
+		switch store.RegistrableDomain(raw) {
+		case "reddit.com":
+			return time.Hour
+		case "example.com":
+			return time.Minute
+		default:
+			return 0
+		}
+	}
+	got := buildAdminPoll(now, feeds, spacingFor)
+
+	if got.Enabled != 33 || got.Behind != 33 {
+		t.Fatalf("enabled/behind = %d/%d, want 33/33", got.Enabled, got.Behind)
+	}
+	if got.OldestTitle != "Example 0" {
+		t.Fatalf("oldest title = %q, want Example 0", got.OldestTitle)
+	}
+	if got.Overloaded != 1 {
+		t.Fatalf("overloaded hosts = %d, want 1", got.Overloaded)
+	}
+	if len(got.Hosts) != 3 {
+		t.Fatalf("host rows = %d, want 3: %+v", len(got.Hosts), got.Hosts)
+	}
+	top := got.Hosts[0]
+	if top.Host != "reddit.com" || !top.Overloaded || top.Behind != 30 || top.Feeds != 30 {
+		t.Fatalf("top host = %+v, want overloaded reddit.com with 30 behind of 30", top)
+	}
+	if top.Spacing != "1h" || top.Demand != "2880" || top.Capacity != "24" || top.Clear != "30h" {
+		t.Fatalf("reddit load = %+v", top)
+	}
+	never := got.Hosts[2]
+	if never.Host != "lanhost" || never.Capacity != "unlimited" || never.Overloaded {
+		t.Fatalf("never-polled host = %+v, want unlimited and not overloaded", never)
 	}
 }
