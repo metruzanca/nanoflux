@@ -1115,8 +1115,8 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-feed-error", errMsg)
 		return
 	}
-	if s.feedURLExists(u.ID, normalizeURL(r.FormValue("feed_url"))) {
-		writeFormError(w, r, "add-feed-error", "you already have this feed")
+	if feedURL := normalizeURL(r.FormValue("feed_url")); s.feedURLExists(u.ID, feedURL) {
+		s.writeDuplicateFeedError(w, r, "add-feed-error", u.ID, feedURL)
 		return
 	}
 	authorID, isNew, errMsg := s.resolveAuthor(r, u.ID)
@@ -1171,8 +1171,8 @@ func (s *Server) authorFeedCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-feed-error", errMsg)
 		return
 	}
-	if s.feedURLExists(u.ID, normalizeURL(r.FormValue("feed_url"))) {
-		writeFormError(w, r, "add-feed-error", "you already have this feed")
+	if feedURL := normalizeURL(r.FormValue("feed_url")); s.feedURLExists(u.ID, feedURL) {
+		s.writeDuplicateFeedError(w, r, "add-feed-error", u.ID, feedURL)
 		return
 	}
 	f, errMsg := s.createFeed(r, u.ID, authorID)
@@ -2723,6 +2723,21 @@ func normalizeAuthorView(v string) string {
 func writeFormError(w http.ResponseWriter, r *http.Request, target, msg string) {
 	w.WriteHeader(http.StatusBadRequest)
 	web.Render(w, r, FormErrorOOB(target, msg))
+}
+
+// writeDuplicateFeedError responds with the add-feed duplicate warning plus a
+// link to the feed the user already subscribes to (its author page, scoped to
+// the feed), since there is no standalone feed page.
+func (s *Server) writeDuplicateFeedError(w http.ResponseWriter, r *http.Request, target string, userID int64, feedURL string) {
+	const msg = "you already have this feed."
+	ref := s.savedFeedRefFor(userID, feedURL)
+	if ref.FeedID == 0 {
+		writeFormError(w, r, target, msg)
+		return
+	}
+	href := "/authors/" + strconv.FormatInt(ref.AuthorID, 10) + "?feed=" + strconv.FormatInt(ref.FeedID, 10)
+	w.WriteHeader(http.StatusBadRequest)
+	web.Render(w, r, FormErrorOOBLink(target, msg, href, "open it"))
 }
 
 // renderError responds to an htmx request whose target is the preview

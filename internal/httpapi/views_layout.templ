@@ -243,6 +243,17 @@ templ FormErrorOOB(target, msg string) {
 	</div>
 }
 
+// FormErrorOOBLink is FormErrorOOB with a trailing link (for a message that
+// points at an existing resource, such as an already-subscribed feed).
+templ FormErrorOOBLink(target, msg, href, linkText string) {
+	<div id={ target } hx-swap-oob="innerHTML">
+		<div class="error" role="alert">
+			{ msg }
+			<a href={ templ.URL(href) }>{ linkText }</a>
+		</div>
+	</div>
+}
+
 // footer is the small site footer shown at the bottom of the login and settings
 // pages: the project's website and source, its open source license, and a
 // ko-fi tip link.

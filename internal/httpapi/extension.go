@@ -193,11 +193,18 @@ func (sf *savedFeeds) saved(feedURL string) savedFeedRef {
 	return sf.feeds[normExtKey(feedURL)]
 }
 
+// savedFeedRefFor returns the user's saved feed with this exact feed URL
+// (normalized), or the zero value when there is none. It backs the duplicate
+// check for adding a feed: two feeds may share a title or home URL, but not
+// their feed URL.
+func (s *Server) savedFeedRefFor(userID int64, feedURL string) savedFeedRef {
+	return s.savedFeedsFor(userID).saved(feedURL)
+}
+
 // feedURLExists reports whether the user already has a feed with this exact
-// feed URL (normalized). It is the duplicate check for adding a feed: two feeds
-// may share a title or home URL, but not their feed URL.
+// feed URL (normalized).
 func (s *Server) feedURLExists(userID int64, feedURL string) bool {
-	return s.savedFeedsFor(userID).saved(feedURL).FeedID != 0
+	return s.savedFeedRefFor(userID, feedURL).FeedID != 0
 }
 
 // normExtKey normalizes a URL for "already saved" matching: lowercase host

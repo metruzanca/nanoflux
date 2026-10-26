@@ -2657,8 +2657,14 @@ func TestFeedCreateBlocksDuplicateURL(t *testing.T) {
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "already have this feed") {
 		t.Fatalf("duplicate feed should be blocked: %d %s", rr.Code, rr.Body.String())
 	}
-	if feeds, _ := s.store.Feeds.List(u.ID); len(feeds) != 1 {
+	feeds, _ := s.store.Feeds.List(u.ID)
+	if len(feeds) != 1 {
 		t.Fatalf("duplicate feed should not be created: %+v", feeds)
+	}
+	// The warning links to the feed the user already has.
+	wantLink := `href="/authors/` + itoa(a.ID) + `?feed=` + itoa(feeds[0].ID) + `"`
+	if !strings.Contains(rr.Body.String(), wantLink) {
+		t.Fatalf("duplicate feed error should link to the existing feed %q: %s", wantLink, rr.Body.String())
 	}
 	// The same title/home with a different feed URL is allowed.
 	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/feeds", url.Values{
