@@ -48,6 +48,9 @@ func TestTagFilterUI(t *testing.T) {
 	if !strings.Contains(body, "Go post") || strings.Contains(body, "Rust post") {
 		t.Fatalf("tag filter should keep only the matching item: %s", body)
 	}
+	if !strings.Contains(body, "1 matching") {
+		t.Fatalf("filtered list should show the matching post count: %s", body)
+	}
 	// The dialog offers every tag in scope, including the one not selected.
 	if !strings.Contains(body, "r/rust") {
 		t.Fatalf("filter dialog should offer r/rust: %s", body)

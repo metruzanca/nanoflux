@@ -216,7 +216,11 @@ type scopedItemsData struct {
 	FavTab      bool          // author scope only: render the "favorites" tab
 	FavCount    int           // favorited items in scope, for the "favorites (N)" tab
 	Filters     listFilters   // active tag/feed filters (show or hide)
-	TagOptions  []comboItem   // distinct tags in scope, for the filter modal
+	// FilteredCount is how many items in the current view match the active
+	// filters, shown as a "N matching" badge. Only meaningful when Filters is
+	// non-empty.
+	FilteredCount int
+	TagOptions    []comboItem // distinct tags in scope, for the filter modal
 	// FeedOptions are the author's feeds for the filter modal.
 	FeedOptions []comboItem
 }
@@ -2068,12 +2072,16 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 	for _, f := range authorFeeds {
 		feedOpts = append(feedOpts, comboItem{Value: strconv.FormatInt(f.Feed.ID, 10), Label: f.Feed.Title})
 	}
+	filtered := 0
+	if len(filters) > 0 {
+		filtered, _ = s.store.Items.CountFiltered(userID, scopedFilter(view, sortNewest, 0, authorID, 0, filters))
+	}
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
 		More: pageCursorFor(itemsBase, items, more, sort, 0), HideAuthor: true,
 		Mode: s.store.ViewPrefs.Mode(userID, base), FavTab: favs > 0 || view == "favorites", FavCount: favs,
-		Filters: filters, TagOptions: tagItems(cats), FeedOptions: feedOpts,
+		Filters: filters, FilteredCount: filtered, TagOptions: tagItems(cats), FeedOptions: feedOpts,
 	}
 }
 
@@ -2513,6 +2521,9 @@ func (s *Server) collectionScopedItems(userID, collectionID int64, view string, 
 	d.TagOptions = tagItems(cats)
 	d.Items = withTZ(tz, dedupItems(items))
 	d.More = pageCursorFor(itemsBase, items, more, sort, 0)
+	if len(filters) > 0 {
+		d.FilteredCount, _ = s.store.Items.CountFiltered(userID, scopedFilter(view, sortNewest, 0, 0, collectionID, filters))
+	}
 	return d
 }
 
