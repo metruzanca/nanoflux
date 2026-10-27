@@ -43,7 +43,7 @@ reject polling with 429. The app treats this as pacing, not failure:
   `Run` wakes at the earliest of the base interval or a host's next-hit time, so
   rotating hosts are revisited promptly (floored at `minWake`).
 - Even a host that never rate-limits is spaced: after one fetch the group stops
-  and wakes after `hostSpacing` (`NF_POLL_HOST_SPACING`, default 30s; learned
+  and wakes after `hostSpacing` (`NF_POLL_HOST_SPACING`, default 60s; learned
   window overrides when larger; 0 disables). `pollGroup` only stops early when
   another feed is still waiting (`i < len(group)-1`), so a single-feed host is
   never delayed. The default spacing is poller-only and must not pace plugin
