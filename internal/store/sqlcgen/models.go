@@ -20,6 +20,20 @@ type Author struct {
 	CreatedAt     string         `json:"created_at"`
 }
 
+type AuthorFilterRule struct {
+	ID        int64  `json:"id"`
+	AuthorID  int64  `json:"author_id"`
+	Action    string `json:"action"`
+	Kind      string `json:"kind"`
+	Combine   string `json:"combine"`
+	CreatedAt string `json:"created_at"`
+}
+
+type AuthorFilterValue struct {
+	RuleID int64  `json:"rule_id"`
+	Value  string `json:"value"`
+}
+
 type AuthorLink struct {
 	ID        int64          `json:"id"`
 	UserID    int64          `json:"user_id"`
@@ -200,4 +214,28 @@ type UserViewPref struct {
 	Scope     string `json:"scope"`
 	Mode      string `json:"mode"`
 	UpdatedAt string `json:"updated_at"`
+}
+
+type VisibleItem struct {
+	ID             int64          `json:"id"`
+	FeedID         int64          `json:"feed_id"`
+	UserID         int64          `json:"user_id"`
+	Guid           string         `json:"guid"`
+	DedupKey       string         `json:"dedup_key"`
+	CrossKey       string         `json:"cross_key"`
+	Title          string         `json:"title"`
+	Link           string         `json:"link"`
+	Summary        string         `json:"summary"`
+	Content        string         `json:"content"`
+	Categories     string         `json:"categories"`
+	DurationSec    sql.NullInt64  `json:"duration_sec"`
+	ImageUrl       sql.NullString `json:"image_url"`
+	ImageCacheKey  sql.NullString `json:"image_cache_key"`
+	ImageCacheSize int64          `json:"image_cache_size"`
+	PublishedAt    sql.NullString `json:"published_at"`
+	FetchedAt      string         `json:"fetched_at"`
+	Read           bool           `json:"read"`
+	ReadAt         sql.NullString `json:"read_at"`
+	Favorite       bool           `json:"favorite"`
+	Bookmark       bool           `json:"bookmark"`
 }

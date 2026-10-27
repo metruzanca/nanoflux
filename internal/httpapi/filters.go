@@ -234,34 +234,23 @@ func normalizeFilters(in listFilters) listFilters {
 	return out
 }
 
-// storeGroups converts the rows to the store's per-row predicates and returns
-// the selected show-feed ids (for tab counts/tag options).
-func (fs listFilters) storeGroups() (tagGroups []store.TagGroup, feedGroups []store.FeedGroup, showFeedIDs []int64) {
+// rules converts the HTTP rows to the shared store rule shape, which is also
+// what persisted author filters use.
+func (fs listFilters) rules() []store.FilterRule {
+	out := make([]store.FilterRule, 0, len(fs))
 	for _, f := range fs {
-		if f.isTag() {
-			tagGroups = append(tagGroups, store.TagGroup{
-				Tags: f.Values, All: f.allValues(), Exclude: f.hidden(),
-			})
-			continue
-		}
-		ids := make([]int64, 0, len(f.Values))
-		for _, value := range f.Values {
-			id, _ := strconv.ParseInt(value, 10, 64)
-			if id > 0 {
-				ids = append(ids, id)
-			}
-		}
-		if len(ids) == 0 {
-			continue
-		}
-		feedGroups = append(feedGroups, store.FeedGroup{
-			FeedIDs: ids, All: f.allValues(), Exclude: f.hidden(),
+		out = append(out, store.FilterRule{
+			Kind: f.Kind, Action: f.Action, Combine: f.Combine, Values: f.Values,
 		})
-		if f.shown() {
-			showFeedIDs = append(showFeedIDs, ids...)
-		}
 	}
-	return tagGroups, feedGroups, showFeedIDs
+	return out
+}
+
+// storeGroups converts the rows to the store's per-row predicates and returns
+// the selected show-feed ids (for tab counts/tag options). The conversion lives
+// in the store so transient filters and author rules cannot drift apart.
+func (fs listFilters) storeGroups() (tagGroups []store.TagGroup, feedGroups []store.FeedGroup, showFeedIDs []int64) {
+	return store.FilterGroups(fs.rules())
 }
 
 // onlyTags drops feed filters, for scopes that cannot filter by feed.

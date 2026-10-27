@@ -271,9 +271,9 @@ func (q *Queries) ListCollectionsForAuthorFeeds(ctx context.Context, arg ListCol
 const listCollectionsWithCounts = `-- name: ListCollectionsWithCounts :many
 SELECT c.id, c.user_id, c.name, c.is_auto, c.created_at,
        COUNT(DISTINCT cf.feed_id) AS feed_count,
-       (SELECT COUNT(*) FROM items i JOIN collection_feeds cf2 ON cf2.feed_id = i.feed_id
+       (SELECT COUNT(*) FROM visible_items i JOIN collection_feeds cf2 ON cf2.feed_id = i.feed_id
          WHERE cf2.collection_id = c.id AND i.read = 0) AS unread_count,
-       (SELECT COUNT(*) FROM items i JOIN collection_feeds cf2 ON cf2.feed_id = i.feed_id
+       (SELECT COUNT(*) FROM visible_items i JOIN collection_feeds cf2 ON cf2.feed_id = i.feed_id
          WHERE cf2.collection_id = c.id AND i.read = 1) AS read_count
 FROM collections c
 LEFT JOIN collection_feeds cf ON cf.collection_id = c.id

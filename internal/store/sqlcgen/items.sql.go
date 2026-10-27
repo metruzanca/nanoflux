@@ -99,7 +99,7 @@ func (q *Queries) CountAllUnreadItems(ctx context.Context) (int64, error) {
 }
 
 const countBookmarkItems = `-- name: CountBookmarkItems :one
-SELECT COUNT(*) FROM items i
+SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.bookmark = 1
   AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
         SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(?2 AS INTEGER)))
@@ -118,7 +118,7 @@ func (q *Queries) CountBookmarkItems(ctx context.Context, arg CountBookmarkItems
 }
 
 const countBookmarkItemsByAuthor = `-- name: CountBookmarkItemsByAuthor :one
-SELECT COUNT(*) FROM items i
+SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.bookmark = 1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
@@ -138,7 +138,7 @@ func (q *Queries) CountBookmarkItemsByAuthor(ctx context.Context, arg CountBookm
 }
 
 const countFavoriteItems = `-- name: CountFavoriteItems :one
-SELECT COUNT(*) FROM items i
+SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.favorite = 1
   AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
         SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = CAST(?2 AS INTEGER)))
@@ -157,7 +157,7 @@ func (q *Queries) CountFavoriteItems(ctx context.Context, arg CountFavoriteItems
 }
 
 const countFavoriteItemsByAuthor = `-- name: CountFavoriteItemsByAuthor :one
-SELECT COUNT(*) FROM items i
+SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.favorite = 1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
@@ -177,7 +177,7 @@ func (q *Queries) CountFavoriteItemsByAuthor(ctx context.Context, arg CountFavor
 }
 
 const countReadItems = `-- name: CountReadItems :one
-SELECT COUNT(*) FROM items i
+SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.read = 1
   AND i.feed_id NOT IN (SELECT f.id FROM feeds f WHERE f.is_system = 1)
   AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
@@ -197,7 +197,7 @@ func (q *Queries) CountReadItems(ctx context.Context, arg CountReadItemsParams) 
 }
 
 const countReadItemsByAuthor = `-- name: CountReadItemsByAuthor :one
-SELECT COUNT(*) FROM items i
+SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.read = 1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
@@ -217,7 +217,7 @@ func (q *Queries) CountReadItemsByAuthor(ctx context.Context, arg CountReadItems
 }
 
 const countReadItemsByCollection = `-- name: CountReadItemsByCollection :one
-SELECT COUNT(*) FROM items i
+SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.read = 1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf
@@ -237,7 +237,7 @@ func (q *Queries) CountReadItemsByCollection(ctx context.Context, arg CountReadI
 }
 
 const countUnreadItems = `-- name: CountUnreadItems :one
-SELECT COUNT(*) FROM items i
+SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.read = 0
   AND i.feed_id NOT IN (SELECT f.id FROM feeds f WHERE f.is_system = 1)
   AND (CAST(?2 AS INTEGER) = 0 OR i.id IN (
@@ -260,7 +260,7 @@ func (q *Queries) CountUnreadItems(ctx context.Context, arg CountUnreadItemsPara
 }
 
 const countUnreadItemsByAuthor = `-- name: CountUnreadItemsByAuthor :one
-SELECT COUNT(*) FROM items i
+SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.read = 0
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
@@ -280,7 +280,7 @@ func (q *Queries) CountUnreadItemsByAuthor(ctx context.Context, arg CountUnreadI
 }
 
 const countUnreadItemsByCollection = `-- name: CountUnreadItemsByCollection :one
-SELECT COUNT(*) FROM items i
+SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.read = 0
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf
@@ -361,7 +361,7 @@ SELECT
     CAST(COALESCE(MIN(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS first_post_at,
     CAST(COALESCE(MAX(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS last_post_at,
     COUNT(CASE WHEN COALESCE(i.published_at, i.fetched_at) >= datetime('now', '-30 days') THEN 1 END) AS recent_posts
-FROM items i
+FROM visible_items i
 WHERE i.user_id = ?1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
@@ -409,7 +409,7 @@ SELECT
     COUNT(CASE WHEN i.read = 1 THEN 1 END) AS read_posts,
     CAST(COALESCE(MIN(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS first_post_at,
     CAST(COALESCE(MAX(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT) AS last_post_at
-FROM items i
+FROM visible_items i
 WHERE i.user_id = ?1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf WHERE mf.feed_id = ?2)
@@ -1108,7 +1108,7 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
-FROM items i
+FROM visible_items i
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE i.user_id = ?1
@@ -1238,7 +1238,7 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
-FROM items i
+FROM visible_items i
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE i.user_id = ?1
@@ -1364,7 +1364,7 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
-FROM items i
+FROM visible_items i
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 LEFT JOIN (
@@ -1500,7 +1500,7 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
-FROM items i
+FROM visible_items i
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE i.user_id = ?1
@@ -1708,6 +1708,7 @@ WHERE items.user_id = ?2
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
     WHERE f.user_id = ?2 AND f.is_system = 0
       AND (CAST(?3 AS INTEGER) = 0 OR mf.feed_id = CAST(?3 AS INTEGER)))
+  AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?2)
 `
 
 type MarkAllItemsReadParams struct {
@@ -1732,6 +1733,7 @@ WHERE items.user_id = ?1
     SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
     WHERE f.user_id = ?1 AND f.is_system = 0
       AND (CAST(?2 AS INTEGER) = 0 OR mf.feed_id = CAST(?2 AS INTEGER)))
+  AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?1)
 `
 
 type MarkAllItemsUnreadParams struct {
@@ -1758,6 +1760,7 @@ WHERE read = 0
         JOIN item_feeds mfx ON mfx.feed_id = fa.id
         WHERE mfx.item_id = ?3 AND fa.user_id = ?2
       ))
+  AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?2)
   AND (COALESCE(items.published_at, items.fetched_at), items.id) <
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
 `
@@ -1788,6 +1791,7 @@ WHERE read = 0
         JOIN item_feeds mfx ON mfx.feed_id = fa.id
         WHERE mfx.item_id = ?3 AND fa.user_id = ?2
       ))
+  AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?2)
   AND (COALESCE(items.published_at, items.fetched_at), items.id) >
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
 `
@@ -1815,6 +1819,7 @@ WHERE items.user_id = ?2
     JOIN feeds f ON f.id = mf.feed_id
     WHERE f.user_id = ?2 AND f.author_id = ?3
   )
+  AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?2)
 `
 
 type MarkAuthorItemsReadParams struct {
@@ -1841,6 +1846,7 @@ WHERE read = 0
   AND EXISTS (SELECT 1 FROM feeds f WHERE f.id = (CASE WHEN CAST(?2 AS INTEGER) = 0
                              THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
                              ELSE CAST(?2 AS INTEGER) END) AND f.user_id = ?4)
+  AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?4)
   AND (COALESCE(items.published_at, items.fetched_at), items.id) <
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
 `
@@ -1877,6 +1883,7 @@ WHERE read = 0
   AND EXISTS (SELECT 1 FROM feeds f WHERE f.id = (CASE WHEN CAST(?2 AS INTEGER) = 0
                              THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
                              ELSE CAST(?2 AS INTEGER) END) AND f.user_id = ?4)
+  AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?4)
   AND (COALESCE(items.published_at, items.fetched_at), items.id) >
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
 `

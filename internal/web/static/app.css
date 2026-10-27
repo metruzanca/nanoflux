@@ -850,6 +850,18 @@ a.item-tag:hover { color: var(--accent); }
 }
 .filter-row > .link { flex: 0 0 auto; }
 
+/* Author settings: always-on rule preview, allowed beside blocked. */
+.author-filter-preview { margin-top: 1rem; }
+.filter-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 1rem;
+}
+.filter-preview-grid h3 { margin: 0 0 0.35rem; font-size: 0.85rem; }
+.filter-preview-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.filter-preview-list li { display: flex; flex-direction: column; gap: 0.1rem; }
+.filter-preview-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Collapsible "all tags seen in this feed" list in the feed filter card. */
 .tag-cloud { margin: 0.75rem 0 0; }
 .tag-cloud > summary { cursor: pointer; color: var(--muted); font-size: 0.8rem; }

@@ -305,10 +305,55 @@ Categories are also normalized for tag browsing and list filtering.
   an empty row list recoverable. The tag/feed select is hidden when only one
   kind is available; with one feed the kind defaults to `tag` and feed filters
   are dropped. Each row's kind change swaps its value options client-side
-  (`#filter-row-template`, `data-add-filter-row`, `data-filter-kind` in
-  `app.js`). Active-filter chips drop one row; a hidden filter's chip uses the
+  (`data-filter-row-template`, `data-filter-rows`, `data-add-filter-row`,
+  `data-filter-kind` in `app.js`). Active-filter chips drop one row; a hidden
+  filter's chip uses the
   `chip-hide` style. Author-page feed rows are validated against the author
   before use (`authorFilters`).
+
+## Author filters (always-on allow/block)
+
+Authors can carry persistent filter rules that apply everywhere, configured in
+the author settings card. They reuse the transient filter system rather than a
+parallel implementation.
+
+- **Same rule shape.** `store.FilterRule` (`kind`, `action`, `combine`, `values`)
+  is the canonical row. The HTTP layer's `listFilter` adds labels and URL
+  serialization; `store.FilterGroups` is the one conversion to `TagGroup` /
+  `FeedGroup`, used by transient filters, author rules, and the preview. Actions
+  are `show`/`hide` internally; the author card labels them **allow**/**block**.
+- **Semantics.** Every allow row must match (like show rows); any matching block
+  row excludes (like hide rows). An author with no allow rows allows everything
+  not blocked. Matching keys on the item's owner author (`items.feed_id ->
+  feeds.author_id`), which is the author a row displays. Feed rules match through
+  `item_feeds` membership restricted to that author's feeds.
+- **Storage (schemaV55).** `author_filter_rules` + `author_filter_values`, owned
+  by `AuthorFilterStore` (`store.AuthorFilters`). `POST /authors/{id}/edit`
+  replaces them when the form carries `author_filters_present`; a partial save
+  without the card leaves them alone. Feed delete removes its id from rules and
+  drops any rule left empty; `CloneUser` remaps author ids and feed values.
+- **One read path.** The `visible_items` view (schemaV55, mirrored in
+  `schema.sql`) applies the rules in SQL. Item lists, counts, badges, search,
+  read history, list items, and public shared lists select from `visible_items`
+  instead of `items`. Item detail (`GetItem*`) and shared-item fetch stay on raw
+  `items`, so a blocked item is still reachable by direct link. Auto-read
+  retention (`MarkItemsOlderThanRead`) is unchanged. Any new item read path must
+  use `visible_items`; write paths and storage/dedup stay on `items`.
+  `visible_items` is `SELECT i.*`, so a future migration that adds an `items`
+  column must recreate the view in the same migration.
+- **Writes respect it too.** Mark-all read/unread and the scoped filtered mark
+  gate on `visible_items`, so hidden items keep their state.
+- **Preview.** `POST /authors/{id}/filters/preview` evaluates the submitted
+  (draft) rows against raw items scoped to the author's owned feeds: allowed is
+  the normal group predicate, blocked is its complement. It never persists and
+  never double-applies saved rules. The author card re-posts on change
+  (`hx-include="#author-filter-fields"`) and on `authorfilterschanged` from
+  `app.js`.
+- **Transient filters still work.** The funnel dialog remains; its show/hide
+  rows intersect with the always-on rules. `app.js` scopes row cloning to the
+  nearest `[data-filter-rows]` / `[data-filter-row-template]` and value options
+  to the nearest `[data-tag-items]` container, so the dialog and the author card
+  share the same component.
 
 ## Feeds live on the author page
 

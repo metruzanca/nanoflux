@@ -258,7 +258,7 @@ SELECT a.id, a.user_id, a.name, a.avatar_url, a.avatar_key, a.last_fetched_at, a
           WHERE f2.author_id = a.id AND f2.user_id = a.user_id AND i2.favorite = 1) AS fav_count
 FROM authors a
 LEFT JOIN feeds f ON f.author_id = a.id AND f.user_id = a.user_id
-LEFT JOIN items i ON i.feed_id = f.id AND i.read = 0
+LEFT JOIN visible_items i ON i.feed_id = f.id AND i.read = 0
 WHERE a.user_id = ? AND a.is_system = 0
 GROUP BY a.id
 ORDER BY a.name

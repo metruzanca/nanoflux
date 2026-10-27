@@ -49,6 +49,12 @@ func TestCloneUser(t *testing.T) {
 	if err := s.Lists.AddItem(seed.ID, lst.ID, itemID); err != nil {
 		t.Fatalf("add item to list: %v", err)
 	}
+	if err := s.AuthorFilters.Replace(seed.ID, a.ID, []FilterRule{{
+		Kind: FilterKindFeed, Action: FilterActionShow, Combine: FilterCombineAny,
+		Values: []string{itoa(f.ID)},
+	}}); err != nil {
+		t.Fatalf("author filters: %v", err)
+	}
 
 	clone, err := s.CloneUser(seed.ID, "swift-otter", "hash", "2026-01-01 00:00:00")
 	if err != nil {
@@ -89,6 +95,10 @@ func TestCloneUser(t *testing.T) {
 	}
 	if cf.FeedURL != f.FeedURL || cf.Title != f.Title {
 		t.Fatalf("cloned feed lost fields: %+v", cf)
+	}
+	rules, err := s.AuthorFilters.List(clone.ID, cf.AuthorID)
+	if err != nil || len(rules) != 1 || len(rules[0].Values) != 1 || rules[0].Values[0] != itoa(cf.ID) {
+		t.Fatalf("cloned author filters should remap the feed id: %v %+v", err, rules)
 	}
 
 	// Items carry read/favorite state and the new owner.

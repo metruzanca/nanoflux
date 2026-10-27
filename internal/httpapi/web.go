@@ -157,6 +157,13 @@ type authorsData struct {
 	// Editor is the combined page's feed editor, for the feed named by the
 	// ?feed= query. nil when no feed is selected.
 	Editor *feedsData
+	// Rules are the author's always-on filters, rendered as allow/block rows.
+	Rules listFilters
+	// FilterTagOptions/FilterFeedOptions back the rule row value pickers.
+	FilterTagOptions  []comboItem
+	FilterFeedOptions []comboItem
+	// FilterPreview is the draft/saved rule preview rendered under the rows.
+	FilterPreview store.AuthorFilterPreview
 }
 
 type authorData struct {
@@ -2009,6 +2016,79 @@ func (s *Server) reconcileAuthorLinks(userID, authorID int64, r *http.Request) {
 	}
 }
 
+// authorRulesToFilters converts stored author rules to the shared HTTP filter
+// rows, validating feed values against the author and filling display labels.
+func (s *Server) authorRulesToFilters(userID, authorID int64, rules []store.FilterRule) listFilters {
+	fs := make(listFilters, 0, len(rules))
+	for _, r := range rules {
+		fs = append(fs, listFilter{
+			Kind: r.Kind, Action: r.Action, Combine: r.Combine,
+			Values: append([]string(nil), r.Values...), Labels: append([]string(nil), r.Values...),
+		})
+	}
+	return s.validateAuthorRules(userID, authorID, fs)
+}
+
+// validateAuthorRules drops stale/foreign feed values and labels feed rows.
+// Unlike authorFilters it keeps feed rows for a single-feed author: a persistent
+// rule may intentionally target that feed.
+func (s *Server) validateAuthorRules(userID, authorID int64, fs listFilters) listFilters {
+	if len(fs) == 0 {
+		return nil
+	}
+	feeds, _ := s.store.Feeds.ListByAuthor(userID, authorID)
+	titles := make(map[int64]string, len(feeds))
+	for _, feed := range feeds {
+		titles[feed.ID] = feed.Title
+	}
+	out := make(listFilters, 0, len(fs))
+	for _, f := range fs {
+		if f.isFeed() {
+			values := make([]string, 0, len(f.Values))
+			for _, value := range f.Values {
+				id, _ := strconv.ParseInt(value, 10, 64)
+				if _, ok := titles[id]; ok {
+					values = append(values, value)
+				}
+			}
+			if len(values) == 0 {
+				continue
+			}
+			f.Values = values
+		}
+		out = append(out, f)
+	}
+	return filterFeedTitles(normalizeFilters(out), titles)
+}
+
+// authorFilterPreview renders the draft allow/block result for the author
+// settings card. It reads the submitted rows and never persists anything.
+func (s *Server) authorFilterPreview(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.Authors.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	filters := s.validateAuthorRules(u.ID, id, filtersFromValues(r.Form))
+	tagGroups, feedGroups, _ := filters.storeGroups()
+	preview, err := s.store.Items.PreviewAuthorFilters(u.ID, id, tagGroups, feedGroups, 5)
+	if err != nil {
+		log.Error("author filter preview", "author_id", id, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	web.Render(w, r, authorFilterPreviewFragment(preview))
+}
+
 // authorFilters validates and labels author-page filters. Feed rows must name a
 // feed owned by the user under this author; stale or foreign rows are dropped.
 // With a single feed, feed filters are redundant and dropped (the feed kind is
@@ -2210,12 +2290,25 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 			editor = s.feedEditorData(u, f)
 		}
 	}
+	rules, _ := s.store.AuthorFilters.List(u.ID, a.ID)
+	ruleFilters := s.authorRulesToFilters(u.ID, a.ID, rules)
+	tagGroups, feedGroups, _ := ruleFilters.storeGroups()
+	preview, _ := s.store.Items.PreviewAuthorFilters(u.ID, a.ID, tagGroups, feedGroups, 5)
+	cats, _ := s.store.Items.ListCategories(u.ID, store.ItemFilter{AuthorID: a.ID})
+	feedOpts := make([]comboItem, 0, len(feeds))
+	for _, f := range feeds {
+		feedOpts = append(feedOpts, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
+	}
 	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
-		Form:       authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
-		Links:      links,
-		Feeds:      feeds,
-		AvatarCard: s.authorAvatarCardData(a, u.Timezone, ""),
-		Editor:     editor,
+		Form:              authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
+		Links:             links,
+		Feeds:             feeds,
+		AvatarCard:        s.authorAvatarCardData(a, u.Timezone, ""),
+		Editor:            editor,
+		Rules:             ruleFilters,
+		FilterTagOptions:  tagItems(cats),
+		FilterFeedOptions: feedOpts,
+		FilterPreview:     preview,
 	})))
 }
 
@@ -2252,6 +2345,16 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reconcileAuthorLinks(u.ID, id, r)
+	// Author filters are part of the same form. The marker keeps partial saves
+	// (an API client that does not render the card) from clearing them.
+	if r.FormValue("author_filters_present") != "" {
+		rules := s.validateAuthorRules(u.ID, id, filtersFromValues(r.Form))
+		if err := s.store.AuthorFilters.Replace(u.ID, id, rules.rules()); err != nil {
+			log.Error("save author filters", "author_id", id, "err", err)
+			http.Error(w, "update failed", http.StatusInternalServerError)
+			return
+		}
+	}
 	// The combined edit form carries every feed panel the user loaded, each
 	// namespaced by feedFieldPrefix and marked with a hidden feed_ids value.
 	// Feeds not present (never opened) are left untouched.

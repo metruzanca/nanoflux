@@ -65,6 +65,7 @@ var migrations = []migration{
 	{52, schemaV52},
 	{53, schemaV53},
 	{54, schemaV54},
+	{55, schemaV55},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -774,6 +775,95 @@ ALTER TABLE feeds DROP COLUMN filter_mode;
 // from a planned poll.
 const schemaV54 = `
 ALTER TABLE feeds ADD COLUMN next_poll_scheduled INTEGER NOT NULL DEFAULT 0;
+`
+
+// schemaV55 adds author-level always-on allow/block filters. Rules mirror the
+// transient list filter rows (kind/action/combine/values). visible_items is the
+// single read-side translation: it hides an item when any block rule of its
+// owner author matches, or when any allow rule of that author does not match.
+const schemaV55 = `
+CREATE TABLE author_filter_rules (
+    id         INTEGER PRIMARY KEY,
+    author_id  INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    action     TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    combine    TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_author_filter_rules_author ON author_filter_rules(author_id, action);
+
+CREATE TABLE author_filter_values (
+    rule_id INTEGER NOT NULL REFERENCES author_filter_rules(id) ON DELETE CASCADE,
+    value   TEXT NOT NULL,
+    PRIMARY KEY (rule_id, value)
+);
+
+CREATE VIEW visible_items AS
+SELECT i.*
+FROM items i
+JOIN feeds f ON f.id = i.feed_id
+WHERE NOT EXISTS (
+    SELECT 1 FROM author_filter_rules r
+    WHERE r.author_id = f.author_id AND r.action = 'hide'
+      AND (
+        CASE r.kind
+          WHEN 'tag' THEN CASE r.combine
+            WHEN 'all' THEN
+              (SELECT COUNT(DISTINCT ic.category) FROM item_categories ic
+                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                WHERE ic.item_id = i.id)
+              = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+            ELSE EXISTS (SELECT 1 FROM item_categories ic
+                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                WHERE ic.item_id = i.id)
+          END
+          WHEN 'feed' THEN CASE r.combine
+            WHEN 'all' THEN
+              (SELECT COUNT(DISTINCT mf.feed_id) FROM item_feeds mf
+                 JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
+                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
+                WHERE mf.item_id = i.id)
+              = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+            ELSE EXISTS (SELECT 1 FROM item_feeds mf
+                 JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
+                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
+                WHERE mf.item_id = i.id)
+          END
+          ELSE 0
+        END
+      )
+)
+AND NOT EXISTS (
+    SELECT 1 FROM author_filter_rules r
+    WHERE r.author_id = f.author_id AND r.action = 'show'
+      AND NOT (
+        CASE r.kind
+          WHEN 'tag' THEN CASE r.combine
+            WHEN 'all' THEN
+              (SELECT COUNT(DISTINCT ic.category) FROM item_categories ic
+                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                WHERE ic.item_id = i.id)
+              = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+            ELSE EXISTS (SELECT 1 FROM item_categories ic
+                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                WHERE ic.item_id = i.id)
+          END
+          WHEN 'feed' THEN CASE r.combine
+            WHEN 'all' THEN
+              (SELECT COUNT(DISTINCT mf.feed_id) FROM item_feeds mf
+                 JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
+                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
+                WHERE mf.item_id = i.id)
+              = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+            ELSE EXISTS (SELECT 1 FROM item_feeds mf
+                 JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
+                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
+                WHERE mf.item_id = i.id)
+          END
+          ELSE 0
+        END
+      )
+);
 `
 
 // Migrate applies any pending migrations in order, recording each in
