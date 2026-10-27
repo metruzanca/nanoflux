@@ -18,40 +18,42 @@ var (
 // (and later the MCP server) use the same Store, so admin operations always
 // share the app's data access paths.
 type Store struct {
-	db          *sql.DB
-	q           *sqlcgen.Queries
-	Users       *UserStore
-	Sessions    *SessionStore
-	Settings    *SettingStore
-	Authors     *AuthorStore
-	Feeds       *FeedStore
-	Items       *ItemStore
-	Collections *CollectionStore
-	SourceIcons *SourceIconStore
-	Shares      *ShareStore
-	Lists       *ListStore
-	AuthorLinks *AuthorLinkStore
-	ViewPrefs   *ViewPrefStore
+	db            *sql.DB
+	q             *sqlcgen.Queries
+	Users         *UserStore
+	Sessions      *SessionStore
+	Settings      *SettingStore
+	Authors       *AuthorStore
+	Feeds         *FeedStore
+	Items         *ItemStore
+	Collections   *CollectionStore
+	SourceIcons   *SourceIconStore
+	Shares        *ShareStore
+	Lists         *ListStore
+	AuthorLinks   *AuthorLinkStore
+	AuthorFilters *AuthorFilterStore
+	ViewPrefs     *ViewPrefStore
 }
 
 func New(sqldb *sql.DB) *Store {
 	q := sqlcgen.New(sqldb)
 	policy := URLPolicy(identityPolicy{})
 	return &Store{
-		db:          sqldb,
-		q:           q,
-		Users:       &UserStore{q: q, db: sqldb},
-		Sessions:    &SessionStore{q: q},
-		Settings:    &SettingStore{q: q, db: sqldb},
-		Authors:     &AuthorStore{q: q},
-		Feeds:       &FeedStore{q: q, db: sqldb, policy: policy},
-		Items:       &ItemStore{q: q, db: sqldb, policy: policy},
-		Collections: &CollectionStore{q: q, db: sqldb},
-		SourceIcons: &SourceIconStore{q: q},
-		Shares:      &ShareStore{q: q, db: sqldb},
-		Lists:       &ListStore{q: q, db: sqldb, policy: policy},
-		AuthorLinks: &AuthorLinkStore{q: q},
-		ViewPrefs:   &ViewPrefStore{q: q},
+		db:            sqldb,
+		q:             q,
+		Users:         &UserStore{q: q, db: sqldb},
+		Sessions:      &SessionStore{q: q},
+		Settings:      &SettingStore{q: q, db: sqldb},
+		Authors:       &AuthorStore{q: q},
+		Feeds:         &FeedStore{q: q, db: sqldb, policy: policy},
+		Items:         &ItemStore{q: q, db: sqldb, policy: policy},
+		Collections:   &CollectionStore{q: q, db: sqldb},
+		SourceIcons:   &SourceIconStore{q: q},
+		Shares:        &ShareStore{q: q, db: sqldb},
+		Lists:         &ListStore{q: q, db: sqldb, policy: policy},
+		AuthorLinks:   &AuthorLinkStore{q: q},
+		AuthorFilters: &AuthorFilterStore{db: sqldb},
+		ViewPrefs:     &ViewPrefStore{q: q},
 	}
 }
 

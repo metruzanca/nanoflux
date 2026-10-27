@@ -18,6 +18,7 @@ func TestMigrate(t *testing.T) {
 	tables := []string{
 		"users", "sessions", "authors", "feeds",
 		"items", "collections", "collection_feeds", "schema_migrations",
+		"author_filter_rules", "author_filter_values",
 	}
 	for _, name := range tables {
 		var n int
@@ -29,6 +30,17 @@ func TestMigrate(t *testing.T) {
 		if n != 1 {
 			t.Errorf("table %s not created", name)
 		}
+	}
+
+	// Author filters add a read-side view over items (schemaV55).
+	var visibleView int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='view' AND name='visible_items'`,
+	).Scan(&visibleView); err != nil {
+		t.Fatal(err)
+	}
+	if visibleView != 1 {
+		t.Errorf("visible_items view not created")
 	}
 
 	// The ingest filter-rule system (schemaV53) is gone: no filters table and no

@@ -163,7 +163,8 @@ type ItemFilter struct {
 	FavoritesOnly bool
 	BookmarksOnly bool
 	FeedID        int64 // 0 = all
-	AuthorID      int64 // 0 = all
+	AuthorID      int64 // 0 = all (matches any membership of the author's feeds)
+	OwnerAuthorID int64 // 0 = all (matches items owned by the author's feeds)
 	CollectionID  int64 // 0 = all
 	BeforeID      int64 // keyset cursor (descending): only items ordered before this id
 	AfterID       int64 // keyset cursor (ascending): only items ordered after this id
@@ -555,7 +556,7 @@ func (s *ItemStore) SearchPage(userID int64, query string, f ItemFilter) ([]Item
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
-FROM items i
+FROM visible_items i
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 JOIN items_fts fts ON fts.rowid = i.id
@@ -637,24 +638,57 @@ func (s *ItemStore) ListReadHistory(userID int64, offset, limit int) ([]ItemWith
 
 // itemListColumns is the shared SELECT list for the item list queries (the
 // generated ListItems* and the hand-written tagged variant), so both scan the
-// same sqlcgen.ListItemsRow shape.
-const itemListColumns = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
+// same sqlcgen.ListItemsRow shape. from is "visible_items" for normal reads and
+// "items" only for the author-filter preview, which must evaluate draft rules
+// without the saved ones.
+func itemListColumns(from string) string {
+	return `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
-FROM items i
+FROM ` + from + ` i
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id`
+}
 
-// listPageTagged is ListPage with an AND tag filter. It builds the query
-// dynamically (one EXISTS per tag) because the tag set is variable and the
-// generated queries have a fixed placeholder shape. It mirrors ListItems'
-// scope, read/favorite/bookmark, saved-page and cursor semantics, and supports
-// all three sorts. limit is the caller's already-clamped page size.
+// scanItemList reads rows selected with itemListColumns into ItemWithFeed values.
+func scanItemList(rows *sql.Rows, limit int) ([]ItemWithFeed, bool, error) {
+	defer rows.Close()
+	out := make([]ItemWithFeed, 0, limit)
+	for rows.Next() {
+		var r sqlcgen.ListItemsRow
+		if err := rows.Scan(&r.ID, &r.FeedID, &r.Guid, &r.Title, &r.Link, &r.Summary, &r.Categories,
+			&r.ImageUrl, &r.ImageCacheKey, &r.DurationSec, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.Bookmark, &r.ReadAt,
+			&r.FeedTitle, &r.FeedUrl, &r.FeedHomeUrl, &r.FeedIsSystem, &r.AuthorID, &r.AuthorName); err != nil {
+			return nil, false, err
+		}
+		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
+			r.ImageUrl, r.ImageCacheKey, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
+			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	hasMore := len(out) > limit
+	if hasMore {
+		out = out[:limit]
+	}
+	return out, hasMore, nil
+}
+
+// listPageTagged is ListPage with a variable-shape tag/feed predicate. It builds
+// the query dynamically because the group set is variable and the generated
+// queries have a fixed placeholder shape. It mirrors ListItems' scope,
+// read/favorite/bookmark, saved-page and cursor semantics, and supports all
+// three sorts. limit is the caller's already-clamped page size.
 func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]ItemWithFeed, bool, error) {
+	return s.listPageTaggedFrom(userID, f, limit, "visible_items")
+}
+
+func (s *ItemStore) listPageTaggedFrom(userID int64, f ItemFilter, limit int, from string) ([]ItemWithFeed, bool, error) {
 	var b strings.Builder
-	b.WriteString(itemListColumns)
+	b.WriteString(itemListColumns(from))
 	var args []any
 	if f.Magic {
 		b.WriteString(` LEFT JOIN (
@@ -690,25 +724,9 @@ func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]Ite
 	if err != nil {
 		return nil, false, err
 	}
-	defer rows.Close()
-	out := make([]ItemWithFeed, 0, limit)
-	for rows.Next() {
-		var r sqlcgen.ListItemsRow
-		if err := rows.Scan(&r.ID, &r.FeedID, &r.Guid, &r.Title, &r.Link, &r.Summary, &r.Categories,
-			&r.ImageUrl, &r.ImageCacheKey, &r.DurationSec, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.Bookmark, &r.ReadAt,
-			&r.FeedTitle, &r.FeedUrl, &r.FeedHomeUrl, &r.FeedIsSystem, &r.AuthorID, &r.AuthorName); err != nil {
-			return nil, false, err
-		}
-		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-			r.ImageUrl, r.ImageCacheKey, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
-			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
-	}
-	if err := rows.Err(); err != nil {
+	out, hasMore, err := scanItemList(rows, limit)
+	if err != nil {
 		return nil, false, err
-	}
-	hasMore := len(out) > limit
-	if hasMore {
-		out = out[:limit]
 	}
 	if err := s.attachSources(userID, out); err != nil {
 		return nil, false, err
@@ -727,6 +745,10 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
 	if f.AuthorID != 0 {
 		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id WHERE mf.item_id = i.id AND mf2.author_id = ?)")
 		*args = append(*args, f.AuthorID)
+	}
+	if f.OwnerAuthorID != 0 {
+		b.WriteString(" AND i.feed_id IN (SELECT oa.id FROM feeds oa WHERE oa.author_id = ?)")
+		*args = append(*args, f.OwnerAuthorID)
 	}
 	if f.CollectionID != 0 {
 		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))")
@@ -761,15 +783,18 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
 		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_feeds mfx WHERE mfx.item_id = i.id AND mfx.feed_id = ?)")
 		*args = append(*args, f.ExcludeFeedID)
 	}
-	appendTagGroups(b, args, "i.id", f.TagGroups)
-	appendFeedGroups(b, args, "i.id", f.FeedGroups)
+	appendFilterGroups(b, args, "i.id", f.TagGroups, f.FeedGroups)
 }
 
 // CountFiltered counts the items ListPage would return for f, ignoring its
 // cursor and limit. It backs the "N matching" badge on a filtered item list.
 func (s *ItemStore) CountFiltered(userID int64, f ItemFilter) (int, error) {
+	return s.countFilteredFrom(userID, f, "visible_items")
+}
+
+func (s *ItemStore) countFilteredFrom(userID int64, f ItemFilter, from string) (int, error) {
 	var b strings.Builder
-	b.WriteString(`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+	b.WriteString(`SELECT COUNT(*) FROM ` + from + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 	args := []any{userID}
 	appendItemFilterPredicates(&b, &args, f)
 	var n int
@@ -777,6 +802,79 @@ func (s *ItemStore) CountFiltered(userID int64, f ItemFilter) (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// AuthorFilterPreview is the draft-rule preview on the author settings page.
+// Total and the allowed/blocked counts cover every item owned by the author;
+// Allowed/Blocked are the newest samples.
+type AuthorFilterPreview struct {
+	Total        int
+	AllowedCount int
+	BlockedCount int
+	Allowed      []ItemWithFeed
+	Blocked      []ItemWithFeed
+}
+
+// PreviewAuthorFilters evaluates draft author rules against the author's owned
+// items. It reads raw items, not visible_items, so saved rules are not
+// double-applied. The blocked sample is the complement of the same group
+// predicate the normal list uses.
+func (s *ItemStore) PreviewAuthorFilters(userID, authorID int64, tagGroups []TagGroup, feedGroups []FeedGroup, limit int) (AuthorFilterPreview, error) {
+	if limit <= 0 || limit > 20 {
+		limit = 5
+	}
+	total, err := s.countFilteredFrom(userID, ItemFilter{OwnerAuthorID: authorID}, "items")
+	if err != nil {
+		return AuthorFilterPreview{}, err
+	}
+	f := ItemFilter{
+		OwnerAuthorID: authorID,
+		TagGroups:     tagGroups,
+		FeedGroups:    feedGroups,
+	}
+	allowedCount, err := s.countFilteredFrom(userID, f, "items")
+	if err != nil {
+		return AuthorFilterPreview{}, err
+	}
+	allowed, _, err := s.listPageTaggedFrom(userID, f, limit, "items")
+	if err != nil {
+		return AuthorFilterPreview{}, err
+	}
+	p := AuthorFilterPreview{
+		Total:        total,
+		AllowedCount: allowedCount,
+		BlockedCount: total - allowedCount,
+		Allowed:      allowed,
+	}
+	if p.BlockedCount <= 0 {
+		return p, nil
+	}
+	clause, groupArgs := filterGroupsClause("i.id", tagGroups, feedGroups)
+	if clause == "" {
+		return p, nil
+	}
+	var b strings.Builder
+	b.WriteString(itemListColumns("items"))
+	b.WriteString(" WHERE i.user_id = ? AND i.feed_id IN (SELECT oa.id FROM feeds oa WHERE oa.author_id = ?)")
+	b.WriteString(" AND NOT (")
+	b.WriteString(clause)
+	b.WriteString(") ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ?")
+	args := []any{userID, authorID}
+	args = append(args, groupArgs...)
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
+	if err != nil {
+		return AuthorFilterPreview{}, err
+	}
+	blocked, _, err := scanItemList(rows, limit)
+	if err != nil {
+		return AuthorFilterPreview{}, err
+	}
+	if err := s.attachSources(userID, blocked); err != nil {
+		return AuthorFilterPreview{}, err
+	}
+	p.Blocked = blocked
+	return p, nil
 }
 
 // Enclosure is one media attachment (podcast, video) on an item.
@@ -1520,10 +1618,11 @@ func unreadFilteredQuery(userID int64, f ItemFilter, mark bool) (string, []any) 
 	var b strings.Builder
 	var args []any
 	if mark {
-		b.WriteString(`UPDATE items SET read = 1, read_at = ? WHERE user_id = ? AND read = 0`)
-		args = append(args, ns(db.Now()), userID)
+		b.WriteString(`UPDATE items SET read = 1, read_at = ? WHERE user_id = ? AND read = 0
+		AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?)`)
+		args = append(args, ns(db.Now()), userID, userID)
 	} else {
-		b.WriteString(`SELECT COUNT(*) FROM items WHERE user_id = ? AND read = 0`)
+		b.WriteString(`SELECT COUNT(*) FROM visible_items items WHERE items.user_id = ? AND items.read = 0`)
 		args = append(args, userID)
 	}
 	b.WriteString(` AND items.id IN (
@@ -1555,41 +1654,46 @@ func unreadFilteredQuery(userID int64, f ItemFilter, mark bool) (string, []any) 
 		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_feeds mfx WHERE mfx.item_id = items.id AND mfx.feed_id = ?)")
 		args = append(args, f.ExcludeFeedID)
 	}
-	appendTagGroups(&b, &args, "items.id", f.TagGroups)
-	appendFeedGroups(&b, &args, "items.id", f.FeedGroups)
+	appendFilterGroups(&b, &args, "items.id", f.TagGroups, f.FeedGroups)
 	return b.String(), args
 }
 
-// appendTagGroups adds one predicate per tag group. itemID is the qualified
-// items.id column for the query being built.
-func appendTagGroups(b *strings.Builder, args *[]any, itemID string, groups []TagGroup) {
-	for _, g := range groups {
+// filterGroupsClause builds the combined predicate for tag/feed groups, with no
+// leading AND. It is shared by the normal list path and the author-filter
+// preview, so both evaluate groups identically.
+func filterGroupsClause(itemID string, tagGroups []TagGroup, feedGroups []FeedGroup) (string, []any) {
+	var (
+		clauses []string
+		args    []any
+	)
+	for _, g := range tagGroups {
 		terms := make([]string, 0, len(g.Tags))
 		for _, tag := range g.Tags {
 			terms = append(terms, "EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = "+itemID+" AND ic.category = ?)")
-			*args = append(*args, tag)
+			args = append(args, tag)
 		}
-		appendGroupPredicate(b, terms, g.All, g.Exclude)
+		if clause := groupClause(terms, g.All, g.Exclude); clause != "" {
+			clauses = append(clauses, clause)
+		}
 	}
-}
-
-// appendFeedGroups adds one predicate per feed group.
-func appendFeedGroups(b *strings.Builder, args *[]any, itemID string, groups []FeedGroup) {
-	for _, g := range groups {
+	for _, g := range feedGroups {
 		terms := make([]string, 0, len(g.FeedIDs))
 		for _, feedID := range g.FeedIDs {
 			terms = append(terms, "EXISTS (SELECT 1 FROM item_feeds mfg WHERE mfg.item_id = "+itemID+" AND mfg.feed_id = ?)")
-			*args = append(*args, feedID)
+			args = append(args, feedID)
 		}
-		appendGroupPredicate(b, terms, g.All, g.Exclude)
+		if clause := groupClause(terms, g.All, g.Exclude); clause != "" {
+			clauses = append(clauses, clause)
+		}
 	}
+	return strings.Join(clauses, " AND "), args
 }
 
-// appendGroupPredicate joins a group's terms with AND/OR and negates the whole
-// predicate for a hide group.
-func appendGroupPredicate(b *strings.Builder, terms []string, all, exclude bool) {
+// groupClause joins a group's terms with AND/OR and negates the whole predicate
+// for a hide group.
+func groupClause(terms []string, all, exclude bool) string {
 	if len(terms) == 0 {
-		return
+		return ""
 	}
 	joiner := " OR "
 	if all {
@@ -1597,14 +1701,20 @@ func appendGroupPredicate(b *strings.Builder, terms []string, all, exclude bool)
 	}
 	inner := strings.Join(terms, joiner)
 	if exclude {
-		b.WriteString(" AND NOT (")
-		b.WriteString(inner)
-		b.WriteString(")")
+		return "NOT (" + inner + ")"
+	}
+	return "(" + inner + ")"
+}
+
+// appendFilterGroups adds the combined tag/feed group predicate to b.
+func appendFilterGroups(b *strings.Builder, args *[]any, itemID string, tagGroups []TagGroup, feedGroups []FeedGroup) {
+	clause, groupArgs := filterGroupsClause(itemID, tagGroups, feedGroups)
+	if clause == "" {
 		return
 	}
-	b.WriteString(" AND (")
-	b.WriteString(inner)
-	b.WriteString(")")
+	b.WriteString(" AND ")
+	b.WriteString(clause)
+	*args = append(*args, groupArgs...)
 }
 
 // MarkAuthorRead marks every item read across all of an author's feeds.

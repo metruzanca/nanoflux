@@ -420,9 +420,21 @@ function addAuthorLinkRow() {
 // Author-level filter modal: clone a blank row, give it a unique row token, and
 // keep its multi-select values in sync with the tag/feed kind.
 var filterRowSeq = 0;
-function addFilterRow(after) {
-  var tpl = document.getElementById('filter-row-template');
-  var list = document.getElementById('filter-rows');
+function filterRowScope(el) {
+  if (el && el.closest) {
+    var scoped = el.closest('[data-filter-scope]') || el.closest('[data-author-filters]');
+    if (scoped) return scoped;
+  }
+  return document.getElementById('tag-filter-dialog') || document;
+}
+function authorFiltersChanged(el) {
+  var card = el && el.closest ? el.closest('[data-author-filters]') : null;
+  if (card && window.htmx && window.htmx.trigger) window.htmx.trigger(card, 'authorfilterschanged');
+}
+function addFilterRow(after, trigger) {
+  var scope = filterRowScope(trigger || after);
+  var tpl = scope.querySelector('[data-filter-row-template]');
+  var list = scope.querySelector('[data-filter-rows]');
   if (!tpl || !list) return null;
   var row = tpl.content.firstElementChild.cloneNode(true);
   filterRowSeq += 1;
@@ -441,6 +453,7 @@ function addFilterRow(after) {
   if (after && after.parentNode === list) after.after(row);
   else list.appendChild(row);
   if (window.nanofluxReinitVaadin) window.nanofluxReinitVaadin(row);
+  authorFiltersChanged(row);
   return row;
 }
 function syncFilterRowKind(row) {
@@ -448,9 +461,9 @@ function syncFilterRowKind(row) {
   var kind = row.querySelector('[data-filter-kind]');
   var combo = row.querySelector('vaadin-multi-select-combo-box');
   var mirrors = row.querySelector('[data-vaadin-mirrors]');
-  var dialog = row.closest('dialog');
-  if (!kind || !combo || !dialog) return;
-  var raw = kind.value === 'feed' ? dialog.dataset.feedItems : dialog.dataset.tagItems;
+  var source = row.closest('[data-tag-items]');
+  if (!kind || !combo || !source) return;
+  var raw = kind.value === 'feed' ? source.dataset.feedItems : source.dataset.tagItems;
   var items = [];
   try { items = JSON.parse(raw || '[]'); } catch (e) { items = []; }
   combo.items = items;
@@ -1555,9 +1568,15 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     }
     if ((el = t.closest('[data-remove-closest]'))) {
       var rm = closest(el, el.getAttribute('data-remove-closest'));
-      if (rm) rm.remove();
-      if (rm && rm.classList.contains('filter-row') && !document.querySelector('#filter-rows .filter-row')) {
-        addFilterRow(null);
+      if (rm && rm.classList.contains('filter-row')) {
+        var card = rm.closest('[data-author-filters]');
+        var scope = filterRowScope(rm);
+        var wasLast = !scope.querySelector('[data-filter-rows] .filter-row');
+        rm.remove();
+        if (card) authorFiltersChanged(card);
+        if (wasLast) addFilterRow(null, card || scope);
+      } else if (rm) {
+        rm.remove();
       }
       return;
     }
@@ -1577,7 +1596,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     if ((el = t.closest('[data-item-nav]'))) { itemNav(parseInt(el.getAttribute('data-item-nav'), 10)); return; }
     if ((el = t.closest('[data-plugin-docs]'))) { e.preventDefault(); openPluginDocs(el.dataset.plugin); return; }
     if ((el = t.closest('[data-add-author-link]'))) { addAuthorLinkRow(); return; }
-    if ((el = t.closest('[data-add-filter-row]'))) { addFilterRow(el.closest('.filter-row')); return; }
+    if ((el = t.closest('[data-add-filter-row]'))) { addFilterRow(el.closest('.filter-row'), el); return; }
   });
 
   document.addEventListener('change', function (e) {

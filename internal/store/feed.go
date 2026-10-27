@@ -319,6 +319,24 @@ func (s *FeedStore) Delete(userID, id int64) ([]string, error) {
 		return nil, fmt.Errorf("re-home feed items: %w", err)
 	}
 
+	// Drop this feed from the author's stored filter rules, and any rule left
+	// with no values. Rules live outside the feed cascade, so a stale id would
+	// otherwise keep showing in the author's settings.
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM author_filter_values
+		WHERE value = CAST(? AS TEXT)
+		  AND rule_id IN (SELECT id FROM author_filter_rules WHERE author_id = ?)`,
+		f.ID, f.AuthorID); err != nil {
+		return nil, fmt.Errorf("remove feed from author filters: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM author_filter_rules
+		WHERE author_id = ?
+		  AND NOT EXISTS (SELECT 1 FROM author_filter_values v WHERE v.rule_id = author_filter_rules.id)`,
+		f.AuthorID); err != nil {
+		return nil, fmt.Errorf("delete empty author filters: %w", err)
+	}
+
 	if _, err := q.DeleteFeed(ctx, sqlcgen.DeleteFeedParams{ID: id, UserID: userID}); err != nil {
 		return nil, fmt.Errorf("delete feed: %w", err)
 	}

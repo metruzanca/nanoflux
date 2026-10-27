@@ -43,7 +43,7 @@ func (q *Queries) ClearListShareToken(ctx context.Context, arg ClearListShareTok
 
 const countReadItemsInList = `-- name: CountReadItemsInList :one
 SELECT COUNT(*) FROM list_items li
-JOIN items i ON i.id = li.item_id
+JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 WHERE li.list_id = ?1 AND f.user_id = ?2 AND i.read = 1
 `
@@ -62,7 +62,7 @@ func (q *Queries) CountReadItemsInList(ctx context.Context, arg CountReadItemsIn
 
 const countUnreadItemsInList = `-- name: CountUnreadItemsInList :one
 SELECT COUNT(*) FROM list_items li
-JOIN items i ON i.id = li.item_id
+JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 WHERE li.list_id = ?1 AND f.user_id = ?2 AND i.read = 0
 `
@@ -335,7 +335,7 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
-JOIN items i ON i.id = li.item_id
+JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE li.list_id = ?1 AND f.user_id = ?2
@@ -441,7 +441,7 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
-JOIN items i ON i.id = li.item_id
+JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE li.list_id = ?1 AND f.user_id = ?2
@@ -547,7 +547,7 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
-JOIN items i ON i.id = li.item_id
+JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE li.list_id = ?1

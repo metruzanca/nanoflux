@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 )
 
 // CloneUser copies a seed account into a brand-new non-admin user, remapping
@@ -73,6 +74,13 @@ func (s *Store) CloneUser(seedID int64, newUsername, passwordHash, expiresAt str
 	}
 	feedMap, err := cloneFeeds(ctx, tx, seedID, newID)
 	if err != nil {
+		return User{}, err
+	}
+	authorMap, err := cloneAuthorIDMap(ctx, tx, seedID, newID)
+	if err != nil {
+		return User{}, err
+	}
+	if err := cloneAuthorFilters(ctx, tx, seedID, authorMap, feedMap); err != nil {
 		return User{}, err
 	}
 	itemMap, err := cloneItems(ctx, tx, seedID, newID, feedMap)
@@ -592,6 +600,92 @@ func cloneLists(ctx context.Context, tx *sql.Tx, seedID, newID int64, itemMap ma
 			INSERT INTO list_items (list_id, item_id, created_at) VALUES (?, ?, ?)
 			ON CONFLICT (list_id, item_id) DO NOTHING`, newList, newItem, x.createdAt); err != nil {
 			return fmt.Errorf("clone list_items insert: %w", err)
+		}
+	}
+	return nil
+}
+
+// cloneAuthorFilters copies author-level allow/block rules, remapping both the
+// author and any feed-id values. Rules whose feed did not survive the clone lose
+// that value; a rule left empty is skipped.
+func cloneAuthorFilters(ctx context.Context, tx *sql.Tx, seedID int64, authorMap, feedMap map[int64]int64) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT r.id, r.author_id, r.action, r.kind, r.combine, v.value
+		FROM author_filter_rules r
+		JOIN authors a ON a.id = r.author_id
+		JOIN author_filter_values v ON v.rule_id = r.id
+		WHERE a.user_id = ? AND a.is_system = 0
+		ORDER BY r.id, v.value`, seedID)
+	if err != nil {
+		return fmt.Errorf("clone author filters select: %w", err)
+	}
+	defer rows.Close()
+	type rule struct {
+		id       int64
+		authorID int64
+		action   string
+		kind     string
+		combine  string
+		values   []string
+	}
+	var rules []rule
+	for rows.Next() {
+		var (
+			r     rule
+			value string
+		)
+		if err := rows.Scan(&r.id, &r.authorID, &r.action, &r.kind, &r.combine, &value); err != nil {
+			return fmt.Errorf("clone author filters scan: %w", err)
+		}
+		if len(rules) == 0 || rules[len(rules)-1].id != r.id {
+			r.values = []string{value}
+			rules = append(rules, r)
+		} else {
+			rules[len(rules)-1].values = append(rules[len(rules)-1].values, value)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, r := range rules {
+		newAuthor, ok := authorMap[r.authorID]
+		if !ok {
+			continue
+		}
+		values := make([]string, 0, len(r.values))
+		for _, value := range r.values {
+			if r.kind == "feed" {
+				oldFeed, err := strconv.ParseInt(value, 10, 64)
+				if err != nil {
+					continue
+				}
+				newFeed, ok := feedMap[oldFeed]
+				if !ok {
+					continue
+				}
+				value = strconv.FormatInt(newFeed, 10)
+			}
+			values = append(values, value)
+		}
+		if len(values) == 0 {
+			continue
+		}
+		res, err := tx.ExecContext(ctx, `
+			INSERT INTO author_filter_rules (author_id, action, kind, combine)
+			VALUES (?, ?, ?, ?)`, newAuthor, r.action, r.kind, r.combine)
+		if err != nil {
+			return fmt.Errorf("clone author filter insert: %w", err)
+		}
+		ruleID, err := res.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("clone author filter id: %w", err)
+		}
+		for _, value := range values {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO author_filter_values (rule_id, value) VALUES (?, ?)`,
+				ruleID, value); err != nil {
+				return fmt.Errorf("clone author filter value insert: %w", err)
+			}
 		}
 	}
 	return nil

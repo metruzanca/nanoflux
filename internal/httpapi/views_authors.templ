@@ -103,6 +103,7 @@ templ authorEditPage(u store.User, d authorsData) {
 			@authorFields(d)
 			@authorLinkFields(d)
 		</section>
+		@authorFilterCard(d)
 		if len(d.Feeds) > 0 {
 			<div class="author-feeds">
 				<h2>feeds</h2>
@@ -189,6 +190,91 @@ templ authorAvatarCard(d authorAvatarCardData) {
 			}
 		</span>
 	</div>
+}
+
+// authorFilterCard configures the author's always-on allow/block rules. It is
+// part of the one author-edit form; the marker lets the handler tell a real
+// submission from a partial one. Edits re-post the rows to the preview endpoint
+// as they change, so the user sees what would be allowed and blocked before
+// saving.
+templ authorFilterCard(d authorsData) {
+	<section class="card author-filter-card" data-author-filters data-filter-scope
+		data-tag-items={ comboItemsJSON(d.FilterTagOptions) }
+		data-feed-items={ comboItemsJSON(d.FilterFeedOptions) }
+		hx-post={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/filters/preview" }
+		hx-trigger="change delay:400ms, authorfilterschanged"
+		hx-include="#author-filter-fields"
+		hx-target="#author-filter-preview"
+		hx-swap="innerHTML">
+		<div class="row">
+			<h2>filters</h2>
+		</div>
+		<p class="muted small">Always on. Allow rows must all match; block rows hide matching posts. Filters apply to every list, count and search result.</p>
+		<input type="hidden" name="author_filters_present" value="1"/>
+		<div id="author-filter-fields">
+			<div class="filter-rows" id="author-filter-rows" data-filter-rows>
+				for i, f := range d.Rules {
+					@filterRow("author-filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, d.FilterTagOptions, d.FilterFeedOptions, true, true)
+				}
+				if len(d.Rules) == 0 {
+					@filterRow("author-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, true, true)
+				}
+			</div>
+			<template id="author-filter-row-template" data-filter-row-template>
+				@filterRow("author-filter-template", "template", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, true, true)
+			</template>
+			<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
+		</div>
+		<div id="author-filter-preview" class="author-filter-preview">
+			@authorFilterPreviewFragment(d.FilterPreview)
+		</div>
+	</section>
+}
+
+// authorFilterPreviewFragment renders the allowed/blocked sample. It is used for
+// the initial page render and the live htmx preview.
+templ authorFilterPreviewFragment(p store.AuthorFilterPreview) {
+	<div class="filter-preview-grid">
+		<div>
+			<h3>allowed ({ strconv.Itoa(p.AllowedCount) })</h3>
+			if len(p.Allowed) == 0 {
+				<p class="muted small">no allowed posts</p>
+			} else {
+				<ul class="filter-preview-list">
+					for _, it := range p.Allowed {
+						<li>
+							<span class="filter-preview-title">{ it.Title }</span>
+							<span class="muted small">{ it.FeedTitle }
+								if it.PublishedAt != "" {
+									· { web.TimeFmt("", it.PublishedAt) }
+								}
+							</span>
+						</li>
+					}
+				</ul>
+			}
+		</div>
+		<div>
+			<h3>blocked ({ strconv.Itoa(p.BlockedCount) })</h3>
+			if len(p.Blocked) == 0 {
+				<p class="muted small">no blocked posts</p>
+			} else {
+				<ul class="filter-preview-list">
+					for _, it := range p.Blocked {
+						<li>
+							<span class="filter-preview-title">{ it.Title }</span>
+							<span class="muted small">{ it.FeedTitle }
+								if it.PublishedAt != "" {
+									· { web.TimeFmt("", it.PublishedAt) }
+								}
+							</span>
+						</li>
+					}
+				</ul>
+			}
+		</div>
+	</div>
+	<p class="muted small">{ strconv.Itoa(p.Total) } posts in scope · newest matches shown first</p>
 }
 
 templ authorFields(d authorsData) {

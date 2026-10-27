@@ -180,6 +180,14 @@ analytics and public demo mode are env-driven.
   each row has `show`/`hide`, `tag`/`feed`, `any`/`all`, one or more values, and
   negative author filters are supported. A scoped feed/author/collection list
   gets an editable filter dialog, active-filter chips and match counts.
+- Authors also carry persistent always-on rules (`schemaV55`,
+  `store.AuthorFilters`), edited in the author settings card as allow/block
+  rows. They reuse the same `FilterRule` shape, `store.FilterGroups` conversion
+  and row component as the transient dialog. The `visible_items` view applies
+  them to every item read (lists, counts, badges, search, read history, list
+  items and public shares); item detail stays reachable by direct link. The
+  settings card shows a live allowed/blocked preview
+  (`POST /authors/{id}/filters/preview`).
 - Search is stateless FTS5 (`items_fts`, `schemaV10`) over title + summary, with
   `title:`, `author:`, `feed:`, `unread:` qualifiers. No saved searches, and
   item bodies are not indexed.

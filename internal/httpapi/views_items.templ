@@ -424,7 +424,7 @@ templ scopedTab(path, itemsPath, view, label, count string, active bool, sort it
 // filterRow is one editable row in the filter modal: action, kind, any/all,
 // values, then remove/add controls. The kind select is hidden when only one
 // kind is possible; its value still submits through a hidden input.
-templ filterRow(id, token, kind, action, combine string, values []string, tagItems, feedItems []comboItem, switchable bool) {
+templ filterRow(id, token, kind, action, combine string, values []string, tagItems, feedItems []comboItem, switchable, allowBlock bool) {
 	{{ options := tagItems }}
 	if kind == filterKindFeed {
 		{{ options = feedItems }}
@@ -432,8 +432,13 @@ templ filterRow(id, token, kind, action, combine string, values []string, tagIte
 	<div class="filter-row" data-filter-row>
 		<input type="hidden" name="filter_row" value={ token }/>
 		<select name="filter_action" class="filter-select filter-action" aria-label="filter action">
-			<option value={ filterShow } selected?={ action == filterShow }>show</option>
-			<option value={ filterHide } selected?={ action == filterHide }>hide</option>
+			if allowBlock {
+				<option value={ filterShow } selected?={ action == filterShow }>allow</option>
+				<option value={ filterHide } selected?={ action == filterHide }>block</option>
+			} else {
+				<option value={ filterShow } selected?={ action == filterShow }>show</option>
+				<option value={ filterHide } selected?={ action == filterHide }>hide</option>
+			}
 		</select>
 		if switchable {
 			<select name="filter_kind" class="filter-select filter-kind" aria-label="filter kind" data-filter-kind>
@@ -500,7 +505,7 @@ templ scopedItemsInner(d scopedItemsData) {
 			{{ defaultKind := d.filterDefaultKind() }}
 			{{ switchable := d.filterKindsSwitchable() }}
 			{{ feedItems := d.effectiveFeedOptions() }}
-			<dialog id="tag-filter-dialog" class="modal" data-tag-items={ comboItemsJSON(d.TagOptions) } data-feed-items={ comboItemsJSON(feedItems) }>
+			<dialog id="tag-filter-dialog" class="modal" data-filter-scope data-tag-items={ comboItemsJSON(d.TagOptions) } data-feed-items={ comboItemsJSON(feedItems) }>
 				<div class="row">
 					<h2>filter</h2>
 					<button type="button" class="link" title="close" data-close-dialog>@web.Lucide("x")</button>
@@ -509,16 +514,16 @@ templ scopedItemsInner(d scopedItemsData) {
 					<input type="hidden" name="view" value={ d.View }/>
 					<input type="hidden" name="sort" value={ d.Sort.param() }/>
 					<p class="muted small">show matching posts, or hide them. each row combines its values with any (or) or all (and); show rows must all match, and any hide row excludes.</p>
-					<div class="filter-rows" id="filter-rows">
+					<div class="filter-rows" id="filter-rows" data-filter-rows>
 						for i, f := range d.Filters {
-							@filterRow("filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, d.TagOptions, feedItems, switchable)
+							@filterRow("filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, d.TagOptions, feedItems, switchable, false)
 						}
 						if len(d.Filters) == 0 {
-							@filterRow("filter-empty", "empty", defaultKind, filterShow, filterAll, nil, d.TagOptions, feedItems, switchable)
+							@filterRow("filter-empty", "empty", defaultKind, filterShow, filterAll, nil, d.TagOptions, feedItems, switchable, false)
 						}
 					</div>
-					<template id="filter-row-template">
-						@filterRow("filter-template", "template", defaultKind, filterShow, filterAll, nil, d.TagOptions, feedItems, switchable)
+					<template id="filter-row-template" data-filter-row-template>
+						@filterRow("filter-template", "template", defaultKind, filterShow, filterAll, nil, d.TagOptions, feedItems, switchable, false)
 					</template>
 					<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 					<div class="row-actions">

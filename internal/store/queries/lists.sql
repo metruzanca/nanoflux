@@ -78,7 +78,7 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
-JOIN items i ON i.id = li.item_id
+JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID')
@@ -96,7 +96,7 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
-JOIN items i ON i.id = li.item_id
+JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID')
@@ -109,13 +109,13 @@ LIMIT sqlc.arg('limit');
 
 -- name: CountUnreadItemsInList :one
 SELECT COUNT(*) FROM list_items li
-JOIN items i ON i.id = li.item_id
+JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID') AND i.read = 0;
 
 -- name: CountReadItemsInList :one
 SELECT COUNT(*) FROM list_items li
-JOIN items i ON i.id = li.item_id
+JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID') AND i.read = 1;
 
@@ -126,7 +126,7 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        f.is_system AS feed_is_system,
        a.id AS author_id, a.name AS author_name
 FROM list_items li
-JOIN items i ON i.id = li.item_id
+JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id
 WHERE li.list_id = sqlc.arg('listID')
