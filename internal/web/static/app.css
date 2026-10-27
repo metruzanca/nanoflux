@@ -832,6 +832,7 @@ a.item-tag:hover { color: var(--accent); }
 }
 .active-tags .chip-hide:hover { border-color: var(--danger); }
 .active-tags .chip-clear { background: var(--panel); border-color: var(--border); color: var(--muted); }
+.active-tags .chip-count { background: var(--panel); border-style: dashed; color: var(--muted); cursor: default; }
 
 /* Filter modal: one editable row per applied filter. The value combo takes the
    available width; the action/kind selects and the x/+ buttons stay compact. */

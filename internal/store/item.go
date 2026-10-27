@@ -665,49 +665,7 @@ func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]Ite
 	}
 	b.WriteString(" WHERE i.user_id = ?")
 	args = append(args, userID)
-	if f.FeedID != 0 {
-		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = ?)")
-		args = append(args, f.FeedID)
-	}
-	if f.AuthorID != 0 {
-		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id WHERE mf.item_id = i.id AND mf2.author_id = ?)")
-		args = append(args, f.AuthorID)
-	}
-	if f.CollectionID != 0 {
-		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))")
-		args = append(args, f.CollectionID)
-	}
-	if f.UnreadOnly {
-		b.WriteString(" AND i.read = 0")
-	}
-	if f.ReadOnly {
-		b.WriteString(" AND i.read = 1")
-	}
-	if f.FavoritesOnly {
-		b.WriteString(" AND i.favorite = 1")
-	}
-	if f.BookmarksOnly {
-		b.WriteString(" AND i.bookmark = 1")
-	}
-	// Saved pages (system feed items) surface only in favorites, bookmarks and
-	// search; keep them out of the unread/read/feed/author/collection streams.
-	if !f.FavoritesOnly && !f.BookmarksOnly {
-		b.WriteString(" AND f.is_system = 0")
-	}
-	for _, tag := range f.Tags {
-		b.WriteString(" AND EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = i.id AND ic.category = ?)")
-		args = append(args, tag)
-	}
-	for _, tag := range f.ExcludeTags {
-		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = i.id AND ic.category = ?)")
-		args = append(args, tag)
-	}
-	if f.ExcludeFeedID != 0 {
-		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_feeds mfx WHERE mfx.item_id = i.id AND mfx.feed_id = ?)")
-		args = append(args, f.ExcludeFeedID)
-	}
-	appendTagGroups(&b, &args, "i.id", f.TagGroups)
-	appendFeedGroups(&b, &args, "i.id", f.FeedGroups)
+	appendItemFilterPredicates(&b, &args, f)
 	switch {
 	case f.Magic:
 		b.WriteString(" ORDER BY CASE WHEN f.rank > 0 THEN 0 WHEN f.rank < 0 THEN 2 ELSE 1 END ASC, COALESCE(fc.fav_count, 0) DESC, COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ? OFFSET ?")
@@ -756,6 +714,69 @@ func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]Ite
 		return nil, false, err
 	}
 	return out, hasMore, nil
+}
+
+// appendItemFilterPredicates adds the scope, view state, saved-page and
+// tag/feed predicates shared by the dynamic item list and its count. The query
+// must join feeds as f and items as i.
+func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
+	if f.FeedID != 0 {
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = ?)")
+		*args = append(*args, f.FeedID)
+	}
+	if f.AuthorID != 0 {
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id WHERE mf.item_id = i.id AND mf2.author_id = ?)")
+		*args = append(*args, f.AuthorID)
+	}
+	if f.CollectionID != 0 {
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))")
+		*args = append(*args, f.CollectionID)
+	}
+	if f.UnreadOnly {
+		b.WriteString(" AND i.read = 0")
+	}
+	if f.ReadOnly {
+		b.WriteString(" AND i.read = 1")
+	}
+	if f.FavoritesOnly {
+		b.WriteString(" AND i.favorite = 1")
+	}
+	if f.BookmarksOnly {
+		b.WriteString(" AND i.bookmark = 1")
+	}
+	// Saved pages (system feed items) surface only in favorites, bookmarks and
+	// search; keep them out of the unread/read/feed/author/collection streams.
+	if !f.FavoritesOnly && !f.BookmarksOnly {
+		b.WriteString(" AND f.is_system = 0")
+	}
+	for _, tag := range f.Tags {
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = i.id AND ic.category = ?)")
+		*args = append(*args, tag)
+	}
+	for _, tag := range f.ExcludeTags {
+		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = i.id AND ic.category = ?)")
+		*args = append(*args, tag)
+	}
+	if f.ExcludeFeedID != 0 {
+		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_feeds mfx WHERE mfx.item_id = i.id AND mfx.feed_id = ?)")
+		*args = append(*args, f.ExcludeFeedID)
+	}
+	appendTagGroups(b, args, "i.id", f.TagGroups)
+	appendFeedGroups(b, args, "i.id", f.FeedGroups)
+}
+
+// CountFiltered counts the items ListPage would return for f, ignoring its
+// cursor and limit. It backs the "N matching" badge on a filtered item list.
+func (s *ItemStore) CountFiltered(userID int64, f ItemFilter) (int, error) {
+	var b strings.Builder
+	b.WriteString(`SELECT COUNT(*) FROM items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+	args := []any{userID}
+	appendItemFilterPredicates(&b, &args, f)
+	var n int
+	if err := s.db.QueryRowContext(context.Background(), b.String(), args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // Enclosure is one media attachment (podcast, video) on an item.

@@ -488,6 +488,7 @@ templ scopedItemsInner(d scopedItemsData) {
 				}
 				<a class={ cls } href={ templ.URL(filterPageURL(d.Path, d.View, d.Sort, d.Filters.without(i))) } title={ "remove " + f.Action + " filter " + f.label() }>{ f.label() } <span aria-hidden="true">×</span></a>
 			}
+			<span class="chip chip-count" title="posts matching the active filters">{ strconv.Itoa(d.FilteredCount) } matching</span>
 			<a class="chip chip-clear" href={ templ.URL(filterPageURL(d.Path, d.View, d.Sort, nil)) }>clear all</a>
 		</div>
 	}
