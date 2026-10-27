@@ -64,4 +64,4 @@ indexes; `GET /` dropped from ~2-4 s to ~0.1 s.
 - `GOMEMLIMIT` — cap the Go heap so the server cannot swap on a low-RAM box.
 - `NF_DB_MAX_CONNS` — SQLite connection pool size (default 4).
 
-See `deployment` notes in the README/gist for a full Pi compose profile.
+See the README and `docker-compose.yml` for a full Pi compose profile.
