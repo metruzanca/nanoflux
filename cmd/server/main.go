@@ -142,6 +142,10 @@ func runServer() {
 	// cache/<plugin>/. A plugin that claims CapImageCache forces it on; a user
 	// may also enable it per feed.
 	p.SetImageCache(imagecache.New(files, p.Client(), plugins.Registry.CachesImages, plugins.Registry.ImageCacheFolder))
+	// A plugin may require a longer minimum poll interval for its feeds, so the
+	// poller consults the registry per feed URL. The host's configured minimum
+	// is the base; the larger value wins.
+	p.SetMinPollInterval(poller.MinPollSeconds(cfg.PollMinInterval, plugins.Registry.MinPollInterval))
 	// Rewrite stored feed URLs to their canonical form (each plugin's
 	// redirect-free shape). Idempotent; fixes feeds added before
 	// canonicalization.

@@ -104,6 +104,9 @@ type feedForm struct {
 	// CacheForced is true when the feed's plugin forces image caching on
 	// (CapImageCache), in which case the user cannot turn it off.
 	CacheForced bool
+	// MinPollIntervalSec is the effective poll floor (seconds) for this feed:
+	// the configured minimum raised by its plugin's floor.
+	MinPollIntervalSec int
 }
 
 type feedsData struct {
@@ -1215,9 +1218,7 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 	feedURL := normalizeURL(r.FormValue("feed_url"))
 	homeURL := r.FormValue("home_url")
 	interval, _ := strconv.Atoi(r.FormValue("poll_interval_sec"))
-	if interval <= 0 {
-		interval = 900
-	}
+	interval = s.clampPollIntervalSec(feedURL, interval)
 	if title == "" || feedURL == "" {
 		return store.Feed{}, "title and feed url are required"
 	}
@@ -1374,11 +1375,17 @@ func (s *Server) feedEditFragment(w http.ResponseWriter, r *http.Request) {
 // collections it belongs to, its plugin docs link and its plugin panel. It backs
 // the combined author edit page's ?feed= editor.
 func (s *Server) feedEditorData(u store.User, f store.Feed) *feedsData {
+	floor := s.pollFloorSec(f.FeedURL)
+	interval := f.PollIntervalSec
+	if floor > interval {
+		interval = floor
+	}
 	form := feedForm{
 		ID: f.ID, Title: f.Title, FeedURL: f.FeedURL, HomeURL: f.HomeURL,
 		Description: f.Description, AuthorID: f.AuthorID,
-		PollIntervalSec: f.PollIntervalSec, PollIntervalAuto: f.PollIntervalAuto, Enabled: f.Enabled,
+		PollIntervalSec: interval, PollIntervalAuto: f.PollIntervalAuto, Enabled: f.Enabled,
 		CacheImages: f.CacheImages, CacheForced: s.imageCacheForced(f.FeedURL),
+		MinPollIntervalSec: floor,
 	}
 	form.CollectionIDs = s.collectionIDsForFeed(u.ID, f.ID)
 	collections, _ := s.store.Collections.List(u.ID)
@@ -1441,14 +1448,14 @@ func (s *Server) applyFeedForm(u store.User, old store.Feed, prefix string, form
 		return false, nil
 	}
 	interval, _ := strconv.Atoi(form.Get(prefix + "poll_interval_sec"))
-	if interval <= 0 {
-		interval = 900
-	}
 	auto := form.Get(prefix+"poll_interval_auto") == "1"
 	if auto {
 		// Adaptive polling owns the interval; keep the stored value.
 		interval = old.PollIntervalSec
 	}
+	// The configured minimum (raised by a plugin floor) wins over a user value
+	// below it, so editing a feed cannot undercut its pacing.
+	interval = s.clampPollIntervalSec(feedURL, interval)
 	homeURL := form.Get(prefix + "home_url")
 	// Editing happens on the feed's author's page, so the feed keeps its author.
 	cacheImages := form.Get(prefix+"cache_images") == "1" || s.imageCacheForced(feedURL)

@@ -98,14 +98,17 @@ message MetaResponse {
   bool has_feed_admin = 8;
   // Whether the plugin implements Configurable. Filled by the plugin's gRPC server.
   bool has_settings = 9;
+  // Shortest poll interval (seconds) the plugin allows for feeds it matches with
+  // the min-poll-interval capability. 0 means no plugin floor.
+  int64 min_poll_interval_sec = 10;
 }
 
 message MatchRequest {
   string url = 1;
   // 0 = discover, 1 = fetch, 2 = render, 3 = docs, 4 = shared keys, 5 = decorate,
   // 6 = url policy, 7 = enrich, 8 = provision, 9 = feed admin, 10 = image cache,
-  // 11 = icon. New capabilities are appended, never inserted: the value crosses
-  // the wire as an integer.
+  // 11 = icon, 12 = min poll interval. New capabilities are appended, never
+  // inserted: the value crosses the wire as an integer.
   int32 capability = 2;
 }
 message MatchResponse { bool match = 1; }

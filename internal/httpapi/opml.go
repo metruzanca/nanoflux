@@ -212,7 +212,7 @@ func (s *Server) opmlImport(w http.ResponseWriter, r *http.Request) {
 			authorID = a.ID
 			authorsByName[authorName] = authorID
 		}
-		f, err := s.store.Feeds.CreateWithPlugin(u.ID, authorID, title, feedURL, homeURL, "", s.pluginNameFor(feedURL), 900)
+		f, err := s.store.Feeds.CreateWithPlugin(u.ID, authorID, title, feedURL, homeURL, "", s.pluginNameFor(feedURL), s.defaultPollIntervalSec(feedURL))
 		if err != nil {
 			log.Error("opml import create", "url", feedURL, "err", err)
 			failed++

@@ -278,7 +278,7 @@ func (s *Server) adminPollData() adminPoll {
 		}
 		return s.cfg.PollHostSpacing
 	}
-	return buildAdminPoll(time.Now().UTC(), feeds, spacingFor)
+	return buildAdminPoll(time.Now().UTC(), feeds, spacingFor, s.pollFloorSec)
 }
 
 // buildAdminPoll computes the per-host polling load. A feed is behind when its
@@ -287,7 +287,7 @@ func (s *Server) adminPollData() adminPoll {
 // Demand is the sum of each enabled feed's required polls per day; capacity is
 // what the host's spacing allows. demand > capacity means the host is
 // permanently behind, not merely catching up after downtime.
-func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) time.Duration) adminPoll {
+func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) time.Duration, minFor func(string) int) adminPoll {
 	type hostAgg struct {
 		feeds   int
 		demand  float64
@@ -312,9 +312,15 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 			byHost[host] = h
 		}
 		h.feeds++
-		// The form enforces a 60s minimum; clamp defensively so demand cannot
-		// divide by zero or count a nonsensical interval as infinite load.
+		// The effective interval is the stored one raised to the poll floor, so
+		// a legacy or user-set value below the floor does not make the card
+		// report a feed behind at a cadence the poller will not actually use.
 		interval := f.PollIntervalSec
+		if floor := minFor(f.FeedURL); floor > interval {
+			interval = floor
+		}
+		// Clamp defensively so demand cannot divide by zero or count a
+		// nonsensical interval as infinite load.
 		if interval < 60 {
 			interval = 60
 		}
@@ -328,7 +334,7 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 		if err != nil {
 			continue
 		}
-		if now.After(refTime.Add(time.Duration(f.PollIntervalSec) * time.Second)) {
+		if now.After(refTime.Add(time.Duration(interval) * time.Second)) {
 			h.behind++
 			out.Behind++
 			if oldest.IsZero() || refTime.Before(oldest) {

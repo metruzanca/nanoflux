@@ -89,7 +89,7 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 		}
 		authorID = a.ID
 	}
-	f, err := s.store.Feeds.CreateWithPlugin(u.ID, authorID, title, feedURL, homeURL, "", s.pluginNameFor(feedURL), 900)
+	f, err := s.store.Feeds.CreateWithPlugin(u.ID, authorID, title, feedURL, homeURL, "", s.pluginNameFor(feedURL), s.defaultPollIntervalSec(feedURL))
 	if err != nil {
 		return apiFeed{}, err
 	}

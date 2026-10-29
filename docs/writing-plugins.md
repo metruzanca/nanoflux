@@ -6,9 +6,8 @@ integration (a private API-backed feed, a bespoke scraper) without touching the
 nanoflux repo.
 
 Status: **v0.1 implemented.** The API is small and will change before v1.0.0.
-This is the authoring guide for the system described in
-[`plugin-architecture.md`](plugin-architecture.md); read that for the rationale
-(host-mediated HTTP, host-owned rate limiting, why go-plugin).
+This is the authoring guide for the plugin system (host-mediated HTTP,
+host-owned rate limiting, why go-plugin).
 
 The default integrations (YouTube, Bluesky, Patreon, Reddit, Kill the
 Newsletter, Instagram) are also plugin executables, each in its own module under
@@ -135,6 +134,12 @@ a feed it does not fetch at all.
 - **`Icon` (optional)** — return a built-in source icon (MIME type and bytes)
   for a site URL via `Match(u, CapIcon)`. The host uses it when no cached favicon
   exists. Pure (no network I/O); it runs while serving an icon request.
+- **Minimum poll interval (capability + `Meta` field, no method)** — if the
+  site's feed is tightly rate-limited, claim `Match(u, CapMinPollInterval)` for
+  its feed URLs and set `Meta.MinPollInterval`. The host uses the larger of this
+  value and its configured `NF_POLL_MIN_INTERVAL`, so lowering the global default
+  cannot poll that site more often than the plugin allows. It is matched on the
+  feed URL and must be pure and cheap.
 - **`URLPolicy` (optional)** — pure site URL rules: the canonical feed shape
   (`CanonicalizeFeedURL`) and the token a feed URL represents (`FeedToken`).
 - **`Docs` (optional)** — return Markdown describing the plugin, shown from the

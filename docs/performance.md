@@ -61,6 +61,8 @@ indexes; `GET /` dropped from ~2-4 s to ~0.1 s.
 - `NF_POLL_WORKERS=1` — one fetch at a time on one core.
 - `NF_POLL_INTERVAL` / `NF_POLL_HOST_SPACING` — space fetches out so the poller
   does not keep the core busy.
+- `NF_POLL_MIN_INTERVAL` (default `1h`) — the smallest automatic per-feed
+  interval; a longer value means fewer requests per day.
 - `GOMEMLIMIT` — cap the Go heap so the server cannot swap on a low-RAM box.
 - `NF_DB_MAX_CONNS` — SQLite connection pool size (default 4).
 

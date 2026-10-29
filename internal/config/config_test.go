@@ -118,3 +118,17 @@ func TestPluginsDirDefault(t *testing.T) {
 		t.Errorf("PluginsDir override = %q, want /plugins", got)
 	}
 }
+
+func TestPollMinInterval(t *testing.T) {
+	if got := Load().PollMinInterval; got != time.Hour {
+		t.Errorf("default PollMinInterval = %v, want 1h", got)
+	}
+	t.Setenv("NF_POLL_MIN_INTERVAL", "15m")
+	if got := Load().PollMinInterval; got != 15*time.Minute {
+		t.Errorf("PollMinInterval = %v, want 15m", got)
+	}
+	t.Setenv("NF_POLL_MIN_INTERVAL", "0s")
+	if got := Load().PollMinInterval; got != 0 {
+		t.Errorf("PollMinInterval = %v, want 0", got)
+	}
+}

@@ -47,7 +47,8 @@ func (s *grpcFetcherServer) Meta(context.Context, *pb.MetaRequest) (*pb.MetaResp
 		Name: m.Name, ApiVersion: m.APIVersion, RawNetwork: m.RawNetwork,
 		UserAgent: m.UserAgent, Summary: m.Summary, HasDocs: hasDocs,
 		ProvisionLabel: m.ProvisionLabel, HasFeedAdmin: hasFeedAdmin,
-		HasSettings: hasSettings,
+		HasSettings:        hasSettings,
+		MinPollIntervalSec: int64(m.MinPollInterval / time.Second),
 	}, nil
 }
 
@@ -360,7 +361,8 @@ func (c *grpcFetcherClient) Meta() Meta {
 		Name: resp.Name, APIVersion: resp.ApiVersion, RawNetwork: resp.RawNetwork,
 		UserAgent: resp.UserAgent, Summary: resp.Summary, HasDocs: resp.HasDocs,
 		ProvisionLabel: resp.ProvisionLabel, HasFeedAdmin: resp.HasFeedAdmin,
-		HasSettings: resp.HasSettings,
+		HasSettings:     resp.HasSettings,
+		MinPollInterval: time.Duration(resp.MinPollIntervalSec) * time.Second,
 	}
 }
 

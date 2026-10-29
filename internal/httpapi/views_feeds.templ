@@ -256,13 +256,20 @@ templ feedFields(d feedsData, p string) {
 	if d.Form.CacheForced {
 		{{ cacheHelp = "on for this site: its plugin serves image links that expire, so nanoflux keeps a copy. it cannot be turned off." }}
 	}
+	{{ minPoll := d.Form.MinPollIntervalSec }}
+	if minPoll < 60 {
+		{{ minPoll = 60 }}
+	}
 	<div class="field-group">
 		<h3>fetching</h3>
 		@switchField(p+"enabled", "enabled (poll this feed)", d.Form.Enabled, "", nil)
 		@switchField(p+"poll_interval_auto", "auto-adjust poll interval", d.Form.PollIntervalAuto, "", nil)
 		<label>
-			poll interval (seconds) — used when auto-adjust is off
-			<input name={ p + "poll_interval_sec" } type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min="60"/>
+			poll interval (seconds), used when auto-adjust is off
+			<input name={ p + "poll_interval_sec" } type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min={ strconv.Itoa(minPoll) }/>
+			if d.Form.MinPollIntervalSec > 0 {
+				<span class="muted small">minimum { strconv.Itoa(d.Form.MinPollIntervalSec) } seconds for this feed</span>
+			}
 		</label>
 		<label>
 			feed url
