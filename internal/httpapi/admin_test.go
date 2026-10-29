@@ -397,7 +397,7 @@ func TestBuildAdminPoll(t *testing.T) {
 			return 0
 		}
 	}
-	got := buildAdminPoll(now, feeds, spacingFor)
+	got := buildAdminPoll(now, feeds, spacingFor, func(string) int { return 0 })
 
 	if got.Enabled != 33 || got.Behind != 33 {
 		t.Fatalf("enabled/behind = %d/%d, want 33/33", got.Enabled, got.Behind)
@@ -421,5 +421,36 @@ func TestBuildAdminPoll(t *testing.T) {
 	never := got.Hosts[2]
 	if never.Host != "lanhost" || never.Capacity != "unlimited" || never.Overloaded {
 		t.Fatalf("never-polled host = %+v, want unlimited and not overloaded", never)
+	}
+}
+
+// A stored interval below the effective poll floor is measured at the floor:
+// the card must not report such a feed behind at a cadence the poller will not
+// use, and its demand is the floored one.
+func TestBuildAdminPollUsesPollFloor(t *testing.T) {
+	now := time.Date(2026, 10, 25, 6, 0, 0, 0, time.UTC)
+	ts := func(d time.Duration) string { return db.FormatTime(now.Add(d)) }
+	feed := store.Feed{
+		Title: "Reddit", FeedURL: "https://www.reddit.com/r/cats.rss", Enabled: true,
+		PollIntervalSec: 900, LastPolledAt: ts(-30 * time.Minute),
+	}
+	minFor := func(string) int { return 3600 }
+	spacingFor := func(string) time.Duration { return 0 }
+
+	got := buildAdminPoll(now, []store.Feed{feed}, spacingFor, minFor)
+	if got.Behind != 0 {
+		t.Fatalf("behind = %d, want 0 while inside the floor", got.Behind)
+	}
+	if len(got.Hosts) != 0 {
+		t.Fatalf("host rows = %+v, want none while on schedule", got.Hosts)
+	}
+
+	feed.LastPolledAt = ts(-2 * time.Hour)
+	got = buildAdminPoll(now, []store.Feed{feed}, spacingFor, minFor)
+	if got.Behind != 1 {
+		t.Fatalf("behind = %d, want 1 once the floor elapsed", got.Behind)
+	}
+	if len(got.Hosts) != 1 || got.Hosts[0].Demand != "24" {
+		t.Fatalf("host rows = %+v, want demand 24 at the 1h floor", got.Hosts)
 	}
 }

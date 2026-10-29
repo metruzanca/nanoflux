@@ -73,6 +73,40 @@ func (s *Server) SetPlugins(reg *plugin.Registry, hosts *plugin.Hosts) {
 	}
 }
 
+// pollFloorSec returns the smallest per-feed poll interval (seconds) a feed at
+// rawURL may use: the configured global minimum raised by any plugin floor that
+// claims the feed URL. Zero means no global floor is configured.
+func (s *Server) pollFloorSec(rawURL string) int {
+	floor := int(s.cfg.PollMinInterval / time.Second)
+	if s.plugins != nil {
+		if d := int(s.plugins.MinPollInterval(rawURL) / time.Second); d > floor {
+			floor = d
+		}
+	}
+	return floor
+}
+
+// defaultPollIntervalSec is what a feed starts at when no interval is supplied:
+// the floor, or the historical 15-minute default when the floor is off.
+func (s *Server) defaultPollIntervalSec(rawURL string) int {
+	if floor := s.pollFloorSec(rawURL); floor > 0 {
+		return floor
+	}
+	return 900
+}
+
+// clampPollIntervalSec raises sec to the effective floor for rawURL. A zero or
+// negative value falls back to the default interval.
+func (s *Server) clampPollIntervalSec(rawURL string, sec int) int {
+	if sec <= 0 {
+		return s.defaultPollIntervalSec(rawURL)
+	}
+	if floor := s.pollFloorSec(rawURL); sec < floor {
+		return floor
+	}
+	return sec
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 

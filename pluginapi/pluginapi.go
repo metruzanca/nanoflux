@@ -88,6 +88,12 @@ const (
 	// used as the source-icon fallback when no cached favicon exists. It is
 	// matched on the site URL and must be pure and cheap.
 	CapIcon
+	// CapMinPollInterval asks whether the plugin requires a minimum poll
+	// interval for a feed URL. It is matched on the feed URL, and the host uses
+	// the larger of its own configured floor and the plugin's
+	// Meta.MinPollInterval. A plugin claims it for feeds it knows are tightly
+	// rate-limited, so lowering the host's global default cannot hammer them.
+	CapMinPollInterval
 )
 
 // Meta describes a plugin to the host.
@@ -129,6 +135,12 @@ type Meta struct {
 	// not set it. It lets the admin page offer a settings form without asking
 	// every plugin for its schema.
 	HasSettings bool
+	// MinPollInterval is the shortest poll interval this plugin allows for the
+	// feeds it claims CapMinPollInterval for. Zero means no plugin floor. The
+	// host uses the larger of its configured minimum and this value, so a user
+	// who lowers the global default cannot poll a tightly rate-limited site
+	// more often than the plugin permits.
+	MinPollInterval time.Duration
 }
 
 // Candidate is one feed a plugin discovered on a page. Title/IconURL/HomeURL are

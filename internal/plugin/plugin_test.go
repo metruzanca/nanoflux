@@ -26,10 +26,11 @@ type fakeFetcher struct {
 	match    func(*url.URL, pluginapi.Capability) bool
 	discover func() []pluginapi.Candidate
 	result   pluginapi.Result
+	minPoll  time.Duration
 }
 
 func (f fakeFetcher) Meta() pluginapi.Meta {
-	return pluginapi.Meta{Name: f.name, APIVersion: pluginapi.APIVersion}
+	return pluginapi.Meta{Name: f.name, APIVersion: pluginapi.APIVersion, MinPollInterval: f.minPoll}
 }
 func (f fakeFetcher) Match(u *url.URL, cap pluginapi.Capability) bool {
 	if f.match == nil {
@@ -889,5 +890,44 @@ func TestRegistryBypassesProxy(t *testing.T) {
 	}
 	if reg.BypassesProxy("not a url") {
 		t.Error("an unparsable url should not bypass")
+	}
+}
+
+// MinPollInterval returns the largest floor among the plugins that claim the
+// feed URL, ignoring plugins that declare none or do not match.
+func TestRegistryMinPollInterval(t *testing.T) {
+	reg := NewRegistry()
+	reg.RegisterExternal(fakeFetcher{
+		name:    "reddit",
+		minPoll: time.Hour,
+		match: func(u *url.URL, cap pluginapi.Capability) bool {
+			return cap == pluginapi.CapMinPollInterval && strings.HasSuffix(u.Hostname(), "reddit.com")
+		},
+	})
+	reg.RegisterExternal(fakeFetcher{
+		name:    "slow",
+		minPoll: 2 * time.Hour,
+		match: func(u *url.URL, cap pluginapi.Capability) bool {
+			return cap == pluginapi.CapMinPollInterval && u.Hostname() == "slow.example"
+		},
+	})
+	reg.RegisterExternal(fakeFetcher{
+		name: "unrelated",
+		match: func(*url.URL, pluginapi.Capability) bool {
+			return false
+		},
+	})
+
+	if got := reg.MinPollInterval("https://www.reddit.com/r/cats.rss"); got != time.Hour {
+		t.Fatalf("reddit floor = %v, want 1h", got)
+	}
+	if got := reg.MinPollInterval("https://slow.example/feed"); got != 2*time.Hour {
+		t.Fatalf("slow floor = %v, want 2h", got)
+	}
+	if got := reg.MinPollInterval("https://example.com/feed"); got != 0 {
+		t.Fatalf("unclaimed floor = %v, want 0", got)
+	}
+	if got := reg.MinPollInterval("not a url"); got != 0 {
+		t.Fatalf("unparsable floor = %v, want 0", got)
 	}
 }

@@ -59,6 +59,39 @@ reject polling with 429. The app treats this as pacing, not failure:
   adding a feed at limit says "rate-limiting requests (HTTP 429)" rather than a
   bare "no feed found".
 
+## Poll interval floor
+
+A feed also has a minimum automatic interval, not only a cadence:
+
+- `NF_POLL_MIN_INTERVAL` (default 1h) is the global floor. A plugin can raise it
+  for feeds it claims with the URL-matched `CapMinPollInterval`, via
+  `Meta.MinPollInterval`; `Registry.MinPollInterval` takes the maximum and
+  memoizes it per URL. The host uses the larger of the two everywhere.
+- `poller.SetMinPollInterval` receives the composed resolver. `feedFloorSec` is
+  the floor for every feed, and `adaptiveFloorSec` is
+  `max(adaptiveFloor (900), feedFloorSec)`, used by `adaptiveInterval`. Do not
+  hardcode 900 for the adaptive floor again.
+- Retroactive enforcement is at due time, not a rewrite: `pollDue` runs
+  `applyPollFloor`, dropping a feed whose stored interval elapsed but whose floor
+  has not, and advances the wake to its floor deadline. A feed due by an explicit
+  `next_poll_at` (rate-limit retry or clock-aligned schedule) is never held back.
+  Do not add a startup or cadence rewrite of `poll_interval_sec` to the floor:
+  that would make lowering `NF_POLL_MIN_INTERVAL` ineffective for existing feeds.
+  The feed editor shows the effective interval and clamps on save.
+- `httpapi.Server.pollFloorSec` composes the same values for create/edit, the
+  feed form's minimum, and the admin card. Every create path uses
+  `defaultPollIntervalSec`, and `applyFeedForm` uses `clampPollIntervalSec`; do
+  not reintroduce a bare 900.
+- `buildAdminPoll` measures demand and behind-ness at
+  `max(poll_interval_sec, floor)`, so the card matches what the poller will do.
+- A manual refresh and "load older items" are explicit user actions and stay
+  exempt. The rate-limit `next_poll_at` remains authoritative.
+- The floor does **not** replace per-host spacing. `NF_POLL_HOST_SPACING`
+  (default 60s) still paces any two fetches to the same registrable host through
+  `pollGroup`/`hostNextHit`; `applyPollFloor` runs before grouping. Keep both:
+  the floor protects one feed, the spacing protects the host (which is what keeps
+  many reddit feeds from tripping a rate limit together).
+
 ## Time-of-day polling
 
 A feed's adaptive interval measures *how often* it posts, not *when*, so a daily
@@ -79,8 +112,9 @@ just after the author's typical posting time, stored in the existing
   enforce the hard minimum.
 - The target is `min(next occurrence, last_polled + poll_interval_sec)`: a
   schedule only ever brings a fetch **forward**, never delays it beyond the
-  interval. Only adaptive (`poll_interval_auto`) and non-stale feeds are
-  scheduled.
+  interval, and it is clamped up to `last_polled + poll floor` so it cannot
+  undercut the per-feed minimum. Only adaptive (`poll_interval_auto`) and
+  non-stale feeds are scheduled.
 - It runs on every successful poll, **including `304`**, recomputing from the
   actual poll time so wake jitter cannot drift the alignment. A non-rate-limit
   error clears the schedule so the feed retries on its normal interval.

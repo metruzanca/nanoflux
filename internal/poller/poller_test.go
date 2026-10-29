@@ -124,6 +124,42 @@ func TestPollOneAdaptiveInterval(t *testing.T) {
 	}
 }
 
+// A feed that posts every few minutes would otherwise adapt down to the
+// 15-minute adaptive floor. The host/plugin poll floor wins instead.
+func TestPollOneAdaptiveHonorsPollFloor(t *testing.T) {
+	sqldb, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqldb.Close()
+	if err := db.Migrate(sqldb); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(sqldb)
+	u, _ := st.Users.Create("alice", "h")
+	a, _ := st.Authors.Create(u.ID, "Metru", "", "")
+
+	srv := cadenceServer(t, 5*time.Minute, 0)
+	defer srv.Close()
+
+	feedURL := srv.URL + "/feed"
+	f, _ := st.Feeds.Create(u.ID, a.ID, "Fast", feedURL, "", "", 900)
+	p := New(st, time.Minute, 1)
+	p.SetMinPollInterval(func(raw string) int {
+		if raw == feedURL {
+			return 3600
+		}
+		return 0
+	})
+	if _, err := p.PollOne(context.Background(), f); err != nil {
+		t.Fatalf("PollOne: %v", err)
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.PollIntervalSec != 3600 {
+		t.Fatalf("interval = %d, want the 1h poll floor", got.PollIntervalSec)
+	}
+}
+
 // A multi-day cadence is honored up to the 7-day ceiling, and it is not pulled
 // forward to the next occurrence of the posting hour.
 func TestPollOneMultiDayInterval(t *testing.T) {
@@ -1627,5 +1663,76 @@ func TestEffectiveSpacing(t *testing.T) {
 	}
 	if got := p.EffectiveSpacing("not a url"); got != 0 {
 		t.Fatalf("unparseable URL EffectiveSpacing = %v, want 0", got)
+	}
+}
+
+// applyPollFloor holds a feed that is due by its stored interval but not yet by
+// its effective floor, and wakes at the floor deadline. A feed due by an
+// explicit next_poll_at (a rate-limit retry or clock-aligned schedule) is never
+// held back.
+func TestPollFloorHoldsFeeds(t *testing.T) {
+	p := New(newPollerStore(t), time.Minute, 1)
+	p.SetMinPollInterval(func(raw string) int {
+		if store.RegistrableDomain(raw) == "reddit.com" {
+			return 3600
+		}
+		return 0
+	})
+
+	now := time.Now().UTC()
+	ts := func(d time.Duration) string { return db.FormatTime(now.Add(d)) }
+	feeds := []store.Feed{
+		{ID: 1, FeedURL: "https://www.reddit.com/r/a.rss", PollIntervalSec: 900, LastPolledAt: ts(-30 * time.Minute)},
+		{ID: 2, FeedURL: "https://www.reddit.com/r/b.rss", PollIntervalSec: 900, LastPolledAt: ts(-2 * time.Hour)},
+		{ID: 3, FeedURL: "https://example.com/feed", PollIntervalSec: 900, LastPolledAt: ts(-30 * time.Minute)},
+		{ID: 4, FeedURL: "https://www.reddit.com/r/c.rss", PollIntervalSec: 900, NextPollAt: ts(-time.Minute)},
+	}
+
+	kept, wake := p.applyPollFloor(feeds, db.FormatTime(now))
+	gotIDs := make([]int64, 0, len(kept))
+	for _, f := range kept {
+		gotIDs = append(gotIDs, f.ID)
+	}
+	want := []int64{2, 3, 4}
+	if fmt.Sprint(gotIDs) != fmt.Sprint(want) {
+		t.Fatalf("kept feeds = %v, want %v", gotIDs, want)
+	}
+	if wantWake := now.Add(30 * time.Minute); wake.Sub(wantWake).Abs() > time.Second {
+		t.Fatalf("wake = %v, want about %v", wake, wantWake)
+	}
+}
+
+// The adaptive cadence may not go below the host/plugin floor, but keeps the
+// historical 15-minute minimum when no floor is configured.
+func TestAdaptiveFloorSec(t *testing.T) {
+	p := New(newPollerStore(t), time.Minute, 1)
+	p.SetMinPollInterval(func(string) int { return 3600 })
+	if got := p.adaptiveFloorSec(store.Feed{}); got != 3600 {
+		t.Fatalf("adaptive floor = %d, want 3600", got)
+	}
+
+	p.SetMinPollInterval(func(string) int { return 0 })
+	if got := p.adaptiveFloorSec(store.Feed{}); got != adaptiveFloor {
+		t.Fatalf("adaptive floor with no configured floor = %d, want %d", got, adaptiveFloor)
+	}
+	if got := p.feedFloorSec(store.Feed{}); got != minPollInterval {
+		t.Fatalf("feed floor with no configured floor = %d, want %d", got, minPollInterval)
+	}
+}
+
+func TestMinPollSeconds(t *testing.T) {
+	global := time.Hour
+	plugin := func(raw string) time.Duration {
+		if store.RegistrableDomain(raw) == "reddit.com" {
+			return 2 * time.Hour
+		}
+		return 0
+	}
+	fn := MinPollSeconds(global, plugin)
+	if got := fn("https://www.reddit.com/r/a.rss"); got != 7200 {
+		t.Fatalf("reddit floor = %d, want 7200", got)
+	}
+	if got := fn("https://example.com/feed"); got != 3600 {
+		t.Fatalf("other floor = %d, want 3600", got)
 	}
 }

@@ -115,7 +115,7 @@ func (s *Server) feedProvision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	feed, err := s.store.Feeds.CreateWithPlugin(u.ID, author.ID, feedTitle, feedURL, got.HomeURL, "",
-		s.pluginNameFor(feedURL), 900)
+		s.pluginNameFor(feedURL), s.defaultPollIntervalSec(feedURL))
 	if err != nil {
 		log.Error("create provisioned feed", "err", err)
 		writeFormError(w, r, "provision-error", "could not save the feed")

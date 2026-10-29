@@ -81,6 +81,10 @@ type Poller struct {
 	cool        hostCooler
 	enricher    itemEnricher
 	imgCache    itemImageCacher
+	// minPoll returns the smallest interval (seconds) a feed URL may use: the
+	// host's configured floor raised by any plugin floor. Nil keeps the
+	// historical adaptive floor. It is never allowed below minPollInterval.
+	minPoll func(feedURL string) int
 
 	// hostWindow records, per registrable host, the minimum spacing the host
 	// has asked for after a rate limit (learned from Retry-After /
@@ -112,6 +116,56 @@ func New(st *store.Store, interval time.Duration, workers int) *Poller {
 // same host, applied even to hosts that have never rate-limited the poller. A
 // learned rate-limit window still overrides it when larger. Zero disables it.
 func (p *Poller) SetHostSpacing(d time.Duration) { p.hostSpacing = d }
+
+// minPollInterval is the absolute smallest per-feed interval, regardless of
+// what the host or a plugin configures.
+const minPollInterval = 60
+
+// SetMinPollInterval installs the per-feed poll floor: fn returns the smallest
+// interval in seconds a feed URL may use, composed from the host's configured
+// minimum and any plugin floor. The poller never goes below minPollInterval.
+// A nil fn keeps the historical 15-minute adaptive floor.
+func (p *Poller) SetMinPollInterval(fn func(feedURL string) int) { p.minPoll = fn }
+
+// MinPollSeconds composes a configured per-feed floor with a plugin floor
+// resolver into the seconds-valued function SetMinPollInterval takes. A nil
+// resolver applies only the configured floor.
+func MinPollSeconds(global time.Duration, pluginFloor func(string) time.Duration) func(string) int {
+	base := int(global / time.Second)
+	return func(rawURL string) int {
+		floor := base
+		if pluginFloor != nil {
+			if d := int(pluginFloor(rawURL) / time.Second); d > floor {
+				floor = d
+			}
+		}
+		return floor
+	}
+}
+
+// feedFloorSec returns the smallest interval (seconds) a feed may poll at. It
+// applies to every feed, not only adaptive ones, so lowering the global floor
+// takes effect without rewriting stored intervals.
+func (p *Poller) feedFloorSec(f store.Feed) int {
+	if p.minPoll == nil {
+		return 0
+	}
+	sec := p.minPoll(f.FeedURL)
+	if sec < minPollInterval {
+		sec = minPollInterval
+	}
+	return sec
+}
+
+// adaptiveFloorSec is the floor the adaptive cadence may not go below: the
+// host/plugin floor, or the historical adaptive minimum when none is set.
+func (p *Poller) adaptiveFloorSec(f store.Feed) int {
+	floor := p.feedFloorSec(f)
+	if floor < adaptiveFloor {
+		floor = adaptiveFloor
+	}
+	return floor
+}
 
 // EffectiveSpacing returns the spacing the poller currently enforces before the
 // next request to rawURL's registrable host: its learned rate-limit window when
@@ -239,6 +293,19 @@ func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
 		return 0, wake, nil
 	}
 
+	// A stored interval may predate the current floor (the global minimum was
+	// raised, or a plugin loaded after the feed was created). Keep the feed out
+	// of this cycle until its floor elapses, and wake at that deadline instead
+	// of the base interval so it is not late by a whole cycle.
+	due := len(feeds)
+	feeds, floorWake := p.applyPollFloor(feeds, now)
+	if !floorWake.IsZero() && (wake.IsZero() || floorWake.Before(wake)) {
+		wake = floorWake
+	}
+	if len(feeds) == 0 {
+		return 0, wake, nil
+	}
+
 	groups := groupByHost(feeds)
 
 	var (
@@ -267,6 +334,7 @@ func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
 	// show how many feeds ran, how many were paced, and what the next wake is.
 	log.Info("poll cycle",
 		"feeds", len(feeds),
+		"floored", due-len(feeds),
 		"hosts", len(groups),
 		"fetched", sum.fetched,
 		"new_items", sum.newItems,
@@ -275,6 +343,45 @@ func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
 		"next_wake", wakeString(wake),
 	)
 	return sum.newItems, wake, nil
+}
+
+// applyPollFloor returns the feeds whose effective floor has elapsed and the
+// earliest time a held-back feed may poll. A feed due by an explicit
+// next_poll_at (a rate-limit retry or a clock-aligned schedule) is always kept:
+// that deadline is authoritative and was already computed under the floor when
+// it was set.
+func (p *Poller) applyPollFloor(feeds []store.Feed, now string) ([]store.Feed, time.Time) {
+	nowT, err := db.ParseTime(now)
+	if err != nil {
+		return feeds, time.Time{}
+	}
+	kept := make([]store.Feed, 0, len(feeds))
+	var wake time.Time
+	for _, f := range feeds {
+		if f.NextPollAt != "" {
+			kept = append(kept, f)
+			continue
+		}
+		floor := p.feedFloorSec(f)
+		if floor <= 0 || f.PollIntervalSec >= floor || f.LastPolledAt == "" {
+			kept = append(kept, f)
+			continue
+		}
+		last, err := db.ParseTime(f.LastPolledAt)
+		if err != nil {
+			kept = append(kept, f)
+			continue
+		}
+		next := last.Add(time.Duration(floor) * time.Second)
+		if !nowT.Before(next) {
+			kept = append(kept, f)
+			continue
+		}
+		if wake.IsZero() || next.Before(wake) {
+			wake = next
+		}
+	}
+	return kept, wake
 }
 
 // cycleSummary aggregates one poll cycle across host groups for the cycle log.
@@ -579,7 +686,7 @@ func (p *Poller) updateCadence(f store.Feed, now string, newItems int) {
 		// adaptive polling is enabled.
 		want = adaptiveCeil
 	case f.PollIntervalAuto && newItems > 0:
-		if sec, ok := adaptiveInterval(times, adaptiveFloor, adaptiveCeil); ok {
+		if sec, ok := adaptiveInterval(times, p.adaptiveFloorSec(f), adaptiveCeil); ok {
 			want = sec
 		}
 	}
@@ -620,7 +727,20 @@ func (p *Poller) scheduleNextPoll(f store.Feed, times []string, now string) {
 		return
 	}
 	target := nextFetchTime(nowT, sec, f.ID)
-	if gate := nowT.Add(time.Duration(f.PollIntervalSec) * time.Second); gate.Before(target) {
+	// The schedule may bring a fetch forward from the interval deadline, but it
+	// must never undercut the poll floor: a frequent feed with a strong
+	// time-of-day signal would otherwise poll sooner than its minimum.
+	floor := p.feedFloorSec(f)
+	if floor > 0 {
+		if earliest := nowT.Add(time.Duration(floor) * time.Second); target.Before(earliest) {
+			target = earliest
+		}
+	}
+	interval := f.PollIntervalSec
+	if floor > interval {
+		interval = floor
+	}
+	if gate := nowT.Add(time.Duration(interval) * time.Second); gate.Before(target) {
 		target = gate
 	}
 	if err := p.store.Feeds.SetNextPollAt(f.ID, db.FormatTime(target)); err != nil {

@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/charmbracelet/log"
 
@@ -15,14 +17,26 @@ import (
 // matching one, in registration order.
 type Registry struct {
 	external []pluginapi.Fetcher
+	// minPoll is each plugin's declared poll floor, aligned with external. It is
+	// read once at registration so a per-feed floor lookup does not ask every
+	// plugin for its Meta on every poll.
+	minPoll []time.Duration
+
+	// minMu guards minCache, which memoizes the per-URL poll floor. Match may
+	// depend on plugin configuration, so Configure clears it.
+	minMu    sync.Mutex
+	minCache map[string]time.Duration
 }
 
 // NewRegistry returns an empty Registry.
-func NewRegistry() *Registry { return &Registry{} }
+func NewRegistry() *Registry {
+	return &Registry{minCache: map[string]time.Duration{}}
+}
 
 // RegisterExternal adds a plugin loaded over gRPC.
 func (r *Registry) RegisterExternal(f pluginapi.Fetcher) {
-	name := f.Meta().Name
+	m := f.Meta()
+	name := m.Name
 	for _, existing := range r.external {
 		if existing.Meta().Name == name {
 			log.Warn("duplicate plugin name; keeping the first", "plugin", name)
@@ -30,6 +44,8 @@ func (r *Registry) RegisterExternal(f pluginapi.Fetcher) {
 		}
 	}
 	r.external = append(r.external, f)
+	r.minPoll = append(r.minPoll, m.MinPollInterval)
+	r.clearMinPollCache()
 	log.Info("registered external plugin", "plugin", describe(f))
 }
 
@@ -360,7 +376,51 @@ func (r *Registry) Configure(name string, values map[string]string) bool {
 		return false
 	}
 	c.Configure(values)
+	r.clearMinPollCache()
 	return true
+}
+
+// clearMinPollCache drops memoized per-URL poll floors. It runs when the plugin
+// set changes or a plugin is reconfigured, since Match may depend on config.
+func (r *Registry) clearMinPollCache() {
+	r.minMu.Lock()
+	r.minCache = map[string]time.Duration{}
+	r.minMu.Unlock()
+}
+
+// MinPollInterval returns the largest poll-interval floor the loaded plugins
+// require for rawURL, or 0 when none claims one. It is gated by
+// CapMinPollInterval, matched on the feed URL, and pure: the result is memoized
+// per URL because the poller asks on every successful poll.
+func (r *Registry) MinPollInterval(rawURL string) time.Duration {
+	if r.Empty() || rawURL == "" {
+		return 0
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return 0
+	}
+	r.minMu.Lock()
+	if d, ok := r.minCache[rawURL]; ok {
+		r.minMu.Unlock()
+		return d
+	}
+	var floor time.Duration
+	for i, f := range r.external {
+		d := r.minPoll[i]
+		if d <= floor {
+			continue
+		}
+		if f.Match(u, pluginapi.CapMinPollInterval) {
+			floor = d
+		}
+	}
+	if r.minCache == nil {
+		r.minCache = map[string]time.Duration{}
+	}
+	r.minCache[rawURL] = floor
+	r.minMu.Unlock()
+	return floor
 }
 
 // ProvisionerByName returns the create-capable plugin with the given name, or

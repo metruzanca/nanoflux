@@ -7,8 +7,11 @@ what happens when a fetch fails. It is the reference for the poller
 (`internal/plugin`).
 
 The design goal is **be a good citizen**: fetch no more often than a site wants,
-back off the moment a site says to, and never let one throttled site starve the
-rest of the feed list.
+back off the moment a site says to, and never let one busy or throttled feed
+starve the rest of the feed list. Four independent layers do that, in order: the
+per-feed interval, the per-feed floor, the per-host spacing, and the learned
+rate-limit window. They are independent and all apply; see
+["Putting it together"](#putting-it-together-one-poll-cycle) for worked examples.
 
 ## The two fetch paths
 
@@ -16,8 +19,8 @@ Every feed is fetched through the same entry point, `feedparse.Fetch` (via
 `FetchFeed`), so all callers behave identically. It routes in order:
 
 1. **A matching plugin.** Plugins loaded over gRPC from `NF_PLUGINS_DIR`
-   declare which URLs they handle. If one matches, it fetches the feed. See [`writing-plugins.md`](writing-plugins.md) and
-   [`plugin-architecture.md`](plugin-architecture.md).
+   declare which URLs they handle. If one matches, it fetches the feed. See
+   [`writing-plugins.md`](writing-plugins.md).
 2. **The generic parser.** Otherwise nanoflux fetches the URL and parses it as
    RSS / Atom / JSON-feed with `gofeed`.
 
@@ -59,7 +62,9 @@ and several things act on it.
 The background poller (`poller.Run`) wakes on an interval (`NF_POLL_INTERVAL`,
 default 15m) and fetches every feed that is *due*. It re-computes the next wake
 after each pass (see "Waking at the right time"), so the base interval is a
-ceiling, not a fixed tick.
+ceiling, not a fixed tick. "Due" means the stored interval has elapsed and the
+per-feed floor has also elapsed, or an explicit `next_poll_at` has passed (that
+deadline is authoritative on its own; see "Per-feed poll floor").
 
 The hidden per-user **saved-pages feed** (`feeds.is_system`, `schemaV34`) is
 never a fetch target: it is created with `enabled = 0`, holds arbitrary pages
@@ -68,15 +73,18 @@ it (`is_system = 0`). Nothing else in this document applies to it.
 
 ### Per-feed interval and adaptive cadence
 
-- A new feed starts at a default interval (900s / 15m).
+- A new feed starts at the effective minimum: the larger of `NF_POLL_MIN_INTERVAL`
+  (default 1h) and any plugin floor for its URL. With the global floor set to
+  `0`, it keeps the historical 15m default.
 - When a poll brings **new items** and adaptive polling is enabled
   (`poll_interval_auto`, on by default), nanoflux derives the interval from the
   feed's **recent posting cadence**: it averages the gaps between the newest
-  ~20 item timestamps and clamps the result to **[15m, 7 days]**. A feed that
-  posts hourly is polled roughly hourly; a feed that posts every few days is
-  polled on that cadence; one that posts monthly is polled weekly (the ceiling).
-  This is the "automatic adjusting of delay."
-- If adaptive polling is turned off, the interval stays whatever the user set.
+  ~20 item timestamps and clamps the result to **[max(15m, floor), 7 days]**. A
+  feed that posts hourly is polled roughly hourly; a feed that posts every few
+  days is polled on that cadence; one that posts monthly is polled weekly (the
+  ceiling). This is the "automatic adjusting of delay."
+- If adaptive polling is turned off, the interval stays whatever the user set,
+  but the floor and the host spacing still apply to it.
 
 ### Scheduled to the author's time of day
 
@@ -96,9 +104,11 @@ just after that time, instead of waiting out its interval:
   feed) plus a per-feed jitter of up to 10 minutes (`feed id mod 10m`), so feeds
   that share a posting hour don't all fetch at once. Per-host spacing and fair
   rotation still spread a host's feeds (see below).
-- The target is never later than `last_polled + poll_interval_sec`, so a schedule
-  only ever brings a fetch **forward**; frequent feeds keep their cadence and a
-  mis-timed daily feed realigns in one hop.
+- The target is the next preferred time, clamped **up** to
+  `last_polled + poll floor` and **down** to
+  `last_polled + max(poll_interval_sec, poll floor)`. A schedule therefore never
+  undercuts the floor and never delays a fetch beyond its interval. A frequent
+  feed keeps its cadence, and a mis-timed daily feed realigns in one hop.
 - Scheduling applies only to intervals of **at most one day**. On a multi-day
   cadence the next occurrence of the posting hour is always nearby, which would
   pull a weekly fetch forward to tomorrow and defeat the longer interval. Those
@@ -130,8 +140,9 @@ its normal posts.
 ### User overrides
 
 The feed edit form can set a fixed interval and toggle adaptive polling. The
-manual **refresh** button bypasses the schedule entirely (subject to the
-rate-limit guard below).
+form shows the effective interval (the stored value raised to the floor) and
+clamps a submitted value to the floor. The manual **refresh** button bypasses
+the interval and the floor entirely (subject to the rate-limit guard below).
 
 ## Rate limits and politeness
 
@@ -143,9 +154,11 @@ behaves this way is handled the same.
 Pacing decisions are logged so the behavior can be confirmed from logs alone:
 a rate limit emits `feed rate limited` (Warn) with the host, status,
 `retry_after` and `next_poll_at`; each poll pass emits a `poll cycle` (Info)
-line with `fetched`, `new_items`, `rate_limited`, `paced` and `next_wake`; and
-per-host skip/spacing decisions emit `host cooling, skipping`, `host paced,
-skipping`, `host spaced` and `next wake from paced host` at Debug
+line with `feeds` (due after the floor filter), `floored` (held back by the
+floor), `hosts`, `fetched`, `new_items`, `rate_limited`, `paced` and
+`next_wake`; and per-host skip/spacing decisions emit `host cooling, skipping`,
+`host paced, skipping` and `host spaced`, plus `next wake from deadline` or
+`wake deadline passed, retrying` for the sleep decision, at Debug
 (`NF_LOG_LEVEL=debug`). Plugin-host limits log `plugin rate limited` and
 `plugin request refused: host cooling`, which is the shared cooldown in action.
 
@@ -191,6 +204,36 @@ The time-of-day scheduler above stores its planned fetch in the same column, and
 backoff (no retry badge, and a manual refresh may override it), whereas a
 rate-limit deadline disables the refresh button.
 
+### Per-feed poll floor
+
+A feed's interval is also bounded below. `NF_POLL_MIN_INTERVAL` (default **1
+hour**) is the smallest automatic interval any feed may use, and a plugin can
+raise it for feeds it matches through `CapMinPollInterval` plus
+`Meta.MinPollInterval` (a site whose anonymous endpoints are tightly limited).
+The larger of the two wins.
+
+The floor is enforced when the due list is read, not by a bulk rewrite of
+`poll_interval_sec`: a feed whose stored interval has elapsed but whose floor has
+not is held back, stays due, and the loop wakes at its floor deadline. Raising
+the global value therefore applies to existing feeds at once. For a fixed-interval
+feed, lowering it also takes effect at once, because the stored value was never
+changed. An adaptive feed stores the interval it computes (already clamped to the
+floor), so after a floor change it converges on its next cadence update. Saving a
+feed in the editor clamps its stored interval to the current floor, so a new
+value can never sit below it.
+
+The floor covers automatic polls only. A rate-limit `next_poll_at` remains
+authoritative (the host's own window may be shorter or longer), the time-of-day
+scheduler never plans a fetch before the floor, and a manual refresh or "load
+older items" still runs on demand. Adaptive polling uses the floor as its
+minimum, keeping the historical 15-minute minimum when the global floor is `0`.
+
+The floor is independent of per-host spacing below, and both mechanics apply: the
+floor caps how often **one feed** may poll, while `NF_POLL_HOST_SPACING` caps how
+often **any two feeds on the same registrable host** are fetched. A host with many
+feeds still rotates them one spacing window at a time even when each feed is
+individually held to the floor.
+
 ### Per-host pacing and fair rotation
 
 Feeds are grouped by **registrable host** (all feeds on one domain are one
@@ -228,7 +271,8 @@ for the base interval. After each pass it wakes at the **earliest** of:
 - the base interval (`NF_POLL_INTERVAL`), or
 - the next moment a paced host becomes hittable, or
 - the soonest planned `next_poll_at` (a scheduled time-of-day fetch or a
-  rate-limit retry),
+  rate-limit retry), or
+- the soonest poll-floor deadline for a feed the floor held back,
 
 floored at 30 seconds so a just-cleared backoff cannot make the loop spin. If a
 deadline is already in the past by the time a pass finishes (another host's
@@ -241,12 +285,13 @@ all across roughly twenty minutes, continuously, instead of one per day.
 ### Admin polling health
 
 The admin page's **polling** card shows whether the poller can keep up. A feed is
-**behind** when its last poll is older than its own `poll_interval_sec` (a
-never-polled feed is measured from its creation time), so rate-limited feeds
-still count while they wait. Per host it shows:
+**behind** when its last poll is older than its own effective interval,
+`max(poll_interval_sec, poll floor)` (a never-polled feed is measured from its
+creation time), so rate-limited feeds still count while they wait and a legacy
+15-minute value is measured at the 1-hour floor. Per host it shows:
 
 - **demand/day**: the sum of every enabled feed's required polls per day
-  (`86400 / poll_interval_sec`).
+  (`86400 / effective interval`).
 - **capacity/day**: what the host's effective spacing allows
   (`86400 / spacing`), including a learned rate-limit window.
 - **clear**: the estimated time to drain the host's current backlog at that
@@ -284,7 +329,8 @@ backoff described above.
 The plugin host and the poller share **one** cooldown instance (wired in
 `cmd/server/main.go`): a limit seen by either paces both, so a feed fetch and a
 plugin's auxiliary request cannot trip the same host twice in a row. The default
-spacing above is poller-only — it never blocks a plugin request.
+spacing above and the per-feed floor are poller-only; neither blocks a plugin
+request. A plugin's `Host.Do` calls are still paced by the learned cooldown.
 
 ### Ownership is derived, not locked
 
@@ -307,12 +353,89 @@ The admin plugins card shows, per loaded plugin, the domains and distinct feed
 URLs it currently matches. That is the debug view for ownership, including a
 plugin that matches only part of a shared domain (a URL path or query shape).
 
+## Putting it together: one poll cycle
+
+A pass applies four filters, in this order:
+
+1. **Stored interval or explicit deadline.** `ListFeedsDue` returns feeds whose
+   `poll_interval_sec` elapsed, or whose `next_poll_at` (a rate-limit retry or a
+   clock-aligned schedule) has passed.
+2. **Per-feed floor.** `applyPollFloor` drops a feed whose own floor has not
+   elapsed (`last poll + effective floor`) and wakes at the soonest held-back
+   deadline. A feed due by an explicit `next_poll_at` is exempt.
+3. **Host grouping.** `groupByHost` groups the survivors by registrable host.
+4. **Host spacing.** `pollGroup` fetches one feed per host, least-recently-polled
+   first, then sets the host's next allowed time from `max(default host spacing,
+   learned rate-limit window)` and stops. Different hosts run in parallel up to
+   `NF_POLL_WORKERS`.
+
+A feed can therefore be held by its own floor, by its host's spacing, or by a
+learned 429 window. The most restrictive one wins for that cycle; the next wake
+is the earliest of them, capped at `NF_POLL_INTERVAL` and floored at 30s.
+
+### Example: 62 reddit feeds
+
+With `NF_POLL_MIN_INTERVAL=1h`, the reddit plugin declaring 1h, and
+`NF_POLL_HOST_SPACING=60s`:
+
+- Each feed is due only after its own last poll is at least 1h old (step 2).
+  The plugin floor keeps that true even if the global value is lowered.
+- `reddit.com` is one host group, so one feed is fetched per spacing window
+  (step 4); the other 61 stay due.
+- The loop wakes 60s later, re-reads the due list, and fetches the
+  least-recently-polled feed whose floor has elapsed.
+- Result: at most 60 reddit requests per hour, one per minute, so each of the 62
+  feeds refreshes a little over hourly. The floor stops one subreddit from
+  spending the host's budget; the spacing stops the 62 from bursting together.
+- If reddit returns `429` with `Retry-After: 600`, that feed gets
+  `next_poll_at = now + 10m`, the host learns a 10m window, and every reddit feed
+  waits for it. The 10m retry is allowed even though the feed floor is 1h: the
+  host's own window is authoritative.
+
+### Example: a feed below the floor
+
+A feed that predates the change has `poll_interval_sec = 900` and was last polled
+20 minutes ago, with a 1h effective floor.
+
+- `ListFeedsDue` includes it, because its 900s interval elapsed.
+- `applyPollFloor` drops it and moves the wake to `last poll + 1h`, 40 minutes
+  away.
+- The pass at that time fetches it. Nothing was written to the database.
+- If the admin later sets `NF_POLL_MIN_INTERVAL=15m`, that feed can use its
+  stored 900s again without an edit; an adaptive feed converges when its next
+  poll brings new items, and saving the feed writes the then-current floor.
+
+### Example: a daily poster
+
+An adaptive feed posts every day at 15:00 UTC, has a 1h floor and a 24h interval,
+and was polled at 14:30.
+
+- `preferredFetchTime` sees the 15:00 cluster, so `scheduleNextPoll` plans 15:05
+  plus up to 10 minutes of jitter.
+- The floor is `last poll + 1h` = 15:30, so a 15:02 target is bumped to 15:30.
+- The interval deadline is the next day at 14:30, so the feed is still fetched
+  that afternoon instead of up to a day late.
+- A poll at 14:55 plans tomorrow's occurrence; the floor does not change that.
+
+### Example: two hosts
+
+Host A has one feed and host B has ten, both with 1h floors, and
+`NF_POLL_WORKERS=4`.
+
+- Both groups run in parallel in the same pass.
+- Host A's single feed is never delayed by spacing, because it is the group's
+  last feed.
+- Host B fetches one feed, then waits 60s; its remaining due feeds rotate across
+  later passes.
+- A slow or 429-ing host B does not stop host A: the groups are independent, and
+  the wake is the earliest deadline across them.
+
 ## Failures and their effects
 
 | Outcome | What nanoflux does |
 | --- | --- |
-| `304 Not Modified` | Records the poll time, clears backoff, stores nothing |
-| Success with items | Stores new items, records `ETag`/`Last-Modified`, clears backoff, adjusts the interval |
+| `304 Not Modified` | Records the poll time, clears backoff, recomputes the time-of-day schedule, stores nothing |
+| Success with items | Stores new items, records `ETag`/`Last-Modified`, clears backoff, adjusts the interval (clamped to the floor) |
 | Rate limit (`429` / hinted `503`) | Sets `next_poll_at`, learns the host window, records a `last_error`; the feed is not treated as broken |
 | Other HTTP error (`4xx`/`5xx`) | Records `last_error`; retried on the feed's normal interval |
 | Parse error (not a feed) | Records `last_error`; retried on the normal interval |
@@ -351,22 +474,29 @@ polls never touch the cursor, so they cannot clobber an in-progress backfill.
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `NF_POLL_INTERVAL` | `15m` | The poller's base wake interval (a ceiling; dynamic wakes can be sooner) |
+| `NF_POLL_MIN_INTERVAL` | `1h` | Smallest automatic per-feed poll interval. A plugin may require a longer floor for its feeds. `0s` removes the global floor; the adaptive minimum stays 15m |
 | `NF_POLL_WORKERS` | `4` | Concurrent fetches across *distinct hosts*; a single host's feeds are serial |
 | `NF_POLL_HOST_SPACING` | `60s` | Minimum spacing between two fetches to the same host, even before it rate-limits. `0s` disables; floored at 30s by the wake floor |
 | `NF_USER_AGENT` | `nanoflux (<repo URL>)` | Outbound User-Agent for fetching and discovery; set a contact URL for a large instance |
 
-Per-feed interval and adaptive polling are set in the feed edit form, not by env
-var.
+Per-feed interval and adaptive polling are set in the feed edit form. The global
+minimum is a floor from `NF_POLL_MIN_INTERVAL`; a plugin's floor wins over it for
+its own feeds. The floor and the host spacing are independent: the floor limits
+one feed, the spacing limits a whole registrable host, and both apply.
 
 ## Where this lives in the code
 
 | Concern | File |
 | --- | --- |
-| Background loop, per-host pacing, rotation, dynamic wake, `scheduleNextPoll` | `internal/poller/poller.go` |
+| Background loop, per-host pacing, rotation, dynamic wake, `scheduleNextPoll`, `applyPollFloor`, `feedFloorSec`, `MinPollSeconds` | `internal/poller/poller.go` |
 | Adaptive interval, time-of-day detection (`preferredFetchTime`), stale thresholds | `internal/poller/interval.go` |
 | Rate-limit detection, `Retry-After` / `x-ratelimit-reset` parsing | `internal/feedparse/ratelimit.go` |
 | Generic fetch: conditional GET, parse, pagination cursor | `internal/feedparse/feedparse.go` |
 | Host-mediated HTTP + rate-limit cooling for plugins | `internal/plugin/host.go`, `internal/plugin/cooldown.go` |
+| Plugin poll floor (`CapMinPollInterval`, `Registry.MinPollInterval`) | `internal/plugin/registry.go`, `pluginapi/pluginapi.go` |
+| Create/edit interval defaults and clamping, feed-form minimum | `internal/httpapi/server.go`, `internal/httpapi/web.go` |
+| Polling health card (effective interval, demand vs capacity) | `internal/httpapi/admin.go` |
 | Ingest cross-feed key pass and dispatch to plugins | `internal/plugin/dispatch.go`, `internal/feedparse/feedparse.go` |
 | Per-URL site rules (canonical shape, feed token) from plugins | `internal/plugin/urlpolicy.go`, `internal/store/domain.go` |
 | `next_poll_at` / `next_poll_scheduled` storage, `ListFeedsDue`, `EarliestNextPollAt` | `internal/store/feed.go`, `internal/store/queries/feeds.sql` |
+| Poll policy configuration (`NF_POLL_*`) | `internal/config/config.go` |

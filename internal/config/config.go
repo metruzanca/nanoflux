@@ -18,6 +18,12 @@ type Config struct {
 	// same registrable host, applied even before that host ever rate-limits.
 	// Zero disables it; a learned rate-limit window still overrides it.
 	PollHostSpacing time.Duration
+	// PollMinInterval is the smallest per-feed poll interval any feed may use.
+	// It is a floor, not the default: a feed's stored interval is raised to it
+	// when it would otherwise poll more often. A plugin may require a larger
+	// floor for its own feeds (CapMinPollInterval). Zero removes the global
+	// floor; the poller's own 15-minute adaptive floor still applies.
+	PollMinInterval time.Duration
 	PluginsDir      string
 	// PProfAddr, when set, serves net/http/pprof on that address (e.g.
 	// "127.0.0.1:6060"). Empty disables it. It exposes process internals and
@@ -109,6 +115,10 @@ func Load() Config {
 		// 60s matches the tightest anonymous per-IP window we know of; 0
 		// disables the default spacing.
 		PollHostSpacing: durationEnv("NF_POLL_HOST_SPACING", 60*time.Second),
+		// One hour is a sane default cadence for an aggregator and keeps a
+		// frequent feed from consuming the poller's budget. 0 removes the
+		// floor, leaving the poller's 15-minute adaptive minimum.
+		PollMinInterval: durationEnv("NF_POLL_MIN_INTERVAL", time.Hour),
 		PluginsDir:      getenv("NF_PLUGINS_DIR", "./plugins"),
 		PProfAddr:       os.Getenv("NF_PPROF_ADDR"),
 		// Sliding session writes on every request would serialize behind the
