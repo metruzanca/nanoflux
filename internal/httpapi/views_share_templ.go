@@ -59,7 +59,7 @@ func shareAddPage(url string) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div id=\"share-preview\" hx-post=\"/fragments/feed-preview\" hx-trigger=\"load\" hx-include=\"#share-url\" hx-target=\"#share-preview\" hx-swap=\"innerHTML\"><p class=\"muted\">searching…</p></div><p class=\"muted small\">or add it manually:</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\"><div id=\"share-preview\" hx-post=\"/fragments/feed-preview\" hx-trigger=\"load\" hx-include=\"#share-url\" hx-vals='{\"preview_target\":\"#share-preview\"}' hx-target=\"#share-preview\" hx-swap=\"innerHTML\"><p class=\"muted\">searching…</p></div><div id=\"share-add-result\"></div><p class=\"muted small\">or add it manually:</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

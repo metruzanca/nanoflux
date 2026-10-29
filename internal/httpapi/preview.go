@@ -89,13 +89,7 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 			fixedAuthor = &a
 		}
 	}
-	// The preview container that rendered the fragment. The author-scoped
-	// dialog uses a different id than the global one, so every fragment that
-	// swaps into it (chooser, manual form) must target it.
-	previewTarget := "#feed-preview"
-	if r.FormValue("scoped") == "1" {
-		previewTarget = "#author-feed-preview"
-	}
+	previewTarget := previewTargetFor(r)
 
 	candidates, err := s.discoverCandidates(r.Context(), pageURL)
 	if len(candidates) == 0 {
@@ -117,14 +111,14 @@ func (s *Server) feedPreview(w http.ResponseWriter, r *http.Request) {
 	if chosen := strings.TrimSpace(r.FormValue("feed_url")); chosen != "" {
 		for _, c := range candidates {
 			if c.FeedURL == chosen {
-				s.renderFeedPreviewForm(r, w, c, pageURL, previewHome(c, pageURL), authors, selectedAuthor, fixedAuthor)
+				s.renderFeedPreviewForm(r, w, c, pageURL, previewHome(c, pageURL), authors, selectedAuthor, fixedAuthor, previewTarget)
 				return
 			}
 		}
 	}
 
 	if len(candidates) == 1 {
-		s.renderFeedPreviewForm(r, w, candidates[0], pageURL, previewHome(candidates[0], pageURL), authors, selectedAuthor, fixedAuthor)
+		s.renderFeedPreviewForm(r, w, candidates[0], pageURL, previewHome(candidates[0], pageURL), authors, selectedAuthor, fixedAuthor, previewTarget)
 		return
 	}
 
@@ -358,7 +352,7 @@ func feedPreviewError(err error) string {
 // feed title, then the page host; the avatar comes from the site icon. The
 // global add flow (no fixed author) sends the saved feed to its author page;
 // the author-scoped flow appends the new feed row in place.
-func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c discover.Candidate, pageURL, homeURL string, authors []store.Author, selectedAuthor int64, fixedAuthor *store.Author) {
+func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c discover.Candidate, pageURL, homeURL string, authors []store.Author, selectedAuthor int64, fixedAuthor *store.Author, previewTarget string) {
 	// A derived candidate already carries a clean title and home URL, and the
 	// page must not be fetched: that request shares the host's tight anonymous
 	// rate limit with the feed (which the immediate poll needs).
@@ -404,9 +398,39 @@ func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c
 	} else {
 		form.Action = "/feeds"
 		form.Target = "#authors-list"
+		if previewTarget == previewTargetShare {
+			// The share page has no authors list. The request redirects on
+			// success, but htmx still resolves the save target first, so it must
+			// name a container that exists on that page.
+			form.Target = "#share-add-result"
+		}
 		form.Swap = "beforeend"
 	}
 	web.Render(w, r, feedPreviewFields(form))
+}
+
+// Preview containers. The add flow is rendered into a different container by
+// each entry point, and the fragments it returns (chooser, no-feed banner,
+// manual form) must target the same one.
+const (
+	previewTargetGlobal = "#author-preview"
+	previewTargetScoped = "#author-feed-preview"
+	previewTargetShare  = "#share-preview"
+)
+
+// previewTargetFor returns the container the preview fragment is being swapped
+// into. A share-page request names it explicitly; otherwise the author-scoped
+// dialog is detected by its scoped flag and everything else is the global add
+// dialog.
+func previewTargetFor(r *http.Request) string {
+	switch target := strings.TrimSpace(r.FormValue("preview_target")); target {
+	case previewTargetGlobal, previewTargetScoped, previewTargetShare:
+		return target
+	}
+	if r.FormValue("scoped") == "1" {
+		return previewTargetScoped
+	}
+	return previewTargetGlobal
 }
 
 // invalidURL returns a user-facing message when raw doesn't parse into a URL
@@ -438,6 +462,7 @@ func (s *Server) manualFeedForm(w http.ResponseWriter, r *http.Request) {
 	}
 	authors, _ := s.store.Authors.List(u.ID)
 	selectedAuthor, _ := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
+	previewTarget := previewTargetFor(r)
 	var fixedAuthor *store.Author
 	if r.FormValue("scoped") == "1" {
 		if a, err := s.store.Authors.ByID(u.ID, selectedAuthor); err == nil {
@@ -460,6 +485,12 @@ func (s *Server) manualFeedForm(w http.ResponseWriter, r *http.Request) {
 	} else {
 		form.Action = "/feeds"
 		form.Target = "#authors-list"
+		if previewTarget == previewTargetShare {
+			// The share page has no authors list. The request redirects on
+			// success, but htmx still resolves the save target first, so it must
+			// name a container that exists on that page.
+			form.Target = "#share-add-result"
+		}
 		form.Swap = "beforeend"
 	}
 	web.Render(w, r, feedPreviewFields(form))
