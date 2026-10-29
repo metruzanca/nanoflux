@@ -1,21 +1,165 @@
 # Vendored web components and JS
 
-nanoflux has no frontend build step and no npm at build or run time. Its few
-JavaScript dependencies are **vendored**: a generated file is committed under
-`internal/web/static/` and served like any other static asset (the directory is
-`go:embed`-ed; see `internal/web/templates.go`).
+nanoflux has no frontend build step at build or run time. Its JavaScript and the
+component CSS are **generated in development and committed**: the files live
+under `internal/web/` and are served like any other static asset (the `static`
+directory is `go:embed`-ed; see `internal/web/templates.go`). The Docker build
+only runs `go build`.
 
-This document covers the Vaadin web components used for form controls: where the
-bundle comes from, how to regenerate it, how the server talks to the components,
-and how to add more of them. `htmx.min.js` is vendored the same way; hls.js is
-covered at the end.
+This document covers the copied shadcn-templ components used for form controls
+and the committed outputs, plus how to regenerate them. `htmx.min.js` is
+vendored the same way; hls.js is covered at the end.
+
+## shadcn-templ
+
+Status: shadcn-templ **v2.0.0-beta.16**, style `base-nova`, Tailwind CSS
+**4.3.3**.
+
+The component source is copied into the repository with the shadcn-templ CLI,
+under `internal/web/ui`:
+
+- `internal/web/ui/combobox`, `switch`, `slider` are the components we use.
+- `button`, `input`, `inputgroup`, `textarea`, `icon` and `utils` are their
+  local dependencies.
+- `internal/web/ui/baseui` and `internal/web/ui/floatingui` contain the shared
+  browser runtime and positioning code.
+- `internal/web/ui/scripts.templ` renders the one bundle script tag, and
+  `internal/web/ui/scripts_bundle.go` is the generated URL manifest.
+
+`components.json` (repo root) records the style, the Tailwind entry file, and
+the aliases that keep everything under `internal/`. That last point matters: the
+local source build copies only `cmd`, `internal` and `extension` into the image,
+so the components build without changing `Dockerfile.local` or `make`.
+
+### Generated outputs (committed)
+
+| Output | Purpose |
+| --- | --- |
+| `internal/web/static/shadcn.css` | Minified Tailwind output |
+| `internal/web/static/shadcn-templ-<hash>.js` | Component runtime bundle |
+| `internal/web/ui/scripts_bundle.go` | Bundle URL used by `@ui.Scripts()` |
+| `internal/web/ui/**/_templ.go` | Generated templ code for copied components |
+
+Regenerate both the JS bundle and the CSS with:
+
+```bash
+mise run ui:gen
+```
+
+`tools/shadcn/build.sh` pins the CLI and Tailwind versions. It installs the
+dev-only Tailwind packages into `tools/shadcn/node_modules` if they are missing,
+runs `shadcn-templ bundle`, then compiles the Tailwind entry. `node_modules` is
+not committed.
+
+After adding or changing a `.templ` component, also run `mise run gen` (the
+normal templ and sqlc generation). Commit the generated `_templ.go`, the CSS,
+the new hashed JS file and `scripts_bundle.go`.
+
+### Tailwind entry and theming
+
+`tools/shadcn/tailwind.css` is the Tailwind source. It imports only Tailwind's
+theme and utilities layers, plus the vendored `tw-animate.css` and
+`shadcn-tailwind.css`. **Preflight is intentionally omitted**: `app.css` owns
+the page base, and Tailwind's reset would change the hand-written UI. `app.css`
+also scopes its generic button and input rules with `:not([data-slot])`, so the
+hand-written form styles cannot override the shadcn utilities.
+
+The theme maps the shadcn `@theme` color tokens directly to nanoflux variables:
+
+| shadcn token | nanoflux value |
+| --- | --- |
+| `background` / `foreground` | `--bg` / `--fg` |
+| `card`, `popover`, `secondary` | `--panel` |
+| `primary` | `--accent` |
+| `muted-foreground` | `--muted` |
+| `border`, `input` | `--border` |
+| `destructive` | `--danger` |
+| `ring` | `--accent` |
+| `radius` | `6px` |
+
+The shadcn dark variant is mapped to the app's
+`[data-theme="dark"]` selector, so light/dark and the accent setting keep
+working without a second theme system.
+
+### Form behavior
+
+The components render their own hidden native inputs, so htmx and normal form
+submits see the field values without a bridge script. There are a few rules:
+
+- Use `DefaultValue`, `DefaultValues` and `DefaultChecked`. The controlled props
+  (`Value`, `Values`, `Checked`) make the JS wait for an owner update and ignore
+  the user.
+- Field-level htmx attributes go on the wrapper through `comboFieldAttrs`
+  (`internal/httpapi/views_combo.templ`). It adds `hx-disinherit="*"`, a
+  `change from:` trigger that names the hidden input, and an `hx-include` that
+  pulls the field's value while preserving the caller's selectors. This keeps
+  typing in the search box from submitting, while a real selection still does.
+- Some forms put `hx-trigger="change"` on the form itself (settings). The native
+  `change` event that shadcn dispatches on its hidden input bubbles to the form
+  and works unchanged.
+- Components self-initialize through a MutationObserver, so htmx swaps, cloned
+  filter rows and `fetch` + `innerHTML` dialogs need no reinit hook. Keep
+  `htmx.process` for htmx attributes, but do not add a component reinit.
+
+### Native dialogs
+
+shadcn portals its popups to `<body>`. A native `<dialog>` lives in the top
+layer, so a body-portaled combobox inside one would render behind it.
+`internal/web/static/shadcn.js` redirects the portal into the nearest
+`<dialog>` ancestor instead. It also turns the slider's drag events into one
+native `change` on pointerup or keyup, so a surrounding form's
+`hx-trigger="change"` fires once when the drag settles.
+
+The filter modal renders one combobox per possible kind (`tag` and `feed`) in
+`<template>` elements. `app.js` swaps the value cell when the kind select
+changes, so no client-side option JSON or component API is involved.
+
+### Plain chip list
+
+The collection member list is not a combobox. `comboChips` renders ordinary
+server markup: one chip per feed, with a remove button that POSTs to the
+collection's `remove-feed` endpoint. Auto collections render no remove button.
+
+### Home reorder
+
+The pinned-collection list on `/settings` is plain server markup. Native HTML5
+drag and drop in `internal/web/static/home-reorder.js` computes the new order
+and posts it to the card's `data-reorder-url`. There is no grid component and
+no imperative row renderer.
+
+### Adding another component
+
+1. Copy it from the pinned CLI:
+
+   ```bash
+   go run github.com/axadrn/shadcn-templ/v2/cmd/shadcn-templ@v2.0.0-beta.16 add <name>
+   ```
+
+2. Run `mise run gen` and `mise run ui:gen`.
+3. Add a wrapper in `views_combo.templ` (or a new `views_<name>.templ`). Use the
+   uncontrolled props and the `comboFieldAttrs` helper when the control submits
+   a form value on its own.
+4. Check the Tailwind output includes the new classes, and commit all generated
+   files.
+
+Gotchas:
+
+- The CLI rewrites imports to the aliases in `components.json`. Keep copied
+  source under `internal/`; a root-level `components/` directory would need a
+  Dockerfile change.
+- `internal/web/ui/utils` uses `github.com/Oudwins/tailwind-merge-go`, which is
+  a normal build dependency of the main module.
+- Copies are MIT licensed. Keep the upstream license notice when redistributing
+  them.
+- Do not remove preflight exemption or the `:not([data-slot])` guards without a
+  visual pass over the hand-written UI.
 
 ## hls.js (HLS video)
 
 Some plugin videos are stored as HLS enclosures (an `.m3u8` manifest), for
 example Bluesky videos, which Chrome and Firefox cannot play natively.
-`internal/web/static/hls.light.min.js` is the
-pinned hls.js **light** build (VOD playback; the full build is not needed), and
+`internal/web/static/hls.light.min.js` is the pinned hls.js **light** build (VOD
+playback; the full build is not needed), and
 `internal/web/static/hls-video.js` is the small committed glue that attaches it
 to any `video[data-hls]` (Safari is left to play HLS natively).
 
@@ -27,211 +171,22 @@ mise run vendor:hls      # needs node once; not needed at runtime
 
 `tools/hls-vendor/vendor.sh` installs the pinned `hls.js` version and copies
 `dist/hls.light.min.js` (an IIFE that sets `window.Hls` when loaded as a classic
-script). Unlike the Vaadin bundle it needs no esbuild step. hls.js is **lazy**:
-`hls-video.js` injects the script only when a page actually has an HLS video, so
-readers who never open one do not download it.
-
-Status: Vaadin **25.3.0**, vendored as `vaadin-combo-box`,
-`vaadin-multi-select-combo-box`, `vaadin-switch`, `vaadin-slider`, and
-`vaadin-grid`.
-
-## Why vendored, not a bundler
-
-Vaadin ships a tree of `@vaadin/*` ES modules that import each other by bare
-specifier (`@vaadin/component-base`, `lit`, …). A browser cannot resolve those,
-so the package folder cannot be copied in as-is. Bundling that closure once at
-development time and committing the result keeps the runtime simple: no
-`node_modules`, no build step, and self-hosting (the `make` path) stays
-`go build`.
-
-The bundle is **emitted as an IIFE, not ESM**, and loaded with a plain
-`<script defer>`. A classic script containing `export` fails to parse, which
-silently leaves every element unregistered — they then render as zero-size
-unknown elements. Do not change the format without also changing the script tag.
-
-Current size: ~370 KB minified, ~89 KB gzipped, no dynamic imports.
-
-## Regenerating the bundle
-
-The pinned versions live in `tools/vaadin-vendor/vendor.sh`. Regenerate with:
-
-```bash
-mise run vendor:vaadin      # needs node once; not needed at runtime
-```
-
-That script:
-
-1. installs the pinned `@vaadin/*` packages and `esbuild` into a temp dir,
-2. bundles `tools/vaadin-vendor/entry.js` (the list of components to include)
-   into one minified IIFE at `internal/web/static/vaadin.bundle.js`,
-3. prints the output size.
-
-Commit the regenerated file, exactly as `htmx.min.js` is committed. Bump
-`VAADIN_VERSION` in the script when upgrading; also bump `ESBUILD_VERSION`
-occasionally.
-
-## What is in the bundle
-
-`tools/vaadin-vendor/entry.js` is the single source of truth for which
-components ship. It currently imports:
-
-```js
-import "@vaadin/combo-box";
-import "@vaadin/multi-select-combo-box";
-import "@vaadin/switch";
-import "@vaadin/slider";
-import "@vaadin/grid";
-```
-
-Everything else in the bundle (the overlay, scroller, item, input-container,
-theme mixin, usage-statistics, …) is a transitive dependency of those.
-
-## How the server uses the components
-
-The components are client-side custom elements, so the server renders markup and
-a small script wires them up. There are three moving parts.
-
-### 1. Templ wrappers (`internal/httpapi/views_combo.templ`)
-
-`comboSelect`, `comboMulti`, `comboChips`, `switchField`, and `sliderField`
-render the element plus the hidden native mirrors described below. Options are
-passed as `[]comboItem` (`internal/httpapi/combo.go`).
-
-`switchField` replaces the plain checkbox on the feed edit form (`enabled`,
-`poll_interval_auto`, `is_regex`). Its label is a string set as the component's
-own `label` attribute (not a slotted `<label>`), so the mirror stays a single
-self-contained control. The mirror's value is `"1"` when on and `""` when off
-(`switchValue`), matching how the checkbox submitted.
-
-Options are emitted **inline as JSON attributes**:
-
-- `items` on every combo, and
-- `selected-items` on multi-selects.
-
-Lit JSON-parses Array-typed attributes by default, so no client-side hydration
-is needed. `selected-items` must be the **full item objects**, not bare value
-strings: the component labels a selection by looking up the item object, and a
-bare value makes it fall back to the value string (chips showing `165` instead
-of `Test Blog`).
-
-v25 has no `<optgroup>` equivalent, so a grouped picker prefixes the group name
-onto the label (`"Metru · Blog"`).
-
-### 2. Form-submission bridge (`internal/web/static/vaadin.js`)
-
-The components are **not form-associated**, and their own internal `<input>`
-holds display text. htmx serializes a form with `FormData`, which would submit
-the **label** for a single-select and **nothing** for a multi-select. So each
-wrapper pairs the component with hidden native inputs:
-
-- **single select**: one mirror `input[data-vaadin-target]` carries the value
-  and any `hx-*` attributes (spread from the wrapper), so
-  `hx-trigger="change"` on it behaves exactly as it did on the `<select>` it
-  replaced.
-- **multi select**: one mirror per selected value, all sharing a name, so the
-  field submits as repeated params (`r.Form["collections"]`) like the checkbox
-  group it replaced.
-- **chips**: no mirrors; display-only, and a removed chip POSTs to the
-  wrapper's `data-remove-url`.
-- **switch**: one mirror `input[data-vaadin-target]` carries `"1"`/`""` and any
-  `hx-*` attributes; `checked-changed` updates it.
-- **slider**: one mirror `input[data-vaadin-target]` carries the numeric value;
-  `value-changed` updates it while dragging but `change` (fired when the slider
-  settles) is what fires the mirror's `change`, so an htmx `change` trigger does
-  not fire on every pixel of movement.
-
-The script is idempotent, waits for `customElements.whenDefined`, and re-runs
-after `htmx:afterSwap`. Fragments injected with `fetch` + `innerHTML` (the
-add-to-list dialog) fire no htmx swap event, so callers must invoke
-`window.nanofluxReinitVaadin(target)` after injecting; see `static/app.js`.
-
-### 3. Theming (`internal/web/static/app.css`)
-
-v25 ships **only structural base styles** — there is no Lumo theme package in
-the dependency tree. Components are themed with CSS custom properties from
-`app.css`, mapped to nanoflux tokens (`--panel`, `--bg`, `--border`, `--fg`,
-`--accent`).
-
-Vaadin's base color tokens default via CSS `light-dark()`, which follows the
-**OS** preference, not our `data-theme`. They are therefore mapped once on
-`:root` (which inherits into every component's shadow DOM) so the components
-follow the app theme. Component-specific overrides sit near the bottom of
-`app.css` under the "Vaadin components (vendored)" heading.
-
-### Grid (`vaadin-grid`)
-
-`vaadin-grid` is used once: the pinned-collection list on `/settings`, where
-rows drag to reorder (`views_home.templ`, `static/home-grid.js`). It is the one
-component that needs real glue, because its columns render imperatively:
-
-- Columns take a JS `renderer`, not declarative templates. The card emits one
-  `<template id="settings-home-row-{id}">` per pinned collection holding the
-  row's plain server markup, and `home-grid.js`'s renderer clones the matching
-  template into the cell, then `htmx.process(root)` so the row's `hx-*`
-  attributes bind. The grid's cell content is slotted from the light DOM
-  (`vaadin-grid-cell-content`), so htmx can reach it.
-- Reordering listens for `grid-drop` (from Vaadin's drag-and-drop mixin),
-  computes the new id order, and `htmx.ajax('POST', …)`s it to the card's
-  `data-reorder-url`. The server's `reorder` action rebuilds the pinned order
-  from the posted `order` list, ignoring unowned/unknown ids and preserving any
-  pin the client omitted. Note `grid-drop` carries only `dropTargetItem` /
-  `dropLocation`; the dragged items are on **`grid-dragstart`**, so the handler
-  remembers them when the drag begins.
-- `all-rows-visible` makes the grid as tall as its content (no inner scroll).
-- `rows-draggable` + `drop-mode="between"` enable row drag and between-row
-  drops.
-
-Note: pass htmx `values` as a **plain object** (`{ action: 'reorder', order: idList }`),
-not a `URLSearchParams` — htmx's encoder iterates own keys, so a
-`URLSearchParams` silently sends nothing.
-
-## Bringing in another Vaadin component
-
-1. Add its package to the `npm install` list in
-   `tools/vaadin-vendor/vendor.sh` **and** an `import "@vaadin/<name>";` line to
-   `tools/vaadin-vendor/entry.js`.
-2. Run `mise run vendor:vaadin` and commit the regenerated bundle.
-3. Add a templ wrapper in `views_combo.templ` (or a new `views_<name>.templ`),
-   following `comboSelect` as the model. Decide whether it needs a mirror:
-   - If it is a **form control** you submit, it needs mirrors, plus a branch in
-     `static/vaadin.js` (`data-vaadin="<kind>"`) to sync them.
-   - If it is **display-only** or driven entirely by htmx attributes it carries
-     itself, it may need no JS at all.
-4. Theme it in `app.css` with its `--vaadin-*` properties.
-5. If it is a plain fixed-set choice where search adds nothing (2–3 options),
-   prefer the existing custom pill picker (`PickerControl` in
-   `views_items.templ`) — see `/settings` → home screen for an example.
-
-### Gotchas
-
-- **Check for a theme package.** Some components used to pull Lumo styles via
-  `@vaadin/vaadin-lumo-styles`. v25 does not, but verify for any new one; if it
-  does, add that import too or the component renders unstyled.
-- **Opt out of usage statistics.** `@vaadin/component-base` imports
-  `vaadin-usage-statistics`, which only runs in development mode (localhost, and
-  only when not minified). The production bundle is minified, so it is inert;
-  note this if you ever ship an unminified bundle.
-- **`items`/`selected-items` are JSON attributes.** Prefer them over setting
-  properties from JS, so the markup is complete without hydration.
-- **Form participation.** Assume a new component is not form-associated until
-  proven otherwise; test `new FormData(form)` for the value you expect.
-- **Component internals can be shadow DOM.** Grid cell content happens to be
-  slotted (light DOM) so htmx can reach it, but do not assume that of other
-  components; check where their interactive content lands.
-- **`htmx:afterSwap`'s `detail.target` may be detached** after an `outerHTML`
-  swap. The init hooks scan the whole document when the target is disconnected,
-  so re-initialization is not skipped.
+script). hls.js is **lazy**: `hls-video.js` injects the script only when a page
+actually has an HLS video, so readers who never open one do not download it.
 
 ## Where this lives in the code
 
 | Concern | File |
 | --- | --- |
-| Pinned versions + bundle command | `tools/vaadin-vendor/vendor.sh` |
-| Which components ship | `tools/vaadin-vendor/entry.js` |
-| Committed bundle (generated) | `internal/web/static/vaadin.bundle.js` |
-| Committed bridge script (combos) | `internal/web/static/vaadin.js` |
-| Committed renderer/reorder script (grid) | `internal/web/static/home-grid.js` |
+| CLI config and aliases | `components.json` |
+| Pinned CLI, Tailwind versions and regeneration | `tools/shadcn/build.sh`, `tools/shadcn/package.json` |
+| Tailwind entry and theme mapping | `tools/shadcn/tailwind.css` |
+| Copied component source | `internal/web/ui/**` |
+| Generated Tailwind output | `internal/web/static/shadcn.css` |
+| Generated JS bundle and URL manifest | `internal/web/static/shadcn-templ-*.js`, `internal/web/ui/scripts_bundle.go` |
+| Portal and slider glue | `internal/web/static/shadcn.js` |
+| Home reorder | `internal/web/static/home-reorder.js` |
 | Templ wrappers | `internal/httpapi/views_combo.templ`, `views_home.templ` |
 | Option/data helpers | `internal/httpapi/combo.go`, `home.go` |
-| Theming | `internal/web/static/app.css` (Vaadin section) |
-| Load order (htmx, bundle, bridge, app) | `internal/httpapi/views_layout.templ` |
+| Wrapper layout and chip styling | `internal/web/static/app.css` |
+| Load order | `internal/httpapi/views_layout.templ` |

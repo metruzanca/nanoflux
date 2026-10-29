@@ -213,14 +213,17 @@ func TestAutoCollectionHiddenFromFeedEditCheckboxes(t *testing.T) {
 		t.Fatalf("manual collection should appear in the edit combo: %s", body)
 	}
 	yt := autoCollection(t, s, u.ID, "youtube.com")
-	// The feed edit collections combo serializes options as JSON; the auto
-	// collection's id must not appear as a selectable item or a selected value.
-	// Scope to the collections combo payload so the author combo (which can
-	// share the id space) doesn't interfere.
-	collectionsPayload := body[strings.Index(body, `data-vaadin-name="feed_`+itoa(f.ID)+`_collections"`):]
-	collectionsPayload = collectionsPayload[:strings.Index(collectionsPayload, "</div>")]
-	if strings.Contains(collectionsPayload, `"`+itoa(yt.ID)+`"`) {
-		t.Fatalf("auto collection should not appear in the edit combo: %s", collectionsPayload)
+	// The auto collection's id must not appear as a selected value or as an
+	// option in the feed edit collections combobox.
+	field := "feed_" + itoa(f.ID) + "_collections"
+	if !strings.Contains(body, `data-combo="`+field+`"`) {
+		t.Fatalf("feed edit should render the collections combo: %s", body)
+	}
+	if strings.Contains(body, `name="`+field+`" value="`+itoa(yt.ID)+`"`) {
+		t.Fatalf("auto collection should not be selected in the edit combo: %s", body)
+	}
+	if strings.Contains(body, `data-combo-option="`+field+`:`+itoa(yt.ID)+`"`) {
+		t.Fatalf("auto collection should not appear as a selectable option: %s", body)
 	}
 
 	// Editing the feed must not disturb the auto membership.

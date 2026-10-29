@@ -762,33 +762,39 @@ state is shared and the combined streams count it once.
   resolves). It runs inside `attachSources` (user-scoped) on every list/detail
   path; the public list page passes user 0 and skips the resolution.
 
-## Combo boxes (Vaadin)
+## Combo boxes and controls (shadcn-templ)
 
-Single- and multi-select form fields use vendored Vaadin v25 web components
-(`vaadin-combo-box`, `vaadin-multi-select-combo-box`), so long option lists are
-searchable. See [`docs/vendored-web-components.md`](docs/vendored-web-components.md)
-for the full guide (regenerating the bundle, adding more components, gotchas).
-The invariants that bite:
+Single- and multi-select form fields use copied shadcn-templ components, so long
+option lists are searchable. See
+[`docs/vendored-web-components.md`](docs/vendored-web-components.md) for the
+full guide (regeneration, adding components, gotchas). The invariants that bite:
 
-- The committed bundle (`internal/web/static/vaadin.bundle.js`) is regenerated
-  with `mise run vendor:vaadin` (needs node once; runtime does not). It is an
-  **IIFE**, not ESM: a plain `<script defer>` containing `export` fails to parse,
-  so the elements never register and render as zero-size unknown elements.
-- The components are **not form-associated**, so htmx's `FormData` would submit
-  the label (single-select) or nothing (multi-select). Each wrapper in
-  `views_combo.templ` pairs the component with hidden native mirrors, synced by
-  `static/vaadin.js`. Options ride inline as JSON attributes (`items`,
-  `selected-items` as full item objects, not bare values).
-- Some fragments are injected with `fetch` + `innerHTML` (the add-to-list
-  dialog), which fires no htmx swap event; `static/app.js` calls
-  `window.nanofluxReinitVaadin(target)` after injecting so the bridge binds.
+- Component source lives in `internal/web/ui` (pinned shadcn-templ
+  `v2.0.0-beta.16`). The Tailwind output
+  (`internal/web/static/shadcn.css`), the hashed JS bundle, `_templ.go` files and
+  `internal/web/ui/scripts_bundle.go` are generated and committed. Run
+  `mise run gen` and `mise run ui:gen` after changing components, then commit
+  the outputs. Runtime and the Docker build never need node or Tailwind.
+- Use the uncontrolled props: `DefaultValue`, `DefaultValues`,
+  `DefaultChecked`. The controlled props (`Value`, `Values`, `Checked`) make
+  the JS wait for an owner update and ignore the user.
+- The components render their own hidden native inputs, so normal form submits
+  and htmx see the expected field values. Field-level htmx attributes go on the
+  wrapper via `comboFieldAttrs` (`views_combo.templ`), which adds
+  `hx-disinherit="*"`, a `from:` trigger on the hidden input, and `hx-include`
+  for the field. Do not put htmx attributes on the text input.
+- Components self-initialize through their MutationObserver, including markup
+  cloned by `app.js` or injected with `fetch` + `innerHTML`. Keep
+  `htmx.process` for htmx attributes only.
+- The home pinned-collection list is plain server markup reordered by
+  `static/home-reorder.js`, not a component with an imperative renderer.
+- Popups are portaled into the nearest `<dialog>` by `static/shadcn.js`, because
+  a body-portaled popup would render behind a native modal dialog.
+- Tailwind preflight is intentionally not imported. `app.css` keeps the page
+  base and scopes its generic form rules with `:not([data-slot])`. Do not
+  remove those guards or shadcn controls will inherit the app button/input look.
 - For a plain fixed-set choice where search adds nothing, prefer the custom pill
   picker (`PickerControl` in `views_items.templ`); see `/settings` home screen.
-- `vaadin-grid` renders columns imperatively (a JS `renderer`), used for the
-  drag-to-reorder pinned collections on `/settings` (`static/home-grid.js`). Its
-  cell content is slotted from the light DOM, so htmx can reach the cloned row
-  markup. Vaadin's base color tokens default via `light-dark()` (OS preference,
-  not `data-theme`) and are remapped on `:root` in `app.css`.
 
 ## Security invariants
 

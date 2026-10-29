@@ -285,40 +285,6 @@ type settingsHomeRow struct {
 	Sort       string
 }
 
-// homeGridItem is one pinned collection as the grid's row data. The grid renders
-// each row by cloning a server template (see views_home.templ), so the row's
-// markup carries its own htmx attributes; only id/name/mode/sort ride in the data.
-type homeGridItem struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Mode string `json:"mode"`
-	Sort string `json:"sort"`
-}
-
-// homeGridItems maps the pinned rows to grid items, preserving order.
-func homeGridItems(rows []settingsHomeRow) []homeGridItem {
-	out := make([]homeGridItem, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, homeGridItem{
-			ID:   strconv.FormatInt(r.Collection.ID, 10),
-			Name: r.Collection.Name,
-			Mode: r.Mode,
-			Sort: r.Sort,
-		})
-	}
-	return out
-}
-
-// homeGridItemsJSON marshals the pinned rows for the grid's inline `items`
-// attribute. A marshal error degrades to an empty list (the struct cannot fail).
-func homeGridItemsJSON(rows []settingsHomeRow) string {
-	b, err := json.Marshal(homeGridItems(rows))
-	if err != nil {
-		return "[]"
-	}
-	return string(b)
-}
-
 // settingsHomeData is the home-screen settings card's data.
 type settingsHomeData struct {
 	Rows           []settingsHomeRow

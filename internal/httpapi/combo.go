@@ -7,13 +7,12 @@ import (
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
-// comboItem is one option for a Vaadin combo-box. Value is the form value
+// comboItem is one option for a shadcn combobox. Value is the form value
 // (usually a numeric id as a string); Label is what the user sees and types to
-// filter. It marshals to the shape the component expects in its inline `items`
-// and `selected-items` attributes.
+// filter. views_combo.templ converts these to the component's ItemData shape.
 type comboItem struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
+	Value string
+	Label string
 }
 
 // authorItems maps authors to combo items with a leading "+ create new author"
@@ -59,8 +58,8 @@ func candidateValue(cs []discover.Candidate) string {
 }
 
 // groupedFeedItems maps author-grouped feeds to combo items, prefixing each
-// label with its author so the author stays visible (v25 combo boxes have no
-// optgroup equivalent) and searchable.
+// label with its author so the author stays visible and searchable (the
+// picker is a flat list, so the prefix carries the grouping).
 func groupedFeedItems(groups []collectionFeedGroup) []comboItem {
 	out := make([]comboItem, 0)
 	for _, g := range groups {

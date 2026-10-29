@@ -299,7 +299,7 @@ the code. Do not re-plan them.
 - Magic sort, lists, saved pages, native bookmarks, list/favorites/bookmarks
   share pages, auto-read, demo mode and Umami analytics.
 - Command palette merged with entity search; row and modal swipe gestures;
-  add-to-list now uses the Vaadin multi-select combo box.
+  add-to-list now uses the shared multi-select combobox.
 
 ## Proposed work
 

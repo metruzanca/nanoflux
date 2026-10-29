@@ -1,0 +1,771 @@
+package combobox
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/metruzanca/nanoflux/internal/web/ui/button"
+	"github.com/metruzanca/nanoflux/internal/web/ui/icon"
+	"github.com/metruzanca/nanoflux/internal/web/ui/inputgroup"
+	"github.com/metruzanca/nanoflux/internal/web/ui/utils"
+)
+
+type Side string
+
+const (
+	SideTop    Side = "top"
+	SideRight  Side = "right"
+	SideBottom Side = "bottom"
+	SideLeft   Side = "left"
+)
+
+type Align string
+
+const (
+	AlignStart  Align = "start"
+	AlignCenter Align = "center"
+	AlignEnd    Align = "end"
+)
+
+type ctxKey string
+
+const stateKey ctxKey = "comboboxState"
+
+type ctxState struct {
+	id              string
+	name            string
+	value           string
+	values          []string
+	valueControlled bool
+	open            *bool
+	defaultOpen     bool
+	multiple        bool
+	autoHighlight   bool
+	disabled        bool
+	readOnly        bool
+	required        bool
+	form            string
+	items           []ItemData
+}
+
+// ItemData is one entry of Base UI's items prop: the label the input and
+// Value show for the value. Label is a string or a templ.Component, Base UI's
+// ReactNode.
+type ItemData struct {
+	Value string
+	Label any
+}
+
+// isSelected is the selection test of an item: in the selection, "" too when
+// the combobox has a value "" (Base UI compares the item to the value).
+func (s ctxState) isSelected(value string) bool {
+	if s.multiple {
+		for _, v := range s.values {
+			if v == value {
+				return true
+			}
+		}
+		return false
+	}
+	return s.value == value && s.hasSelectedValue()
+}
+
+// hasSelectedValue is Base UI's: a value is selected. "" is null unless the
+// items have an entry "", like upstream's popup example.
+func (s ctxState) hasSelectedValue() bool {
+	if s.multiple {
+		return len(s.values) > 0
+	}
+	if s.value != "" {
+		return true
+	}
+	for _, item := range s.items {
+		if item.Value == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// labelOf is the items label of a value, the value itself without one.
+func (s ctxState) labelOf(value string) any {
+	for _, item := range s.items {
+		if item.Value == value {
+			return item.Label
+		}
+	}
+	return value
+}
+
+// labelText is a label as the input's text.
+func labelText(label any) string {
+	if text, ok := label.(string); ok {
+		return text
+	}
+	return ""
+}
+
+// optionID derives an option's id from the combobox id and the option's
+// value, so aria-activedescendant has something to name and the id survives
+// an htmx swap of the list. Whitespace collapses because
+// aria-activedescendant reads a space as an id separator.
+func optionID(comboboxID, value string) string {
+	return comboboxID + "-option-" + strings.Join(strings.Fields(value), "-")
+}
+
+func state(ctx context.Context) ctxState {
+	if s, ok := ctx.Value(stateKey).(ctxState); ok {
+		return s
+	}
+	return ctxState{}
+}
+
+type Props struct {
+	ID string
+	// Name makes the combobox submit its value in forms (hidden input).
+	Name string
+	// Value/Values are controlled selections. Use DefaultValue/DefaultValues
+	// when the browser should own selection after the initial render.
+	Value         *string
+	DefaultValue  string
+	Values        []string
+	DefaultValues []string
+	Open          *bool
+	DefaultOpen   bool
+	// Multiple allows selecting several items, rendered as chips.
+	Multiple bool
+	// Items is Base UI's items: the labels the input and Value show.
+	Items []ItemData
+	// AutoHighlight keeps the first matching item highlighted while typing.
+	AutoHighlight bool
+	Disabled      bool
+	ReadOnly      bool
+	Required      bool
+	Form          string
+}
+
+func initialValue(p Props) string {
+	if p.Value != nil {
+		return *p.Value
+	}
+	return p.DefaultValue
+}
+
+func initialValues(p Props) []string {
+	if p.Values != nil {
+		return p.Values
+	}
+	return p.DefaultValues
+}
+
+type InputProps struct {
+	ID         string
+	Class      string
+	Attributes templ.Attributes
+	// Placeholder is shown while no item is selected.
+	Placeholder string
+	// HideTrigger hides the chevron button.
+	HideTrigger bool
+	// ShowClear renders a clear button while a value is selected.
+	ShowClear bool
+	// Disabled is shadcn's ComboboxInput disabled: the input, the trigger and
+	// the clear button.
+	Disabled bool
+}
+
+type ContentProps struct {
+	Class      string
+	Attributes templ.Attributes
+	// Side of the anchor to open against. Defaults to bottom.
+	Side Side
+	// Align along the anchor edge. Defaults to start.
+	Align Align
+	// SideOffset is the gap to the anchor in px. Defaults to 6.
+	SideOffset int
+	// AlignOffset shifts the content along the aligned edge, in px.
+	AlignOffset int
+}
+
+// ValueProps is ComboboxValue's: it renders no element of its own.
+type ValueProps struct {
+	// Placeholder is shown until an item is selected.
+	Placeholder string
+}
+
+type ListProps struct {
+	ID         string
+	Class      string
+	Attributes templ.Attributes
+}
+
+type EmptyProps struct {
+	ID         string
+	Class      string
+	Attributes templ.Attributes
+}
+
+type GroupProps struct {
+	ID         string
+	Class      string
+	Attributes templ.Attributes
+}
+
+type LabelProps struct {
+	ID         string
+	Class      string
+	Attributes templ.Attributes
+}
+
+type ItemProps struct {
+	ID         string
+	Class      string
+	Attributes templ.Attributes
+	Value      string
+	// Label is what the input shows when this item is selected and what the
+	// filter matches. Defaults to the item's text content.
+	Label    string
+	Disabled bool
+}
+
+type SeparatorProps struct {
+	ID         string
+	Class      string
+	Attributes templ.Attributes
+}
+
+type ChipsProps struct {
+	ID         string
+	Class      string
+	Attributes templ.Attributes
+}
+
+type ChipProps struct {
+	ID         string
+	Class      string
+	Attributes templ.Attributes
+	// Value is the selected value this chip shows and removes.
+	Value string
+	// HideRemove hides the chip's remove button.
+	HideRemove bool
+}
+
+type ChipsInputProps struct {
+	ID         string
+	Class      string
+	Attributes templ.Attributes
+	// Placeholder is shown while the chips input is empty.
+	Placeholder string
+}
+
+// Combobox is ComboboxRoot: it carries the id, name and selection that link
+// Input/Chips, Content and the trigger (via ctx), and renders the hidden input
+// after its children, plus one named input per value in multiple mode.
+templ Combobox(props ...Props) {
+	{{ var p Props }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	if p.ID == "" {
+		{{ p.ID = utils.RandomID() }}
+	}
+	{{ s := ctxState{id: p.ID, name: p.Name, value: initialValue(p), values: initialValues(p), valueControlled: p.Value != nil || p.Values != nil, open: p.Open, defaultOpen: p.DefaultOpen, multiple: p.Multiple, autoHighlight: p.AutoHighlight, disabled: p.Disabled, readOnly: p.ReadOnly, required: p.Required, form: p.Form, items: p.Items} }}
+	{{ ctx = context.WithValue(ctx, stateKey, s) }}
+	{ children... }
+	// A multiple selection carries Base UI's name in data-templ-name: it
+	// submits one input per value.
+	<input
+		if s.multiple || s.name == "" {
+			id={ s.id + "-hidden-input" }
+		} else {
+			name={ s.name }
+		}
+		if s.multiple && s.name != "" {
+			data-templ-name={ s.name }
+		}
+		if s.form != "" {
+			form={ s.form }
+		}
+		disabled?={ s.disabled }
+		required?={ s.required && !(s.multiple && len(s.values) > 0) }
+		readonly?={ s.readOnly }
+		if s.multiple {
+			value={ strings.Join(s.values, ",") }
+		} else {
+			value={ s.value }
+		}
+		if s.name != "" && !s.multiple {
+			style="clip-path:inset(50%);overflow:hidden;white-space:nowrap;border:0;padding:0;width:1px;height:1px;margin:-1px;position:absolute"
+		} else {
+			style="clip-path:inset(50%);overflow:hidden;white-space:nowrap;border:0;padding:0;width:1px;height:1px;margin:-1px;position:fixed;top:0;left:0"
+		}
+		tabindex="-1"
+		aria-hidden="true"
+	/>
+	if s.multiple && s.name != "" {
+		for _, v := range s.values {
+			<input
+				type="hidden"
+				if s.form != "" {
+					form={ s.form }
+				}
+				name={ s.name }
+				value={ v }
+				disabled?={ s.disabled }
+			/>
+		}
+	}
+}
+
+// Trigger returns the attributes that turn any element (usually a button)
+// into shadcn's ComboboxTrigger — the render prop pendant, used for the popup
+// pattern where the search input lives inside the content. Like Base UI's
+// ComboboxTrigger with the input inside the popup, it is the combobox and has
+// aria-haspopup="dialog"; data-placeholder while no value is selected. The
+// element brings shadcn's chevron itself. data-templ-combobox-anchor is the
+// port marker for the positioning anchor Base UI keeps in context.
+func Trigger(ctx context.Context) templ.Attributes {
+	s := state(ctx)
+	return templ.Attributes{
+		// useButton: tabIndex 0 and the native type.
+		"tabindex":                   "0",
+		"type":                       "button",
+		"data-slot":                  "combobox-trigger",
+		"role":                       "combobox",
+		"data-templ-combobox-anchor": s.id,
+		"data-templ-controls":        s.id,
+		"aria-haspopup":              "dialog",
+		"aria-expanded":              "false",
+		"data-placeholder":           !s.hasSelectedValue(),
+	}
+}
+
+// Value is ComboboxValue, which renders no element: the selected chips in
+// multiple mode, else the label of the value, or the placeholder while none
+// is selected.
+templ Value(props ...ValueProps) {
+	{{ var p ValueProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	{{ s := state(ctx) }}
+	if s.multiple {
+		for _, v := range s.values {
+			@Chip(ChipProps{Value: v})
+		}
+	} else if s.hasSelectedValue() {
+		@itemLabel(s.labelOf(s.value))
+	} else {
+		{ p.Placeholder }
+	}
+}
+
+// itemLabel renders an items label: a templ.Component, or text.
+templ itemLabel(label any) {
+	if c, ok := label.(templ.Component); ok {
+		@c
+	} else if label != nil {
+		{ fmt.Sprint(label) }
+	}
+}
+
+templ Input(props ...InputProps) {
+	{{ var p InputProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	{{ s := state(ctx) }}
+	{{ disabled := s.disabled || p.Disabled }}
+	@inputgroup.InputGroup(inputgroup.Props{
+		Class:      utils.CN("w-auto", p.Class),
+		Attributes: templ.Attributes{"data-templ-combobox-anchor": s.id},
+	}) {
+		{{
+			// ComboboxInput: a text input that is the combobox, its value the
+			// selected label (an input inside the popup is a search box and
+			// starts empty, the script clears it).
+			attrs := templ.Attributes{
+				"role":                "combobox",
+				"data-templ-controls": s.id,
+				"aria-expanded":       "false",
+				"aria-haspopup":       "listbox",
+				"aria-autocomplete":   "list",
+				"autocomplete":        "off",
+				"spellcheck":          "false",
+				"autocorrect":         "off",
+				"autocapitalize":      "none",
+				"value":               utils.IfElse(s.multiple || !s.hasSelectedValue(), "", labelText(s.labelOf(s.value))),
+			}
+			for k, v := range p.Attributes {
+				attrs[k] = v
+			}
+			if s.readOnly {
+				attrs["readonly"] = true
+			}
+			if disabled {
+				attrs["data-disabled"] = true
+			}
+		}}
+		@inputgroup.Input(inputgroup.InputProps{
+			ID:          p.ID,
+			Type:        "text",
+			Placeholder: p.Placeholder,
+			Disabled:    disabled,
+			Attributes:  attrs,
+		})
+		@inputgroup.Addon(inputgroup.AddonProps{Align: inputgroup.AlignInlineEnd}) {
+			if !p.HideTrigger {
+				@inputgroup.Button(inputgroup.ButtonProps{
+					Size:     inputgroup.ButtonSizeIconXs,
+					Disabled: disabled,
+					// Base UI's ComboboxTrigger next to an input: aria-haspopup
+					// listbox, the link to the popup and aria-expanded.
+					// The button's own tabindex wins over the trigger's, as
+					// with shadcn's render prop.
+					Attributes: templ.Attributes{
+						"data-slot":           "input-group-button",
+						"aria-haspopup":       "listbox",
+						"data-templ-controls": s.id,
+						"aria-expanded":       "false",
+						"data-disabled":       disabled,
+						"data-placeholder":    !s.hasSelectedValue(),
+					},
+					// shadcn hides the trigger while Base UI's Clear is mounted;
+					// ours stays mounted and toggles hidden, hence :not([hidden]).
+					Class: "[&_svg:not([class*='size-'])]:size-4 group-has-[[data-slot=combobox-clear]:not([hidden])]/input-group:hidden data-pressed:bg-transparent",
+				}) {
+					@icon.ChevronDown(icon.Props{Class: "text-muted-foreground size-4 pointer-events-none"})
+				}
+			}
+			if p.ShowClear {
+				@inputgroup.Button(inputgroup.ButtonProps{
+					Size:     inputgroup.ButtonSizeIconXs,
+					Disabled: disabled,
+					Class:    "",
+					Attributes: templ.Attributes{
+						"data-slot":    "combobox-clear",
+						"tabindex":     "-1",
+						"hidden":       !s.hasSelectedValue(),
+						"data-visible": s.hasSelectedValue(),
+					},
+				}) {
+					@icon.X(icon.Props{Class: "pointer-events-none"})
+				}
+			}
+		}
+		{ children... }
+	}
+}
+
+templ Content(props ...ContentProps) {
+	{{ var p ContentProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	if p.Side == "" {
+		{{ p.Side = SideBottom }}
+	}
+	if p.Align == "" {
+		{{ p.Align = AlignStart }}
+	}
+	if p.SideOffset == 0 {
+		{{ p.SideOffset = 6 }}
+	}
+	{{ s := state(ctx) }}
+	// Hidden until the script portals it to <body> on open, so the SSRd
+	// content never participates in layout or sibling CSS.
+	<div data-templ-portal hidden>
+		<div data-base-ui-portal hidden>
+		<div
+			if s.valueControlled {
+				if s.multiple {
+					data-templ-value={ templ.JSONString(s.values) }
+				} else {
+					data-templ-value={ s.value }
+				}
+			}
+			if s.open != nil {
+				data-templ-open={ strconv.FormatBool(*s.open) }
+			}
+			data-templ-default-open?={ s.open == nil && s.defaultOpen }
+			data-templ-read-only?={ s.readOnly }
+			data-templ-side={ string(p.Side) }
+			data-templ-align={ string(p.Align) }
+			data-templ-side-offset={ strconv.Itoa(p.SideOffset) }
+			if p.AlignOffset != 0 {
+				data-templ-align-offset={ strconv.Itoa(p.AlignOffset) }
+			}
+			data-templ-auto-highlight?={ s.autoHighlight }
+			data-closed
+			hidden
+			role="presentation"
+			class="isolate z-50"
+			{ utils.DirectionAttributes(ctx)... }
+		>
+			// ComboboxPopup: role dialog when the input sits inside it, the
+			// script sets that.
+			<div
+				id={ s.id }
+				data-slot="combobox-content"
+				data-chips={ utils.IfElse(s.multiple, "true", "false") }
+				data-closed
+				tabindex="-1"
+				role="presentation"
+				class={
+					utils.CN(
+						// 1:1 base/ui/combobox.tsx ComboboxContent, the look comes from
+						// (animations key on Base UI's data-open/data-closed
+						// attributes); the JS sets Base UI's positioner variables.
+						"bg-popover text-popover-foreground data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ring-foreground/10 *:data-[slot=input-group]:bg-input/30 *:data-[slot=input-group]:border-input/30 overflow-hidden rounded-lg shadow-md ring-1 duration-100 *:data-[slot=input-group]:m-1 *:data-[slot=input-group]:mb-0 *:data-[slot=input-group]:h-8 *:data-[slot=input-group]:shadow-none data-[side=inline-start]:slide-in-from-right-2 data-[side=inline-end]:slide-in-from-left-2 group/combobox-content relative max-h-(--available-height) w-(--anchor-width) max-w-(--available-width) min-w-[calc(var(--anchor-width)+--spacing(7))] origin-(--transform-origin) data-[chips=true]:min-w-(--anchor-width)",
+						// The popup stays mounted after animate-out until it unmounts.
+						"data-closed:fill-mode-forwards",
+						p.Class,
+					),
+				}
+				{ p.Attributes... }
+			>
+				{ children... }
+			</div>
+		</div>
+		</div>
+	</div>
+}
+
+templ List(props ...ListProps) {
+	{{ var p ListProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	{{ s := state(ctx) }}
+	// ComboboxList is the listbox and the list navigation's floating element.
+	<div
+		id={ utils.IfElse(p.ID != "", p.ID, s.id+"-list") }
+		data-slot="combobox-list"
+		tabindex="-1"
+		role="listbox"
+		if s.multiple {
+			aria-multiselectable="true"
+		}
+		data-base-ui-focusable
+		class={ utils.CN("no-scrollbar max-h-[min(calc(--spacing(72)---spacing(9)),calc(var(--available-height)---spacing(9)))] scroll-py-1 p-1 data-empty:p-0 overflow-y-auto overscroll-contain", p.Class) }
+		{ p.Attributes... }
+	>
+		{ children... }
+	</div>
+}
+
+templ Empty(props ...EmptyProps) {
+	{{ var p EmptyProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	<div
+		if p.ID != "" {
+			id={ p.ID }
+		}
+		data-slot="combobox-empty"
+		class={ utils.CN("text-muted-foreground hidden w-full justify-center py-2 text-center text-sm group-data-empty/combobox-content:flex", p.Class) }
+		{ p.Attributes... }
+	>
+		{ children... }
+	</div>
+}
+
+templ Group(props ...GroupProps) {
+	{{ var p GroupProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	<div
+		if p.ID != "" {
+			id={ p.ID }
+		}
+		role="group"
+		data-slot="combobox-group"
+		class={ utils.CN("", p.Class) }
+		{ p.Attributes... }
+	>
+		{ children... }
+	</div>
+}
+
+templ Label(props ...LabelProps) {
+	{{ var p LabelProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	<div
+		if p.ID != "" {
+			id={ p.ID }
+		}
+		data-slot="combobox-label"
+		class={ utils.CN("text-muted-foreground px-2 py-1.5 text-xs", p.Class) }
+		{ p.Attributes... }
+	>
+		{ children... }
+	</div>
+}
+
+templ Item(props ...ItemProps) {
+	{{ var p ItemProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	{{ s := state(ctx) }}
+	{{ selected := s.isSelected(p.Value) }}
+	if p.ID == "" {
+		{{ p.ID = optionID(s.id, p.Value) }}
+	}
+	<div
+		id={ p.ID }
+		role="option"
+		data-slot="combobox-item"
+		data-templ-value={ p.Value }
+		if p.Label != "" {
+			data-templ-label={ p.Label }
+		}
+		if selected {
+			data-selected="true"
+			aria-selected="true"
+		} else {
+			aria-selected="false"
+		}
+		if p.Disabled {
+			data-disabled
+			aria-disabled="true"
+		}
+		class={
+			utils.CN(
+				// 1:1 base/ui/combobox.tsx ComboboxItem, the look comes from
+				// (the highlight keys on the data-highlighted
+				// attribute our JS sets).
+				"data-highlighted:bg-accent data-highlighted:text-accent-foreground not-data-[variant=destructive]:data-highlighted:**:text-accent-foreground gap-2 rounded-md py-1 pr-8 pl-1.5 text-sm [&_svg:not([class*='size-'])]:size-4 relative flex w-full cursor-default items-center outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+				p.Class,
+			),
+		}
+		{ p.Attributes... }
+	>
+		{ children... }
+		// ComboboxItemIndicator: mounted while the item is selected, the script
+		// toggles [hidden] for the unmount.
+		<span class="pointer-events-none absolute right-2 flex size-4 items-center justify-center" aria-hidden="true" data-selected hidden?={ !selected }>
+			@icon.Check(icon.Props{Class: "pointer-events-none"})
+		</span>
+	</div>
+}
+
+templ Separator(props ...SeparatorProps) {
+	{{ var p SeparatorProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	<div
+		if p.ID != "" {
+			id={ p.ID }
+		}
+		role="separator"
+		aria-orientation="horizontal"
+		data-orientation="horizontal"
+		data-slot="combobox-separator"
+		class={ utils.CN("bg-border -mx-1 my-1 h-px", p.Class) }
+		{ p.Attributes... }
+	></div>
+}
+
+// Chips is the anchor for multiple mode: a chip container composed by the
+// user with Value (the selected chips) and ChipsInput (the inline filter).
+templ Chips(props ...ChipsProps) {
+	{{ var p ChipsProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	{{ s := state(ctx) }}
+	<div
+		if p.ID != "" {
+			id={ p.ID }
+		}
+		data-slot="combobox-chips"
+		data-templ-combobox-anchor={ s.id }
+		role="toolbar"
+		class={ utils.CN("dark:bg-input/30 border-input focus-within:border-ring focus-within:ring-ring/50 has-aria-invalid:ring-destructive/20 dark:has-aria-invalid:ring-destructive/40 has-aria-invalid:border-destructive dark:has-aria-invalid:border-destructive/50 flex min-h-8 flex-wrap items-center gap-1 rounded-lg border bg-transparent bg-clip-padding px-2.5 py-1 text-sm transition-colors focus-within:ring-3 has-aria-invalid:ring-3 has-data-[slot=combobox-chip]:px-1", p.Class) }
+		{ p.Attributes... }
+	>
+		{ children... }
+		<template>
+			@Chip()
+		</template>
+	</div>
+}
+
+// ChipsInput is the inline filter input rendered after the chips.
+templ ChipsInput(props ...ChipsInputProps) {
+	{{ var p ChipsInputProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	{{ s := state(ctx) }}
+	<input
+		if p.ID != "" {
+			id={ p.ID }
+		}
+		data-slot="combobox-chip-input"
+		type="text"
+		value=""
+		role="combobox"
+		data-templ-controls={ s.id }
+		aria-expanded="false"
+		aria-haspopup="listbox"
+		aria-autocomplete="list"
+		autocomplete="off"
+		spellcheck="false"
+		autocorrect="off"
+		autocapitalize="none"
+		if p.Placeholder != "" {
+			placeholder={ p.Placeholder }
+		}
+		disabled?={ s.disabled }
+		readonly?={ s.readOnly }
+		class={ utils.CN("min-w-16 flex-1 outline-none", p.Class) }
+		{ p.Attributes... }
+	/>
+}
+
+templ Chip(props ...ChipProps) {
+	{{ var p ChipProps }}
+	if len(props) > 0 {
+		{{ p = props[0] }}
+	}
+	{{ s := state(ctx) }}
+	<div
+		if p.ID != "" {
+			id={ p.ID }
+		}
+		data-slot="combobox-chip"
+		tabindex="-1"
+		data-templ-value={ p.Value }
+		class={
+			utils.CN(
+				"bg-muted text-foreground flex h-[calc(--spacing(5.25))] w-fit items-center justify-center gap-1 rounded-sm px-1.5 text-xs font-medium whitespace-nowrap has-data-[slot=combobox-chip-remove]:pr-0 has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:opacity-50",
+				p.Class,
+			),
+		}
+		{ p.Attributes... }
+	>
+		@itemLabel(s.labelOf(p.Value))
+		if !p.HideRemove {
+			@button.Button(button.Props{
+				Variant: button.VariantGhost,
+				Size:    button.SizeIconXs,
+				Class:   "-ml-1 opacity-50 hover:opacity-100",
+				Attributes: templ.Attributes{
+					"data-slot":     "combobox-chip-remove",
+					"tabindex":      "-1",
+					"aria-disabled": "false",
+				},
+			}) {
+				@icon.X(icon.Props{Class: "pointer-events-none"})
+			}
+		}
+	</div>
+}

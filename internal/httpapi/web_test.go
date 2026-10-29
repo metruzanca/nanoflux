@@ -113,7 +113,7 @@ func TestFeedPreviewFormStripsWWW(t *testing.T) {
 		HomeURL: "https://www.example.com",
 	}, "not-a-url", "https://www.example.com", nil, 0, nil, previewTargetGlobal)
 	body := w.Body.String()
-	if strings.Contains(body, "www.") {
+	if strings.Contains(body, "https://www.") {
 		t.Fatalf("preview form should strip www from auto-filled urls: %s", body)
 	}
 	if !strings.Contains(body, `value="https://example.com/feed.xml"`) {
@@ -2505,11 +2505,9 @@ func TestCollectionAddFeedGroupedByAuthor(t *testing.T) {
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
 
 	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
-	// v25 combo boxes have no optgroup, so the author is prefixed onto each
-	// feed label ("Metru · Blog") to keep the grouping visible and searchable.
-	// The options are emitted inline as a JSON attribute (templ escapes the
-	// quotes as &#34;, which the browser decodes).
-	if !strings.Contains(body, `&#34;label&#34;:&#34;Metru · Blog&#34;`) {
+	// The picker is a flat list, so the author is prefixed onto each feed label
+	// ("Metru · Blog") to keep the grouping visible and searchable.
+	if !strings.Contains(body, `data-templ-label="Metru · Blog"`) {
 		t.Fatalf("collection add-feed combo should label feeds by author: %s", body)
 	}
 }

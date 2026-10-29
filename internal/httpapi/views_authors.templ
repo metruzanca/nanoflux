@@ -199,8 +199,6 @@ templ authorAvatarCard(d authorAvatarCardData) {
 // saving.
 templ authorFilterCard(d authorsData) {
 	<section class="card author-filter-card" data-author-filters data-filter-scope
-		data-tag-items={ comboItemsJSON(d.FilterTagOptions) }
-		data-feed-items={ comboItemsJSON(d.FilterFeedOptions) }
 		hx-post={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/filters/preview" }
 		hx-trigger="change delay:400ms, authorfilterschanged"
 		hx-include="#author-filter-fields"
@@ -221,7 +219,7 @@ templ authorFilterCard(d authorsData) {
 				}
 			</div>
 			<template id="author-filter-row-template" data-filter-row-template>
-				@filterRow("author-filter-template", "template", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, true, true)
+				@filterRow("author-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, true, true)
 			</template>
 			<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 		</div>

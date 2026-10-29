@@ -1,0 +1,799 @@
+(function () {
+  // Constants from Base UI's combobox, shadcn's reference implementation.
+  const SIDE_OFFSET = 6;
+
+  // The combobox's element is the positioner (no slot upstream) around the
+  // [data-slot=combobox-content] popup.
+  const POPUP = '[data-slot="combobox-content"]';
+  const ITEM = '[data-slot="combobox-item"]';
+  const CHIP = '[data-slot="combobox-chip"]';
+  // Base UI keeps the positioning anchor in context; the port marker names
+  // the combobox it anchors.
+  const ANCHOR = "[data-templ-combobox-anchor]";
+  // The filter input: Base UI's ComboboxInput, role combobox (a
+  // ComboboxTrigger of the popup pattern has that role too).
+  const INPUT = 'input[role="combobox"]';
+
+  function isPositioner(el) {
+    // The popup is the positioner's slotted child, next to the focus guards.
+    return !!el?.querySelector?.(":scope > " + POPUP);
+  }
+
+  function allContents() {
+    return [...document.querySelectorAll(POPUP)].map((p) => p.parentElement).filter(isPositioner);
+  }
+
+  function positionerOf(target) {
+    const popup = target && target.closest && target.closest(POPUP);
+    return popup && isPositioner(popup.parentElement) ? popup.parentElement : null;
+  }
+
+  // The positioner from its popup's id. The id is the popup's, like Base
+  // UI's, which data-templ-controls and data-templ-combobox-anchor name.
+  function byId(id) {
+    const el = id ? document.getElementById(id) : null;
+    return el?.matches(POPUP) && isPositioner(el.parentElement) ? el.parentElement : null;
+  }
+
+  function idOf(content) {
+    return popupFor(content)?.id || "";
+  }
+
+  // Every ComboboxTrigger of this combobox.
+  function triggersFor(content) {
+    return [...document.querySelectorAll('[aria-haspopup][data-templ-controls="' + idOf(content) + '"]:not(input)')];
+  }
+
+  // Base UI's ComboboxTrigger: aria-haspopup plus the link to the combobox
+  // (not the role=combobox input).
+  function triggerOf(target) {
+    const trigger = target.closest && target.closest("[aria-haspopup][data-templ-controls]");
+    if (!trigger || trigger.matches(INPUT)) return null;
+    return byId(trigger.getAttribute("data-templ-controls")) ? trigger : null;
+  }
+
+  // A popup-pattern anchor is the trigger button itself.
+  function isTriggerAnchor(anchor) {
+    return anchor.hasAttribute("aria-haspopup");
+  }
+
+  // The anchor is the input group, chips container or button trigger OUTSIDE
+  // the content (an input group inside the popup also carries the attribute
+  // but never anchors the position).
+  function anchorFor(content) {
+    return [...document.querySelectorAll('[data-templ-combobox-anchor="' + idOf(content) + '"]')].find(
+      (a) => !content.contains(a),
+    );
+  }
+
+  function contentFor(el) {
+    const anchor = el.closest(ANCHOR);
+    return anchor ? byId(anchor.getAttribute("data-templ-combobox-anchor")) : null;
+  }
+
+  // What the popup is positioned against, like shadcn's runtime: the chips
+  // container or a button trigger anchor as a whole, but for an input group
+  // the INPUT CONTROL itself (Base UI's inputElement default) — that is why
+  // shadcn's min-w adds --spacing(7) and the input-group example uses
+  // alignOffset -28.
+  function positionAnchorFor(content) {
+    const anchor = anchorFor(content);
+    if (!anchor) return null;
+    if (anchor.matches('[data-slot="combobox-chips"]') || isTriggerAnchor(anchor)) {
+      return anchor;
+    }
+    return anchor.querySelector(INPUT) || anchor;
+  }
+
+  // The filter input sits in the anchor, or inside the popup (button-trigger
+  // pattern).
+  function inputFor(content) {
+    const anchor = anchorFor(content);
+    return (
+      (anchor && anchor.querySelector(INPUT)) ||
+      content.querySelector(INPUT)
+    );
+  }
+
+  // ComboboxRoot renders its hidden input after its children, so after the
+  // anchor (or one of its ancestors) among the siblings; named inputs of a
+  // multiple selection follow it.
+  const ROOT_INPUT = 'input[aria-hidden="true"][tabindex="-1"]';
+
+  function rootInputFor(content) {
+    for (let node = anchorFor(content); node; node = node.parentElement) {
+      for (let el = node.nextElementSibling; el; el = el.nextElementSibling) {
+        if (el.matches(ROOT_INPUT)) return el;
+      }
+    }
+    return null;
+  }
+
+  // React renders a controlled input's value as its attribute too.
+  function setInputValue(input, value) {
+    input.value = value;
+    input.setAttribute("value", value);
+  }
+
+  // The input inside the popup (the trigger pattern) makes the popup a dialog.
+  function inputInsidePopup(content) {
+    const input = inputFor(content);
+    return !!input && content.contains(input);
+  }
+
+  // The input and every trigger of this combobox (ComboboxInput and
+  // ComboboxTrigger render aria-expanded, data-popup-open and data-pressed),
+  // the popup-pattern anchor and the input group button.
+  function setExpanded(content, expanded) {
+    const input = inputFor(content);
+    // ComboboxInput and ComboboxTrigger render the popup's side while it is
+    // mounted.
+    const side = content.getAttribute("data-side");
+    [input, ...triggersFor(content)].forEach((t) => {
+      if (t && expanded && side) t.setAttribute("data-popup-side", side);
+      if (!t) return;
+      // ComboboxInput and ComboboxTrigger render aria-controls while open.
+      if (expanded) t.setAttribute("aria-controls", idOf(content));
+      else t.removeAttribute("aria-controls");
+      t.setAttribute("aria-expanded", expanded ? "true" : "false");
+      t.toggleAttribute("data-popup-open", expanded);
+      t.toggleAttribute("data-pressed", expanded);
+    });
+    // ComboboxClear renders the open state too.
+    anchorFor(content)?.querySelectorAll('[data-slot="combobox-clear"]').forEach((clear) => {
+      clear.toggleAttribute("data-popup-open", expanded);
+    });
+  }
+
+  function popupFor(content) {
+    return content.querySelector(":scope > " + POPUP);
+  }
+
+  function listFor(content) {
+    return content.querySelector('[data-slot="combobox-list"]');
+  }
+
+  // ComboboxItemIndicator mounts while its item is selected.
+  function setItemSelected(item, selected) {
+    if (selected) item.setAttribute("data-selected", "true");
+    else item.removeAttribute("data-selected");
+    item.setAttribute("aria-selected", selected ? "true" : "false");
+    const indicator = item.querySelector(':scope > span[aria-hidden="true"]');
+    if (indicator) indicator.hidden = !selected;
+  }
+
+  function itemsOf(content) {
+    return [...content.querySelectorAll(ITEM)];
+  }
+
+  function labelOf(item) {
+    return item.getAttribute("data-templ-label") || item.textContent.trim();
+  }
+
+  function isMultiple(content) {
+    const popup = popupFor(content);
+    // data-chips is always rendered as "true"/"false" (React stringifies
+    // data-* booleans the same way), so the value decides, not presence.
+    return popup && popup.getAttribute("data-chips") === "true";
+  }
+
+  function selectedItems(content) {
+    return itemsOf(content).filter((i) => i.hasAttribute("data-selected"));
+  }
+
+  // The popup renders the transition status, its positioner the open state.
+  function partsOf(content) {
+    return { positioner: content, parts: [popupFor(content)] };
+  }
+
+
+  function sideOffsetOf(content) {
+    const v = parseFloat(content.getAttribute("data-templ-side-offset"));
+    return isNaN(v) ? SIDE_OFFSET : v;
+  }
+
+
+  // The positioner's parent is the portal node, which moves to <body>
+  // (shadcn portals it the same way).
+  function portalNodeOf(content) {
+    return content.parentElement;
+  }
+
+  // ComboboxPortal mounts with the popup.
+  function portal(content) {
+    const node = portalNodeOf(content);
+    window.templ.portal.render(node);
+    node.hidden = false;
+  }
+
+  // ComboboxInternalDismissButton: a visually hidden button for screen
+  // readers, before the input and after the popup while the focus manager is
+  // modal.
+  function createDismissButton(content) {
+    const button = document.createElement("span");
+    button.setAttribute("role", "button");
+    button.setAttribute("aria-label", "Dismiss");
+    button.style.cssText = "clip-path:inset(50%);overflow:hidden;white-space:nowrap;border:0;padding:0;width:1px;height:1px;margin:-1px;position:absolute";
+    button.addEventListener("click", () => requestOpenChange(content, false));
+    return button;
+  }
+
+  // ComboboxPopup's FloatingFocusManager. With the input in the anchor it is
+  // modal but leaves focus in the input, so there are no guards and the
+  // outside is hidden. With the input in the popup it is non modal and the
+  // input takes the initial focus.
+  function startFocusManager(content) {
+    if (content._templFocus) {
+      content._templFocus.open();
+      return;
+    }
+    const input = inputFor(content);
+    const popup = popupFor(content);
+    const inputInsidePopup = !!input && content.contains(input);
+    const modal = !inputInsidePopup;
+    const trigger = triggersFor(content)[0] || null;
+    if (modal) {
+      content._templDismissButtons = [createDismissButton(content), createDismissButton(content)];
+      input?.before(content._templDismissButtons[0]);
+      popup.after(content._templDismissButtons[1]);
+    }
+    content._templFocus = window.templ.focusManager.useFloatingFocusManager({
+      floating: content,
+      reference: inputInsidePopup ? trigger : input || trigger,
+      triggers: [input, ...triggersFor(content)],
+      modal,
+      openInteractionType: content._templOpenMethod ?? null,
+      initialFocus: inputInsidePopup ? (interactionType) => (interactionType === "touch" ? popup : input) : false,
+      returnFocus: inputInsidePopup,
+      // ComboboxPopup's focus manager wraps the popup; the list inside is
+      // the focusable element.
+      guardsAround: popup,
+      getInsideElements: () => content._templDismissButtons || [],
+      onOpenChange: (open) => requestOpenChange(content, open),
+    });
+  }
+
+  function stopFocusManager(content) {
+    content._templFocus?.unmount();
+    content._templFocus = null;
+    content._templDismissButtons?.forEach((button) => button.remove());
+    content._templDismissButtons = null;
+  }
+
+  // ComboboxPositioner: useAnchorPositioning with the dropdown collision
+  // avoidance and a lazy flip, so a filtered list that resizes does not flip
+  // back and forth. autoUpdate follows the chips and the list resizing.
+  function startAutoPositioning(content) {
+    stopAutoPositioning(content);
+    const anchor = positionAnchorFor(content);
+    if (!anchor) return Promise.resolve();
+    const positioning = window.templ.anchorPositioning.useAnchorPositioning({
+      anchor,
+      positioner: content,
+      parts: [content, popupFor(content)],
+      side: content.getAttribute("data-templ-side") || "bottom",
+      align: content.getAttribute("data-templ-align") || "start",
+      sideOffset: sideOffsetOf(content),
+      alignOffset: parseFloat(content.getAttribute("data-templ-align-offset")) || 0,
+      collisionAvoidance: { fallbackAxisSide: "none" },
+      lazyFlip: true,
+    });
+    content._templPositionCleanup = positioning.cleanup;
+    return positioning.positioned;
+  }
+
+  function stopAutoPositioning(content) {
+    if (!content._templPositionCleanup) return;
+    content._templPositionCleanup();
+    content._templPositionCleanup = null;
+  }
+
+  // ----- filtering ----------------------------------------------------------
+
+  function applyFilter(content, query) {
+    const q = query.trim().toLowerCase();
+    let visible = 0;
+    itemsOf(content).forEach((item) => {
+      const match = q === "" || labelOf(item).toLowerCase().includes(q);
+      item.hidden = !match;
+      if (match) visible += 1;
+    });
+    content.querySelectorAll('[data-slot="combobox-group"]').forEach((group) => {
+      group.hidden = !group.querySelector(ITEM + ":not([hidden])");
+    });
+    const popup = popupFor(content);
+    const list = listFor(content);
+    popup.toggleAttribute("data-empty", visible === 0);
+    if (list) list.toggleAttribute("data-empty", visible === 0);
+
+    const highlighted = highlightedItem(content);
+    if (highlighted && highlighted.hidden) setHighlight(content, null);
+    // autoHighlight is Base UI's "input-change" mode: a query highlights the
+    // first match, opening does not.
+    if (q !== "" && content.hasAttribute("data-templ-auto-highlight")) {
+      setHighlight(content, itemsOf(content).find((i) => !i.hidden) || null);
+    }
+  }
+
+  // ----- highlight ----------------------------------------------------------
+
+  function highlightedItem(content) {
+    return content.querySelector(ITEM + "[data-highlighted]");
+  }
+
+  function setHighlight(content, item) {
+    itemsOf(content).forEach((i) => {
+      if (i !== item) i.removeAttribute("data-highlighted");
+    });
+    if (item) {
+      item.setAttribute("data-highlighted", "");
+      item.scrollIntoView({ block: "nearest" });
+    }
+    // Focus stays on the input while the highlight moves, so
+    // aria-activedescendant is the only thing naming the current option.
+    // The list names it too when its reference is not the input (the input
+    // sits inside the popup).
+    const input = inputFor(content);
+    const list = listFor(content);
+    [input, inputInsidePopup(content) ? list : null].forEach((el) => {
+      if (!el) return;
+      if (item && item.id) el.setAttribute("aria-activedescendant", item.id);
+      else el.removeAttribute("aria-activedescendant");
+    });
+  }
+
+  function indexOf(content, item) {
+    const index = item ? itemsOf(content).indexOf(item) : -1;
+    return index === -1 ? null : index;
+  }
+
+  // AriaCombobox's useListNavigation: virtual focus, the input keeps focus
+  // and names the highlighted item. Filtered out items are hidden, which the
+  // list navigation skips, disabled items are highlighted (an empty
+  // disabledIndices). Without autoHighlight the arrows escape the list back
+  // to the input.
+  function startListNavigation(content) {
+    content._templNav = window.templ.listNavigation.useListNavigation({
+      floating: listFor(content) || popupFor(content),
+      reference: inputFor(content),
+      items: () => itemsOf(content),
+      activeIndex: () => indexOf(content, highlightedItem(content)),
+      selectedIndex: () => indexOf(content, selectedItems(content).find((i) => !i.hidden)),
+      virtual: true,
+      loopFocus: true,
+      allowEscape: !content.hasAttribute("data-templ-auto-highlight"),
+      disabledIndices: [],
+      isOpen: () => content.hasAttribute("data-open"),
+      onNavigate(index, event) {
+        // Retain the highlight while transitioning out or closed.
+        if ((!event && !content.hasAttribute("data-open")) || window.templ.transition.isEnding(popupFor(content))) return;
+        setHighlight(content, index == null ? null : itemsOf(content)[index]);
+      },
+      onOpenChange(open) {
+        const input = inputFor(content);
+        if (!input?.disabled) requestOpenChange(content, open);
+      },
+    });
+  }
+
+  // ----- open / close -------------------------------------------------------
+
+  function open(content) {
+    if (content.hasAttribute("data-open")) return;
+    allContents().forEach((c) => {
+      if (c !== content) requestOpenChange(c, false);
+    });
+    portal(content);
+    content._templDismiss ??= window.templ.dismiss.useDismiss({
+      floating: content,
+      reference: [inputFor(content), ...triggersFor(content)],
+      // The visual viewport can be small with the software keyboard open, so
+      // a touch outside dismisses on the click, after a possible scroll.
+      outsidePressEvent: { mouse: "sloppy", touch: "intentional" },
+      outsidePress(event) {
+        const target = event.target;
+        return !anchorFor(content)?.contains(target) &&
+          !target.closest?.('[data-slot="combobox-clear"], [data-slot="combobox-chips"]');
+      },
+      onOpenChange: (open) => requestOpenChange(content, open),
+    });
+    content.hidden = false;
+    startFocusManager(content);
+
+    // With autoHighlight the first item is highlighted, the list navigation
+    // then highlights the current selection on open.
+    applyFilter(content, "");
+
+    // Positioned first, then the enter animation plays in place.
+    const finish = () => {
+      if (content.hidden) return;
+      window.templ.transition.open(partsOf(content));
+      setExpanded(content, true);
+      content._templNav?.open();
+    };
+    startAutoPositioning(content).then(finish, finish);
+  }
+
+  function close(content) {
+    if (content.hidden) return;
+    content._templDismiss?.();
+    content._templDismiss = null;
+    content._templFocus?.close();
+    content._templNav?.close();
+    // Positioned until it unmounts, like Base UI. Unmounting the focus
+    // manager returns focus and resets the highlight.
+    window.templ.transition.close(partsOf(content), popupFor(content), () => {
+      stopAutoPositioning(content);
+      stopFocusManager(content);
+      setHighlight(content, null);
+      content.hidden = true;
+      portalNodeOf(content).hidden = true;
+      [inputFor(content), ...triggersFor(content)].forEach((t) => t?.removeAttribute("data-popup-side"));
+    });
+    setExpanded(content, false);
+    const input = inputFor(content);
+    if (input) {
+      // Revert the typed text: an in-popup input is a pure search box, an
+      // anchor input shows the selected label.
+      setInputValue(input, isMultiple(content) || content.contains(input) ? "" : displayValue(content));
+    }
+  }
+
+  function requestOpenChange(content, nextOpen) {
+  const anchor = anchorFor(content);
+  const change = new CustomEvent("combobox-open-change", {
+    bubbles: true,
+    cancelable: true,
+    detail: { open: nextOpen },
+  });
+  const accepted = (anchor || content).dispatchEvent(change);
+  if (!accepted || content.hasAttribute("data-templ-open")) return false;
+  if (nextOpen) open(content);
+  else close(content);
+  return true;
+  }
+
+  function displayValue(content) {
+    const selected = selectedItems(content)[0];
+    return selected ? labelOf(selected) : "";
+  }
+
+  // ----- selection ----------------------------------------------------------
+
+  function dispatchNativeChange(content) {
+    rootInputFor(content)?.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function requestValueChange(content, values) {
+  // Controlled: the Base UI value prop, the owner commits.
+  const controlled = content.hasAttribute("data-templ-value");
+  const anchor = anchorFor(content);
+  if (!anchor || content.hasAttribute("data-templ-read-only")) {
+    return { accepted: false, controlled };
+  }
+  const change = new CustomEvent("combobox-change", {
+    bubbles: true,
+    cancelable: true,
+    detail: { values },
+  });
+  const accepted = anchor.dispatchEvent(change);
+  return { accepted, controlled };
+  }
+
+  // The root input carries the value; a multiple selection with a name
+  // submits one hidden input per value after it.
+  function syncHiddenInputs(content, values) {
+    const root = rootInputFor(content);
+    if (!root) return;
+    if (!isMultiple(content)) {
+      setInputValue(root, values[0] || "");
+      return;
+    }
+    setInputValue(root, values.join(","));
+    const named = [];
+    for (let el = root.nextElementSibling; el && el.matches('input[type="hidden"]'); el = el.nextElementSibling) named.push(el);
+    const name = named[0]?.name || root.getAttribute("data-templ-name");
+    named.forEach((el) => el.remove());
+    if (!name) return;
+    values.slice().reverse().forEach((v) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = v;
+      const form = root.getAttribute("form");
+      if (form) input.setAttribute("form", form);
+      root.after(input);
+    });
+  }
+
+  // The selected values in selection order: a multiple selection's chips
+  // keep it (the value array of Base UI), else the selected items.
+  function selectedValues(content) {
+    const anchor = anchorFor(content);
+    if (isMultiple(content) && anchor?.matches('[data-slot="combobox-chips"]')) {
+      return [...anchor.querySelectorAll(CHIP)].map((c) => c.getAttribute("data-templ-value") || "");
+    }
+    return selectedItems(content).map((i) => i.getAttribute("data-templ-value") || "");
+  }
+
+  // ComboboxChips renders a chip per value, keyed by the value like React:
+  // a chip that stays keeps its element.
+  function syncChips(content, anchor, values) {
+    if (!anchor.matches('[data-slot="combobox-chips"]')) return;
+    // The chip template the chips container renders last; a template's
+    // content is not part of the document, so querySelectorAll skips it.
+    const template = anchor.querySelector(":scope > template");
+    if (!template) return;
+    const existing = new Map([...anchor.querySelectorAll(CHIP)].map((c) => [c.getAttribute("data-templ-value") || "", c]));
+    const input = anchor.querySelector(INPUT);
+    // React renders the chips before the dismiss button the modal popup puts
+    // right before the input.
+    const dismiss = content._templDismissButtons?.[0];
+    const before = dismiss?.parentElement === anchor ? dismiss : input;
+    const items = itemsOf(content);
+    values.forEach((value) => {
+      let chip = existing.get(value);
+      existing.delete(value);
+      if (!chip) {
+        chip = template.content.firstElementChild.cloneNode(true);
+        chip.setAttribute("data-templ-value", value);
+        // ComboboxChip renders its label right in it, the remove button
+        // follows.
+        const item = items.find((i) => (i.getAttribute("data-templ-value") || "") === value);
+        [...chip.childNodes].forEach((n) => n.nodeType === Node.TEXT_NODE && n.remove());
+        chip.prepend(document.createTextNode(item ? labelOf(item) : value));
+      }
+      anchor.insertBefore(chip, before);
+    });
+    existing.forEach((chip) => chip.remove());
+  }
+
+
+  function toggleClear(content, anchor) {
+    // ComboboxClear mounts while a value is selected, data-visible then.
+    const clear = anchor.querySelector('[data-slot="combobox-clear"]');
+    if (clear) {
+      clear.hidden = selectedItems(content).length === 0;
+      clear.toggleAttribute("data-visible", !clear.hidden);
+    }
+  }
+
+  // ComboboxValue renders no element: in a ComboboxTrigger it is the
+  // trigger's text, the label of the selection. The trigger and the input
+  // group button are a placeholder while nothing is selected.
+  function syncValueDisplay(content) {
+    const selected = selectedItems(content).length > 0;
+    triggersFor(content).forEach((trigger) => {
+      trigger.toggleAttribute("data-placeholder", !selected);
+      if (!trigger.matches('[data-slot="combobox-trigger"]') || !selected) return;
+      [...trigger.childNodes].forEach((n) => n.nodeType === Node.TEXT_NODE && n.remove());
+      trigger.prepend(document.createTextNode(displayValue(content)));
+    });
+  }
+
+  // values: the selection in its order, the selected items' by default.
+  function afterSelectionChange(content, values = selectedValues(content)) {
+    const anchor = anchorFor(content);
+    if (!anchor) return;
+    syncChips(content, anchor, values);
+    syncHiddenInputs(content, values);
+    toggleClear(content, anchor);
+    syncValueDisplay(content);
+    dispatchNativeChange(content);
+  }
+
+  function selectItem(content, item) {
+    const input = inputFor(content);
+    if (isMultiple(content)) {
+    const values = selectedValues(content);
+    const value = item.getAttribute("data-templ-value") || "";
+    const nextValues = item.hasAttribute("data-selected")
+      ? values.filter((selected) => selected !== value)
+      : [...values, value];
+    const request = requestValueChange(content, nextValues);
+    if (!request.accepted || request.controlled) return;
+      setItemSelected(item, !item.hasAttribute("data-selected"));
+      afterSelectionChange(content, nextValues);
+      if (input) {
+        setInputValue(input, "");
+        input.focus();
+      }
+      applyFilter(content, "");
+      return;
+    }
+  const nextValue = item.getAttribute("data-templ-value") || "";
+  const request = requestValueChange(content, [nextValue]);
+  if (!request.accepted) return;
+  if (request.controlled) {
+    requestOpenChange(content, false);
+    return;
+  }
+    itemsOf(content).forEach((i) => setItemSelected(i, i === item));
+    if (input) setInputValue(input, content.contains(input) ? "" : labelOf(item));
+    afterSelectionChange(content);
+  requestOpenChange(content, false);
+  }
+
+  function clearSelection(content) {
+  const request = requestValueChange(content, []);
+  if (!request.accepted || request.controlled) return;
+    itemsOf(content).forEach((i) => setItemSelected(i, false));
+    const input = inputFor(content);
+    if (input) {
+      setInputValue(input, "");
+      input.focus();
+    }
+    afterSelectionChange(content, []);
+    applyFilter(content, "");
+  }
+
+  // Shows the selected item's label in the input (server only knows the
+  // value, the label lives in the item). A content unmounts with its portal
+  // owner: a portaled one is removed from <body> then.
+  window.templ.lifecycle.register(POPUP, {
+    init(popup) {
+      const content = popup.parentElement;
+      if (!isPositioner(content)) return;
+      if (inputInsidePopup(content)) popupFor(content).setAttribute("role", "dialog");
+      // ComboboxGroup names its ComboboxGroupLabel.
+      content.querySelectorAll('[data-slot="combobox-group"]').forEach((group, n) => {
+        const label = group.querySelector(':scope > [data-slot="combobox-label"]');
+        if (!label) return;
+        if (!label.id) label.id = idOf(content) + "-label-" + (n + 1);
+        group.setAttribute("aria-labelledby", label.id);
+      });
+      startListNavigation(content);
+      // Server-side open state (Base UI open or defaultOpen).
+      if (content.getAttribute("data-templ-open") === "true" || content.hasAttribute("data-templ-default-open")) {
+        open(content);
+      }
+      if (isMultiple(content)) return;
+      // The server renders the label of an items entry; without items the
+      // input shows the selected item's text.
+      const input = inputFor(content);
+      if (input && content.contains(input)) setInputValue(input, "");
+      if (!input || input.value !== "" || content.contains(input)) return;
+      const label = displayValue(content);
+      if (label) setInputValue(input, label);
+    },
+    destroy(popup) {
+      const content = popup.parentElement;
+      if (!isPositioner(content)) return;
+      content._templNav?.cleanup();
+      content._templNav = null;
+      stopAutoPositioning(content);
+      content._templDismiss?.();
+      stopFocusManager(content);
+      window.templ.portal.remove(portalNodeOf(content));
+    },
+  });
+
+  // ----- events -------------------------------------------------------------
+
+  // Pointer interactions toggle and dismiss on PRESS, exactly like Base UI.
+  // Click is never used for open/close, so the stray click the browser fires
+  // on <body> when the popup ends up under the released pointer is harmless.
+  function toggleTrigger(trigger, interactionType = null) {
+    const content = contentFor(trigger);
+    if (!content) return;
+    content._templOpenMethod = interactionType;
+    if (content.hasAttribute("data-open")) {
+    requestOpenChange(content, false);
+    } else {
+      const input = inputFor(content);
+      if (input && input.disabled) return;
+    requestOpenChange(content, true);
+      // The trigger moves focus to an input in the anchor; an input in the
+      // popup is the focus manager's initial focus.
+      if (input && !content.contains(input)) requestAnimationFrame(() => input.focus());
+    }
+  }
+
+  // ComboboxItem's onPointerDownCapture and onMouseDown: pressing an item
+  // never takes the focus from the input (iOS Safari sends a synthetic
+  // mousedown for a tap without a pointerdown).
+  function keepInputFocus(e) {
+    if (!(e.target instanceof Element)) return;
+    const item = e.target.closest(ITEM);
+    if (item && positionerOf(item)) e.preventDefault();
+  }
+  document.addEventListener("pointerdown", keepInputFocus, true);
+  document.addEventListener("mousedown", keepInputFocus);
+
+  document.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !(e.target instanceof Element)) return;
+
+    const trigger = triggerOf(e.target);
+    if (trigger) {
+      toggleTrigger(trigger, e.pointerType || "mouse");
+      return;
+    }
+
+    // Clear and chip-remove buttons act on the selection, they never open.
+    if (e.target.closest('[data-slot="combobox-clear"], [data-slot="combobox-chip-remove"]')) return;
+
+    const anchor = e.target.closest(ANCHOR);
+    if (anchor && !positionerOf(anchor)) {
+      const content = byId(anchor.getAttribute("data-templ-combobox-anchor"));
+      if (!content || content.hasAttribute("data-open")) return;
+      const field = inputFor(content);
+    if (field && !field.disabled) requestOpenChange(content, true);
+      return;
+    }
+
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!(e.target instanceof Element)) return;
+
+    const remove = e.target.closest('[data-slot="combobox-chip-remove"]');
+    if (remove) {
+      const chip = remove.closest(CHIP);
+      const content = contentFor(remove);
+      if (chip && content) {
+        const value = chip.getAttribute("data-templ-value");
+        const item = itemsOf(content).find(
+          (i) => (i.getAttribute("data-templ-value") || "") === value,
+        );
+    if (item) selectItem(content, item);
+      }
+      return;
+    }
+
+    const clear = e.target.closest('[data-slot="combobox-clear"]');
+    if (clear) {
+      const content = contentFor(clear);
+      if (content) clearSelection(content);
+      return;
+    }
+
+    const trigger = triggerOf(e.target);
+    if (trigger) {
+      // Keyboard activation only (Enter/Space fire a detail-0 click without
+      // a preceding pointerdown); pointer presses are handled on pointerdown.
+      if (e.detail === 0) toggleTrigger(trigger, "keyboard");
+      return;
+    }
+
+    const item = e.target.closest(ITEM);
+    if (item && !item.hasAttribute("data-disabled")) {
+      const content = positionerOf(item);
+      if (content) selectItem(content, item);
+    }
+  });
+
+  document.addEventListener("input", (e) => {
+    if (!(e.target instanceof Element) || !e.target.matches(INPUT)) return;
+    e.target.setAttribute("value", e.target.value);
+    const content = contentFor(e.target);
+    if (!isPositioner(content)) return;
+  if (!content.hasAttribute("data-open")) requestOpenChange(content, true);
+    applyFilter(content, e.target.value);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (!(e.target instanceof Element) || !e.target.matches(INPUT)) return;
+    const content = contentFor(e.target);
+    if (!isPositioner(content)) return;
+    const isOpen = content.hasAttribute("data-open");
+
+    if (e.key === "Enter") {
+      const highlighted = isOpen && highlightedItem(content);
+      if (highlighted) {
+        e.preventDefault();
+        selectItem(content, highlighted);
+      }
+      return;
+    }
+    if (e.key === "Backspace" && isMultiple(content) && e.target.value === "") {
+      const chips = [...e.target.parentElement.querySelectorAll(CHIP)];
+      const last = chips[chips.length - 1];
+      if (last) {
+        const btn = last.querySelector('[data-slot="combobox-chip-remove"]');
+        if (btn) btn.click();
+      }
+      return;
+    }
+  });
+
+})();

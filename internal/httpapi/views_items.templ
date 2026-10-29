@@ -424,11 +424,10 @@ templ scopedTab(path, itemsPath, view, label, count string, active bool, sort it
 // filterRow is one editable row in the filter modal: action, kind, any/all,
 // values, then remove/add controls. The kind select is hidden when only one
 // kind is possible; its value still submits through a hidden input.
+//
+// Both option sets are rendered as <template>s. app.js swaps the value cell
+// when the kind changes, so no client-side option hydration is needed.
 templ filterRow(id, token, kind, action, combine string, values []string, tagItems, feedItems []comboItem, switchable, allowBlock bool) {
-	{{ options := tagItems }}
-	if kind == filterKindFeed {
-		{{ options = feedItems }}
-	}
 	<div class="filter-row" data-filter-row>
 		<input type="hidden" name="filter_row" value={ token }/>
 		<select name="filter_action" class="filter-select filter-action" aria-label="filter action">
@@ -452,7 +451,19 @@ templ filterRow(id, token, kind, action, combine string, values []string, tagIte
 			<option value={ filterAny } selected?={ combine == filterAny }>any</option>
 			<option value={ filterAll } selected?={ combine == filterAll }>all</option>
 		</select>
-		@comboMultiID(id+"-value", "filter_value_"+token, "", values, options)
+		<div class="filter-value" data-filter-value data-filter-value-kind={ kind }>
+			if kind == filterKindFeed {
+				@comboMultiID(id+"-value", "filter_value_"+token, "", values, feedItems)
+			} else {
+				@comboMultiID(id+"-value", "filter_value_"+token, "", values, tagItems)
+			}
+		</div>
+		<template data-filter-value-template="tag">
+			@comboMultiID(id+"-value-tag", "filter_value_"+token, "", nil, tagItems)
+		</template>
+		<template data-filter-value-template="feed">
+			@comboMultiID(id+"-value-feed", "filter_value_"+token, "", nil, feedItems)
+		</template>
 		<button type="button" class="link danger" title="remove filter" data-remove-closest=".filter-row">@web.Lucide("x")</button>
 		<button type="button" class="link" title="add another filter" data-add-filter-row>@web.Lucide("plus")</button>
 	</div>
@@ -505,7 +516,7 @@ templ scopedItemsInner(d scopedItemsData) {
 			{{ defaultKind := d.filterDefaultKind() }}
 			{{ switchable := d.filterKindsSwitchable() }}
 			{{ feedItems := d.effectiveFeedOptions() }}
-			<dialog id="tag-filter-dialog" class="modal" data-filter-scope data-tag-items={ comboItemsJSON(d.TagOptions) } data-feed-items={ comboItemsJSON(feedItems) }>
+			<dialog id="tag-filter-dialog" class="modal" data-filter-scope>
 				<div class="row">
 					<h2>filter</h2>
 					<button type="button" class="link" title="close" data-close-dialog>@web.Lucide("x")</button>
@@ -523,7 +534,7 @@ templ scopedItemsInner(d scopedItemsData) {
 						}
 					</div>
 					<template id="filter-row-template" data-filter-row-template>
-						@filterRow("filter-template", "template", defaultKind, filterShow, filterAll, nil, d.TagOptions, feedItems, switchable, false)
+						@filterRow("filter-__token__", "__token__", defaultKind, filterShow, filterAll, nil, d.TagOptions, feedItems, switchable, false)
 					</template>
 					<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 					<div class="row-actions">
