@@ -330,11 +330,13 @@ label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; 
 label.check { flex-direction: row; align-items: center; gap: 0.35rem; }
 
 /* shadcn components carry data-slot. Skip them here so this hand-written form
-   styling does not override the utilities in static/shadcn.css. */
-input[type="text"]:not([data-slot]), input[type="password"]:not([data-slot]),
-input[type="url"]:not([data-slot]), input[type="number"]:not([data-slot]),
-input[type="email"]:not([data-slot]), input:not([type]):not([data-slot]),
-select:not([data-slot]), textarea:not([data-slot]) {
+   styling does not override the utilities in static/shadcn.css. The exclusion
+   sits in :where() so these selectors keep their original specificity and
+   class rules such as .avatar-btn and .mode-btn still win. */
+input[type="text"]:where(:not([data-slot])), input[type="password"]:where(:not([data-slot])),
+input[type="url"]:where(:not([data-slot])), input[type="number"]:where(:not([data-slot])),
+input[type="email"]:where(:not([data-slot])), input:not([type]):where(:not([data-slot])),
+select:where(:not([data-slot])), textarea:where(:not([data-slot])) {
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -343,7 +345,7 @@ select:not([data-slot]), textarea:not([data-slot]) {
   font: inherit;
 }
 
-button:not([data-slot]) {
+button:where(:not([data-slot])) {
   padding: 0.5rem 0.9rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -911,13 +913,13 @@ a.item-tag:hover { color: var(--accent); }
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.35rem 0.7rem;
+  padding: 0.4rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--panel);
-  color: var(--muted);
+  color: var(--fg);
   font: inherit;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   cursor: pointer;
 }
 .mode-btn:hover { border-color: var(--accent); color: var(--fg); }
@@ -959,7 +961,10 @@ a.item-tag:hover { color: var(--accent); }
   color: var(--fg);
   text-decoration: none;
 }
-.mode-option[aria-checked="true"] { color: var(--fg); }
+.mode-option[aria-checked="true"] {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
 
 /* Grid display mode: a two-column grid built on the same item rows. It lays
    items out in reading order — left to right, then down — unlike a CSS

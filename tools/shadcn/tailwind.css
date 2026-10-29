@@ -81,24 +81,31 @@
     display: none !important;
   }
   /* Give shadcn controls the inherited typography and pointer affordance that
-     preflight normally supplies. */
-  [data-slot="button"],
-  [data-slot="input-group-control"],
-  [data-slot="combobox-chip-input"] {
+     preflight normally supplies. Components use several data-slot values for
+     buttons, so match the element plus the attribute rather than one value. */
+  button[data-slot],
+  input[data-slot],
+  textarea[data-slot] {
     font: inherit;
+    /* Preflight gives form controls the inherited text color. Without this,
+       the native input falls back to black on the dark theme. */
+    color: inherit;
+  }
+  /* Ghost icon buttons and the combobox chevron carry no background utility.
+     Preflight normally clears the native button fill. Utilities such as
+     bg-primary layer above this and still win. */
+  button[data-slot] {
+    background: transparent;
+    cursor: pointer;
+  }
+  button[data-slot]:disabled,
+  button[data-slot][data-disabled] {
+    cursor: default;
   }
   /* The chips input sits inside the bordered chips container. Preflight would
      make it transparent and borderless; do that explicitly. */
   [data-slot="combobox-chip-input"] {
     background: transparent;
     border: 0;
-    color: inherit;
-  }
-  [data-slot="button"] {
-    cursor: pointer;
-  }
-  [data-slot="button"]:disabled,
-  [data-slot="button"][data-disabled] {
-    cursor: default;
   }
 }
