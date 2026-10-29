@@ -70,9 +70,23 @@ func (s *grpcFetcherServer) Discover(ctx context.Context, req *pb.DiscoverReques
 	}
 	out := make([]*pb.Candidate, 0, len(cs))
 	for _, c := range cs {
-		out = append(out, &pb.Candidate{FeedUrl: c.FeedURL, Title: c.Title, IconUrl: c.IconURL, HomeUrl: c.HomeURL})
+		out = append(out, toPBCandidate(c))
 	}
 	return &pb.DiscoverResponse{Candidates: out}, nil
+}
+
+// toPBCandidate carries every preview field a plugin may set, not just the URL
+// and title: Derived is what keeps the host from fetching a page whose feed it
+// can already derive, and AuthorName is the preferred new-author label.
+func toPBCandidate(c Candidate) *pb.Candidate {
+	return &pb.Candidate{
+		FeedUrl:    c.FeedURL,
+		Title:      c.Title,
+		IconUrl:    c.IconURL,
+		HomeUrl:    c.HomeURL,
+		AuthorName: c.AuthorName,
+		Derived:    c.Derived,
+	}
 }
 
 func (s *grpcFetcherServer) Fetch(ctx context.Context, req *pb.FetchRequest) (*pb.FetchResponse, error) {
@@ -370,9 +384,21 @@ func (c *grpcFetcherClient) Discover(ctx context.Context, pageURL string, h Host
 	}
 	out := make([]Candidate, 0, len(resp.Candidates))
 	for _, x := range resp.Candidates {
-		out = append(out, Candidate{FeedURL: x.FeedUrl, Title: x.Title, IconURL: x.IconUrl, HomeURL: x.HomeUrl})
+		out = append(out, fromPBCandidate(x))
 	}
 	return out, nil
+}
+
+// fromPBCandidate restores the optional preview fields the wire carries.
+func fromPBCandidate(x *pb.Candidate) Candidate {
+	return Candidate{
+		FeedURL:    x.FeedUrl,
+		Title:      x.Title,
+		IconURL:    x.IconUrl,
+		HomeURL:    x.HomeUrl,
+		AuthorName: x.AuthorName,
+		Derived:    x.Derived,
+	}
 }
 
 func (c *grpcFetcherClient) Fetch(ctx context.Context, req FetchRequest, h Host) (Result, error) {

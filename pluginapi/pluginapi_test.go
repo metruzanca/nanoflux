@@ -206,3 +206,20 @@ func TestEnrichConversions(t *testing.T) {
 		t.Fatalf("enriched = %+v", enriched)
 	}
 }
+
+// TestCandidateRoundTrip guards the gRPC boundary: Derived and AuthorName are
+// part of a candidate's preview metadata, and dropping them makes the host
+// fetch a page a plugin already derived its feed from.
+func TestCandidateRoundTrip(t *testing.T) {
+	in := Candidate{
+		FeedURL:    "https://old.reddit.com/search?q=author%3Asomeone",
+		Title:      "search: author:someone",
+		IconURL:    "https://old.reddit.com/icon.png",
+		HomeURL:    "https://old.reddit.com/search?q=author%3Asomeone",
+		AuthorName: "someone",
+		Derived:    true,
+	}
+	if got := fromPBCandidate(toPBCandidate(in)); got != in {
+		t.Fatalf("candidate round trip = %+v, want %+v", got, in)
+	}
+}
