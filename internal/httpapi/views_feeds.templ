@@ -101,7 +101,7 @@ templ FeedRow(r feedRow) {
 // failure, just no recent updates. Appears on the author page, /feeds,
 // collections, and feed rows after refresh (FeedRow is shared).
 templ staleBadge(f store.Feed, tz string) {
-	if sf, ok := web.StaleFeedFor(f.LastItemAt); ok {
+	if sf, ok := web.StaleFeedFor(f.LastItemAt, f.PollIntervalSec); ok {
 		<span class="badge warn" title={ "newest post " + web.TimeFmt(tz, f.LastItemAt) }>
 			if sf.Abandoned {
 				quiet { sf.Days }d · may be abandoned

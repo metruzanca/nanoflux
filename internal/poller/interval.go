@@ -13,8 +13,9 @@ const (
 	// adaptiveFloor is the smallest computed poll interval (15 min), matching
 	// the poller ticker's default granularity.
 	adaptiveFloor = 900
-	// adaptiveCeil is the largest computed poll interval (1 day).
-	adaptiveCeil = 86400
+	// adaptiveCeil is the largest computed poll interval (7 days), so a feed
+	// that posts rarely is polled at its own cadence instead of daily.
+	adaptiveCeil = 7 * 24 * 60 * 60
 )
 
 // Time-of-day scheduling: when a feed's recent posts cluster at a particular
@@ -35,6 +36,11 @@ const (
 	// posts are considered concentrated at one time of day. A daily poster at a
 	// fixed hour is near 1; posts spread across the day are near 0.
 	scheduleMinStrength = 0.5
+	// scheduleMaxInterval is the longest feed interval that still gets a
+	// time-of-day schedule. Beyond a day, aligning to the next occurrence of the
+	// posting hour would pull the fetch forward to tomorrow and defeat the
+	// longer cadence (a weekly poster would be polled daily again).
+	scheduleMaxInterval = 24 * time.Hour
 )
 
 // Stale-feed thresholds (how old a feed's newest item may be before it is

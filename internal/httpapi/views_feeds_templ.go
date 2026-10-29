@@ -478,7 +478,7 @@ func staleBadge(f store.Feed, tz string) templ.Component {
 			templ_7745c5c3_Var22 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		if sf, ok := web.StaleFeedFor(f.LastItemAt); ok {
+		if sf, ok := web.StaleFeedFor(f.LastItemAt, f.PollIntervalSec); ok {
 			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<span class=\"badge warn\" title=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err

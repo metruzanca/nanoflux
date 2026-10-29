@@ -509,18 +509,20 @@ func StripHTML(s string) string {
 // StaleFeed describes a feed that has stopped posting for a while.
 type StaleFeed struct {
 	Days      int  // days since the feed's newest item
-	Abandoned bool // >= 30 days: the account may be abandoned
+	Abandoned bool // >= 30 days or four intervals: the account may be abandoned
 }
 
-// StaleFeedFor reports whether a feed is quiet (its newest item is at least 7
-// days old) and how long it has been. ok is false when the feed has no items
-// yet or is still active. Distinct from a feed error: there is no failure,
-// just no new posts.
-func StaleFeedFor(lastItemAt string) (StaleFeed, bool) {
-	return staleFeedFor(lastItemAt, db.FormatTime(time.Now()))
+// StaleFeedFor reports whether a feed is quiet and how long it has been. ok is
+// false when the feed has no items yet or is still active. The quiet threshold
+// is at least 7 days but scales with the feed's own poll interval (twice the
+// interval), so a weekly feed is not labelled quiet between its normal posts.
+// The abandoned marker is at least 30 days or four intervals. Distinct from a
+// feed error: there is no failure, just no new posts.
+func StaleFeedFor(lastItemAt string, intervalSec int) (StaleFeed, bool) {
+	return staleFeedFor(lastItemAt, db.FormatTime(time.Now()), intervalSec)
 }
 
-func staleFeedFor(lastItemAt, now string) (StaleFeed, bool) {
+func staleFeedFor(lastItemAt, now string, intervalSec int) (StaleFeed, bool) {
 	if lastItemAt == "" {
 		return StaleFeed{}, false
 	}
@@ -533,10 +535,19 @@ func staleFeedFor(lastItemAt, now string) (StaleFeed, bool) {
 		return StaleFeed{}, false
 	}
 	d := n.Sub(t)
-	if d < 7*24*time.Hour {
+	interval := time.Duration(intervalSec) * time.Second
+	quietAfter := 7 * 24 * time.Hour
+	if 2*interval > quietAfter {
+		quietAfter = 2 * interval
+	}
+	abandonedAfter := 30 * 24 * time.Hour
+	if 4*interval > abandonedAfter {
+		abandonedAfter = 4 * interval
+	}
+	if d < quietAfter {
 		return StaleFeed{}, false
 	}
-	return StaleFeed{Days: int(d / (24 * time.Hour)), Abandoned: d >= 30*24*time.Hour}, true
+	return StaleFeed{Days: int(d / (24 * time.Hour)), Abandoned: d >= abandonedAfter}, true
 }
 
 // TimeFmt renders a stored UTC timestamp relative to the user's timezone.

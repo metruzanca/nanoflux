@@ -124,6 +124,50 @@ func TestPollOneAdaptiveInterval(t *testing.T) {
 	}
 }
 
+// A multi-day cadence is honored up to the 7-day ceiling, and it is not pulled
+// forward to the next occurrence of the posting hour.
+func TestPollOneMultiDayInterval(t *testing.T) {
+	cases := []struct {
+		name string
+		gap  time.Duration
+		want int
+	}{
+		{"three days", 3 * 24 * time.Hour, 3 * 86400},
+		{"clamped to one week", 10 * 24 * time.Hour, adaptiveCeil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			sqldb, err := db.Open(":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer sqldb.Close()
+			if err := db.Migrate(sqldb); err != nil {
+				t.Fatal(err)
+			}
+			st := store.New(sqldb)
+			u, _ := st.Users.Create("alice", "h")
+			a, _ := st.Authors.Create(u.ID, "Metru", "", "")
+
+			srv := cadenceServer(t, c.gap, 0)
+			defer srv.Close()
+
+			f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
+			p := New(st, time.Minute, 1)
+			if _, err := p.PollOne(context.Background(), f); err != nil {
+				t.Fatalf("PollOne: %v", err)
+			}
+			got, _ := st.Feeds.ByID(u.ID, f.ID)
+			if got.PollIntervalSec != c.want {
+				t.Fatalf("interval = %d, want %d", got.PollIntervalSec, c.want)
+			}
+			if got.NextPollScheduled || got.NextPollAt != "" {
+				t.Fatalf("multi-day feed should not be scheduled: scheduled=%v next=%q", got.NextPollScheduled, got.NextPollAt)
+			}
+		})
+	}
+}
+
 // fixedHourServer serves n items published one day apart at the same UTC hour,
 // so a feed's recent posts cluster at a time of day.
 func fixedHourServer(t *testing.T, n, hour int) *httptest.Server {
@@ -189,8 +233,8 @@ func TestPollOneSchedulesToPostingHour(t *testing.T) {
 	}
 
 	got, _ := st.Feeds.ByID(u.ID, f.ID)
-	if got.PollIntervalSec != adaptiveCeil {
-		t.Fatalf("interval = %d, want the 1-day ceiling (%d) for a daily feed", got.PollIntervalSec, adaptiveCeil)
+	if got.PollIntervalSec != 86400 {
+		t.Fatalf("interval = %d, want 1 day (86400) for a daily feed", got.PollIntervalSec)
 	}
 	if !got.NextPollScheduled || got.NextPollAt == "" {
 		t.Fatalf("daily feed should be scheduled: scheduled=%v next=%q", got.NextPollScheduled, got.NextPollAt)
@@ -248,7 +292,7 @@ func TestPollOneDoesNotScheduleSpreadFeed(t *testing.T) {
 	}
 }
 
-// A feed whose newest post is 8 days old is backed off to a 1-day poll
+// A feed whose newest post is 8 days old is backed off to the 7-day poll
 // interval regardless of the adaptive toggle.
 func TestPollOneStaleBacksOff(t *testing.T) {
 	sqldb, err := db.Open(":memory:")
@@ -266,7 +310,7 @@ func TestPollOneStaleBacksOff(t *testing.T) {
 	srv := cadenceServer(t, 2*time.Hour, 8*24*time.Hour)
 	defer srv.Close()
 
-	// auto is off, but the stale rule still forces 1 day.
+	// auto is off, but the stale rule still forces the 7-day ceiling.
 	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
 	st.Feeds.Update(u.ID, f.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 3600, false, true, false)
 	fresh, _ := st.Feeds.ByID(u.ID, f.ID)
@@ -276,7 +320,7 @@ func TestPollOneStaleBacksOff(t *testing.T) {
 	}
 	got, _ := st.Feeds.ByID(u.ID, f.ID)
 	if got.PollIntervalSec != adaptiveCeil {
-		t.Fatalf("interval = %d, want 1 day (%d) for a stale feed", got.PollIntervalSec, adaptiveCeil)
+		t.Fatalf("interval = %d, want the %d-second ceiling for a stale feed", got.PollIntervalSec, adaptiveCeil)
 	}
 }
 
