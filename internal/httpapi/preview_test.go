@@ -102,6 +102,65 @@ func TestFeedPreviewSingleAndNone(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), `hx-post="/fragments/manual-feed"`) {
 		t.Fatalf("no-feed preview should offer manual entry: %s", rr.Body.String())
 	}
+	if !strings.Contains(rr.Body.String(), `hx-target="#author-preview"`) {
+		t.Fatalf("global no-feed preview must target the add dialog container: %s", rr.Body.String())
+	}
+}
+
+// TestFeedPreviewTargets covers the three preview containers. Each entry point
+// swaps the chooser and no-feed fragments into a different container, and a
+// wrong selector makes htmx abort with a targetError.
+func TestFeedPreviewTargets(t *testing.T) {
+	_, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	feedSrv := feedPreviewServer(t)
+	defer feedSrv.Close()
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(fmt.Sprintf(`<html><head><title>Both</title>
+		  <link rel="alternate" type="application/rss+xml" href="%s/rss">
+		  <link rel="alternate" type="application/atom+xml" href="%s/atom"></head></html>`, feedSrv.URL, feedSrv.URL)))
+	}))
+	defer page.Close()
+
+	// Global add dialog: the chooser targets its own container, not the old
+	// #feed-preview id that no page defines.
+	rr := doForm(h, "POST", "/fragments/feed-preview", url.Values{"url": {page.URL}}, cookie)
+	body := rr.Body.String()
+	if !strings.Contains(body, `hx-target="#author-preview"`) || strings.Contains(body, `hx-target="#feed-preview"`) {
+		t.Fatalf("global chooser target: %s", body)
+	}
+
+	// Share page: chooser targets #share-preview.
+	rr = doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url": {page.URL}, "preview_target": {previewTargetShare},
+	}, cookie)
+	body = rr.Body.String()
+	if !strings.Contains(body, `hx-target="#share-preview"`) {
+		t.Fatalf("share chooser should target #share-preview: %s", body)
+	}
+	// The chosen feed's form must submit somewhere that exists on the share
+	// page; the redirect header wins after a successful save.
+	rr = doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url": {page.URL}, "feed_url": {feedSrv.URL + "/atom"}, "preview_target": {previewTargetShare},
+	}, cookie)
+	body = rr.Body.String()
+	if !strings.Contains(body, `hx-target="#share-add-result"`) {
+		t.Fatalf("share add form should target #share-add-result: %s", body)
+	}
+
+	// Share page no-feed banner: its manual button targets #share-preview.
+	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte("<html><head><title>Nothing</title></head></html>"))
+	}))
+	defer empty.Close()
+	rr = doForm(h, "POST", "/fragments/feed-preview", url.Values{
+		"url": {empty.URL}, "preview_target": {previewTargetShare},
+	}, cookie)
+	if body := rr.Body.String(); !strings.Contains(body, `hx-target="#share-preview"`) {
+		t.Fatalf("share no-feed button should target #share-preview: %s", body)
+	}
 }
 
 // countingTransport counts requests and fails them, so a test can assert that a

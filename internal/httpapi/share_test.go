@@ -14,7 +14,9 @@ func TestShareAddPage(t *testing.T) {
 	body := doGet(h, "/add?url="+url.QueryEscape("https://example.com/post"), cookie).Body.String()
 	if !strings.Contains(body, `id="share-preview"`) ||
 		!strings.Contains(body, `hx-post="/fragments/feed-preview"`) ||
-		!strings.Contains(body, `value="https://example.com/post"`) {
+		!strings.Contains(body, `value="https://example.com/post"`) ||
+		!strings.Contains(body, `"preview_target":"#share-preview"`) ||
+		!strings.Contains(body, `id="share-add-result"`) {
 		t.Fatalf("share page should trigger the preview flow: %s", body)
 	}
 }
