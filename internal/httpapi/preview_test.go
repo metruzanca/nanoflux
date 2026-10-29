@@ -401,15 +401,20 @@ func TestFeedPreviewPreselectsAuthor(t *testing.T) {
 		t.Fatalf("preview: %d %s", rr.Code, rr.Body.String())
 	}
 	body := rr.Body.String()
-	// The author combo's hidden mirror carries the selected author id.
-	if !strings.Contains(body, `data-vaadin-target name="author_id" value="`+itoa(a.ID)+`"`) {
+	// The author combo's hidden input carries the selected author id, and its
+	// wrapper includes both the field value and the caller's home-url field.
+	if !strings.Contains(body, `data-combo="author_id"`) ||
+		!strings.Contains(body, `hx-include="closest .combo-field, #feed-home-url"`) {
+		t.Fatalf("author combo should carry scoped htmx attributes: %s", body)
+	}
+	if !strings.Contains(body, `name="author_id" value="`+itoa(a.ID)+`"`) {
 		t.Fatalf("expected author preselected in the form: %s", body)
 	}
-	// Without author_id the mirror defaults to "new".
+	// Without author_id the hidden input defaults to "new".
 	rr = doForm(h, "POST", "/fragments/feed-preview", url.Values{
 		"url": {feedSrv.URL + "/rss"},
 	}, cookie)
-	if !strings.Contains(rr.Body.String(), `data-vaadin-target name="author_id" value="new"`) {
+	if !strings.Contains(rr.Body.String(), `name="author_id" value="new"`) {
 		t.Fatalf("no author should be preselected by default: %s", rr.Body.String())
 	}
 }

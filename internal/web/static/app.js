@@ -137,40 +137,6 @@ function pickerMenu(el) {
   var ctl = el.closest('.picker');
   return ctl ? ctl.querySelector('.mode-menu') : null;
 }
-// pickerLayer is the fixed overlay a portaled picker menu is moved into. A
-// dropdown inside a vaadin-grid cannot be shown in place: the grid's shadow-DOM
-// scroller clips it (overflow:hidden) and later grid rows paint over it, so the
-// menu is moved here and positioned against the button instead.
-function pickerLayer() {
-  var l = document.getElementById('picker-layer');
-  if (!l) {
-    l = document.createElement('div');
-    l.id = 'picker-layer';
-    document.body.appendChild(l);
-  }
-  return l;
-}
-function openPicker(ctl, btn, menu) {
-  var layer = pickerLayer();
-  layer.appendChild(menu);
-  menu.hidden = false;
-  menu._pickerBtn = btn;
-  // Position fixed under the button, flipping above it when it would overflow
-  // the viewport bottom.
-  var r = btn.getBoundingClientRect();
-  menu.style.position = 'fixed';
-  menu.style.right = 'auto';
-  menu.style.top = '0px';
-  menu.style.left = '0px';
-  var mw = menu.offsetWidth;
-  var mh = menu.offsetHeight;
-  var left = Math.max(4, Math.min(r.right - mw, window.innerWidth - mw - 4));
-  var top = r.bottom + 6;
-  if (top + mh > window.innerHeight - 4) top = Math.max(4, r.top - mh - 6);
-  menu.style.left = left + 'px';
-  menu.style.top = top + 'px';
-  btn.setAttribute('aria-expanded', 'true');
-}
 function closePickers() {
   document.querySelectorAll('.mode-menu:not([hidden])').forEach(function (m) {
     m.hidden = true;
@@ -182,24 +148,15 @@ function togglePicker(e) {
   e.stopPropagation();
   var btn = e.target.closest('[data-toggle-picker]');
   if (!btn) return;
-  var ctl = btn.closest('.picker');
   var menu = pickerMenu(btn);
   if (!menu) return;
   var wasOpen = !menu.hidden;
   closePickers();
   if (wasOpen) return;
-  // Only a menu trapped inside a grid needs portaling; pickers elsewhere open
-  // in place (their state sync via setPickerState relies on the DOM position).
-  if (ctl.closest('vaadin-grid')) openPicker(ctl, btn, menu);
-  else {
-    menu.hidden = false;
-    btn.setAttribute('aria-expanded', 'true');
-  }
+  menu.hidden = false;
+  menu._pickerBtn = btn;
+  btn.setAttribute('aria-expanded', 'true');
 }
-// A portaled menu is positioned against the button, so close it on scroll or
-// resize rather than tracking the button.
-window.addEventListener('scroll', closePickers, true);
-window.addEventListener('resize', closePickers);
 document.addEventListener('click', function (e) {
   document.querySelectorAll('.mode-menu:not([hidden])').forEach(function (m) {
     if (!m.contains(e.target) && !e.target.closest('.picker')) m.hidden = true;
@@ -436,40 +393,48 @@ function addFilterRow(after, trigger) {
   var tpl = scope.querySelector('[data-filter-row-template]');
   var list = scope.querySelector('[data-filter-rows]');
   if (!tpl || !list) return null;
-  var row = tpl.content.firstElementChild.cloneNode(true);
   filterRowSeq += 1;
   var token = 'add' + filterRowSeq;
+  // The server template uses __token__ in every id and field name so a cloned
+  // row never duplicates the combobox ids the popup and ARIA references rely on.
+  var holder = document.createElement('div');
+  holder.innerHTML = tpl.innerHTML.split('__token__').join(token);
+  var row = holder.firstElementChild;
+  if (!row) return null;
   var tokenInput = row.querySelector('input[name="filter_row"]');
   if (tokenInput) tokenInput.value = token;
-  var combo = row.querySelector('vaadin-multi-select-combo-box');
-  if (combo) combo.id = 'filter-' + token + '-value';
-  var mirrors = row.querySelector('[data-vaadin-mirrors]');
-  if (mirrors) {
-    mirrors.dataset.vaadinName = 'filter_value_' + token;
-    mirrors.querySelectorAll('input').forEach(function (input) {
-      input.name = 'filter_value_' + token;
-    });
-  }
   if (after && after.parentNode === list) after.after(row);
   else list.appendChild(row);
-  if (window.nanofluxReinitVaadin) window.nanofluxReinitVaadin(row);
+  if (window.htmx) htmx.process(row);
   authorFiltersChanged(row);
   return row;
 }
 function syncFilterRowKind(row) {
   if (!row) return;
   var kind = row.querySelector('[data-filter-kind]');
-  var combo = row.querySelector('vaadin-multi-select-combo-box');
-  var mirrors = row.querySelector('[data-vaadin-mirrors]');
-  var source = row.closest('[data-tag-items]');
-  if (!kind || !combo || !source) return;
-  var raw = kind.value === 'feed' ? source.dataset.feedItems : source.dataset.tagItems;
-  var items = [];
-  try { items = JSON.parse(raw || '[]'); } catch (e) { items = []; }
-  combo.items = items;
-  combo.selectedItems = [];
-  if (mirrors) mirrors.textContent = '';
-  combo.setAttribute('placeholder', kind.value === 'feed' ? 'feed' : 'tag');
+  var cell = row.querySelector('[data-filter-value]');
+  if (!kind || !cell || cell.dataset.filterValueKind === kind.value) return;
+  var tpl = row.querySelector('[data-filter-value-template="' + kind.value + '"]');
+  if (!tpl) return;
+  cell.innerHTML = tpl.innerHTML;
+  cell.dataset.filterValueKind = kind.value;
+  if (window.htmx) htmx.process(cell);
+}
+
+// removeChip drops one feed from a collection's chip list. The endpoint
+// confirms with 204; a failure leaves the chip in place so the UI still
+// matches the server.
+function removeChip(btn) {
+  var wrap = btn.closest('[data-remove-url]');
+  if (!wrap) return;
+  var chip = btn.closest('.chip');
+  var url = wrap.dataset.removeUrl + encodeURIComponent(btn.dataset.removeChip || '');
+  fetch(url, { method: 'POST', headers: { 'HX-Request': 'true' } })
+    .then(function (r) {
+      if (!r.ok) throw new Error('remove failed');
+      if (chip) chip.remove();
+    })
+    .catch(function () {});
 }
 
 // Item modal.
@@ -673,10 +638,9 @@ function itemMenuAction(e, action) {
     .then(function (r) { return r.text(); })
     .then(function (html) {
       d.innerHTML = html;
-      // The picker's form carries hx attributes; it was injected via innerHTML,
-      // so initialize it (and its combo box, which no htmx event announced).
+      // The picker's form carries hx attributes and was injected via innerHTML,
+      // so initialize it. shadcn initializes the combobox itself.
       htmx.process(d);
-      if (window.nanofluxReinitVaadin) window.nanofluxReinitVaadin(d);
     })
     .catch(function () { d.innerHTML = '<p class="error">could not load lists</p>'; });
 }
@@ -1013,7 +977,6 @@ function openSavePage() {
     .then(function (html) {
       d.innerHTML = html;
       htmx.process(d);
-      if (window.nanofluxReinitVaadin) window.nanofluxReinitVaadin(d);
     })
     .catch(function () { d.innerHTML = '<p class="error">could not load the form</p>'; });
 }
@@ -1033,7 +996,6 @@ function openProvisionForm(name, label) {
     .then(function (html) {
       if (body) body.innerHTML = html;
       htmx.process(d);
-      if (window.nanofluxReinitVaadin) window.nanofluxReinitVaadin(d);
     })
     .catch(function () { if (body) body.innerHTML = '<p class="error">could not load the form</p>'; });
 }
@@ -1051,7 +1013,6 @@ function openPluginDocs(name) {
     .then(function (html) {
       d.innerHTML = html;
       htmx.process(d);
-      if (window.nanofluxReinitVaadin) window.nanofluxReinitVaadin(d);
     })
     .catch(function () { d.innerHTML = '<p class="error">could not load the documentation</p>'; });
 }
@@ -1597,6 +1558,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     if ((el = t.closest('[data-plugin-docs]'))) { e.preventDefault(); openPluginDocs(el.dataset.plugin); return; }
     if ((el = t.closest('[data-add-author-link]'))) { addAuthorLinkRow(); return; }
     if ((el = t.closest('[data-add-filter-row]'))) { addFilterRow(el.closest('.filter-row'), el); return; }
+    if ((el = t.closest('[data-remove-chip]'))) { removeChip(el); return; }
   });
 
   document.addEventListener('change', function (e) {

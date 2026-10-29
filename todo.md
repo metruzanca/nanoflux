@@ -2,6 +2,6 @@
 
 ## Done
 
-- [x] "Add to list" now uses the vendored Vaadin multi-select combo box.
-- [x] Form fields use the shared vendored Vaadin web components.
+- [x] "Add to list" now uses the shared multi-select combobox.
+- [x] Form fields use the copied shadcn-templ components.
 - [x] Swipe gestures in the item view: modal pager swipe plus row swipe actions.

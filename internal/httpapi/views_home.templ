@@ -111,10 +111,9 @@ templ homeSortControl(collectionID int64, sort string) {
 }
 
 // settingsHomeCard lets the user pin collections to their home screen, in
-// order, and drag them to reorder. The list is a vaadin-grid; each row's markup
-// is a server-rendered <template> (below) that the grid clones per item, so the
-// row keeps its htmx attributes and the JS is limited to rendering and the
-// drag-drop reorder POST. Empty collections simply don't render on the home page.
+// order, and drag them to reorder. The rows are plain server markup; a small
+// delegated drag handler in static/home-reorder.js posts the new order. Empty
+// collections simply don't render on the home page.
 templ settingsHomeCard(d settingsHomeData) {
 	<section class="card" id="settings-home-card">
 		<h2>home screen</h2>
@@ -125,22 +124,17 @@ templ settingsHomeCard(d settingsHomeData) {
 		if len(d.Rows) == 0 {
 			<p class="muted small">no pinned collections</p>
 		} else {
-			<vaadin-grid
+			<div
+				class="home-grid"
 				id="settings-home-grid"
-				all-rows-visible
-				rows-draggable
-				drop-mode="between"
-				items={ homeGridItemsJSON(d.Rows) }
 				data-reorder-url="/settings/home"
+				role="list"
 				aria-label="pinned collections, drag to reorder"
 			>
-				<vaadin-grid-column></vaadin-grid-column>
-			</vaadin-grid>
-			for _, r := range d.Rows {
-				<template id={ "settings-home-row-" + strconv.FormatInt(r.Collection.ID, 10) }>
+				for _, r := range d.Rows {
 					@homeGridRow(r)
-				</template>
-			}
+				}
+			</div>
 		}
 		if len(d.Collections) > 0 {
 			<form class="pin-row" hx-post="/settings/home" hx-target="#settings-home-card" hx-swap="outerHTML">
@@ -158,11 +152,11 @@ templ settingsHomeCard(d settingsHomeData) {
 	</section>
 }
 
-// homeGridRow is one row's markup, cloned by the grid once per pinned item. It
-// is a plain server fragment (not grid-specific): the collection link, the
-// render-mode picker, and the remove button, all wired with htmx.
+// homeGridRow is one pinned collection: the collection link, the render-mode
+// picker, and the remove button, all wired with htmx. The row is draggable and
+// carries its collection id for the reorder handler.
 templ homeGridRow(r settingsHomeRow) {
-	<div class="home-grid-row">
+	<div class="home-grid-row" role="listitem" draggable="true" data-home-row data-id={ strconv.FormatInt(r.Collection.ID, 10) }>
 		<a href={ "/collections/" + strconv.FormatInt(r.Collection.ID, 10) }>{ r.Collection.Name }</a>
 		<div class="row-actions">
 			@homeSortControl(r.Collection.ID, r.Sort)

@@ -1,0 +1,104 @@
+/*
+ * shadcn-templ Tailwind entry for nanoflux.
+ *
+ * The app has no Tailwind at build or run time: this file is compiled in
+ * development with `mise run ui:gen` and the minified output is committed to
+ * internal/web/static/shadcn.css (embedded by internal/web/templates.go).
+ *
+ * Preflight is deliberately not imported. app.css already owns the page base
+ * (box sizing, typography, form elements), and Tailwind's reset would change
+ * the hand-written UI. Only theme variables and utilities are pulled in, and
+ * app.css scopes its generic button/input rules away from shadcn components
+ * with :not([data-slot]).
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "./tw-animate.css";
+@import "./shadcn-tailwind.css";
+
+/* The app selects light/dark with data-theme on <html> (app.css). */
+@custom-variant dark (&:is([data-theme="dark"] *));
+
+/* Scan the copied shadcn components and our own templ wrappers. */
+@source "../../internal/web/ui";
+@source "../../internal/httpapi";
+
+@theme inline {
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-card: var(--panel);
+  --color-card-foreground: var(--fg);
+  --color-popover: var(--panel);
+  --color-popover-foreground: var(--fg);
+  --color-primary: var(--accent);
+  --color-primary-foreground: #fff;
+  --color-secondary: var(--panel);
+  --color-secondary-foreground: var(--fg);
+  --color-muted: color-mix(in oklab, var(--fg) 8%, var(--panel));
+  --color-muted-foreground: var(--muted);
+  --color-accent: color-mix(in oklab, var(--fg) 12%, var(--panel));
+  --color-accent-foreground: var(--fg);
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: #fff;
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--accent);
+  --color-chart-1: var(--accent);
+  --color-chart-2: var(--warn);
+  --color-chart-3: var(--danger);
+  --color-chart-4: var(--muted);
+  --color-chart-5: var(--fg);
+  --color-sidebar: var(--panel);
+  --color-sidebar-foreground: var(--fg);
+  --color-sidebar-primary: var(--accent);
+  --color-sidebar-primary-foreground: #fff;
+  --color-sidebar-accent: color-mix(in oklab, var(--fg) 12%, var(--panel));
+  --color-sidebar-accent-foreground: var(--fg);
+  --color-sidebar-border: var(--border);
+  --color-sidebar-ring: var(--accent);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --radius: 6px;
+}
+
+@layer base {
+  /* Preflight is absent, so restore the two rules shadcn components rely on:
+     the hidden attribute must beat utility display classes, and form controls
+     inherit the page typography. */
+  [hidden] {
+    display: none !important;
+  }
+  /* Give shadcn controls the inherited typography and pointer affordance that
+     preflight normally supplies. */
+  [data-slot="button"],
+  [data-slot="input-group-control"],
+  [data-slot="combobox-chip-input"] {
+    font: inherit;
+  }
+  /* The chips input sits inside the bordered chips container. Preflight would
+     make it transparent and borderless; do that explicitly. */
+  [data-slot="combobox-chip-input"] {
+    background: transparent;
+    border: 0;
+    color: inherit;
+  }
+  [data-slot="button"] {
+    cursor: pointer;
+  }
+  [data-slot="button"]:disabled,
+  [data-slot="button"][data-disabled] {
+    cursor: default;
+  }
+}

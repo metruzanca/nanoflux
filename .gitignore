@@ -1,5 +1,7 @@
 /nanoflux
 /nanoflux
+/node_modules/
+/tools/shadcn/node_modules/
 /dist/
 /data/
 /backups/

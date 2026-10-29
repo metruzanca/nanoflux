@@ -33,7 +33,7 @@ func TestSettingsPage(t *testing.T) {
 		`hx-post="/settings/appearance/unread-nav"`,
 		`hx-post="/settings/appearance/grid-columns"`,
 		"appearance",
-		`vaadin-slider`,
+		`data-slot="slider"`,
 		`hide global unread counts`,
 		`hide unread from nav`,
 		`grid max columns`,
@@ -148,7 +148,7 @@ func TestSettingsInstantControls(t *testing.T) {
 	cookie := sessionCookie(t, h)
 
 	body := doGet(h, "/settings", cookie).Body.String()
-	if !strings.Contains(body, `vaadin-combo-box id="timezone"`) {
+	if !strings.Contains(body, `data-combo="timezone"`) || !strings.Contains(body, `id="timezone"`) {
 		t.Fatalf("timezone should be a combo box: %s", body)
 	}
 	if !strings.Contains(body, `America/New_York`) {
@@ -508,10 +508,12 @@ func TestSettingsAppearanceGridColumns(t *testing.T) {
 		t.Fatalf("default grid columns should be 2: %s", body)
 	}
 
-	// The slider is a Vaadin slider bound to the field.
+	// The slider's range input carries the field name and the default value.
 	settingsBody := doGet(h, "/settings", cookie).Body.String()
-	if !strings.Contains(settingsBody, `name="grid_max_columns" value="2"`) {
-		t.Fatalf("slider mirror should carry the default value: %s", settingsBody)
+	if !strings.Contains(settingsBody, `data-slot="slider"`) ||
+		!strings.Contains(settingsBody, `name="grid_max_columns"`) ||
+		!strings.Contains(settingsBody, `value="2"`) {
+		t.Fatalf("slider should carry the default value: %s", settingsBody)
 	}
 
 	// Set 4.

@@ -1,165 +1,241 @@
 package httpapi
 
 import (
-	"encoding/json"
-	"strconv"
+	"fmt"
+	"strings"
+
+	"github.com/metruzanca/nanoflux/internal/web"
+	"github.com/metruzanca/nanoflux/internal/web/ui/combobox"
+	slidercomp "github.com/metruzanca/nanoflux/internal/web/ui/slider"
+	switchcomp "github.com/metruzanca/nanoflux/internal/web/ui/switch"
 )
 
-// comboSelect is a single-select Vaadin combo-box. `items` is emitted inline as a
-// JSON attribute (Lit's default converter JSON-parses Array-typed attributes),
-// so no client-side hydration is needed to populate the options.
+// comboSelect is a single-select shadcn combobox. `items` supplies both the
+// option list and the labels the combobox uses for its selected value. The
+// component renders a hidden native input that carries the form name and value,
+// so htmx and normal form submits see the same field a <select> would provide.
 //
-// The component is not form-associated: its own input submits the display label,
-// not the value. So a hidden native mirror carries the real value, the field
-// name, and any hx-* attributes (spread from attrs), letting htmx see exactly
-// the element it used to see when this was a <select>. static/vaadin.js updates
-// the mirror on change.
-//
-// label renders an external <label>; placeholder is the empty-state text.
+// attrs are htmx attributes for fields that react on their own (the author and
+// feed pickers). They are placed on the field wrapper, with a trigger that
+// listens to the hidden input only, so typing in the filter does not submit.
 templ comboSelect(name, value, label, placeholder string, items []comboItem, attrs templ.Attributes) {
-	<div class="combo-field">
+	<div class="combo-field" data-combo={ name } { comboFieldAttrs(attrs, ".combo-field", comboHiddenTrigger(name))... }>
 		if label != "" {
 			<label for={ name }>{ label }</label>
 		}
-		<div class="combo" data-vaadin="single">
-			<vaadin-combo-box id={ name } placeholder={ placeholder } items={ comboItemsJSON(items) } value={ value }></vaadin-combo-box>
-			<input type="hidden" data-vaadin-target name={ name } value={ value } { attrs... }/>
-		</div>
+		@combobox.Combobox(combobox.Props{
+			ID:           name + "-combo",
+			Name:         name,
+			DefaultValue: value,
+			Items:        comboItemData(items),
+		}) {
+			@combobox.Input(combobox.InputProps{ID: name, Placeholder: placeholder})
+			@combobox.Content() {
+				@combobox.Empty() {
+					<span>no matches</span>
+				}
+				@combobox.List() {
+					for _, it := range items {
+						@combobox.Item(combobox.ItemProps{Value: it.Value, Label: it.Label, Attributes: templ.Attributes{"data-combo-option": name + ":" + it.Value}}) {
+							{ it.Label }
+						}
+					}
+				}
+			}
+		}
 	</div>
 }
 
-// comboSelectID is comboSelect with an explicit element id, for repeated rows
-// that share a form name (the filter modal's value combos) but need unique ids.
-templ comboSelectID(id, name, value, label, placeholder string, items []comboItem, attrs templ.Attributes) {
-	<div class="combo-field">
+// comboMulti is a multi-select shadcn combobox. It renders one hidden native
+// input per selected value, so the field submits as repeated params exactly
+// like the checkbox group it replaced.
+templ comboMulti(name, label string, values []string, items []comboItem) {
+	<div class="combo-field" data-combo={ name }>
+		if label != "" {
+			<label for={ name }>{ label }</label>
+		}
+		@combobox.Combobox(combobox.Props{
+			ID:            name + "-combo",
+			Name:          name,
+			Multiple:      true,
+			DefaultValues: values,
+			Items:         comboItemData(items),
+		}) {
+			@combobox.Chips() {
+				@combobox.Value()
+				@combobox.ChipsInput(combobox.ChipsInputProps{ID: name, Placeholder: "select"})
+			}
+			@combobox.Content() {
+				@combobox.Empty() {
+					<span>no matches</span>
+				}
+				@combobox.List() {
+					for _, it := range items {
+						@combobox.Item(combobox.ItemProps{Value: it.Value, Label: it.Label, Attributes: templ.Attributes{"data-combo-option": name + ":" + it.Value}}) {
+							{ it.Label }
+						}
+					}
+				}
+			}
+		}
+	</div>
+}
+
+// comboMultiID is comboMulti with an explicit element id and field name, for
+// repeated rows that need unique ids but their own name (the filter modal).
+templ comboMultiID(id, name, label string, values []string, items []comboItem) {
+	<div class="combo-field" data-combo={ name }>
 		if label != "" {
 			<label for={ id }>{ label }</label>
 		}
-		<div class="combo" data-vaadin="single">
-			<vaadin-combo-box id={ id } placeholder={ placeholder } items={ comboItemsJSON(items) } value={ value }></vaadin-combo-box>
-			<input type="hidden" data-vaadin-target name={ name } value={ value } { attrs... }/>
-		</div>
+		@combobox.Combobox(combobox.Props{
+			ID:            id + "-combo",
+			Name:          name,
+			Multiple:      true,
+			DefaultValues: values,
+			Items:         comboItemData(items),
+		}) {
+			@combobox.Chips() {
+				@combobox.Value()
+				@combobox.ChipsInput(combobox.ChipsInputProps{ID: id, Placeholder: "select"})
+			}
+			@combobox.Content() {
+				@combobox.Empty() {
+					<span>no matches</span>
+				}
+				@combobox.List() {
+					for _, it := range items {
+						@combobox.Item(combobox.ItemProps{Value: it.Value, Label: it.Label, Attributes: templ.Attributes{"data-combo-option": name + ":" + it.Value}}) {
+							{ it.Label }
+						}
+					}
+				}
+			}
+		}
 	</div>
 }
 
-// switchField is a Vaadin switch paired with a hidden native mirror. The
-// component is not form-associated, so the mirror carries the field name, the
-// "1"/"" value the server reads, and any hx-* attributes (spread from attrs);
-// static/vaadin.js keeps it in sync with the switch's checked state.
+// comboChips is a display-only list of the members of a collection. Each chip
+// is plain server markup; for a user collection its remove button POSTs to
+// removeURL + the feed id and app.js drops the chip on success. Auto
+// collections are inspect-only.
+templ comboChips(removeURL string, values []string, items []comboItem, readonly bool) {
+	<div class="chips combo-chips" data-remove-url={ removeURL }>
+		for _, it := range items {
+			if comboHasValue(values, it.Value) {
+				<span class="chip">
+					{ it.Label }
+					if !readonly && removeURL != "" {
+						<button type="button" class="chip-remove" title="remove" data-remove-chip={ it.Value }>@web.Lucide("x")</button>
+					}
+				</span>
+			}
+		}
+	</div>
+}
+
+// switchField is a shadcn switch paired with its generated hidden checkbox.
+// The checkbox carries the field name and the "1" value the server reads, and
+// submits nothing when off, matching how the old checkbox behaved.
 //
-// The visible label is ours (not the component's label attribute) so an
-// optional help line can sit directly under it, sharing its left edge via the
-// two-column grid. The switch keeps an aria-label for accessibility.
+// The visible label is ours so an optional help line can sit directly under
+// it, sharing its left edge via the two-column grid.
 templ switchField(name, label string, checked bool, help string, attrs templ.Attributes) {
-	<div class="switch-field" data-vaadin="switch">
-		<vaadin-switch aria-label={ label } checked?={ checked }></vaadin-switch>
+	<div class="switch-field" data-switch-field={ name } { comboFieldAttrs(attrs, ".switch-field", comboHiddenTrigger(name))... }>
+		@switchcomp.Switch(switchcomp.Props{ID: name, Name: name, Value: "1", DefaultChecked: checked})
 		<div class="switch-field-text">
-			<span class="switch-field-label">{ label }</span>
+			<label class="switch-field-label" for={ name }>{ label }</label>
 			if help != "" {
 				<p class="switch-field-help muted small">{ help }</p>
 			}
 		</div>
-		<input type="hidden" data-vaadin-target name={ name } value={ switchValue(checked) } { attrs... }/>
 	</div>
 }
 
-// comboMulti is a multi-select Vaadin combo-box that submits like the checkbox
-// group it replaces. selected-items must hold the item objects (not value
-// strings) so labels resolve, so it is computed from items + the selected
-// values. The server renders one hidden mirror per selected value (all sharing
-// name) so the field submits as repeated params; static/vaadin.js rebuilds them
-// on change.
-templ comboMulti(name, label string, values []string, items []comboItem) {
-	<div class="combo-field">
-		<label for={ name }>{ label }</label>
-		<div class="combo" data-vaadin="multi">
-			<vaadin-multi-select-combo-box id={ name } auto-expand-horizontally auto-expand-vertically placeholder="—" items={ comboItemsJSON(items) } selected-items={ comboSelectionJSON(items, values) }></vaadin-multi-select-combo-box>
-			<div data-vaadin-mirrors data-vaadin-name={ name }>
-				for _, v := range values {
-					<input type="hidden" name={ name } value={ v }/>
-				}
-			</div>
-		</div>
-	</div>
-}
-
-// comboMultiID is comboMulti with an explicit element id and mirror name, for
-// repeated rows that need unique ids but per-row field names (the filter modal).
-templ comboMultiID(id, name, label string, values []string, items []comboItem) {
-	<div class="combo-field">
-		if label != "" {
-			<label for={ id }>{ label }</label>
-		}
-		<div class="combo" data-vaadin="multi">
-			<vaadin-multi-select-combo-box id={ id } auto-expand-horizontally auto-expand-vertically placeholder="—" items={ comboItemsJSON(items) } selected-items={ comboSelectionJSON(items, values) }></vaadin-multi-select-combo-box>
-			<div data-vaadin-mirrors data-vaadin-name={ name }>
-				for _, v := range values {
-					<input type="hidden" name={ name } value={ v }/>
-				}
-			</div>
-		</div>
-	</div>
-}
-
-// comboChips is a display-only multi-select used where the current members are
-// shown and removed individually (the collection edit feed list). removeURL is
-// the per-item endpoint prefix; the client appends the removed value's id. When
-// readonly, the chips hide their remove button and the list is inspect-only
-// (auto collections). auto-expand-* keep every name visible, wrapping as needed.
-templ comboChips(removeURL string, values []string, items []comboItem, readonly bool) {
-	<div class="combo combo-chips" data-vaadin="chips" data-remove-url={ removeURL }>
-		<vaadin-multi-select-combo-box auto-expand-horizontally auto-expand-vertically readonly?={ readonly } placeholder="—" items={ comboItemsJSON(items) } selected-items={ comboSelectionJSON(items, values) }></vaadin-multi-select-combo-box>
-	</div>
-}
-
-// switchValue is the hidden mirror's value for a switch: "1" when on, "" when
-// off, matching how the checkbox submitted and how handlers read it.
-func switchValue(checked bool) string {
-	if checked {
-		return "1"
-	}
-	return ""
-}
-
-// sliderField is a Vaadin slider paired with a hidden native mirror. The
-// component is not form-associated, so the mirror carries the field name and
-// any hx-* attributes (spread from attrs); static/vaadin.js keeps it in sync.
-// The mirror fires "change" only when the slider settles, so dragging does not
-// fire a request per pixel.
+// sliderField is a shadcn slider. The range input it renders is a real form
+// control, so a surrounding form's hx-trigger="change" sees the value once the
+// drag settles (static/shadcn.js turns the slider's drag events into a native
+// change on pointerup or keyup).
 templ sliderField(name, label string, value, min, max int, attrs templ.Attributes) {
-	<div class="slider-field" data-vaadin="slider">
+	<div class="slider-field" data-slider-field={ name } { comboFieldAttrs(attrs, ".slider-field", sliderTrigger(name))... }>
 		if label != "" {
-			<label for={ name }>{ label }</label>
+			<label for={ name + "-thumb-0" }>{ label }</label>
 		}
-		<vaadin-slider id={ name } min={ strconv.Itoa(min) } max={ strconv.Itoa(max) } step="1" value={ strconv.Itoa(value) }></vaadin-slider>
-		<input type="hidden" data-vaadin-target name={ name } value={ strconv.Itoa(value) } { attrs... }/>
+		@slidercomp.Slider(slidercomp.Props{
+			ID:           name,
+			Name:         name,
+			DefaultValue: []float64{float64(value)},
+			Min:          float64(min),
+			Max:          float64(max),
+			Step:         1,
+		})
 	</div>
 }
 
-// comboItemsJSON marshals items for an inline `items` attribute. It cannot fail
-// for our struct, so a marshal error degrades to an empty list.
-func comboItemsJSON(items []comboItem) string {
-	b, err := json.Marshal(items)
-	if err != nil {
-		return "[]"
+// comboItemData converts our compact option list to the shape the combobox
+// uses for its value labels.
+func comboItemData(items []comboItem) []combobox.ItemData {
+	out := make([]combobox.ItemData, 0, len(items))
+	for _, it := range items {
+		out = append(out, combobox.ItemData{Value: it.Value, Label: it.Label})
 	}
-	return string(b)
+	return out
 }
 
-// comboSelectionJSON marshals the selected items (as full objects, not values)
-// for a `selected-items` attribute. The components label a selection by looking
-// up the item object; given a bare value they fall back to its string form, so
-// the objects matter.
-func comboSelectionJSON(items []comboItem, values []string) string {
-	want := make(map[string]bool, len(values))
-	for _, v := range values {
-		want[v] = true
+// comboHiddenTrigger names the aria-hidden input a combobox or switch renders
+// for its form value, for a field-level htmx trigger.
+func comboHiddenTrigger(name string) string {
+	return fmt.Sprintf("[name='%s'][aria-hidden='true']", name)
+}
+
+// sliderTrigger names the slider's range input, which is the field's form
+// value and is not aria-hidden.
+func sliderTrigger(name string) string {
+	return fmt.Sprintf("[name='%s']", name)
+}
+
+// comboFieldAttrs turns caller-supplied htmx attributes into attributes on the
+// field wrapper. hx-disinherit keeps the wrapper's request from being inherited
+// by the combobox text input. The default trigger listens to the generated
+// hidden input, and hx-include pulls the field's current value while preserving
+// any selector the caller already provided.
+func comboFieldAttrs(attrs templ.Attributes, scope, trigger string) templ.Attributes {
+	if len(attrs) == 0 {
+		return nil
 	}
-	sel := make([]comboItem, 0, len(values))
-	for _, it := range items {
-		if want[it.Value] {
-			sel = append(sel, it)
+	out := make(templ.Attributes, len(attrs)+2)
+	hasHX := false
+	for k, v := range attrs {
+		out[k] = v
+		if strings.HasPrefix(k, "hx-") {
+			hasHX = true
 		}
 	}
-	return comboItemsJSON(sel)
+	if !hasHX {
+		return out
+	}
+	if _, ok := out["hx-trigger"]; !ok {
+		out["hx-trigger"] = "change from:" + trigger
+	}
+	if _, ok := out["hx-disinherit"]; !ok {
+		out["hx-disinherit"] = "*"
+	}
+	include := "closest " + scope
+	if v, ok := out["hx-include"]; ok {
+		if s := fmt.Sprint(v); s != "" {
+			include += ", " + s
+		}
+	}
+	out["hx-include"] = include
+	return out
+}
+
+// comboHasValue reports whether v is one of the selected values.
+func comboHasValue(values []string, v string) bool {
+	for _, got := range values {
+		if got == v {
+			return true
+		}
+	}
+	return false
 }

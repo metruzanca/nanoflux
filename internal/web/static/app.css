@@ -329,8 +329,12 @@ main:has(#home-sections) {
 label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; color: var(--muted); }
 label.check { flex-direction: row; align-items: center; gap: 0.35rem; }
 
-input[type="text"], input[type="password"], input[type="url"], input[type="number"],
-input[type="email"], input:not([type]), select, textarea {
+/* shadcn components carry data-slot. Skip them here so this hand-written form
+   styling does not override the utilities in static/shadcn.css. */
+input[type="text"]:not([data-slot]), input[type="password"]:not([data-slot]),
+input[type="url"]:not([data-slot]), input[type="number"]:not([data-slot]),
+input[type="email"]:not([data-slot]), input:not([type]):not([data-slot]),
+select:not([data-slot]), textarea:not([data-slot]) {
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -339,7 +343,7 @@ input[type="email"], input:not([type]), select, textarea {
   font: inherit;
 }
 
-button {
+button:not([data-slot]) {
   padding: 0.5rem 0.9rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -838,6 +842,7 @@ a.item-tag:hover { color: var(--accent); }
    available width; the action/kind selects and the x/+ buttons stay compact. */
 .filter-rows { display: flex; flex-direction: column; gap: 0.5rem; }
 .filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.filter-row .filter-value { flex: 1 1 12rem; min-width: 0; }
 .filter-row .combo-field { flex: 1 1 12rem; min-width: 0; }
 .filter-row .filter-select {
   flex: 0 0 auto;
@@ -1626,41 +1631,21 @@ details.feeds-section summary:hover { color: var(--accent); }
   #item-dialog:has(.enclosures video) .enclosures video { border-radius: 0; }
 }
 
-/* --- Vaadin components (vendored) ------------------------------------------
-   v25 ships only structural base styles; its base color tokens default via
-   light-dark(), which follows the OS preference, not our data-theme. Map them to
-   nanoflux tokens here (inherited into every component's shadow DOM) so the
-   components match the hand-written controls and the selected theme. */
-:root {
-  --vaadin-background-color: var(--bg);
-  --vaadin-text-color: var(--fg);
-  --vaadin-text-color-secondary: var(--muted);
-  --vaadin-text-color-disabled: var(--muted);
-  --vaadin-border-color: var(--border);
-  --vaadin-border-color-secondary: var(--border);
-  --vaadin-focus-ring-color: var(--accent);
-  --vaadin-grid-background: var(--panel);
-  --vaadin-grid-row-background-color: var(--panel);
-  --vaadin-grid-row-odd-background-color: var(--panel);
-  --vaadin-grid-row-hover-background-color: var(--panel);
-  --vaadin-grid-header-text-color: var(--muted);
-  --vaadin-grid-cell-background-color: transparent;
-}
-
-.combo-field { display: flex; flex-direction: column; gap: 0.35rem; }
+/* --- shadcn-templ components ---------------------------------------------
+   The component look lives in static/shadcn.css (generated Tailwind). These
+   rules only lay out our wrappers and the plain chip / reorder lists. */
+.combo-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
 .combo-field > label { font-size: 0.85rem; color: var(--muted); }
-.combo { display: block; }
 
-/* Vaadin switch (form control): a two-column grid so the label and an optional
-   help line sit together, both starting at the same left edge (the switch
-   track stays in the first column). */
+/* Two-column switch field so the label and an optional help line sit together,
+   both starting at the same left edge (the switch track stays in column one). */
 .switch-field {
   display: grid;
   grid-template-columns: auto 1fr;
   column-gap: 0.6rem;
   align-items: start;
 }
-.switch-field > vaadin-switch { grid-column: 1; grid-row: 1; }
+.switch-field > [data-slot="switch"] { grid-column: 1; grid-row: 1; margin-top: 0.1rem; }
 .switch-field-text {
   grid-column: 2;
   grid-row: 1;
@@ -1669,89 +1654,43 @@ details.feeds-section summary:hover { color: var(--accent); }
   gap: 0.15rem;
   min-width: 0;
 }
-.switch-field-label { font-size: 0.9rem; }
+.switch-field-label { font-size: 0.9rem; color: var(--fg); }
 .switch-field-help { margin: 0; }
-vaadin-switch {
-  --vaadin-field-default-width: auto;
-  --vaadin-switch-label-font-size: 0.9rem;
-  --vaadin-switch-gap: 0.5rem;
-}
 
-/* Vaadin slider (grid-columns setting). Full-width like the combos, themed to
-   the app tokens so track/fill/thumb follow the accent and theme. */
-.slider-field { display: flex; flex-direction: column; gap: 0.35rem; }
+.slider-field { display: flex; flex-direction: column; gap: 0.45rem; }
 .slider-field > label { font-size: 0.85rem; color: var(--muted); }
-vaadin-slider {
-  --vaadin-field-default-width: 100%;
-  --vaadin-slider-track-background: var(--border);
-  --vaadin-slider-track-height: 4px;
-  --vaadin-slider-fill-background: var(--accent);
-  --vaadin-slider-thumb-background: var(--accent);
-  --vaadin-slider-thumb-border-color: var(--accent);
-  --vaadin-slider-thumb-width: 1rem;
-  --vaadin-slider-thumb-height: 1rem;
-  --vaadin-slider-bubble-background: var(--panel);
-  --vaadin-slider-bubble-text-color: var(--fg);
-  --vaadin-slider-bubble-border-color: var(--border);
-}
+.slider-field [data-slot="slider"] { padding: 0.35rem 0; }
 
-vaadin-combo-box,
-vaadin-multi-select-combo-box {
-  --vaadin-input-field-background: var(--bg);
-  --vaadin-input-field-border-color: var(--border);
-  --vaadin-input-field-value-color: var(--fg);
-  --vaadin-input-field-label-color: var(--muted);
-  --vaadin-input-field-helper-color: var(--muted);
-  --vaadin-input-field-focus-border-color: var(--accent);
-  --vaadin-chip-background: var(--panel);
-  --vaadin-chip-border-color: var(--border);
-  --vaadin-chip-text-color: var(--fg);
-  --vaadin-input-field-border-radius: 6px;
-  --vaadin-input-field-value-font-size: 0.95rem;
-  --vaadin-field-default-width: 100%;
+/* Display-only collection members: a chip plus an inline remove control. */
+.combo-chips .chip { display: inline-flex; align-items: center; gap: 0.35rem; cursor: default; }
+.chip-remove .ic { width: 14px; height: 14px; }
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  line-height: 1;
+  cursor: pointer;
 }
+.chip-remove:hover { color: var(--danger); }
 
-/* The overlay list reuses the panel/token look of our dropdowns. */
-vaadin-combo-box-overlay,
-vaadin-multi-select-combo-box-overlay {
-  --vaadin-overlay-background: var(--panel);
-  --vaadin-text-color: var(--fg);
-  --vaadin-text-color-secondary: var(--muted);
-  --vaadin-border-color: var(--border);
-}
-
-/* Display-only chip list (collection edit): let it grow tall so every member
-   name is visible, and give the chips a little more room. */
-.combo-chips vaadin-multi-select-combo-box {
-  --vaadin-field-default-width: 100%;
-  --vaadin-input-field-value-font-size: 0.9rem;
-}
-
-/* Home-screen pinned-collection grid (vendored Vaadin grid). Rows are draggable
-   to reorder; all-rows-visible keeps it as tall as its content, no inner scroll. */
-#settings-home-grid {
-  --vaadin-grid-border-color: var(--border);
-  --vaadin-grid-border-radius: 6px;
-  --vaadin-grid-cell-padding: 0.5rem 0.6rem;
-  margin-bottom: 0.25rem;
-}
-/* The grid's cell content is slotted from our light DOM; make each cloned row
-   fill the cell and lay out its name + actions. */
-#settings-home-grid .home-grid-row {
+/* Home-screen pinned collections. Rows drag to reorder (static/home-reorder.js). */
+.home-grid { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 0.25rem; }
+.home-grid-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: grab;
 }
-/* A grab affordance on the row, since dragging is the reorder gesture. */
-#settings-home-grid vaadin-grid-cell-content[draggable-source] .home-grid-row { cursor: grab; }
-#settings-home-grid [dragging-rows] .home-grid-row { cursor: grabbing; }
-/* The per-row list/grid picker's dropdown is portaled to #picker-layer when it
-   opens (see app.js), because the grid's shadow-DOM scroller clips anything
-   rendered in place. The layer is a fixed overlay above the page. */
-#picker-layer { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
-#picker-layer .mode-menu { pointer-events: auto; }
+.home-grid-row.dragging { opacity: 0.45; cursor: grabbing; }
+.home-grid-row .row-actions { display: flex; align-items: center; gap: 0.5rem; }
 
 /* Admin user list: one table row per account. The actions re-render the whole
    list in place; the notice shows a generated password exactly once. */

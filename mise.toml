@@ -14,9 +14,9 @@ run = "go run ./tools/iconsgen"
 description = "Package the browser extension into dist/"
 run = "go run ./tools/extzip"
 
-[tasks."vendor:vaadin"]
-description = "Bundle the pinned Vaadin web components into static/ (needs node)"
-run = "./tools/vaadin-vendor/vendor.sh"
+[tasks."ui:gen"]
+description = "Regenerate shadcn-templ JS + Tailwind CSS into static/ (needs node)"
+run = "./tools/shadcn/build.sh"
 
 [tasks."vendor:hls"]
 description = "Vendor the pinned hls.js build into static/ (needs node)"
