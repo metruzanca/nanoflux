@@ -351,30 +351,37 @@ func TestAverageGapSeconds(t *testing.T) {
 }
 
 func TestStaleFeedFor(t *testing.T) {
-	now := time.Now()
 	d := func(days int) string {
 		return time.Now().Add(-time.Duration(days) * 24 * time.Hour).Format("2006-01-02 15:04:05")
 	}
 	cases := []struct {
+		name        string
 		last        string
+		intervalSec int
 		wantDays    int
 		wantAbandon bool
 		wantOK      bool
 	}{
-		{"", 0, false, false},
-		{d(1), 0, false, false}, // active
-		{d(6), 0, false, false},
-		{d(8), 8, false, true},
-		{d(14), 14, false, true},
-		{d(30), 30, true, true},
-		{d(45), 45, true, true},
-		{"garbage", 0, false, false},
+		{"none", "", 900, 0, false, false},
+		{"active", d(1), 900, 0, false, false},
+		{"six days on a 15m feed", d(6), 900, 0, false, false},
+		{"eight days on a 15m feed", d(8), 900, 8, false, true},
+		{"fourteen days on a 15m feed", d(14), 900, 14, false, true},
+		{"thirty days on a 15m feed", d(30), 900, 30, true, true},
+		{"forty-five days on a 15m feed", d(45), 900, 45, true, true},
+		{"ten days on a weekly feed", d(10), 7 * 86400, 0, false, false},
+		{"fifteen days on a weekly feed", d(15), 7 * 86400, 15, false, true},
+		{"thirty-one days on a weekly feed", d(31), 7 * 86400, 31, true, true},
+		{"forty-five days on a monthly feed", d(45), 30 * 86400, 0, false, false},
+		{"sixty-one days on a monthly feed", d(61), 30 * 86400, 61, false, true},
+		{"garbage", "garbage", 900, 0, false, false},
 	}
-	_ = now
 	for _, c := range cases {
-		sf, ok := staleFeedFor(c.last, time.Now().Format("2006-01-02 15:04:05"))
-		if ok != c.wantOK || (ok && (sf.Days != c.wantDays || sf.Abandoned != c.wantAbandon)) {
-			t.Errorf("staleFeedFor(%q) = %+v, %v; want days=%d aband=%v ok=%v", c.last, sf, ok, c.wantDays, c.wantAbandon, c.wantOK)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			sf, ok := staleFeedFor(c.last, time.Now().Format("2006-01-02 15:04:05"), c.intervalSec)
+			if ok != c.wantOK || (ok && (sf.Days != c.wantDays || sf.Abandoned != c.wantAbandon)) {
+				t.Errorf("staleFeedFor(%q, %d) = %+v, %v; want days=%d aband=%v ok=%v", c.last, c.intervalSec, sf, ok, c.wantDays, c.wantAbandon, c.wantOK)
+			}
+		})
 	}
 }

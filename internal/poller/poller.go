@@ -546,8 +546,8 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 // the feed's poll interval:
 //
 //   - if the feed's newest item is at least staleAfter old, force the interval
-//     to adaptiveCeil (1 day) so a quiet feed isn't polled often — regardless of
-//     whether adaptive polling is enabled;
+//     to adaptiveCeil (7 days) so a quiet feed isn't polled often, regardless
+//     of whether adaptive polling is enabled;
 //   - otherwise, if adaptive polling is enabled and the poll brought new items,
 //     derive the interval from the average gap between the feed's recent posts.
 //
@@ -575,7 +575,7 @@ func (p *Poller) updateCadence(f store.Feed, now string, newItems int) {
 	var want int
 	switch {
 	case isStale(f.LastItemAt, now, staleAfter):
-		// A quiet feed is polled at most once a day, regardless of whether
+		// A quiet feed is polled at most once a week, regardless of whether
 		// adaptive polling is enabled.
 		want = adaptiveCeil
 	case f.PollIntervalAuto && newItems > 0:
@@ -604,6 +604,11 @@ func (p *Poller) updateCadence(f store.Feed, now string, newItems int) {
 // ever brings a fetch forward.
 func (p *Poller) scheduleNextPoll(f store.Feed, times []string, now string) {
 	if !f.PollIntervalAuto || isStale(f.LastItemAt, now, staleAfter) {
+		return
+	}
+	// A multi-day cadence must not be pulled forward to the next occurrence of
+	// the posting hour (which is at most a day away).
+	if f.PollIntervalSec > int(scheduleMaxInterval/time.Second) {
 		return
 	}
 	sec, ok := preferredFetchTime(times)

@@ -72,9 +72,10 @@ it (`is_system = 0`). Nothing else in this document applies to it.
 - When a poll brings **new items** and adaptive polling is enabled
   (`poll_interval_auto`, on by default), nanoflux derives the interval from the
   feed's **recent posting cadence**: it averages the gaps between the newest
-  ~20 item timestamps and clamps the result to **[15m, 1 day]**. A feed that
-  posts hourly is polled roughly hourly; a feed that posts monthly is polled
-  around once a day. This is the "automatic adjusting of delay."
+  ~20 item timestamps and clamps the result to **[15m, 7 days]**. A feed that
+  posts hourly is polled roughly hourly; a feed that posts every few days is
+  polled on that cadence; one that posts monthly is polled weekly (the ceiling).
+  This is the "automatic adjusting of delay."
 - If adaptive polling is turned off, the interval stays whatever the user set.
 
 ### Scheduled to the author's time of day
@@ -98,6 +99,10 @@ just after that time, instead of waiting out its interval:
 - The target is never later than `last_polled + poll_interval_sec`, so a schedule
   only ever brings a fetch **forward**; frequent feeds keep their cadence and a
   mis-timed daily feed realigns in one hop.
+- Scheduling applies only to intervals of **at most one day**. On a multi-day
+  cadence the next occurrence of the posting hour is always nearby, which would
+  pull a weekly fetch forward to tomorrow and defeat the longer interval. Those
+  feeds poll on their interval instead.
 - Stale feeds and feeds with adaptive polling off are never scheduled. A poll
   that brings no new items (the author was late, or a `304`) keeps the plan: the
   next fetch is recomputed from the actual poll time, so the alignment does not
@@ -111,10 +116,13 @@ wake close to a scheduled target rather than on the next base tick.
 ### Quiet (stale) feeds
 
 If a feed's newest item is **older than 7 days**, its interval is forced to the
-1-day maximum (regardless of adaptive polling) so a silent feed is not polled
+7-day maximum (regardless of adaptive polling) so a silent feed is not polled
 often. This is why `last_item_at` is tracked separately from the poll time: "no
-new posts in a while" is not an error, just a signal to slow down. At 30 days the
-UI additionally marks the feed as possibly abandoned.
+new posts in a while" is not an error, just a signal to slow down. The feed
+card's quiet/abandoned badge scales with the feed's interval too: quiet after
+`max(7 days, 2 x interval)` and possibly abandoned after
+`max(30 days, 4 x interval)`, so a weekly feed is not labelled abandoned between
+its normal posts.
 
 > Note: `last_item_at` only ever moves forward, and an empty value (no items
 > yet) is never treated as stale.
