@@ -36,18 +36,22 @@ reject polling with 429. The app treats this as pacing, not failure:
   it **independently of `poll_interval_sec`** — a passed backoff makes a feed due
   even inside a 1-day interval, so the host's real window is honored instead of
   being masked. Do not recombine those conditions with `AND`.
-- `poller.pollDue` groups feeds by registrable host and processes each group
-  least-recently-polled-first (fair rotation). A host that 429s is paced by its
-  learned window (`hostWindow`/`hostNextHit`); its remaining feeds stay **due**
-  and are picked up when the window clears, rather than skipped for the cycle.
-  `Run` wakes at the earliest of the base interval or a host's next-hit time, so
-  rotating hosts are revisited promptly (floored at `minWake`).
-- Even a host that never rate-limits is spaced: after one fetch the group stops
+- `poller.pollDue` groups feeds by registrable host and keeps a **persistent FIFO
+  queue per host** (`poller.queues`, in memory, rebuilt on restart). An empty
+  queue is seeded most-overdue-first by `dueDeadline` (`next_poll_at` when set,
+  otherwise last poll or creation plus the effective interval). While a queue is
+  non-empty, newly due feeds are appended to the tail, even if they are already
+  overdue. `reconcileQueues` drops IDs that are no longer due (polled, disabled,
+  deleted, floor-held, rate-limited into the future, or moved host). Hosts are
+  serviced in queue-head deadline order. A host that 429s keeps its queue intact
+  and resumes when the learned window (`hostWindow`/`hostNextHit`) clears.
+  `Run` wakes at the earliest of the base interval, a host's next-hit time, a
+  `next_poll_at`, or a floor deadline (floored at `minWake`).
+- Even a host that never rate-limits is spaced: after one fetch the queue stops
   and wakes after `hostSpacing` (`NF_POLL_HOST_SPACING`, default 60s; learned
-  window overrides when larger; 0 disables). `pollGroup` only stops early when
-  another feed is still waiting (`i < len(group)-1`), so a single-feed host is
-  never delayed. The default spacing is poller-only and must not pace plugin
-  `Host.Do` calls.
+  window overrides when larger; 0 disables). `pollHost` only stops early when
+  the queue still has another item, so the last queued feed is never delayed.
+  The default spacing is poller-only and must not pace plugin `Host.Do` calls.
 - The poller and plugin host share **one** `plugin.Cooldown` (wired in
   `cmd/server/main.go`, poller holds it via the local `hostCooler` interface):
   a limit seen by either paces both. Do not give `plugin.Setup` or `poller.New`
