@@ -155,12 +155,13 @@ Pacing decisions are logged so the behavior can be confirmed from logs alone:
 a rate limit emits `feed rate limited` (Warn) with the host, status,
 `retry_after` and `next_poll_at`; each poll pass emits a `poll cycle` (Info)
 line with `feeds` (due after the floor filter), `floored` (held back by the
-floor), `hosts`, `fetched`, `new_items`, `rate_limited`, `paced` and
-`next_wake`; and per-host skip/spacing decisions emit `host cooling, skipping`,
-`host paced, skipping` and `host spaced`, plus `next wake from deadline` or
-`wake deadline passed, retrying` for the sleep decision, at Debug
-(`NF_LOG_LEVEL=debug`). Plugin-host limits log `plugin rate limited` and
-`plugin request refused: host cooling`, which is the shared cooldown in action.
+floor), `queued` (total items waiting in host queues), `hosts`, `fetched`,
+`new_items`, `rate_limited`, `paced` and `next_wake`; and per-host skip/spacing
+decisions emit `host cooling, skipping`, `host paced, skipping` and `host
+spaced`, plus `next wake from deadline` or `wake deadline passed, retrying` for
+the sleep decision, at Debug (`NF_LOG_LEVEL=debug`). Plugin-host limits log
+`plugin rate limited` and `plugin request refused: host cooling`, which is the
+shared cooldown in action.
 
 ### Feed URLs are canonicalized by the owning plugin
 
@@ -234,34 +235,49 @@ often **any two feeds on the same registrable host** are fetched. A host with ma
 feeds still rotates them one spacing window at a time even when each feed is
 individually held to the floor.
 
-### Per-host pacing and fair rotation
+### Per-host queue, pacing, and fair rotation
 
-Feeds are grouped by **registrable host** (all feeds on one domain are one
-group). Three rules keep a host from being hammered:
+Feeds are grouped by **registrable host** (all feeds on one domain are one host).
+Each host has a persistent FIFO of due feed IDs that survives cycles:
 
-- **One host at a time.** Feeds in a group are fetched sequentially, while
+- **Seeding.** An empty queue is filled with the host's due feeds sorted by due
+  deadline ascending: `next_poll_at` when set, otherwise last poll (or creation)
+  plus the effective interval. The most overdue feed is at the head, so a
+  backlog drains before feeds that only just became due.
+- **Appending.** While the queue is non-empty, a feed that becomes due is added
+  to the tail, even if it is already overdue. A feed leaves the queue when it is
+  polled and re-enters at the tail the next time it is due. This is what stops a
+  fast feed from jumping ahead of the backlog.
+- **Reconciling.** Each cycle drops queued feeds that are no longer due (polled,
+  disabled, deleted, floor-held, rate-limited into the future, or moved to
+  another host). If a host has nothing due, its queue is dropped.
+
+The queue is in memory. On restart it is rebuilt from the current due set with
+the same ordering. Three pacing rules then apply:
+
+- **One host at a time.** A host's queue is drained sequentially, while
   different hosts run in parallel up to `NF_POLL_WORKERS`. This prevents
-  bursting a single site.
+  bursting a single site. Hosts are started most-overdue first.
 - **Default spacing.** Even a host that has never rate-limited the poller is
   spaced: after fetching one of its feeds, the next same-host fetch waits
   `NF_POLL_HOST_SPACING` (default **60 seconds**, matching the tightest
   anonymous per-IP window we know of). This stops a domain with many
   due feeds from firing them all in one cycle, which is what tends to trigger
-  the first `429`. A single-feed host is never delayed, and a host's last
-  waiting feed is fetched promptly once the window clears. Set the variable to
-  `0s` to disable; a learned rate-limit window always overrides the default.
+  the first `429`. A single-feed host is never delayed, and the last item in a
+  queue is fetched promptly. Set the variable to `0s` to disable; a learned
+  rate-limit window always overrides the default.
 - **Learned window.** When a host rate-limits a fetch, the poller remembers how
   long it asked to be left alone (`hostWindow`, floored at **60 seconds**) and
   records the next time the host may be hit (`hostNextHit`). Until that time,
-  the host's remaining feeds are **not fetched** — but they stay **due**, so
-  they are picked up the moment the window clears.
+  the host's queue is **not** drained, but it is left intact, so it resumes the
+  moment the window clears.
 
 The `NF_POLL_HOST_SPACING` floor is the poller's **30-second wake floor**: a
 smaller configured value cannot make the loop revisit a host sooner.
 
-Within a group, feeds are processed **least-recently-polled first**. So if a
-host can only be hit once per minute and there are twenty of its feeds, they
-rotate: each feed takes its turn rather than a few winning every cycle.
+Because the queue is FIFO, a host that can only be hit once per minute and has
+twenty queued feeds drains them in order: each feed takes its turn instead of a
+few winning every cycle.
 
 ### Waking at the right time
 
@@ -355,7 +371,7 @@ plugin that matches only part of a shared domain (a URL path or query shape).
 
 ## Putting it together: one poll cycle
 
-A pass applies four filters, in this order:
+A pass applies these steps, in order:
 
 1. **Stored interval or explicit deadline.** `ListFeedsDue` returns feeds whose
    `poll_interval_sec` elapsed, or whose `next_poll_at` (a rate-limit retry or a
@@ -363,15 +379,38 @@ A pass applies four filters, in this order:
 2. **Per-feed floor.** `applyPollFloor` drops a feed whose own floor has not
    elapsed (`last poll + effective floor`) and wakes at the soonest held-back
    deadline. A feed due by an explicit `next_poll_at` is exempt.
-3. **Host grouping.** `groupByHost` groups the survivors by registrable host.
-4. **Host spacing.** `pollGroup` fetches one feed per host, least-recently-polled
-   first, then sets the host's next allowed time from `max(default host spacing,
-   learned rate-limit window)` and stops. Different hosts run in parallel up to
-   `NF_POLL_WORKERS`.
+3. **Host grouping and queue reconciliation.** `groupByHost` groups the survivors
+   by registrable host. Each host keeps a persistent FIFO of due feed IDs: IDs
+   that are no longer due are dropped, an empty queue is seeded most-overdue
+   first, and newly due feeds are appended to the tail.
+4. **Host order.** Hosts are serviced in the order of their queue head's due
+   deadline, so the host with the most overdue feed starts first.
+5. **Drain.** `pollHost` pops the head of each host queue, fetches it, then sets
+   the host's next allowed time from `max(default host spacing, learned
+   rate-limit window)` and stops if anything remains. Different hosts run in
+   parallel up to `NF_POLL_WORKERS`.
 
-A feed can therefore be held by its own floor, by its host's spacing, or by a
-learned 429 window. The most restrictive one wins for that cycle; the next wake
-is the earliest of them, capped at `NF_POLL_INTERVAL` and floored at 30s.
+A feed can therefore be held by its own floor, by its position in the host
+queue, by its host's spacing, or by a learned 429 window. The most restrictive
+one wins for that cycle; the next wake is the earliest of them, capped at
+`NF_POLL_INTERVAL` and floored at 30s.
+
+### Example: the backlog of 44
+
+Forty-four feeds are already past their effective interval when the poller
+starts. They are spread over a few hosts.
+
+- On the first pass, each affected host's queue is empty, so it is seeded with
+  that host's due feeds sorted by due deadline. The 44 overdue feeds are at the
+  heads of their queues; a feed that is only just due is behind them.
+- Hosts are serviced most-overdue first. Each host drains one feed per spacing
+  window.
+- Feeds that become due while the backlog is draining are appended to their
+  host's tail. They do not jump the 44 already waiting.
+- A feed leaves the queue when it is polled and re-enters at the tail the next
+  time it is due.
+- If a host's demand exceeds what its spacing allows, the backlog still cannot
+  drain faster; the admin card marks that host overloaded.
 
 ### Example: 62 reddit feeds
 
@@ -380,13 +419,14 @@ With `NF_POLL_MIN_INTERVAL=1h`, the reddit plugin declaring 1h, and
 
 - Each feed is due only after its own last poll is at least 1h old (step 2).
   The plugin floor keeps that true even if the global value is lowered.
-- `reddit.com` is one host group, so one feed is fetched per spacing window
-  (step 4); the other 61 stay due.
-- The loop wakes 60s later, re-reads the due list, and fetches the
-  least-recently-polled feed whose floor has elapsed.
+- `reddit.com` is one host with one FIFO. It is seeded with all due reddit feeds,
+  most overdue first, then one feed is fetched per spacing window (step 5).
+- The loop wakes 60s later, re-reads the due list, and pops the next feed from
+  the same queue. A subreddit that becomes due again is appended to the tail.
 - Result: at most 60 reddit requests per hour, one per minute, so each of the 62
   feeds refreshes a little over hourly. The floor stops one subreddit from
-  spending the host's budget; the spacing stops the 62 from bursting together.
+  spending the host's budget; the queue and spacing stop the 62 from bursting
+  together.
 - If reddit returns `429` with `Retry-After: 600`, that feed gets
   `next_poll_at = now + 10m`, the host learns a 10m window, and every reddit feed
   waits for it. The 10m retry is allowed even though the feed floor is 1h: the
@@ -399,7 +439,7 @@ A feed that predates the change has `poll_interval_sec = 900` and was last polle
 
 - `ListFeedsDue` includes it, because its 900s interval elapsed.
 - `applyPollFloor` drops it and moves the wake to `last poll + 1h`, 40 minutes
-  away.
+  away. Its host queue does not include it until then.
 - The pass at that time fetches it. Nothing was written to the database.
 - If the admin later sets `NF_POLL_MIN_INTERVAL=15m`, that feed can use its
   stored 900s again without an edit; an adaptive feed converges when its next
@@ -422,12 +462,12 @@ and was polled at 14:30.
 Host A has one feed and host B has ten, both with 1h floors, and
 `NF_POLL_WORKERS=4`.
 
-- Both groups run in parallel in the same pass.
-- Host A's single feed is never delayed by spacing, because it is the group's
-  last feed.
-- Host B fetches one feed, then waits 60s; its remaining due feeds rotate across
-  later passes.
-- A slow or 429-ing host B does not stop host A: the groups are independent, and
+- Both host queues are reconciled in the same pass and run in parallel.
+- Host A's single feed is never delayed by spacing, because it is the last item
+  in its queue.
+- Host B fetches one feed, then waits 60s; its queue drains one item per window,
+  and feeds that become due meanwhile are appended to the tail.
+- A slow or 429-ing host B does not stop host A: the hosts are independent, and
   the wake is the earliest deadline across them.
 
 ## Failures and their effects
@@ -488,7 +528,7 @@ one feed, the spacing limits a whole registrable host, and both apply.
 
 | Concern | File |
 | --- | --- |
-| Background loop, per-host pacing, rotation, dynamic wake, `scheduleNextPoll`, `applyPollFloor`, `feedFloorSec`, `MinPollSeconds` | `internal/poller/poller.go` |
+| Background loop, per-host FIFO queue, pacing, dynamic wake, `scheduleNextPoll`, `applyPollFloor`, `dueDeadline`, `feedFloorSec`, `MinPollSeconds` | `internal/poller/poller.go` |
 | Adaptive interval, time-of-day detection (`preferredFetchTime`), stale thresholds | `internal/poller/interval.go` |
 | Rate-limit detection, `Retry-After` / `x-ratelimit-reset` parsing | `internal/feedparse/ratelimit.go` |
 | Generic fetch: conditional GET, parse, pagination cursor | `internal/feedparse/feedparse.go` |

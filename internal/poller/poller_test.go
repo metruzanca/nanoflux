@@ -1736,3 +1736,111 @@ func TestMinPollSeconds(t *testing.T) {
 		t.Fatalf("other floor = %d, want 3600", got)
 	}
 }
+
+// A host queue is seeded by due deadline (most overdue relative to its own
+// interval first), then keeps its order: feeds that become due later are
+// appended at the tail even when they are more overdue than what is queued.
+func TestReconcileQueuesPriorityAndFIFO(t *testing.T) {
+	p := New(newPollerStore(t), time.Minute, 1)
+	now := time.Now().UTC()
+	ts := func(d time.Duration) string { return db.FormatTime(now.Add(d)) }
+
+	a := store.Feed{ID: 1, FeedURL: "https://example.com/a", PollIntervalSec: 3600, LastPolledAt: ts(-2 * time.Hour)}   // overdue 1h
+	b := store.Feed{ID: 2, FeedURL: "https://example.com/b", PollIntervalSec: 34200, LastPolledAt: ts(-10 * time.Hour)} // overdue 0.5h
+	c := store.Feed{ID: 3, FeedURL: "https://example.com/c", PollIntervalSec: 3600, LastPolledAt: ts(-100 * time.Hour)} // newly due, very overdue
+
+	plans := p.reconcileQueues([]store.Feed{a, b})
+	if len(plans) != 1 {
+		t.Fatalf("plans = %d, want 1", len(plans))
+	}
+	if got := fmt.Sprint(plans[0].queue.ids); got != "[1 2]" {
+		t.Fatalf("seeded queue = %s, want [1 2] (A is more overdue than B)", got)
+	}
+
+	plans = p.reconcileQueues([]store.Feed{a, b, c})
+	if got := fmt.Sprint(plans[0].queue.ids); got != "[1 2 3]" {
+		t.Fatalf("queue after new arrival = %s, want [1 2 3] (new feeds append)", got)
+	}
+
+	// A was polled and is no longer due. B and C keep their relative order.
+	plans = p.reconcileQueues([]store.Feed{b, c})
+	if got := fmt.Sprint(plans[0].queue.ids); got != "[2 3]" {
+		t.Fatalf("queue after A left = %s, want [2 3]", got)
+	}
+
+	// Nothing is due: the host queue is dropped.
+	p.reconcileQueues(nil)
+	if len(p.queues) != 0 {
+		t.Fatalf("queues = %d, want all cleared", len(p.queues))
+	}
+}
+
+// Hosts are serviced in the order of their queue head's deadline, so a host
+// holding the most overdue feed starts before a host that is only just due.
+func TestReconcileQueuesOrdersHostsByHead(t *testing.T) {
+	p := New(newPollerStore(t), time.Minute, 1)
+	now := time.Now().UTC()
+	ts := func(d time.Duration) string { return db.FormatTime(now.Add(d)) }
+
+	x := store.Feed{ID: 1, FeedURL: "https://slow.example/feed", PollIntervalSec: 3600, LastPolledAt: ts(-90 * time.Minute)}
+	y := store.Feed{ID: 2, FeedURL: "https://behind.example/feed", PollIntervalSec: 3600, LastPolledAt: ts(-10 * time.Hour)}
+
+	plans := p.reconcileQueues([]store.Feed{x, y})
+	if len(plans) != 2 {
+		t.Fatalf("plans = %d, want 2", len(plans))
+	}
+	if plans[0].host != "behind.example" || plans[1].host != "slow.example" {
+		t.Fatalf("host order = %q then %q, want behind.example then slow.example", plans[0].host, plans[1].host)
+	}
+}
+
+// The host queue survives cycles: a feed that becomes due while the queue is
+// draining is appended to the tail, even when it is more overdue than what is
+// already queued.
+func TestPollDueHostQueueAppendsNewFeedAtBottom(t *testing.T) {
+	st := newPollerStore(t)
+	u, _ := st.Users.ByUsername("alice")
+	a, _ := st.Authors.Create(u.ID, "A", "", "")
+
+	var order []string
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		order = append(order, r.URL.Path)
+		mu.Unlock()
+		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title></channel></rss>`))
+	}))
+	defer srv.Close()
+
+	fa, _ := st.Feeds.Create(u.ID, a.ID, "A", srv.URL+"/a", "", "", 900)
+	fb, _ := st.Feeds.Create(u.ID, a.ID, "B", srv.URL+"/b", "", "", 900)
+	st.Feeds.SetPollMeta(fa.ID, "", "", db.FormatTime(time.Now().Add(-40*time.Minute)), "")
+	st.Feeds.SetPollMeta(fb.ID, "", "", db.FormatTime(time.Now().Add(-20*time.Minute)), "")
+
+	p := New(st, time.Minute, 1)
+	p.SetHostSpacing(time.Hour)
+	if _, err := p.PollDue(context.Background()); err != nil {
+		t.Fatalf("PollDue cycle 1: %v", err)
+	}
+
+	// A new feed that is already very overdue arrives while B is still queued.
+	fc, _ := st.Feeds.Create(u.ID, a.ID, "C", srv.URL+"/c", "", "", 900)
+	st.Feeds.SetPollMeta(fc.ID, "", "", db.FormatTime(time.Now().Add(-2*time.Hour)), "")
+
+	// Clear the host pacing so the next cycle can run immediately.
+	host := store.RegistrableDomain(srv.URL + "/x")
+	p.hostMu.Lock()
+	delete(p.hostNextHit, host)
+	p.hostMu.Unlock()
+
+	if _, err := p.PollDue(context.Background()); err != nil {
+		t.Fatalf("PollDue cycle 2: %v", err)
+	}
+
+	mu.Lock()
+	got := append([]string(nil), order...)
+	mu.Unlock()
+	if fmt.Sprint(got) != "[/a /b]" {
+		t.Fatalf("fetch order = %v, want [/a /b] (C must wait behind the queue)", got)
+	}
+}

@@ -95,6 +95,64 @@ type Poller struct {
 	hostMu      sync.Mutex
 	hostWindow  map[string]time.Duration
 	hostNextHit map[string]time.Time
+
+	// queues holds each registrable host's FIFO of due feed IDs. It survives
+	// across cycles: a feed is appended when it becomes due and keeps its place
+	// until polled, so a feed that becomes due again cannot jump ahead of the
+	// backlog. Seeded most-overdue-first when a host's queue is empty. In-memory
+	// and rebuilt on restart. cycleMu serializes pollDue so the queue map is
+	// only touched by one cycle at a time.
+	queues  map[string]*hostQueue
+	cycleMu sync.Mutex
+}
+
+// hostQueue is one registrable host's FIFO of due feed IDs. IDs are immutable
+// feed identities; the fresh feed snapshot is looked up in the cycle's due map.
+type hostQueue struct {
+	ids []int64
+	set map[int64]struct{}
+}
+
+func newHostQueue() *hostQueue {
+	return &hostQueue{set: map[int64]struct{}{}}
+}
+
+func (q *hostQueue) add(id int64) {
+	if _, ok := q.set[id]; ok {
+		return
+	}
+	q.set[id] = struct{}{}
+	q.ids = append(q.ids, id)
+}
+
+func (q *hostQueue) pop() (int64, bool) {
+	if len(q.ids) == 0 {
+		return 0, false
+	}
+	id := q.ids[0]
+	q.ids = q.ids[1:]
+	delete(q.set, id)
+	return id, true
+}
+
+func (q *hostQueue) len() int { return len(q.ids) }
+
+// queueHost is the map key for a feed's host queue. A feed whose host cannot
+// be derived gets its own bucket keyed by URL, so it never blocks another feed.
+func queueHost(f store.Feed) string {
+	if host := store.RegistrableDomain(f.FeedURL); host != "" {
+		return host
+	}
+	return "\x00" + f.FeedURL
+}
+
+// hostPlan is one host's ready queue for a cycle: the FIFO, the fresh feed
+// snapshots it refers to, and the head's due deadline for scheduling order.
+type hostPlan struct {
+	host  string
+	queue *hostQueue
+	due   map[int64]store.Feed
+	head  time.Time
 }
 
 func New(st *store.Store, interval time.Duration, workers int) *Poller {
@@ -109,6 +167,7 @@ func New(st *store.Store, interval time.Duration, workers int) *Poller {
 		hostSpacing: defaultHostSpacing,
 		hostWindow:  map[string]time.Duration{},
 		hostNextHit: map[string]time.Time{},
+		queues:      map[string]*hostQueue{},
 	}
 }
 
@@ -269,12 +328,16 @@ func (p *Poller) PollDue(ctx context.Context) (int, error) {
 // pollDue fetches due feeds and returns how many new items were stored plus the
 // earliest time a skipped (paced) host may next be hit (zero when none).
 //
-// Feeds are grouped by registrable host and each host's feeds are processed
-// oldest-poll-first (a fair rotation), while different hosts run in parallel up
-// to the worker limit. A host that has rate-limited the poller is spaced by its
-// window; its remaining feeds stay due and are picked up when the window
-// clears.
+// Each registrable host has a persistent FIFO of due feeds. An empty queue is
+// seeded most-overdue-first; while it is non-empty, newly due feeds are appended
+// to the tail. Hosts are serviced in queue-head deadline order, each queue drained
+// one feed per spacing window. Different hosts run in parallel up to the worker
+// limit. A host that has rate-limited the poller keeps its queue intact and
+// resumes when the window clears.
 func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
+	p.cycleMu.Lock()
+	defer p.cycleMu.Unlock()
+
 	now := db.Now()
 	feeds, err := p.store.Feeds.ListDue(now)
 	if err != nil {
@@ -290,6 +353,7 @@ func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
 		}
 	}
 	if len(feeds) == 0 {
+		p.clearQueues()
 		return 0, wake, nil
 	}
 
@@ -303,10 +367,18 @@ func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
 		wake = floorWake
 	}
 	if len(feeds) == 0 {
+		p.clearQueues()
 		return 0, wake, nil
 	}
 
-	groups := groupByHost(feeds)
+	// Reconcile each host's persistent FIFO with the feeds that are due now,
+	// then order hosts by how overdue their queue head is. This is the ordering
+	// that drains the current backlog before feeds that become due later.
+	plans := p.reconcileQueues(feeds)
+	queued := 0
+	for _, plan := range plans {
+		queued += plan.queue.len()
+	}
 
 	var (
 		wg  sync.WaitGroup
@@ -314,28 +386,37 @@ func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
 		mu  sync.Mutex
 		sum cycleSummary
 	)
-	for _, group := range groups {
+	for _, plan := range plans {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(group []store.Feed) {
+		go func(plan hostPlan) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			res := p.pollGroup(ctx, group)
+			res := p.pollHost(ctx, plan)
 			mu.Lock()
 			sum.merge(res)
 			if !res.wake.IsZero() && (wake.IsZero() || res.wake.Before(wake)) {
 				wake = res.wake
 			}
 			mu.Unlock()
-		}(group)
+		}(plan)
 	}
 	wg.Wait()
+	// Pick up any deadline created during the cycle (a rate-limit backoff or a
+	// newly planned time-of-day fetch), so the loop wakes at it instead of the
+	// base interval even when the paced feed was the last one in its queue.
+	if earliest, err := p.store.Feeds.EarliestNextPollAt(db.Now()); err == nil && earliest != "" {
+		if t, err := db.ParseTime(earliest); err == nil && (wake.IsZero() || t.Before(wake)) {
+			wake = t
+		}
+	}
 	// One line per cycle, regardless of whether new items arrived, so logs alone
 	// show how many feeds ran, how many were paced, and what the next wake is.
 	log.Info("poll cycle",
 		"feeds", len(feeds),
 		"floored", due-len(feeds),
-		"hosts", len(groups),
+		"queued", queued,
+		"hosts", len(plans),
 		"fetched", sum.fetched,
 		"new_items", sum.newItems,
 		"rate_limited", sum.rateLimited,
@@ -343,6 +424,123 @@ func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
 		"next_wake", wakeString(wake),
 	)
 	return sum.newItems, wake, nil
+}
+
+// clearQueues drops every host queue. It runs when no feed is due, at which
+// point no queued feed can be eligible either (a queued feed is only dropped
+// from a cycle by not being due).
+func (p *Poller) clearQueues() {
+	for host := range p.queues {
+		delete(p.queues, host)
+	}
+}
+
+// reconcileQueues updates each host's FIFO against the current due set and
+// returns the hosts in the order they should be serviced.
+//
+//   - A queued feed that is no longer due (polled, disabled, deleted, floor-held,
+//     rate-limited into the future, or moved to another host) is dropped.
+//   - A host whose queue is empty is seeded with all of its due feeds, sorted by
+//     due deadline ascending, so the most overdue is at the head.
+//   - A non-empty queue keeps its order; feeds that became due since the last
+//     cycle are sorted by deadline among themselves and appended to the tail.
+//
+// The result is a stable FIFO per host: the current backlog drains first and a
+// feed that becomes due later cannot jump ahead of it.
+func (p *Poller) reconcileQueues(feeds []store.Feed) []hostPlan {
+	groups := groupByHost(feeds)
+	byHost := make(map[string][]store.Feed, len(groups))
+	for _, group := range groups {
+		byHost[queueHost(group[0])] = group
+	}
+
+	// Drop queues for hosts with nothing due, and any queued ID that is no
+	// longer in its host's due set.
+	for host, q := range p.queues {
+		group, ok := byHost[host]
+		if !ok {
+			delete(p.queues, host)
+			continue
+		}
+		present := make(map[int64]struct{}, len(group))
+		for _, f := range group {
+			present[f.ID] = struct{}{}
+		}
+		kept := q.ids[:0]
+		q.set = make(map[int64]struct{}, len(q.ids))
+		for _, id := range q.ids {
+			if _, ok := present[id]; ok {
+				kept = append(kept, id)
+				q.set[id] = struct{}{}
+			}
+		}
+		q.ids = kept
+	}
+
+	plans := make([]hostPlan, 0, len(byHost))
+	for host, group := range byHost {
+		q := p.queues[host]
+		if q == nil {
+			q = newHostQueue()
+			p.queues[host] = q
+		}
+		// New arrivals go after everything already queued. Sort the batch by
+		// deadline so the most overdue of the new feeds still goes first.
+		fresh := make([]store.Feed, 0, len(group))
+		for _, f := range group {
+			if _, ok := q.set[f.ID]; !ok {
+				fresh = append(fresh, f)
+			}
+		}
+		sort.SliceStable(fresh, func(i, j int) bool {
+			return p.dueDeadline(fresh[i]).Before(p.dueDeadline(fresh[j]))
+		})
+		for _, f := range fresh {
+			q.add(f.ID)
+		}
+
+		due := make(map[int64]store.Feed, len(group))
+		for _, f := range group {
+			due[f.ID] = f
+		}
+		plan := hostPlan{host: host, queue: q, due: due}
+		if len(q.ids) > 0 {
+			if f, ok := due[q.ids[0]]; ok {
+				plan.head = p.dueDeadline(f)
+			}
+		}
+		plans = append(plans, plan)
+	}
+
+	sort.SliceStable(plans, func(i, j int) bool {
+		return plans[i].head.Before(plans[j].head)
+	})
+	return plans
+}
+
+// dueDeadline is when a feed was expected to be polled: its explicit
+// next_poll_at (rate-limit retry or clock-aligned schedule) when set, otherwise
+// last poll (or creation) plus the effective interval. Earlier means more
+// overdue, which is the priority used to seed a host queue.
+func (p *Poller) dueDeadline(f store.Feed) time.Time {
+	if f.NextPollAt != "" {
+		if t, err := db.ParseTime(f.NextPollAt); err == nil {
+			return t
+		}
+	}
+	ref := f.LastPolledAt
+	if ref == "" {
+		ref = f.CreatedAt
+	}
+	t, err := db.ParseTime(ref)
+	if err != nil {
+		return time.Time{}
+	}
+	interval := f.PollIntervalSec
+	if floor := p.feedFloorSec(f); floor > interval {
+		interval = floor
+	}
+	return t.Add(time.Duration(interval) * time.Second)
 }
 
 // applyPollFloor returns the feeds whose effective floor has elapsed and the
@@ -408,27 +606,29 @@ type cycleResult struct {
 	wake        time.Time
 }
 
-// pollGroup processes one host's due feeds, oldest-polled first, pacing the host
-// when it has a learned rate-limit window. It returns this group's contribution
-// to the cycle summary and the earliest time this host may next be hit (zero
-// when it was not paced).
-func (p *Poller) pollGroup(ctx context.Context, group []store.Feed) cycleResult {
-	// Fair rotation: least-recently-polled first, so every feed takes a turn.
-	sort.SliceStable(group, func(i, j int) bool {
-		return group[i].LastPolledAt < group[j].LastPolledAt
-	})
-
-	host := store.RegistrableDomain(group[0].FeedURL)
+// pollHost drains one host's FIFO until the host needs to be spaced or is
+// cooling. The queue is left in place when the host is not ready, so the same
+// order resumes when the window clears. A feed is removed from the queue when it
+// is polled; it re-enters at the tail the next time it becomes due.
+func (p *Poller) pollHost(ctx context.Context, plan hostPlan) cycleResult {
 	var res cycleResult
-	for i, f := range group {
+	for plan.queue.len() > 0 {
 		if ctx.Err() != nil {
 			return res
 		}
-		// A host cooling from a rate limit — learned by the poller or by a
-		// plugin — is not hit; its feeds stay due until the window clears.
+		id := plan.queue.ids[0]
+		f, ok := plan.due[id]
+		if !ok {
+			// Defensive: reconciliation should have removed it.
+			plan.queue.pop()
+			continue
+		}
+		host := store.RegistrableDomain(f.FeedURL)
+		// A host cooling from a rate limit, learned by the poller or by a
+		// plugin, is not hit; its queue stays intact until the window clears.
 		if p.cool != nil && p.cool.Cooling(f.FeedURL) {
 			if until, ok := p.cool.Until(f.FeedURL); ok {
-				remaining := len(group) - i
+				remaining := plan.queue.len()
 				res.paced += remaining
 				res.wake = until
 				log.Debug("host cooling, skipping",
@@ -440,10 +640,10 @@ func (p *Poller) pollGroup(ctx context.Context, group []store.Feed) cycleResult 
 			}
 		}
 		if host != "" && !p.hostReady(host, time.Now()) {
-			// The host is inside its pacing window: leave the remaining feeds
-			// due and wake when it clears.
+			// The host is inside its pacing window: leave the queue in place and
+			// wake when it clears.
 			until := p.hostNextHitTime(host)
-			remaining := len(group) - i
+			remaining := plan.queue.len()
 			res.paced += remaining
 			res.wake = until
 			log.Debug("host paced, skipping",
@@ -453,6 +653,7 @@ func (p *Poller) pollGroup(ctx context.Context, group []store.Feed) cycleResult 
 			)
 			return res
 		}
+		plan.queue.pop()
 		got, err := p.PollOne(ctx, f)
 		res.fetched++
 		res.newItems += got
@@ -467,19 +668,19 @@ func (p *Poller) pollGroup(ctx context.Context, group []store.Feed) cycleResult 
 			}
 		}
 		// Space the host's next request (learned rate-limit window wins over
-		// the default spacing). Only stop early when another feed is waiting:
-		// the group's last feed must not sit out the window it just set, so a
-		// single-feed host is never delayed.
-		if host != "" && i < len(group)-1 {
+		// the default spacing). Only wait when another feed is still queued: the
+		// last feed must not sit out the window it just set, so a single-feed
+		// host is never delayed.
+		if plan.queue.len() > 0 {
 			if w := p.effectiveSpacing(host); w > 0 {
 				next := time.Now().Add(w)
 				p.setHostNextHit(host, next)
-				res.paced += len(group) - i - 1
+				res.paced += plan.queue.len()
 				res.wake = next
 				log.Debug("host spaced",
 					"host", host, "spacing", w.Round(time.Second),
 					"until", next.Round(time.Second),
-					"skipped", len(group)-i-1,
+					"skipped", plan.queue.len(),
 				)
 				return res
 			}
@@ -505,10 +706,7 @@ func groupByHost(feeds []store.Feed) [][]store.Feed {
 	byHost := map[string][]store.Feed{}
 	var order []string
 	for _, f := range feeds {
-		host := store.RegistrableDomain(f.FeedURL)
-		if host == "" {
-			host = "\x00" + f.FeedURL // unique bucket for an unparseable host
-		}
+		host := queueHost(f)
 		if _, ok := byHost[host]; !ok {
 			order = append(order, host)
 		}
