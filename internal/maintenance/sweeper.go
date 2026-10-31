@@ -20,6 +20,9 @@ const DefaultInterval = 24 * time.Hour
 type Sweeper struct {
 	store    *store.Store
 	interval time.Duration
+	// progressRetention drops media playback positions not updated within it.
+	// Zero disables the sweep.
+	progressRetention time.Duration
 }
 
 // New builds a Sweeper. A non-positive interval falls back to DefaultInterval.
@@ -28,6 +31,12 @@ func New(st *store.Store, interval time.Duration) *Sweeper {
 		interval = DefaultInterval
 	}
 	return &Sweeper{store: st, interval: interval}
+}
+
+// SetProgressRetention sets how long a saved playback position is kept. Zero
+// disables the sweep; a per-user row cap still applies on every write.
+func (s *Sweeper) SetProgressRetention(d time.Duration) {
+	s.progressRetention = d
 }
 
 // Run sweeps once, then every interval until ctx is done.
@@ -67,6 +76,14 @@ func (s *Sweeper) Sweep() {
 		}
 		if n > 0 {
 			log.Info("auto-read sweep marked items read", "user_id", u.ID, "count", n, "days", u.AutoReadAfterDays)
+		}
+	}
+	if s.progressRetention > 0 {
+		n, err := s.store.Progress.DeleteOlderThan(time.Now().Add(-s.progressRetention))
+		if err != nil {
+			log.Error("progress sweep", "err", err)
+		} else if n > 0 {
+			log.Info("progress sweep removed stale positions", "count", n, "retention", s.progressRetention)
 		}
 	}
 }

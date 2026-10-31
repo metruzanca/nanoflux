@@ -625,12 +625,13 @@ type itemViewData struct {
 	FeedIsSystem  bool                    // true for a saved page (hidden feed/author, no internal links)
 	Attribution   []store.AttributionPart // source line from the item's decoration; author/feed when empty
 	Enclosures    []store.Enclosure
-	ShareToken    string // public share token, "" when the item is not shared
-	Timezone      string // user's IANA timezone, for relative timestamps in templates
-	Favorite      bool   // drives the modal's favorite toggle
-	Bookmark      bool   // drives the modal's bookmark toggle
-	Read          bool   // drives the modal's read/unread toggle (true after auto-mark)
-	ProxyImages   bool   // route remote images through /img (authenticated modal only)
+	ShareToken    string        // public share token, "" when the item is not shared
+	Timezone      string        // user's IANA timezone, for relative timestamps in templates
+	Favorite      bool          // drives the modal's favorite toggle
+	Bookmark      bool          // drives the modal's bookmark toggle
+	Read          bool          // drives the modal's read/unread toggle (true after auto-mark)
+	ProxyImages   bool          // route remote images through /img (authenticated modal only)
+	Progress      *itemProgress // saved playback position; nil when not resumable
 }
 
 // imgSrc returns a remote image URL as it should be rendered: proxied through
@@ -746,6 +747,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	if data.EmbedSrc == "" {
 		data.EmbedSrc = s.resolveMediaEmbed(ctx, data)
 	}
+	s.loadProgress(u.ID, &it, &data, requestBaseURL(r))
 	if sh, err := s.store.Shares.ByItem(u.ID, it.ID); err == nil {
 		data.ShareToken = sh.Token
 	}

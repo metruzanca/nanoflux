@@ -467,6 +467,8 @@ function openItemData(id) {
   if (!wasOpen) savedPageTitle = document.title;
   currentItemId = id;
   var body = document.getElementById('item-dialog-body');
+  // Stop the previous item's player timers before its markup is replaced.
+  if (window.nanofluxDestroyProgress) window.nanofluxDestroyProgress(itemDialog);
   body.innerHTML = '<p class="muted">loading…</p>';
   var slot = document.getElementById('item-dialog-controls');
   if (slot) slot.replaceChildren();
@@ -487,6 +489,7 @@ function openItemData(id) {
       htmx.process(document.getElementById('item-dialog'));
       // The body was injected via innerHTML, so initialize any HLS video in it.
       if (window.nanofluxInitHLS) window.nanofluxInitHLS(itemDialog);
+      if (window.nanofluxInitProgress) window.nanofluxInitProgress(itemDialog);
       // Focus the scrollable body so the browser's arrow keys scroll the post
       // (rather than the dialog's first button grabbing focus).
       body.focus();
@@ -517,6 +520,7 @@ if (itemDialog) {
     if (savedPageTitle !== null) { document.title = savedPageTitle; savedPageTitle = null; }
     // Stop any HLS video's network activity once the modal is gone.
     if (window.nanofluxDestroyHLS) window.nanofluxDestroyHLS(itemDialog);
+    if (window.nanofluxDestroyProgress) window.nanofluxDestroyProgress(itemDialog);
   });
   // The item dialog closes only via Esc (native) or the ✕ button. A click on
   // the backdrop deliberately does NOT close it: an accidental outside click

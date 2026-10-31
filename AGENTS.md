@@ -700,6 +700,36 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
   implementation notes and site-specific invariants belong in the plugin
   repository's own `AGENTS.md`.
 
+### Resume playback position
+
+Watching is resumable per user, server-side: a partially watched video reopens at
+the saved position from any login or device. Nothing uses localStorage.
+
+- `item_progress` (schemaV56) is keyed `(user_id, progress_key)`. The key is the
+  media identity, not the item: a plugin can supply one (for example a YouTube
+  video id) so the same video stored through two items shares a position, and a
+  normal enclosure falls back to `item:<id>`. `item_id` is informational and is
+  deliberately **not** a foreign key, so deleting the item that carried the media
+  keeps a position another item can still resume.
+- A plugin makes media resumable with the pure `PlaybackProvider` capability
+  (`CapPlayback`, matched on the item's link): `PlaybackFor(link)` returns the
+  media key and a core player adapter name. The registry prefixes the key with
+  the plugin name (`plugin:<name>:<key>`) and memoizes the answer per link, since
+  it runs on every render and every progress write. Core owns the adapters:
+  `native` (a `<video>`/`<audio>` element, including hls.js) and `youtube`
+  (`web.ResumeEmbedSrc` adds `start`/`enablejsapi`/`origin`; `media-progress.js`
+  drives it over postMessage, so no third-party script is added to `script-src`).
+- `loadProgress` attaches `itemProgress` to the authenticated item view only; the
+  public share page has no user, so it never resumes or writes.
+- `POST /items/{id}/progress` upserts. Restoration is seamless: the modal renders
+  no "resume at" label or reset control, and a user who wants to start over does
+  so in the player itself. A write under 10s clears the row and a finish (within
+  20s or the last 5%) deletes it, so a completed video starts over. Every write
+  trims the user to `MaxProgressPerUser` (200) rows.
+- `maintenance.Sweeper` also deletes rows older than `NF_PROGRESS_RETENTION`
+  (default 90 days; 0 disables the sweep). `CloneUser` copies progress, remapping
+  item-scoped keys, so a demo account inherits the seed's positions.
+
 ### Item media duration
 
 - `items.duration_sec` (schemaV37) is a media item's runtime in seconds, NULL

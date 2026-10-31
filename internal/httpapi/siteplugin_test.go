@@ -219,7 +219,7 @@ func (fakeVideoPlugin) Match(u *url.URL, cap pluginapi.Capability) bool {
 		return false
 	}
 	switch cap {
-	case pluginapi.CapRender, pluginapi.CapDecorate:
+	case pluginapi.CapRender, pluginapi.CapDecorate, pluginapi.CapPlayback:
 		return fakeVideoID(u) != ""
 	default:
 		return false
@@ -241,6 +241,15 @@ func (fakeVideoPlugin) Render(_ context.Context, req pluginapi.RenderRequest, _ 
 		return pluginapi.Media{}, nil
 	}
 	return pluginapi.Media{EmbedSrc: "https://www.youtube.com/embed/" + id}, nil
+}
+
+func (fakeVideoPlugin) PlaybackFor(link string) pluginapi.PlaybackInfo {
+	u, _ := url.Parse(link)
+	id := fakeVideoID(u)
+	if id == "" {
+		return pluginapi.PlaybackInfo{}
+	}
+	return pluginapi.PlaybackInfo{Key: id, Player: "youtube"}
 }
 
 func (fakeVideoPlugin) Decorate(_ context.Context, req pluginapi.DecorateRequest) ([]pluginapi.Decorated, error) {

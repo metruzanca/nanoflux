@@ -275,6 +275,15 @@ func (s *grpcFetcherServer) Icon(_ context.Context, req *pb.IconRequest) (*pb.Ic
 	return &pb.IconResponse{MimeType: mime, Data: data}, nil
 }
 
+func (s *grpcFetcherServer) Playback(_ context.Context, req *pb.PlaybackRequest) (*pb.PlaybackResponse, error) {
+	pp, ok := s.impl.(PlaybackProvider)
+	if !ok {
+		return &pb.PlaybackResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	info := pp.PlaybackFor(req.Link)
+	return &pb.PlaybackResponse{Key: info.Key, Player: info.Player}, nil
+}
+
 func (s *grpcFetcherServer) FeedAction(ctx context.Context, req *pb.FeedActionRequest) (*pb.FeedActionResponse, error) {
 	fa, ok := s.impl.(FeedAdmin)
 	if !ok {
@@ -575,6 +584,14 @@ func (c *grpcFetcherClient) Icon(rawURL string) (string, []byte) {
 		return "", nil
 	}
 	return resp.MimeType, resp.Data
+}
+
+func (c *grpcFetcherClient) PlaybackFor(link string) PlaybackInfo {
+	resp, err := c.client.Playback(context.Background(), &pb.PlaybackRequest{Link: link})
+	if err != nil || resp.Error != nil {
+		return PlaybackInfo{}
+	}
+	return PlaybackInfo{Key: resp.Key, Player: resp.Player}
 }
 
 func (c *grpcFetcherClient) FeedFields(feedURL string) []Field {

@@ -66,6 +66,7 @@ var migrations = []migration{
 	{53, schemaV53},
 	{54, schemaV54},
 	{55, schemaV55},
+	{56, schemaV56},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -864,6 +865,24 @@ AND NOT EXISTS (
         END
       )
 );
+`
+
+// schemaV56 adds per-user media playback positions. A row is keyed by the
+// media identity, not the item, so the same video stored through two items (a
+// feed item and a saved page) shares one position. item_id is informational and
+// deliberately not a foreign key: deleting the item that carried the media must
+// not lose a position that another item can still resume.
+const schemaV56 = `
+CREATE TABLE item_progress (
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    progress_key TEXT    NOT NULL,
+    item_id      INTEGER NOT NULL DEFAULT 0,
+    position_sec INTEGER NOT NULL,
+    duration_sec INTEGER NOT NULL DEFAULT 0,
+    updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, progress_key)
+);
+CREATE INDEX idx_item_progress_updated ON item_progress(user_id, updated_at);
 `
 
 // Migrate applies any pending migrations in order, recording each in

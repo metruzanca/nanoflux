@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // CloneUser copies a seed account into a brand-new non-admin user, remapping
@@ -110,6 +111,9 @@ func (s *Store) CloneUser(seedID int64, newUsername, passwordHash, expiresAt str
 		return User{}, err
 	}
 	if err := cloneViewPrefs(ctx, tx, seedID, newID); err != nil {
+		return User{}, err
+	}
+	if err := cloneProgress(ctx, tx, seedID, newID, itemMap); err != nil {
 		return User{}, err
 	}
 	if err := remapHomeConfig(ctx, tx, newID, homeConfig.String, collectionMap); err != nil {
@@ -793,6 +797,54 @@ func cloneViewPrefs(ctx context.Context, tx *sql.Tx, seedID, newID int64) error 
 			INSERT INTO user_view_prefs (user_id, scope, mode) VALUES (?, ?, ?)
 			ON CONFLICT (user_id, scope) DO NOTHING`, newID, p.scope, p.mode); err != nil {
 			return fmt.Errorf("clone view pref insert: %w", err)
+		}
+	}
+	return nil
+}
+
+// cloneProgress copies the seed's saved playback positions. An item-scoped key
+// ("item:<id>") is remapped to the cloned item; a plugin key carries no item
+// reference and is copied unchanged.
+func cloneProgress(ctx context.Context, tx *sql.Tx, seedID, newID int64, itemMap map[int64]int64) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT progress_key, item_id, position_sec, duration_sec
+		FROM item_progress WHERE user_id = ?`, seedID)
+	if err != nil {
+		return fmt.Errorf("clone progress select: %w", err)
+	}
+	defer rows.Close()
+	type row struct {
+		key      string
+		itemID   int64
+		position int
+		duration int
+	}
+	var rowsOut []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.key, &r.itemID, &r.position, &r.duration); err != nil {
+			return fmt.Errorf("clone progress scan: %w", err)
+		}
+		rowsOut = append(rowsOut, r)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, r := range rowsOut {
+		key := r.key
+		itemID := r.itemID
+		if newItem, ok := itemMap[itemID]; ok {
+			itemID = newItem
+			if strings.HasPrefix(key, "item:") {
+				key = "item:" + strconv.FormatInt(newItem, 10)
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO item_progress (user_id, progress_key, item_id, position_sec, duration_sec)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT (user_id, progress_key) DO NOTHING`,
+			newID, key, itemID, r.position, r.duration); err != nil {
+			return fmt.Errorf("clone progress insert: %w", err)
 		}
 	}
 	return nil

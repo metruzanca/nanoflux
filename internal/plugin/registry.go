@@ -26,11 +26,24 @@ type Registry struct {
 	// depend on plugin configuration, so Configure clears it.
 	minMu    sync.Mutex
 	minCache map[string]time.Duration
+
+	// playMu guards playCache, which memoizes the per-link playback facts.
+	// PlaybackFor is pure, so a link's answer never changes until the plugin
+	// set or configuration does.
+	playMu    sync.Mutex
+	playCache map[string]playbackTarget
+}
+
+// playbackTarget is a registry-resolved progress key and core player adapter.
+// The key carries the owning plugin's name so two plugins cannot collide.
+type playbackTarget struct {
+	key    string
+	player string
 }
 
 // NewRegistry returns an empty Registry.
 func NewRegistry() *Registry {
-	return &Registry{minCache: map[string]time.Duration{}}
+	return &Registry{minCache: map[string]time.Duration{}, playCache: map[string]playbackTarget{}}
 }
 
 // RegisterExternal adds a plugin loaded over gRPC.
@@ -46,6 +59,7 @@ func (r *Registry) RegisterExternal(f pluginapi.Fetcher) {
 	r.external = append(r.external, f)
 	r.minPoll = append(r.minPoll, m.MinPollInterval)
 	r.clearMinPollCache()
+	r.clearPlaybackCache()
 	log.Info("registered external plugin", "plugin", describe(f))
 }
 
@@ -377,6 +391,7 @@ func (r *Registry) Configure(name string, values map[string]string) bool {
 	}
 	c.Configure(values)
 	r.clearMinPollCache()
+	r.clearPlaybackCache()
 	return true
 }
 
@@ -421,6 +436,58 @@ func (r *Registry) MinPollInterval(rawURL string) time.Duration {
 	r.minCache[rawURL] = floor
 	r.minMu.Unlock()
 	return floor
+}
+
+// PlaybackFor returns the resumable media facts for an item link: a progress
+// key prefixed with the owning plugin's name, and the core player adapter that
+// drives it. Empty values mean the host does not track the item's playback.
+// Gated by CapPlayback and pure, so the answer is memoized per link.
+func (r *Registry) PlaybackFor(rawURL string) (key, player string) {
+	if r.Empty() || rawURL == "" {
+		return "", ""
+	}
+	r.playMu.Lock()
+	if t, ok := r.playCache[rawURL]; ok {
+		r.playMu.Unlock()
+		return t.key, t.player
+	}
+	var target playbackTarget
+	if u, err := url.Parse(rawURL); err == nil && u.Host != "" {
+		u.Host = strings.ToLower(u.Host)
+		for _, f := range r.external {
+			if !f.Match(u, pluginapi.CapPlayback) {
+				continue
+			}
+			pp, ok := f.(pluginapi.PlaybackProvider)
+			if !ok {
+				continue
+			}
+			info := pp.PlaybackFor(rawURL)
+			if info.Key == "" || info.Player == "" || len(info.Key) > 256 || len(info.Player) > 32 {
+				continue
+			}
+			name := f.Meta().Name
+			if name == "" {
+				continue
+			}
+			target = playbackTarget{key: "plugin:" + name + ":" + info.Key, player: info.Player}
+			break
+		}
+	}
+	if r.playCache == nil {
+		r.playCache = map[string]playbackTarget{}
+	}
+	r.playCache[rawURL] = target
+	r.playMu.Unlock()
+	return target.key, target.player
+}
+
+// clearPlaybackCache drops memoized per-link playback facts. It runs when the
+// plugin set changes or a plugin is reconfigured.
+func (r *Registry) clearPlaybackCache() {
+	r.playMu.Lock()
+	r.playCache = map[string]playbackTarget{}
+	r.playMu.Unlock()
 }
 
 // ProvisionerByName returns the create-capable plugin with the given name, or

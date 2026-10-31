@@ -162,8 +162,11 @@ func runServer() {
 		go backupRunner.Run(ctx)
 	}
 
-	// Mark stale unread items read for users who opted in to auto-read.
-	go maintenance.New(store.New(bgDB), maintenance.DefaultInterval).Run(ctx)
+	// Mark stale unread items read for users who opted in to auto-read, and
+	// drop playback positions older than the retention window.
+	sweeper := maintenance.New(store.New(bgDB), maintenance.DefaultInterval)
+	sweeper.SetProgressRetention(cfg.ProgressRetention)
+	go sweeper.Run(ctx)
 
 	// Demo mode: clone a curated seed account for each visitor and purge expired
 	// ones in the background. Built before the server closure so its manager can

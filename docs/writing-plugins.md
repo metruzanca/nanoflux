@@ -99,8 +99,8 @@ forwarded to nanoflux's logs prefixed with the plugin name.
 ## The capabilities
 
 A plugin implements `Fetcher`; it may also implement the optional `Renderer`,
-`SharedKeyer`, `Enricher`, `Decoration`, `URLPolicy`, `Docser`, `Provisioner`,
-`FeedAdmin` and `Configurable` interfaces. `Match` tells the host which URL
+`PlaybackProvider`, `SharedKeyer`, `Enricher`, `Decoration`, `URLPolicy`,
+`Docser`, `Provisioner`, `FeedAdmin` and `Configurable` interfaces. `Match` tells the host which URL
 shapes (and which capability) each applies to. A plugin may own a site's whole
 shape (fetch + discover + shared keys + enrich + render + URL rules) or decorate
 a feed it does not fetch at all.
@@ -121,6 +121,12 @@ a feed it does not fetch at all.
   items only, after either fetch path.
 - **`Decorate` (optional)** — given a page's stored items, return each item's
   source attribution and card kind. Runs at view time; must not do network I/O.
+- **`PlaybackFor` (optional)** — make an item's media resumable. Return a stable
+  media `Key` (for example a video id) and a core `Player` adapter name
+  (`"youtube"` today). The host stores each user's position server-side and
+  restores it when the item opens again; a video seen through two items shares
+  one position. Matched on the item's link via `Match(u, CapPlayback)`, pure and
+  cheap: it runs while rendering an item and while saving progress.
 - **Image caching (capability only, no method)** — if the site serves images
   with short-lived, signed URLs, claim `Match(u, CapImageCache)`. At poll time
   the host then downloads each item's primary image and image-type enclosures

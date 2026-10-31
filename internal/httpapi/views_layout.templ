@@ -30,6 +30,7 @@ templ head(title, accent string) {
 	<script src={ templ.URL("/static/home-reorder.js") } defer></script>
 	<script src={ templ.URL("/static/hls-video.js") } defer></script>
 	<script src={ templ.URL("/static/app.js") } defer></script>
+	<script src={ templ.URL("/static/media-progress.js") } defer></script>
 	if an := analyticsFrom(ctx); an.Enabled() {
 		<script src={ templ.URL("/static/umami.js") } defer></script>
 		<script

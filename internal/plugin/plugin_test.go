@@ -60,6 +60,15 @@ func (f fakeRenderer) Render(context.Context, pluginapi.RenderRequest, pluginapi
 	return f.media, f.err
 }
 
+// fakePlayback is a fakeFetcher that also implements the optional
+// PlaybackProvider.
+type fakePlayback struct {
+	fakeFetcher
+	info pluginapi.PlaybackInfo
+}
+
+func (f fakePlayback) PlaybackFor(string) pluginapi.PlaybackInfo { return f.info }
+
 // fakeDocser is a fakeFetcher that also implements the optional Docser.
 type fakeDocser struct {
 	fakeFetcher
@@ -373,6 +382,31 @@ func TestRegistryRenderItem(t *testing.T) {
 	})
 	if _, err := reg3.RenderItem(context.Background(), pluginapi.RenderRequest{Link: renderURL.String()}, hosts); err == nil {
 		t.Fatal("RenderItem should surface the plugin error")
+	}
+}
+
+// TestRegistryPlaybackFor covers the view-time playback capability: a matching
+// plugin's key is namespaced, a non-claiming plugin is skipped, and a plugin
+// that names an unknown player still reports it (the caller validates adapters).
+func TestRegistryPlaybackFor(t *testing.T) {
+	link := "https://videos.example/watch/abc"
+
+	reg := NewRegistry()
+	reg.RegisterExternal(fakePlayback{
+		fakeFetcher: fakeFetcher{name: "yt", match: func(u *url.URL, cap pluginapi.Capability) bool {
+			return cap == pluginapi.CapPlayback && u != nil && u.Hostname() == "videos.example"
+		}},
+		info: pluginapi.PlaybackInfo{Key: "abc", Player: "youtube"},
+	})
+	if key, player := reg.PlaybackFor(link); key != "plugin:yt:abc" || player != "youtube" {
+		t.Fatalf("PlaybackFor = %q, %q", key, player)
+	}
+
+	// A plugin that matches the URL but does not claim CapPlayback is skipped.
+	reg2 := NewRegistry()
+	reg2.RegisterExternal(fakeFetcher{name: "other", match: func(*url.URL, pluginapi.Capability) bool { return false }})
+	if key, player := reg2.PlaybackFor(link); key != "" || player != "" {
+		t.Fatalf("unmatched PlaybackFor = %q, %q", key, player)
 	}
 }
 
