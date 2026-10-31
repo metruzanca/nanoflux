@@ -33,6 +33,7 @@ type Store struct {
 	AuthorLinks   *AuthorLinkStore
 	AuthorFilters *AuthorFilterStore
 	ViewPrefs     *ViewPrefStore
+	Progress      *ProgressStore
 }
 
 func New(sqldb *sql.DB) *Store {
@@ -54,6 +55,7 @@ func New(sqldb *sql.DB) *Store {
 		AuthorLinks:   &AuthorLinkStore{q: q},
 		AuthorFilters: &AuthorFilterStore{db: sqldb},
 		ViewPrefs:     &ViewPrefStore{q: q},
+		Progress:      &ProgressStore{db: sqldb},
 	}
 }
 

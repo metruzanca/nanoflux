@@ -94,6 +94,11 @@ const (
 	// Meta.MinPollInterval. A plugin claims it for feeds it knows are tightly
 	// rate-limited, so lowering the host's global default cannot hammer them.
 	CapMinPollInterval
+	// CapPlayback asks whether the plugin can name an item's playback media: a
+	// stable media identity plus the core player adapter that can resume and
+	// report its position. It is matched on the item's link, is pure, and never
+	// performs network I/O.
+	CapPlayback
 )
 
 // Meta describes a plugin to the host.
@@ -332,6 +337,34 @@ type Renderer interface {
 	// Render resolves an item's view-time media. req describes the item; the
 	// returned Media is merged into the modal.
 	Render(ctx context.Context, req RenderRequest, h Host) (Media, error)
+}
+
+// PlaybackProvider is an optional pure capability a plugin may implement to
+// make an item's media resumable. The host stores a per-user playback position
+// and restores it when the item opens again; the plugin supplies the media
+// identity shared across items and the core-owned player adapter that can
+// resume and report it.
+//
+// It is matched on the item's link via CapPlayback. PlaybackFor must be pure and
+// cheap: it runs while rendering an item and while saving its progress, and it
+// must not perform network I/O.
+type PlaybackProvider interface {
+	// PlaybackFor returns the playback facts for link. An empty Key or Player
+	// means the item is not resumable.
+	PlaybackFor(link string) PlaybackInfo
+}
+
+// PlaybackInfo describes an item's resumable media.
+type PlaybackInfo struct {
+	// Key is a stable identity for the media (for example a video id), so the
+	// same video stored through two items shares one position. The host prefixes
+	// it with the plugin name, so a plugin cannot collide with another's keys.
+	Key string
+	// Player names the core player adapter that drives the media and reports
+	// its position. The supported values are the adapter names the host
+	// documents (for example "youtube"); an unknown or empty name means the
+	// host does not track it.
+	Player string
 }
 
 // Docser is an optional capability a plugin may implement to document itself.

@@ -809,7 +809,22 @@ templ itemContent(d itemViewData, v itemVisuals) {
 			<!-- The app's global Referrer-Policy: no-referrer would strip the
 			     Referer some players require (for example, YouTube error 153).
 			     Override it here so only the embedding origin is sent. -->
-			<iframe src={ templ.URL(d.EmbedSrc) } title={ d.Title } frameborder="0" allow="autoplay; fullscreen; picture-in-picture; web-share" allowfullscreen loading="lazy" referrerpolicy="origin"></iframe>
+			<iframe
+				src={ templ.URL(d.resumeSrc()) }
+				title={ d.Title }
+				frameborder="0"
+				allow="autoplay; fullscreen; picture-in-picture; web-share"
+				allowfullscreen
+				loading="lazy"
+				referrerpolicy="origin"
+				if d.Progress != nil && d.Progress.Player == web.PlayerYouTube {
+					data-progress-item={ strconv.FormatInt(d.Progress.ItemID, 10) }
+					data-progress-key={ d.Progress.Key }
+					data-progress-player={ d.Progress.Player }
+					data-progress-resume={ strconv.Itoa(d.Progress.Position) }
+					data-progress-duration={ strconv.Itoa(d.Progress.Duration) }
+				}
+			></iframe>
 		</div>
 	} else if v.Image {
 		<div class="image-lightbox">
@@ -842,15 +857,50 @@ templ itemContent(d itemViewData, v itemVisuals) {
 						// loads it lazily and attaches on the data-hls URL); the
 						// enclosure poster or the item thumbnail is the poster.
 						<figure>
-							<video controls preload="none" data-hls={ e.URL } poster={ templ.URL(d.enclosurePoster(e)) }></video>
+							<video
+								controls
+								preload="none"
+								data-hls={ e.URL }
+								poster={ templ.URL(d.enclosurePoster(e)) }
+								if d.Progress != nil && d.Progress.Player == web.PlayerNative {
+									data-progress-item={ strconv.FormatInt(d.Progress.ItemID, 10) }
+									data-progress-key={ d.Progress.Key }
+									data-progress-player={ d.Progress.Player }
+									data-progress-resume={ strconv.Itoa(d.Progress.Position) }
+									data-progress-duration={ strconv.Itoa(d.Progress.Duration) }
+								}
+							></video>
 						</figure>
 					} else if kind == "video" {
 						<figure>
-							<video controls preload="none" src={ templ.URL(e.URL) } poster={ templ.URL(d.enclosurePoster(e)) }></video>
+							<video
+								controls
+								preload="none"
+								src={ templ.URL(e.URL) }
+								poster={ templ.URL(d.enclosurePoster(e)) }
+								if d.Progress != nil && d.Progress.Player == web.PlayerNative {
+									data-progress-item={ strconv.FormatInt(d.Progress.ItemID, 10) }
+									data-progress-key={ d.Progress.Key }
+									data-progress-player={ d.Progress.Player }
+									data-progress-resume={ strconv.Itoa(d.Progress.Position) }
+									data-progress-duration={ strconv.Itoa(d.Progress.Duration) }
+								}
+							></video>
 						</figure>
 					} else if kind == "audio" {
 						<figure>
-							<audio controls preload="none" src={ templ.URL(e.URL) }></audio>
+							<audio
+								controls
+								preload="none"
+								src={ templ.URL(e.URL) }
+								if d.Progress != nil && d.Progress.Player == web.PlayerNative {
+									data-progress-item={ strconv.FormatInt(d.Progress.ItemID, 10) }
+									data-progress-key={ d.Progress.Key }
+									data-progress-player={ d.Progress.Player }
+									data-progress-resume={ strconv.Itoa(d.Progress.Position) }
+									data-progress-duration={ strconv.Itoa(d.Progress.Duration) }
+								}
+							></audio>
 						</figure>
 					}
 				}

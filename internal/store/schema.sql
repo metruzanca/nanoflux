@@ -341,3 +341,18 @@ CREATE TABLE author_links (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_author_links_author ON author_links(author_id);
+
+-- Per-user media playback positions (schemaV56). progress_key is the media
+-- identity, so the same video stored through two items shares one position.
+-- item_id is informational, not a foreign key: deleting the item that carried
+-- the media must not lose a position another item can still resume.
+CREATE TABLE item_progress (
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    progress_key TEXT    NOT NULL,
+    item_id      INTEGER NOT NULL DEFAULT 0,
+    position_sec INTEGER NOT NULL,
+    duration_sec INTEGER NOT NULL DEFAULT 0,
+    updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, progress_key)
+);
+CREATE INDEX idx_item_progress_updated ON item_progress(user_id, updated_at);

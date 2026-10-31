@@ -214,6 +214,7 @@ const (
 	Fetcher_SettingsSchema_FullMethodName      = "/nanoflux.plugin.v1.Fetcher/SettingsSchema"
 	Fetcher_Configure_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/Configure"
 	Fetcher_Icon_FullMethodName                = "/nanoflux.plugin.v1.Fetcher/Icon"
+	Fetcher_Playback_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/Playback"
 )
 
 // FetcherClient is the client API for Fetcher service.
@@ -258,6 +259,9 @@ type FetcherClient interface {
 	// Icon is optional: a built-in source icon for a site URL, used when no
 	// cached favicon exists. Pure, no network I/O.
 	Icon(ctx context.Context, in *IconRequest, opts ...grpc.CallOption) (*IconResponse, error)
+	// Playback is optional: the item's resumable media identity and the
+	// core-owned player adapter that drives it. Pure, no network I/O.
+	Playback(ctx context.Context, in *PlaybackRequest, opts ...grpc.CallOption) (*PlaybackResponse, error)
 }
 
 type fetcherClient struct {
@@ -438,6 +442,16 @@ func (c *fetcherClient) Icon(ctx context.Context, in *IconRequest, opts ...grpc.
 	return out, nil
 }
 
+func (c *fetcherClient) Playback(ctx context.Context, in *PlaybackRequest, opts ...grpc.CallOption) (*PlaybackResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PlaybackResponse)
+	err := c.cc.Invoke(ctx, Fetcher_Playback_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FetcherServer is the server API for Fetcher service.
 // All implementations must embed UnimplementedFetcherServer
 // for forward compatibility.
@@ -480,6 +494,9 @@ type FetcherServer interface {
 	// Icon is optional: a built-in source icon for a site URL, used when no
 	// cached favicon exists. Pure, no network I/O.
 	Icon(context.Context, *IconRequest) (*IconResponse, error)
+	// Playback is optional: the item's resumable media identity and the
+	// core-owned player adapter that drives it. Pure, no network I/O.
+	Playback(context.Context, *PlaybackRequest) (*PlaybackResponse, error)
 	mustEmbedUnimplementedFetcherServer()
 }
 
@@ -540,6 +557,9 @@ func (UnimplementedFetcherServer) Configure(context.Context, *ConfigureRequest) 
 }
 func (UnimplementedFetcherServer) Icon(context.Context, *IconRequest) (*IconResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Icon not implemented")
+}
+func (UnimplementedFetcherServer) Playback(context.Context, *PlaybackRequest) (*PlaybackResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Playback not implemented")
 }
 func (UnimplementedFetcherServer) mustEmbedUnimplementedFetcherServer() {}
 func (UnimplementedFetcherServer) testEmbeddedByValue()                 {}
@@ -868,6 +888,24 @@ func _Fetcher_Icon_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fetcher_Playback_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlaybackRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).Playback(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_Playback_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).Playback(ctx, req.(*PlaybackRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Fetcher_ServiceDesc is the grpc.ServiceDesc for Fetcher service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -942,6 +980,10 @@ var Fetcher_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Icon",
 			Handler:    _Fetcher_Icon_Handler,
+		},
+		{
+			MethodName: "Playback",
+			Handler:    _Fetcher_Playback_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
