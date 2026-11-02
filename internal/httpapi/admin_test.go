@@ -397,13 +397,16 @@ func TestBuildAdminPoll(t *testing.T) {
 			return 0
 		}
 	}
-	got := buildAdminPoll(now, feeds, spacingFor, func(string) int { return 0 })
+	got := buildAdminPoll(now, feeds, spacingFor, func(string) int { return 0 }, nil)
 
 	if got.Enabled != 33 || got.Behind != 33 {
 		t.Fatalf("enabled/behind = %d/%d, want 33/33", got.Enabled, got.Behind)
 	}
-	if got.OldestTitle != "Example 0" {
-		t.Fatalf("oldest title = %q, want Example 0", got.OldestTitle)
+	if got.MostOverdue.Title != "Example 0" {
+		t.Fatalf("most overdue = %q, want Example 0", got.MostOverdue.Title)
+	}
+	if len(got.BehindFeeds) != maxAdminBehindFeeds || got.BehindFeeds[0].Title != "Example 0" {
+		t.Fatalf("behind feeds = %d, first %q; want %d with Example 0 first", len(got.BehindFeeds), got.BehindFeeds[0].Title, maxAdminBehindFeeds)
 	}
 	if got.Overloaded != 1 {
 		t.Fatalf("overloaded hosts = %d, want 1", got.Overloaded)
@@ -437,7 +440,7 @@ func TestBuildAdminPollUsesPollFloor(t *testing.T) {
 	minFor := func(string) int { return 3600 }
 	spacingFor := func(string) time.Duration { return 0 }
 
-	got := buildAdminPoll(now, []store.Feed{feed}, spacingFor, minFor)
+	got := buildAdminPoll(now, []store.Feed{feed}, spacingFor, minFor, nil)
 	if got.Behind != 0 {
 		t.Fatalf("behind = %d, want 0 while inside the floor", got.Behind)
 	}
@@ -446,11 +449,82 @@ func TestBuildAdminPollUsesPollFloor(t *testing.T) {
 	}
 
 	feed.LastPolledAt = ts(-2 * time.Hour)
-	got = buildAdminPoll(now, []store.Feed{feed}, spacingFor, minFor)
+	got = buildAdminPoll(now, []store.Feed{feed}, spacingFor, minFor, nil)
 	if got.Behind != 1 {
 		t.Fatalf("behind = %d, want 1 once the floor elapsed", got.Behind)
 	}
 	if len(got.Hosts) != 1 || got.Hosts[0].Demand != "24" {
 		t.Fatalf("host rows = %+v, want demand 24 at the 1h floor", got.Hosts)
+	}
+}
+
+// "Most overdue" is measured from each feed's own deadline, not from raw
+// last-poll age: a weekly feed polled a week ago is less overdue than a daily
+// feed polled two days ago. A future next_poll_at is reported as waiting, and
+// the active shared cooldown is visible separately from spacing.
+func TestBuildAdminPollReportsOverdueWaitingAndCooling(t *testing.T) {
+	now := time.Date(2026, 10, 25, 6, 0, 0, 0, time.UTC)
+	ts := func(d time.Duration) string { return db.FormatTime(now.Add(d)) }
+
+	weekly := store.Feed{
+		Title: "weekly", FeedURL: "https://example.com/weekly", Enabled: true,
+		PollIntervalSec: 7 * 86400, LastPolledAt: ts(-7*24*time.Hour - 5*time.Minute),
+		LastItemAt: ts(-7*24*time.Hour - 5*time.Minute),
+	}
+	daily := store.Feed{
+		Title: "daily", FeedURL: "https://example.com/daily", Enabled: true,
+		PollIntervalSec: 86400, LastPolledAt: ts(-48 * time.Hour),
+		LastItemAt: ts(-48 * time.Hour),
+	}
+	waiting := store.Feed{
+		Title: "waiting", FeedURL: "https://www.reddit.com/r/x.rss", Enabled: true,
+		PollIntervalSec: 3600, LastPolledAt: ts(-2 * time.Hour), NextPollAt: ts(time.Hour),
+	}
+
+	spacingFor := func(raw string) time.Duration { return time.Minute }
+	coolingFor := func(raw string) (time.Time, bool) {
+		if store.RegistrableDomain(raw) == "reddit.com" {
+			return now.Add(20 * time.Minute), true
+		}
+		return time.Time{}, false
+	}
+
+	got := buildAdminPoll(now, []store.Feed{weekly, daily, waiting}, spacingFor,
+		func(string) int { return 0 }, coolingFor)
+
+	if got.MostOverdue.Title != "daily" {
+		t.Fatalf("most overdue = %q, want daily (1d late, not the week-old weekly feed)", got.MostOverdue.Title)
+	}
+	if len(got.BehindFeeds) == 0 || got.BehindFeeds[0].Title != "daily" {
+		t.Fatalf("behind feeds = %+v, want daily first", got.BehindFeeds)
+	}
+
+	var waited *adminPollFeed
+	for i := range got.BehindFeeds {
+		if got.BehindFeeds[i].Title == "waiting" {
+			waited = &got.BehindFeeds[i]
+		}
+	}
+	if waited == nil {
+		t.Fatal("waiting feed missing from behind list")
+	}
+	if waited.Next != "rate-limited" || waited.NextAt == "" {
+		t.Fatalf("waiting feed = %+v, want rate-limited with a deadline", waited)
+	}
+
+	var reddit *adminPollHost
+	for i := range got.Hosts {
+		if got.Hosts[i].Host == "reddit.com" {
+			reddit = &got.Hosts[i]
+		}
+	}
+	if reddit == nil {
+		t.Fatal("reddit.com host missing")
+	}
+	if reddit.Waiting != 1 || reddit.Cooling == "" {
+		t.Fatalf("reddit host = %+v, want one waiting and an active cooldown", reddit)
+	}
+	if reddit.Clear != "" {
+		t.Fatalf("reddit clear = %q, want empty while its only behind feed is waiting", reddit.Clear)
 	}
 }

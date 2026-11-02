@@ -236,6 +236,11 @@ templ AdminStats(st adminStats) {
 // per day the host's feeds ask for at their current intervals; capacity is what
 // the host's spacing allows. Demand above capacity is the permanent-lateness
 // signal: the backlog cannot drain until the load or spacing changes.
+//
+// "Most overdue" is measured from the feed's own deadline, not from the age of
+// its last poll, and it is shown next to the last stored post. A weekly feed
+// polled a week ago is not automatically more urgent than a daily feed that is
+// two days late, and a week-old last poll does not mean the feed has been quiet.
 templ AdminPollCard(d adminPoll, tz string) {
 	<section class="card" id="admin-poll-card">
 		<h2>polling</h2>
@@ -246,13 +251,40 @@ templ AdminPollCard(d adminPoll, tz string) {
 		} else {
 			<p class="muted small">
 				<strong>{ strconv.Itoa(d.Behind) }</strong> of { strconv.Itoa(d.Enabled) } feeds behind schedule
-				if d.OldestRef != "" {
-					{ " · oldest " }
-					<strong>{ d.OldestTitle }</strong>
-					{ " last polled " }
-					{ web.TimeFmt(tz, d.OldestRef) }
-				}
 			</p>
+			if d.MostOverdue.Title != "" {
+				<p class="muted small">
+					{ "most overdue: " }
+					<strong>{ d.MostOverdue.Title }</strong>
+					if d.MostOverdue.Overdue != "" {
+						{ ", " }
+						{ d.MostOverdue.Overdue }
+						{ " late" }
+					}
+					{ " · last poll " }
+					if d.MostOverdue.LastPoll != "" {
+						{ web.TimeFmt(tz, d.MostOverdue.LastPoll) }
+					} else {
+						{ "never" }
+					}
+					{ " · last post " }
+					if d.MostOverdue.LastPost != "" {
+						{ web.TimeFmt(tz, d.MostOverdue.LastPost) }
+					} else {
+						{ "none stored" }
+					}
+					{ " · interval " }
+					{ d.MostOverdue.Interval }
+					if d.MostOverdue.Next != "" {
+						{ " · next " }
+						{ d.MostOverdue.Next }
+						if d.MostOverdue.NextAt != "" {
+							{ " " }
+							{ web.TimeFmt(tz, d.MostOverdue.NextAt) }
+						}
+					}
+				</p>
+			}
 			if d.Overloaded > 0 {
 				<div class="error banner" role="alert">
 					<strong>
@@ -273,7 +305,9 @@ templ AdminPollCard(d adminPoll, tz string) {
 						<tr>
 							<th>host</th>
 							<th>behind</th>
+							<th>waiting</th>
 							<th>spacing</th>
+							<th>cooling</th>
 							<th>demand/day</th>
 							<th>capacity/day</th>
 							<th>clear</th>
@@ -289,7 +323,21 @@ templ AdminPollCard(d adminPoll, tz string) {
 									}
 								</td>
 								<td>{ strconv.Itoa(h.Behind) } / { strconv.Itoa(h.Feeds) }</td>
+								<td>
+									if h.Waiting > 0 {
+										{ strconv.Itoa(h.Waiting) }
+									} else {
+										{ "-" }
+									}
+								</td>
 								<td>{ h.Spacing }</td>
+								<td>
+									if h.Cooling != "" {
+										<span class="badge warn" title="shared rate-limit cooldown">cooling { h.Cooling }</span>
+									} else {
+										{ "-" }
+									}
+								</td>
 								<td>{ h.Demand }</td>
 								<td>{ h.Capacity }</td>
 								<td>{ h.Clear }</td>
@@ -297,7 +345,61 @@ templ AdminPollCard(d adminPoll, tz string) {
 						}
 					</tbody>
 				</table>
-				<p class="muted small">Capacity uses the current host spacing, including a learned rate-limit window. Active 429 cooldowns are not included.</p>
+				<p class="muted small">behind = last poll older than the feed's effective interval. waiting = held by a future next poll (rate limit or scheduled time). cooling = the shared rate-limit cooldown, which blocks the host even when spacing is short. clear assumes waiting feeds are not part of the drain.</p>
+			}
+			if len(d.BehindFeeds) > 0 {
+				<details class="admin-behind">
+					<summary class="muted small">behind feeds ({ strconv.Itoa(len(d.BehindFeeds)) })</summary>
+					<table class="admin-users">
+						<thead>
+							<tr>
+								<th>feed</th>
+								<th>host</th>
+								<th>last poll</th>
+								<th>last post</th>
+								<th>interval</th>
+								<th>overdue</th>
+								<th>next</th>
+								<th>last error</th>
+							</tr>
+						</thead>
+						<tbody>
+							for _, f := range d.BehindFeeds {
+								<tr>
+									<td>{ f.Title }</td>
+									<td>{ f.Host }</td>
+									<td>
+										if f.LastPoll != "" {
+											{ web.TimeFmt(tz, f.LastPoll) }
+										} else {
+											{ "never" }
+										}
+									</td>
+									<td>
+										if f.LastPost != "" {
+											{ web.TimeFmt(tz, f.LastPost) }
+										} else {
+											{ "none" }
+										}
+									</td>
+									<td>{ f.Interval }</td>
+									<td>{ f.Overdue }</td>
+									<td>
+										{ f.Next }
+										if f.NextAt != "" {
+											{ " " }
+											{ web.TimeFmt(tz, f.NextAt) }
+										}
+									</td>
+									<td class="muted small">{ f.Error }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+					if d.Behind > len(d.BehindFeeds) {
+						<p class="muted small">showing the { strconv.Itoa(len(d.BehindFeeds)) } most overdue of { strconv.Itoa(d.Behind) }.</p>
+					}
+				</details>
 			}
 		}
 	</section>

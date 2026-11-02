@@ -247,6 +247,17 @@ func (p *Poller) SetHostCooler(c hostCooler) {
 	}
 }
 
+// CoolingUntil returns when the shared cooldown for rawURL's registrable host
+// expires and whether it is active. It is the gate the poller honors before a
+// fetch; the admin card shows it separately from host spacing because an active
+// cooldown blocks the host even when spacing is short.
+func (p *Poller) CoolingUntil(rawURL string) (time.Time, bool) {
+	if p.cool == nil {
+		return time.Time{}, false
+	}
+	return p.cool.Until(rawURL)
+}
+
 // SetItemEnricher attaches the plugin-backed body enricher (satisfied by
 // *plugin.Dispatcher), so newly stored items are offered to matching plugins.
 // A nil enricher disables enrichment.

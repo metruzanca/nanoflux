@@ -303,21 +303,41 @@ all across roughly twenty minutes, continuously, instead of one per day.
 The admin page's **polling** card shows whether the poller can keep up. A feed is
 **behind** when its last poll is older than its own effective interval,
 `max(poll_interval_sec, poll floor)` (a never-polled feed is measured from its
-creation time), so rate-limited feeds still count while they wait and a legacy
-15-minute value is measured at the 1-hour floor. Per host it shows:
+creation time). The summary names the **most overdue** feed by its own deadline,
+not the feed with the oldest last poll: a weekly feed polled a week ago is less
+overdue than a daily feed polled two days ago. Alongside it the card shows the
+feed's last poll, **last stored post** (`last_item_at`), effective interval,
+overdue duration, next deadline, and last error. This separates "we have not
+polled it" from "it has not posted": a week-old last post means the app has
+stored nothing new, even if the site has published.
 
+Per host the card shows:
+
+- **behind**: feeds past their effective interval.
+- **waiting**: feeds held by a future `next_poll_at` (a rate-limit retry or a
+  clock-aligned schedule). They can be behind but cannot be fetched yet.
+- **spacing**: the host's pacing window, including a learned rate-limit window.
+- **cooling**: the active shared cooldown, which blocks every request to the host
+  even when spacing is short. It can be set by the poller **or by a plugin
+  request** (for example a reddit render-time lookup), so a feed can wait while
+  the spacing column still shows a short window.
 - **demand/day**: the sum of every enabled feed's required polls per day
   (`86400 / effective interval`).
 - **capacity/day**: what the host's effective spacing allows
   (`86400 / spacing`), including a learned rate-limit window.
-- **clear**: the estimated time to drain the host's current backlog at that
-  spacing.
+- **clear**: the estimated time to drain the behind feeds that are eligible now,
+  at that spacing. Feeds counted as **waiting** are excluded from this estimate
+  and active cooldowns are not included.
+
+A collapsible **behind feeds** table lists each behind feed with its host, last
+poll, last post, interval, overdue time, next deadline, and last error. That is
+the per-feed view for deciding whether a feed is late, waiting on a backoff, or
+being skipped because its host is cooling.
 
 When demand exceeds capacity, the host is marked **overloaded**. That is the
 permanent-lateness signal: the backlog cannot drain until feeds are removed from
 that host or their intervals are lengthened. A large backlog with demand below
-capacity is only a transient catch-up, for example after downtime. Active 429
-cooldowns are not included in the estimate.
+capacity is only a transient catch-up, for example after downtime.
 
 ### The manual refresh button
 

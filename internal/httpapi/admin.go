@@ -33,28 +33,54 @@ type adminData struct {
 }
 
 // adminPoll is the polling health summary shown on /admin. "Behind" means a
-// feed's last poll is older than its own interval, so it is waiting even if a
-// rate-limit deadline currently keeps the poller from touching it. The per-host
-// demand/capacity ratio is the permanent-lateness signal: when a host needs more
-// fetches per day than its spacing allows, the backlog cannot drain.
+// feed's last poll is older than its own effective interval, so it is waiting
+// even if a rate-limit deadline or an active cooldown currently keeps the
+// poller from touching it. The per-host demand/capacity ratio is the
+// permanent-lateness signal: when a host needs more fetches per day than its
+// spacing allows, the backlog cannot drain.
 type adminPoll struct {
-	Enabled     int
-	Behind      int
-	OldestTitle string
-	OldestRef   string // stored UTC time of the oldest behind feed
-	Overloaded  int    // hosts whose demand exceeds their capacity
+	Enabled int
+	Behind  int
+	// MostOverdue is the behind feed furthest past its own deadline. It is not
+	// necessarily the oldest last poll: a weekly feed polled a week ago can be
+	// less overdue than a daily feed polled two days ago.
+	MostOverdue adminPollFeed
+	// BehindFeeds lists the behind feeds, most overdue first, capped so the
+	// card stays readable.
+	BehindFeeds []adminPollFeed
+	Overloaded  int // hosts whose demand exceeds their capacity
 	Hosts       []adminPollHost
 	Unavailable bool
 }
 
+// adminPollFeed is one behind feed's stored state, shown so "last polled" is
+// never confused with "last posted". LastPost is the newest item timestamp the
+// app has stored, which only changes when a poll actually brings items.
+type adminPollFeed struct {
+	Title     string
+	Host      string
+	LastPoll  string // stored UTC timestamp, "" when never polled
+	LastPost  string // stored UTC timestamp, "" when no items stored
+	Interval  string // effective interval, e.g. "24h"
+	Overdue   string // how far past its deadline, e.g. "6d"
+	Next      string // "due", "scheduled", or "rate-limited"
+	NextAt    string // future next_poll_at, "" when the feed is due now
+	Error     string // last poll error, truncated; "" when none
+	overdueBy time.Duration
+}
+
 // adminPollHost is one host's polling load. Demand and Capacity are whole
 // fetches per day; Clear is the estimated time to drain the current backlog at
-// the host's spacing.
+// the host's spacing. Waiting counts behind feeds whose next_poll_at is still in
+// the future. Cooling is the active shared cooldown, which blocks the host even
+// when its spacing is short.
 type adminPollHost struct {
 	Host       string
 	Feeds      int
 	Behind     int
+	Waiting    int
 	Spacing    string
+	Cooling    string
 	Demand     string
 	Capacity   string
 	Clear      string
@@ -278,25 +304,44 @@ func (s *Server) adminPollData() adminPoll {
 		}
 		return s.cfg.PollHostSpacing
 	}
-	return buildAdminPoll(time.Now().UTC(), feeds, spacingFor, s.pollFloorSec)
+	coolingFor := func(rawURL string) (time.Time, bool) {
+		if s.poller != nil {
+			return s.poller.CoolingUntil(rawURL)
+		}
+		return time.Time{}, false
+	}
+	return buildAdminPoll(time.Now().UTC(), feeds, spacingFor, s.pollFloorSec, coolingFor)
 }
 
 // buildAdminPoll computes the per-host polling load. A feed is behind when its
-// last poll is older than its own interval; a never-polled feed is measured
-// from its creation time so a new feed is not reported as overdue immediately.
-// Demand is the sum of each enabled feed's required polls per day; capacity is
-// what the host's spacing allows. demand > capacity means the host is
-// permanently behind, not merely catching up after downtime.
-func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) time.Duration, minFor func(string) int) adminPoll {
+// last poll is older than its own effective interval; a never-polled feed is
+// measured from its creation time so a new feed is not reported as overdue
+// immediately. Demand is the sum of each enabled feed's required polls per day;
+// capacity is what the host's spacing allows. demand > capacity means the host
+// is permanently behind, not merely catching up after downtime.
+//
+// "Most overdue" uses the same deadline as the queue (last poll or creation,
+// plus the effective interval), not raw last-poll age. A weekly feed polled a
+// week ago is less overdue than a daily feed polled two days ago, even though
+// its last poll is older. The behind list also shows the last stored post, so a
+// stale poll is never confused with a quiet feed.
+func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) time.Duration, minFor func(string) int, coolingFor func(string) (time.Time, bool)) adminPoll {
+	if coolingFor == nil {
+		coolingFor = func(string) (time.Time, bool) { return time.Time{}, false }
+	}
 	type hostAgg struct {
-		feeds   int
-		demand  float64
-		behind  int
-		spacing time.Duration
+		feeds         int
+		demand        float64
+		behind        int
+		waiting       int
+		behindWaiting int
+		spacing       time.Duration
+		sampleURL     string
+		cooling       time.Time
 	}
 	byHost := map[string]*hostAgg{}
 	var out adminPoll
-	var oldest time.Time
+	var behind []adminPollFeed
 	for _, f := range feeds {
 		if !f.Enabled || f.IsSystem {
 			continue
@@ -308,7 +353,7 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 		}
 		h := byHost[host]
 		if h == nil {
-			h = &hostAgg{spacing: spacingFor(f.FeedURL)}
+			h = &hostAgg{spacing: spacingFor(f.FeedURL), sampleURL: f.FeedURL}
 			byHost[host] = h
 		}
 		h.feeds++
@@ -334,15 +379,57 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 		if err != nil {
 			continue
 		}
-		if now.After(refTime.Add(time.Duration(interval) * time.Second)) {
-			h.behind++
-			out.Behind++
-			if oldest.IsZero() || refTime.Before(oldest) {
-				oldest = refTime
-				out.OldestTitle = f.Title
-				out.OldestRef = ref
+		entry := adminPollFeed{
+			Title:    f.Title,
+			Host:     host,
+			LastPoll: f.LastPolledAt,
+			LastPost: f.LastItemAt,
+			Interval: formatPollInterval(interval),
+			Error:    shortPollError(f.LastError),
+		}
+		// A future next_poll_at is a rate-limit retry or a clock-aligned
+		// schedule. It gates the feed even when its interval has elapsed, so it
+		// is both a waiting signal and an explanation for a behind feed.
+		if f.NextPollAt != "" {
+			if next, err := db.ParseTime(f.NextPollAt); err == nil && next.After(now) {
+				h.waiting++
+				entry.NextAt = f.NextPollAt
+				if f.NextPollScheduled {
+					entry.Next = "scheduled"
+				} else {
+					entry.Next = "rate-limited"
+				}
 			}
 		}
+
+		overdue := now.Sub(refTime.Add(time.Duration(interval) * time.Second))
+		if overdue > 0 {
+			h.behind++
+			out.Behind++
+			entry.Overdue = formatPollClear(overdue)
+			entry.overdueBy = overdue
+			if entry.Next == "" {
+				entry.Next = "due"
+			}
+			if entry.NextAt != "" {
+				h.behindWaiting++
+			}
+			behind = append(behind, entry)
+			if entry.overdueBy > out.MostOverdue.overdueBy {
+				out.MostOverdue = entry
+			}
+		}
+	}
+
+	sort.SliceStable(behind, func(i, j int) bool {
+		if behind[i].overdueBy == behind[j].overdueBy {
+			return behind[i].Title < behind[j].Title
+		}
+		return behind[i].overdueBy > behind[j].overdueBy
+	})
+	out.BehindFeeds = behind
+	if len(out.BehindFeeds) > maxAdminBehindFeeds {
+		out.BehindFeeds = out.BehindFeeds[:maxAdminBehindFeeds]
 	}
 
 	for host, h := range byHost {
@@ -351,16 +438,20 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 			capacity = 86400 / h.spacing.Seconds()
 		}
 		overloaded := capacity > 0 && h.demand > capacity
+		if until, ok := coolingFor(h.sampleURL); ok && until.After(now) {
+			h.cooling = until
+		}
 		if overloaded {
 			out.Overloaded++
 		}
-		if !overloaded && h.behind == 0 {
+		if !overloaded && h.behind == 0 && h.waiting == 0 && h.cooling.IsZero() {
 			continue
 		}
 		row := adminPollHost{
 			Host:       host,
 			Feeds:      h.feeds,
 			Behind:     h.behind,
+			Waiting:    h.waiting,
 			Spacing:    formatPollSpacing(h.spacing),
 			Demand:     formatPollCount(h.demand),
 			Overloaded: overloaded,
@@ -370,8 +461,13 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 		} else {
 			row.Capacity = "unlimited"
 		}
-		if h.spacing > 0 && h.behind > 0 {
-			row.Clear = formatPollClear(time.Duration(h.behind) * h.spacing)
+		if !h.cooling.IsZero() {
+			row.Cooling = formatPollClear(h.cooling.Sub(now))
+		}
+		// The clear estimate is for the behind feeds that can be fetched now;
+		// a feed held by a future next_poll_at cannot be part of the drain.
+		if dueBehind := h.behind - h.behindWaiting; dueBehind > 0 && h.spacing > 0 {
+			row.Clear = formatPollClear(time.Duration(dueBehind) * h.spacing)
 		}
 		out.Hosts = append(out.Hosts, row)
 	}
@@ -384,12 +480,44 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 		if a.Behind != b.Behind {
 			return a.Behind > b.Behind
 		}
+		if a.Waiting != b.Waiting {
+			return a.Waiting > b.Waiting
+		}
 		return a.Host < b.Host
 	})
 	if len(out.Hosts) > 8 {
 		out.Hosts = out.Hosts[:8]
 	}
 	return out
+}
+
+// maxAdminBehindFeeds caps the behind-feed detail table.
+const maxAdminBehindFeeds = 25
+
+// shortPollError trims a stored fetch error to a readable cell.
+func shortPollError(s string) string {
+	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
+	const limit = 90
+	r := []rune(s)
+	if len(r) > limit {
+		return string(r[:limit]) + "…"
+	}
+	return s
+}
+
+// formatPollInterval renders a feed's effective interval.
+func formatPollInterval(sec int) string {
+	d := time.Duration(sec) * time.Second
+	switch {
+	case d < time.Minute:
+		return "<1m"
+	case d < time.Hour:
+		return strconv.Itoa(int(d.Minutes()+0.5)) + "m"
+	case d < 48*time.Hour:
+		return strconv.Itoa(int(d.Hours()+0.5)) + "h"
+	default:
+		return strconv.Itoa(int(d.Hours()/24+0.5)) + "d"
+	}
 }
 
 // formatPollSpacing renders a host spacing compactly.
