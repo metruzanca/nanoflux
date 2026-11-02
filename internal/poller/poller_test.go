@@ -755,6 +755,72 @@ func TestPollDue(t *testing.T) {
 	}
 }
 
+// fakeFailureClassifier plays the role of a plugin that recognizes a permanent
+// fetch failure from the response.
+type fakeFailureClassifier struct {
+	verdict feedparse.FailureVerdict
+	status  int
+	body    string
+}
+
+func (fakeFailureClassifier) MatchFetch(feedparse.FetchRequest) bool      { return false }
+func (fakeFailureClassifier) MatchSharedKeys(feedparse.FetchRequest) bool { return false }
+func (fakeFailureClassifier) FetchPlugin(context.Context, feedparse.FetchRequest) (feedparse.Result, error) {
+	return feedparse.Result{}, nil
+}
+func (fakeFailureClassifier) SharedKeysPlugin(context.Context, feedparse.FetchRequest, *feedparse.Result) error {
+	return nil
+}
+func (f *fakeFailureClassifier) ClassifyFetchFailure(_ feedparse.FetchRequest, status int, body []byte) feedparse.FailureVerdict {
+	f.status = status
+	f.body = string(body)
+	return f.verdict
+}
+
+// TestPollPausesPermanentFailure asserts a classifier's pause verdict disables
+// the feed, clears the transient error and leaves nothing due, so a deleted
+// profile stops spending the host's rate-limit budget.
+func TestPollPausesPermanentFailure(t *testing.T) {
+	st := newPollerStore(t)
+	u, _ := st.Users.ByUsername("alice")
+	a, _ := st.Authors.Create(u.ID, "u/sam", "", "")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`<feed><title>u/sam: deleted</title></feed>`))
+	}))
+	defer srv.Close()
+
+	f, _ := st.Feeds.Create(u.ID, a.ID, "u/sam", srv.URL+"/user/sam/submitted.rss", "", "", 900)
+	plug := &fakeFailureClassifier{verdict: feedparse.FailureVerdict{Pause: true, Reason: "reddit profile was deleted"}}
+	feedparse.SetPlugin(plug)
+	defer feedparse.SetPlugin(nil)
+
+	p := New(st, time.Minute, 1)
+	if n, err := p.PollOne(context.Background(), f); err != nil || n != 0 {
+		t.Fatalf("PollOne = %d, %v; want 0, nil", n, err)
+	}
+	got, _ := st.Feeds.ByID(u.ID, f.ID)
+	if got.Enabled {
+		t.Fatal("feed should be paused")
+	}
+	if got.DisabledReason != "reddit profile was deleted" {
+		t.Fatalf("disabled reason = %q", got.DisabledReason)
+	}
+	if got.LastError != "" {
+		t.Fatalf("last error should be clear, got %q", got.LastError)
+	}
+	if got.NextPollAt != "" {
+		t.Fatalf("next poll at should be clear, got %q", got.NextPollAt)
+	}
+	if got.LastPolledAt == "" {
+		t.Fatal("the attempt should be recorded")
+	}
+	if due, _ := st.Feeds.ListDue(db.Now()); len(due) != 0 {
+		t.Fatalf("paused feed should not be due, got %d", len(due))
+	}
+}
+
 func TestPollOneRecordsLastError(t *testing.T) {
 	sqldb, err := db.Open(":memory:")
 	if err != nil {

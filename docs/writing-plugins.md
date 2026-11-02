@@ -127,6 +127,13 @@ a feed it does not fetch at all.
   restores it when the item opens again; a video seen through two items shares
   one position. Matched on the item's link via `Match(u, CapPlayback)`, pure and
   cheap: it runs while rendering an item and while saving progress.
+- **`ClassifyFetchFailure` (optional)**: interpret a failed feed response for a
+  permanent, site-specific condition (a deleted profile, a banned community).
+  The host calls it on 404/410 with a capped body, matched on the feed URL via
+  `Match(u, CapFetchFailure)`. A `Pause` verdict pauses the feed with your
+  user-facing `Reason`, clearing the transient error and stopping automatic
+  polling; a zero verdict keeps the normal failure handling. Pure: it only reads
+  the response the host already fetched.
 - **Image caching (capability only, no method)** — if the site serves images
   with short-lived, signed URLs, claim `Match(u, CapImageCache)`. At poll time
   the host then downloads each item's primary image and image-type enclosures

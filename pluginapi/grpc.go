@@ -284,6 +284,17 @@ func (s *grpcFetcherServer) Playback(_ context.Context, req *pb.PlaybackRequest)
 	return &pb.PlaybackResponse{Key: info.Key, Player: info.Player}, nil
 }
 
+func (s *grpcFetcherServer) ClassifyFetchFailure(_ context.Context, req *pb.FetchFailureRequest) (*pb.FetchFailureResponse, error) {
+	fc, ok := s.impl.(FetchFailureClassifier)
+	if !ok {
+		return &pb.FetchFailureResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	v := fc.ClassifyFetchFailure(FetchFailureRequest{
+		FeedURL: req.FeedUrl, Status: int(req.Status), Body: req.Body,
+	})
+	return &pb.FetchFailureResponse{Pause: v.Pause, Reason: v.Reason}, nil
+}
+
 func (s *grpcFetcherServer) FeedAction(ctx context.Context, req *pb.FeedActionRequest) (*pb.FeedActionResponse, error) {
 	fa, ok := s.impl.(FeedAdmin)
 	if !ok {
@@ -594,6 +605,16 @@ func (c *grpcFetcherClient) PlaybackFor(link string) PlaybackInfo {
 	return PlaybackInfo{Key: resp.Key, Player: resp.Player}
 }
 
+func (c *grpcFetcherClient) ClassifyFetchFailure(req FetchFailureRequest) FetchFailure {
+	resp, err := c.client.ClassifyFetchFailure(context.Background(), &pb.FetchFailureRequest{
+		FeedUrl: req.FeedURL, Status: int32(req.Status), Body: req.Body,
+	})
+	if err != nil || resp.Error != nil {
+		return FetchFailure{}
+	}
+	return FetchFailure{Pause: resp.Pause, Reason: resp.Reason}
+}
+
 func (c *grpcFetcherClient) FeedFields(feedURL string) []Field {
 	resp, err := c.client.FeedSettings(context.Background(), &pb.FeedSettingsRequest{FeedUrl: feedURL})
 	if err != nil || resp.Error != nil {
@@ -622,17 +643,18 @@ func (c *grpcFetcherClient) Action(ctx context.Context, req FeedActionRequest, h
 }
 
 var (
-	_ Fetcher      = (*grpcFetcherClient)(nil)
-	_ Renderer     = (*grpcFetcherClient)(nil)
-	_ Docser       = (*grpcFetcherClient)(nil)
-	_ SharedKeyer  = (*grpcFetcherClient)(nil)
-	_ Enricher     = (*grpcFetcherClient)(nil)
-	_ Decoration   = (*grpcFetcherClient)(nil)
-	_ URLPolicy    = (*grpcFetcherClient)(nil)
-	_ Provisioner  = (*grpcFetcherClient)(nil)
-	_ FeedAdmin    = (*grpcFetcherClient)(nil)
-	_ Configurable = (*grpcFetcherClient)(nil)
-	_ IconProvider = (*grpcFetcherClient)(nil)
+	_ Fetcher                = (*grpcFetcherClient)(nil)
+	_ Renderer               = (*grpcFetcherClient)(nil)
+	_ Docser                 = (*grpcFetcherClient)(nil)
+	_ SharedKeyer            = (*grpcFetcherClient)(nil)
+	_ Enricher               = (*grpcFetcherClient)(nil)
+	_ Decoration             = (*grpcFetcherClient)(nil)
+	_ URLPolicy              = (*grpcFetcherClient)(nil)
+	_ Provisioner            = (*grpcFetcherClient)(nil)
+	_ FeedAdmin              = (*grpcFetcherClient)(nil)
+	_ Configurable           = (*grpcFetcherClient)(nil)
+	_ IconProvider           = (*grpcFetcherClient)(nil)
+	_ FetchFailureClassifier = (*grpcFetcherClient)(nil)
 )
 
 // ---- conversions ----

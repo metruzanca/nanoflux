@@ -91,6 +91,24 @@ func (d *Dispatcher) SharedKeysPlugin(ctx context.Context, req feedparse.FetchRe
 	return nil
 }
 
+// ClassifyFetchFailure asks the matching plugin to interpret a failed feed
+// response. A plugin that does not match, does not implement the classifier, or
+// returns nothing yields a zero verdict, so feedparse keeps its normal failure
+// handling.
+func (d *Dispatcher) ClassifyFetchFailure(req feedparse.FetchRequest, status int, body []byte) feedparse.FailureVerdict {
+	if d.reg.Empty() {
+		return feedparse.FailureVerdict{}
+	}
+	fc, _ := d.reg.MatchFailureClassifier(mustParse(req.URL))
+	if fc == nil {
+		return feedparse.FailureVerdict{}
+	}
+	v := fc.ClassifyFetchFailure(pluginapi.FetchFailureRequest{
+		FeedURL: req.URL, Status: status, Body: body,
+	})
+	return feedparse.FailureVerdict{Pause: v.Pause, Reason: v.Reason}
+}
+
 // fromFeedparseItem converts a feedparse item into the pluginapi model, for the
 // SharedKeys pass (the reverse of toFeedparseResult's item loop).
 func fromFeedparseItem(it feedparse.Item) pluginapi.Item {

@@ -37,6 +37,44 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("get %s: status %d", e.URL, e.Code)
 }
 
+// PermanentError reports a fetch failure that retrying cannot fix. A matching
+// plugin's failure classifier supplies the user-facing Reason (a deleted
+// profile, a banned community); the poller pauses the feed instead of retrying
+// it on the normal interval.
+type PermanentError struct {
+	Code   int
+	Reason string
+}
+
+func (e *PermanentError) Error() string {
+	reason := e.Reason
+	if reason == "" {
+		reason = "feed is no longer available"
+	}
+	return fmt.Sprintf("%s (status %d)", reason, e.Code)
+}
+
+// FailureVerdict is a plugin's classification of a failed feed response.
+// Pause means retrying cannot succeed and the feed should be stopped; Reason is
+// a short user-facing explanation.
+type FailureVerdict struct {
+	Pause  bool
+	Reason string
+}
+
+// failureClassifier is the optional plugin hook that interprets a failed feed
+// response. A plugin that does not implement it keeps the normal StatusError
+// handling. It is a type assertion rather than part of Plugin so existing
+// plugins and test fakes are unaffected.
+type failureClassifier interface {
+	ClassifyFetchFailure(req FetchRequest, status int, body []byte) FailureVerdict
+}
+
+// failureBodyLimit caps how much of a failed response is handed to a plugin
+// classifier. The interesting part is a small XML/HTML document; reading an
+// arbitrary error page in full would waste memory.
+const failureBodyLimit = 64 << 10
+
 // Feed carries normalized feed-level metadata.
 type Feed struct {
 	Title       string
@@ -218,6 +256,22 @@ func FetchFeed(ctx context.Context, req FetchRequest, client *http.Client) (Resu
 		return Result{}, &RateLimitError{URL: feedURL, Status: resp.StatusCode, RetryAfter: rateLimitBackoff(resp)}
 	}
 	if resp.StatusCode >= 400 {
+		// A plugin may recognize a permanent, site-specific failure from the
+		// response body (a deleted profile's feed says so in its title). Only
+		// 404/410 are eligible, and the body is read solely for a plugin that
+		// implements the optional classifier.
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
+			if fc, ok := installedPlugin.(failureClassifier); ok {
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, failureBodyLimit))
+				if v := fc.ClassifyFetchFailure(req, resp.StatusCode, body); v.Pause {
+					reason := v.Reason
+					if reason == "" {
+						reason = "feed is no longer available"
+					}
+					return Result{}, &PermanentError{Code: resp.StatusCode, Reason: reason}
+				}
+			}
+		}
 		return Result{}, &StatusError{Code: resp.StatusCode, URL: feedURL}
 	}
 

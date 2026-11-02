@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -173,6 +174,112 @@ func TestFetchAtom(t *testing.T) {
 	}
 	if res.Items[0].GUID != "urn:atom:1" || res.Items[0].Title != "Atom Post" {
 		t.Errorf("item malformed: %+v", res.Items[0])
+	}
+}
+
+// classifyPlugin is a Plugin that also implements the optional failure
+// classifier, recording what the host handed it.
+type classifyPlugin struct {
+	verdict FailureVerdict
+	status  int
+	body    []byte
+}
+
+func (*classifyPlugin) MatchFetch(FetchRequest) bool      { return false }
+func (*classifyPlugin) MatchSharedKeys(FetchRequest) bool { return false }
+func (*classifyPlugin) SharedKeysPlugin(context.Context, FetchRequest, *Result) error {
+	return nil
+}
+func (*classifyPlugin) FetchPlugin(context.Context, FetchRequest) (Result, error) {
+	return Result{}, nil
+}
+func (p *classifyPlugin) ClassifyFetchFailure(_ FetchRequest, status int, body []byte) FailureVerdict {
+	p.status = status
+	p.body = body
+	return p.verdict
+}
+
+func TestFetchClassifiesPermanentFailure(t *testing.T) {
+	plug := &classifyPlugin{verdict: FailureVerdict{Pause: true, Reason: "profile was deleted"}}
+	SetPlugin(plug)
+	defer SetPlugin(nil)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`<feed><title>u/sam: deleted</title></feed>`))
+	}))
+	defer srv.Close()
+
+	_, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	var pe *PermanentError
+	if !errors.As(err, &pe) {
+		t.Fatalf("error = %v, want *PermanentError", err)
+	}
+	if pe.Reason != "profile was deleted" || pe.Code != http.StatusNotFound {
+		t.Fatalf("permanent error = %+v", pe)
+	}
+	if plug.status != http.StatusNotFound {
+		t.Fatalf("classifier status = %d", plug.status)
+	}
+	if !strings.Contains(string(plug.body), "u/sam: deleted") {
+		t.Fatalf("classifier body = %q", plug.body)
+	}
+}
+
+func TestFetchClassifierFallsBackWithoutVerdict(t *testing.T) {
+	plug := &classifyPlugin{}
+	SetPlugin(plug)
+	defer SetPlugin(nil)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	_, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	var se *StatusError
+	if !errors.As(err, &se) {
+		t.Fatalf("error = %v, want *StatusError", err)
+	}
+}
+
+func TestFetchClassifierSkipsOtherStatuses(t *testing.T) {
+	// 500 is not eligible: the classifier must not be asked to interpret an
+	// ordinary server error, and no body is read.
+	plug := &classifyPlugin{verdict: FailureVerdict{Pause: true, Reason: "nope"}}
+	SetPlugin(plug)
+	defer SetPlugin(nil)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(strings.Repeat("x", 1000)))
+	}))
+	defer srv.Close()
+
+	_, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	var se *StatusError
+	if !errors.As(err, &se) {
+		t.Fatalf("error = %v, want *StatusError", err)
+	}
+	if plug.status != 0 || len(plug.body) != 0 {
+		t.Fatalf("classifier should not be called, got status=%d body=%d", plug.status, len(plug.body))
+	}
+}
+
+func TestFetchClassifierBodyIsCapped(t *testing.T) {
+	plug := &classifyPlugin{}
+	SetPlugin(plug)
+	defer SetPlugin(nil)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusGone)
+		w.Write([]byte(strings.Repeat("x", failureBodyLimit+1000)))
+	}))
+	defer srv.Close()
+
+	_, _ = Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	if len(plug.body) != failureBodyLimit {
+		t.Fatalf("classifier body = %d bytes, want cap %d", len(plug.body), failureBodyLimit)
 	}
 }
 

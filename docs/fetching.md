@@ -477,12 +477,15 @@ Host A has one feed and host B has ten, both with 1h floors, and
 | `304 Not Modified` | Records the poll time, clears backoff, recomputes the time-of-day schedule, stores nothing |
 | Success with items | Stores new items, records `ETag`/`Last-Modified`, clears backoff, adjusts the interval (clamped to the floor) |
 | Rate limit (`429` / hinted `503`) | Sets `next_poll_at`, learns the host window, records a `last_error`; the feed is not treated as broken |
+| Permanent failure (plugin classifier) | Pauses the feed (`enabled = 0`) with a `disabled_reason`, clears `last_error` and any deadline; `ListFeedsDue` skips it until the user re-enables it |
 | Other HTTP error (`4xx`/`5xx`) | Records `last_error`; retried on the feed's normal interval |
 | Parse error (not a feed) | Records `last_error`; retried on the normal interval |
 
 `last_error` is shown as a **"last poll failed"** badge on the author page's
 feed card. It is distinct from the amber **stale** badge ("no new posts in a
-while"), which is not a failure.
+while"), which is not a failure. A paused feed shows its `disabled_reason`
+instead; a manual refresh still makes one request, so the user can check whether
+a permanent condition has cleared before re-enabling the feed.
 
 ## Item categories
 

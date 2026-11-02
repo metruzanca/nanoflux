@@ -319,6 +319,13 @@ func feedPreviewError(err error) string {
 	if errors.As(err, &rl) {
 		return "that site is rate-limiting requests — wait a minute and try again"
 	}
+	var pe *feedparse.PermanentError
+	if errors.As(err, &pe) {
+		if pe.Reason != "" {
+			return pe.Reason
+		}
+		return "that feed is no longer available (HTTP " + strconv.Itoa(pe.Code) + ")"
+	}
 	var se *feedparse.StatusError
 	if errors.As(err, &se) {
 		switch se.Code {

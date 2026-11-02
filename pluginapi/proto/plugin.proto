@@ -83,6 +83,10 @@ service Fetcher {
   // Playback is optional: the item's resumable media identity and the
   // core-owned player adapter that drives it. Pure, no network I/O.
   rpc Playback(PlaybackRequest) returns (PlaybackResponse);
+  // ClassifyFetchFailure is optional: interpret a failed feed response (a
+  // deleted profile, a banned community) so the host can pause the feed instead
+  // of retrying it. Pure, no network I/O.
+  rpc ClassifyFetchFailure(FetchFailureRequest) returns (FetchFailureResponse);
 }
 
 message MetaRequest {}
@@ -110,8 +114,9 @@ message MatchRequest {
   string url = 1;
   // 0 = discover, 1 = fetch, 2 = render, 3 = docs, 4 = shared keys, 5 = decorate,
   // 6 = url policy, 7 = enrich, 8 = provision, 9 = feed admin, 10 = image cache,
-  // 11 = icon, 12 = min poll interval, 13 = playback. New capabilities are
-  // appended, never inserted: the value crosses the wire as an integer.
+  // 11 = icon, 12 = min poll interval, 13 = playback, 14 = fetch failure. New
+  // capabilities are appended, never inserted: the value crosses the wire as an
+  // integer.
   int32 capability = 2;
 }
 message MatchResponse { bool match = 1; }
@@ -394,5 +399,20 @@ message PlaybackResponse {
   string key = 1;
   // Core player adapter name (for example "youtube"); empty means none.
   string player = 2;
+  PluginError error = 3;
+}
+
+// ClassifyFetchFailure interprets a failed feed response. A pause verdict means
+// retrying cannot succeed, so the host stops polling and shows the reason.
+
+message FetchFailureRequest {
+  string feed_url = 1;
+  int32 status = 2;
+  // The start of the response body, capped by the host.
+  bytes body = 3;
+}
+message FetchFailureResponse {
+  bool pause = 1;
+  string reason = 2;
   PluginError error = 3;
 }

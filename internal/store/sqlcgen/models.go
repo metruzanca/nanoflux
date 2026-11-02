@@ -132,6 +132,15 @@ type ItemFeed struct {
 	CreatedAt string `json:"created_at"`
 }
 
+type ItemProgress struct {
+	UserID      int64  `json:"user_id"`
+	ProgressKey string `json:"progress_key"`
+	ItemID      int64  `json:"item_id"`
+	PositionSec int64  `json:"position_sec"`
+	DurationSec int64  `json:"duration_sec"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
 type ItemsFt struct {
 	Rowid   int64  `json:"rowid"`
 	Title   string `json:"title"`
