@@ -278,9 +278,9 @@ function setAuthorSort(sort, e) {
 
 // Feed-card sort (abc / newest / unread ascending / unread descending).
 // Client-side (localStorage), reorders every list marked data-feed-sort-list,
-// so it works on a collection's feeds tab and on /feeds' folders alike. The
-// default is "abc" to match the server's title order. "unread" is the legacy
-// most-unread value kept for an existing saved preference.
+// so it works on a collection's feeds tab. The default is "abc" to match the
+// server's title order. "unread" is the legacy most-unread value kept for an
+// existing saved preference.
 var FEED_SORT_KEY = 'nanoflux.feeds.sort';
 function feedSort() {
   var s = localStorage.getItem(FEED_SORT_KEY);
@@ -313,58 +313,6 @@ function setFeedSort(sort, e) {
   applyFeedSort();
   closePickers();
 }
-
-// "Hide empty" hides feeds with no unread items on the feed-first browser, so
-// a reader can see what is left to check off. Persisted per browser; folders
-// whose every feed is hidden disappear too.
-var FEED_HIDE_EMPTY_KEY = 'nanoflux.feeds.hideEmpty';
-function feedHideEmpty() {
-  return localStorage.getItem(FEED_HIDE_EMPTY_KEY) === '1';
-}
-function applyFeedEmptyFilter() {
-  var hide = feedHideEmpty();
-  var anyVisible = false;
-  document.querySelectorAll('[data-feed-sort-list]').forEach(function (list) {
-    Array.prototype.forEach.call(list.children, function (row) {
-      row.hidden = hide && row.dataset.unread === '0';
-      if (!row.hidden) anyVisible = true;
-    });
-  });
-  document.querySelectorAll('[data-feed-folder]').forEach(function (folder) {
-    var list = folder.querySelector('[data-feed-sort-list]');
-    var any = false;
-    if (list) {
-      Array.prototype.forEach.call(list.children, function (row) {
-        if (!row.hidden) any = true;
-      });
-    }
-    folder.hidden = hide && !any;
-  });
-  var btn = document.querySelector('[data-toggle-feed-empty]');
-  if (btn) {
-    btn.setAttribute('aria-pressed', String(hide));
-    btn.textContent = hide ? 'show all' : 'hide empty';
-  }
-  var note = document.getElementById('feeds-all-hidden');
-  if (note) note.hidden = !(hide && !anyVisible);
-}
-function setFeedHideEmpty(hide, e) {
-  if (e) e.stopPropagation();
-  if (hide) localStorage.setItem(FEED_HIDE_EMPTY_KEY, '1');
-  else localStorage.removeItem(FEED_HIDE_EMPTY_KEY);
-  applyFeedEmptyFilter();
-}
-document.addEventListener('click', function (e) {
-  var btn = e.target.closest('[data-toggle-feed-empty]');
-  if (!btn) return;
-  e.preventDefault();
-  setFeedHideEmpty(!feedHideEmpty(), e);
-});
-
-applyDisplayMode();
-applyAuthorSort();
-applyFeedSort();
-applyFeedEmptyFilter();
 
 // Author edit form: clone the blank link row <template> to add another.
 function addAuthorLinkRow() {
