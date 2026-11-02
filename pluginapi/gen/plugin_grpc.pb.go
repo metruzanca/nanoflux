@@ -197,24 +197,25 @@ var Host_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	Fetcher_Meta_FullMethodName                = "/nanoflux.plugin.v1.Fetcher/Meta"
-	Fetcher_Match_FullMethodName               = "/nanoflux.plugin.v1.Fetcher/Match"
-	Fetcher_Discover_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/Discover"
-	Fetcher_Fetch_FullMethodName               = "/nanoflux.plugin.v1.Fetcher/Fetch"
-	Fetcher_Render_FullMethodName              = "/nanoflux.plugin.v1.Fetcher/Render"
-	Fetcher_Docs_FullMethodName                = "/nanoflux.plugin.v1.Fetcher/Docs"
-	Fetcher_SharedKeys_FullMethodName          = "/nanoflux.plugin.v1.Fetcher/SharedKeys"
-	Fetcher_Enrich_FullMethodName              = "/nanoflux.plugin.v1.Fetcher/Enrich"
-	Fetcher_Decorate_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/Decorate"
-	Fetcher_CanonicalizeFeedURL_FullMethodName = "/nanoflux.plugin.v1.Fetcher/CanonicalizeFeedURL"
-	Fetcher_FeedToken_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/FeedToken"
-	Fetcher_Provision_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/Provision"
-	Fetcher_FeedSettings_FullMethodName        = "/nanoflux.plugin.v1.Fetcher/FeedSettings"
-	Fetcher_FeedAction_FullMethodName          = "/nanoflux.plugin.v1.Fetcher/FeedAction"
-	Fetcher_SettingsSchema_FullMethodName      = "/nanoflux.plugin.v1.Fetcher/SettingsSchema"
-	Fetcher_Configure_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/Configure"
-	Fetcher_Icon_FullMethodName                = "/nanoflux.plugin.v1.Fetcher/Icon"
-	Fetcher_Playback_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/Playback"
+	Fetcher_Meta_FullMethodName                 = "/nanoflux.plugin.v1.Fetcher/Meta"
+	Fetcher_Match_FullMethodName                = "/nanoflux.plugin.v1.Fetcher/Match"
+	Fetcher_Discover_FullMethodName             = "/nanoflux.plugin.v1.Fetcher/Discover"
+	Fetcher_Fetch_FullMethodName                = "/nanoflux.plugin.v1.Fetcher/Fetch"
+	Fetcher_Render_FullMethodName               = "/nanoflux.plugin.v1.Fetcher/Render"
+	Fetcher_Docs_FullMethodName                 = "/nanoflux.plugin.v1.Fetcher/Docs"
+	Fetcher_SharedKeys_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/SharedKeys"
+	Fetcher_Enrich_FullMethodName               = "/nanoflux.plugin.v1.Fetcher/Enrich"
+	Fetcher_Decorate_FullMethodName             = "/nanoflux.plugin.v1.Fetcher/Decorate"
+	Fetcher_CanonicalizeFeedURL_FullMethodName  = "/nanoflux.plugin.v1.Fetcher/CanonicalizeFeedURL"
+	Fetcher_FeedToken_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/FeedToken"
+	Fetcher_Provision_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/Provision"
+	Fetcher_FeedSettings_FullMethodName         = "/nanoflux.plugin.v1.Fetcher/FeedSettings"
+	Fetcher_FeedAction_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/FeedAction"
+	Fetcher_SettingsSchema_FullMethodName       = "/nanoflux.plugin.v1.Fetcher/SettingsSchema"
+	Fetcher_Configure_FullMethodName            = "/nanoflux.plugin.v1.Fetcher/Configure"
+	Fetcher_Icon_FullMethodName                 = "/nanoflux.plugin.v1.Fetcher/Icon"
+	Fetcher_Playback_FullMethodName             = "/nanoflux.plugin.v1.Fetcher/Playback"
+	Fetcher_ClassifyFetchFailure_FullMethodName = "/nanoflux.plugin.v1.Fetcher/ClassifyFetchFailure"
 )
 
 // FetcherClient is the client API for Fetcher service.
@@ -262,6 +263,10 @@ type FetcherClient interface {
 	// Playback is optional: the item's resumable media identity and the
 	// core-owned player adapter that drives it. Pure, no network I/O.
 	Playback(ctx context.Context, in *PlaybackRequest, opts ...grpc.CallOption) (*PlaybackResponse, error)
+	// ClassifyFetchFailure is optional: interpret a failed feed response (a
+	// deleted profile, a banned community) so the host can pause the feed instead
+	// of retrying it. Pure, no network I/O.
+	ClassifyFetchFailure(ctx context.Context, in *FetchFailureRequest, opts ...grpc.CallOption) (*FetchFailureResponse, error)
 }
 
 type fetcherClient struct {
@@ -452,6 +457,16 @@ func (c *fetcherClient) Playback(ctx context.Context, in *PlaybackRequest, opts 
 	return out, nil
 }
 
+func (c *fetcherClient) ClassifyFetchFailure(ctx context.Context, in *FetchFailureRequest, opts ...grpc.CallOption) (*FetchFailureResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FetchFailureResponse)
+	err := c.cc.Invoke(ctx, Fetcher_ClassifyFetchFailure_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // FetcherServer is the server API for Fetcher service.
 // All implementations must embed UnimplementedFetcherServer
 // for forward compatibility.
@@ -497,6 +512,10 @@ type FetcherServer interface {
 	// Playback is optional: the item's resumable media identity and the
 	// core-owned player adapter that drives it. Pure, no network I/O.
 	Playback(context.Context, *PlaybackRequest) (*PlaybackResponse, error)
+	// ClassifyFetchFailure is optional: interpret a failed feed response (a
+	// deleted profile, a banned community) so the host can pause the feed instead
+	// of retrying it. Pure, no network I/O.
+	ClassifyFetchFailure(context.Context, *FetchFailureRequest) (*FetchFailureResponse, error)
 	mustEmbedUnimplementedFetcherServer()
 }
 
@@ -560,6 +579,9 @@ func (UnimplementedFetcherServer) Icon(context.Context, *IconRequest) (*IconResp
 }
 func (UnimplementedFetcherServer) Playback(context.Context, *PlaybackRequest) (*PlaybackResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Playback not implemented")
+}
+func (UnimplementedFetcherServer) ClassifyFetchFailure(context.Context, *FetchFailureRequest) (*FetchFailureResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClassifyFetchFailure not implemented")
 }
 func (UnimplementedFetcherServer) mustEmbedUnimplementedFetcherServer() {}
 func (UnimplementedFetcherServer) testEmbeddedByValue()                 {}
@@ -906,6 +928,24 @@ func _Fetcher_Playback_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Fetcher_ClassifyFetchFailure_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FetchFailureRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).ClassifyFetchFailure(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_ClassifyFetchFailure_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).ClassifyFetchFailure(ctx, req.(*FetchFailureRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Fetcher_ServiceDesc is the grpc.ServiceDesc for Fetcher service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -984,6 +1024,10 @@ var Fetcher_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Playback",
 			Handler:    _Fetcher_Playback_Handler,
+		},
+		{
+			MethodName: "ClassifyFetchFailure",
+			Handler:    _Fetcher_ClassifyFetchFailure_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

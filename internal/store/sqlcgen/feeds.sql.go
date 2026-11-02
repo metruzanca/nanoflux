@@ -935,6 +935,31 @@ func (q *Queries) ListUserFeeds(ctx context.Context, userID int64) ([]ListUserFe
 	return items, nil
 }
 
+const pauseFeed = `-- name: PauseFeed :exec
+UPDATE feeds
+SET enabled = 0,
+    disabled_reason = ?1,
+    last_polled_at = ?2,
+    last_error = NULL,
+    next_poll_at = NULL,
+    next_poll_scheduled = 0
+WHERE id = ?3
+`
+
+type PauseFeedParams struct {
+	Reason   sql.NullString `json:"reason"`
+	PolledAt sql.NullString `json:"polledAt"`
+	ID       int64          `json:"id"`
+}
+
+// Stop polling a feed permanently (a deleted profile, a banned community).
+// The poller owns this write: it is not user-scoped, and enabling the feed
+// later clears the reason through UpdateFeed or SetFeedEnabled.
+func (q *Queries) PauseFeed(ctx context.Context, arg PauseFeedParams) error {
+	_, err := q.db.ExecContext(ctx, pauseFeed, arg.Reason, arg.PolledAt, arg.ID)
+	return err
+}
+
 const reenableAutoDisabledFeed = `-- name: ReenableAutoDisabledFeed :execrows
 UPDATE feeds
 SET enabled = 1, disabled_reason = NULL
@@ -973,14 +998,15 @@ func (q *Queries) SetFeedCacheImages(ctx context.Context, arg SetFeedCacheImages
 
 const setFeedEnabled = `-- name: SetFeedEnabled :exec
 UPDATE feeds
-SET enabled = ?
-WHERE id = ? AND user_id = ?
+SET enabled = ?1,
+    disabled_reason = CASE WHEN ?1 THEN NULL ELSE disabled_reason END
+WHERE id = ?2 AND user_id = ?3
 `
 
 type SetFeedEnabledParams struct {
 	Enabled bool  `json:"enabled"`
 	ID      int64 `json:"id"`
-	UserID  int64 `json:"user_id"`
+	UserID  int64 `json:"userID"`
 }
 
 func (q *Queries) SetFeedEnabled(ctx context.Context, arg SetFeedEnabledParams) error {

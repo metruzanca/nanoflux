@@ -327,6 +327,24 @@ func TestFeedRefreshUpdatesAuthorList(t *testing.T) {
 	}
 }
 
+// TestPausedFeedShowsReason asserts an automatically paused feed renders the
+// classifier's reason instead of a generic poll error.
+func TestPausedFeedShowsReason(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "u/sam", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "u/sam", "https://www.reddit.com/user/sam/submitted.rss", "", "", 900)
+	if err := s.store.Feeds.Pause(f.ID, "reddit profile was deleted", db.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if !strings.Contains(body, "reddit profile was deleted") {
+		t.Fatalf("paused feed should show its reason: %s", body)
+	}
+}
+
 // TestFeedRefreshRespectsBackoff asserts that a manual refresh during a
 // rate-limit backoff does not fetch (so it can't hammer the host) and the row
 // shows the retry deadline with the refresh button disabled.

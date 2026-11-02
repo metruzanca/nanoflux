@@ -813,6 +813,25 @@ func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
 			)
 			return 0, err
 		}
+		// A permanent failure means retrying cannot succeed (a deleted profile,
+		// a banned community). Pause the feed so it stops spending the host's
+		// request budget, and record the plugin's user-facing reason instead of
+		// a raw error.
+		var pe *feedparse.PermanentError
+		if errors.As(err, &pe) {
+			if perr := p.store.Feeds.Pause(f.ID, truncateError(pe.Reason), fetched); perr != nil {
+				log.Error("pause feed", "feed_id", f.ID, "url", f.FeedURL, "err", perr)
+				p.store.Feeds.SetPollMeta(f.ID, "", "", fetched, truncateError(err.Error()))
+				return 0, perr
+			}
+			log.Warn("feed paused",
+				"feed_id", f.ID,
+				"url", f.FeedURL,
+				"status", pe.Code,
+				"reason", pe.Reason,
+			)
+			return 0, nil
+		}
 		p.store.Feeds.SetPollMeta(f.ID, "", "", fetched, truncateError(err.Error()))
 		p.clearSchedule(f.ID)
 		return 0, err

@@ -97,8 +97,22 @@ WHERE id = ?;
 
 -- name: SetFeedEnabled :exec
 UPDATE feeds
-SET enabled = ?
-WHERE id = ? AND user_id = ?;
+SET enabled = sqlc.arg('enabled'),
+    disabled_reason = CASE WHEN sqlc.arg('enabled') THEN NULL ELSE disabled_reason END
+WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('userID');
+
+-- name: PauseFeed :exec
+-- Stop polling a feed permanently (a deleted profile, a banned community).
+-- The poller owns this write: it is not user-scoped, and enabling the feed
+-- later clears the reason through UpdateFeed or SetFeedEnabled.
+UPDATE feeds
+SET enabled = 0,
+    disabled_reason = sqlc.arg('reason'),
+    last_polled_at = sqlc.arg('polledAt'),
+    last_error = NULL,
+    next_poll_at = NULL,
+    next_poll_scheduled = 0
+WHERE id = sqlc.arg('id');
 
 -- name: SetFeedPollInterval :exec
 UPDATE feeds

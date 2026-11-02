@@ -154,6 +154,59 @@ func (f fakeProvisioner) Action(context.Context, pluginapi.FeedActionRequest, pl
 	return pluginapi.FeedActionResult{Deleted: f.deleted}, nil
 }
 
+// fakeClassifier is a fakeFetcher that also implements the optional failure
+// classifier.
+type fakeClassifier struct {
+	fakeFetcher
+	verdict pluginapi.FetchFailure
+	got     pluginapi.FetchFailureRequest
+}
+
+func (f *fakeClassifier) ClassifyFetchFailure(req pluginapi.FetchFailureRequest) pluginapi.FetchFailure {
+	f.got = req
+	return f.verdict
+}
+
+// TestFetchFailureClassifier covers the capability routing and the dispatcher's
+// type conversion: a matching plugin's verdict reaches feedparse, and an
+// unmatched URL or non-implementing plugin yields no verdict.
+func TestFetchFailureClassifier(t *testing.T) {
+	reg := NewRegistry()
+	classifier := &fakeClassifier{
+		fakeFetcher: fakeFetcher{
+			name: "f",
+			match: func(u *url.URL, cap pluginapi.Capability) bool {
+				return cap == pluginapi.CapFetchFailure && u.Hostname() == "gone.example"
+			},
+		},
+		verdict: pluginapi.FetchFailure{Pause: true, Reason: "profile was deleted"},
+	}
+	reg.RegisterExternal(classifier)
+	reg.RegisterExternal(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
+
+	u, _ := url.Parse("https://gone.example/user/sam/submitted.rss")
+	fc, _ := reg.MatchFailureClassifier(u)
+	if fc == nil {
+		t.Fatal("MatchFailureClassifier should find the plugin")
+	}
+	other, _ := url.Parse("https://other.example/feed")
+	if fc, _ := reg.MatchFailureClassifier(other); fc != nil {
+		t.Fatal("unmatched URL should not resolve a classifier")
+	}
+
+	d := NewDispatcher(reg, nil)
+	verdict := d.ClassifyFetchFailure(feedparse.FetchRequest{URL: u.String()}, 404, []byte("<feed/>"))
+	if !verdict.Pause || verdict.Reason != "profile was deleted" {
+		t.Fatalf("verdict = %+v", verdict)
+	}
+	if classifier.got.FeedURL != u.String() || classifier.got.Status != 404 || string(classifier.got.Body) != "<feed/>" {
+		t.Fatalf("classifier request = %+v", classifier.got)
+	}
+	if got := d.ClassifyFetchFailure(feedparse.FetchRequest{URL: other.String()}, 404, nil); got.Pause {
+		t.Fatalf("unmatched verdict = %+v", got)
+	}
+}
+
 // fakeIconer is a fakeFetcher that also implements IconProvider.
 type fakeIconer struct {
 	fakeFetcher

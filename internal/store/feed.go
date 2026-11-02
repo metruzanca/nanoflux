@@ -370,7 +370,8 @@ func (s *FeedStore) SetNextPageURL(id int64, url string) error {
 }
 
 // SetEnabled pauses or resumes polling for a feed. Disabled feeds keep their
-// items but are skipped by the poller.
+// items but are skipped by the poller. Enabling clears an automatic
+// disabled_reason so a user override always wins.
 func (s *FeedStore) SetEnabled(userID, id int64, enabled bool) error {
 	if err := s.q.SetFeedEnabled(context.Background(), sqlcgen.SetFeedEnabledParams{
 		Enabled: enabled,
@@ -380,6 +381,18 @@ func (s *FeedStore) SetEnabled(userID, id int64, enabled bool) error {
 		return err
 	}
 	return nil
+}
+
+// Pause stops polling a feed permanently (a deleted profile, a banned
+// community). It records the user-facing reason, clears any transient error and
+// poll deadline, and records the poll attempt. The poller owns this write, so it
+// is not user-scoped.
+func (s *FeedStore) Pause(id int64, reason, polledAt string) error {
+	return s.q.PauseFeed(context.Background(), sqlcgen.PauseFeedParams{
+		Reason:   ns(reason),
+		PolledAt: ns(polledAt),
+		ID:       id,
+	})
 }
 
 // SetPollInterval records a feed's poll_interval_sec. Not user-scoped: the

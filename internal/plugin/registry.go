@@ -119,6 +119,24 @@ func (r *Registry) MatchEnricher(u *url.URL) (pluginapi.Enricher, pluginapi.Fetc
 	return nil, nil
 }
 
+// MatchFailureClassifier returns the first plugin that classifies a failed
+// fetch for u, or (nil, nil). It is matched on the feed URL, like the other
+// URL-gated capabilities.
+func (r *Registry) MatchFailureClassifier(u *url.URL) (pluginapi.FetchFailureClassifier, pluginapi.Fetcher) {
+	if u == nil {
+		return nil, nil
+	}
+	for _, f := range r.all() {
+		if !f.Match(u, pluginapi.CapFetchFailure) {
+			continue
+		}
+		if fc, ok := f.(pluginapi.FetchFailureClassifier); ok {
+			return fc, f
+		}
+	}
+	return nil, nil
+}
+
 // MatchSharedKeyer returns the first plugin that assigns cross-feed keys to u's
 // parsed items at ingest, along with its Fetcher (for the host factory), or
 // (nil, nil).

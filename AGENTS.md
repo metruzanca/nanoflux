@@ -203,6 +203,16 @@ executables loaded from `NF_PLUGINS_DIR`.
   icon for its site when no cached favicon exists. `Registry.Icon` matches the
   URL and calls `IconProvider.Icon`, and `httpapi` uses it before the generic
   globe fallback. Pure and cheap; it runs while serving an icon request.
+- **`FetchFailureClassifier`** (`CapFetchFailure`): classifies a failed feed
+  fetch so a permanent, site-specific condition pauses the feed instead of
+  retrying it forever. `feedparse` reads a capped body only for 404/410 and
+  calls the matching plugin's pure `ClassifyFetchFailure`; a `Pause` verdict
+  becomes a typed `feedparse.PermanentError` with a user-facing reason.
+  `poller.PollOne` maps that to `FeedStore.Pause`, which sets `enabled = 0`,
+  `disabled_reason`, and clears `last_error` and the poll deadlines. The paused
+  feed is excluded by `ListFeedsDue`, so it stops spending the host's request
+  budget; a manual refresh still performs one request, and enabling the feed
+  clears the reason.
 
 `Match` **must honour the capability it is asked about**: return false for any
 capability the plugin does not claim. A plugin that ignores it (an early
@@ -216,7 +226,8 @@ gRPC client's unsupported RPC is handled), but Match-only ones are not.
 A plugin that owns URL-matched capabilities is the reference for all of
 these: `Match` returns true only for the
 capabilities it claims (`CapSharedKey`, `CapDecorate`, `CapURLPolicy`,
-`CapDiscover`, `CapRender`, `CapDocs`) on its hosts; it does **not** claim
+`CapDiscover`, `CapRender`, `CapDocs`, `CapFetchFailure`) on its hosts; it does
+**not** claim
 `CapFetch` when the generic parser reads its feeds. A URL that is not a feed is a
 case where the plugin returns false for the URL-matched capabilities that would
 misread it (otherwise discovery would read it as a feed shape and the URL policy

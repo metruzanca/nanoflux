@@ -99,6 +99,11 @@ const (
 	// report its position. It is matched on the item's link, is pure, and never
 	// performs network I/O.
 	CapPlayback
+	// CapFetchFailure asks whether the plugin can classify a failed feed fetch:
+	// a response status and its body, so a site-specific permanent condition
+	// (a deleted profile, a banned community) can pause the feed instead of
+	// retrying it forever. It is matched on the feed URL.
+	CapFetchFailure
 )
 
 // Meta describes a plugin to the host.
@@ -352,6 +357,37 @@ type PlaybackProvider interface {
 	// PlaybackFor returns the playback facts for link. An empty Key or Player
 	// means the item is not resumable.
 	PlaybackFor(link string) PlaybackInfo
+}
+
+// FetchFailureClassifier is an optional pure capability a plugin may implement
+// to classify a failed feed fetch. The host calls it after a 404 or 410 with a
+// capped response body, so a site-specific permanent condition can pause the
+// feed instead of retrying it on every interval.
+//
+// It is matched on the feed URL via CapFetchFailure. ClassifyFetchFailure must be
+// pure and must not perform network I/O: it only interprets the response the
+// host already received. Returning a zero FetchFailure means "no special
+// meaning", and the host keeps its normal failure handling.
+type FetchFailureClassifier interface {
+	ClassifyFetchFailure(req FetchFailureRequest) FetchFailure
+}
+
+// FetchFailureRequest is one failed feed response offered to a classifier.
+type FetchFailureRequest struct {
+	// FeedURL is the feed that was fetched.
+	FeedURL string
+	// Status is the HTTP response status (404 or 410).
+	Status int
+	// Body is the start of the response body, capped by the host.
+	Body []byte
+}
+
+// FetchFailure is a classifier's verdict for a failed fetch. Pause asks the host
+// to stop polling the feed because retrying cannot succeed; Reason is a short
+// user-facing explanation shown with the paused feed.
+type FetchFailure struct {
+	Pause  bool
+	Reason string
 }
 
 // PlaybackInfo describes an item's resumable media.
