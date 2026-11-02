@@ -351,9 +351,11 @@ func TestAverageGapSeconds(t *testing.T) {
 }
 
 func TestStaleFeedFor(t *testing.T) {
+	now := time.Date(2026, 11, 2, 12, 0, 0, 0, time.UTC)
 	d := func(days int) string {
-		return time.Now().Add(-time.Duration(days) * 24 * time.Hour).Format("2006-01-02 15:04:05")
+		return now.Add(-time.Duration(days) * 24 * time.Hour).Format("2006-01-02 15:04:05")
 	}
+	nowStr := now.Format("2006-01-02 15:04:05")
 	cases := []struct {
 		name        string
 		last        string
@@ -378,7 +380,7 @@ func TestStaleFeedFor(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			sf, ok := staleFeedFor(c.last, time.Now().Format("2006-01-02 15:04:05"), c.intervalSec)
+			sf, ok := staleFeedFor(c.last, nowStr, c.intervalSec)
 			if ok != c.wantOK || (ok && (sf.Days != c.wantDays || sf.Abandoned != c.wantAbandon)) {
 				t.Errorf("staleFeedFor(%q, %d) = %+v, %v; want days=%d aband=%v ok=%v", c.last, c.intervalSec, sf, ok, c.wantDays, c.wantAbandon, c.wantOK)
 			}
