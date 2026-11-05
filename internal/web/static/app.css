@@ -835,6 +835,11 @@ a.item-tag:hover { color: var(--accent); }
   font: inherit;
 }
 .filter-row > .link { flex: 0 0 auto; }
+.filter-time { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; flex: 1 1 20rem; min-width: 0; }
+.filter-time-field { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: var(--muted); }
+.filter-time-field input { min-width: 0; }
+.filter-time-end { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.filter-time-end[hidden] { display: none; }
 
 /* Author settings: always-on rule preview, allowed beside blocked. */
 .author-filter-preview { margin-top: 1rem; }

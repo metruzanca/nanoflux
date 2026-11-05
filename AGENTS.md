@@ -327,36 +327,56 @@ Categories are also normalized for tag browsing and list filtering.
   rows for items stored before the migration, and is a no-op once populated.
 - `ItemStore.ListCategories(userID, ItemFilter{FeedID|AuthorID|CollectionID})`
   returns each distinct tag with its item count, most-used first.
+  `ItemStore.ListUserCategories(userID, unreadOnly)` is the global variant for
+  `/unread`: every distinct tag across the user's feeds (through
+  `visible_items`, so author block rules apply), optionally counted over unread
+  items only. It is deliberately not capped; the filter combobox narrows the
+  full list client-side as the user types.
 - `ItemFilter.Tags` filters a list to items carrying **every** listed tag (AND).
   `ItemFilter.ExcludeTags` hides items carrying any listed tag, and
   `ItemFilter.ExcludeFeedID` hides items seen through one feed. Per-row filters
-  use `ItemFilter.TagGroups` / `FeedGroups`: each group has its own values and
-  `All` (AND vs OR) and `Exclude` flags. The generated `ListItems*` queries are
-  fixed-shape, so any tag/group/negative filter uses the hand-written
+  use `ItemFilter.TagGroups` / `FeedGroups` / `TimeGroups`: each group has its
+  own values and `All` (AND vs OR) and `Exclude` flags; a `TimeGroup` carries
+  inclusive `After`/`Before` UTC bounds over `COALESCE(published_at,
+  fetched_at)`. The generated `ListItems*` queries are fixed-shape, so any
+  tag/group/negative/time filter uses the hand-written
   `ItemStore.listPageTagged` (dynamic `EXISTS`/`NOT EXISTS`; supports
   newest/oldest/magic and all scopes), mirroring `SearchPage`'s raw-SQL pattern.
-  `unreadFilteredQuery` (mark-all/count) applies the same predicates.
+  `unreadFilteredQuery` (mark-all/count) applies the same predicates, so a
+  filtered mark-all marks exactly the shown items.
 - HTTP filters are transient query state (`internal/httpapi/filters.go`): each
-  applied row has a kind (`tag`/`feed`), action (`show`/`hide`), combine
+  applied row has a kind (`tag`/`feed`/`time`), action (`show`/`hide`), combine
   (`any`/`all`) and one or more values. A single value uses the legacy URL
   shape `?f=tag:show:r/golang`; multi-value rows use
-  `?f=tag:show:any:["r/golang","r/rust"]`. Legacy `?tags=`/`?feed=` still parse
-  as show/all filters. Rows are ANDed together for `show` and ORed for `hide`
-  (any matching hide row excludes). The modal form submits one `filter_row`
-  token per row plus repeated `filter_value_<token>` values. Tags are capped at
-  `maxTagFilters`. Tab, sort, chip and pagination links carry the filters with
+  `?f=tag:show:any:["r/golang","r/rust"]`; a time row uses
+  `?f=time:show:["between","2026-01-01","2026-01-31"]` with values
+  `[mode, start, end]` (`before`/`after`/`between`). Legacy `?tags=`/`?feed=`
+  still parse as show/all filters. Rows are ANDed together for `show` and ORed
+  for `hide` (any matching hide row excludes). The modal form submits one
+  `filter_row` token per row plus repeated `filter_value_<token>` values (and
+  `filter_time_*_<token>` for a time row). Tags are capped at `maxTagFilters`.
+  Tab, sort, chip and pagination links carry the filters with
   `listFilters.appendFilters`.
+- Time rows are resolved at query time in the user's timezone and converted to
+  the canonical UTC storage format: a date-only lower bound means start of day,
+  a date-only upper bound means the last second of that day, and a supplied
+  time makes the bound exact. The transient `/unread` list is the place to
+  filter across every feed; its pickers are tag (all unread tags), feed (all
+  the user's feeds) and time. Author settings never persist time rules:
+  `listFilters.rules()` skips time rows and `validateAuthorRules` drops them.
 - UI: the item modal shows its tags as clickable chips (linking to
-  `/authors/{id}?tags=`); a scoped feed/author/collection list gets a filter
-  dialog with one editable row per applied filter (`show`/`hide` action,
-  `tag`/`feed` kind, `any`/`all` combine, multi-select values) plus x (remove)
-  and + (insert another row) controls; a persistent "add filter" button keeps
-  an empty row list recoverable. The tag/feed select is hidden when only one
-  kind is available; with one feed the kind defaults to `tag` and feed filters
-  are dropped. Each row's kind change swaps its value options client-side
-  (`data-filter-row-template`, `data-filter-rows`, `data-add-filter-row`,
-  `data-filter-kind` in `app.js`). Active-filter chips drop one row; a hidden
-  filter's chip uses the
+  `/authors/{id}?tags=`); a scoped feed/author/collection list and `/unread`
+  get a filter dialog with one editable row per applied filter (`show`/`hide`
+  action, `tag`/`feed`/`time` kind, `any`/`all` combine, multi-select values)
+  plus x (remove) and + (insert another row) controls; a persistent "add
+  filter" button keeps an empty row list recoverable. The kind select is shown
+  when more than one kind is available; with one feed the feed kind is dropped
+  and feed filters are ignored. A time row replaces the value combo with a
+  mode select and date plus optional time inputs; its any/all select is hidden
+  because it has no meaning there. Each row's kind change swaps its value
+  options client-side (`data-filter-row-template`, `data-filter-rows`,
+  `data-add-filter-row`, `data-filter-kind`, `data-filter-time-mode` in
+  `app.js`). Active-filter chips drop one row; a hidden filter's chip uses the
   `chip-hide` style. Author-page feed rows are validated against the author
   before use (`authorFilters`).
 

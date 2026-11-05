@@ -267,13 +267,31 @@ func (s *Server) unread(w http.ResponseWriter, r *http.Request) {
 func (s *Server) renderUnread(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	sort := itemSortOf(r)
-	items, more, _ := s.store.Items.ListPage(u.ID, scopedFilter("unread", sort, cursorID(r, sort), 0, 0, nil))
+	filters := filtersFromRequest(r)
+	items, more, _ := s.store.Items.ListPage(u.ID, scopedFilter("unread", sort, cursorID(r, sort), 0, 0, filters, u.Timezone))
 	unread, _ := s.store.Items.CountUnread(u.ID, 0)
-	base := "/items?sort=" + sort.param()
+	base := filters.appendFilters("/items?sort=" + sort.param())
+	// /unread is the global filter view, so its pickers span every feed. Tags
+	// are the user's unread tags, most-used first; the combobox filters the full
+	// list client-side as the user types.
+	cats, _ := s.store.Items.ListUserCategories(u.ID, true)
+	feeds, _ := s.store.Feeds.ListWithUnread(u.ID)
+	titles := make(map[int64]string, len(feeds))
+	for _, f := range feeds {
+		titles[f.Feed.ID] = f.Feed.Title
+	}
+	filters = filterFeedTitles(filters, titles)
+	filtered := 0
+	if len(filters) > 0 {
+		filtered, _ = s.store.Items.CountFiltered(u.ID, scopedFilter("unread", sortNewest, 0, 0, 0, filters, u.Timezone))
+	}
 	web.Render(w, r, basePage("unread", u, homePage(homeData{
 		Unread: withTZ(u.Timezone, items), UnreadCount: unread, Sort: sort,
-		More: pageCursorFor(base, items, more, sort, int(cursorID(r, sort))),
-		Mode: s.store.ViewPrefs.Mode(u.ID, "/unread"),
+		More:    pageCursorFor(base, items, more, sort, int(cursorID(r, sort))),
+		Mode:    s.store.ViewPrefs.Mode(u.ID, "/unread"),
+		Filters: filters, FilteredCount: filtered,
+		TagOptions:  mergeActiveTags(tagItems(cats), filters),
+		FeedOptions: groupedFeedItems(groupFeedsByAuthor(feeds)),
 	})))
 }
 

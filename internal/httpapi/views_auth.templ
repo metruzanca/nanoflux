@@ -66,14 +66,18 @@ templ dashboardPage(d dashboardData) {
 }
 
 templ homePage(d homeData) {
+	{{ fp := d.filterPanel() }}
 	<div class="row">
 		<h1>unread ({ d.UnreadCount })</h1>
 		<div class="row-actions">
-			@SimpleSortControl("/unread", d.Sort)
+			@filterButton(fp)
+			@SimpleSortControl("/unread", d.Sort, d.Filters)
 			@DisplayModeControl("/unread", d.Mode)
 		</div>
 	</div>
+	@filterChips(fp)
 	@ItemsSection(d.Unread, d.More, false, d.Mode)
+	@filterDialog(fp)
 }
 
 templ readPage(d readData) {
@@ -93,7 +97,7 @@ templ favoritesPage(d favoritesData) {
 	<div class="row">
 		<h1>favorites ({ d.FavCount })</h1>
 		<div class="row-actions">
-			@SimpleSortControl("/favorites", d.Sort)
+			@SimpleSortControl("/favorites", d.Sort, nil)
 			@DisplayModeControl("/favorites", d.Mode)
 			@favoritesShareControl(d.ShareToken)
 		</div>
@@ -105,7 +109,7 @@ templ bookmarksPage(d bookmarksData) {
 	<div class="row">
 		<h1>bookmarks ({ d.BookCount })</h1>
 		<div class="row-actions">
-			@SimpleSortControl("/bookmarks", d.Sort)
+			@SimpleSortControl("/bookmarks", d.Sort, nil)
 			@DisplayModeControl("/bookmarks", d.Mode)
 			@bookmarksShareControl(d.ShareToken)
 		</div>

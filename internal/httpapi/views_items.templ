@@ -422,12 +422,14 @@ templ scopedTab(path, itemsPath, view, label, count string, active bool, sort it
 }
 
 // filterRow is one editable row in the filter modal: action, kind, any/all,
-// values, then remove/add controls. The kind select is hidden when only one
-// kind is possible; its value still submits through a hidden input.
+// values, then remove/add controls. kinds is the set of kinds the caller
+// offers (tag/feed/time); the kind select is hidden when only one is possible
+// and its value still submits through a hidden input.
 //
-// Both option sets are rendered as <template>s. app.js swaps the value cell
-// when the kind changes, so no client-side option hydration is needed.
-templ filterRow(id, token, kind, action, combine string, values []string, tagItems, feedItems []comboItem, switchable, allowBlock bool) {
+// Each possible kind's value editor is rendered as a <template>. app.js swaps
+// the value cell when the kind changes, so no client-side option hydration is
+// needed.
+templ filterRow(id, token, kind, action, combine string, values []string, tagItems, feedItems []comboItem, kinds []string, allowBlock bool) {
 	<div class="filter-row" data-filter-row>
 		<input type="hidden" name="filter_row" value={ token }/>
 		<select name="filter_action" class="filter-select filter-action" aria-label="filter action">
@@ -439,37 +441,144 @@ templ filterRow(id, token, kind, action, combine string, values []string, tagIte
 				<option value={ filterHide } selected?={ action == filterHide }>hide</option>
 			}
 		</select>
-		if switchable {
+		if len(kinds) > 1 {
 			<select name="filter_kind" class="filter-select filter-kind" aria-label="filter kind" data-filter-kind>
-				<option value={ filterKindTag } selected?={ kind == filterKindTag }>tag</option>
-				<option value={ filterKindFeed } selected?={ kind == filterKindFeed }>feed</option>
+				for _, k := range kinds {
+					<option value={ k } selected?={ kind == k }>{ k }</option>
+				}
 			</select>
 		} else {
 			<input type="hidden" name="filter_kind" value={ kind }/>
 		}
-		<select name="filter_combine" class="filter-select filter-combine" aria-label="how values combine">
-			<option value={ filterAny } selected?={ combine == filterAny }>any</option>
-			<option value={ filterAll } selected?={ combine == filterAll }>all</option>
-		</select>
+		<span data-filter-combine hidden?={ kind == filterKindTime }>
+			<select name="filter_combine" class="filter-select filter-combine" aria-label="how values combine">
+				<option value={ filterAny } selected?={ combine == filterAny }>any</option>
+				<option value={ filterAll } selected?={ combine == filterAll }>all</option>
+			</select>
+		</span>
 		<div class="filter-value" data-filter-value data-filter-value-kind={ kind }>
-			if kind == filterKindFeed {
+			if kind == filterKindTime {
+				@filterTimeRow(id+"-value", token, values)
+			} else if kind == filterKindFeed {
 				@comboMultiID(id+"-value", "filter_value_"+token, "", values, feedItems)
 			} else {
 				@comboMultiID(id+"-value", "filter_value_"+token, "", values, tagItems)
 			}
 		</div>
-		<template data-filter-value-template="tag">
-			@comboMultiID(id+"-value-tag", "filter_value_"+token, "", nil, tagItems)
-		</template>
-		<template data-filter-value-template="feed">
-			@comboMultiID(id+"-value-feed", "filter_value_"+token, "", nil, feedItems)
-		</template>
+		for _, k := range kinds {
+			if k == filterKindTime {
+				<template data-filter-value-template="time">
+					@filterTimeRow(id+"-value-time", token, nil)
+				</template>
+			} else if k == filterKindFeed {
+				<template data-filter-value-template="feed">
+					@comboMultiID(id+"-value-feed", "filter_value_"+token, "", nil, feedItems)
+				</template>
+			} else {
+				<template data-filter-value-template="tag">
+					@comboMultiID(id+"-value-tag", "filter_value_"+token, "", nil, tagItems)
+				</template>
+			}
+		}
 		<button type="button" class="link danger" title="remove filter" data-remove-closest=".filter-row">@web.Lucide("x")</button>
 		<button type="button" class="link" title="add another filter" data-add-filter-row>@web.Lucide("plus")</button>
 	</div>
 }
 
+// filterTimeRow is the value editor for a time row: a mode select, the primary
+// date and optional time, and (for "between") the end date and optional time.
+// A date-only bound means the whole day in the user's timezone.
+templ filterTimeRow(id, token string, values []string) {
+	{{ mode := timeModeOf(values) }}
+	{{ startDate, startClock := splitTimeInput(timePrimary(values)) }}
+	{{ endDate, endClock := splitTimeInput(timeSecondary(values)) }}
+	<div class="filter-time" data-filter-time>
+		<select name={ "filter_time_mode_" + token } class="filter-select filter-time-mode" aria-label="time window" data-filter-time-mode>
+			<option value={ filterTimeBetween } selected?={ mode == filterTimeBetween }>between</option>
+			<option value={ filterTimeBefore } selected?={ mode == filterTimeBefore }>before</option>
+			<option value={ filterTimeAfter } selected?={ mode == filterTimeAfter }>after</option>
+		</select>
+		<label class="filter-time-field">date
+			<input type="date" name={ "filter_time_start_" + token } value={ startDate }/>
+		</label>
+		<label class="filter-time-field">time
+			<input type="time" name={ "filter_time_start_clock_" + token } value={ startClock }/>
+		</label>
+		<span class="filter-time-end" data-filter-time-end hidden?={ mode != filterTimeBetween }>
+			<label class="filter-time-field">to date
+				<input type="date" name={ "filter_time_end_" + token } value={ endDate }/>
+			</label>
+			<label class="filter-time-field">to time
+				<input type="time" name={ "filter_time_end_clock_" + token } value={ endClock }/>
+			</label>
+		</span>
+	</div>
+}
+
+// filterButton opens the filter modal when the list has anything to filter by.
+templ filterButton(fp filterPanelData) {
+	if fp.available() {
+		<button type="button" class="mode-btn" title="filter by tag, feed or time" data-open="tag-filter-dialog">@web.Lucide("funnel-plus")</button>
+	}
+}
+
+// filterChips renders the active filters as removable chips plus the match
+// count and a clear-all link.
+templ filterChips(fp filterPanelData) {
+	if len(fp.Filters) > 0 {
+		<div class="chips active-tags">
+			for i, f := range fp.Filters {
+				{{ cls := "chip" }}
+				if f.hidden() {
+					{{ cls = "chip chip-hide" }}
+				}
+				<a class={ cls } href={ templ.URL(filterPageURL(fp.Path, fp.View, fp.Sort, fp.Filters.without(i))) } title={ "remove " + f.Action + " filter " + f.label() }>{ f.label() } <span aria-hidden="true">×</span></a>
+			}
+			<span class="chip chip-count" title="posts matching the active filters">{ strconv.Itoa(fp.FilteredCount) } matching</span>
+			<a class="chip chip-clear" href={ templ.URL(filterPageURL(fp.Path, fp.View, fp.Sort, nil)) }>clear all</a>
+		</div>
+	}
+}
+
+// filterDialog is the shared filter modal. One form submits a row token per
+// filter plus that row's values; blank rows are dropped server-side.
+templ filterDialog(fp filterPanelData) {
+	if fp.available() {
+		{{ defaultKind := fp.defaultKind() }}
+		{{ kinds := fp.kinds() }}
+		{{ feedItems := fp.effectiveFeedOptions() }}
+		<dialog id="tag-filter-dialog" class="modal" data-filter-scope>
+			<div class="row">
+				<h2>filter</h2>
+				<button type="button" class="link" title="close" data-close-dialog>@web.Lucide("x")</button>
+			</div>
+			<form method="get" action={ templ.URL(fp.Path) } class="stack">
+				<input type="hidden" name="view" value={ fp.View }/>
+				<input type="hidden" name="sort" value={ fp.Sort.param() }/>
+				<p class="muted small">show matching posts, or hide them. tag and feed rows combine their values with any (or) or all (and); time rows match a window on the post time, in your timezone. show rows must all match, and any hide row excludes.</p>
+				<div class="filter-rows" id="filter-rows" data-filter-rows>
+					for i, f := range fp.Filters {
+						@filterRow("filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, fp.TagOptions, feedItems, kinds, false)
+					}
+					if len(fp.Filters) == 0 {
+						@filterRow("filter-empty", "empty", defaultKind, filterShow, filterAll, nil, fp.TagOptions, feedItems, kinds, false)
+					}
+				</div>
+				<template id="filter-row-template" data-filter-row-template>
+					@filterRow("filter-__token__", "__token__", defaultKind, filterShow, filterAll, nil, fp.TagOptions, feedItems, kinds, false)
+				</template>
+				<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
+				<div class="row-actions">
+					<button type="button" class="link" data-close-dialog>cancel</button>
+					<button type="submit">apply</button>
+				</div>
+			</form>
+		</dialog>
+	}
+}
+
 templ scopedItemsInner(d scopedItemsData) {
+	{{ fp := d.filterPanel() }}
 	<div class="tabs-row">
 		<nav class="tabs">
 			@scopedTab(d.Path, d.ItemsPath, "unread", "unread", strconv.Itoa(d.UnreadCount), d.View == "unread", d.Sort, d.Filters)
@@ -483,9 +592,7 @@ templ scopedItemsInner(d scopedItemsData) {
 		</nav>
 		if d.View != "feeds" {
 			<div class="row-actions">
-				if d.filterAvailable() {
-					<button type="button" class="mode-btn" title="filter by tag or feed" data-open="tag-filter-dialog">@web.Lucide("funnel-plus")</button>
-				}
+				@filterButton(fp)
 				@sortPicker(d.Path, d.View, d.Sort, d.NoMagic, d.Filters)
 				@DisplayModeControl(d.Path, d.Mode)
 			</div>
@@ -495,55 +602,12 @@ templ scopedItemsInner(d scopedItemsData) {
 			</div>
 		}
 	</div>
-	if len(d.Filters) > 0 && d.View != "feeds" {
-		<div class="chips active-tags">
-			for i, f := range d.Filters {
-				{{ cls := "chip" }}
-				if f.hidden() {
-					{{ cls = "chip chip-hide" }}
-				}
-				<a class={ cls } href={ templ.URL(filterPageURL(d.Path, d.View, d.Sort, d.Filters.without(i))) } title={ "remove " + f.Action + " filter " + f.label() }>{ f.label() } <span aria-hidden="true">×</span></a>
-			}
-			<span class="chip chip-count" title="posts matching the active filters">{ strconv.Itoa(d.FilteredCount) } matching</span>
-			<a class="chip chip-clear" href={ templ.URL(filterPageURL(d.Path, d.View, d.Sort, nil)) }>clear all</a>
-		</div>
-	}
 	if d.View == "feeds" {
 		@CollectionFeedCards(d.Feeds, false)
 	} else {
+		@filterChips(fp)
 		@ItemsListPage(d.Items, d.More, d.HideAuthor, d.Mode)
-		if d.filterAvailable() {
-			{{ defaultKind := d.filterDefaultKind() }}
-			{{ switchable := d.filterKindsSwitchable() }}
-			{{ feedItems := d.effectiveFeedOptions() }}
-			<dialog id="tag-filter-dialog" class="modal" data-filter-scope>
-				<div class="row">
-					<h2>filter</h2>
-					<button type="button" class="link" title="close" data-close-dialog>@web.Lucide("x")</button>
-				</div>
-				<form method="get" action={ templ.URL(d.Path) } class="stack">
-					<input type="hidden" name="view" value={ d.View }/>
-					<input type="hidden" name="sort" value={ d.Sort.param() }/>
-					<p class="muted small">show matching posts, or hide them. each row combines its values with any (or) or all (and); show rows must all match, and any hide row excludes.</p>
-					<div class="filter-rows" id="filter-rows" data-filter-rows>
-						for i, f := range d.Filters {
-							@filterRow("filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, d.TagOptions, feedItems, switchable, false)
-						}
-						if len(d.Filters) == 0 {
-							@filterRow("filter-empty", "empty", defaultKind, filterShow, filterAll, nil, d.TagOptions, feedItems, switchable, false)
-						}
-					</div>
-					<template id="filter-row-template" data-filter-row-template>
-						@filterRow("filter-__token__", "__token__", defaultKind, filterShow, filterAll, nil, d.TagOptions, feedItems, switchable, false)
-					</template>
-					<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
-					<div class="row-actions">
-						<button type="button" class="link" data-close-dialog>cancel</button>
-						<button type="submit">apply</button>
-					</div>
-				</form>
-			</dialog>
-		}
+		@filterDialog(fp)
 	}
 }
 
@@ -702,13 +766,14 @@ templ sortPicker(basePath, view string, current itemSort, noMagic bool, filters 
 }
 
 // SimpleSortControl is SortControl for a page whose list is not scoped (a plain
-// query-string base such as "/unread" or "/favorites").
-templ SimpleSortControl(basePath string, current itemSort) {
+// query-string base such as "/unread" or "/favorites"). filters are preserved in
+// each option's link.
+templ SimpleSortControl(basePath string, current itemSort, filters listFilters) {
 	{{ sep := "?" }}
 	if strings.Contains(basePath, "?") {
 		{{ sep = "&" }}
 	}
-	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, sep, current, false, nil))
+	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, sep, current, false, filters))
 }
 
 // sortOptions builds the newest/oldest/magic picker options for a base URL. The

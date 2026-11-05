@@ -360,13 +360,24 @@ function addFilterRow(after, trigger) {
 function syncFilterRowKind(row) {
   if (!row) return;
   var kind = row.querySelector('[data-filter-kind]');
+  if (!kind) return;
+  var combine = row.querySelector('[data-filter-combine]');
+  if (combine) combine.hidden = kind.value === 'time';
   var cell = row.querySelector('[data-filter-value]');
-  if (!kind || !cell || cell.dataset.filterValueKind === kind.value) return;
+  if (!cell || cell.dataset.filterValueKind === kind.value) return;
   var tpl = row.querySelector('[data-filter-value-template="' + kind.value + '"]');
   if (!tpl) return;
   cell.innerHTML = tpl.innerHTML;
   cell.dataset.filterValueKind = kind.value;
   if (window.htmx) htmx.process(cell);
+  syncFilterTimeMode(row);
+}
+function syncFilterTimeMode(row) {
+  if (!row) return;
+  var mode = row.querySelector('[data-filter-time-mode]');
+  var end = row.querySelector('[data-filter-time-end]');
+  if (!mode || !end) return;
+  end.hidden = mode.value !== 'between';
 }
 
 // removeChip drops one feed from a collection's chip list. The endpoint
@@ -1519,6 +1530,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     if (t.matches('[data-submit-avatar]')) { submitAvatar(t.form); return; }
     if (t.matches('[data-submit-on-change]')) { if (t.form) t.form.requestSubmit(); return; }
     if (t.matches('[data-filter-kind]')) { syncFilterRowKind(t.closest('.filter-row')); return; }
+    if (t.matches('[data-filter-time-mode]')) { syncFilterTimeMode(t.closest('.filter-row')); return; }
   });
 
   document.addEventListener('submit', function (e) {
