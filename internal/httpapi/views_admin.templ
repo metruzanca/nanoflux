@@ -8,19 +8,21 @@ import (
 )
 
 templ adminPage(u store.User, d adminData) {
-	<h1>admin</h1>
-	@AdminInstanceCard(d)
-	@AdminStats(d.Stats)
-	@AdminPollCard(d.Poll, u.Timezone)
-	@AdminErrorsCard(d.Errors, u.Timezone)
-	@AdminStorageCard(d.Storage)
-	@AdminPluginsCard(d.Plugins)
-	@AdminBackupCard(d.Backup)
-	<section class="card">
-		<h2>users</h2>
-		<p class="muted small">Manage accounts: reset a password to a new random value, grant or revoke the admin flag, or delete users. Deleting a user removes all of their data.</p>
-		<div id="admin-users-list">@AdminUserList(d.Users, "")</div>
-	</section>
+	<div class="admin-page">
+		<h1>admin</h1>
+		@AdminInstanceCard(d)
+		@AdminStats(d.Stats)
+		@AdminPollCard(d.Poll, u.Timezone)
+		@AdminErrorsCard(d.Errors, u.Timezone)
+		@AdminStorageCard(d.Storage)
+		@AdminPluginsCard(d.Plugins)
+		@AdminBackupCard(d.Backup)
+		<section class="card">
+			<h2>users</h2>
+			<p class="muted small">Manage accounts: reset a password to a new random value, grant or revoke the admin flag, or delete users. Deleting a user removes all of their data.</p>
+			<div id="admin-users-list">@AdminUserList(d.Users, "")</div>
+		</section>
+	</div>
 }
 
 // AdminPluginsCard lists the feed plugin executables the host loaded at
