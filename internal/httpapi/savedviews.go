@@ -313,9 +313,13 @@ func (s *Server) savedViewNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filters := s.savedViewFilters(u.ID, authorID, collectionID, filtersFromRequest(r))
+	baseView := r.URL.Query().Get("tab")
+	if baseView == "" {
+		baseView = r.URL.Query().Get("view")
+	}
 	form := savedViewForm{
 		Title:             "",
-		BaseView:          normalizeSavedViewBase(r.URL.Query().Get("view")),
+		BaseView:          normalizeSavedViewBase(baseView),
 		Sort:              itemSortOf(r),
 		Filters:           filters,
 		AuthorID:          authorID,

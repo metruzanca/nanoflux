@@ -750,21 +750,3 @@ func (d homeData) filterPanel() filterPanelData {
 		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
 	}
 }
-
-// saveViewURL is the "save as view" link for the current list: the view, sort,
-// scope and active filters become the create form's prefill.
-func (d filterPanelData) saveViewURL() string {
-	v := url.Values{}
-	v.Set("view", d.View)
-	v.Set("sort", d.Sort.param())
-	if d.ScopeAuthorID > 0 {
-		v.Set("scope_author", strconv.FormatInt(d.ScopeAuthorID, 10))
-	}
-	if d.ScopeCollectionID > 0 {
-		v.Set("scope_collection", strconv.FormatInt(d.ScopeCollectionID, 10))
-	}
-	for _, p := range d.Filters.params() {
-		v.Add("f", p)
-	}
-	return "/views/new?" + v.Encode()
-}
