@@ -101,6 +101,9 @@ func (s *Store) CloneUser(seedID int64, newUsername, passwordHash, expiresAt str
 	if err != nil {
 		return User{}, err
 	}
+	if err := cloneSavedViews(ctx, tx, seedID, newID, authorMap, collectionMap, feedMap); err != nil {
+		return User{}, err
+	}
 	if err := cloneLists(ctx, tx, seedID, newID, itemMap); err != nil {
 		return User{}, err
 	}
@@ -693,6 +696,133 @@ func cloneAuthorFilters(ctx context.Context, tx *sql.Tx, seedID int64, authorMap
 		}
 	}
 	return nil
+}
+
+// cloneSavedViews copies private saved views, remapping the assigned author, the
+// scope author/collection and any feed-id filter values. A view whose scope
+// author/collection did not survive the clone is skipped rather than widened.
+func cloneSavedViews(ctx context.Context, tx *sql.Tx, seedID, newID int64, authorMap, collectionMap, feedMap map[int64]int64) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT author_id, title, base_view, sort, filters,
+		       scope_author_id, scope_collection_id, created_at
+		FROM saved_views WHERE user_id = ?`, seedID)
+	if err != nil {
+		return fmt.Errorf("clone saved views select: %w", err)
+	}
+	defer rows.Close()
+	type view struct {
+		authorID          sql.NullInt64
+		title             string
+		baseView          string
+		sort              string
+		filters           string
+		scopeAuthorID     sql.NullInt64
+		scopeCollectionID sql.NullInt64
+		createdAt         string
+	}
+	var views []view
+	for rows.Next() {
+		var v view
+		if err := rows.Scan(&v.authorID, &v.title, &v.baseView, &v.sort, &v.filters,
+			&v.scopeAuthorID, &v.scopeCollectionID, &v.createdAt); err != nil {
+			return fmt.Errorf("clone saved views scan: %w", err)
+		}
+		views = append(views, v)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, v := range views {
+		var assigned, scopeAuthor, scopeCollection any
+		if v.authorID.Valid {
+			if id, ok := authorMap[v.authorID.Int64]; ok {
+				assigned = id
+			}
+		}
+		if v.scopeAuthorID.Valid {
+			id, ok := authorMap[v.scopeAuthorID.Int64]
+			if !ok {
+				continue // the scoped author was not cloned
+			}
+			scopeAuthor = id
+		}
+		if v.scopeCollectionID.Valid {
+			id, ok := collectionMap[v.scopeCollectionID.Int64]
+			if !ok {
+				continue // the scoped collection was not cloned
+			}
+			scopeCollection = id
+		}
+		var filters []string
+		if err := json.Unmarshal([]byte(v.filters), &filters); err != nil {
+			filters = nil
+		}
+		outFilters := make([]string, 0, len(filters))
+		for _, raw := range filters {
+			if remapped, ok := remapSavedViewFilter(raw, feedMap); ok {
+				outFilters = append(outFilters, remapped)
+			}
+		}
+		encoded, err := json.Marshal(outFilters)
+		if err != nil {
+			return fmt.Errorf("clone saved view encode: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO saved_views (
+				user_id, author_id, title, base_view, sort, filters,
+				scope_author_id, scope_collection_id, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			newID, assigned, v.title, v.baseView, v.sort, string(encoded),
+			scopeAuthor, scopeCollection, v.createdAt); err != nil {
+			return fmt.Errorf("clone saved view insert: %w", err)
+		}
+	}
+	return nil
+}
+
+// remapSavedViewFilter rewrites a canonical feed filter param to the cloned feed
+// ids. It reports false when no feed survives (the row is dropped).
+func remapSavedViewFilter(raw string, feedMap map[int64]int64) (string, bool) {
+	if !strings.HasPrefix(raw, "feed:") {
+		return raw, true
+	}
+	parts := strings.SplitN(raw, ":", 4)
+	if len(parts) == 4 && strings.HasPrefix(strings.TrimSpace(parts[3]), "[") {
+		var values []string
+		if err := json.Unmarshal([]byte(parts[3]), &values); err != nil {
+			return "", false
+		}
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			oldID, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				continue
+			}
+			if newFeed, ok := feedMap[oldID]; ok {
+				out = append(out, strconv.FormatInt(newFeed, 10))
+			}
+		}
+		if len(out) == 0 {
+			return "", false
+		}
+		b, err := json.Marshal(out)
+		if err != nil {
+			return "", false
+		}
+		return "feed:" + parts[1] + ":" + parts[2] + ":" + string(b), true
+	}
+	if len(parts) < 3 {
+		return "", false
+	}
+	oldID, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return "", false
+	}
+	newFeed, ok := feedMap[oldID]
+	if !ok {
+		return "", false
+	}
+	return "feed:" + parts[1] + ":" + strconv.FormatInt(newFeed, 10), true
 }
 
 // cloneAuthorLinks copies external author bookmarks, remapping the author.

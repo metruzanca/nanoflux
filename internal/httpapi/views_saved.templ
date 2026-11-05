@@ -1,0 +1,178 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+// savedViewsPage is the private index of every saved view, grouped by the author
+// it is assigned to (unassigned last).
+templ savedViewsPage(d savedViewsPageData) {
+	<div class="row">
+		<h1>views ({ d.Total })</h1>
+		<a class="button small" href="/unread">browse lists</a>
+	</div>
+	<p class="muted small">A view is a saved filter recipe. Create one with the bookmark button on any item list, then assign it to an author to keep it beside their feeds.</p>
+	if d.Total == 0 {
+		<p class="muted">no views yet. open a list, set your filters, and use “save this list as a view”.</p>
+	} else {
+		for _, g := range d.Groups {
+			<section class="card">
+				<div class="row">
+					<h2>
+						if g.AuthorID > 0 {
+							<a href={ templ.URL("/authors/" + strconv.FormatInt(g.AuthorID, 10)) }>{ g.AuthorName }</a>
+						} else {
+							unassigned
+						}
+					</h2>
+				</div>
+				<ul class="feed-cards">
+					for _, r := range g.Rows {
+						@savedViewCard(r)
+					}
+				</ul>
+			</section>
+		}
+	}
+}
+
+// savedViewCard is one view as a feed-style card: title, base tab, scope, filter
+// chips and its matching-item count, with open/edit actions.
+templ savedViewCard(r savedViewRow) {
+	{{ id := strconv.FormatInt(r.ID, 10) }}
+	<li id={ "view-" + id } class="feed-card-item">
+		<div class="card feed-card">
+			<div class="feed-card-main">
+				<div class="feed-card-title">
+					<a href={ templ.URL("/views/" + id) }>
+						<strong>{ r.Title } @web.Lucide("bookmark-plus")</strong>
+					</a>
+					<span class="badge">{ r.BaseView }</span>
+				</div>
+				<div class="item-meta">
+					{ r.ScopeLabel } · { r.Count } matching
+					if r.AuthorID > 0 && r.AuthorName != "" {
+						· assigned to <a href={ templ.URL("/authors/" + strconv.FormatInt(r.AuthorID, 10)) }>{ r.AuthorName }</a>
+					}
+				</div>
+				if len(r.Filters) > 0 {
+					<div class="chips active-tags">
+						for _, f := range r.Filters {
+							<span class={ "chip" } title={ f.Action + " " + f.Kind }>{ f.label() }</span>
+						}
+					</div>
+				}
+			</div>
+			<div class="feed-card-side">
+				<div class="row-actions">
+					<a class="small" title="edit" href={ templ.URL("/views/" + id + "/edit") }>@web.EditIcon()</a>
+				</div>
+			</div>
+		</div>
+	</li>
+}
+
+// savedViewPage is the view itself: its header, mark-all control and the shared
+// scoped item list (tabs, sorter, filters, pagination).
+templ savedViewPage(u store.User, d savedViewPageData) {
+	{{ id := strconv.FormatInt(d.Row.ID, 10) }}
+	<section class="card">
+		<div class="row">
+			<h1>{ d.Row.Title }</h1>
+			<div class="row-actions">
+				@markAllReadControl(d.MarkAll)
+				<a class="small" title="edit" href={ templ.URL("/views/" + id + "/edit") }>@web.EditIcon()</a>
+			</div>
+		</div>
+		<p class="muted small">
+			{ d.Row.ScopeLabel } · starts on { d.Row.BaseView } · { d.Row.Sort.param() } first
+			if d.Row.AuthorID > 0 && d.Row.AuthorName != "" {
+				· assigned to <a href={ templ.URL("/authors/" + strconv.FormatInt(d.Row.AuthorID, 10)) }>{ d.Row.AuthorName }</a>
+			}
+		</p>
+	</section>
+	<div class="author-items">
+		@ScopedItems(d.Scoped)
+	</div>
+	<form class="stack delete-form" method="post" action={ templ.URL("/views/" + id + "/delete") } data-confirm="delete this view?">
+		@csrfField()
+		<button type="submit" class="danger">delete view</button>
+	</form>
+}
+
+// savedViewFormPage is the create/edit page. The scope is captured at creation
+// and shown read-only; title, assignment, base tab, sort and filters are
+// editable.
+templ savedViewFormPage(u store.User, f savedViewForm) {
+	{{ action := "/views" }}
+	if f.ID > 0 {
+		{{ action = "/views/" + strconv.FormatInt(f.ID, 10) + "/edit" }}
+	}
+	<div class="row">
+		<h1>
+			if f.ID > 0 {
+				edit view
+			} else {
+				new view
+			}
+		</h1>
+		<a class="button small" href="/views">back to views</a>
+	</div>
+	<form class="stack card" method="post" action={ templ.URL(action) } data-filter-scope>
+		@csrfField()
+		<input type="hidden" name="scope_author" value={ strconv.FormatInt(f.ScopeAuthorID, 10) }/>
+		<input type="hidden" name="scope_collection" value={ strconv.FormatInt(f.ScopeCollectionID, 10) }/>
+		if f.Error != "" {
+			<div class="error" role="alert">{ f.Error }</div>
+		}
+		<label>title
+			<input name="title" value={ f.Title } maxlength="120" required autofocus/>
+		</label>
+		@comboSelect("author_id", savedViewAuthorValue(f.AuthorID), "assign to author", "search authors", f.AuthorOptions, nil)
+		<p class="muted small">scope · { f.ScopeLabel }. The scope is fixed when the view is created; assignment only decides where it is listed.</p>
+		<div class="row">
+			<label>starts on
+				<select name="view">
+					<option value="unread" selected?={ f.BaseView == "unread" }>unread</option>
+					<option value="read" selected?={ f.BaseView == "read" }>read</option>
+					<option value="favorites" selected?={ f.BaseView == "favorites" }>favorites</option>
+					<option value="bookmarks" selected?={ f.BaseView == "bookmarks" }>bookmarks</option>
+				</select>
+			</label>
+			<label>sort
+				<select name="sort">
+					<option value="newest" selected?={ f.Sort == sortNewest }>newest</option>
+					<option value="oldest" selected?={ f.Sort == sortOldest }>oldest</option>
+					<option value="magic" selected?={ f.Sort == sortMagic }>magic</option>
+				</select>
+			</label>
+		</div>
+		<div class="field-group">
+			<h3>filters</h3>
+			{{ kinds := []string{filterKindTag} }}
+			if len(f.FeedOptions) > 0 {
+				{{ kinds = append(kinds, filterKindFeed) }}
+			}
+			{{ kinds = append(kinds, filterKindTime) }}
+			<div class="filter-rows" id="saved-view-filter-rows" data-filter-rows>
+				for i, flt := range f.Filters {
+					@filterRow("saved-view-filter-"+strconv.Itoa(i), strconv.Itoa(i), flt.Kind, flt.Action, flt.Combine, flt.Values, f.TagOptions, f.FeedOptions, kinds, false)
+				}
+				if len(f.Filters) == 0 {
+					@filterRow("saved-view-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, kinds, false)
+				}
+			</div>
+			<template id="saved-view-filter-row-template" data-filter-row-template>
+				@filterRow("saved-view-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, kinds, false)
+			</template>
+			<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
+		</div>
+		<div class="row-actions">
+			<a class="link" href="/views">cancel</a>
+			<button type="submit">save view</button>
+		</div>
+	</form>
+}

@@ -263,6 +263,24 @@ CREATE TABLE collection_feeds (
     PRIMARY KEY (collection_id, feed_id)
 );
 
+-- Saved views: private named filter recipes over the item lists (schemaV57).
+-- author_id groups a view on an author page; scope_* record what the view was
+-- created over. filters is a JSON array of canonical ?f= params.
+CREATE TABLE saved_views (
+    id                  INTEGER PRIMARY KEY,
+    user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id           INTEGER REFERENCES authors(id) ON DELETE CASCADE,
+    title               TEXT NOT NULL,
+    base_view           TEXT NOT NULL DEFAULT 'unread',
+    sort                TEXT NOT NULL DEFAULT 'newest',
+    filters             TEXT NOT NULL DEFAULT '[]',
+    scope_author_id     INTEGER REFERENCES authors(id) ON DELETE CASCADE,
+    scope_collection_id INTEGER REFERENCES collections(id) ON DELETE CASCADE,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_saved_views_user ON saved_views(user_id);
+CREATE INDEX idx_saved_views_author ON saved_views(author_id);
+
 -- Full-text search over items. In the real DB (internal/db/migrate.go,
 -- schemaV10) this is an FTS5 virtual table kept in sync by triggers; sqlc
 -- cannot introspect FTS5 virtual tables, so it is declared here as a plain

@@ -32,6 +32,7 @@ type Store struct {
 	Lists         *ListStore
 	AuthorLinks   *AuthorLinkStore
 	AuthorFilters *AuthorFilterStore
+	SavedViews    *SavedViewStore
 	ViewPrefs     *ViewPrefStore
 	Progress      *ProgressStore
 }
@@ -54,6 +55,7 @@ func New(sqldb *sql.DB) *Store {
 		Lists:         &ListStore{q: q, db: sqldb, policy: policy},
 		AuthorLinks:   &AuthorLinkStore{q: q},
 		AuthorFilters: &AuthorFilterStore{db: sqldb},
+		SavedViews:    &SavedViewStore{db: sqldb},
 		ViewPrefs:     &ViewPrefStore{q: q},
 		Progress:      &ProgressStore{db: sqldb},
 	}

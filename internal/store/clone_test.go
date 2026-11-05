@@ -55,6 +55,13 @@ func TestCloneUser(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("author filters: %v", err)
 	}
+	if _, err := s.SavedViews.Create(seed.ID, SavedView{
+		AuthorID: a.ID, Title: "Blog view", BaseView: "unread", Sort: "newest",
+		Filters:       []string{"feed:show:" + itoa(f.ID), "tag:show:dev"},
+		ScopeAuthorID: a.ID,
+	}); err != nil {
+		t.Fatalf("saved view: %v", err)
+	}
 
 	clone, err := s.CloneUser(seed.ID, "swift-otter", "hash", "2026-01-01 00:00:00")
 	if err != nil {
@@ -99,6 +106,19 @@ func TestCloneUser(t *testing.T) {
 	rules, err := s.AuthorFilters.List(clone.ID, cf.AuthorID)
 	if err != nil || len(rules) != 1 || len(rules[0].Values) != 1 || rules[0].Values[0] != itoa(cf.ID) {
 		t.Fatalf("cloned author filters should remap the feed id: %v %+v", err, rules)
+	}
+
+	// Saved views keep their assignment and scope, remapping the feed filter.
+	views, err := s.SavedViews.List(clone.ID)
+	if err != nil || len(views) != 1 {
+		t.Fatalf("clone saved views: %v %+v", err, views)
+	}
+	cv := views[0]
+	if cv.AuthorID != cf.AuthorID || cv.ScopeAuthorID != cf.AuthorID {
+		t.Fatalf("cloned view should remap its author/scope: %+v", cv)
+	}
+	if len(cv.Filters) != 2 || cv.Filters[0] != "feed:show:"+itoa(cf.ID) || cv.Filters[1] != "tag:show:dev" {
+		t.Fatalf("cloned view should remap the feed filter: %v", cv.Filters)
 	}
 
 	// Items carry read/favorite state and the new owner.

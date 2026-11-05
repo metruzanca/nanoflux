@@ -467,6 +467,41 @@ the search-palette feed entity and the provision success link at
 is omitted on the author's own page). Display-mode scopes drop `/feeds/{id}`;
 the author page's scope stays `/authors/{id}`.
 
+## Saved views
+
+A saved view is a private, named filter recipe over the shared item lists. It is
+**not** a feed: it never polls, has no URL, and is absent from OPML/plugin/poller
+code. The entity lives in `saved_views` (schemaV57), separate from `feeds`.
+
+- A view stores a base tab (`unread`/`read`/`favorites`/`bookmarks`), a sort and
+  the canonical `?f=` filter params, plus the scope it was created over
+  (`scope_author_id` or `scope_collection_id`; both empty means all feeds).
+- `author_id` only groups a view on an author page. It does **not** narrow the
+  items, which is why a view created from `/unread` with
+  `tag=u/example-poster` can be assigned to that author and still show posts
+  from every feed.
+- The scope is fixed when the view is created. The edit form changes the title,
+  assignment, base tab, sort and filters; it cannot widen the scope.
+- `filter_row`-style form submissions and the canonical `f` params share
+  `filtersFromValues`. `filtersFromParams`/`listFilters.params()` are the
+  persistence round-trip, so time rows survive too.
+- A bare `/views/{id}` redirects once to its canonical query (`?view=&sort=&f=`).
+  That keeps the shared tabs, sort picker, filter dialog, load-more and "clear
+  all" links operating on explicit params instead of falling back to the stored
+  recipe.
+- Feed filter values are validated on save and load against the scope (an
+  author's feeds, a collection's feeds, or all of the user's feeds), so deleting
+  a feed degrades the view rather than breaking it.
+- Creation is offered from the bookmark button on every filterable item list
+  (`.../saveViewButton`, via `filterPanelData.saveViewURL`). The create/edit page
+  reuses `filterRow`; the view page reuses `scopedItemsData`/`ScopedItems` and a
+  filter-aware mark-all (`POST /views/{id}/read-all`).
+- `/views` is the private index, grouped by assigned author, and is linked from
+  the user menu; an author's page also renders its assigned views as cards.
+- `CloneUser` copies saved views and remaps author/collection/feed ids; a view
+  whose scoped author or collection did not survive the clone is skipped rather
+  than widened.
+
 ## Appearance
 
 Per-user display preferences live in the settings "appearance" card and are
