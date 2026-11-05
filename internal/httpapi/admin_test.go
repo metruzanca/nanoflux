@@ -15,6 +15,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/backup"
 	"github.com/metruzanca/nanoflux/internal/config"
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -311,7 +312,7 @@ func TestAdminStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := doGet(h, "/admin", adminSession(t, s, "root")).Body.String()
-	for _, want := range []string{"users", "feeds", "authors", "items", "unread", "objects", "storage", "10 B", "polling", "no enabled feeds"} {
+	for _, want := range []string{"users", "feeds", "authors", "items", "unread", "objects", "storage", "10 B", "polling", "feed errors", "no feeds are failing", "no enabled feeds"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("admin stats missing %q", want)
 		}
@@ -452,5 +453,174 @@ func TestBuildAdminPollUsesPollFloor(t *testing.T) {
 	}
 	if len(got.Hosts) != 1 || got.Hosts[0].Demand != "24" {
 		t.Fatalf("host rows = %+v, want demand 24 at the 1h floor", got.Hosts)
+	}
+}
+
+// A failing feed is late because its fetch keeps failing, not because the host
+// cannot keep up: it must be reported as failing (or cooling for a rate limit)
+// and kept out of the healthy backlog, including the clear estimate.
+func TestBuildAdminPollSeparatesFailures(t *testing.T) {
+	now := time.Date(2026, 10, 25, 6, 0, 0, 0, time.UTC)
+	ts := func(d time.Duration) string { return db.FormatTime(now.Add(d)) }
+	feeds := []store.Feed{
+		{
+			Title: "Healthy", FeedURL: "https://example.com/healthy", Enabled: true,
+			PollIntervalSec: 900, LastPolledAt: ts(-2 * time.Hour),
+		},
+		{
+			Title: "Failing", FeedURL: "https://example.com/failing", Enabled: true,
+			PollIntervalSec: 900, LastPolledAt: ts(-2 * time.Hour),
+			LastError: "get https://example.com/failing: status 500",
+		},
+		{
+			Title: "Cooling", FeedURL: "https://example.com/cooling", Enabled: true,
+			PollIntervalSec: 900, LastPolledAt: ts(-2 * time.Hour),
+			LastError:  "get https://example.com/cooling: rate limited (status 429), retry after 1m0s",
+			NextPollAt: ts(10 * time.Minute),
+		},
+	}
+	spacingFor := func(string) time.Duration { return time.Hour }
+
+	got := buildAdminPoll(now, feeds, spacingFor, func(string) int { return 0 })
+
+	if got.Enabled != 3 || got.Behind != 1 || got.Failing != 1 || got.Cooling != 1 {
+		t.Fatalf("enabled/behind/failing/cooling = %d/%d/%d/%d, want 3/1/1/1",
+			got.Enabled, got.Behind, got.Failing, got.Cooling)
+	}
+	if got.OldestTitle != "Healthy" {
+		t.Fatalf("oldest behind = %q, want only the healthy feed", got.OldestTitle)
+	}
+	if len(got.Hosts) != 1 {
+		t.Fatalf("host rows = %+v, want the one host", got.Hosts)
+	}
+	host := got.Hosts[0]
+	if host.Behind != 1 || host.Failing != 1 || host.Feeds != 3 {
+		t.Fatalf("host = %+v, want 1 behind and 1 failing of 3", host)
+	}
+	if host.Clear != "1h" {
+		t.Fatalf("clear = %q, want 1h (only the healthy feed drains)", host.Clear)
+	}
+}
+
+// buildAdminErrors groups failing feeds by cause, keeps the owner for the admin,
+// orders groups from pacing to unrecognized, and lists the stalest failure
+// first inside a group.
+func TestBuildAdminErrors(t *testing.T) {
+	now := time.Date(2026, 10, 25, 6, 0, 0, 0, time.UTC)
+	ts := func(d int) string {
+		return db.FormatTime(time.Date(2026, 10, 25, 6+d, 0, 0, 0, time.UTC))
+	}
+	feeds := []store.FeedWithOwner{
+		{Feed: store.Feed{
+			Title: "Newer server error", FeedURL: "https://www.example.com/a", Enabled: true,
+			LastPolledAt: ts(0), LastError: "get https://www.example.com/a: status 500",
+		}, Owner: "alice"},
+		{Feed: store.Feed{
+			Title: "Older server error", FeedURL: "https://www.example.com/b", Enabled: true,
+			LastPolledAt: ts(-2), LastError: "get https://www.example.com/b: status 502",
+		}, Owner: "bob"},
+		{Feed: store.Feed{
+			Title: "Client error", FeedURL: "https://one.example.net/c", Enabled: true,
+			LastPolledAt: ts(0), LastError: "status 403 for https://one.example.net/c",
+		}, Owner: "carol"},
+		{Feed: store.Feed{
+			Title: "Limited", FeedURL: "https://slow.example.org/d", Enabled: true,
+			LastPolledAt: ts(0), NextPollAt: ts(1),
+			LastError: "get https://slow.example.org/d: rate limited (status 429), retry after 5m0s",
+		}, Owner: "dave"},
+		{Feed: store.Feed{
+			Title: "Unreachable", FeedURL: "https://down.example.org/e", Enabled: true,
+			LastPolledAt: ts(0), LastError: `get https://down.example.org/e: Get "https://down.example.org/e": dial tcp: lookup down.example.org: no such host`,
+		}, Owner: "erin"},
+		{Feed: store.Feed{
+			Title: "Parse failure", FeedURL: "https://odd.example.org/f", Enabled: true,
+			LastPolledAt: ts(0), LastError: "parse https://odd.example.org/f: invalid character '<'",
+		}, Owner: "frank"},
+		{Feed: store.Feed{
+			Title: "Paused", FeedURL: "https://www.example.com/paused", Enabled: false,
+			LastError: "get https://www.example.com/paused: status 500",
+		}, Owner: "alice"},
+		{Feed: store.Feed{
+			Title: "Healthy", FeedURL: "https://www.example.com/ok", Enabled: true,
+		}, Owner: "alice"},
+	}
+
+	got := buildAdminErrors(now, feeds)
+	if got.Total != 6 {
+		t.Fatalf("total = %d, want 6 (paused and healthy excluded)", got.Total)
+	}
+
+	wantKinds := []feedparse.FailureKind{
+		feedparse.FailureRateLimit,
+		feedparse.FailureServer,
+		feedparse.FailureClient,
+		feedparse.FailureNetwork,
+		feedparse.FailureOther,
+	}
+	if len(got.Groups) != len(wantKinds) {
+		t.Fatalf("groups = %d, want %d: %+v", len(got.Groups), len(wantKinds), got.Groups)
+	}
+	for i, kind := range wantKinds {
+		if got.Groups[i].Kind != kind {
+			t.Fatalf("group %d kind = %q, want %q", i, got.Groups[i].Kind, kind)
+		}
+	}
+
+	limited := got.Groups[0].Feeds
+	if len(limited) != 1 || limited[0].Title != "Limited" || limited[0].Retry == "" {
+		t.Fatalf("rate-limit group = %+v, want Limited carrying its retry deadline", limited)
+	}
+	if limited[0].Owner != "dave" || limited[0].Host != "example.org" {
+		t.Fatalf("rate-limit row = %+v, want owner dave on example.org", limited[0])
+	}
+
+	server := got.Groups[1].Feeds
+	if len(server) != 2 || server[0].Title != "Older server error" || server[1].Title != "Newer server error" {
+		t.Fatalf("server group = %+v, want the stalest failure first", server)
+	}
+	if server[0].Retry != "" {
+		t.Fatalf("a non-rate-limit row must not carry a retry deadline: %+v", server[0])
+	}
+
+	// A deadline already in the past is not rendered as a retry.
+	expired := buildAdminErrors(now, []store.FeedWithOwner{{Feed: store.Feed{
+		Title: "Expired", FeedURL: "https://slow.example.org/x", Enabled: true,
+		LastPolledAt: ts(0), NextPollAt: ts(-1),
+		LastError: "get https://slow.example.org/x: rate limited (status 429), retry after 5m0s",
+	}}})
+	if len(expired.Groups) != 1 || expired.Groups[0].Feeds[0].Retry != "" {
+		t.Fatalf("expired retry deadline = %+v, want none", expired.Groups)
+	}
+}
+
+// The admin page renders the feed-errors card with the failing feed's category
+// and stored error text, and links the polling card's failing count to it.
+func TestAdminPageShowsFeedErrors(t *testing.T) {
+	s, h := newTestServer(t)
+	root := createUser(t, s, "root")
+	if err := s.store.Users.SetAdmin(root.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	author, err := s.store.Authors.Create(root.ID, "Broken blog", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed, err := s.store.Feeds.Create(root.ID, author.ID, "Broken blog", "https://broken.example.com/feed", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	polled := db.FormatTime(time.Now().Add(-2 * time.Hour))
+	if err := s.store.Feeds.SetPollMeta(feed.ID, "", "", polled, "get https://broken.example.com/feed: status 500"); err != nil {
+		t.Fatal(err)
+	}
+
+	body := doGet(h, "/admin", adminSession(t, s, "root")).Body.String()
+	for _, want := range []string{
+		"feed errors", "server errors (5xx)", "Broken blog", "status 500",
+		"broken.example.com", "#admin-feed-errors", "failing",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("admin page missing %q", want)
+		}
 	}
 }

@@ -301,23 +301,40 @@ all across roughly twenty minutes, continuously, instead of one per day.
 ### Admin polling health
 
 The admin page's **polling** card shows whether the poller can keep up. A feed is
-**behind** when its last poll is older than its own effective interval,
-`max(poll_interval_sec, poll floor)` (a never-polled feed is measured from its
-creation time), so rate-limited feeds still count while they wait and a legacy
-15-minute value is measured at the 1-hour floor. Per host it shows:
+**behind** when it is healthy and its last poll is older than its own effective
+interval, `max(poll_interval_sec, poll floor)` (a never-polled feed is measured
+from its creation time), so a legacy 15-minute value is measured at the 1-hour
+floor. Per host it shows:
 
 - **demand/day**: the sum of every enabled feed's required polls per day
   (`86400 / effective interval`).
 - **capacity/day**: what the host's effective spacing allows
   (`86400 / spacing`), including a learned rate-limit window.
-- **clear**: the estimated time to drain the host's current backlog at that
-  spacing.
+- **clear**: the estimated time to drain the host's current **healthy** backlog
+  at that spacing.
+
+A feed whose last poll failed is reported separately instead of as behind,
+because the poller does reach it and it will keep erroring: the card counts
+**failing** feeds (non-rate-limit errors) and **cooling** feeds (waiting out a
+rate-limit backoff) in the summary, and shows a **failing** column per host.
+Failures still count toward demand, but not toward the backlog or its clear
+estimate. The cause is classified from the stored error text (rate limit, HTTP
+5xx, HTTP 4xx, network, other); see "Feed errors" below.
 
 When demand exceeds capacity, the host is marked **overloaded**. That is the
 permanent-lateness signal: the backlog cannot drain until feeds are removed from
 that host or their intervals are lengthened. A large backlog with demand below
 capacity is only a transient catch-up, for example after downtime. Active 429
 cooldowns are not included in the estimate.
+
+The **feed errors** card lists every enabled feed whose last poll failed, grouped
+by cause in this order: rate limited, server errors (5xx), client errors (4xx),
+network/connection, other. Each group is ordered oldest failure first and shows
+the feed, its owner, host, last poll time, and the stored error text; a
+rate-limited row also shows its retry deadline. Rate limits are pacing rather
+than a broken feed, so the poller handles them and nothing needs doing.
+Classification is best-effort from `feeds.last_error`; an unrecognized plugin
+message falls into "other".
 
 ### The manual refresh button
 
@@ -539,6 +556,7 @@ one feed, the spacing limits a whole registrable host, and both apply.
 | Plugin poll floor (`CapMinPollInterval`, `Registry.MinPollInterval`) | `internal/plugin/registry.go`, `pluginapi/pluginapi.go` |
 | Create/edit interval defaults and clamping, feed-form minimum | `internal/httpapi/server.go`, `internal/httpapi/web.go` |
 | Polling health card (effective interval, demand vs capacity) | `internal/httpapi/admin.go` |
+| Feed errors card and stored-error classification | `internal/httpapi/admin.go`, `internal/feedparse/failure.go` |
 | Ingest cross-feed key pass and dispatch to plugins | `internal/plugin/dispatch.go`, `internal/feedparse/feedparse.go` |
 | Per-URL site rules (canonical shape, feed token) from plugins | `internal/plugin/urlpolicy.go`, `internal/store/domain.go` |
 | `next_poll_at` / `next_poll_scheduled` storage, `ListFeedsDue`, `EarliestNextPollAt` | `internal/store/feed.go`, `internal/store/queries/feeds.sql` |

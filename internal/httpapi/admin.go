@@ -15,6 +15,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/storage"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/internal/web"
@@ -24,6 +25,7 @@ import (
 type adminData struct {
 	Stats       adminStats
 	Poll        adminPoll
+	Errors      adminErrors
 	Storage     adminStorage
 	AllowSignup bool
 	BannerShown bool
@@ -33,13 +35,18 @@ type adminData struct {
 }
 
 // adminPoll is the polling health summary shown on /admin. "Behind" means a
-// feed's last poll is older than its own interval, so it is waiting even if a
-// rate-limit deadline currently keeps the poller from touching it. The per-host
-// demand/capacity ratio is the permanent-lateness signal: when a host needs more
-// fetches per day than its spacing allows, the backlog cannot drain.
+// healthy feed's last poll is older than its own interval, so it is waiting for
+// the poller. A feed that failed its last poll is reported as failing (or as
+// cooling when it was rate-limited) instead: it is late because the fetch keeps
+// failing, not because the host cannot keep up, and counting it as behind would
+// overstate a backlog that will never drain. The per-host demand/capacity ratio
+// is the permanent-lateness signal: when a host needs more fetches per day than
+// its spacing allows, the backlog cannot drain.
 type adminPoll struct {
 	Enabled     int
 	Behind      int
+	Failing     int // enabled feeds whose last poll failed with a non-rate-limit error
+	Cooling     int // enabled feeds waiting out a rate-limit backoff
 	OldestTitle string
 	OldestRef   string // stored UTC time of the oldest behind feed
 	Overloaded  int    // hosts whose demand exceeds their capacity
@@ -48,17 +55,44 @@ type adminPoll struct {
 }
 
 // adminPollHost is one host's polling load. Demand and Capacity are whole
-// fetches per day; Clear is the estimated time to drain the current backlog at
-// the host's spacing.
+// fetches per day; Clear is the estimated time to drain the host's current
+// healthy backlog at the host's spacing.
 type adminPollHost struct {
 	Host       string
 	Feeds      int
 	Behind     int
+	Failing    int
 	Spacing    string
 	Demand     string
 	Capacity   string
 	Clear      string
 	Overloaded bool
+}
+
+// adminErrors is the "feed errors" card: every enabled feed whose last poll
+// failed, grouped by failure kind so a rate limit is not confused with a broken
+// site.
+type adminErrors struct {
+	Total  int
+	Groups []adminErrorGroup
+}
+
+// adminErrorGroup is one failure kind's feeds, in severity order.
+type adminErrorGroup struct {
+	Kind  feedparse.FailureKind
+	Label string
+	Feeds []adminErrorRow
+}
+
+// adminErrorRow is one failing feed. Times are stored UTC values; the template
+// formats them in the admin's timezone.
+type adminErrorRow struct {
+	Title      string
+	Owner      string
+	Host       string
+	LastPolled string
+	Retry      string // stored next_poll_at for a rate limit, "" otherwise
+	Error      string
 }
 
 // adminStorage is the object-store breakdown shown on /admin: bytes per kind
@@ -175,12 +209,12 @@ func (s *Server) adminPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	d := adminData{
 		Stats:   s.adminStats(r.Context()),
-		Poll:    s.adminPollData(),
 		Storage: s.adminStorageData(r.Context()),
 		Users:   s.adminUserRows(u.ID, u.Timezone),
 		Backup:  s.adminBackupData(u.Timezone),
 		Plugins: s.adminPluginRows(),
 	}
+	d.Poll, d.Errors = s.adminFeedData()
 	d.AllowSignup = s.allowSignup()
 	if d.AllowSignup {
 		dismissed, err := s.store.Users.BannerDismissed(u.ID)
@@ -258,15 +292,15 @@ func (s *Server) adminStats(ctx context.Context) adminStats {
 	return st
 }
 
-// adminPollData assembles the polling health card from every enabled feed. It
-// uses the live poller for effective host spacing (which includes a learned
-// rate-limit window), falling back to the configured default when no poller is
-// attached (CLI or tests).
-func (s *Server) adminPollData() adminPoll {
+// adminFeedData assembles the polling health card and the feed-errors card from
+// every feed in one query. It uses the live poller for effective host spacing
+// (which includes a learned rate-limit window), falling back to the configured
+// default when no poller is attached (CLI or tests).
+func (s *Server) adminFeedData() (adminPoll, adminErrors) {
 	rows, err := s.store.Feeds.ListAll()
 	if err != nil {
 		log.Warn("admin: poll stats", "err", err)
-		return adminPoll{Unavailable: true}
+		return adminPoll{Unavailable: true}, adminErrors{}
 	}
 	feeds := make([]store.Feed, 0, len(rows))
 	for _, f := range rows {
@@ -278,12 +312,16 @@ func (s *Server) adminPollData() adminPoll {
 		}
 		return s.cfg.PollHostSpacing
 	}
-	return buildAdminPoll(time.Now().UTC(), feeds, spacingFor, s.pollFloorSec)
+	now := time.Now().UTC()
+	return buildAdminPoll(now, feeds, spacingFor, s.pollFloorSec), buildAdminErrors(now, rows)
 }
 
-// buildAdminPoll computes the per-host polling load. A feed is behind when its
-// last poll is older than its own interval; a never-polled feed is measured
-// from its creation time so a new feed is not reported as overdue immediately.
+// buildAdminPoll computes the per-host polling load. A feed is behind when it is
+// healthy and its last poll is older than its own interval; a never-polled feed
+// is measured from its creation time so a new feed is not reported as overdue
+// immediately. A feed whose last poll failed is counted as failing, or as
+// cooling when the failure was a rate limit, and is excluded from behind: it is
+// not waiting on host capacity, it is failing every time the poller reaches it.
 // Demand is the sum of each enabled feed's required polls per day; capacity is
 // what the host's spacing allows. demand > capacity means the host is
 // permanently behind, not merely catching up after downtime.
@@ -292,6 +330,7 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 		feeds   int
 		demand  float64
 		behind  int
+		failing int
 		spacing time.Duration
 	}
 	byHost := map[string]*hostAgg{}
@@ -302,10 +341,7 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 			continue
 		}
 		out.Enabled++
-		host := store.RegistrableDomain(f.FeedURL)
-		if host == "" {
-			host = f.FeedURL
-		}
+		host := adminFeedHost(f.FeedURL)
 		h := byHost[host]
 		if h == nil {
 			h = &hostAgg{spacing: spacingFor(f.FeedURL)}
@@ -325,6 +361,19 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 			interval = 60
 		}
 		h.demand += 86400 / float64(interval)
+
+		// A failing feed is not part of the healthy backlog: it will keep
+		// erroring every time its turn comes, so reporting it as behind would
+		// suggest the queue is draining toward a normal poll.
+		if f.LastError != "" {
+			if feedparse.ClassifyFailureText(f.LastError) == feedparse.FailureRateLimit {
+				out.Cooling++
+			} else {
+				h.failing++
+				out.Failing++
+			}
+			continue
+		}
 
 		ref := f.LastPolledAt
 		if ref == "" {
@@ -354,13 +403,14 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 		if overloaded {
 			out.Overloaded++
 		}
-		if !overloaded && h.behind == 0 {
+		if !overloaded && h.behind == 0 && h.failing == 0 {
 			continue
 		}
 		row := adminPollHost{
 			Host:       host,
 			Feeds:      h.feeds,
 			Behind:     h.behind,
+			Failing:    h.failing,
 			Spacing:    formatPollSpacing(h.spacing),
 			Demand:     formatPollCount(h.demand),
 			Overloaded: overloaded,
@@ -384,12 +434,123 @@ func buildAdminPoll(now time.Time, feeds []store.Feed, spacingFor func(string) t
 		if a.Behind != b.Behind {
 			return a.Behind > b.Behind
 		}
+		if a.Failing != b.Failing {
+			return a.Failing > b.Failing
+		}
 		return a.Host < b.Host
 	})
 	if len(out.Hosts) > 8 {
 		out.Hosts = out.Hosts[:8]
 	}
 	return out
+}
+
+// failureKindOrder is the order the errors card lists groups in: pacing first
+// (it needs no fixing), then server faults, client faults, transport failures,
+// and finally everything unrecognized.
+var failureKindOrder = []feedparse.FailureKind{
+	feedparse.FailureRateLimit,
+	feedparse.FailureServer,
+	feedparse.FailureClient,
+	feedparse.FailureNetwork,
+	feedparse.FailureOther,
+}
+
+// failureKindLabel is the human heading for a failure kind.
+func failureKindLabel(k feedparse.FailureKind) string {
+	switch k {
+	case feedparse.FailureRateLimit:
+		return "rate limited"
+	case feedparse.FailureServer:
+		return "server errors (5xx)"
+	case feedparse.FailureClient:
+		return "client errors (4xx)"
+	case feedparse.FailureNetwork:
+		return "network / connection"
+	default:
+		return "other failures"
+	}
+}
+
+// errorKindBadge is the badge style for a failure kind heading: a rate limit is
+// a warning, everything else is a failure that needs attention.
+func errorKindBadge(k feedparse.FailureKind) string {
+	if k == feedparse.FailureRateLimit {
+		return "badge warn"
+	}
+	return "badge danger"
+}
+
+// buildAdminErrors groups every enabled feed whose last poll failed by failure
+// kind, oldest failure first inside each group (the stalest needs attention).
+// The hidden system feed and paused feeds are excluded: they are not polled, and
+// pausing clears the stored error. Retry is set only while a rate-limit deadline
+// is still ahead, so it never renders an empty "retry" line.
+func buildAdminErrors(now time.Time, feeds []store.FeedWithOwner) adminErrors {
+	byKind := map[feedparse.FailureKind][]adminErrorRow{}
+	var total int
+	for _, f := range feeds {
+		if !f.Enabled || f.IsSystem || f.LastError == "" {
+			continue
+		}
+		kind := feedparse.ClassifyFailureText(f.LastError)
+		row := adminErrorRow{
+			Title:      f.Title,
+			Owner:      f.Owner,
+			Host:       adminFeedHost(f.FeedURL),
+			LastPolled: f.LastPolledAt,
+			Error:      f.LastError,
+		}
+		if kind == feedparse.FailureRateLimit {
+			if t, err := db.ParseTime(f.NextPollAt); err == nil && t.After(now) {
+				row.Retry = f.NextPollAt
+			}
+		}
+		byKind[kind] = append(byKind[kind], row)
+		total++
+	}
+	out := adminErrors{Total: total}
+	for _, kind := range failureKindOrder {
+		rows := byKind[kind]
+		if len(rows) == 0 {
+			continue
+		}
+		sort.Slice(rows, func(i, j int) bool { return stalestFirst(rows[i].LastPolled, rows[j].LastPolled) })
+		out.Groups = append(out.Groups, adminErrorGroup{
+			Kind:  kind,
+			Label: failureKindLabel(kind),
+			Feeds: rows,
+		})
+	}
+	return out
+}
+
+// stalestFirst orders stored UTC times oldest first, with a missing or
+// unparseable time last (it tells us nothing about staleness).
+func stalestFirst(a, b string) bool {
+	at, aerr := db.ParseTime(a)
+	bt, berr := db.ParseTime(b)
+	switch {
+	case aerr != nil && berr != nil:
+		return a < b
+	case aerr != nil:
+		return false
+	case berr != nil:
+		return true
+	}
+	if at.Equal(bt) {
+		return a < b
+	}
+	return at.Before(bt)
+}
+
+// adminFeedHost is the display/grouping host for a feed URL, falling back to the
+// URL itself when no registrable domain can be derived.
+func adminFeedHost(rawURL string) string {
+	if host := store.RegistrableDomain(rawURL); host != "" {
+		return host
+	}
+	return rawURL
 }
 
 // formatPollSpacing renders a host spacing compactly.

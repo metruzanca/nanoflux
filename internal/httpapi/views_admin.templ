@@ -12,6 +12,7 @@ templ adminPage(u store.User, d adminData) {
 	@AdminInstanceCard(d)
 	@AdminStats(d.Stats)
 	@AdminPollCard(d.Poll, u.Timezone)
+	@AdminErrorsCard(d.Errors, u.Timezone)
 	@AdminStorageCard(d.Storage)
 	@AdminPluginsCard(d.Plugins)
 	@AdminBackupCard(d.Backup)
@@ -235,7 +236,10 @@ templ AdminStats(st adminStats) {
 // AdminPollCard shows whether the poller can keep up. Demand is how many fetches
 // per day the host's feeds ask for at their current intervals; capacity is what
 // the host's spacing allows. Demand above capacity is the permanent-lateness
-// signal: the backlog cannot drain until the load or spacing changes.
+// signal: the backlog cannot drain until the load or spacing changes. Feeds
+// whose last poll failed are reported as failing or cooling instead of behind:
+// the poller will reach them, but they will keep erroring, so counting them as
+// a backlog suggests progress that is not happening.
 templ AdminPollCard(d adminPoll, tz string) {
 	<section class="card" id="admin-poll-card">
 		<h2>polling</h2>
@@ -252,6 +256,14 @@ templ AdminPollCard(d adminPoll, tz string) {
 					{ " last polled " }
 					{ web.TimeFmt(tz, d.OldestRef) }
 				}
+				if d.Failing > 0 {
+					{ " · " }
+					<a href="#admin-feed-errors"><strong>{ strconv.Itoa(d.Failing) }</strong> failing</a>
+				}
+				if d.Cooling > 0 {
+					{ " · " }
+					<strong>{ strconv.Itoa(d.Cooling) }</strong> cooling off a rate limit
+				}
 			</p>
 			if d.Overloaded > 0 {
 				<div class="error banner" role="alert">
@@ -266,13 +278,18 @@ templ AdminPollCard(d adminPoll, tz string) {
 				</div>
 			}
 			if len(d.Hosts) == 0 {
-				<p class="muted small">all feeds are on schedule.</p>
+				if d.Cooling > 0 {
+					<p class="muted small">no healthy backlog; rate-limited feeds are waiting out their window.</p>
+				} else {
+					<p class="muted small">all feeds are on schedule.</p>
+				}
 			} else {
 				<table class="admin-users">
 					<thead>
 						<tr>
 							<th>host</th>
 							<th>behind</th>
+							<th>failing</th>
 							<th>spacing</th>
 							<th>demand/day</th>
 							<th>capacity/day</th>
@@ -289,6 +306,13 @@ templ AdminPollCard(d adminPoll, tz string) {
 									}
 								</td>
 								<td>{ strconv.Itoa(h.Behind) } / { strconv.Itoa(h.Feeds) }</td>
+								<td>
+									if h.Failing > 0 {
+										<strong>{ strconv.Itoa(h.Failing) }</strong>
+									} else {
+										0
+									}
+								</td>
 								<td>{ h.Spacing }</td>
 								<td>{ h.Demand }</td>
 								<td>{ h.Capacity }</td>
@@ -297,7 +321,55 @@ templ AdminPollCard(d adminPoll, tz string) {
 						}
 					</tbody>
 				</table>
-				<p class="muted small">Capacity uses the current host spacing, including a learned rate-limit window. Active 429 cooldowns are not included.</p>
+				<p class="muted small">Capacity uses the current host spacing, including a learned rate-limit window. Active 429 cooldowns are not included. Failing feeds still count toward demand, but not toward the backlog or its clear estimate.</p>
+			}
+		}
+	</section>
+}
+
+// AdminErrorsCard lists every enabled feed whose last poll failed, grouped by
+// cause, so a rate-limited host is not confused with a broken one. The stored
+// error text is shown in full: this is the admin's debugging surface.
+templ AdminErrorsCard(d adminErrors, tz string) {
+	<section class="card" id="admin-feed-errors">
+		<h2>feed errors</h2>
+		if d.Total == 0 {
+			<p class="muted small">no feeds are failing.</p>
+		} else {
+			<p class="muted small">Enabled feeds whose last poll failed, grouped by cause and oldest failure first. A rate limit is pacing, not a broken feed; retrying is handled by the poller.</p>
+			for _, g := range d.Groups {
+				<h3>{ g.Label } <span class={ errorKindBadge(g.Kind) }>{ strconv.Itoa(len(g.Feeds)) }</span></h3>
+				<table class="admin-users">
+					<thead>
+						<tr>
+							<th>feed</th>
+							<th>owner</th>
+							<th>host</th>
+							<th>last polled</th>
+							<th>error</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, r := range g.Feeds {
+							<tr>
+								<td><strong>{ r.Title }</strong></td>
+								<td class="muted">{ r.Owner }</td>
+								<td class="muted">{ r.Host }</td>
+								<td class="muted">
+									if r.LastPolled != "" {
+										{ web.TimeFmt(tz, r.LastPolled) }
+									} else {
+										never
+									}
+									if r.Retry != "" {
+										<div class="small">retry { web.Until(r.Retry) }</div>
+									}
+								</td>
+								<td><code>{ r.Error }</code></td>
+							</tr>
+						}
+					</tbody>
+				</table>
 			}
 		}
 	</section>
