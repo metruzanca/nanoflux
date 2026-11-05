@@ -130,6 +130,7 @@ type feedsData struct {
 type authorRow struct {
 	store.Author
 	FeedCount int
+	ViewCount int
 	Unread    int
 	// Taste is the magic-sort key: the author's rank tier (raised > neutral >
 	// lowered), then total favorites across their feeds. Higher sorts first.
@@ -230,6 +231,8 @@ type scopedItemsData struct {
 	// created from; both zero mean the global stream.
 	ScopeAuthorID     int64
 	ScopeCollectionID int64
+	// ViewID is the selected saved view on a view-scoped author page.
+	ViewID int64
 }
 
 // itemSort is the ordering of an item list: newest first (time desc), oldest
@@ -367,7 +370,25 @@ const maxTagFilters = 100
 // cursor are appended by the caller (see scopedTabURL, sortPicker and
 // moreURLFor).
 func scopedViewQuery(path, view string) string {
+	return scopedViewQueryFor(path, view, 0)
+}
+
+// scopedViewQueryFor builds the view/sort prefix for a scoped list. A numeric
+// saved-view selection uses ?view=<id> and keeps the tab in ?tab=.
+func scopedViewQueryFor(path, view string, viewID int64) string {
+	if viewID > 0 {
+		return path + "?view=" + strconv.FormatInt(viewID, 10) + "&tab=" + url.QueryEscape(view)
+	}
 	return path + "?view=" + url.QueryEscape(view)
+}
+
+// scopedViewSep is the separator a sort picker appends before sort=, matching
+// scopedViewQueryFor.
+func scopedViewSep(view string, viewID int64) string {
+	if viewID > 0 {
+		return "?view=" + strconv.FormatInt(viewID, 10) + "&tab=" + url.QueryEscape(view) + "&"
+	}
+	return "?view=" + url.QueryEscape(view) + "&"
 }
 
 // cursorID reads the page cursor from a load-more request: before= (newest),
@@ -407,12 +428,19 @@ func (s *Server) authorReadAll(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// The author page's mark-all honors the active show/hide filters, so a click
-	// marks exactly the items the filtered list shows (unread ones).
+	// The author page's mark-all honors the active show/hide filters and the
+	// selected view, so a click marks exactly the items the list shows.
 	filters := s.authorFilters(u.ID, id, filtersFromRequest(r))
+	_, viewID := authorViewState(r)
+	scopeAuthor, scopeViews, ok := s.authorScope(u.ID, id, viewID, u.Timezone)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
 	tagGroups, feedGroups, _ := filters.storeGroups()
 	if _, err := s.store.Items.MarkAllReadFiltered(u.ID, store.ItemFilter{
-		AuthorID: id, TagGroups: tagGroups, FeedGroups: feedGroups,
+		AuthorID: scopeAuthor, Views: scopeViews,
+		TagGroups: tagGroups, FeedGroups: feedGroups,
 		TimeGroups: filters.timeGroups(u.Timezone),
 	}); err != nil {
 		log.Error("mark author read", "author_id", id, "err", err)
@@ -423,9 +451,18 @@ func (s *Server) authorReadAll(w http.ResponseWriter, r *http.Request) {
 }
 
 // authorReadAllURL is the author mark-all action, carrying the active filters
-// (as query params the POST re-reads) so it marks the shown items only.
-func authorReadAllURL(authorID int64, filters listFilters) string {
-	return filterActionURL("/authors/"+strconv.FormatInt(authorID, 10)+"/read-all", filters)
+// and selected view (as query params the POST re-reads) so it marks the shown
+// items only.
+func authorReadAllURL(authorID int64, filters listFilters, viewID int64) string {
+	base := filterActionURL("/authors/"+strconv.FormatInt(authorID, 10)+"/read-all", filters)
+	if viewID <= 0 {
+		return base
+	}
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	return base + sep + "view=" + strconv.FormatInt(viewID, 10)
 }
 
 // readPage is the history page: the user's read items, most recently read
@@ -1710,10 +1747,13 @@ func (s *Server) authorScopedFromCurrentURL(userID int64, tz string, r *http.Req
 	if u.Path != "/authors/"+strconv.FormatInt(authorID, 10) {
 		return scopedItemsData{}, false
 	}
-	view := normalizeAuthorView(u.Query().Get("view"))
+	view, viewID := authorViewStateValues(u.Query())
 	sort := itemSortFromParam(u.Query().Get("sort"))
 	filters := s.authorFilters(userID, authorID, filtersFromValues(u.Query()))
-	scoped := s.authorScopedItems(userID, authorID, view, sort, tz, filters)
+	scoped, ok := s.authorScopedItems(userID, authorID, view, sort, tz, filters, viewID)
+	if !ok {
+		return scopedItemsData{}, false
+	}
 	scoped.SwapOOB = true
 	return scoped, true
 }
@@ -1860,7 +1900,7 @@ func (s *Server) favoritesAlgorithmPage(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) authors(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	rows := s.authorRows(u.ID)
+	rows := s.authorRows(u.ID, u.Timezone)
 	// Default sort is most unread first (the sort picker's default); app.js
 	// reorders client-side once the user picks another mode. Ties break by name
 	// so the order is stable.
@@ -1873,13 +1913,20 @@ func (s *Server) authors(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage("authors", u, authorsPage(u, authorsData{Rows: rows})))
 }
 
-func (s *Server) authorRows(userID int64) []authorRow {
+func (s *Server) authorRows(userID int64, tz string) []authorRow {
 	rows, _ := s.store.Authors.ListWithFeedCount(userID)
+	viewFilters, viewCounts := s.savedViewsByAuthor(userID, tz)
 	out := make([]authorRow, 0, len(rows))
 	for _, r := range rows {
+		unread := r.UnreadCount
+		if views := viewFilters[r.ID]; len(views) > 0 {
+			unread, _ = s.store.Items.CountFiltered(userID, store.ItemFilter{
+				AuthorID: r.ID, Views: views, UnreadOnly: true,
+			})
+		}
 		out = append(out, authorRow{
-			Author: r.Author, FeedCount: r.FeedCount, Unread: r.UnreadCount,
-			Taste: authorTaste(r.MaxRank, r.FavCount),
+			Author: r.Author, FeedCount: r.FeedCount, ViewCount: viewCounts[r.ID],
+			Unread: unread, Taste: authorTaste(r.MaxRank, r.FavCount),
 		})
 	}
 	return out
@@ -1942,22 +1989,28 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 	}
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, id)
 	filters := s.authorFilters(u.ID, id, filtersFromRequest(r))
-	scoped := s.authorScopedItems(u.ID, id, authorView(r), itemSortOf(r), u.Timezone, filters)
-	stats, _ := s.store.Items.StatsAuthor(u.ID, id)
+	tab, viewID := authorViewState(r)
+	scoped, ok := s.authorScopedItems(u.ID, id, tab, itemSortOf(r), u.Timezone, filters, viewID)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	statsFilter := store.ItemFilter{AuthorID: id, Views: s.authorStoreViewFilters(u.ID, id, u.Timezone)}
+	stats, _ := s.store.Items.StatsFilter(u.ID, statsFilter)
+	stats.Storage, _ = s.store.Items.StorageByAuthor(u.ID, id)
 	frequency := ""
-	if times, err := s.store.Items.AuthorRecentTimes(u.ID, id, 30); err == nil {
+	if times, err := s.store.Items.RecentTimesFilter(u.ID, statsFilter, 30); err == nil {
 		if gap, ok := web.AverageGapSeconds(times); ok {
 			frequency = web.PostFrequency(gap)
 		}
 	}
 	// The header's "mark all read" is always shown and honors the active
-	// show/hide filters, so it marks exactly the unread items the list shows.
-	tagGroups, feedGroups, _ := filters.storeGroups()
-	unread, _ := s.store.Items.CountUnreadFiltered(u.ID, store.ItemFilter{
-		AuthorID: id, TagGroups: tagGroups, FeedGroups: feedGroups,
-		TimeGroups: filters.timeGroups(u.Timezone),
-	})
-	markAll := markAllReadData{Action: authorReadAllURL(id, filters), Unread: unread}
+	// show/hide filters and selected view, so it marks exactly the unread items
+	// the list shows.
+	markAll := markAllReadData{
+		Action: authorReadAllURL(id, filters, viewID),
+		Unread: scoped.UnreadCount,
+	}
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
 		Author: a, Rows: rows, Views: s.savedViewsForAuthor(u.ID, id, u.Timezone), Links: links,
 		Scoped: scoped, Collections: authorCollections(rows),
@@ -2107,9 +2160,9 @@ func (s *Server) authorFilterPreview(w http.ResponseWriter, r *http.Request) {
 }
 
 // authorFilters validates and labels author-page filters. Feed rows must name a
-// feed owned by the user under this author; stale or foreign rows are dropped.
-// With a single feed, feed filters are redundant and dropped (the feed kind is
-// not offered).
+// feed the page can actually show: the author's own feeds, or any feed reachable
+// through an assigned view. With a single available feed, feed filters are
+// redundant and dropped (the feed kind is not offered).
 func (s *Server) authorFilters(userID, authorID int64, filters listFilters) listFilters {
 	if len(filters) == 0 {
 		return nil
@@ -2119,10 +2172,18 @@ func (s *Server) authorFilters(userID, authorID int64, filters listFilters) list
 	for _, feed := range feeds {
 		titles[feed.ID] = feed.Title
 	}
+	// A view-backed author page can filter by feeds the views select from, not
+	// just the author's own feeds.
+	if s.authorHasViews(userID, authorID) {
+		all, _ := s.store.Feeds.List(userID)
+		for _, feed := range all {
+			titles[feed.ID] = feed.Title
+		}
+	}
 	out := make(listFilters, 0, len(filters))
 	for _, f := range filters {
 		if f.isFeed() {
-			if len(feeds) <= 1 {
+			if len(titles) <= 1 {
 				continue
 			}
 			values := make([]string, 0, len(f.Values))
@@ -2142,36 +2203,44 @@ func (s *Server) authorFilters(userID, authorID int64, filters listFilters) list
 	return filterFeedTitles(normalizeFilters(out), titles)
 }
 
+// authorHasViews reports whether an author has at least one usable view.
+func (s *Server) authorHasViews(userID, authorID int64) bool {
+	views, _ := s.store.SavedViews.ListByAuthor(userID, authorID)
+	for _, v := range views {
+		if len(s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID, filtersFromParams(v.Filters))) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // authorScopedItems loads one item list (unread/read/favorites) for an author
-// plus the counts that drive the tabs. A show-feed filter scopes the counts to
-// that single feed instead of the whole author.
-func (s *Server) authorScopedItems(userID, authorID int64, view string, sort itemSort, tz string, filters listFilters) scopedItemsData {
-	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, sort, 0, authorID, 0, filters, tz))
-	var unread, read, favs int
-	_, _, showFeedIDs := filters.storeGroups()
-	tagFilter := store.ItemFilter{AuthorID: authorID}
-	if len(showFeedIDs) == 1 {
-		showFeed := showFeedIDs[0]
-		unread, _ = s.store.Items.CountUnread(userID, showFeed)
-		read, _ = s.store.Items.CountRead(userID, showFeed)
-		favs, _ = s.store.Items.CountFavorites(userID, showFeed)
-		tagFilter = store.ItemFilter{FeedID: showFeed}
-	} else {
-		unread, _ = s.store.Items.CountUnreadAuthor(userID, authorID)
-		read, _ = s.store.Items.CountReadAuthor(userID, authorID)
-		favs, _ = s.store.Items.CountFavoritesAuthor(userID, authorID)
+// plus the counts that drive the tabs. The author's own feeds are ORed with the
+// views assigned to them; a selected view narrows the list to just that view.
+// The bool is false when viewID is not an assigned view of this author.
+func (s *Server) authorScopedItems(userID, authorID int64, view string, sort itemSort, tz string, filters listFilters, viewID int64) (scopedItemsData, bool) {
+	scopeAuthor, scopeViews, ok := s.authorScope(userID, authorID, viewID, tz)
+	if !ok {
+		return scopedItemsData{}, false
 	}
+	pageFilter := scopedFilter(view, sort, 0, scopeAuthor, 0, filters, tz)
+	pageFilter.Views = scopeViews
+	items, more, _ := s.store.Items.ListPage(userID, pageFilter)
+	count := func(v string) int {
+		f := scopedFilter(v, sortNewest, 0, scopeAuthor, 0, filters, tz)
+		f.Views = scopeViews
+		n, _ := s.store.Items.CountFiltered(userID, f)
+		return n
+	}
+	unread, read, favs := count("unread"), count("read"), count("favorites")
 	base := "/authors/" + strconv.FormatInt(authorID, 10)
-	itemsBase := filters.appendFilters(scopedViewQuery(base+"/items", view) + "&sort=" + sort.param())
-	cats, _ := s.store.Items.ListCategories(userID, tagFilter)
-	authorFeeds, _ := s.store.Feeds.ListByAuthorWithUnread(userID, authorID)
-	feedOpts := make([]comboItem, 0, len(authorFeeds))
-	for _, f := range authorFeeds {
-		feedOpts = append(feedOpts, comboItem{Value: strconv.FormatInt(f.Feed.ID, 10), Label: f.Feed.Title})
-	}
+	itemsBase := filters.appendFilters(scopedViewQueryFor(base+"/items", view, viewID) + "&sort=" + sort.param())
+	tagScope := store.ItemFilter{AuthorID: scopeAuthor, Views: scopeViews}
+	cats, _ := s.store.Items.ListCategoriesFilter(userID, tagScope)
+	feedOpts := s.authorFeedOptions(userID, authorID, len(scopeViews) > 0)
 	filtered := 0
 	if len(filters) > 0 {
-		filtered, _ = s.store.Items.CountFiltered(userID, scopedFilter(view, sortNewest, 0, authorID, 0, filters, tz))
+		filtered, _ = s.store.Items.CountFiltered(userID, pageFilter)
 	}
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
@@ -2179,8 +2248,40 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 		More: pageCursorFor(itemsBase, items, more, sort, 0), HideAuthor: true,
 		Mode: s.store.ViewPrefs.Mode(userID, base), FavTab: favs > 0 || view == "favorites", FavCount: favs,
 		Filters: filters, FilteredCount: filtered, TagOptions: tagItems(cats), FeedOptions: feedOpts,
-		ScopeAuthorID: authorID,
+		ScopeAuthorID: authorID, ViewID: viewID,
+	}, true
+}
+
+// authorScope resolves the store scope for an author page: the author's feeds
+// plus all usable views, or just one selected view.
+func (s *Server) authorScope(userID, authorID, viewID int64, tz string) (scopeAuthor int64, views []store.ViewFilter, ok bool) {
+	if viewID > 0 {
+		vf, found := s.authorStoreViewFilter(userID, authorID, viewID, tz)
+		if !found {
+			return 0, nil, false
+		}
+		return 0, []store.ViewFilter{vf}, true
 	}
+	return authorID, s.authorStoreViewFilters(userID, authorID, tz), true
+}
+
+// authorFeedOptions maps the feeds offered by the author filter modal. When the
+// scope includes views it offers every feed, since view items can come from any
+// feed the views select; otherwise it stays on the author's own feeds.
+func (s *Server) authorFeedOptions(userID, authorID int64, all bool) []comboItem {
+	var out []comboItem
+	if all {
+		feeds, _ := s.store.Feeds.ListWithUnread(userID)
+		for _, f := range feeds {
+			out = append(out, comboItem{Value: strconv.FormatInt(f.Feed.ID, 10), Label: f.Feed.Title})
+		}
+		return out
+	}
+	feeds, _ := s.store.Feeds.ListByAuthorWithUnread(userID, authorID)
+	for _, f := range feeds {
+		out = append(out, comboItem{Value: strconv.FormatInt(f.Feed.ID, 10), Label: f.Feed.Title})
+	}
+	return out
 }
 
 func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
@@ -2190,20 +2291,32 @@ func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	view := authorView(r)
+	view, viewID := authorViewState(r)
 	sort := itemSortOf(r)
 	filters := s.authorFilters(u.ID, id, filtersFromRequest(r))
+	scopeAuthor, scopeViews, ok := s.authorScope(u.ID, id, viewID, u.Timezone)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
 	if cursor := cursorID(r, sort); cursor > 0 {
-		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, sort, cursor, id, 0, filters, u.Timezone))
+		f := scopedFilter(view, sort, cursor, scopeAuthor, 0, filters, u.Timezone)
+		f.Views = scopeViews
+		items, more, err := s.store.Items.ListPage(u.ID, f)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		base := filters.appendFilters(scopedViewQuery("/authors/"+strconv.FormatInt(id, 10)+"/items", view) + "&sort=" + sort.param())
+		base := filters.appendFilters(scopedViewQueryFor("/authors/"+strconv.FormatInt(id, 10)+"/items", view, viewID) + "&sort=" + sort.param())
 		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursorFor(base, items, more, sort, int(cursor)), true))
 		return
 	}
-	web.Render(w, r, ScopedItems(s.authorScopedItems(u.ID, id, view, sort, u.Timezone, filters)))
+	scoped, ok := s.authorScopedItems(u.ID, id, view, sort, u.Timezone, filters, viewID)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	web.Render(w, r, ScopedItems(scoped))
 }
 
 // feedRowFor builds a single feed card row with its collection tags and cached
@@ -2767,8 +2880,23 @@ func normalizeCollectionView(v string) string {
 
 // authorView reads the author page's ?view= param. It understands the
 // author-only "favorites" tab in addition to the shared unread/read views.
-func authorView(r *http.Request) string {
-	return normalizeAuthorView(r.URL.Query().Get("view"))
+// authorViewState reads the author page's tab and selected saved view. A
+// numeric ?view= is a saved view id, with the tab in ?tab= (default unread). A
+// non-numeric ?view= keeps its historical tab meaning.
+func authorViewState(r *http.Request) (tab string, viewID int64) {
+	return authorViewStateValues(r.URL.Query())
+}
+
+func authorViewStateValues(q url.Values) (tab string, viewID int64) {
+	raw := strings.TrimSpace(q.Get("view"))
+	if id, err := strconv.ParseInt(raw, 10, 64); err == nil && id > 0 {
+		tab = strings.TrimSpace(q.Get("tab"))
+		if tab == "" {
+			tab = "unread"
+		}
+		return normalizeAuthorView(tab), id
+	}
+	return normalizeAuthorView(raw), 0
 }
 
 func normalizeAuthorView(v string) string {

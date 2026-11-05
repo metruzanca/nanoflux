@@ -43,11 +43,19 @@ templ savedViewsPage(d savedViewsPageData) {
 // chips and its matching-item count, with open/edit actions.
 templ savedViewCard(r savedViewRow) {
 	{{ id := strconv.FormatInt(r.ID, 10) }}
+	{{ href := "/views/" + id }}
+	if r.AuthorID > 0 {
+		{{ href = "/authors/" + strconv.FormatInt(r.AuthorID, 10) + "?view=" + id }}
+	}
+	if len(r.Filters) == 0 {
+		// A view from before filters became mandatory: send it to the editor.
+		{{ href = "/views/" + id + "/edit" }}
+	}
 	<li id={ "view-" + id } class="feed-card-item">
 		<div class="card feed-card">
 			<div class="feed-card-main">
 				<div class="feed-card-title">
-					<a href={ templ.URL("/views/" + id) }>
+					<a href={ templ.URL(href) }>
 						<strong>{ r.Title } @web.Lucide("bookmark-plus")</strong>
 					</a>
 					<span class="badge">{ r.BaseView }</span>
@@ -175,4 +183,10 @@ templ savedViewFormPage(u store.User, f savedViewForm) {
 			<button type="submit">save view</button>
 		</div>
 	</form>
+	if f.ID > 0 {
+		<form class="stack delete-form" method="post" action={ templ.URL("/views/" + strconv.FormatInt(f.ID, 10) + "/delete") } data-confirm="delete this view?">
+			@csrfField()
+			<button type="submit" class="danger">delete view</button>
+		</form>
+	}
 }

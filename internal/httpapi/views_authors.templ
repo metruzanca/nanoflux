@@ -78,7 +78,16 @@ templ AuthorRow(r authorRow) {
 				}
 				<strong>{ r.Name }</strong>
 			</a>
-			<span class="muted"><span class="unread-count">{ r.Unread } unread</span> · { r.FeedCount } feeds</span>
+			<span class="muted"><span class="unread-count">{ r.Unread } unread</span> · { r.FeedCount } feeds
+				if r.ViewCount > 0 {
+					· { strconv.Itoa(r.ViewCount) }
+					if r.ViewCount == 1 {
+						view
+					} else {
+						views
+					}
+				}
+			</span>
 		</div>
 	</li>
 }
