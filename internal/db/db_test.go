@@ -54,6 +54,27 @@ func TestMigrate(t *testing.T) {
 	if filtersTable != 0 {
 		t.Errorf("filters table should not exist after schemaV53")
 	}
+
+	// Full-text search (schemaV10) was removed again by schemaV58: no FTS table
+	// and no sync triggers remain.
+	var ftsTable int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='items_fts'`,
+	).Scan(&ftsTable); err != nil {
+		t.Fatal(err)
+	}
+	if ftsTable != 0 {
+		t.Errorf("items_fts table should not exist after schemaV58")
+	}
+	var ftsTriggers int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('items_ai','items_ad','items_au')`,
+	).Scan(&ftsTriggers); err != nil {
+		t.Fatal(err)
+	}
+	if ftsTriggers != 0 {
+		t.Errorf("items FTS triggers should not exist after schemaV58")
+	}
 	var hasFilterMode int
 	if err := sqldb.QueryRow(
 		`SELECT COUNT(*) FROM pragma_table_info('feeds') WHERE name='filter_mode'`,

@@ -325,13 +325,6 @@ func TestDeleteSaved(t *testing.T) {
 	if err := s.Items.DeleteSaved(u.ID, dropID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("second DeleteSaved should be ErrNotFound, got %v", err)
 	}
-	// Search no longer finds it.
-	found, _, _ := s.Items.SearchPage(u.ID, "Drop", ItemFilter{Limit: 10})
-	for _, it := range found {
-		if it.ID == dropID {
-			t.Fatal("deleted saved page should not appear in search")
-		}
-	}
 }
 
 func mustSystemFeedID(t *testing.T, s *Store, userID int64) int64 {

@@ -113,18 +113,6 @@ a.external::after {
 /* Appearance pref "hide global unread counts": the server omits the spans, but
    the client badge refresh recreates them; this keeps them hidden regardless. */
 body.hide-counts .nav-count { display: none; }
-.top-search { margin: 0; display: inline-flex; }
-.top-search input {
-  width: 11rem;
-  padding: 0.3rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--fg);
-  font: inherit;
-  font-size: 0.85rem;
-}
-.top-search input:focus { outline: none; border-color: var(--accent); }
 .inline { display: inline; margin: 0; }
 
 .user-menu { position: relative; display: inline-flex; }
@@ -1492,9 +1480,6 @@ details.feeds-section summary:hover { color: var(--accent); }
 
   .top-nav-center > a { padding: 0.5rem 0.25rem; }
   .top-nav-center > a + a { border-top: 1px solid var(--border); }
-
-  .top-search { width: 100%; }
-  .top-search input { width: 100%; }
 
   .top-nav-right > .user-menu {
     display: flex;

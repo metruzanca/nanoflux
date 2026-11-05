@@ -259,38 +259,16 @@ func TestLoadMoreFlow(t *testing.T) {
 	}
 }
 
-func TestSearchRoute(t *testing.T) {
-	s, h := newTestServer(t)
+func TestTopbar(t *testing.T) {
+	_, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
-	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
-	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
-	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Go concurrency", Link: "https://b.dev/1", FetchedAt: db.Now()})
-	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "Rust ownership", Link: "https://b.dev/2", FetchedAt: db.Now()})
 
-	body := doGet(h, "/search?q=concurrency", cookie).Body.String()
-	if !strings.Contains(body, "Go concurrency") || strings.Contains(body, "Rust ownership") {
-		t.Fatalf("search should return only the match: %s", body)
-	}
-
-	// The qualifier author: scopes to the author's items.
-	body = doGet(h, "/search?q="+url.QueryEscape(`author:Metru Go`), cookie).Body.String()
-	if !strings.Contains(body, "Go concurrency") {
-		t.Fatalf("author-qualified search missing result: %s", body)
-	}
-
-	// Empty query renders the empty results page.
-	rr := doGet(h, "/search", cookie)
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "search") {
-		t.Fatalf("empty search: %d %s", rr.Code, rr.Body.String())
-	}
-
-	// The search box lives in the topbar.
 	home := doGet(h, "/", cookie).Body.String()
-	if !strings.Contains(home, `name="q"`) || !strings.Contains(home, `/search`) {
-		t.Fatalf("topbar should carry the search form: %s", home)
+	// Item search was removed; the topbar no longer carries a search form.
+	if strings.Contains(home, `action="/search"`) || strings.Contains(home, `id="search-input"`) {
+		t.Fatalf("topbar should not carry the removed search form: %s", home)
 	}
-	// The mobile hamburger toggle is part of the same header.
+	// The mobile hamburger toggle is part of the header.
 	if !strings.Contains(home, `id="nav-toggle"`) || !strings.Contains(home, `id="top-nav"`) {
 		t.Fatalf("topbar should carry the mobile nav toggle: %s", home)
 	}

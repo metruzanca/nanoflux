@@ -309,44 +309,6 @@ func TestItemsListPagePagination(t *testing.T) {
 	}
 }
 
-func TestSearchPage(t *testing.T) {
-	s := newTestStore(t)
-	u := mustUser(t, s, "alice")
-	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
-	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
-
-	base := Item{GUID: "g1", Title: "Go concurrency patterns", Link: "https://metru.dev/1", Summary: "goroutines and channels", FetchedAt: db.Now()}
-	s.Items.Upsert(f.ID, base)
-	s.Items.Upsert(f.ID, Item{GUID: "g2", Title: "Rust memory safety", Link: "https://metru.dev/2", Summary: "ownership and borrowing", FetchedAt: db.Now()})
-	s.Items.Upsert(f.ID, Item{GUID: "g3", Title: "Go for beginners", Link: "https://metru.dev/3", Summary: "getting started", FetchedAt: db.Now()})
-
-	// Token match across title + summary.
-	got, more, err := s.Items.SearchPage(u.ID, `"concurrency" OR "borrowing"`, ItemFilter{Limit: 10})
-	if err != nil {
-		t.Fatalf("SearchPage: %v", err)
-	}
-	if len(got) != 2 || more {
-		t.Fatalf("search results: %d, more=%v", len(got), more)
-	}
-	for _, it := range got {
-		if it.Title != "Go concurrency patterns" && it.Title != "Rust memory safety" {
-			t.Fatalf("unexpected result: %+v", it)
-		}
-	}
-
-	// title: qualifier restricts to the title column.
-	got, _, err = s.Items.SearchPage(u.ID, `title:"Go"`, ItemFilter{Limit: 10})
-	if err != nil || len(got) != 2 {
-		t.Fatalf("title: search: %v %d", err, len(got))
-	}
-
-	// No matches.
-	got, _, err = s.Items.SearchPage(u.ID, `"zzzznope"`, ItemFilter{Limit: 10})
-	if err != nil || len(got) != 0 {
-		t.Fatalf("empty search: %v %d", err, len(got))
-	}
-}
-
 func TestItemEnclosures(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

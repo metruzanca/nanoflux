@@ -68,6 +68,7 @@ var migrations = []migration{
 	{55, schemaV55},
 	{56, schemaV56},
 	{57, schemaV57},
+	{58, schemaV58},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -905,6 +906,16 @@ CREATE TABLE saved_views (
 );
 CREATE INDEX idx_saved_views_user ON saved_views(user_id);
 CREATE INDEX idx_saved_views_author ON saved_views(author_id);
+`
+
+// schemaV58 removes item full-text search. The feature was retired in favor of
+// starting over later, so drop the FTS5 table and the triggers that kept it in
+// sync. schemaV10 stays in the history for databases that already applied it.
+const schemaV58 = `
+DROP TRIGGER IF EXISTS items_ai;
+DROP TRIGGER IF EXISTS items_ad;
+DROP TRIGGER IF EXISTS items_au;
+DROP TABLE IF EXISTS items_fts;
 `
 
 // Migrate applies any pending migrations in order, recording each in

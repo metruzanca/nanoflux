@@ -69,8 +69,8 @@ func TestAuthorFilterRules(t *testing.T) {
 		}
 	}
 
-	// Block a tag: matching items vanish everywhere, including global counts and
-	// search; another author's item with the same tag is untouched.
+	// Block a tag: matching items vanish everywhere, including global counts
+	// and lists; another author's item with the same tag is untouched.
 	apply(FilterRule{Kind: FilterKindTag, Action: FilterActionHide, Combine: FilterCombineAny, Values: []string{"r/rust"}})
 	if got := list(); len(got) != 1 || got[0] != "Go post" {
 		t.Fatalf("blocked tag list = %v, want [Go post]", got)
@@ -81,12 +81,12 @@ func TestAuthorFilterRules(t *testing.T) {
 	if n, _ := s.Items.CountUnread(u.ID, 0); n != 2 {
 		t.Fatalf("global unread = %d, want 2 (Go + Other)", n)
 	}
-	results, _, err := s.Items.SearchPage(u.ID, "post", ItemFilter{Limit: 20})
+	all, err := s.Items.List(u.ID, ItemFilter{Limit: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := titles(results); !contains(got, "Go post") || contains(got, "Rust post") {
-		t.Fatalf("search = %v, want Go post but not Rust post", got)
+	if got := titles(all); !contains(got, "Go post") || contains(got, "Rust post") {
+		t.Fatalf("global list = %v, want Go post but not Rust post", got)
 	}
 	if err := s.Items.SetFavorite(u.ID, rustID, true); err != nil {
 		t.Fatal(err)

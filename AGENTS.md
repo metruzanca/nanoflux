@@ -347,7 +347,8 @@ Categories are also normalized for tag browsing and list filtering.
   fetched_at)`. The generated `ListItems*` queries are fixed-shape, so any
   tag/group/negative/time filter uses the hand-written
   `ItemStore.listPageTagged` (dynamic `EXISTS`/`NOT EXISTS`; supports
-  newest/oldest/magic and all scopes), mirroring `SearchPage`'s raw-SQL pattern.
+  newest/oldest/magic and all scopes), as a hand-written query alongside the
+  generated ones.
   `unreadFilteredQuery` (mark-all/count) applies the same predicates, so a
   filtered mark-all marks exactly the shown items.
 - HTTP filters are transient query state (`internal/httpapi/filters.go`): each
@@ -408,8 +409,8 @@ parallel implementation.
   without the card leaves them alone. Feed delete removes its id from rules and
   drops any rule left empty; `CloneUser` remaps author ids and feed values.
 - **One read path.** The `visible_items` view (schemaV55, mirrored in
-  `schema.sql`) applies the rules in SQL. Item lists, counts, badges, search,
-  read history, list items, and public shared lists select from `visible_items`
+  `schema.sql`) applies the rules in SQL. Item lists, counts, badges, read
+  history, list items, and public shared lists select from `visible_items`
   instead of `items`. Item detail (`GetItem*`) and shared-item fetch stay on raw
   `items`, so a blocked item is still reachable by direct link. Auto-read
   retention (`MarkItemsOlderThanRead`) is unchanged. Any new item read path must
@@ -462,7 +463,7 @@ A feed's item list is the author page filtered with `?feed={id}`
 the header mark-all to that feed. Every former `/feeds/{id}` link now points at
 an author page: the feed card title at `/authors/{id}?feed=`, item/source/author
 links at `/authors/{id}`, the item modal's tag chips at `/authors/{id}?tags=`,
-the search-palette feed entity and the provision success link at
+the command-palette feed entity and the provision success link at
 `/authors/{id}?feed=`. The item menu's old "go to feed" is "go to author" (and
 is omitted on the author's own page). Display-mode scopes drop `/feeds/{id}`;
 the author page's scope stays `/authors/{id}`.
@@ -582,7 +583,7 @@ to `ListItemsMagic` (offset-paged, no keyset cursor; `?sort=magic`).
 
 The extension can save an arbitrary page ("watch later") when the current page
 has no feed. A saved page is a normal `items` row under a hidden per-user system
-feed, so lists, favorites, bookmarks, FTS search and share pages all work
+feed, so lists, favorites, bookmarks and share pages all work
 unchanged.
 
 - `authors.is_system` / `feeds.is_system` (schemaV34) mark the hidden pair.
@@ -593,11 +594,11 @@ unchanged.
   and author listing (`ListFeeds*`, `ListAuthors*`, `ListAllFeeds`, collections,
   OPML, plugin reconcile). `FeedStore.ByID`/`AuthorStore.ByID` return
   `ErrNotFound` for them, so their pages 404 instead of rendering.
-- Saved pages surface **only** in lists, favorites, bookmarks and search. The
+- Saved pages surface **only** in lists, favorites and bookmarks. The
   `ListItems` queries keep them out of the unread/read/feed/author/collection
   streams (`AND (f.is_system = 0 OR favorites = 1 OR bookmarks = 1)`);
   `CountUnread`/`MarkAllItemsRead`/`MarkAllItemsUnread` exclude them. They stay
-  favoriteable, bookmarket, searchable and subject to the auto-read sweep.
+  favoriteable, bookmarket and subject to the auto-read sweep.
 - `ItemWithFeed.FeedIsSystem` drives rendering: the row/modal show "saved" as
   plain text (no link to the hidden feed/author) and `dedupItems` never merges a
   saved page into a feed item.
@@ -854,7 +855,7 @@ not have" limitation.
   `DeduplicateItems` group only same-feed + same-link + same-published-time rows
   (conservative), keep the most recently fetched row (the current scheme), and
   carry over read/favorite state, enclosures, list memberships and shares. The
-  merge runs in one transaction; verify integrity + FK + FTS after a run.
+  merge runs in one transaction; verify integrity + FK after a run.
 
 ### Cross-feed items (one item-id per post)
 

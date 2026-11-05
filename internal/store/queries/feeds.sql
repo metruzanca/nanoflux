@@ -197,12 +197,6 @@ FROM feeds f
 WHERE f.user_id = ? AND f.is_system = 0
 ORDER BY f.id;
 
--- name: GetFeedByTitle :one
-SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
-FROM feeds
-WHERE user_id = ? AND title = ? COLLATE NOCASE;
-
 -- name: ListAllFeeds :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
        f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
