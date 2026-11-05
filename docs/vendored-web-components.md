@@ -110,9 +110,13 @@ layer, so a body-portaled combobox inside one would render behind it.
 native `change` on pointerup or keyup, so a surrounding form's
 `hx-trigger="change"` fires once when the drag settles.
 
-The filter modal renders one combobox per possible kind (`tag` and `feed`) in
-`<template>` elements. `app.js` swaps the value cell when the kind select
-changes, so no client-side option JSON or component API is involved.
+The filter modal renders one combobox per tag/feed kind in `<template>`
+elements, plus a plain time-window editor for the `time` kind. `app.js` swaps
+the value cell when the kind select changes, and toggles the time editor's end
+fields when its mode changes, so no client-side option JSON or component API is
+involved. The combobox filters its full item list client-side as the user
+types, so a long tag list on `/unread` is not capped: typing narrows the
+rendered options.
 
 ### Plain chip list
 

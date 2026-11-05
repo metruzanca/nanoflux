@@ -157,6 +157,15 @@ type FeedGroup struct {
 	Exclude bool
 }
 
+// TimeGroup is one time-window predicate from a filter row. After and Before
+// are inclusive bounds in the canonical UTC TimeFormat ("" = open); Exclude
+// negates the whole window, so a hide row removes items inside it.
+type TimeGroup struct {
+	After   string
+	Before  string
+	Exclude bool
+}
+
 type ItemFilter struct {
 	UnreadOnly    bool
 	ReadOnly      bool
@@ -187,6 +196,9 @@ type ItemFilter struct {
 	// callers that only need the simple forms.
 	TagGroups  []TagGroup
 	FeedGroups []FeedGroup
+	// TimeGroups are per-row time-window predicates over
+	// COALESCE(published_at, fetched_at), in UTC TimeFormat strings.
+	TimeGroups []TimeGroup
 	Limit      int
 }
 
@@ -384,7 +396,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	// filter or negative filter uses the hand-written dynamic query. sqlc owns
 	// the rest of the list paths.
 	if len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 ||
-		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 {
+		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.TimeGroups) > 0 {
 		return s.listPageTagged(userID, f, limit)
 	}
 	if f.Magic {
@@ -784,6 +796,7 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
 		*args = append(*args, f.ExcludeFeedID)
 	}
 	appendFilterGroups(b, args, "i.id", f.TagGroups, f.FeedGroups)
+	appendTimeGroups(b, args, "COALESCE(i.published_at, i.fetched_at)", f.TimeGroups)
 }
 
 // CountFiltered counts the items ListPage would return for f, ignoring its
@@ -1226,6 +1239,21 @@ func (s *ItemStore) ListCategories(userID int64, f ItemFilter) ([]CategoryCount,
 	}
 }
 
+// ListUserCategories returns the user's distinct tags with their item counts
+// across every feed, most-used first. unreadOnly restricts the counts to unread
+// items, which is what the global /unread filter offers. It reads visible_items
+// so an author block rule also hides that author's tags from the picker.
+func (s *ItemStore) ListUserCategories(userID int64, unreadOnly bool) ([]CategoryCount, error) {
+	rows, err := s.q.ListCategoriesForUser(context.Background(), sqlcgen.ListCategoriesForUserParams{
+		UserID: userID,
+		Unread: boolInt(unreadOnly),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return categoryCounts(len(rows), func(i int) (string, int64) { return rows[i].Category, rows[i].ItemCount }), nil
+}
+
 // categoryCounts maps sqlc rows to CategoryCount via the caller's accessors.
 func categoryCounts(n int, at func(i int) (string, int64)) []CategoryCount {
 	out := make([]CategoryCount, 0, n)
@@ -1655,7 +1683,34 @@ func unreadFilteredQuery(userID int64, f ItemFilter, mark bool) (string, []any) 
 		args = append(args, f.ExcludeFeedID)
 	}
 	appendFilterGroups(&b, &args, "items.id", f.TagGroups, f.FeedGroups)
+	appendTimeGroups(&b, &args, "COALESCE(items.published_at, items.fetched_at)", f.TimeGroups)
 	return b.String(), args
+}
+
+// appendTimeGroups adds the time-window predicates to b. It is shared by the
+// dynamic list/count query and the mark-all statement, so both evaluate the
+// same windows; expr is the item time expression the caller's aliases allow.
+func appendTimeGroups(b *strings.Builder, args *[]any, expr string, groups []TimeGroup) {
+	for _, g := range groups {
+		var terms []string
+		if g.After != "" {
+			terms = append(terms, expr+" >= ?")
+			*args = append(*args, g.After)
+		}
+		if g.Before != "" {
+			terms = append(terms, expr+" <= ?")
+			*args = append(*args, g.Before)
+		}
+		if len(terms) == 0 {
+			continue
+		}
+		clause := "(" + strings.Join(terms, " AND ") + ")"
+		if g.Exclude {
+			clause = "NOT " + clause
+		}
+		b.WriteString(" AND ")
+		b.WriteString(clause)
+	}
 }
 
 // filterGroupsClause builds the combined predicate for tag/feed groups, with no

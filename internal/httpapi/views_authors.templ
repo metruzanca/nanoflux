@@ -212,14 +212,14 @@ templ authorFilterCard(d authorsData) {
 		<div id="author-filter-fields">
 			<div class="filter-rows" id="author-filter-rows" data-filter-rows>
 				for i, f := range d.Rules {
-					@filterRow("author-filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, d.FilterTagOptions, d.FilterFeedOptions, true, true)
+					@filterRow("author-filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, d.FilterTagOptions, d.FilterFeedOptions, []string{filterKindTag, filterKindFeed}, true)
 				}
 				if len(d.Rules) == 0 {
-					@filterRow("author-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, true, true)
+					@filterRow("author-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, []string{filterKindTag, filterKindFeed}, true)
 				}
 			</div>
 			<template id="author-filter-row-template" data-filter-row-template>
-				@filterRow("author-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, true, true)
+				@filterRow("author-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, []string{filterKindTag, filterKindFeed}, true)
 			</template>
 			<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 		</div>

@@ -191,17 +191,20 @@ func TestAuthorFilterShowHide(t *testing.T) {
 	}
 
 	// With one feed, the feed kind is not offered and a redundant feed filter
-	// is dropped; the hidden kind defaults to tag.
+	// is dropped; tag and time remain, so the kind select is still rendered.
 	one, _ := s.store.Authors.Create(u.ID, "Solo", "", "")
 	only, _ := s.store.Feeds.Create(u.ID, one.ID, "Solo feed", "https://solo.dev/rss.xml", "", "", 900)
 	upsert(only.ID, "solo", "Solo post", "r/solo")
 	oneURL := "/authors/" + itoa(one.ID)
 	body = doGet(h, oneURL+"?f="+url.QueryEscape("feed:show:"+itoa(only.ID)), cookie).Body.String()
-	if strings.Contains(body, `data-filter-kind`) {
-		t.Fatalf("single-feed author should not render a kind select: %s", body)
+	if !strings.Contains(body, `data-filter-kind`) {
+		t.Fatalf("single-feed author should render a tag/time kind select: %s", body)
 	}
-	if strings.Contains(body, `feed:show:`) || !strings.Contains(body, `name="filter_kind" value="tag"`) {
-		t.Fatalf("single-feed feed filter should be dropped and kind default to tag: %s", body)
+	if strings.Contains(body, `<option value="feed"`) {
+		t.Fatalf("single-feed author should not offer the feed kind: %s", body)
+	}
+	if strings.Contains(body, `feed:show:`) {
+		t.Fatalf("single-feed feed filter should be dropped: %s", body)
 	}
 }
 
@@ -225,6 +228,28 @@ func TestFiltersFromValues(t *testing.T) {
 			vals: url.Values{"f": {`tag:show:any:["r/golang","r/rust"]`}},
 			want: listFilters{
 				{Kind: filterKindTag, Action: filterShow, Combine: filterAny, Values: []string{"r/golang", "r/rust"}, Labels: []string{"r/golang", "r/rust"}},
+			},
+		},
+		{
+			name: "time canonical",
+			vals: url.Values{"f": {`time:show:["between","2026-01-01","2026-01-31T13:00"]`}},
+			want: listFilters{
+				{Kind: filterKindTime, Action: filterShow, Combine: filterAll, Values: []string{"between", "2026-01-01", "2026-01-31T13:00"}},
+			},
+		},
+		{
+			name: "time form row",
+			vals: url.Values{
+				"filter_row":                {"0"},
+				"filter_kind":               {"time"},
+				"filter_action":             {"hide"},
+				"filter_combine":            {"all"},
+				"filter_time_mode_0":        {"before"},
+				"filter_time_start_0":       {"2026-02-01"},
+				"filter_time_start_clock_0": {"09:30"},
+			},
+			want: listFilters{
+				{Kind: filterKindTime, Action: filterHide, Combine: filterAll, Values: []string{"before", "2026-02-01T09:30", ""}},
 			},
 		},
 		{

@@ -888,6 +888,53 @@ func (q *Queries) ListCategoriesForFeed(ctx context.Context, arg ListCategoriesF
 	return items, nil
 }
 
+const listCategoriesForUser = `-- name: ListCategoriesForUser :many
+SELECT ic.category, COUNT(*) AS item_count
+FROM item_categories ic
+JOIN visible_items vi ON vi.id = ic.item_id
+WHERE vi.user_id = ?1
+  AND (?2 = 0 OR vi.read = 0)
+GROUP BY ic.category
+ORDER BY item_count DESC, ic.category ASC
+`
+
+type ListCategoriesForUserParams struct {
+	UserID int64       `json:"userID"`
+	Unread interface{} `json:"unread"`
+}
+
+type ListCategoriesForUserRow struct {
+	Category  string `json:"category"`
+	ItemCount int64  `json:"item_count"`
+}
+
+// Every distinct tag across a user's feeds, most-used first. This backs the
+// global /unread filter picker. The search-only combobox filters the returned
+// list client-side, so it is deliberately not capped. visible_items keeps
+// author block rules applied; unread = 1 narrows the counts to unread items.
+func (q *Queries) ListCategoriesForUser(ctx context.Context, arg ListCategoriesForUserParams) ([]ListCategoriesForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCategoriesForUser, arg.UserID, arg.Unread)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCategoriesForUserRow
+	for rows.Next() {
+		var i ListCategoriesForUserRow
+		if err := rows.Scan(&i.Category, &i.ItemCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEnclosures = `-- name: ListEnclosures :many
 SELECT url, title, mime_type, size, sort, kind, poster, cache_key, cache_size
 FROM item_enclosures

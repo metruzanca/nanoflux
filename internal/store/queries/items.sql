@@ -672,6 +672,19 @@ WHERE mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = 
 GROUP BY ic.category
 ORDER BY item_count DESC, ic.category ASC;
 
+-- name: ListCategoriesForUser :many
+-- Every distinct tag across a user's feeds, most-used first. This backs the
+-- global /unread filter picker. The search-only combobox filters the returned
+-- list client-side, so it is deliberately not capped. visible_items keeps
+-- author block rules applied; unread = 1 narrows the counts to unread items.
+SELECT ic.category, COUNT(*) AS item_count
+FROM item_categories ic
+JOIN visible_items vi ON vi.id = ic.item_id
+WHERE vi.user_id = sqlc.arg('userID')
+  AND (sqlc.arg('unread') = 0 OR vi.read = 0)
+GROUP BY ic.category
+ORDER BY item_count DESC, ic.category ASC;
+
 -- name: ListItemsWithCategories :many
 -- Items that carry a category string but have no item_categories rows yet, for
 -- the one-time backfill (SQLite cannot split the newline-joined column in SQL).
