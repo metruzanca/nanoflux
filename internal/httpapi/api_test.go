@@ -362,6 +362,7 @@ func TestAPIDiscoverSavedFlag(t *testing.T) {
 		Saved         bool   `json:"saved"`
 		SavedFeedID   int64  `json:"saved_feed_id"`
 		SavedAuthorID int64  `json:"saved_author_id"`
+		SavedURL      string `json:"saved_url"`
 	}
 	var resp struct {
 		Candidates []candidate `json:"candidates"`
@@ -379,10 +380,58 @@ func TestAPIDiscoverSavedFlag(t *testing.T) {
 	if len(resp.Candidates) != 1 || !resp.Candidates[0].Saved {
 		t.Fatalf("saved candidate: %+v", resp)
 	}
-	// The saved candidate carries both ids so the popup can link to the feed and
-	// its author.
-	if resp.Candidates[0].SavedFeedID != f.ID || resp.Candidates[0].SavedAuthorID != a.ID {
-		t.Fatalf("saved candidate ids = %+v, want feed %d author %d", resp.Candidates[0], f.ID, a.ID)
+	// The saved candidate carries both ids and the author-scoped feed link so the
+	// popup can link to the feed without knowing the route shape.
+	wantURL := "/authors/" + itoa(a.ID) + "?feed=" + itoa(f.ID)
+	if resp.Candidates[0].SavedFeedID != f.ID || resp.Candidates[0].SavedAuthorID != a.ID ||
+		resp.Candidates[0].SavedURL != wantURL {
+		t.Fatalf("saved candidate = %+v, want feed %d author %d url %q", resp.Candidates[0], f.ID, a.ID, wantURL)
+	}
+}
+
+// TestAPIDiscoverPluginDerived proves the extension's discovery endpoint uses
+// plugin-first discovery, so a feed a plugin derives from the page URL (reddit's
+// old.reddit.com/user/<name>/submitted/ -> www.reddit.com/user/<name>/submitted.rss)
+// is reported instead of "no feeds found". It also proves a feed stored under the
+// canonical URL is recognised as already saved.
+func TestAPIDiscoverPluginDerived(t *testing.T) {
+	s, h := newTestServer(t)
+	useSitePlugin(t, s)
+	token := apiToken(t, s, h, "alice", "secret")
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "metruzanca", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "u/metruzanca",
+		"https://www.reddit.com/user/metruzanca/submitted.rss",
+		"https://old.reddit.com/user/metruzanca", "", 900)
+
+	var resp struct {
+		Candidates []struct {
+			FeedURL       string `json:"feed_url"`
+			Derived       bool   `json:"derived"`
+			Saved         bool   `json:"saved"`
+			SavedFeedID   int64  `json:"saved_feed_id"`
+			SavedAuthorID int64  `json:"saved_author_id"`
+			SavedURL      string `json:"saved_url"`
+		} `json:"candidates"`
+	}
+	rr := apiJSON(h, "POST", "/api/discover", token, map[string]string{
+		"url": "https://old.reddit.com/user/metruzanca/submitted/",
+	})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("discover: %d %s", rr.Code, rr.Body.String())
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Candidates) != 1 {
+		t.Fatalf("candidates = %+v", resp.Candidates)
+	}
+	c := resp.Candidates[0]
+	wantURL := "/authors/" + itoa(a.ID) + "?feed=" + itoa(f.ID)
+	if c.FeedURL != "https://www.reddit.com/user/metruzanca/submitted.rss" ||
+		!c.Derived || !c.Saved || c.SavedFeedID != f.ID ||
+		c.SavedAuthorID != a.ID || c.SavedURL != wantURL {
+		t.Fatalf("candidate = %+v, want derived saved reddit feed with %q", c, wantURL)
 	}
 }
 

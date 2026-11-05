@@ -155,7 +155,15 @@ func (s *Server) apiDiscover(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url required"})
 		return
 	}
-	candidates, err := s.discoverer.Discover(r.Context(), req.URL)
+	pageURL := normalizeURL(req.URL)
+	if msg := invalidURL(pageURL); msg != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
+		return
+	}
+	// Use the same plugin-first discovery as the web add-feed flow: a plugin
+	// derives some feeds from the page URL with no request, and the generic
+	// crawler alone would report "no feeds" for them.
+	candidates, err := s.discoverCandidates(r.Context(), pageURL)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": feedPreviewError(err)})
 		return
@@ -163,9 +171,10 @@ func (s *Server) apiDiscover(w http.ResponseWriter, r *http.Request) {
 	saved := s.savedFeedsFor(u.ID)
 	type apiCandidate struct {
 		discover.Candidate
-		Saved         bool  `json:"saved"`
-		SavedFeedID   int64 `json:"saved_feed_id,omitempty"`
-		SavedAuthorID int64 `json:"saved_author_id,omitempty"`
+		Saved         bool   `json:"saved"`
+		SavedFeedID   int64  `json:"saved_feed_id,omitempty"`
+		SavedAuthorID int64  `json:"saved_author_id,omitempty"`
+		SavedURL      string `json:"saved_url,omitempty"`
 	}
 	out := make([]apiCandidate, 0, len(candidates))
 	for _, c := range candidates {
@@ -175,9 +184,10 @@ func (s *Server) apiDiscover(w http.ResponseWriter, r *http.Request) {
 			Saved:         ref.FeedID != 0,
 			SavedFeedID:   ref.FeedID,
 			SavedAuthorID: ref.AuthorID,
+			SavedURL:      authorFeedURL(ref.AuthorID, ref.FeedID),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"url": req.URL, "accent": u.AccentColor, "candidates": out})
+	writeJSON(w, http.StatusOK, map[string]any{"url": pageURL, "accent": u.AccentColor, "candidates": out})
 }
 
 func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {

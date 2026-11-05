@@ -81,7 +81,11 @@ async function main() {
   if (saved) {
     const links = document.createElement('div');
     links.className = 'ext-links';
-    links.appendChild(link('/feeds/' + saved.saved_feed_id, 'open this feed in nanoflux'));
+    if (saved.saved_url) {
+      links.appendChild(link(saved.saved_url, 'open this feed in nanoflux'));
+    } else if (saved.saved_author_id) {
+      links.appendChild(link('/authors/' + saved.saved_author_id, 'open this feed in nanoflux'));
+    }
     if (saved.saved_author_id) {
       links.appendChild(link('/authors/' + saved.saved_author_id, 'open its author'));
     }
