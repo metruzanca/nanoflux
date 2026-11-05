@@ -98,8 +98,8 @@ templ AuthorRow(r authorRow) {
 // on demand (see the accordion below) and only a loaded panel is part of the
 // submission; feedFieldPrefix namespaces each feed's fields, and each panel
 // carries a hidden feed_ids marker so the handler knows what it received. Feed
-// deletion is a formaction button within this form; the author's own delete form
-// stays a separate form after it.
+// deletion is a type=button action (data-post-action) inside this form, never a
+// submit button, so Enter saves instead of deleting.
 templ authorEditPage(u store.User, d authorsData) {
 	<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
 		@csrfField()
@@ -157,10 +157,9 @@ templ authorEditPage(u store.User, d authorsData) {
 			<button type="submit">save author and feeds</button>
 		</div>
 	</form>
-	<form class="stack delete-form" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this author and their feeds?">
-		@csrfField()
-		<button type="submit" class="danger">delete</button>
-	</form>
+	<div class="stack delete-form">
+		<button type="button" class="danger" data-post-action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this author and their feeds?">delete</button>
+	</div>
 }
 
 // authorAvatarFields renders the avatar section at the top of the edit form:

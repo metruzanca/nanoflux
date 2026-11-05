@@ -449,13 +449,16 @@ carries no `<form>` of its own; `feedFields` takes a name prefix
 `feed_ids` marker, so `authorUpdate` only touches the feeds present in the
 submission (a collapsed, never-opened panel is left untouched). `applyFeedForm`
 is the shared per-feed writer, called with prefix `""` by the standalone
-`POST /feeds/{id}/edit`. Nested forms are avoided: the feed delete control is a
-`formaction="/feeds/{id}/delete"` submit button inside the page form (with a
-per-button `data-confirm`, honoured by `app.js` via `e.submitter`), the remote
-opt-in is `delete_remote_<id>`, and the plugin panel's sync is an htmx button
-(`hx-params="action"`, `hx-vals`) rather than a form. htmx-in-panel actions
-(refetch, refresh now, load older) use `hx-params="none"` so clicking them does
-not post the whole page form.
+`POST /feeds/{id}/edit`. Nested forms are avoided. The feed delete control is a
+`type="button"` action (`data-post-action="/feeds/{id}/delete"`, `data-confirm`,
+`data-include="delete_remote_<id>"`) handled by `postAction` in `app.js`, never a
+submit button, so pressing Enter saves instead of deleting. The remote opt-in is
+`delete_remote_<id>`, and the plugin panel's sync is an htmx button
+(`hx-params="action"`, `hx-vals`) rather than a form. Every delete control (feed,
+author, list, collection, saved view) follows the same rule: a `type="button"`
+explicit action, never a submit button. htmx-in-panel actions (refetch, refresh
+now, load older) use `hx-params="none"` so clicking them does not post the whole
+page form.
 
 A feed's item list is the author page filtered with `?feed={id}`
 (`Server.authorFeedFilter` validates ownership; `authorScopedItems` sets

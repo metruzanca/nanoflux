@@ -157,10 +157,9 @@ templ collectionEditPage(u store.User, d collectionData) {
 				<button type="submit">save</button>
 			</form>
 		}
-		<form class="stack delete-form" method="post" action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/delete" } data-confirm="delete this collection?">
-			@csrfField()
-			<button type="submit" class="danger">delete</button>
-		</form>
+		<div class="stack delete-form">
+			<button type="button" class="danger" data-post-action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/delete" } data-confirm="delete this collection?">delete</button>
+		</div>
 	</section>
 	<section class="card">
 		<h2>feeds</h2>
