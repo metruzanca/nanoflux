@@ -441,7 +441,10 @@ func previewTargetFor(r *http.Request) string {
 }
 
 // invalidURL returns a user-facing message when raw doesn't parse into a URL
-// with a usable host, or "" when it does.
+// with a usable host, or "" when it does. Any non-empty hostname is accepted:
+// single-label hosts (a LAN or tailnet MagicDNS name such as "nixos", or an
+// IPv6 literal) are legitimate. Fetch safety is not this check's job; safedial
+// refuses private addresses unless NF_ALLOW_PRIVATE_FETCH=1.
 func invalidURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -450,8 +453,7 @@ func invalidURL(raw string) string {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return "enter a valid url"
 	}
-	host := u.Hostname()
-	if host == "" || !strings.Contains(host, ".") && host != "localhost" {
+	if u.Hostname() == "" {
 		return "enter a valid url"
 	}
 	return ""

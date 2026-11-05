@@ -455,6 +455,30 @@ func TestFeedPreviewPrefillsNewAuthor(t *testing.T) {
 	}
 }
 
+func TestInvalidURL(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		ok   bool
+	}{
+		{"single-label host with port and query", "http://nixos:20310/unread?view=unread&sort=newest&filter_row=empty&filter_action=show&filter_kind=tag&filter_combine=all&filter_value_empty=u%2Fexample", true},
+		{"single-label host", "http://nas/feed.xml", true},
+		{"ipv6 literal", "http://[::1]:8080/x", true},
+		{"dotted host", "https://example.com/page", true},
+		{"localhost", "http://localhost:8080", true},
+		{"wrong scheme", "ftp://example.com/file", false},
+		{"no scheme", "example.com/page", false},
+		{"empty host", "https://", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := invalidURL(tt.raw); (got == "") != tt.ok {
+				t.Fatalf("invalidURL(%q) = %q, want valid=%v", tt.raw, got, tt.ok)
+			}
+		})
+	}
+}
+
 func TestAuthorFormFragmentPrefill(t *testing.T) {
 	_, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
