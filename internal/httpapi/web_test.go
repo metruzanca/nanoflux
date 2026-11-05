@@ -1458,6 +1458,38 @@ func TestAuthorLinks(t *testing.T) {
 	if _, err := s.store.AuthorLinks.ByID(u.ID, links[0].ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("dropped link should be gone: %v", err)
 	}
+
+	// A single-label host (a LAN/tailnet name) is a valid link and keeps its
+	// query string.
+	lanURL := "http://nixos:20310/unread?view=unread&sort=newest&filter_row=empty&filter_action=show&filter_kind=tag&filter_combine=all&filter_value_empty=u%2Fexample"
+	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/edit", url.Values{
+		"name":          {"Metru"},
+		"links_present": {"1"},
+		"link_id":       {itoa(links[1].ID), ""},
+		"link_label":    {"", ""},
+		"link_url":      {"https://www.example.com/page", lanURL},
+	}, cookie)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("save single-label link: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
+	if len(after) != 2 {
+		t.Fatalf("single-label link should persist: %+v", after)
+	}
+	found := false
+	for _, l := range after {
+		if l.URL == lanURL {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("single-label link URL was not stored verbatim: %+v", after)
+	}
+	page = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
+	if !strings.Contains(page, `href="http://nixos:20310/unread?view=unread&amp;sort=newest`) ||
+		!strings.Contains(page, ">nixos</a>") {
+		t.Fatalf("author page should render the single-label link: %s", page)
+	}
 }
 
 func TestAuthorLinkScopedToOwner(t *testing.T) {
