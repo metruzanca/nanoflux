@@ -1929,10 +1929,10 @@ func TestAuthorEditDeleteFlow(t *testing.T) {
 		t.Fatalf("authors list should not offer row-level delete: %s", list)
 	}
 	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit", cookie).Body.String()
-	if !strings.Contains(edit, `form class="stack delete-form"`) ||
-		!strings.Contains(edit, `action="/authors/`+itoa(a.ID)+`/delete"`) ||
+	if !strings.Contains(edit, `class="stack delete-form"`) ||
+		!strings.Contains(edit, `data-post-action="/authors/`+itoa(a.ID)+`/delete"`) ||
 		!strings.Contains(edit, `class="danger"`) || !strings.Contains(edit, ">delete<") {
-		t.Fatalf("edit page missing the delete form: %s", edit)
+		t.Fatalf("edit page missing the delete action: %s", edit)
 	}
 
 	// Deleting redirects back to the authors list and removes the author (and
@@ -2145,12 +2145,16 @@ func TestFeedEditDeleteFlow(t *testing.T) {
 		t.Fatalf("author feed row should not link to the feed URL: %s", author)
 	}
 
-	// The feed edit page carries the delete action (a formaction button inside
-	// the page's single form, since the delete form is not nested).
+	// The feed edit page carries the delete action as an explicit type=button
+	// (data-post-action) rather than a submit button, so Enter saves instead of
+	// deleting.
 	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
-	if !strings.Contains(edit, `formaction="/feeds/`+itoa(f.ID)+`/delete"`) ||
+	if !strings.Contains(edit, `type="button" class="danger" data-post-action="/feeds/`+itoa(f.ID)+`/delete"`) ||
 		!strings.Contains(edit, `class="danger"`) {
 		t.Fatalf("feed edit page should carry a delete action: %s", edit)
+	}
+	if strings.Contains(edit, `formaction="/feeds/`+itoa(f.ID)+`/delete"`) {
+		t.Fatalf("feed delete should not be a submit button: %s", edit)
 	}
 
 	// Deleting redirects back to the author page and removes the feed.
@@ -2345,6 +2349,19 @@ func TestFeedEditRedirectsToCombinedAuthorEdit(t *testing.T) {
 	// The author picker is gone from the feed form.
 	if strings.Contains(body, `name="author_id"`) {
 		t.Fatalf("combined feed editor should not carry an author picker: %s", body)
+	}
+	// Deleting a feed is an explicit type=button action, never a submit button:
+	// a submit button inside this shared form would be clicked by Enter and
+	// delete the feed instead of saving.
+	wantDelete := `<button type="button" class="danger" data-post-action="/feeds/` + itoa(f.ID) + `/delete" data-include="delete_remote_` + itoa(f.ID) + `" data-confirm="delete this feed?">delete</button>`
+	if !strings.Contains(body, wantDelete) {
+		t.Fatalf("feed delete should be an explicit button action %q: %s", wantDelete, body)
+	}
+	if strings.Contains(body, "formaction=") {
+		t.Fatalf("feed delete must not use formaction: %s", body)
+	}
+	if !strings.Contains(body, `<button type="submit">save author and feeds</button>`) {
+		t.Fatalf("the save button should remain the form's submit button: %s", body)
 	}
 
 	// An unknown or foreign feed id yields no editor (and no author picker).

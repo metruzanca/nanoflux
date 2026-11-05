@@ -105,10 +105,9 @@ templ savedViewPage(u store.User, d savedViewPageData) {
 	<div class="author-items">
 		@ScopedItems(d.Scoped)
 	</div>
-	<form class="stack delete-form" method="post" action={ templ.URL("/views/" + id + "/delete") } data-confirm="delete this view?">
-		@csrfField()
-		<button type="submit" class="danger">delete view</button>
-	</form>
+	<div class="stack delete-form">
+		<button type="button" class="danger" data-post-action={ templ.URL("/views/" + id + "/delete") } data-confirm="delete this view?">delete view</button>
+	</div>
 }
 
 // savedViewFormPage is the create/edit page. The scope is captured at creation
@@ -184,9 +183,8 @@ templ savedViewFormPage(u store.User, f savedViewForm) {
 		</div>
 	</form>
 	if f.ID > 0 {
-		<form class="stack delete-form" method="post" action={ templ.URL("/views/" + strconv.FormatInt(f.ID, 10) + "/delete") } data-confirm="delete this view?">
-			@csrfField()
-			<button type="submit" class="danger">delete view</button>
-		</form>
+		<div class="stack delete-form">
+			<button type="button" class="danger" data-post-action={ templ.URL("/views/" + strconv.FormatInt(f.ID, 10) + "/delete") } data-confirm="delete this view?">delete view</button>
+		</div>
 	}
 }

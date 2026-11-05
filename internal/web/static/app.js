@@ -1047,6 +1047,41 @@ function postForm(path) {
   f.submit();
 }
 
+// postAction submits a destructive control as an explicit POST instead of a
+// form submit button, so pressing Enter in the surrounding form can never
+// trigger it. The control names its target with data-post-action and may list
+// field names to copy from the nearest form with data-include (comma separated;
+// unchecked checkboxes are skipped). CSRF rides the same meta token htmx uses.
+function postAction(el) {
+  var msg = el.getAttribute('data-confirm');
+  if (msg && !window.confirm(msg)) return;
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = el.getAttribute('data-post-action');
+  form.style.display = 'none';
+  var csrf = document.querySelector('meta[name="csrf-token"]');
+  if (csrf && csrf.getAttribute('content')) addFormValue(form, 'csrf_token', csrf.getAttribute('content'));
+  var scope = el.closest('form') || document;
+  var names = (el.getAttribute('data-include') || '').split(',');
+  for (var i = 0; i < names.length; i++) {
+    var name = names[i].trim();
+    if (!name) continue;
+    var field = scope.querySelector('[name="' + name.replace(/"/g, '\\"') + '"]');
+    if (!field || (field.type === 'checkbox' && !field.checked)) continue;
+    addFormValue(form, name, field.value);
+  }
+  document.body.appendChild(form);
+  form.submit();
+}
+
+function addFormValue(form, name, value) {
+  var input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = name;
+  input.value = value;
+  form.appendChild(input);
+}
+
 // Unified search: commands first, then matching entities. A leading @/#/!
 // narrows to one entity kind without the sigil counting as part of the query.
 // Entities are fetched on every open; a cached list renders immediately so
@@ -1485,6 +1520,11 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
       if (cd) cd.close();
       return;
     }
+    if ((el = t.closest('[data-post-action]'))) {
+      e.preventDefault();
+      postAction(el);
+      return;
+    }
     if ((el = t.closest('[data-click]'))) {
       var clickTarget = byId(el.getAttribute('data-click'));
       if (clickTarget) clickTarget.click();
@@ -1536,8 +1576,8 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
   document.addEventListener('submit', function (e) {
     var f = e.target;
     var btn = e.submitter;
-    // A button may carry its own data-confirm (e.g. a delete button using
-    // formaction inside a shared form); otherwise fall back to the form's.
+    // A button may carry its own data-confirm (e.g. a future submit action
+    // inside a shared form); otherwise fall back to the form's.
     var msg = (btn && btn.getAttribute && btn.getAttribute('data-confirm')) ||
       (f && f.hasAttribute && f.hasAttribute('data-confirm') && f.getAttribute('data-confirm'));
     if (msg && !window.confirm(msg)) e.preventDefault();

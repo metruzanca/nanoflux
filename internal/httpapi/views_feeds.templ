@@ -240,7 +240,7 @@ templ feedEditorBody(d feedsData) {
 				also delete it on the remote service
 			</label>
 		}
-		<button type="submit" class="danger" formaction={ "/feeds/" + id + "/delete" } data-confirm="delete this feed?">delete</button>
+		<button type="button" class="danger" data-post-action={ "/feeds/" + id + "/delete" } data-include={ "delete_remote_" + id } data-confirm="delete this feed?">delete</button>
 	</div>
 	if d.Panel != nil {
 		@feedPluginPanel(*d.Panel)

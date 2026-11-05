@@ -168,10 +168,9 @@ templ listEditPage(u store.User, d listPageData) {
 			</label>
 			<button type="submit">save</button>
 		</form>
-		<form class="stack delete-form" method="post" action={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/delete" } data-confirm="delete this list?">
-			@csrfField()
-			<button type="submit" class="danger">delete</button>
-		</form>
+		<div class="stack delete-form">
+			<button type="button" class="danger" data-post-action={ "/lists/" + strconv.FormatInt(d.List.ID, 10) + "/delete" } data-confirm="delete this list?">delete</button>
+		</div>
 	</section>
 }
 
