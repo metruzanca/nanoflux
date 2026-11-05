@@ -1,6 +1,8 @@
 ## Project Rules
 
 - Commit messages must follow the Conventional Commits spec.
+- When a change is the result of a plan then build, commit it. Do not leave a
+  built plan uncommitted.
 - Document all environment variables in `.env.example`.
 - App links are internal by default, ↗ on every external link.
 - mise is for development, make is for selfhosting an instance
