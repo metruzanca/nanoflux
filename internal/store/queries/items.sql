@@ -87,8 +87,8 @@ WHERE i.user_id = sqlc.arg('userID')
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
   AND (CAST(sqlc.arg('bookmarks') AS INTEGER) = 0 OR i.bookmark = 1)
-  -- Saved pages (system feed items) surface only in favorites, bookmarks and
-  -- search, not in the unread/read/feed/author/collection streams.
+  -- Saved pages (system feed items) surface only in favorites and bookmarks,
+  -- not in the unread/read/feed/author/collection streams.
   AND (f.is_system = 0 OR CAST(sqlc.arg('favorites') AS INTEGER) = 1 OR CAST(sqlc.arg('bookmarks') AS INTEGER) = 1)
   AND (CAST(sqlc.arg('beforeID') AS INTEGER) = 0 OR
        (COALESCE(i.published_at, i.fetched_at), i.id) <
@@ -118,7 +118,7 @@ WHERE i.user_id = sqlc.arg('userID')
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
   AND (CAST(sqlc.arg('bookmarks') AS INTEGER) = 0 OR i.bookmark = 1)
-  -- Saved pages surface only in favorites, bookmarks and search.
+  -- Saved pages surface only in favorites and bookmarks.
   AND (f.is_system = 0 OR CAST(sqlc.arg('favorites') AS INTEGER) = 1 OR CAST(sqlc.arg('bookmarks') AS INTEGER) = 1)
   AND (CAST(sqlc.arg('afterID') AS INTEGER) = 0 OR
        (COALESCE(i.published_at, i.fetched_at), i.id) >

@@ -204,7 +204,7 @@ type ItemFilter struct {
 
 type ItemStore struct {
 	q  *sqlcgen.Queries
-	db *sql.DB // raw handle for the FTS5 search query sqlc cannot generate
+	db *sql.DB // raw handle for hand-written queries sqlc cannot generate
 	// policy is the host's per-URL site rules (from the plugin layer), used to
 	// resolve an item's tokens to the user's subscribed feeds.
 	policy URLPolicy
@@ -550,73 +550,6 @@ func (s *ItemStore) IngestItemID(userID, feedID int64, identity, crossKey string
 	return s.ByUserCrossKey(userID, crossKey)
 }
 
-// searchPageLimit is the default page size for search results.
-const searchPageLimit = 25
-
-// SearchPage runs an FTS5 query over item titles and summaries, scoped to the
-// user, returning one page plus whether more results exist. query must be a
-// valid FTS5 MATCH expression (see parseSearchQuery in httpapi). This query is
-// hand-written because sqlc cannot introspect FTS5 virtual tables; the column
-// set mirrors ListItems so rows reuse the generated scanner.
-func (s *ItemStore) SearchPage(userID int64, query string, f ItemFilter) ([]ItemWithFeed, bool, error) {
-	limit := f.Limit
-	if limit <= 0 {
-		limit = searchPageLimit
-	}
-	const sql = `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
-       i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
-       f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
-       f.is_system AS feed_is_system,
-       a.id AS author_id, a.name AS author_name
-FROM visible_items i
-JOIN feeds f ON f.id = i.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
-JOIN items_fts fts ON fts.rowid = i.id
-WHERE i.user_id = ?1
-  AND items_fts MATCH ?2
-  AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?3 AS INTEGER)))
-  AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
-        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?4 AS INTEGER)))
-  AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
-  AND (CAST(?6 AS INTEGER) = 0 OR
-       (COALESCE(i.published_at, i.fetched_at), i.id) <
-       (SELECT COALESCE(published_at, fetched_at), id FROM items WHERE id = CAST(?6 AS INTEGER)))
-ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
-LIMIT ?7`
-	rows, err := s.db.QueryContext(context.Background(), sql, userID, query,
-		f.FeedID, f.AuthorID, boolInt(f.UnreadOnly), f.BeforeID, limit+1)
-	if err != nil {
-		return nil, false, err
-	}
-	defer rows.Close()
-
-	out := make([]ItemWithFeed, 0, limit)
-	for rows.Next() {
-		var r sqlcgen.ListItemsRow
-		if err := rows.Scan(&r.ID, &r.FeedID, &r.Guid, &r.Title, &r.Link, &r.Summary, &r.Categories,
-			&r.ImageUrl, &r.ImageCacheKey, &r.DurationSec, &r.PublishedAt, &r.FetchedAt, &r.Read, &r.Favorite, &r.Bookmark, &r.ReadAt,
-			&r.FeedTitle, &r.FeedUrl, &r.FeedHomeUrl, &r.FeedIsSystem, &r.AuthorID, &r.AuthorName); err != nil {
-			return nil, false, err
-		}
-		out = append(out, toItemWithFeed(r.ID, r.FeedID, r.Guid, r.Title, r.Link, r.Summary, r.Categories,
-			r.ImageUrl, r.ImageCacheKey, r.DurationSec, r.PublishedAt, r.FetchedAt, r.Read, r.Favorite, r.Bookmark, r.ReadAt,
-			r.FeedTitle, r.FeedUrl, r.FeedHomeUrl, r.FeedIsSystem, r.AuthorID, r.AuthorName))
-	}
-	if err := rows.Err(); err != nil {
-		return nil, false, err
-	}
-	hasMore := len(out) > limit
-	if hasMore {
-		out = out[:limit]
-	}
-	if err := s.attachSources(userID, out); err != nil {
-		return nil, false, err
-	}
-	return out, hasMore, nil
-}
-
 // ListReadHistory returns a page of the user's read items, most recently read
 // first (read_at desc, id desc), for the history page. Offset-paged, since
 // read_at is not unique.
@@ -778,8 +711,8 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
 	if f.BookmarksOnly {
 		b.WriteString(" AND i.bookmark = 1")
 	}
-	// Saved pages (system feed items) surface only in favorites, bookmarks and
-	// search; keep them out of the unread/read/feed/author/collection streams.
+	// Saved pages (system feed items) surface only in favorites and bookmarks;
+	// keep them out of the unread/read/feed/author/collection streams.
 	if !f.FavoritesOnly && !f.BookmarksOnly {
 		b.WriteString(" AND f.is_system = 0")
 	}
@@ -1077,9 +1010,8 @@ func (s *ItemStore) SetItemImageCacheKey(itemID int64, key string, size int64) e
 
 // DeleteSaved hard-deletes a saved page: an item under the user's hidden
 // system feed. Regular feed items are never touched (the query's system-feed
-// guard). Child rows (enclosures, list memberships, shares) cascade, and the
-// items_ad trigger keeps items_fts consistent. Returns ErrNotFound when the id
-// is not one of the user's saved pages.
+// guard). Child rows (enclosures, list memberships, shares) cascade. Returns
+// ErrNotFound when the id is not one of the user's saved pages.
 func (s *ItemStore) DeleteSaved(userID, itemID int64) error {
 	res, err := s.q.DeleteSavedItem(context.Background(), sqlcgen.DeleteSavedItemParams{
 		ItemID: itemID,

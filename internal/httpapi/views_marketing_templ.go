@@ -54,7 +54,7 @@ func landingPage(d landingData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" alt=\"\" width=\"20\" height=\"20\"> <span>nanoflux</span></a><div class=\"mkt-nav-right\"><a href=\"https://github.com/metruzanca/nanoflux\" class=\"external\" target=\"_blank\" rel=\"noopener noreferrer\" referrerpolicy=\"no-referrer\">github ↗</a> <a href=\"/login\">log in</a></div></header><main class=\"mkt-main\"><section class=\"mkt-hero\"><div class=\"mkt-hero-copy\"><p class=\"mkt-eyebrow\">a feed reader for the way you actually read</p><h1>all your feeds. one quiet place.</h1><p class=\"mkt-lede\">nanoflux pulls every feed you follow into a single fast timeline. favorites, collections, lists, full-text search and a browser extension come built in. self-host it, or bring your own.</p><div class=\"mkt-cta\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" alt=\"\" width=\"20\" height=\"20\"> <span>nanoflux</span></a><div class=\"mkt-nav-right\"><a href=\"https://github.com/metruzanca/nanoflux\" class=\"external\" target=\"_blank\" rel=\"noopener noreferrer\" referrerpolicy=\"no-referrer\">github ↗</a> <a href=\"/login\">log in</a></div></header><main class=\"mkt-main\"><section class=\"mkt-hero\"><div class=\"mkt-hero-copy\"><p class=\"mkt-eyebrow\">a feed reader for the way you actually read</p><h1>all your feeds. one quiet place.</h1><p class=\"mkt-lede\">nanoflux pulls every feed you follow into a single fast timeline. favorites, collections, lists and a browser extension come built in. self-host it, or bring your own.</p><div class=\"mkt-cta\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -97,7 +97,7 @@ func landingPage(d landingData) templ.Component {
 		}
 		templ_7745c5c3_Err = mktFeature(feature{
 			Title: "read it your way",
-			Body: "A keyboard-driven reading flow with unread, history and search. " +
+			Body: "A keyboard-driven reading flow with unread, history and saved pages. " +
 				"Favorites are a taste signal that feeds a magic sort; bookmarks are your " +
 				"save-for-later pile. Both get their own public share link.",
 			Image: "/static/marketing-features.svg",
@@ -121,7 +121,7 @@ func landingPage(d landingData) templ.Component {
 		templ_7745c5c3_Err = mktFeature(feature{
 			Title: "organize without fiddling",
 			Body: "Authors group feeds, collections group authors, lists group posts. " +
-				"Pin the ones you care about to your home screen. Everything is searchable " +
+				"Pin the ones you care about to your home screen. Everything is ready " +
 				"the moment it arrives.",
 			Image: "/static/marketing-organize.svg",
 			Alt:   "collections and lists sidebar",

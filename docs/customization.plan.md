@@ -46,8 +46,8 @@ ahead; on interoperability and ingestion plumbing Miniflux is ahead.
 
 ### At parity
 
-RSS/Atom/JSON Feed (via `gofeed`), OPML import/export, full-text search,
-share links, favicons and source icons, sanitization and strict CSP, multi-user
+RSS/Atom/JSON Feed (via `gofeed`), OPML import/export, share links, favicons
+and source icons, sanitization and strict CSP, multi-user
 and admin, multiple enclosures, keyboard navigation, PWA install, background
 scheduler, tracking-parameter stripping, `Referrer-Policy: no-referrer` and an
 image/media proxy.
@@ -169,7 +169,7 @@ analytics and public demo mode are env-driven.
 - `theme-color` meta is still hard-coded to `#111318` in `views_layout.templ` and
   does not follow the theme.
 
-### Filters / search / tags
+### Filters / tags
 
 - The per-feed ingest filter-rule system was removed for a clean
   reimplementation; `schemaV53` dropped the `filters` table and
@@ -184,15 +184,15 @@ analytics and public demo mode are env-driven.
   `store.AuthorFilters`), edited in the author settings card as allow/block
   rows. They reuse the same `FilterRule` shape, `store.FilterGroups` conversion
   and row component as the transient dialog. The `visible_items` view applies
-  them to every item read (lists, counts, badges, search, read history, list
-  items and public shares); item detail stays reachable by direct link. The
-  settings card shows a live allowed/blocked preview
+  them to every item read (lists, counts, badges, read history, list items and
+  public shares); item detail stays reachable by direct link. The settings card
+  shows a live allowed/blocked preview
   (`POST /authors/{id}/filters/preview`).
-- Search is stateless FTS5 (`items_fts`, `schemaV10`) over title + summary, with
-  `title:`, `author:`, `feed:`, `unread:` qualifiers. No saved searches, and
-  item bodies are not indexed.
+- Item full-text search was removed (schemaV58) so it can be redesigned from
+  scratch later. The command palette still filters authors, collections and
+  feeds client-side.
 - Tags: `item_categories` backs tag chips in the item modal and the scoped
-  filter dialog. `tag:` works in search.
+  filter dialog.
 - Unread counts appear in the topbar and on author/collection rows, not on every
   scope (lists and tags lack badges).
 
@@ -233,7 +233,7 @@ ownership, and `ReconcileFeeds` re-derives it at startup.
 ### Keyboard / interaction
 
 `←/→` previous/next while reading (modal pager and horizontal swipe), `Ctrl/⌘+P`
-or `Ctrl/⌘+Shift+P` command palette plus search, swipe down from the topbar for
+or `Ctrl/⌘+Shift+P` command palette, swipe down from the topbar for
 the palette, Tinder-style row swipe actions, `Esc` closes dialogs, deep-link
 item modal, load-more.
 
@@ -256,8 +256,7 @@ Ordered by leverage, not by effort.
   toggle. `CapEnrich` covers plugin-owned sites only.
 - No user-defined scraper rules, rewrite rules or regex include/exclude rules.
 - No ingest rule engine (the old one was removed pending reimplementation).
-- FTS indexes title + summary only, not bodies.
-- No saved searches.
+- No item full-text search (removed pending a redesigned implementation).
 - No per-feed HTTP auth, cookies, proxy or invalid-cert option.
 - Privacy remainder: FeedBurner, pixel trackers, privacy-friendly embeds.
 
@@ -323,8 +322,8 @@ Pure presets, no new concepts, low migration risk.
 - Rebuild ingest rules: a rule editor with `field`/`pattern`, reactive and
   retroactive application, global (all-feeds) rules, and actions
   `delete`/`mark_read`/`star`/`tag`/`notify`.
-- Saved searches: persist the existing query grammar (`saved_searches` table
-  plus sidebar run/list endpoints; the parser already exists).
+- Item search: design a replacement from scratch (the FTS5 implementation was
+  removed in schemaV58).
 - Unread badges on lists, tags and every scope the filter dialog supports.
 - A tag control in the item view and saved tag scopes.
 - Bulk selection with batch read/unread, favorite, tag and list actions.
@@ -400,7 +399,7 @@ that already exists and lowers the cost. Effort is a rough S/M/L. Items marked
   add a context menu and toolbar action.
 - **Send current page item to nanoflux.** **Done**: the extension save-page flow
   stores a hidden system-feed item (`schemaV34`), defaulting to bookmarks and
-  surfacing in lists, favorites, bookmarks and search.
+  surfacing in lists, favorites and bookmarks.
 - **Share-sheet parity on desktop (S).** The PWA is a mobile share target;
   surface the same "send to" endpoint in the extension.
 - **Export a list or favorites as its own RSS feed (S).** Share tokens and public
@@ -432,9 +431,6 @@ that already exists and lowers the cost. Effort is a rough S/M/L. Items marked
 - **Feed health panel (S/M).** Admin poll health already exists; add a per-feed
   last-error, consecutive-failure and "stale, no new items in N days" badge.
   `feeds.disabled_reason` and the 429 badge establish the pattern.
-- **Index item bodies in full-text search (S/M).** `items_fts` covers title +
-  summary; including content changes the FTS table and triggers but makes
-  search far more useful.
 - **OPML URL import (S).** Miniflux accepts a URL to an OPML; nanoflux takes a
   file. JSON Feed already parses via `gofeed`.
 
@@ -550,8 +546,8 @@ Three shapes of idea are worth distinguishing:
 ### Shortlist by leverage
 
 Beyond the tiers: reader API (unblocks mobile apps), personal access tokens
-(unblocks scripting and removes stored passwords), full-text body search and
-extraction, webhooks/Sink capability, per-feed HTTP auth, and podcast playback.
+(unblocks scripting and removes stored passwords), a redesigned item search,
+webhooks/Sink capability, per-feed HTTP auth, and podcast playback.
 
 For plugins specifically: **Hacker News** (keyless), **AO3 / Royal Road** (the
 serialized-fiction niche), a **social-site OAuth plugin** (kills the recurring

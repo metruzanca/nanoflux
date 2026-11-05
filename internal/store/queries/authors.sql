@@ -57,11 +57,6 @@ LEFT JOIN visible_items i ON i.feed_id = f.id AND i.read = 0
 WHERE a.user_id = ? AND a.is_system = 0
 GROUP BY a.id
 ORDER BY a.name;
--- name: GetAuthorByName :one
-SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, created_at
-FROM authors
-WHERE user_id = ? AND name = ? COLLATE NOCASE;
-
 -- name: CountAllAuthors :one
 SELECT COUNT(*) FROM authors WHERE is_system = 0;
 

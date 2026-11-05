@@ -178,7 +178,7 @@ CREATE TABLE author_filter_values (
 -- visible_items is the read-side translation of author rules: an item is hidden
 -- when any block rule of its owner author matches, or when any allow rule of
 -- that author does not match. Item read paths select from this view so the
--- rules apply everywhere (lists, counts, search, badges) without per-caller
+-- rules apply everywhere (lists, counts, badges) without per-caller
 -- predicates. Keep the expression in sync with the migration in
 -- internal/db/migrate.go (schemaV55).
 CREATE VIEW visible_items AS
@@ -280,17 +280,6 @@ CREATE TABLE saved_views (
 );
 CREATE INDEX idx_saved_views_user ON saved_views(user_id);
 CREATE INDEX idx_saved_views_author ON saved_views(author_id);
-
--- Full-text search over items. In the real DB (internal/db/migrate.go,
--- schemaV10) this is an FTS5 virtual table kept in sync by triggers; sqlc
--- cannot introspect FTS5 virtual tables, so it is declared here as a plain
--- table with the same columns. Generated queries run unchanged against the
--- virtual table at runtime.
-CREATE TABLE items_fts (
-    rowid   INTEGER PRIMARY KEY,
-    title   TEXT NOT NULL,
-    summary TEXT NOT NULL
-);
 
 CREATE TABLE item_enclosures (
     id        INTEGER PRIMARY KEY,

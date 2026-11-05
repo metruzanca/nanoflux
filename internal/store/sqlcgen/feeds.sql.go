@@ -261,50 +261,6 @@ func (q *Queries) GetFeedAny(ctx context.Context, id int64) (Feed, error) {
 	return i, err
 }
 
-const getFeedByTitle = `-- name: GetFeedByTitle :one
-SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
-FROM feeds
-WHERE user_id = ? AND title = ? COLLATE NOCASE
-`
-
-type GetFeedByTitleParams struct {
-	UserID int64  `json:"user_id"`
-	Title  string `json:"title"`
-}
-
-func (q *Queries) GetFeedByTitle(ctx context.Context, arg GetFeedByTitleParams) (Feed, error) {
-	row := q.db.QueryRowContext(ctx, getFeedByTitle, arg.UserID, arg.Title)
-	var i Feed
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.AuthorID,
-		&i.Title,
-		&i.FeedUrl,
-		&i.HomeUrl,
-		&i.Description,
-		&i.Etag,
-		&i.LastModified,
-		&i.LastPolledAt,
-		&i.LastError,
-		&i.NextPageUrl,
-		&i.PollIntervalSec,
-		&i.PollIntervalAuto,
-		&i.LastItemAt,
-		&i.NextPollAt,
-		&i.NextPollScheduled,
-		&i.PluginName,
-		&i.DisabledReason,
-		&i.Enabled,
-		&i.IsSystem,
-		&i.Rank,
-		&i.CacheImages,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getSystemFeed = `-- name: GetSystemFeed :one
 SELECT id, user_id, author_id, title, feed_url, home_url, description,
        etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at

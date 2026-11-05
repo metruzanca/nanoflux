@@ -141,12 +141,6 @@ type ItemProgress struct {
 	UpdatedAt   string `json:"updated_at"`
 }
 
-type ItemsFt struct {
-	Rowid   int64  `json:"rowid"`
-	Title   string `json:"title"`
-	Summary string `json:"summary"`
-}
-
 type List struct {
 	ID         int64          `json:"id"`
 	UserID     int64          `json:"user_id"`

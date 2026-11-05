@@ -814,7 +814,7 @@ func authorFilterCard(d authorsData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\" hx-trigger=\"change delay:400ms, authorfilterschanged\" hx-include=\"#author-filter-fields\" hx-target=\"#author-filter-preview\" hx-swap=\"innerHTML\"><div class=\"row\"><h2>filters</h2></div><p class=\"muted small\">Always on. Allow rows must all match; block rows hide matching posts. Filters apply to every list, count and search result.</p><input type=\"hidden\" name=\"author_filters_present\" value=\"1\"><div id=\"author-filter-fields\"><div class=\"filter-rows\" id=\"author-filter-rows\" data-filter-rows>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\" hx-trigger=\"change delay:400ms, authorfilterschanged\" hx-include=\"#author-filter-fields\" hx-target=\"#author-filter-preview\" hx-swap=\"innerHTML\"><div class=\"row\"><h2>filters</h2></div><p class=\"muted small\">Always on. Allow rows must all match; block rows hide matching posts. Filters apply to every list and count.</p><input type=\"hidden\" name=\"author_filters_present\" value=\"1\"><div id=\"author-filter-fields\"><div class=\"filter-rows\" id=\"author-filter-rows\" data-filter-rows>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -760,12 +760,6 @@ func TestDeleteSavedPageEndpoint(t *testing.T) {
 	if rr := doForm(h, "POST", "/items/"+itoa(savedID)+"/delete", url.Values{}, cookie); rr.Code != http.StatusNotFound {
 		t.Fatalf("second delete should 404, got %d", rr.Code)
 	}
-	// Search no longer surfaces it (the query echo is not a result, so assert
-	// the results list is empty).
-	search := doGet(h, "/search?q=Saved+One", cookie).Body.String()
-	if !strings.Contains(search, `id="items-list">nothing here`) {
-		t.Fatalf("deleted page should not appear in search results: %s", search)
-	}
 }
 
 // The hidden saved-pages feed and its author are not reachable as ordinary feed
