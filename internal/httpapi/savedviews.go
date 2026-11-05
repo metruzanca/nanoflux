@@ -465,6 +465,8 @@ func (s *Server) savedViewFormFromRequest(userID int64, r *http.Request) (savedV
 		form.Error = "title is required"
 	} else if len(form.Title) > maxSavedViewTitle {
 		form.Error = "title is too long"
+	} else if len(form.Filters) == 0 {
+		form.Error = "add at least one filter"
 	}
 	return form, true
 }
@@ -498,6 +500,12 @@ func (s *Server) savedView(w http.ResponseWriter, r *http.Request) {
 	v, err := s.store.SavedViews.ByID(u.ID, id)
 	if err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	// An assigned view is part of its author's page now; the standalone page is
+	// only for unassigned views.
+	if v.AuthorID > 0 {
+		http.Redirect(w, r, "/authors/"+strconv.FormatInt(v.AuthorID, 10)+"?view="+strconv.FormatInt(v.ID, 10), http.StatusSeeOther)
 		return
 	}
 	if !hasSavedViewListParams(r) {
@@ -701,9 +709,76 @@ func (s *Server) savedViewsForAuthor(userID, authorID int64, tz string) []savedV
 	views, _ := s.store.SavedViews.ListByAuthor(userID, authorID)
 	rows := make([]savedViewRow, 0, len(views))
 	for _, v := range views {
+		if len(s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
+			filtersFromParams(v.Filters))) == 0 {
+			continue
+		}
 		rows = append(rows, s.savedViewRow(userID, v, tz))
 	}
 	return rows
+}
+
+// storeViewFilter converts a saved view into the store's query predicate. An
+// unfiltered view is skipped by callers: without a filter it would match the
+// whole scope, which is not a useful author source.
+func (s *Server) storeViewFilter(userID int64, v store.SavedView, tz string) store.ViewFilter {
+	filters := s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
+		filtersFromParams(v.Filters))
+	tagGroups, feedGroups, _ := filters.storeGroups()
+	return store.ViewFilter{
+		AuthorID: v.ScopeAuthorID, CollectionID: v.ScopeCollectionID,
+		TagGroups: tagGroups, FeedGroups: feedGroups, TimeGroups: filters.timeGroups(tz),
+	}
+}
+
+// savedViewsByAuthor returns the usable view predicates and the total assigned
+// view count per author, from one read of the user's views.
+func (s *Server) savedViewsByAuthor(userID int64, tz string) (map[int64][]store.ViewFilter, map[int64]int) {
+	views, _ := s.store.SavedViews.List(userID)
+	filters := make(map[int64][]store.ViewFilter)
+	counts := make(map[int64]int)
+	for _, v := range views {
+		if v.AuthorID <= 0 {
+			continue
+		}
+		if len(s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
+			filtersFromParams(v.Filters))) == 0 {
+			continue
+		}
+		counts[v.AuthorID]++
+		filters[v.AuthorID] = append(filters[v.AuthorID], s.storeViewFilter(userID, v, tz))
+	}
+	return filters, counts
+}
+
+// authorStoreViewFilters returns the usable view predicates assigned to an
+// author. Unfiltered views are omitted, so an old/blank recipe cannot pull the
+// whole stream into the author by accident.
+func (s *Server) authorStoreViewFilters(userID, authorID int64, tz string) []store.ViewFilter {
+	views, _ := s.store.SavedViews.ListByAuthor(userID, authorID)
+	out := make([]store.ViewFilter, 0, len(views))
+	for _, v := range views {
+		if len(s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
+			filtersFromParams(v.Filters))) == 0 {
+			continue
+		}
+		out = append(out, s.storeViewFilter(userID, v, tz))
+	}
+	return out
+}
+
+// authorStoreViewFilter returns one assigned, filtered view as a predicate.
+func (s *Server) authorStoreViewFilter(userID, authorID, viewID int64, tz string) (store.ViewFilter, bool) {
+	v, err := s.store.SavedViews.ByID(userID, viewID)
+	if err != nil || v.AuthorID != authorID {
+		return store.ViewFilter{}, false
+	}
+	filters := s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
+		filtersFromParams(v.Filters))
+	if len(filters) == 0 {
+		return store.ViewFilter{}, false
+	}
+	return s.storeViewFilter(userID, v, tz), true
 }
 
 // savedViewFiltersURL encodes the active filters onto a POST action URL (the

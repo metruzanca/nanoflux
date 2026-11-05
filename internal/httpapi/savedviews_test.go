@@ -15,7 +15,7 @@ import (
 func savedViewFixture(t *testing.T, s *Server) (store.User, store.Author, store.Feed) {
 	t.Helper()
 	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "Example Poster", "", "")
+	a, _ := s.store.Authors.Create(u.ID, "Aggregate", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://amphibian.dev/feed.xml", "", "", 900)
 	for _, it := range []store.Item{
 		{GUID: "go", Title: "Go post", Link: "https://x/go", Categories: []string{"u/example-poster"}, FetchedAt: db.Now()},
@@ -49,7 +49,8 @@ func TestSavedViewFilterParamsRoundTrip(t *testing.T) {
 func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
-	_, author, _ := savedViewFixture(t, s)
+	u, _, _ := savedViewFixture(t, s)
+	author, _ := s.store.Authors.Create(u.ID, "Example Poster", "", "")
 
 	form := url.Values{
 		"title":            {"Example posts"},
@@ -92,23 +93,48 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 		t.Fatalf("views index should list the saved view under its author: %s", body)
 	}
 
-	// The bare view URL redirects to its canonical query.
+	// An assigned view redirects to the author page, which now carries its items.
 	bare := doGet(h, "/views/"+id, cookie)
-	if bare.Code != http.StatusFound {
-		t.Fatalf("bare view should redirect: %d", bare.Code)
+	if bare.Code != http.StatusSeeOther {
+		t.Fatalf("assigned view should redirect to its author: %d", bare.Code)
 	}
-	canonical := bare.Header().Get("Location")
-	if !strings.Contains(canonical, "view=unread") || !strings.Contains(canonical, "f=") {
-		t.Fatalf("canonical view URL missing state: %q", canonical)
+	authorLoc := bare.Header().Get("Location")
+	if authorLoc != "/authors/"+itoa(author.ID)+"?view="+id {
+		t.Fatalf("assigned view redirect = %q", authorLoc)
+	}
+	body = doGet(h, authorLoc, cookie).Body.String()
+	if !strings.Contains(body, "Go post") || strings.Contains(body, "Other post") {
+		t.Fatalf("view-scoped author page should show only the filtered post: %s", body)
+	}
+	if !strings.Contains(body, "unread (1)") {
+		t.Fatalf("view-scoped author unread count should be 1: %s", body)
+	}
+	if !strings.Contains(body, "?view="+id+"&amp;tab=read") {
+		t.Fatalf("read tab should preserve the selected view: %s", body)
 	}
 
-	// The canonical page shows the matching post and no other.
-	body = doGet(h, canonical, cookie).Body.String()
+	// The default author page aggregates assigned views, so it shows the post.
+	body = doGet(h, "/authors/"+itoa(author.ID), cookie).Body.String()
 	if !strings.Contains(body, "Go post") || strings.Contains(body, "Other post") {
-		t.Fatalf("view should show only the filtered post: %s", body)
+		t.Fatalf("default author page should include view items: %s", body)
 	}
-	if !strings.Contains(body, "1 matching") {
-		t.Fatalf("view should report the matching count: %s", body)
+	if !strings.Contains(body, "unread (1)") {
+		t.Fatalf("default author unread count should include the view: %s", body)
+	}
+	if !strings.Contains(body, "<strong>1</strong> posts") {
+		t.Fatalf("author stats should include view items: %s", body)
+	}
+
+	// /authors lists the view's unread count and view count.
+	body = doGet(h, "/authors", cookie).Body.String()
+	if !strings.Contains(body, `data-unread="1"`) || !strings.Contains(body, "1 view") {
+		t.Fatalf("authors index should count view unread items and views: %s", body)
+	}
+
+	// An empty view is rejected: it would pull the whole scope into the author.
+	empty := url.Values{"title": {"Empty"}, "author_id": {itoa(author.ID)}, "view": {"unread"}, "sort": {"newest"}}
+	if rr := doForm(h, http.MethodPost, "/views", empty, cookie); rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "add at least one filter") {
+		t.Fatalf("empty view should be rejected: %d", rr.Code)
 	}
 
 	// The author page carries a views section.
@@ -134,7 +160,7 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	if rr := doForm(h, http.MethodPost, "/views/"+id+"/edit", edit, cookie); rr.Code != http.StatusSeeOther {
 		t.Fatalf("edit view: %d %s", rr.Code, rr.Body.String())
 	}
-	u, _ := s.store.Users.ByUsername("alice")
+	u, _ = s.store.Users.ByUsername("alice")
 	views, _ := s.store.SavedViews.List(u.ID)
 	if len(views) != 1 {
 		t.Fatalf("expected one saved view, got %d", len(views))
@@ -169,11 +195,12 @@ func TestSavedViewScopeDropsForeignFeedFilter(t *testing.T) {
 		"scope_author":   {itoa(author.ID)},
 		"view":           {"unread"},
 		"sort":           {"newest"},
-		"filter_row":     {"0"},
-		"filter_action":  {"show"},
-		"filter_kind":    {"feed"},
-		"filter_combine": {"all"},
+		"filter_row":     {"0", "1"},
+		"filter_action":  {"show", "show"},
+		"filter_kind":    {"feed", "tag"},
+		"filter_combine": {"all", "all"},
 		"filter_value_0": {itoa(otherFeed.ID)},
+		"filter_value_1": {"u/example-poster"},
 	}
 	if rr := doForm(h, http.MethodPost, "/views", form, cookie); rr.Code != http.StatusSeeOther {
 		t.Fatalf("create scoped view: %d %s", rr.Code, rr.Body.String())
@@ -182,8 +209,8 @@ func TestSavedViewScopeDropsForeignFeedFilter(t *testing.T) {
 	if len(views) != 1 {
 		t.Fatalf("expected one view, got %d", len(views))
 	}
-	if len(views[0].Filters) != 0 {
-		t.Fatalf("foreign feed filter should be dropped, got %v", views[0].Filters)
+	if len(views[0].Filters) != 1 || !strings.HasPrefix(views[0].Filters[0], "tag:") {
+		t.Fatalf("foreign feed filter should be dropped and the tag kept, got %v", views[0].Filters)
 	}
 }
 
@@ -210,8 +237,10 @@ func TestSavedViewReadAllHonorsFilters(t *testing.T) {
 	}
 	id := strings.TrimPrefix(rr.Header().Get("Location"), "/views/")
 
-	// Mark-all carries the active filter, so only the matching post is read.
-	if rr := doForm(h, http.MethodPost, "/views/"+id+"/read-all?view=unread&sort=newest&f="+url.QueryEscape("tag:show:u/example-poster"), nil, cookie); rr.Code != http.StatusNoContent {
+	// Mark-all on the view-scoped author page carries the selected view, so only
+	// the matching post is read even though the author also owns the feed.
+	action := "/authors/" + itoa(author.ID) + "/read-all?view=" + id
+	if rr := doForm(h, http.MethodPost, action, nil, cookie); rr.Code != http.StatusNoContent {
 		t.Fatalf("mark view read: %d %s", rr.Code, rr.Body.String())
 	}
 	goID, _ := s.store.Items.ByFeedIdentity(f.ID, "go")

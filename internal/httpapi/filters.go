@@ -575,7 +575,12 @@ func (fs listFilters) appendFilters(base string) string {
 // filterPageURL builds a scoped page's URL with its view/sort and filters, used
 // by the active-filter chips (clicking one drops it) and their links.
 func filterPageURL(path, view string, sort itemSort, filters listFilters) string {
-	u := scopedViewQuery(path, view) + "&sort=" + sort.param()
+	return filterPageURLFor(path, view, sort, filters, 0)
+}
+
+// filterPageURLFor is filterPageURL for a view-scoped author page.
+func filterPageURLFor(path, view string, sort itemSort, filters listFilters, viewID int64) string {
+	u := scopedViewQueryFor(path, view, viewID) + "&sort=" + sort.param()
 	return filters.appendFilters(u)
 }
 
@@ -668,6 +673,9 @@ type filterPanelData struct {
 	// save-view link so a view remembers where it was created.
 	ScopeAuthorID     int64
 	ScopeCollectionID int64
+	// ViewID is the selected saved view on a view-scoped author page (0 when no
+	// view is selected). It makes links carry ?view=<id>&tab=<tab>.
+	ViewID int64
 }
 
 // effectiveFeedOptions drops the feed kind when the scope has only one feed
@@ -730,6 +738,7 @@ func (d scopedItemsData) filterPanel() filterPanelData {
 		Filters: d.Filters, FilteredCount: d.FilteredCount,
 		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
 		ScopeAuthorID: d.ScopeAuthorID, ScopeCollectionID: d.ScopeCollectionID,
+		ViewID: d.ViewID,
 	}
 }
 

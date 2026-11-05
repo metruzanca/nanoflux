@@ -470,33 +470,44 @@ the author page's scope stays `/authors/{id}`.
 
 ## Saved views
 
-A saved view is a private, named filter recipe over the shared item lists. It is
-**not** a feed: it never polls, has no URL, and is absent from OPML/plugin/poller
+A saved view is a private, named filter recipe that acts as a **source** on an
+author page. It never polls, has no URL, and is absent from OPML/plugin/poller
 code. The entity lives in `saved_views` (schemaV57), separate from `feeds`.
 
 - A view stores a base tab (`unread`/`read`/`favorites`/`bookmarks`), a sort and
   the canonical `?f=` filter params, plus the scope it was created over
   (`scope_author_id` or `scope_collection_id`; both empty means all feeds).
-- `author_id` only groups a view on an author page. It does **not** narrow the
-  items, which is why a view created from `/unread` with
-  `tag=u/example-poster` can be assigned to that author and still show posts
-  from every feed.
+- `author_id` is the author the view feeds. An author page's scope is
+  `author's own feeds OR every assigned view`, so a subreddit feed plus a view
+  such as `tag=u/example-poster` can replace a per-user profile feed.
+- A view must have at least one filter row. An unfiltered view would pull its
+  whole scope into the author, so `savedViewFormFromRequest` rejects one and
+  `authorStoreViewFilters` skips any legacy blank view.
 - The scope is fixed when the view is created. The edit form changes the title,
   assignment, base tab, sort and filters; it cannot widen the scope.
-- `filter_row`-style form submissions and the canonical `f` params share
-  `filtersFromValues`. `filtersFromParams`/`listFilters.params()` are the
-  persistence round-trip, so time rows survive too.
-- A bare `/views/{id}` redirects once to its canonical query (`?view=&sort=&f=`).
-  That keeps the shared tabs, sort picker, filter dialog, load-more and "clear
-  all" links operating on explicit params instead of falling back to the stored
-  recipe.
-- Feed filter values are validated on save and load against the scope (an
-  author's feeds, a collection's feeds, or all of the user's feeds), so deleting
-  a feed degrades the view rather than breaking it.
+- `?view=<id>` on an author page selects a saved view; `?tab=unread|read|favorites`
+  selects the tab (default unread). A non-numeric `?view=unread|read` keeps its
+  historical tab meaning. The shared tab, sort, filter-chip, filter-dialog and
+  pagination helpers carry both values through `scopedViewQueryFor` and
+  `scopedViewSep`.
+- The store scope is `store.ViewFilter` + `ItemFilter.Views`. `authorScopeClause`
+  builds the OR of author-owned feeds and each view predicate; `viewFilterClause`
+  applies the view's stored scope, groups and time windows. `listPageTagged` is
+  forced whenever `Views` is non-empty, and `unreadFilteredQuery` delegates to the
+  same predicate builder so mark-all and unread counts include views.
+- Author stats, posting frequency, tag options and `/authors` unread counts use
+  the same union (`StatsFilter`, `RecentTimesFilter`, `ListCategoriesFilter`).
+- Author allow/block rules still apply to the author who owns the feed, not to
+  the viewed author, so view items from another author keep that author's rules.
+- A bare `/views/{id}` redirects to the assigned author's
+  `/authors/{id}?view={viewID}`, or to its canonical query for an unassigned
+  view. The edit page always keeps the delete control.
+- Feed filter values are validated on save and load against the view's scope, so
+  deleting a feed degrades the view rather than breaking it.
 - Creation is offered from the bookmark button on every filterable item list
   (`.../saveViewButton`, via `filterPanelData.saveViewURL`). The create/edit page
-  reuses `filterRow`; the view page reuses `scopedItemsData`/`ScopedItems` and a
-  filter-aware mark-all (`POST /views/{id}/read-all`).
+  reuses `filterRow`; a view-scoped author page reuses `scopedItemsData` with its
+  `ViewID` set.
 - `/views` is the private index, grouped by assigned author, and is linked from
   the user menu; an author's page also renders its assigned views as cards.
 - `CloneUser` copies saved views and remaps author/collection/feed ids; a view

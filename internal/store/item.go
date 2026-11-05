@@ -166,6 +166,18 @@ type TimeGroup struct {
 	Exclude bool
 }
 
+// ViewFilter is one saved view as an item predicate. AuthorID/CollectionID are
+// the view's stored scope (0 = all feeds); the groups and time windows are its
+// filters. ItemFilter.Views ORs these with the author/feed scope, so a view can
+// act as a source under an author it is assigned to.
+type ViewFilter struct {
+	AuthorID     int64
+	CollectionID int64
+	TagGroups    []TagGroup
+	FeedGroups   []FeedGroup
+	TimeGroups   []TimeGroup
+}
+
 type ItemFilter struct {
 	UnreadOnly    bool
 	ReadOnly      bool
@@ -199,7 +211,10 @@ type ItemFilter struct {
 	// TimeGroups are per-row time-window predicates over
 	// COALESCE(published_at, fetched_at), in UTC TimeFormat strings.
 	TimeGroups []TimeGroup
-	Limit      int
+	// Views extend the scope with OR branches. With AuthorID set they are added
+	// to the author's own feeds; without AuthorID they are the whole scope.
+	Views []ViewFilter
+	Limit int
 }
 
 type ItemStore struct {
@@ -396,7 +411,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	// filter or negative filter uses the hand-written dynamic query. sqlc owns
 	// the rest of the list paths.
 	if len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 ||
-		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.TimeGroups) > 0 {
+		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.TimeGroups) > 0 || len(f.Views) > 0 {
 		return s.listPageTagged(userID, f, limit)
 	}
 	if f.Magic {
@@ -687,9 +702,13 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
 		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = ?)")
 		*args = append(*args, f.FeedID)
 	}
-	if f.AuthorID != 0 {
-		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id WHERE mf.item_id = i.id AND mf2.author_id = ?)")
-		*args = append(*args, f.AuthorID)
+	if f.AuthorID != 0 || len(f.Views) > 0 {
+		clause, scopeArgs := authorScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", f.AuthorID, f.Views)
+		if clause != "" {
+			b.WriteString(" AND ")
+			b.WriteString(clause)
+			*args = append(*args, scopeArgs...)
+		}
 	}
 	if f.OwnerAuthorID != 0 {
 		b.WriteString(" AND i.feed_id IN (SELECT oa.id FROM feeds oa WHERE oa.author_id = ?)")
@@ -730,6 +749,60 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
 	}
 	appendFilterGroups(b, args, "i.id", f.TagGroups, f.FeedGroups)
 	appendTimeGroups(b, args, "COALESCE(i.published_at, i.fetched_at)", f.TimeGroups)
+}
+
+// authorScopeClause builds the OR of an author's owned feeds and any saved views
+// assigned to that author. itemID is the item-id expression of the caller's
+// query; timeExpr is its item-time expression.
+func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilter) (string, []any) {
+	var branches []string
+	var args []any
+	if authorID != 0 {
+		branches = append(branches,
+			"EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds sf ON sf.id = mf.feed_id WHERE mf.item_id = "+itemID+" AND sf.author_id = ?)")
+		args = append(args, authorID)
+	}
+	for _, v := range views {
+		clause, viewArgs := viewFilterClause(itemID, timeExpr, v)
+		if clause == "" {
+			clause = "1=1"
+		}
+		branches = append(branches, "("+clause+")")
+		args = append(args, viewArgs...)
+	}
+	if len(branches) == 0 {
+		return "", nil
+	}
+	return "(" + strings.Join(branches, " OR ") + ")", args
+}
+
+// viewFilterClause builds one saved view's predicate over an item alias. The
+// view's stored scope is applied first, then its tag/feed groups and time
+// windows. System-feed (saved page) items never match a view.
+func viewFilterClause(itemID, timeExpr string, v ViewFilter) (string, []any) {
+	parts := []string{
+		itemID + " NOT IN (SELECT si.id FROM items si JOIN feeds sisf ON sisf.id = si.feed_id WHERE sisf.is_system = 1)",
+	}
+	var args []any
+	if v.AuthorID != 0 {
+		parts = append(parts,
+			"EXISTS (SELECT 1 FROM item_feeds vmf JOIN feeds vsf ON vsf.id = vmf.feed_id WHERE vmf.item_id = "+itemID+" AND vsf.author_id = ?)")
+		args = append(args, v.AuthorID)
+	}
+	if v.CollectionID != 0 {
+		parts = append(parts,
+			"EXISTS (SELECT 1 FROM item_feeds vmf WHERE vmf.item_id = "+itemID+" AND vmf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))")
+		args = append(args, v.CollectionID)
+	}
+	if clause, groupArgs := filterGroupsClause(itemID, v.TagGroups, v.FeedGroups); clause != "" {
+		parts = append(parts, "("+clause+")")
+		args = append(args, groupArgs...)
+	}
+	if clause, timeArgs := timeGroupsClause(timeExpr, v.TimeGroups); clause != "" {
+		parts = append(parts, "("+clause+")")
+		args = append(args, timeArgs...)
+	}
+	return strings.Join(parts, " AND "), args
 }
 
 // CountFiltered counts the items ListPage would return for f, ignoring its
@@ -917,6 +990,94 @@ func (s *ItemStore) StatsAuthor(userID, authorID int64) (AuthorItemStats, error)
 		LastAt:    r.LastPostAt,
 		Storage:   storage,
 	}, nil
+}
+
+// StatsFilter returns author-style aggregate stats for an arbitrary item scope
+// (used by author pages whose views extend the scope beyond owned feeds). The
+// storage figure remains the author's own feed media, since view items belong to
+// other authors' feeds.
+func (s *ItemStore) StatsFilter(userID int64, f ItemFilter) (AuthorItemStats, error) {
+	var b strings.Builder
+	b.WriteString(`SELECT COUNT(i.id),
+		COUNT(CASE WHEN i.read = 0 THEN 1 END),
+		COUNT(CASE WHEN i.read = 1 THEN 1 END),
+		COUNT(CASE WHEN i.favorite = 1 THEN 1 END),
+		COUNT(CASE WHEN COALESCE(i.published_at, i.fetched_at) >= ? THEN 1 END),
+		CAST(COALESCE(MIN(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT),
+		CAST(COALESCE(MAX(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT)
+		FROM visible_items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+	args := []any{db.FormatTime(time.Now().AddDate(0, 0, -30)), userID}
+	appendItemFilterPredicates(&b, &args, f)
+	var (
+		total, unread, read, favorites, recent int
+		firstAt, lastAt                        string
+	)
+	if err := s.db.QueryRowContext(context.Background(), b.String(), args...).Scan(
+		&total, &unread, &read, &favorites, &recent, &firstAt, &lastAt,
+	); err != nil {
+		return AuthorItemStats{}, err
+	}
+	return AuthorItemStats{
+		Total: total, Unread: unread, Read: read, Favorites: favorites, Recent: recent,
+		FirstAt: firstAt, LastAt: lastAt,
+	}, nil
+}
+
+// RecentTimesFilter returns the newest item times in an arbitrary scope, newest
+// first. It backs the posting-frequency estimate when an author's scope includes
+// saved views.
+func (s *ItemStore) RecentTimesFilter(userID int64, f ItemFilter, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+	var b strings.Builder
+	b.WriteString(`SELECT COALESCE(i.published_at, i.fetched_at)
+		FROM visible_items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+	args := []any{userID}
+	appendItemFilterPredicates(&b, &args, f)
+	b.WriteString(" ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ?")
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// ListCategoriesFilter returns the distinct tags and item counts for an
+// arbitrary item scope, most-used first. It backs the filter modal when an
+// author's items include view matches from other feeds.
+func (s *ItemStore) ListCategoriesFilter(userID int64, f ItemFilter) ([]CategoryCount, error) {
+	var b strings.Builder
+	b.WriteString(`SELECT ic.category, COUNT(DISTINCT ic.item_id)
+		FROM item_categories ic WHERE ic.item_id IN (
+			SELECT i.id FROM visible_items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+	args := []any{userID}
+	appendItemFilterPredicates(&b, &args, f)
+	b.WriteString(`) GROUP BY ic.category ORDER BY COUNT(DISTINCT ic.item_id) DESC, ic.category`)
+	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CategoryCount
+	for rows.Next() {
+		var c CategoryCount
+		if err := rows.Scan(&c.Category, &c.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 // FeedItemStats aggregates one feed's posts (by item membership).
@@ -1572,66 +1733,40 @@ func (s *ItemStore) CountUnreadFiltered(userID int64, f ItemFilter) (int, error)
 
 // unreadFilteredQuery builds the scoped "unread items matching f" statement. When
 // mark is true it is the UPDATE that marks them read; otherwise it is the COUNT.
-// The scope joins feeds so system-feed (saved page) items are excluded, matching
-// the streams; tags are AND-ed via item_categories.
+// It delegates the scope to the shared item predicate builder, so feeds, author
+// views, tags, groups and time windows all mean the same thing here as in the
+// list and count paths.
 func unreadFilteredQuery(userID int64, f ItemFilter, mark bool) (string, []any) {
 	var b strings.Builder
 	var args []any
 	if mark {
 		b.WriteString(`UPDATE items SET read = 1, read_at = ? WHERE user_id = ? AND read = 0
-		AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?)`)
+		AND items.id IN (SELECT i.id FROM visible_items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 		args = append(args, ns(db.Now()), userID, userID)
 	} else {
-		b.WriteString(`SELECT COUNT(*) FROM visible_items items WHERE items.user_id = ? AND items.read = 0`)
-		args = append(args, userID)
+		b.WriteString(`SELECT COUNT(*) FROM items WHERE user_id = ? AND read = 0
+		AND items.id IN (SELECT i.id FROM visible_items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+		args = append(args, userID, userID)
 	}
-	b.WriteString(` AND items.id IN (
-		SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-		WHERE f.user_id = ? AND f.is_system = 0`)
-	args = append(args, userID)
-	if f.FeedID != 0 {
-		b.WriteString(" AND mf.feed_id = ?")
-		args = append(args, f.FeedID)
-	}
-	if f.AuthorID != 0 {
-		b.WriteString(" AND f.author_id = ?")
-		args = append(args, f.AuthorID)
-	}
-	if f.CollectionID != 0 {
-		b.WriteString(" AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?)")
-		args = append(args, f.CollectionID)
-	}
+	appendItemFilterPredicates(&b, &args, f)
 	b.WriteString(")")
-	for _, tag := range f.Tags {
-		b.WriteString(" AND EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = items.id AND ic.category = ?)")
-		args = append(args, tag)
-	}
-	for _, tag := range f.ExcludeTags {
-		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = items.id AND ic.category = ?)")
-		args = append(args, tag)
-	}
-	if f.ExcludeFeedID != 0 {
-		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_feeds mfx WHERE mfx.item_id = items.id AND mfx.feed_id = ?)")
-		args = append(args, f.ExcludeFeedID)
-	}
-	appendFilterGroups(&b, &args, "items.id", f.TagGroups, f.FeedGroups)
-	appendTimeGroups(&b, &args, "COALESCE(items.published_at, items.fetched_at)", f.TimeGroups)
 	return b.String(), args
 }
 
-// appendTimeGroups adds the time-window predicates to b. It is shared by the
-// dynamic list/count query and the mark-all statement, so both evaluate the
-// same windows; expr is the item time expression the caller's aliases allow.
-func appendTimeGroups(b *strings.Builder, args *[]any, expr string, groups []TimeGroup) {
+// timeGroupsClause joins a set of time windows into one predicate with no
+// leading AND. It is shared by the normal list path and saved-view branches.
+func timeGroupsClause(expr string, groups []TimeGroup) (string, []any) {
+	var clauses []string
+	var args []any
 	for _, g := range groups {
 		var terms []string
 		if g.After != "" {
 			terms = append(terms, expr+" >= ?")
-			*args = append(*args, g.After)
+			args = append(args, g.After)
 		}
 		if g.Before != "" {
 			terms = append(terms, expr+" <= ?")
-			*args = append(*args, g.Before)
+			args = append(args, g.Before)
 		}
 		if len(terms) == 0 {
 			continue
@@ -1640,9 +1775,22 @@ func appendTimeGroups(b *strings.Builder, args *[]any, expr string, groups []Tim
 		if g.Exclude {
 			clause = "NOT " + clause
 		}
-		b.WriteString(" AND ")
-		b.WriteString(clause)
+		clauses = append(clauses, clause)
 	}
+	return strings.Join(clauses, " AND "), args
+}
+
+// appendTimeGroups adds the time-window predicates to b. It is shared by the
+// dynamic list/count query and the mark-all statement, so both evaluate the
+// same windows; expr is the item time expression the caller's aliases allow.
+func appendTimeGroups(b *strings.Builder, args *[]any, expr string, groups []TimeGroup) {
+	clause, timeArgs := timeGroupsClause(expr, groups)
+	if clause == "" {
+		return
+	}
+	b.WriteString(" AND ")
+	b.WriteString(clause)
+	*args = append(*args, timeArgs...)
 }
 
 // filterGroupsClause builds the combined predicate for tag/feed groups, with no
