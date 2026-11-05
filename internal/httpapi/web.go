@@ -32,6 +32,9 @@ type homeData struct {
 	FilteredCount int
 	TagOptions    []comboItem
 	FeedOptions   []comboItem
+	// Scope fields are carried into the save-view toolbar; /unread is global.
+	ScopeAuthorID     int64
+	ScopeCollectionID int64
 }
 
 // pageSize is the number of items rendered per page on every list.
@@ -161,6 +164,7 @@ type authorsData struct {
 type authorData struct {
 	Author store.Author
 	Rows   []feedRow
+	Views  []savedViewRow
 	Links  []store.AuthorLink
 	// Collections is every feed collection the author's feeds belong to,
 	// combined and deduped. Shown as chips on the author card.
@@ -222,6 +226,10 @@ type scopedItemsData struct {
 	TagOptions    []comboItem // distinct tags in scope, for the filter modal
 	// FeedOptions are the author's feeds for the filter modal.
 	FeedOptions []comboItem
+	// ScopeAuthorID/ScopeCollectionID identify the list a "save view" was
+	// created from; both zero mean the global stream.
+	ScopeAuthorID     int64
+	ScopeCollectionID int64
 }
 
 // itemSort is the ordering of an item list: newest first (time desc), oldest
@@ -520,7 +528,7 @@ func validViewScope(scope string) bool {
 	case "/unread", "/read", "/favorites", "/bookmarks":
 		return true
 	}
-	for _, prefix := range []string{"/authors/", "/collections/", "/lists/"} {
+	for _, prefix := range []string{"/authors/", "/collections/", "/lists/", "/views/"} {
 		if id, ok := strings.CutPrefix(scope, prefix); ok {
 			if id == "" || strings.ContainsAny(id, "/?#") {
 				return false
@@ -1951,7 +1959,8 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 	})
 	markAll := markAllReadData{Action: authorReadAllURL(id, filters), Unread: unread}
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
-		Author: a, Rows: rows, Links: links, Scoped: scoped, Collections: authorCollections(rows),
+		Author: a, Rows: rows, Views: s.savedViewsForAuthor(u.ID, id, u.Timezone), Links: links,
+		Scoped: scoped, Collections: authorCollections(rows),
 		Stats: stats, Frequency: frequency, Timezone: u.Timezone,
 		MarkAll: markAll,
 	})))
@@ -2170,6 +2179,7 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 		More: pageCursorFor(itemsBase, items, more, sort, 0), HideAuthor: true,
 		Mode: s.store.ViewPrefs.Mode(userID, base), FavTab: favs > 0 || view == "favorites", FavCount: favs,
 		Filters: filters, FilteredCount: filtered, TagOptions: tagItems(cats), FeedOptions: feedOpts,
+		ScopeAuthorID: authorID,
 	}
 }
 
@@ -2549,6 +2559,7 @@ func (s *Server) collectionScopedItems(userID, collectionID int64, view string, 
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
 		UnreadCount: unread, ReadCount: read, FeedsTab: true, FeedCount: len(memberFeeds),
 		Mode: s.store.ViewPrefs.Mode(userID, base), Filters: filters,
+		ScopeCollectionID: collectionID,
 	}
 	if view == "feeds" {
 		d.Feeds = s.collectionFeedRows(userID, memberFeeds, tz)

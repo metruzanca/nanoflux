@@ -409,6 +409,28 @@ func normalizeFilters(in listFilters) listFilters {
 	return out
 }
 
+// params returns the canonical ?f= spelling of each row, for persistence in a
+// saved view. Time rows survive too (unlike the store rule conversion).
+func (fs listFilters) params() []string {
+	out := make([]string, 0, len(fs))
+	for _, f := range fs {
+		out = append(out, f.param())
+	}
+	return out
+}
+
+// filtersFromParams parses a saved view's stored canonical params. Invalid
+// params are skipped.
+func filtersFromParams(params []string) listFilters {
+	out := make(listFilters, 0, len(params))
+	for _, raw := range params {
+		if f, ok := parseFilterParam(raw); ok {
+			out = append(out, f)
+		}
+	}
+	return normalizeFilters(out)
+}
+
 // rules converts the HTTP rows to the shared store rule shape, which is also
 // what persisted author filters use. Time rows are transient only, so they are
 // never handed to the store's rule conversion.
@@ -642,6 +664,10 @@ type filterPanelData struct {
 	TagOptions    []comboItem
 	FeedOptions   []comboItem
 	AllowTime     bool
+	// ScopeAuthorID/ScopeCollectionID are the list's scope, carried into the
+	// save-view link so a view remembers where it was created.
+	ScopeAuthorID     int64
+	ScopeCollectionID int64
 }
 
 // effectiveFeedOptions drops the feed kind when the scope has only one feed
@@ -703,6 +729,7 @@ func (d scopedItemsData) filterPanel() filterPanelData {
 		Path: d.Path, View: d.View, Sort: d.Sort,
 		Filters: d.Filters, FilteredCount: d.FilteredCount,
 		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
+		ScopeAuthorID: d.ScopeAuthorID, ScopeCollectionID: d.ScopeCollectionID,
 	}
 }
 
@@ -713,4 +740,22 @@ func (d homeData) filterPanel() filterPanelData {
 		Filters: d.Filters, FilteredCount: d.FilteredCount,
 		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
 	}
+}
+
+// saveViewURL is the "save as view" link for the current list: the view, sort,
+// scope and active filters become the create form's prefill.
+func (d filterPanelData) saveViewURL() string {
+	v := url.Values{}
+	v.Set("view", d.View)
+	v.Set("sort", d.Sort.param())
+	if d.ScopeAuthorID > 0 {
+		v.Set("scope_author", strconv.FormatInt(d.ScopeAuthorID, 10))
+	}
+	if d.ScopeCollectionID > 0 {
+		v.Set("scope_collection", strconv.FormatInt(d.ScopeCollectionID, 10))
+	}
+	for _, p := range d.Filters.params() {
+		v.Add("f", p)
+	}
+	return "/views/new?" + v.Encode()
 }

@@ -71,6 +71,7 @@ templ homePage(d homeData) {
 		<h1>unread ({ d.UnreadCount })</h1>
 		<div class="row-actions">
 			@filterButton(fp)
+			@saveViewButton(fp)
 			@SimpleSortControl("/unread", d.Sort, d.Filters)
 			@DisplayModeControl("/unread", d.Mode)
 		</div>

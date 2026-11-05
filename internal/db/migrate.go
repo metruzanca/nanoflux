@@ -67,6 +67,7 @@ var migrations = []migration{
 	{54, schemaV54},
 	{55, schemaV55},
 	{56, schemaV56},
+	{57, schemaV57},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -883,6 +884,27 @@ CREATE TABLE item_progress (
     PRIMARY KEY (user_id, progress_key)
 );
 CREATE INDEX idx_item_progress_updated ON item_progress(user_id, updated_at);
+`
+
+// schemaV57 adds saved views: private, named filter recipes over the item
+// lists. A view captures a base tab, a sort and a list of canonical filter
+// params, plus the scope it was created from (all feeds, one author, or one
+// collection). author_id is display grouping only; it does not limit the items.
+const schemaV57 = `
+CREATE TABLE saved_views (
+    id                  INTEGER PRIMARY KEY,
+    user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id           INTEGER REFERENCES authors(id) ON DELETE CASCADE,
+    title               TEXT NOT NULL,
+    base_view           TEXT NOT NULL DEFAULT 'unread',
+    sort                TEXT NOT NULL DEFAULT 'newest',
+    filters             TEXT NOT NULL DEFAULT '[]',
+    scope_author_id     INTEGER REFERENCES authors(id) ON DELETE CASCADE,
+    scope_collection_id INTEGER REFERENCES collections(id) ON DELETE CASCADE,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_saved_views_user ON saved_views(user_id);
+CREATE INDEX idx_saved_views_author ON saved_views(author_id);
 `
 
 // Migrate applies any pending migrations in order, recording each in

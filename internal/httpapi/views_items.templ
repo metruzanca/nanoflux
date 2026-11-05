@@ -522,6 +522,12 @@ templ filterButton(fp filterPanelData) {
 	}
 }
 
+// saveViewButton links to the create-view form prefilled from this list. It is
+// always offered: an unfiltered list (e.g. an author's unread) is a valid view.
+templ saveViewButton(fp filterPanelData) {
+	<a class="mode-btn" title="save this list as a view" href={ templ.URL(fp.saveViewURL()) }>@web.Lucide("bookmark-plus")</a>
+}
+
 // filterChips renders the active filters as removable chips plus the match
 // count and a clear-all link.
 templ filterChips(fp filterPanelData) {
@@ -593,6 +599,7 @@ templ scopedItemsInner(d scopedItemsData) {
 		if d.View != "feeds" {
 			<div class="row-actions">
 				@filterButton(fp)
+				@saveViewButton(fp)
 				@sortPicker(d.Path, d.View, d.Sort, d.NoMagic, d.Filters)
 				@DisplayModeControl(d.Path, d.Mode)
 			</div>
