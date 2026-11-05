@@ -271,6 +271,13 @@ main:has(#home-sections) {
   max-width: min(100%, calc(46rem + (var(--grid-columns, 2) - 2) * 23rem));
 }
 
+/* The admin page carries wide tables (poll backlog, failing feeds, users,
+   plugin ownership). Let it grow to ~2x the reading width, capped at the
+   viewport so it never overflows. */
+main:has(.admin-page) {
+  max-width: min(100%, 92rem);
+}
+
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
