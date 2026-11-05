@@ -88,6 +88,12 @@ A feed also has a minimum automatic interval, not only a cadence:
   not reintroduce a bare 900.
 - `buildAdminPoll` measures demand and behind-ness at
   `max(poll_interval_sec, floor)`, so the card matches what the poller will do.
+  A feed whose last poll failed is not "behind": it is counted as **failing**, or
+  as **cooling** when the failure was a rate limit, and is excluded from the
+  behind count, the oldest-behind line and the per-host clear estimate. It still
+  counts toward demand. The admin feed-errors card groups the same feeds by
+  `feedparse.ClassifyFailureText` over the stored `last_error` (the typed error
+  is not persisted), so do not fold failures back into behind.
 - A manual refresh and "load older items" are explicit user actions and stay
   exempt. The rate-limit `next_poll_at` remains authoritative.
 - The floor does **not** replace per-host spacing. `NF_POLL_HOST_SPACING`
