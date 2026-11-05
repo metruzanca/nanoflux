@@ -504,12 +504,14 @@ code. The entity lives in `saved_views` (schemaV57), separate from `feeds`.
   view. The edit page always keeps the delete control.
 - Feed filter values are validated on save and load against the view's scope, so
   deleting a feed degrades the view rather than breaking it.
-- Creation is offered from the bookmark button on every filterable item list
-  (`.../saveViewButton`, via `filterPanelData.saveViewURL`). The create/edit page
-  reuses `filterRow`; a view-scoped author page reuses `scopedItemsData` with its
-  `ViewID` set.
+- Creation happens from the filter dialog's `save as view` submit, which posts
+  the draft filter rows to `/views/new`; the topbar add-caret menu also links
+  there. The create/edit page reuses `filterRow`; a view-scoped author page reuses
+  `scopedItemsData` with its `ViewID` set.
+- An author page has one collapsible `sources (N)` section combining its feeds
+  and assigned views; the page itself has no add-feed/add-view controls.
 - `/views` is the private index, grouped by assigned author, and is linked from
-  the user menu; an author's page also renders its assigned views as cards.
+  the user menu.
 - `CloneUser` copies saved views and remaps author/collection/feed ids; a view
   whose scoped author or collection did not survive the clone is skipped rather
   than widened.

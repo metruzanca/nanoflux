@@ -75,10 +75,11 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	}
 	id := strings.TrimPrefix(loc, "/views/")
 
-	// The list toolbar offers the create link pre-filled with the active filter.
+	// The filter dialog saves the draft rows as a view, and the add menu links to
+	// the empty create form.
 	body := doGet(h, "/unread?"+url.Values{"f": {"tag:show:u/example-poster"}}.Encode(), cookie).Body.String()
-	if !strings.Contains(body, "/views/new?") || !strings.Contains(body, "save%20this%20list%20as%20a%20view") && !strings.Contains(body, "save this list as a view") {
-		t.Fatalf("unread list should offer save-as-view: %s", body)
+	if !strings.Contains(body, `formaction="/views/new"`) || !strings.Contains(body, `href="/views/new"`) {
+		t.Fatalf("unread should offer save-as-view from the filter dialog and add menu: %s", body)
 	}
 
 	// The create page carries the filter rows and the author picker.
@@ -137,10 +138,10 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 		t.Fatalf("empty view should be rejected: %d", rr.Code)
 	}
 
-	// The author page carries a views section.
+	// The author page carries the assigned view in its combined sources section.
 	body = doGet(h, "/authors/"+itoa(author.ID), cookie).Body.String()
-	if !strings.Contains(body, "views (1)") || !strings.Contains(body, "Example posts") {
-		t.Fatalf("author page should list the assigned view: %s", body)
+	if !strings.Contains(body, "sources (1)") || !strings.Contains(body, "Example posts") {
+		t.Fatalf("author page should list the assigned view under sources: %s", body)
 	}
 
 	// Edit renames and unassigns the view; the scope stays fixed.

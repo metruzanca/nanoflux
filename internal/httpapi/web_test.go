@@ -1316,32 +1316,37 @@ func TestAuthorFormFragment(t *testing.T) {
 	}
 }
 
-func TestAuthorPageHasAddFeedDialog(t *testing.T) {
+func TestAuthorPageSourcesSection(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.example/rss.xml", "", "", 900)
+	if _, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+		AuthorID: a.ID, Title: "Captain posts", BaseView: "unread", Sort: "newest",
+		Filters: []string{"tag:show:u/Captain"},
+	}); err != nil {
+		t.Fatalf("saved view: %v", err)
+	}
 
 	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
-	for _, want := range []string{
-		`id="add-author-feed-dialog"`,
-		`name="author_id" value="` + itoa(a.ID) + `"`,
-		`hx-post="/fragments/feed-preview"`,
-		`+ add feed`,
-	} {
+	if !strings.Contains(body, "sources (2)") {
+		t.Fatalf("author page should combine feeds and views under sources: %s", body)
+	}
+	for _, want := range []string{`id="feeds-list"`, `id="feed-` + itoa(f.ID) + `"`, `id="view-`} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("author page missing %q: %s", want, body)
+			t.Fatalf("sources section missing %q: %s", want, body)
 		}
 	}
-	// The add-feed control is a link-styled button that sits after the feed
-	// list, not a primary button above it.
-	const addFeedBtn = `data-open="add-author-feed-dialog"`
-	if !strings.Contains(body, addFeedBtn) {
-		t.Fatalf("author page add-feed should be a link-styled button: %s", body)
-	}
-	if strings.Index(body, `id="feeds-list"`) > strings.Index(body, addFeedBtn) {
-		t.Fatalf("add-feed should render below the feed list: %s", body)
+	for _, unwanted := range []string{
+		`id="add-author-feed-dialog"`,
+		`data-open="add-author-feed-dialog"`,
+		`+ add view`,
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("author page should not contain %q: %s", unwanted, body)
+		}
 	}
 }
 

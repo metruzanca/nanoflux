@@ -522,12 +522,6 @@ templ filterButton(fp filterPanelData) {
 	}
 }
 
-// saveViewButton links to the create-view form prefilled from this list. It is
-// always offered: an unfiltered list (e.g. an author's unread) is a valid view.
-templ saveViewButton(fp filterPanelData) {
-	<a class="mode-btn" title="save this list as a view" href={ templ.URL(fp.saveViewURL()) }>@web.Lucide("bookmark-plus")</a>
-}
-
 // filterChips renders the active filters as removable chips plus the match
 // count and a clear-all link.
 templ filterChips(fp filterPanelData) {
@@ -566,6 +560,12 @@ templ filterDialog(fp filterPanelData) {
 					<input type="hidden" name="view" value={ fp.View }/>
 				}
 				<input type="hidden" name="sort" value={ fp.Sort.param() }/>
+				if fp.ScopeAuthorID > 0 {
+					<input type="hidden" name="scope_author" value={ strconv.FormatInt(fp.ScopeAuthorID, 10) }/>
+				}
+				if fp.ScopeCollectionID > 0 {
+					<input type="hidden" name="scope_collection" value={ strconv.FormatInt(fp.ScopeCollectionID, 10) }/>
+				}
 				<p class="muted small">show matching posts, or hide them. tag and feed rows combine their values with any (or) or all (and); time rows match a window on the post time, in your timezone. show rows must all match, and any hide row excludes.</p>
 				<div class="filter-rows" id="filter-rows" data-filter-rows>
 					for i, f := range fp.Filters {
@@ -580,6 +580,7 @@ templ filterDialog(fp filterPanelData) {
 				</template>
 				<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 				<div class="row-actions">
+					<button type="submit" class="link" title="save this list as a view" formaction="/views/new" formmethod="get">@web.Lucide("bookmark-plus") save as view</button>
 					<button type="button" class="link" data-close-dialog>cancel</button>
 					<button type="submit">apply</button>
 				</div>
@@ -604,7 +605,6 @@ templ scopedItemsInner(d scopedItemsData) {
 		if d.View != "feeds" {
 			<div class="row-actions">
 				@filterButton(fp)
-				@saveViewButton(fp)
 				@sortPicker(d.Path, d.View, d.Sort, d.NoMagic, d.Filters, d.ViewID)
 				@DisplayModeControl(d.Path, d.Mode)
 			</div>

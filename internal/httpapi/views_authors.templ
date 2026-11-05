@@ -367,55 +367,28 @@ templ authorPage(u store.User, d authorData) {
 				}
 			</div>
 		}
-		if len(d.Rows) > 0 {
+		{{ sources := len(d.Rows) + len(d.Views) }}
+		if sources > 0 {
 			<details class="author-feeds">
-				<summary>feeds ({ strconv.Itoa(len(d.Rows)) })</summary>
+				<summary>sources ({ strconv.Itoa(sources) })</summary>
 				<div class="author-feeds-body">
-					@FeedsList(d.Rows)
-					<button type="button" class="link" data-open="add-author-feed-dialog">+ add feed</button>
+					if len(d.Rows) > 0 {
+						@FeedsList(d.Rows)
+					}
+					if len(d.Views) > 0 {
+						<ul class="feed-cards">
+							for _, v := range d.Views {
+								@savedViewCard(v)
+							}
+						</ul>
+					}
 				</div>
 			</details>
-		} else {
-			<button type="button" class="link" data-open="add-author-feed-dialog">+ add feed</button>
-		}
-		if len(d.Views) > 0 {
-			<details class="author-feeds">
-				<summary>views ({ strconv.Itoa(len(d.Views)) })</summary>
-				<div class="author-feeds-body">
-					<ul class="feed-cards">
-						for _, v := range d.Views {
-							@savedViewCard(v)
-						}
-					</ul>
-					<a class="link" href={ templ.URL("/views/new?scope_author=" + strconv.FormatInt(d.Author.ID, 10) + "&view=unread&sort=newest") }>+ add view</a>
-				</div>
-			</details>
-		} else {
-			<a class="link" href={ templ.URL("/views/new?scope_author=" + strconv.FormatInt(d.Author.ID, 10) + "&view=unread&sort=newest") }>+ add view</a>
 		}
 	</section>
 	<div class="author-items">
 		@ScopedItems(d.Scoped)
 	</div>
-
-	<dialog id="add-author-feed-dialog" class="modal">
-		<div class="row">
-			<h2>add feed for { d.Author.Name }</h2>
-			<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
-		</div>
-		<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-feed-preview" hx-swap="innerHTML">
-			<input type="hidden" id="feed-author-id" name="author_id" value={ strconv.FormatInt(d.Author.ID, 10) }/>
-			<input type="hidden" id="feed-author-scoped" name="scoped" value="1"/>
-			<label>url
-				<input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required/>
-			</label>
-			<div class="row">
-				<button type="submit">find feed</button>
-				@manualFeedButton("#author-feed-preview")
-			</div>
-		</form>
-		<div id="author-feed-preview"></div>
-	</dialog>
 }
 
 templ authorCreateFields(d authorPreviewForm) {
