@@ -518,6 +518,12 @@ func TestAuthorEditViewPanel(t *testing.T) {
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Inline renamed") {
 		t.Fatalf("auto-save inline view: %d %s", rr.Code, rr.Body.String())
 	}
+	// The response is the accordion item's contents, not the <details> itself:
+	// replacing an open named <details> during the swap would make the browser
+	// close it.
+	if body := rr.Body.String(); strings.Contains(body, "<details") || !strings.Contains(body, `hx-swap="innerHTML"`) {
+		t.Fatalf("view auto-save should swap the item contents and keep the panel open: %s", body)
+	}
 	got, err := s.store.SavedViews.ByID(u.ID, created.ID)
 	if err != nil || got.Title != "Inline renamed" || got.AuthorID != author.ID {
 		t.Fatalf("inline view not saved: %+v %v", got, err)

@@ -431,7 +431,7 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		editor := s.viewEditorData(u, v)
-		web.Render(w, r, viewAccordionItem(u, rows[0], &editor))
+		web.Render(w, r, viewAccordionBody(u, rows[0], &editor))
 		return
 	}
 	http.Redirect(w, r, "/views/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
@@ -452,7 +452,7 @@ func (s *Server) renderViewPanel(w http.ResponseWriter, r *http.Request, u store
 	}
 	form = s.savedViewFormData(u.ID, form)
 	w.WriteHeader(status)
-	web.Render(w, r, viewAccordionItem(u, rows[0], &form))
+	web.Render(w, r, viewAccordionBody(u, rows[0], &form))
 }
 
 // renderSavedViewForm re-renders the create/edit page with a validation or

@@ -176,31 +176,42 @@ templ viewAccordionItem(u store.User, r savedViewRow, editor *savedViewForm) {
 	{{ id := strconv.FormatInt(r.ID, 10) }}
 	{{ selected := editor != nil && editor.ID == r.ID }}
 	<details class="feed-accordion-item" name="author-sources" id={ "view-acc-" + id } if selected { open }>
-		<summary>
-			@web.Lucide("bookmark-plus")
-			<span class="feed-accordion-title">{ r.Title }</span>
-			<span class="badge">{ r.Count } unread</span>
-			if len(r.Collections) > 0 {
-				for _, c := range r.Collections {
-					<span class="badge">{ c.Name }</span>
-				}
-			}
-		</summary>
-		if selected {
-			<div class="feed-accordion-body">@viewEditorPanel(u, *editor)</div>
-		} else {
-			<div class="feed-accordion-body" hx-get={ "/views/" + id + "/edit-fragment" } hx-trigger="toggle from:closest details once" hx-swap="innerHTML">
-				<p class="muted small">loading…</p>
-			</div>
-		}
+		@viewAccordionBody(u, r, editor)
 	</details>
 }
 
+// viewAccordionBody is the inside of one view's accordion item: its summary and
+// editor. Auto-saves swap only this body, never the <details> itself, so the
+// panel keeps its open state (replacing an open named <details> makes the
+// browser close the replacement during htmx's insert-before-remove swap).
+templ viewAccordionBody(u store.User, r savedViewRow, editor *savedViewForm) {
+	{{ id := strconv.FormatInt(r.ID, 10) }}
+	{{ selected := editor != nil && editor.ID == r.ID }}
+	<summary>
+		@web.Lucide("bookmark-plus")
+		<span class="feed-accordion-title">{ r.Title }</span>
+		<span class="badge">{ r.Count } unread</span>
+		if len(r.Collections) > 0 {
+			for _, c := range r.Collections {
+				<span class="badge">{ c.Name }</span>
+			}
+		}
+	</summary>
+	if selected {
+		<div class="feed-accordion-body">@viewEditorPanel(u, *editor)</div>
+	} else {
+		<div class="feed-accordion-body" hx-get={ "/views/" + id + "/edit-fragment" } hx-trigger="toggle from:closest details once" hx-swap="innerHTML">
+			<p class="muted small">loading…</p>
+		</div>
+	}
+}
+
 // viewEditorPanel wraps one view's editor in its own auto-saving form. The form
-// targets the whole accordion item so its summary title and badges update too.
+// swaps the accordion item's contents so its summary title and badges update
+// too, without replacing the <details> that holds the open state.
 templ viewEditorPanel(u store.User, f savedViewForm) {
 	{{ id := strconv.FormatInt(f.ID, 10) }}
-	<form class="stack" method="post" action={ "/views/" + id + "/edit" } hx-post={ "/views/" + id + "/edit" } hx-trigger="change delay:600ms, submit" hx-sync="closest form:replace" hx-target={ "#view-acc-" + id } hx-swap="outerHTML" hx-disinherit="*" data-autosave>
+	<form class="stack" method="post" action={ "/views/" + id + "/edit" } hx-post={ "/views/" + id + "/edit" } hx-trigger="change delay:600ms, submit" hx-sync="closest form:replace" hx-target={ "#view-acc-" + id } hx-swap="innerHTML" hx-disinherit="*" data-autosave>
 		@csrfField()
 		@viewEditorBody(u, f)
 	</form>

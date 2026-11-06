@@ -203,40 +203,51 @@ templ feedAccordionItem(r feedRow, editor *feedsData) {
 	{{ id := strconv.FormatInt(r.ID, 10) }}
 	{{ selected := editor != nil && editor.Form.ID == r.ID }}
 	<details class="feed-accordion-item" name="author-sources" id={ "feed-acc-" + id } if selected { open }>
-		<summary>
-			@web.SourceIcon(feedIconURL(r.Feed))
-			<span class="feed-accordion-title">{ r.Title }</span>
-			if !r.Enabled {
-				if r.DisabledReason != "" {
-					<span class="badge danger" title={ r.DisabledReason }>disabled</span>
-				} else {
-					<span class="badge">paused</span>
-				}
-			}
-			if r.LastError != "" {
-				<span id={ "feed-error-badge-" + id } class="badge danger" title={ r.LastError }>last poll failed</span>
-			}
-			if r.Cooling() {
-				<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited</span>
-			}
-		</summary>
-		if selected {
-			<div class="feed-accordion-body">@feedEditorPanel(*editor)</div>
-		} else {
-			<div class="feed-accordion-body" hx-get={ "/feeds/" + id + "/edit-fragment" } hx-trigger="toggle from:closest details once" hx-swap="innerHTML">
-				<p class="muted small">loading…</p>
-			</div>
-		}
+		@feedAccordionBody(r, editor)
 	</details>
 }
 
+// feedAccordionBody is the inside of one feed's accordion item: its summary and
+// editor. Auto-saves swap only this body, never the <details> itself, so the
+// panel keeps its open state (replacing an open named <details> makes the
+// browser close the replacement during htmx's insert-before-remove swap).
+templ feedAccordionBody(r feedRow, editor *feedsData) {
+	{{ id := strconv.FormatInt(r.ID, 10) }}
+	{{ selected := editor != nil && editor.Form.ID == r.ID }}
+	<summary>
+		@web.SourceIcon(feedIconURL(r.Feed))
+		<span class="feed-accordion-title">{ r.Title }</span>
+		if !r.Enabled {
+			if r.DisabledReason != "" {
+				<span class="badge danger" title={ r.DisabledReason }>disabled</span>
+			} else {
+				<span class="badge">paused</span>
+			}
+		}
+		if r.LastError != "" {
+			<span id={ "feed-error-badge-" + id } class="badge danger" title={ r.LastError }>last poll failed</span>
+		}
+		if r.Cooling() {
+			<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited</span>
+		}
+	</summary>
+	if selected {
+		<div class="feed-accordion-body">@feedEditorPanel(*editor)</div>
+	} else {
+		<div class="feed-accordion-body" hx-get={ "/feeds/" + id + "/edit-fragment" } hx-trigger="toggle from:closest details once" hx-swap="innerHTML">
+			<p class="muted small">loading…</p>
+		</div>
+	}
+}
+
 // feedEditorPanel wraps one feed's settings in its own auto-saving form. The
-// form targets the whole accordion item so the summary title and badges update
-// along with the body. The delete block stays outside the form so its remote
-// checkbox does not trigger an auto-save.
+// form swaps the accordion item's contents so the summary title and badges
+// update too, without replacing the <details> that holds the open state. The
+// delete block stays outside the form so its remote checkbox does not trigger
+// an auto-save.
 templ feedEditorPanel(d feedsData) {
 	{{ id := strconv.FormatInt(d.Form.ID, 10) }}
-	<form class="stack" method="post" action={ "/feeds/" + id + "/edit" } hx-post={ "/feeds/" + id + "/edit" } hx-trigger="change delay:600ms, submit" hx-sync="closest form:replace" hx-target={ "#feed-acc-" + id } hx-swap="outerHTML" hx-disinherit="*" data-autosave>
+	<form class="stack" method="post" action={ "/feeds/" + id + "/edit" } hx-post={ "/feeds/" + id + "/edit" } hx-trigger="change delay:600ms, submit" hx-sync="closest form:replace" hx-target={ "#feed-acc-" + id } hx-swap="innerHTML" hx-disinherit="*" data-autosave>
 		@csrfField()
 		@feedEditorBody(d)
 	</form>
