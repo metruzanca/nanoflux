@@ -2690,8 +2690,18 @@ func TestFeedPanelsAutoSaveIndependently(t *testing.T) {
 			"poll_interval_sec": {"1800"},
 			"enabled":           {"1"},
 		}, cookie)
-		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), f.Title+" renamed") {
-			t.Fatalf("auto-save feed %d: %d %s", f.ID, rr.Code, rr.Body.String())
+		body := rr.Body.String()
+		if rr.Code != http.StatusOK || !strings.Contains(body, f.Title+" renamed") {
+			t.Fatalf("auto-save feed %d: %d %s", f.ID, rr.Code, body)
+		}
+		// The response is the accordion item's contents, not the <details>
+		// itself: replacing an open named <details> during the swap would make
+		// the browser close it.
+		if strings.Contains(body, "<details") {
+			t.Fatalf("feed auto-save must not replace the accordion <details>: %s", body)
+		}
+		if !strings.Contains(body, `hx-swap="innerHTML"`) {
+			t.Fatalf("feed auto-save form should swap the item's contents: %s", body)
 		}
 	}
 	got, _ := s.store.Authors.ByID(u.ID, a.ID)

@@ -1552,7 +1552,7 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusBadRequest
 		}
 		w.WriteHeader(status)
-		web.Render(w, r, feedAccordionItem(s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread), editor))
+		web.Render(w, r, feedAccordionBody(s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread), editor))
 		return
 	}
 	if applyErr != nil {
