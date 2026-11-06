@@ -306,17 +306,10 @@ func (s *FeedStore) Delete(userID, id int64) ([]string, error) {
 	cacheKeys := nonEmptyStrings(cacheRows)
 
 	// Re-home owned items that have another membership to one of those feeds,
-	// before the feed's cascade removes them.
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE items
-		SET feed_id = (
-			SELECT mf.feed_id FROM item_feeds mf
-			WHERE mf.item_id = items.id AND mf.feed_id <> ?
-			ORDER BY mf.feed_id LIMIT 1
-		)
-		WHERE items.feed_id = ?
-		  AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = items.id AND mf.feed_id <> ?)`,
-		f.ID, f.ID, f.ID); err != nil {
+	// before the feed's cascade removes them. A target feed can already have a
+	// row with the same (feed_id, dedup_key), so a blind UPDATE would violate the
+	// unique index; those items are merged into the existing row instead.
+	if err := rehomeFeedItems(ctx, tx, userID, f.ID); err != nil {
 		return nil, fmt.Errorf("re-home feed items: %w", err)
 	}
 
@@ -342,6 +335,77 @@ func (s *FeedStore) Delete(userID, id int64) ([]string, error) {
 		return nil, fmt.Errorf("delete feed: %w", err)
 	}
 	return cacheKeys, tx.Commit()
+}
+
+// rehomeFeedItems moves items owned by feedID to another feed they already
+// belong to. When the candidate feed already has a row with the same dedup_key,
+// the item is merged into that row (state, memberships, categories, lists,
+// shares) rather than moved, which would violate items(feed_id, dedup_key).
+func rehomeFeedItems(ctx context.Context, tx *sql.Tx, userID, feedID int64) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT i.id, mf.feed_id,
+		       (SELECT t.id FROM items t
+		         WHERE t.feed_id = mf.feed_id AND t.dedup_key = i.dedup_key
+		         LIMIT 1) AS collision
+		FROM items i
+		JOIN item_feeds mf ON mf.item_id = i.id AND mf.feed_id <> ?
+		JOIN feeds cf ON cf.id = mf.feed_id AND cf.user_id = ?
+		WHERE i.feed_id = ?
+		ORDER BY i.id, mf.feed_id`, feedID, userID, feedID)
+	if err != nil {
+		return err
+	}
+	type candidate struct {
+		feedID    int64
+		collision sql.NullInt64
+	}
+	byItem := map[int64][]candidate{}
+	order := []int64{}
+	for rows.Next() {
+		var itemID int64
+		var c candidate
+		if err := rows.Scan(&itemID, &c.feedID, &c.collision); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, ok := byItem[itemID]; !ok {
+			order = append(order, itemID)
+		}
+		byItem[itemID] = append(byItem[itemID], c)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, itemID := range order {
+		moved := false
+		var survivor int64
+		for _, c := range byItem[itemID] {
+			if !c.collision.Valid {
+				if _, err := tx.ExecContext(ctx,
+					`UPDATE items SET feed_id = ? WHERE id = ?`, c.feedID, itemID); err != nil {
+					return err
+				}
+				moved = true
+				break
+			}
+			if survivor == 0 {
+				survivor = c.collision.Int64
+			}
+		}
+		if moved {
+			continue
+		}
+		if survivor == 0 {
+			continue
+		}
+		if err := mergeItemInto(ctx, tx, survivor, itemID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SetPollMeta records the result of a fetch: entity tags for conditional GET
