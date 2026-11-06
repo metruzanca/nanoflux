@@ -215,6 +215,23 @@ func (s *FeedStore) SetRank(userID, id int64, rank int) error {
 	return nil
 }
 
+// SetAuthor moves a feed to another author, verifying the feed belongs to the
+// user. The feed's items, collections and list memberships are not touched.
+func (s *FeedStore) SetAuthor(userID, id, authorID int64) error {
+	res, err := s.q.SetFeedAuthor(context.Background(), sqlcgen.SetFeedAuthorParams{
+		AuthorID: authorID,
+		ID:       id,
+		UserID:   userID,
+	})
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int, pollIntervalAuto bool, enabled, cacheImages bool) error {
 	feedURL = s.policy.CanonicalizeFeedURL(feedURL)
 	res, err := s.q.UpdateFeed(context.Background(), sqlcgen.UpdateFeedParams{

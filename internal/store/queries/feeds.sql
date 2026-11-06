@@ -81,6 +81,13 @@ SET author_id = sqlc.arg('authorID'), title = sqlc.arg('title'),
     disabled_reason = NULL
 WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('userID');
 
+-- name: SetFeedAuthor :execresult
+-- Move a feed to another author. Only the owner is changed; items, collections
+-- and list memberships follow the feed unchanged.
+UPDATE feeds
+SET author_id = ?
+WHERE id = ? AND user_id = ?;
+
 -- name: DeleteFeed :execresult
 DELETE FROM feeds
 WHERE id = ? AND user_id = ?;

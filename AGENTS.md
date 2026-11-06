@@ -463,6 +463,16 @@ explicit action, never a submit button. htmx-in-panel actions (refetch, refresh
 now, load older) use `hx-params="none"` so clicking them does not post the whole
 page form.
 
+A feed can move between authors from its expanded panel's "author" group. The
+button (`data-change-author`) loads `GET /fragments/change-author` into the
+shared `#change-author-dialog` (a topbar dialog, outside the page form, so its
+own `<form>` is valid) and `POST /feeds/{id}/author` performs the move through
+`FeedStore.SetAuthor`. Only `feeds.author_id` changes: items, collections and
+list memberships follow the feed, and the old author is not deleted when it ends
+up empty. The picker excludes the current author, and a successful save returns
+an empty `200` so the `outerHTML` swap removes that feed's accordion item from
+the current author's edit page without a reload.
+
 A feed's item list is the author page filtered with `?feed={id}`
 (`Server.authorFeedFilter` validates ownership; `authorScopedItems` sets
 `ItemFilter.FeedID`), which scopes the tabs, counts, sort, tags, pagination and
