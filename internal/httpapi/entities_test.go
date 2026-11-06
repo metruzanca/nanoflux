@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -57,6 +58,64 @@ func TestAPIEntities(t *testing.T) {
 		}
 		if unread[want] != 1 {
 			t.Errorf("entity %q unread = %d, want 1 (all: %+v)", want, unread[want], body.Entities)
+		}
+	}
+}
+
+func TestAPIEntitiesAuthorAvatar(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Picture", "https://cdn.example/avatar.png", "")
+	if _, err := s.store.Collections.Create(u.ID, "Dev"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.example/rss.xml", "", "", 900); err != nil {
+		t.Fatal(err)
+	}
+
+	decode := func() map[string]string {
+		t.Helper()
+		rr := doGet(h, "/api/entities", cookie)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("entities: %d %s", rr.Code, rr.Body.String())
+		}
+		var body struct {
+			Entities []struct {
+				Kind   string `json:"kind"`
+				Avatar string `json:"avatar"`
+			} `json:"entities"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		avatars := map[string]string{}
+		for _, e := range body.Entities {
+			avatars[e.Kind] = e.Avatar
+		}
+		return avatars
+	}
+
+	// Only a remote avatar: the image proxy serves it.
+	if got, want := decode()["author"], "/img?u="+url.QueryEscape("https://cdn.example/avatar.png"); got != want {
+		t.Fatalf("remote avatar = %q, want %q", got, want)
+	}
+
+	// A cached avatar wins over the remote URL and is cache-busted by the
+	// fetch time.
+	if err := s.store.Authors.SetAvatarKey(u.ID, a.ID, "author-avatars/1/2", "2026-01-02T03:04:05Z"); err != nil {
+		t.Fatal(err)
+	}
+	want := "/authors/" + itoa(a.ID) + "/avatar?v=" + url.QueryEscape("2026-01-02T03:04:05Z")
+	avatars := decode()
+	if got := avatars["author"]; got != want {
+		t.Fatalf("cached avatar = %q, want %q", got, want)
+	}
+	// Only authors carry an avatar.
+	for _, kind := range []string{"collection", "feed"} {
+		if got := avatars[kind]; got != "" {
+			t.Fatalf("%s entity avatar = %q, want empty", kind, got)
 		}
 	}
 }

@@ -1185,6 +1185,14 @@ dialog.palette input:focus { outline: none; }
 }
 .palette-item.active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .palette-sigil { font-weight: 700; }
+.palette-avatar {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: 0 0 auto;
+  align-self: center;
+  border-radius: 50%;
+  object-fit: cover;
+}
 .sigil-author { color: var(--accent); }
 .sigil-collection { color: var(--warn); }
 .sigil-feed { color: var(--muted); }
