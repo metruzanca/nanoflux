@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"html/template"
 	"net"
 	"net/http"
@@ -246,6 +247,9 @@ type scopedItemsData struct {
 	ScopeCollectionID int64
 	// ViewID is the selected saved view on a view-scoped author page.
 	ViewID int64
+	// ViewName is the title of the selected saved view, shown as a removable
+	// chip on the list. Empty when no view is selected.
+	ViewName string
 }
 
 // itemSort is the ordering of an item list: newest first (time desc), oldest
@@ -1874,6 +1878,30 @@ func (s *Server) feedToggle(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, FeedRow(s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread)))
 }
 
+// feedClearError clears a feed's stored poll error from the feed editor. It
+// removes the error block being swapped and empties the accordion summary's
+// error badge out of band, so a paused feed stops showing a failure it cannot
+// retry. Unsaved edits on the rest of the page are left alone.
+func (s *Server) feedClearError(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.Feeds.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.Feeds.ClearError(u.ID, id); err != nil {
+		log.Error("clear feed error", "feed_id", id, "err", err)
+		http.Error(w, "clear failed", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<span id="feed-error-badge-%d" hx-swap-oob="true"></span><span hidden></span>`, id)
+}
+
 // feedRank sets a feed's magic-sort manual lever (-1 lowered, 0 neutral, +1
 // raised) from the algorithm editor and re-renders just its control.
 func (s *Server) feedRank(w http.ResponseWriter, r *http.Request) {
@@ -2256,13 +2284,19 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 	if len(filters) > 0 {
 		filtered, _ = s.store.Items.CountFiltered(userID, pageFilter)
 	}
+	viewName := ""
+	if viewID > 0 {
+		if v, err := s.store.SavedViews.ByID(userID, viewID); err == nil {
+			viewName = v.Title
+		}
+	}
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
 		More: pageCursorFor(itemsBase, items, more, sort, 0), HideAuthor: true,
 		Mode: s.store.ViewPrefs.Mode(userID, base), FavTab: favs > 0 || view == "favorites", FavCount: favs,
 		Filters: filters, FilteredCount: filtered, TagOptions: tagItems(cats), FeedOptions: feedOpts,
-		ScopeAuthorID: authorID, ViewID: viewID,
+		ScopeAuthorID: authorID, ViewID: viewID, ViewName: viewName,
 	}, true
 }
 
@@ -2493,7 +2527,7 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.FormValue("name")
 	if name == "" {
-		http.Redirect(w, r, "/authors", http.StatusFound)
+		writeFormError(w, r, "author-edit-error", "name is required")
 		return
 	}
 	// Validate the auto-read override before any write, so a bad value does not
@@ -2507,7 +2541,7 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		} else {
 			days, ok := parseAutoReadValue(value)
 			if !ok {
-				http.Error(w, "choose an auto-read option", http.StatusBadRequest)
+				writeFormError(w, r, "author-edit-error", "choose an auto-read option")
 				return
 			}
 			autoRead = &days
@@ -2521,13 +2555,13 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.Authors.Update(u.ID, id, name, avatarURL, r.FormValue("description")); err != nil {
 		log.Error("update author", "err", err)
-		http.Error(w, "update failed", http.StatusInternalServerError)
+		writeFormError(w, r, "author-edit-error", "update failed")
 		return
 	}
 	if setAutoRead {
 		if err := s.store.Authors.SetAutoReadAfterDays(u.ID, id, autoRead); err != nil {
 			log.Error("update author auto-read", "author_id", id, "err", err)
-			http.Error(w, "update failed", http.StatusInternalServerError)
+			writeFormError(w, r, "author-edit-error", "update failed")
 			return
 		}
 		// Apply the (possibly newly enabled) window to this author right away.
@@ -2542,7 +2576,7 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		rules := s.validateAuthorRules(u.ID, id, filtersFromValues(r.Form))
 		if err := s.store.AuthorFilters.Replace(u.ID, id, rules.rules()); err != nil {
 			log.Error("save author filters", "author_id", id, "err", err)
-			http.Error(w, "update failed", http.StatusInternalServerError)
+			writeFormError(w, r, "author-edit-error", "update failed")
 			return
 		}
 	}
@@ -2560,7 +2594,7 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := s.applyFeedForm(u, f, feedFieldPrefix(fid), r.Form); err != nil {
 			log.Error("update feed", "feed_id", fid, "err", err)
-			http.Error(w, "update failed", http.StatusInternalServerError)
+			writeFormError(w, r, "author-edit-error", "update failed")
 			return
 		}
 	}
@@ -2577,7 +2611,7 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := s.applyViewForm(u, v, viewFieldPrefix(vid), r.Form); err != nil {
 			log.Error("update view", "view_id", vid, "err", err)
-			http.Error(w, "update failed", http.StatusInternalServerError)
+			writeFormError(w, r, "author-edit-error", "update failed")
 			return
 		}
 	}
@@ -2588,6 +2622,13 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 			s.autoCacheAuthorAvatar(ctx, a)
 			cancel()
 		}
+	}
+	if r.Header.Get("HX-Request") != "" {
+		// The edit page is a single htmx form: save in place and refresh the
+		// current URL instead of navigating away.
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusOK)
+		return
 	}
 	http.Redirect(w, r, "/authors/"+strconv.FormatInt(id, 10), http.StatusFound)
 }

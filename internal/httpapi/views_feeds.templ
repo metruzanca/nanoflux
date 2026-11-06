@@ -224,6 +224,7 @@ templ feedEditorBody(d feedsData) {
 				if d.Form.Enabled {
 					<button type="button" class="link" title="retry the fetch now" hx-post={ "/feeds/" + id + "/refresh" } hx-params="none" hx-swap="none" data-reload-on-success>refresh now</button>
 				}
+				<button type="button" class="link" title="clear this feed's error" data-clear-feed-error hidden?={ d.Form.Enabled } hx-post={ "/feeds/" + id + "/clear-error" } hx-params="none" hx-target="closest .feed-error" hx-swap="outerHTML">clear error</button>
 			</div>
 			<p class="feed-error-msg">{ d.LastError }</p>
 		</div>

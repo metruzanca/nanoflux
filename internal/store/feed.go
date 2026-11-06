@@ -448,6 +448,15 @@ func (s *FeedStore) SetEnabled(userID, id int64, enabled bool) error {
 	return nil
 }
 
+// ClearError removes a feed's stored last poll error, so a paused feed stops
+// showing a failure it can no longer retry. It verifies ownership.
+func (s *FeedStore) ClearError(userID, id int64) error {
+	return s.q.ClearFeedError(context.Background(), sqlcgen.ClearFeedErrorParams{
+		ID:     id,
+		UserID: userID,
+	})
+}
+
 // Pause stops polling a feed permanently (a deleted profile, a banned
 // community). It records the user-facing reason, clears any transient error and
 // poll deadline, and records the poll attempt. The poller owns this write, so it

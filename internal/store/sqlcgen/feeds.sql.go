@@ -10,6 +10,24 @@ import (
 	"database/sql"
 )
 
+const clearFeedError = `-- name: ClearFeedError :exec
+UPDATE feeds
+SET last_error = NULL
+WHERE id = ? AND user_id = ?
+`
+
+type ClearFeedErrorParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+// Clear a feed's last poll error, verifying ownership. Used by the feed
+// editor's "clear error" action on a paused feed.
+func (q *Queries) ClearFeedError(ctx context.Context, arg ClearFeedErrorParams) error {
+	_, err := q.db.ExecContext(ctx, clearFeedError, arg.ID, arg.UserID)
+	return err
+}
+
 const countAllFeeds = `-- name: CountAllFeeds :one
 SELECT COUNT(*) FROM feeds WHERE is_system = 0
 `

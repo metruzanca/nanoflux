@@ -522,11 +522,14 @@ templ filterButton(fp filterPanelData) {
 	}
 }
 
-// filterChips renders the active filters as removable chips plus the match
-// count and a clear-all link.
+// filterChips renders the active view and filters as removable chips plus the
+// match count and a clear-all link.
 templ filterChips(fp filterPanelData) {
-	if len(fp.Filters) > 0 {
+	if len(fp.Filters) > 0 || fp.ViewName != "" {
 		<div class="chips active-tags">
+			if fp.ViewName != "" {
+				<a class="chip" href={ templ.URL(filterPageURLFor(fp.Path, fp.View, fp.Sort, fp.Filters, 0)) } title="remove view filter">{ fp.ViewName } <span aria-hidden="true">×</span></a>
+			}
 			for i, f := range fp.Filters {
 				{{ cls := "chip" }}
 				if f.hidden() {
@@ -534,8 +537,10 @@ templ filterChips(fp filterPanelData) {
 				}
 				<a class={ cls } href={ templ.URL(filterPageURLFor(fp.Path, fp.View, fp.Sort, fp.Filters.without(i), fp.ViewID)) } title={ "remove " + f.Action + " filter " + f.label() }>{ f.label() } <span aria-hidden="true">×</span></a>
 			}
-			<span class="chip chip-count" title="posts matching the active filters">{ strconv.Itoa(fp.FilteredCount) } matching</span>
-			<a class="chip chip-clear" href={ templ.URL(filterPageURLFor(fp.Path, fp.View, fp.Sort, nil, fp.ViewID)) }>clear all</a>
+			if len(fp.Filters) > 0 {
+				<span class="chip chip-count" title="posts matching the active filters">{ strconv.Itoa(fp.FilteredCount) } matching</span>
+				<a class="chip chip-clear" href={ templ.URL(filterPageURLFor(fp.Path, fp.View, fp.Sort, nil, fp.ViewID)) }>clear all</a>
+			}
 		</div>
 	}
 }
