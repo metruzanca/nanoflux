@@ -92,113 +92,54 @@ templ AuthorRow(r authorRow) {
 	</li>
 }
 
-// authorEditPage is one form: the author's own fields and every feed's settings
-// are submitted together, so a user can change several feeds (or the author and
-// a feed) and save them in one request. Collapsed feed panels load their fields
-// on demand (see the accordion below) and only a loaded panel is part of the
-// submission; feedFieldPrefix namespaces each feed's fields, and each panel
-// carries a hidden feed_ids marker so the handler knows what it received. Feed
-// deletion is a type=button action (data-post-action) inside this form, never a
-// submit button, so Enter saves instead of deleting.
+// authorEditPage is a set of independently auto-saving sections: the author
+// basics, the always-on filter card (manual apply), the auto-read override, and
+// one accordion of sources (feeds and views). Each feed and view panel is its
+// own form, so a change saves just that panel.
 templ authorEditPage(u store.User, d authorsData) {
-	<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" } hx-post={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" } hx-disinherit="*">
-		@csrfField()
-		<div id="author-edit-error"></div>
-		<section class="card">
+	@authorBasicsCard(d)
+	@authorFilterCard(d)
+	@authorAutoReadCard(d)
+	{{ sources := len(d.Feeds) + len(d.Views) }}
+	<div class="author-sources">
+		<h2>sources</h2>
+		if sources == 0 {
+			<p class="muted small">no sources yet. add a feed from the add menu, or create a view from any item list.</p>
+		} else {
+			<div class="feed-accordion">
+				for _, r := range d.Feeds {
+					@feedAccordionItem(r, d.Editor)
+				}
+				for _, r := range d.Views {
+					@viewAccordionItem(u, r, d.ViewEditor)
+				}
+			</div>
+		}
+	</div>
+	<div class="stack delete-form">
+		<button type="button" class="danger" data-post-action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this author and their feeds?">delete</button>
+	</div>
+}
+
+// authorBasicsCard is the author's own fields and links. It saves on change and
+// re-renders itself, so the avatar and link rows stay current after a save.
+templ authorBasicsCard(d authorsData) {
+	{{ action := "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }}
+	<section id="author-basics-card" class="card">
+		<form class="stack" method="post" action={ action } hx-post={ action } hx-trigger="change delay:600ms, submit" hx-sync="closest form:replace" hx-target="#author-basics-card" hx-swap="outerHTML" hx-disinherit="*" data-autosave>
+			@csrfField()
 			<div class="row">
 				<h1>edit author</h1>
 				<a class="button small" href={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) }>back to author</a>
 			</div>
+			if d.FormError != "" {
+				<div class="error" role="alert">{ d.FormError }</div>
+			}
 			@authorAvatarFields(d.AvatarCard)
 			@authorFields(d)
 			@authorLinkFields(d)
-		</section>
-		@authorFilterCard(d)
-		@authorAutoReadCard(d)
-		if len(d.Feeds) > 0 {
-			<div class="author-feeds">
-				<h2>feeds</h2>
-				// Each feed is an accordion panel; its settings load into the body
-				// the first time it is opened (or inline when ?feed= selected it),
-				// so an author with many feeds does not render every form at once.
-				<div class="feed-accordion">
-					for _, r := range d.Feeds {
-						{{ id := strconv.FormatInt(r.ID, 10) }}
-						{{ selected := d.Editor != nil && d.Editor.Form.ID == r.ID }}
-						<details class="feed-accordion-item" name="author-feeds" id={ "feed-acc-" + id } if selected { open }>
-							<summary>
-								@web.SourceIcon(feedIconURL(r.Feed))
-								<span class="feed-accordion-title">{ r.Title }</span>
-								if !r.Enabled {
-									if r.DisabledReason != "" {
-										<span class="badge danger" title={ r.DisabledReason }>disabled</span>
-									} else {
-										<span class="badge">paused</span>
-									}
-								}
-								if r.LastError != "" {
-									<span id={ "feed-error-badge-" + id } class="badge danger" title={ r.LastError }>last poll failed</span>
-								}
-								if r.Cooling() {
-									<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited</span>
-								}
-							</summary>
-							if selected {
-								<div class="feed-accordion-body">@feedEditorBody(*d.Editor)</div>
-							} else {
-								<div class="feed-accordion-body" hx-get={ "/feeds/" + id + "/edit-fragment" } hx-trigger="toggle from:closest details once" hx-swap="innerHTML">
-									<p class="muted small">loading…</p>
-								</div>
-							}
-						</details>
-					}
-				</div>
-			</div>
-		}
-		<div class="author-views">
-			<div class="row">
-				<h2>views</h2>
-				<a class="button small" href={ templ.URL("/views/new?author_id=" + strconv.FormatInt(d.Form.ID, 10)) }>+ new view</a>
-			</div>
-			if len(d.Views) == 0 {
-				<p class="muted small">No views assigned to this author. A view is a saved filter recipe that adds its matching posts to this author and to any collections it belongs to.</p>
-			} else {
-				// Views use the same lazy accordion as feeds and submit in the same
-				// author form. Each panel's fields are namespaced with viewFieldPrefix.
-				<div class="feed-accordion">
-					for _, r := range d.Views {
-						{{ id := strconv.FormatInt(r.ID, 10) }}
-						{{ selected := d.ViewEditor != nil && d.ViewEditor.ID == r.ID }}
-						<details class="feed-accordion-item" name="author-views" id={ "view-acc-" + id } if selected { open }>
-							<summary>
-								@web.Lucide("bookmark-plus")
-								<span class="feed-accordion-title">{ r.Title }</span>
-								<span class="badge">{ r.Count } unread</span>
-								if len(r.Collections) > 0 {
-									for _, c := range r.Collections {
-										<span class="badge">{ c.Name }</span>
-									}
-								}
-							</summary>
-							if selected {
-								<div class="feed-accordion-body">@viewEditorBody(u, *d.ViewEditor, viewFieldPrefix(r.ID))</div>
-							} else {
-								<div class="feed-accordion-body" hx-get={ "/views/" + id + "/edit-fragment" } hx-trigger="toggle from:closest details once" hx-swap="innerHTML">
-									<p class="muted small">loading…</p>
-								</div>
-							}
-						</details>
-					}
-				</div>
-			}
-		</div>
-		<div class="form-save-bar">
-			<button type="submit">save author and feeds</button>
-		</div>
-	</form>
-	<div class="stack delete-form">
-		<button type="button" class="danger" data-post-action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this author and their feeds?">delete</button>
-	</div>
+		</form>
+	</section>
 }
 
 // authorAvatarFields renders the avatar section at the top of the edit form:
@@ -240,21 +181,25 @@ templ authorAvatarCard(d authorAvatarCardData) {
 }
 
 // authorFilterCard configures the author's always-on allow/block rules. It is
-// part of the one author-edit form; the marker lets the handler tell a real
-// submission from a partial one. Edits re-post the rows to the preview endpoint
-// as they change, so the user sees what would be allowed and blocked before
-// saving.
+// a collapsible card that auto-opens when rules exist; edits still preview
+// live, but the rules are only persisted by the explicit apply button.
 templ authorFilterCard(d authorsData) {
-	<section class="card author-filter-card" data-author-filters data-filter-scope
+	<details id="author-filter-card" class="card author-filter-card" open?={ len(d.Rules) > 0 } data-author-filters data-filter-scope
 		hx-post={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/filters/preview" }
 		hx-trigger="change delay:400ms, authorfilterschanged"
 		hx-include="#author-filter-fields"
 		hx-target="#author-filter-preview"
 		hx-swap="innerHTML">
-		<div class="row">
+		<summary>
 			<h2>filters</h2>
-		</div>
+			if len(d.Rules) > 0 {
+				<span class="badge">{ strconv.Itoa(len(d.Rules)) } rules</span>
+			}
+		</summary>
 		<p class="muted small">Always on. Allow rows must all match; block rows hide matching posts. Filters apply to every list and count for this author, and to views assigned to them. Views are not filtered by the author who owns the feed they draw from.</p>
+		if d.FilterError != "" {
+			<div class="error" role="alert">{ d.FilterError }</div>
+		}
 		<input type="hidden" name="author_filters_present" value="1"/>
 		<div id="author-filter-fields">
 			<div class="filter-rows" id="author-filter-rows" data-filter-rows>
@@ -268,25 +213,33 @@ templ authorFilterCard(d authorsData) {
 			<template id="author-filter-row-template" data-filter-row-template>
 				@filterRow("author-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, []string{filterKindTag, filterKindFeed}, true, "")
 			</template>
+		</div>
+		<div class="row-actions">
 			<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
+			<button type="button" hx-post={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/filters" } hx-include="#author-filter-fields" hx-target="#author-filter-card" hx-swap="outerHTML">apply</button>
 		</div>
 		<div id="author-filter-preview" class="author-filter-preview">
 			@authorFilterPreviewFragment(d.FilterPreview)
 		</div>
-	</section>
+	</details>
 }
 
 // authorAutoReadCard overrides the account auto-read window for this author's
 // feeds. "inherit" follows the account setting; off keeps the author's items
-// unread. It is part of the one author-edit form.
+// unread. It saves on change.
 templ authorAutoReadCard(d authorsData) {
-	<section class="card">
+	{{ action := "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/auto-read" }}
+	<form id="author-auto-read-card" class="card stack" method="post" action={ action } hx-post={ action } hx-trigger="change" hx-sync="closest form:replace" hx-target="#author-auto-read-card" hx-swap="outerHTML" hx-disinherit="*" data-autosave>
+		@csrfField()
 		<h2>auto-read</h2>
 		<p class="muted small">Overrides the account auto-read window for this author's feeds. Items older than the effective window are marked read automatically, including favorites and bookmarks. Off keeps this author's items unread.</p>
 		<input type="hidden" name="author_auto_read_present" value="1"/>
+		if d.AutoReadError != "" {
+			<div class="error" role="alert">{ d.AutoReadError }</div>
+		}
 		@comboSelect("author_auto_read_after_days", d.AutoReadValue, "mark items read after", "select a window", authorAutoReadItems, nil)
 		<p class="muted small">account default: { d.AutoReadDefault }</p>
-	</section>
+	</form>
 }
 
 // authorFilterPreviewFragment renders the allowed/blocked sample. It is used for

@@ -553,6 +553,20 @@ div.stats strong { font-size: 1.1rem; }
    them the breathing room a heading used to provide. */
 .author-feeds { margin-top: 1.5rem; }
 .author-items { margin-top: 1.5rem; }
+/* The author edit page's combined feed and view panels. */
+.author-sources { margin-top: 1.5rem; }
+/* The always-on filters card collapses like a source panel. */
+.author-filter-card > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+}
+.author-filter-card > summary::-webkit-details-marker { display: none; }
+.author-filter-card > summary::after { content: "▸"; margin-left: auto; color: var(--muted); }
+.author-filter-card[open] > summary::after { content: "▾"; }
+.author-filter-card > summary h2 { margin: 0; }
 /* The author card's feed list is a collapsible section. */
 .author-feeds > summary { cursor: pointer; color: var(--fg); font-weight: 600; }
 .author-feeds > summary:hover { color: var(--accent); }
@@ -1409,21 +1423,6 @@ dialog.modal.wide[open] {
 
 /* Author page: external bookmark links rendered inline under the home url. */
 .author-links { margin: 0.35rem 0 0; }
-
-/* The single save bar of a long combined form (the author edit page, whose one
-   form spans the author and every feed panel). Sticky so the save stays
-   reachable without scrolling back to the bottom. */
-.form-save-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  padding: 0.75rem 0;
-  background: var(--bg);
-  border-top: 1px solid var(--border);
-}
 
 /* A destructive action separated from the edit form above it. Applied to the
    standalone delete form and to the in-form feed delete block. */

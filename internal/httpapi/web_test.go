@@ -1520,17 +1520,17 @@ func TestAuthorLinkScopedToOwner(t *testing.T) {
 	}
 }
 
-func TestAuthorSaveStaysOnEditPage(t *testing.T) {
+func TestAuthorBasicsAutoSave(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 
-	// An htmx save asks htmx to refresh the current edit URL instead of
-	// redirecting to the author page.
+	// An htmx change saves the basics and returns the refreshed card fragment
+	// instead of redirecting to the author page.
 	rr := doHtmxForm(h, "POST", "/authors/"+itoa(a.ID)+"/edit", url.Values{"name": {"Renamed"}}, cookie)
-	if rr.Code != http.StatusOK || rr.Header().Get("HX-Refresh") != "true" {
-		t.Fatalf("htmx save should request a refresh: %d %q", rr.Code, rr.Header().Get("HX-Refresh"))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `id="author-basics-card"`) {
+		t.Fatalf("htmx save should return the basics card: %d %s", rr.Code, rr.Body.String())
 	}
 	if loc := rr.Header().Get("Location"); loc != "" {
 		t.Fatalf("htmx save should not redirect, got %q", loc)
@@ -2349,16 +2349,17 @@ func TestAuthorEditListsFeedsWithEditLinks(t *testing.T) {
 		!strings.Contains(edit, "Blog") {
 		t.Fatalf("author edit should list the author's feeds as an accordion: %s", edit)
 	}
-	// Opening a panel lazily loads the feed's editor body.
+	// Opening a panel lazily loads the feed's own auto-saving form.
 	body := doGet(h, "/feeds/"+itoa(f.ID)+"/edit-fragment", cookie).Body.String()
-	for _, want := range []string{`name="feed_ids"`, `name="feed_` + itoa(f.ID) + `_feed_url"`} {
+	for _, want := range []string{
+		`<form`, `hx-post="/feeds/` + itoa(f.ID) + `/edit"`, `name="feed_url"`, `data-autosave`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("edit fragment missing %q: %s", want, body)
 		}
 	}
-	// The fragment carries fields only: the author edit page owns the one form.
-	if strings.Contains(body, "<form") {
-		t.Fatalf("edit fragment should not carry its own form: %s", body)
+	if strings.Contains(body, `name="feed_ids"`) {
+		t.Fatalf("edit fragment should not carry the old combined-form marker: %s", body)
 	}
 }
 
@@ -2377,26 +2378,25 @@ func TestFeedEditRedirectsToCombinedAuthorEdit(t *testing.T) {
 		t.Fatalf("feed edit should redirect to the combined page: %d %q", rr.Code, rr.Header().Get("Location"))
 	}
 
-	// The combined page renders the author form and, for the selected feed, its
-	// editor inline (the accordion panel is open).
+	// The edit page renders the author form and, for the selected feed, its
+	// auto-saving editor inline (the accordion panel is open).
 	body := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
 	for _, want := range []string{
+		`id="author-basics-card"`,
 		`name="name"`,
 		`id="feed-acc-` + itoa(f.ID) + `"`,
-		`name="feed_ids"`,
-		`name="feed_` + itoa(f.ID) + `_feed_url"`,
+		`hx-post="/feeds/` + itoa(f.ID) + `/edit"`,
+		`name="feed_url"`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("combined edit page missing %q: %s", want, body)
+			t.Fatalf("edit page missing %q: %s", want, body)
 		}
 	}
 	// The author picker is gone from the feed form.
 	if strings.Contains(body, `name="author_id"`) {
-		t.Fatalf("combined feed editor should not carry an author picker: %s", body)
+		t.Fatalf("feed editor should not carry an author picker: %s", body)
 	}
-	// Deleting a feed is an explicit type=button action, never a submit button:
-	// a submit button inside this shared form would be clicked by Enter and
-	// delete the feed instead of saving.
+	// Deleting a feed is an explicit type=button action, never a submit button.
 	wantDelete := `<button type="button" class="danger" data-post-action="/feeds/` + itoa(f.ID) + `/delete" data-include="delete_remote_` + itoa(f.ID) + `" data-confirm="delete this feed?">delete</button>`
 	if !strings.Contains(body, wantDelete) {
 		t.Fatalf("feed delete should be an explicit button action %q: %s", wantDelete, body)
@@ -2404,14 +2404,17 @@ func TestFeedEditRedirectsToCombinedAuthorEdit(t *testing.T) {
 	if strings.Contains(body, "formaction=") {
 		t.Fatalf("feed delete must not use formaction: %s", body)
 	}
-	if !strings.Contains(body, `<button type="submit">save author and feeds</button>`) {
-		t.Fatalf("the save button should remain the form's submit button: %s", body)
+	if strings.Contains(body, "save author and feeds") {
+		t.Fatalf("the author edit page should not have a page-level save button: %s", body)
+	}
+	if strings.Contains(body, `name="feed_ids"`) {
+		t.Fatalf("feed panels should not carry the old combined-form marker: %s", body)
 	}
 
 	// An unknown or foreign feed id yields no editor (and no author picker).
 	other, _ := s.store.Authors.Create(u.ID, "Other", "", "")
 	body = doGet(h, "/authors/"+itoa(other.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
-	if strings.Contains(body, `name="feed_ids"`) {
+	if strings.Contains(body, "hx-post=\"/feeds/"+itoa(f.ID)+"/edit\"") {
 		t.Fatalf("a feed not owned by the author should not render an editor: %s", body)
 	}
 }
@@ -2592,7 +2595,7 @@ func TestFeedEditAutoInterval(t *testing.T) {
 
 	// Edit form shows the auto checkbox (new feeds default to on).
 	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
-	if !strings.Contains(edit, `name="feed_`+itoa(f.ID)+`_poll_interval_auto"`) {
+	if !strings.Contains(edit, `name="poll_interval_auto"`) {
 		t.Fatalf("edit form should render the auto-adjust checkbox: %s", edit)
 	}
 
@@ -2628,7 +2631,7 @@ func TestFeedEditAutoInterval(t *testing.T) {
 	}
 }
 
-func TestAuthorEditSavesMultipleFeedsInOneRequest(t *testing.T) {
+func TestFeedPanelsAutoSaveIndependently(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
@@ -2637,28 +2640,20 @@ func TestAuthorEditSavesMultipleFeedsInOneRequest(t *testing.T) {
 	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "News", "https://n.dev/rss.xml", "", "", 900)
 	untouched, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
 
-	// The combined page's one form carries both loaded panels, namespaced, plus
-	// a feed_ids marker per panel. A feed that was never opened is absent and
-	// must not be touched.
-	vals := url.Values{
-		"name":     {"Metru renamed"},
-		"feed_ids": {itoa(f1.ID), itoa(f2.ID)},
-	}
 	for _, f := range []store.Feed{f1, f2} {
-		p := "feed_" + itoa(f.ID) + "_"
-		vals.Set(p+"title", f.Title+" renamed")
-		vals.Set(p+"feed_url", f.FeedURL)
-		vals.Set(p+"poll_interval_sec", "1800")
-		vals.Set(p+"enabled", "1")
+		rr := doHtmxForm(h, "POST", "/feeds/"+itoa(f.ID)+"/edit", url.Values{
+			"title":             {f.Title + " renamed"},
+			"feed_url":          {f.FeedURL},
+			"poll_interval_sec": {"1800"},
+			"enabled":           {"1"},
+		}, cookie)
+		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), f.Title+" renamed") {
+			t.Fatalf("auto-save feed %d: %d %s", f.ID, rr.Code, rr.Body.String())
+		}
 	}
-	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/edit", vals, cookie)
-	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/authors/"+itoa(a.ID) {
-		t.Fatalf("combined save: %d %q", rr.Code, rr.Header().Get("Location"))
-	}
-
 	got, _ := s.store.Authors.ByID(u.ID, a.ID)
-	if got.Name != "Metru renamed" {
-		t.Fatalf("author name not saved: %+v", got)
+	if got.Name != "Metru" {
+		t.Fatalf("feed panels must not touch the author: %+v", got)
 	}
 	for _, f := range []store.Feed{f1, f2} {
 		after, _ := s.store.Feeds.ByID(u.ID, f.ID)

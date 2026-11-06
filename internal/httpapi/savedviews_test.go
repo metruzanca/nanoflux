@@ -456,9 +456,9 @@ func TestCollectionViewSourceOnlyWhenViewSoleSource(t *testing.T) {
 	}
 }
 
-// TestAuthorEditViewPanel covers the inline view editor on the combined author
-// edit form: prefixed fields, lazy fragment, and saving the view and its
-// collection membership in one request.
+// TestAuthorEditViewPanel covers the inline, auto-saving view editor on the
+// author edit page: unprefixed fields, a form in the lazy fragment, and a
+// save that re-renders the panel with its new title.
 func TestAuthorEditViewPanel(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
@@ -472,39 +472,39 @@ func TestAuthorEditViewPanel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prefix := viewFieldPrefix(created.ID)
 	page := doGet(h, "/authors/"+itoa(author.ID)+"/edit?view="+itoa(created.ID), cookie).Body.String()
 	for _, want := range []string{
 		`id="view-acc-` + itoa(created.ID) + `"`,
-		`name="` + prefix + `title"`,
-		`name="` + prefix + `collections"`,
-		`name="view_ids" value="` + itoa(created.ID) + `"`,
+		`hx-post="/views/` + itoa(created.ID) + `/edit"`,
+		`name="title"`,
+		`name="collections"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("author edit view panel missing %q: %s", want, page)
 		}
 	}
+	if strings.Contains(page, `name="view_ids"`) {
+		t.Fatalf("view panels should not carry the old combined-form marker: %s", page)
+	}
 
 	frag := doGet(h, "/views/"+itoa(created.ID)+"/edit-fragment", cookie).Body.String()
-	if !strings.Contains(frag, `name="`+prefix+`title"`) || !strings.Contains(frag, `data-filter-row-token`) {
-		t.Fatalf("view edit fragment is missing its prefixed fields: %s", frag)
+	if !strings.Contains(frag, `<form`) || !strings.Contains(frag, `name="title"`) || !strings.Contains(frag, `data-filter-row-token`) {
+		t.Fatalf("view edit fragment should be an unprefixed auto-saving form: %s", frag)
 	}
 
 	form := url.Values{
-		"name":                    {author.Name},
-		"view_ids":                {itoa(created.ID)},
-		prefix + "title":          {"Inline renamed"},
-		prefix + "author_id":      {itoa(author.ID)},
-		prefix + "collections":    {itoa(c.ID)},
-		prefix + "filter_row":     {"0"},
-		prefix + "filter_action":  {"show"},
-		prefix + "filter_kind":    {"tag"},
-		prefix + "filter_combine": {"all"},
-		prefix + "filter_value_0": {"u/example-poster"},
+		"title":          {"Inline renamed"},
+		"author_id":      {itoa(author.ID)},
+		"collections":    {itoa(c.ID)},
+		"filter_row":     {"0"},
+		"filter_action":  {"show"},
+		"filter_kind":    {"tag"},
+		"filter_combine": {"all"},
+		"filter_value_0": {"u/example-poster"},
 	}
-	rr := doForm(h, http.MethodPost, "/authors/"+itoa(author.ID)+"/edit", form, cookie)
-	if rr.Code != http.StatusFound {
-		t.Fatalf("save author with inline view: %d %s", rr.Code, rr.Body.String())
+	rr := doHtmxForm(h, http.MethodPost, "/views/"+itoa(created.ID)+"/edit", form, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Inline renamed") {
+		t.Fatalf("auto-save inline view: %d %s", rr.Code, rr.Body.String())
 	}
 	got, err := s.store.SavedViews.ByID(u.ID, created.ID)
 	if err != nil || got.Title != "Inline renamed" || got.AuthorID != author.ID {
@@ -513,5 +513,20 @@ func TestAuthorEditViewPanel(t *testing.T) {
 	ids, _ := s.store.SavedViews.CollectionIDs(u.ID, created.ID)
 	if len(ids) != 1 || ids[0] != c.ID {
 		t.Fatalf("inline view collections = %v", ids)
+	}
+
+	// A validation failure re-renders the panel with its error, not a redirect.
+	bad := url.Values{
+		"title":          {""},
+		"author_id":      {itoa(author.ID)},
+		"filter_row":     {"0"},
+		"filter_action":  {"show"},
+		"filter_kind":    {"tag"},
+		"filter_combine": {"all"},
+		"filter_value_0": {"u/example-poster"},
+	}
+	rr = doHtmxForm(h, http.MethodPost, "/views/"+itoa(created.ID)+"/edit", bad, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "title is required") {
+		t.Fatalf("invalid view auto-save should keep the panel: %d %s", rr.Code, rr.Body.String())
 	}
 }

@@ -259,12 +259,6 @@ func (s *Server) savedViewFormData(userID int64, v savedViewForm) savedViewForm 
 	return v
 }
 
-// viewFieldPrefix namespaces a view's fields in the combined author edit form,
-// so several views can share one form without name collisions.
-func viewFieldPrefix(id int64) string {
-	return "view_" + strconv.FormatInt(id, 10) + "_"
-}
-
 // viewEditorData assembles one view's editor: its form values, collection
 // memberships and the option lists for the filters it may edit.
 func (s *Server) viewEditorData(u store.User, v store.SavedView) savedViewForm {
@@ -302,7 +296,7 @@ func (s *Server) savedViewCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	form, ok := s.savedViewFormFromRequest(u.ID, "", r)
+	form, ok := s.savedViewFormFromRequest(u.ID, r)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -366,10 +360,12 @@ func (s *Server) savedViewEditFragment(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	web.Render(w, r, viewEditorBody(u, s.viewEditorData(u, v), viewFieldPrefix(v.ID)))
+	web.Render(w, r, viewEditorPanel(u, s.viewEditorData(u, v)))
 }
 
-// savedViewUpdate persists the edit form.
+// savedViewUpdate persists the edit form. On htmx requests (the author edit
+// page's auto-saving view panel) it re-renders that accordion item instead of
+// redirecting.
 func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -385,32 +381,78 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	form, ok := s.savedViewFormFromRequest(u.ID, "", r)
+	form, ok := s.savedViewFormFromRequest(u.ID, r)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 	form.ID = id
+	form.Filters = s.savedViewFilters(u.ID, form.Filters)
+	htmx := r.Header.Get("HX-Request") != ""
 	if form.Error != "" {
+		if htmx {
+			s.renderViewPanel(w, r, u, id, form, http.StatusBadRequest)
+			return
+		}
 		s.renderSavedViewForm(w, r, u, form, http.StatusBadRequest)
 		return
 	}
-	form.Filters = s.savedViewFilters(u.ID, form.Filters)
 	if err := s.store.SavedViews.Update(u.ID, id, store.SavedView{
 		AuthorID: form.AuthorID, Title: form.Title, Filters: form.Filters.params(),
 	}); err != nil {
 		log.Error("update saved view", "err", err)
 		form.Error = "could not save this view"
+		if htmx {
+			s.renderViewPanel(w, r, u, id, form, http.StatusBadRequest)
+			return
+		}
 		s.renderSavedViewForm(w, r, u, form, http.StatusInternalServerError)
 		return
 	}
 	if err := s.store.SavedViews.SetCollections(u.ID, id, form.CollectionIDs); err != nil {
 		log.Error("set view collections", "view_id", id, "err", err)
 		form.Error = "could not save this view's collections"
+		if htmx {
+			s.renderViewPanel(w, r, u, id, form, http.StatusBadRequest)
+			return
+		}
 		s.renderSavedViewForm(w, r, u, form, http.StatusInternalServerError)
 		return
 	}
+	if htmx {
+		v, err := s.store.SavedViews.ByID(u.ID, id)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		rows := s.savedViewRows(u.ID, []store.SavedView{v}, u.Timezone)
+		if len(rows) == 0 {
+			http.NotFound(w, r)
+			return
+		}
+		editor := s.viewEditorData(u, v)
+		web.Render(w, r, viewAccordionItem(u, rows[0], &editor))
+		return
+	}
 	http.Redirect(w, r, "/views/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+}
+
+// renderViewPanel re-renders one auto-saving view panel with a validation or
+// persistence error.
+func (s *Server) renderViewPanel(w http.ResponseWriter, r *http.Request, u store.User, id int64, form savedViewForm, status int) {
+	v, err := s.store.SavedViews.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	rows := s.savedViewRows(u.ID, []store.SavedView{v}, u.Timezone)
+	if len(rows) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	form = s.savedViewFormData(u.ID, form)
+	w.WriteHeader(status)
+	web.Render(w, r, viewAccordionItem(u, rows[0], &form))
 }
 
 // renderSavedViewForm re-renders the create/edit page with a validation or
@@ -424,11 +466,9 @@ func (s *Server) renderSavedViewForm(w http.ResponseWriter, r *http.Request, u s
 	web.Render(w, r, basePage(title, u, savedViewFormPage(u, s.savedViewFormData(u.ID, form))))
 }
 
-// savedViewFormFromRequest reads and validates the shared create/edit fields.
-// prefix namespaces the field set: "" for the standalone form, and
-// viewFieldPrefix(id) for a panel in the combined author edit form.
-func (s *Server) savedViewFormFromRequest(userID int64, prefix string, r *http.Request) (savedViewForm, bool) {
-	return s.savedViewFormFromRequestValues(userID, prefix, r.Form)
+// savedViewFormFromRequest reads and validates the create/edit fields.
+func (s *Server) savedViewFormFromRequest(userID int64, r *http.Request) (savedViewForm, bool) {
+	return s.savedViewFormFromRequestValues(userID, r.Form)
 }
 
 // savedViewCollectionIDs validates a view form's collection selections against
@@ -454,35 +494,17 @@ func (s *Server) savedViewCollectionIDs(userID int64, raw []string) []int64 {
 	return out
 }
 
-// applyViewForm persists one view's settings from a namespaced (or unprefixed)
-// field set. It reports whether a complete form was applied.
-func (s *Server) applyViewForm(u store.User, old store.SavedView, prefix string, form url.Values) (bool, error) {
-	parsed, ok := s.savedViewFormFromRequestValues(u.ID, prefix, form)
-	if !ok || parsed.Error != "" {
-		return false, nil
-	}
-	if err := s.store.SavedViews.Update(u.ID, old.ID, store.SavedView{
-		AuthorID: parsed.AuthorID, Title: parsed.Title, Filters: parsed.Filters.params(),
-	}); err != nil {
-		return false, err
-	}
-	if err := s.store.SavedViews.SetCollections(u.ID, old.ID, parsed.CollectionIDs); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 // savedViewFormFromRequestValues is savedViewFormFromRequest for an already
 // parsed form.
-func (s *Server) savedViewFormFromRequestValues(userID int64, prefix string, form url.Values) (savedViewForm, bool) {
+func (s *Server) savedViewFormFromRequestValues(userID int64, form url.Values) (savedViewForm, bool) {
 	parsed := savedViewForm{
-		Title:         strings.TrimSpace(form.Get(prefix + "title")),
-		CollectionIDs: s.savedViewCollectionIDs(userID, form[prefix+"collections"]),
-		Filters:       filtersFromValuesAt(form, prefix),
+		Title:         strings.TrimSpace(form.Get("title")),
+		CollectionIDs: s.savedViewCollectionIDs(userID, form["collections"]),
+		Filters:       filtersFromValues(form),
 	}
 	var ok bool
 	parsed.Filters = s.savedViewFilters(userID, parsed.Filters)
-	parsed.AuthorID, ok = s.savedViewAssignedAuthor(userID, form.Get(prefix+"author_id"))
+	parsed.AuthorID, ok = s.savedViewAssignedAuthor(userID, form.Get("author_id"))
 	if !ok {
 		return parsed, false
 	}
