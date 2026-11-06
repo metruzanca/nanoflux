@@ -383,7 +383,7 @@ func TestAuthorRulesVisibleSQLMatchesView(t *testing.T) {
 		return true
 	}
 	built := `SELECT i.id FROM items i JOIN feeds f ON f.id = i.feed_id
-		WHERE i.user_id = ? AND (` + authorRulesVisibleSQL("i.id") + `) ORDER BY i.id`
+		WHERE i.user_id = ? AND (` + authorRulesVisibleSQL("i.id", "f.author_id") + `) ORDER BY i.id`
 	for i, rules := range cases {
 		if err := s.AuthorFilters.Replace(u.ID, a.ID, rules); err != nil {
 			t.Fatal(err)

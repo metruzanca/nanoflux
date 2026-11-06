@@ -2479,12 +2479,19 @@ func (s *Server) feedRowsForAuthor(userID, authorID int64, tz string) ([]feedRow
 	if err != nil {
 		return nil, err
 	}
+	// Count with the same predicate the feed-scoped list uses: the author's
+	// rules apply to items reached through the feed's membership, and a
+	// cross-feed post owned by another author must not leak into the badge.
+	views := s.authorStoreViewFilters(userID, authorID, tz)
 	byFeed, _ := s.store.Collections.CollectionsByAuthorFeed(userID, authorID)
 	out := make([]feedRow, 0, len(rows))
 	for _, r := range rows {
+		unread, _ := s.store.Items.CountFiltered(userID, store.ItemFilter{
+			AuthorID: authorID, Views: views, FeedID: r.Feed.ID, UnreadOnly: true,
+		})
 		storage, _ := s.store.Items.StorageByFeed(r.Feed.ID)
 		out = append(out, feedRow{
-			Feed: r.Feed, AuthorName: r.AuthorName, Unread: r.Unread, Timezone: tz,
+			Feed: r.Feed, AuthorName: r.AuthorName, Unread: unread, Timezone: tz,
 			Storage: storage, Collections: byFeed[r.Feed.ID],
 		})
 	}
