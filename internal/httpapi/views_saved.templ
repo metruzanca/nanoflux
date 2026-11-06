@@ -58,10 +58,9 @@ templ savedViewCard(r savedViewRow) {
 					<a href={ templ.URL(href) }>
 						<strong>{ r.Title } @web.Lucide("bookmark-plus")</strong>
 					</a>
-					<span class="badge">{ r.BaseView }</span>
 				</div>
 				<div class="item-meta">
-					{ r.Count } matching
+					{ r.Count } unread
 					if r.AuthorID > 0 && r.AuthorName != "" {
 						· assigned to <a href={ templ.URL("/authors/" + strconv.FormatInt(r.AuthorID, 10)) }>{ r.AuthorName }</a>
 					}
@@ -95,12 +94,11 @@ templ savedViewPage(u store.User, d savedViewPageData) {
 				<a class="small" title="edit" href={ templ.URL("/views/" + id + "/edit") }>@web.EditIcon()</a>
 			</div>
 		</div>
-		<p class="muted small">
-			starts on { d.Row.BaseView } · { d.Row.Sort.param() } first
-			if d.Row.AuthorID > 0 && d.Row.AuthorName != "" {
-				· assigned to <a href={ templ.URL("/authors/" + strconv.FormatInt(d.Row.AuthorID, 10)) }>{ d.Row.AuthorName }</a>
-			}
-		</p>
+		if d.Row.AuthorID > 0 && d.Row.AuthorName != "" {
+			<p class="muted small">
+				assigned to <a href={ templ.URL("/authors/" + strconv.FormatInt(d.Row.AuthorID, 10)) }>{ d.Row.AuthorName }</a>
+			</p>
+		}
 	</section>
 	<div class="author-items">
 		@ScopedItems(d.Scoped)
@@ -110,8 +108,8 @@ templ savedViewPage(u store.User, d savedViewPageData) {
 	</div>
 }
 
-// savedViewFormPage is the create/edit page. Title, assignment, base tab, sort
-// and filters are editable; the view always matches all feeds.
+// savedViewFormPage is the create/edit page. Only the title, assigned author and
+// filter rows are editable; the view always matches all feeds.
 templ savedViewFormPage(u store.User, f savedViewForm) {
 	{{ action := "/views" }}
 	if f.ID > 0 {
@@ -137,23 +135,6 @@ templ savedViewFormPage(u store.User, f savedViewForm) {
 		</label>
 		@comboSelect("author_id", savedViewAuthorValue(f.AuthorID), "assign to author", "search authors", f.AuthorOptions, nil)
 		<p class="muted small">The view matches every feed; use its filters to limit the posts. Assignment only decides where it is listed.</p>
-		<div class="row">
-			<label>starts on
-				<select name="view">
-					<option value="unread" selected?={ f.BaseView == "unread" }>unread</option>
-					<option value="read" selected?={ f.BaseView == "read" }>read</option>
-					<option value="favorites" selected?={ f.BaseView == "favorites" }>favorites</option>
-					<option value="bookmarks" selected?={ f.BaseView == "bookmarks" }>bookmarks</option>
-				</select>
-			</label>
-			<label>sort
-				<select name="sort">
-					<option value="newest" selected?={ f.Sort == sortNewest }>newest</option>
-					<option value="oldest" selected?={ f.Sort == sortOldest }>oldest</option>
-					<option value="magic" selected?={ f.Sort == sortMagic }>magic</option>
-				</select>
-			</label>
-		</div>
 		<div class="field-group">
 			<h3>filters</h3>
 			{{ kinds := []string{filterKindTag} }}

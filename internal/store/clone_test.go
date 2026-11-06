@@ -56,7 +56,7 @@ func TestCloneUser(t *testing.T) {
 		t.Fatalf("author filters: %v", err)
 	}
 	if _, err := s.SavedViews.Create(seed.ID, SavedView{
-		AuthorID: a.ID, Title: "Blog view", BaseView: "unread", Sort: "newest",
+		AuthorID: a.ID, Title: "Blog view",
 		Filters: []string{"feed:show:" + itoa(f.ID), "tag:show:dev"},
 	}); err != nil {
 		t.Fatalf("saved view: %v", err)

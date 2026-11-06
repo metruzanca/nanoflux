@@ -493,10 +493,10 @@ author page. It never polls, has no URL, and is absent from OPML/plugin/poller
 code.
 
 - The entity lives in `saved_views` (schemaV57; schemaV60 removed its scope
-  columns), separate from `feeds`.
-- A view stores a base tab (`unread`/`read`/`favorites`/`bookmarks`), a sort and
-  the canonical `?f=` filter params. It always matches **all feeds**; limiting
-  it is expressed through its own filter rows.
+  columns and schemaV61 its tab/sort), separate from `feeds`.
+- A view stores its title, assigned author and the canonical `?f=` filter
+  params. It always matches **all feeds**; limiting it is expressed through its
+  own filter rows. The tab and sort are page state, not saved on the view.
 - `author_id` is the author the view feeds. An author page's scope is
   `author's own feeds OR every assigned view`, so a subreddit feed plus a view
   such as `tag=u/example-poster` can replace a per-user profile feed.

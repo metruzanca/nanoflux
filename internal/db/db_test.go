@@ -54,6 +54,17 @@ func TestMigrate(t *testing.T) {
 		t.Errorf("saved_views should not have scope columns after schemaV60")
 	}
 
+	// schemaV61 removed the saved-view base tab and sort.
+	var viewStateCols int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('saved_views') WHERE name IN ('base_view','sort')`,
+	).Scan(&viewStateCols); err != nil {
+		t.Fatal(err)
+	}
+	if viewStateCols != 0 {
+		t.Errorf("saved_views should not have base_view/sort after schemaV61")
+	}
+
 	// The ingest filter-rule system (schemaV53) is gone: no filters table and no
 	// filter_mode column on feeds.
 	var filtersTable int

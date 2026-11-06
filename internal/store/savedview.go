@@ -9,16 +9,13 @@ import (
 )
 
 // SavedView is a private, named filter recipe over the user's item lists. It
-// stores a base tab (unread/read/favorites/bookmarks), a sort and the canonical
-// list filter params. AuthorID only assigns the view to an author page; the
-// view always matches all feeds.
+// stores only the title, the assigned author and the canonical list filter
+// params. The view always matches all feeds; tabs and sort are page state.
 type SavedView struct {
 	ID        int64
 	UserID    int64
 	AuthorID  int64 // 0 = unassigned
 	Title     string
-	BaseView  string
-	Sort      string
 	Filters   []string // canonical ?f= params
 	CreatedAt string
 }
@@ -31,7 +28,7 @@ const MaxSavedViewsPerUser = 200
 // generated because the filter list is an opaque JSON array.
 type SavedViewStore struct{ db *sql.DB }
 
-const savedViewColumns = `id, user_id, author_id, title, base_view, sort, filters, created_at`
+const savedViewColumns = `id, user_id, author_id, title, filters, created_at`
 
 // List returns all of a user's saved views, newest first.
 func (s *SavedViewStore) List(userID int64) ([]SavedView, error) {
@@ -82,9 +79,9 @@ func (s *SavedViewStore) Create(userID int64, v SavedView) (SavedView, error) {
 	}
 	res, err := s.db.ExecContext(context.Background(), `
 		INSERT INTO saved_views (
-			user_id, author_id, title, base_view, sort, filters
-		) VALUES (?, ?, ?, ?, ?, ?)`,
-		userID, savedViewAuthor(v.AuthorID), v.Title, v.BaseView, v.Sort, filters)
+			user_id, author_id, title, filters
+		) VALUES (?, ?, ?, ?)`,
+		userID, savedViewAuthor(v.AuthorID), v.Title, filters)
 	if err != nil {
 		return SavedView{}, fmt.Errorf("create saved view: %w", err)
 	}
@@ -104,10 +101,9 @@ func (s *SavedViewStore) Update(userID, id int64, v SavedView) error {
 	}
 	res, err := s.db.ExecContext(context.Background(), `
 		UPDATE saved_views SET
-			author_id = ?, title = ?, base_view = ?, sort = ?, filters = ?
+			author_id = ?, title = ?, filters = ?
 		WHERE user_id = ? AND id = ?`,
-		savedViewAuthor(v.AuthorID), v.Title, v.BaseView, v.Sort, filters,
-		userID, id)
+		savedViewAuthor(v.AuthorID), v.Title, filters, userID, id)
 	if err != nil {
 		return fmt.Errorf("update saved view: %w", err)
 	}
@@ -170,7 +166,7 @@ func scanSavedView(row savedViewScanner) (SavedView, error) {
 		filters  string
 	)
 	if err := row.Scan(
-		&v.ID, &v.UserID, &authorID, &v.Title, &v.BaseView, &v.Sort, &filters, &v.CreatedAt,
+		&v.ID, &v.UserID, &authorID, &v.Title, &filters, &v.CreatedAt,
 	); err != nil {
 		return SavedView{}, err
 	}
