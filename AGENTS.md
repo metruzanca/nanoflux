@@ -412,9 +412,11 @@ parallel implementation.
   are `show`/`hide` internally; the author card labels them **allow**/**block**.
 - **Semantics.** Every allow row must match (like show rows); any matching block
   row excludes (like hide rows). An author with no allow rows allows everything
-  not blocked. Matching keys on the item's owner author (`items.feed_id ->
-  feeds.author_id`), which is the author a row displays. Feed rules match through
-  `item_feeds` membership restricted to that author's feeds.
+  not blocked. Matching keys on the author the rule set belongs to: normally the
+  item's owner author (`items.feed_id -> feeds.author_id`), which is the author a
+  row displays, and for a saved view the author the view is assigned to (see
+  "Saved views"). Feed rules match through `item_feeds` membership restricted to
+  that author's feeds.
 - **Storage (schemaV55).** `author_filter_rules` + `author_filter_values`, owned
   by `AuthorFilterStore` (`store.AuthorFilters`). `POST /authors/{id}/edit`
   replaces them when the form carries `author_filters_present`; a partial save
@@ -428,6 +430,13 @@ parallel implementation.
   retention (`ItemStore.MarkAutoRead`) deliberately stays on raw `items`. Any new
   item read path must use `visible_items`; write paths and storage/dedup stay on
   `items`.
+  The one exception is a saved-view scope: because its items follow the view's
+  assigned author, `ItemFilter.itemSource()` selects raw `items` whenever
+  `Views`/`CollectionViews` are present, and the owned-feed/collection branches
+  add their own `visibleItemExists` guard. `viewFilterClause` then applies
+  `authorRulesVisibleSQL`, the per-author form of the same rule expression
+  (`TestAuthorRulesVisibleSQLMatchesView` guards the duplication with
+  `visible_items`).
   `visible_items` is `SELECT i.*`, so a future migration that adds an `items`
   column must recreate the view in the same migration.
 - **Writes respect it too.** Mark-all read/unread and the scoped filtered mark
@@ -544,8 +553,13 @@ code.
   the same union (`StatsFilter`, `RecentTimesFilter`, `ListCategoriesFilter`).
   Collection index counts and tag options use it too when the collection has
   views (`applyCollectionViewCounts`, `ListCategoriesFilter`).
-- Author allow/block rules still apply to the author who owns the feed, not to
-  the viewed author, so view items from another author keep that author's rules.
+- A saved view follows the always-on rules of the author it is assigned to, not
+  the rules of the author who owns the feed its items come from. An unassigned
+  view has no author rules. This is what lets one aggregator feed serve several
+  authors: each author's views are sliced by that author's allow/block rules
+  while the feed owner's rules keep applying to the owner's own feed. The view
+  predicate carries `AuthorID` (`store.ViewFilter`); `viewFilterClause` applies
+  `authorRulesVisibleSQL` for it.
 - A bare `/views/{id}` redirects to the assigned author's
   `/authors/{id}?view={viewID}`, or to its canonical query for an unassigned
   view. The edit page always keeps the delete control.
