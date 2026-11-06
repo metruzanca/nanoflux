@@ -9,15 +9,16 @@ import (
 )
 
 type Author struct {
-	ID            int64          `json:"id"`
-	UserID        int64          `json:"user_id"`
-	Name          string         `json:"name"`
-	AvatarUrl     sql.NullString `json:"avatar_url"`
-	AvatarKey     sql.NullString `json:"avatar_key"`
-	LastFetchedAt sql.NullString `json:"last_fetched_at"`
-	Description   sql.NullString `json:"description"`
-	IsSystem      int64          `json:"is_system"`
-	CreatedAt     string         `json:"created_at"`
+	ID                int64          `json:"id"`
+	UserID            int64          `json:"user_id"`
+	Name              string         `json:"name"`
+	AvatarUrl         sql.NullString `json:"avatar_url"`
+	AvatarKey         sql.NullString `json:"avatar_key"`
+	LastFetchedAt     sql.NullString `json:"last_fetched_at"`
+	Description       sql.NullString `json:"description"`
+	IsSystem          int64          `json:"is_system"`
+	AutoReadAfterDays sql.NullInt64  `json:"auto_read_after_days"`
+	CreatedAt         string         `json:"created_at"`
 }
 
 type AuthorFilterRule struct {

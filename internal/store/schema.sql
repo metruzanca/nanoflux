@@ -61,6 +61,7 @@ CREATE TABLE authors (
     last_fetched_at TEXT,
     description TEXT,
     is_system   INTEGER NOT NULL DEFAULT 0,
+    auto_read_after_days INTEGER,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_authors_user ON authors(user_id);

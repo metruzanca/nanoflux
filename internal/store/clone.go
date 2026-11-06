@@ -138,7 +138,7 @@ func (s *Store) CloneUser(seedID int64, newUsername, passwordHash, expiresAt str
 // old author id -> new author id.
 func cloneAuthors(ctx context.Context, tx *sql.Tx, seedID, newID int64) error {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, name, avatar_url, description, last_fetched_at
+		SELECT id, name, avatar_url, description, last_fetched_at, auto_read_after_days
 		FROM authors WHERE user_id = ? AND is_system = 0`, seedID)
 	if err != nil {
 		return fmt.Errorf("clone authors select: %w", err)
@@ -150,11 +150,12 @@ func cloneAuthors(ctx context.Context, tx *sql.Tx, seedID, newID int64) error {
 		avatarURL   sql.NullString
 		description sql.NullString
 		lastFetch   sql.NullString
+		autoRead    sql.NullInt64
 	}
 	var authors []author
 	for rows.Next() {
 		var a author
-		if err := rows.Scan(&a.id, &a.name, &a.avatarURL, &a.description, &a.lastFetch); err != nil {
+		if err := rows.Scan(&a.id, &a.name, &a.avatarURL, &a.description, &a.lastFetch, &a.autoRead); err != nil {
 			return fmt.Errorf("clone authors scan: %w", err)
 		}
 		authors = append(authors, a)
@@ -165,9 +166,9 @@ func cloneAuthors(ctx context.Context, tx *sql.Tx, seedID, newID int64) error {
 	for _, a := range authors {
 		// avatar_key/blobs are intentionally not copied; see CloneUser.
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO authors (user_id, name, avatar_url, description, last_fetched_at)
-			VALUES (?, ?, ?, ?, ?)`,
-			newID, a.name, a.avatarURL, a.description, a.lastFetch); err != nil {
+			INSERT INTO authors (user_id, name, avatar_url, description, last_fetched_at, auto_read_after_days)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			newID, a.name, a.avatarURL, a.description, a.lastFetch, a.autoRead); err != nil {
 			return fmt.Errorf("clone author insert: %w", err)
 		}
 	}

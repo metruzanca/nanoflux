@@ -69,6 +69,7 @@ var migrations = []migration{
 	{56, schemaV56},
 	{57, schemaV57},
 	{58, schemaV58},
+	{59, schemaV59},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -916,6 +917,13 @@ DROP TRIGGER IF EXISTS items_ai;
 DROP TRIGGER IF EXISTS items_ad;
 DROP TRIGGER IF EXISTS items_au;
 DROP TABLE IF EXISTS items_fts;
+`
+
+// schemaV59 adds a per-author auto-read override. NULL inherits the account
+// window (users.auto_read_after_days), 0 disables auto-read for that author, and
+// a positive value is that author's own retention window.
+const schemaV59 = `
+ALTER TABLE authors ADD COLUMN auto_read_after_days INTEGER;
 `
 
 // Migrate applies any pending migrations in order, recording each in

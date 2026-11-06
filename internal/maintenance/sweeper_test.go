@@ -72,3 +72,36 @@ func TestSweepMarksStaleItems(t *testing.T) {
 		t.Fatalf("bob unread = %d; want 1 (disabled, untouched)", bobUnread)
 	}
 }
+
+// TestSweepHonorsAuthorOverride verifies an author's window applies even when
+// the account window is off, and that other authors keep inheriting the off
+// account setting.
+func TestSweepHonorsAuthorOverride(t *testing.T) {
+	s := newTestStore(t)
+	alice, err := s.Users.Create("alice", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Users.SetAutoReadAfterDays(alice.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	af := mustFeed(t, s, alice)
+	bf := mustFeed(t, s, alice)
+
+	old := db.FormatTime(time.Now().AddDate(0, 0, -10))
+	s.Items.Upsert(af.ID, store.Item{GUID: "a-old", PublishedAt: old, FetchedAt: db.Now()})
+	s.Items.Upsert(bf.ID, store.Item{GUID: "b-old", PublishedAt: old, FetchedAt: db.Now()})
+
+	three := 3
+	if err := s.Authors.SetAutoReadAfterDays(alice.ID, af.AuthorID, &three); err != nil {
+		t.Fatal(err)
+	}
+	New(s, 0).Sweep()
+
+	if unread, _ := s.Items.CountUnread(alice.ID, af.ID); unread != 0 {
+		t.Fatalf("override author unread = %d; want 0 (3-day window)", unread)
+	}
+	if unread, _ := s.Items.CountUnread(alice.ID, bf.ID); unread != 1 {
+		t.Fatalf("inheriting author unread = %d; want 1 (account off)", unread)
+	}
+}

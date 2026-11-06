@@ -160,6 +160,10 @@ type authorsData struct {
 	FilterFeedOptions []comboItem
 	// FilterPreview is the draft/saved rule preview rendered under the rows.
 	FilterPreview store.AuthorFilterPreview
+	// AutoReadValue is the author's auto-read override ("inherit", "off", or a
+	// day count); AutoReadDefault labels the account window it inherits from.
+	AutoReadValue   string
+	AutoReadDefault string
 }
 
 type authorData struct {
@@ -2440,6 +2444,8 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 		FilterTagOptions:  tagItems(cats),
 		FilterFeedOptions: feedOpts,
 		FilterPreview:     preview,
+		AutoReadValue:     authorAutoReadValue(a.AutoReadAfterDays),
+		AutoReadDefault:   autoReadLabel(u.AutoReadAfterDays),
 	})))
 }
 
@@ -2464,6 +2470,23 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/authors", http.StatusFound)
 		return
 	}
+	// Validate the auto-read override before any write, so a bad value does not
+	// half-save the author.
+	setAutoRead := r.FormValue("author_auto_read_present") != ""
+	var autoRead *int
+	if setAutoRead {
+		value := strings.TrimSpace(r.FormValue("author_auto_read_after_days"))
+		if value == "inherit" {
+			autoRead = nil
+		} else {
+			days, ok := parseAutoReadValue(value)
+			if !ok {
+				http.Error(w, "choose an auto-read option", http.StatusBadRequest)
+				return
+			}
+			autoRead = &days
+		}
+	}
 	avatarURL := r.FormValue("avatar_url")
 	if avatarURL != old.AvatarURL {
 		// The source changed (or was cleared): drop the stale cache before the
@@ -2474,6 +2497,17 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		log.Error("update author", "err", err)
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
+	}
+	if setAutoRead {
+		if err := s.store.Authors.SetAutoReadAfterDays(u.ID, id, autoRead); err != nil {
+			log.Error("update author auto-read", "author_id", id, "err", err)
+			http.Error(w, "update failed", http.StatusInternalServerError)
+			return
+		}
+		// Apply the (possibly newly enabled) window to this author right away.
+		if _, err := s.store.Items.MarkAutoReadForAuthor(u.ID, id); err != nil {
+			log.Error("auto-read sweep on author save", "author_id", id, "err", err)
+		}
 	}
 	s.reconcileAuthorLinks(u.ID, id, r)
 	// Author filters are part of the same form. The marker keeps partial saves

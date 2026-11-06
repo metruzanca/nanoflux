@@ -5,10 +5,100 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
+
+// TestAuthorAutoReadSettings covers the per-author auto-read override: inherit
+// by default, immediate sweep on save, "off", validation, and clearing back to
+// inherit.
+func TestAuthorAutoReadSettings(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	if err := s.store.Users.SetAutoReadAfterDays(u.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := s.store.Authors.Create(u.ID, "Busy", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Busy feed", "https://busy.dev/feed.xml", "", "", 900)
+	old := db.FormatTime(time.Now().AddDate(0, 0, -10))
+	if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: "old", Title: "old", PublishedAt: old, FetchedAt: db.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	editURL := "/authors/" + itoa(a.ID) + "/edit"
+	body := doGet(h, editURL, cookie).Body.String()
+	if !strings.Contains(body, `name="author_auto_read_after_days"`) || !strings.Contains(body, "use account default") {
+		t.Fatalf("edit page missing the auto-read override card: %s", body)
+	}
+
+	// Saving a window sweeps this author immediately, even though the account
+	// window is off.
+	if rr := doForm(h, http.MethodPost, editURL, url.Values{
+		"name":                        {"Busy"},
+		"author_auto_read_present":    {"1"},
+		"author_auto_read_after_days": {"3"},
+	}, cookie); rr.Code != http.StatusFound {
+		t.Fatalf("save author auto-read: %d %s", rr.Code, rr.Body.String())
+	}
+	got, _ := s.store.Authors.ByID(u.ID, a.ID)
+	if got.AutoReadAfterDays == nil || *got.AutoReadAfterDays != 3 {
+		t.Fatalf("author override = %v; want 3", got.AutoReadAfterDays)
+	}
+	if unread, _ := s.store.Items.CountUnread(u.ID, f.ID); unread != 0 {
+		t.Fatalf("saving should sweep the author immediately: unread = %d", unread)
+	}
+
+	// An invalid value is rejected and does not overwrite the stored one.
+	if rr := doForm(h, http.MethodPost, editURL, url.Values{
+		"name":                        {"Busy"},
+		"author_auto_read_present":    {"1"},
+		"author_auto_read_after_days": {"99"},
+	}, cookie); rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid author auto-read: %d %s", rr.Code, rr.Body.String())
+	}
+	got, _ = s.store.Authors.ByID(u.ID, a.ID)
+	if got.AutoReadAfterDays == nil || *got.AutoReadAfterDays != 3 {
+		t.Fatalf("invalid value changed the override: %v", got.AutoReadAfterDays)
+	}
+
+	// "off" is a real override, distinct from inherit.
+	if rr := doForm(h, http.MethodPost, editURL, url.Values{
+		"name":                        {"Busy"},
+		"author_auto_read_present":    {"1"},
+		"author_auto_read_after_days": {"off"},
+	}, cookie); rr.Code != http.StatusFound {
+		t.Fatalf("save off: %d %s", rr.Code, rr.Body.String())
+	}
+	got, _ = s.store.Authors.ByID(u.ID, a.ID)
+	if got.AutoReadAfterDays == nil || *got.AutoReadAfterDays != 0 {
+		t.Fatalf("off override = %v; want 0", got.AutoReadAfterDays)
+	}
+
+	// A partial save without the marker leaves the override alone.
+	if rr := doForm(h, http.MethodPost, editURL, url.Values{"name": {"Busy"}}, cookie); rr.Code != http.StatusFound {
+		t.Fatalf("partial save: %d %s", rr.Code, rr.Body.String())
+	}
+	got, _ = s.store.Authors.ByID(u.ID, a.ID)
+	if got.AutoReadAfterDays == nil || *got.AutoReadAfterDays != 0 {
+		t.Fatalf("partial save changed the override: %v", got.AutoReadAfterDays)
+	}
+
+	// Inherit clears the override.
+	if rr := doForm(h, http.MethodPost, editURL, url.Values{
+		"name":                        {"Busy"},
+		"author_auto_read_present":    {"1"},
+		"author_auto_read_after_days": {"inherit"},
+	}, cookie); rr.Code != http.StatusFound {
+		t.Fatalf("save inherit: %d %s", rr.Code, rr.Body.String())
+	}
+	got, _ = s.store.Authors.ByID(u.ID, a.ID)
+	if got.AutoReadAfterDays != nil {
+		t.Fatalf("inherit should clear the override, got %v", got.AutoReadAfterDays)
+	}
+}
 
 // TestAuthorFilterSettings covers the author settings card, persistence, the
 // live preview endpoint, and enforcement across author/collection/list/global

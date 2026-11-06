@@ -415,8 +415,9 @@ parallel implementation.
   history, list items, and public shared lists select from `visible_items`
   instead of `items`. Item detail (`GetItem*`) and shared-item fetch stay on raw
   `items`, so a blocked item is still reachable by direct link. Auto-read
-  retention (`MarkItemsOlderThanRead`) is unchanged. Any new item read path must
-  use `visible_items`; write paths and storage/dedup stay on `items`.
+  retention (`ItemStore.MarkAutoRead`) deliberately stays on raw `items`. Any new
+  item read path must use `visible_items`; write paths and storage/dedup stay on
+  `items`.
   `visible_items` is `SELECT i.*`, so a future migration that adds an `items`
   column must recreate the view in the same migration.
 - **Writes respect it too.** Mark-all read/unread and the scoped filtered mark
@@ -553,12 +554,23 @@ stored on `users` (schemaV43), rendered server-side into the topbar and
   unread items older than it (by `COALESCE(published_at, fetched_at)`) are
   marked read. `0` = off; default 30. Set via the settings auto-read card
   (`POST /settings/auto-read`, options 3/7/30/60/off).
-- `ItemStore.MarkOlderThanRead(userID, days)` is the sweep. It ignores favorite
-  and bookmark state (both are swept) and is user-scoped through `feeds.user_id`.
-  `days <= 0` is a no-op.
-- `maintenance.Sweeper` runs it at startup and every 24h
-  (`maintenance.DefaultInterval`), started in `cmd/server/main.go`; the settings
-  handler also sweeps that user immediately on save so the change is visible.
+- `authors.auto_read_after_days` (schemaV59, nullable) overrides that window
+  per author: `NULL` inherits the account window, `0` is off for that author,
+  and a positive value is its own window. It is set on the author edit page
+  (`POST /authors/{id}/edit`, options inherit/3/7/30/60/off) and rendered by
+  `authorAutoReadCard`. Scope is the item's owner author
+  (`items.feed_id -> feeds.author_id`), the same identity author filters use, so
+  a cross-feed post owned by another author keeps that author's window.
+- `ItemStore.MarkAutoRead(userID)` is the sweep,
+  `MarkAutoReadForAuthor(userID, authorID)` its single-author form. The query
+  evaluates each item's effective window (author override, else account window)
+  and skips authors whose effective window is 0. It ignores favorite and
+  bookmark state (both are swept) and is user-scoped through `feeds.user_id`.
+- `maintenance.Sweeper` runs `MarkAutoRead` at startup and every 24h
+  (`maintenance.DefaultInterval`), started in `cmd/server/main.go`. It runs for
+  every user, because an author override may be on while the account window is
+  off. The settings handler and the author edit handler also sweep immediately
+  after a save, scoped to the changed author when one is involved.
 - The sweep only flips `read`/`read_at` — nothing is deleted, so it is
   reversible with "mark all unread".
 

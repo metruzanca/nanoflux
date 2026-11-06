@@ -117,7 +117,8 @@ selfhost via `make`.
   (`users.accent_color`), hide unread counts (`users.hide_unread_counts`),
   move unread nav into the user menu (`users.hide_unread_nav`), home grid max
   columns 2..6 (`users.grid_max_columns`).
-- Auto-read window 3/7/30/60/off (`users.auto_read_after_days`).
+- Auto-read window 3/7/30/60/off (`users.auto_read_after_days`), with a
+  per-author inherit/3/7/30/60/off override (`authors.auto_read_after_days`).
 - Password and active sessions, OPML import/export, extension download,
   keyboard shortcut reference.
 
