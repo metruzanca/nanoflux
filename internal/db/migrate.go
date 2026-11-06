@@ -70,6 +70,7 @@ var migrations = []migration{
 	{57, schemaV57},
 	{58, schemaV58},
 	{59, schemaV59},
+	{60, schemaV60},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -924,6 +925,28 @@ DROP TABLE IF EXISTS items_fts;
 // a positive value is that author's own retention window.
 const schemaV59 = `
 ALTER TABLE authors ADD COLUMN auto_read_after_days INTEGER;
+`
+
+// schemaV60 removes the saved-view scope columns. A view always matches all
+// feeds now; limiting it is expressed with its own filter rows, and author_id
+// only assigns the view to an author page.
+const schemaV60 = `
+CREATE TABLE saved_views_v60 (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id  INTEGER REFERENCES authors(id) ON DELETE CASCADE,
+    title      TEXT NOT NULL,
+    base_view  TEXT NOT NULL DEFAULT 'unread',
+    sort       TEXT NOT NULL DEFAULT 'newest',
+    filters    TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT INTO saved_views_v60 (id, user_id, author_id, title, base_view, sort, filters, created_at)
+SELECT id, user_id, author_id, title, base_view, sort, filters, created_at FROM saved_views;
+DROP TABLE saved_views;
+ALTER TABLE saved_views_v60 RENAME TO saved_views;
+CREATE INDEX idx_saved_views_user ON saved_views(user_id);
+CREATE INDEX idx_saved_views_author ON saved_views(author_id);
 `
 
 // Migrate applies any pending migrations in order, recording each in

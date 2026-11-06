@@ -21,18 +21,15 @@ const maxSavedViewTitle = 120
 // savedViewRow is one view in the index or on an author card, with its resolved
 // display fields and matching-item count.
 type savedViewRow struct {
-	ID          int64
-	Title       string
-	AuthorID    int64
-	AuthorName  string
-	BaseView    string
-	Sort        itemSort
-	Filters     listFilters
-	ScopeLabel  string
-	ScopeAuthor int64
-	ScopeColl   int64
-	Count       int
-	CreatedAt   string
+	ID         int64
+	Title      string
+	AuthorID   int64
+	AuthorName string
+	BaseView   string
+	Sort       itemSort
+	Filters    listFilters
+	Count      int
+	CreatedAt  string
 }
 
 // savedViewGroup is one assigned-author block on the views index.
@@ -47,22 +44,18 @@ type savedViewsPageData struct {
 	Total  int
 }
 
-// savedViewForm is the create/edit page's data. Scope is fixed once the view is
-// created; the form only edits presentation and filters.
+// savedViewForm is the create/edit page's data.
 type savedViewForm struct {
-	ID                int64
-	Title             string
-	BaseView          string
-	Sort              itemSort
-	Filters           listFilters
-	AuthorID          int64
-	ScopeAuthorID     int64
-	ScopeCollectionID int64
-	ScopeLabel        string
-	AuthorOptions     []comboItem
-	TagOptions        []comboItem
-	FeedOptions       []comboItem
-	Error             string
+	ID            int64
+	Title         string
+	BaseView      string
+	Sort          itemSort
+	Filters       listFilters
+	AuthorID      int64
+	AuthorOptions []comboItem
+	TagOptions    []comboItem
+	FeedOptions   []comboItem
+	Error         string
 }
 
 type savedViewPageData struct {
@@ -147,14 +140,12 @@ func groupSavedViews(rows []savedViewRow) []savedViewGroup {
 
 // savedViewRow resolves one view's display fields and matching count.
 func (s *Server) savedViewRow(userID int64, v store.SavedView, tz string) savedViewRow {
-	filters := s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
-		filtersFromParams(v.Filters))
+	filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
 	base := normalizeSavedViewBase(v.BaseView)
-	count, _ := s.savedViewCount(userID, v.ScopeAuthorID, v.ScopeCollectionID, base, filters, tz)
+	count, _ := s.savedViewCount(userID, base, filters, tz)
 	row := savedViewRow{
 		ID: v.ID, Title: v.Title, AuthorID: v.AuthorID, BaseView: base,
 		Sort: itemSortFromParam(v.Sort), Filters: filters,
-		ScopeAuthor: v.ScopeAuthorID, ScopeColl: v.ScopeCollectionID,
 		Count: count, CreatedAt: v.CreatedAt,
 	}
 	if v.AuthorID > 0 {
@@ -162,42 +153,24 @@ func (s *Server) savedViewRow(userID int64, v store.SavedView, tz string) savedV
 			row.AuthorName = a.Name
 		}
 	}
-	row.ScopeLabel = s.savedViewScopeLabel(userID, v.ScopeAuthorID, v.ScopeCollectionID)
 	return row
 }
 
-func (s *Server) savedViewScopeLabel(userID, scopeAuthor, scopeCollection int64) string {
-	if scopeAuthor > 0 {
-		if a, err := s.store.Authors.ByID(userID, scopeAuthor); err == nil {
-			return "author · " + a.Name
-		}
-		return "author"
-	}
-	if scopeCollection > 0 {
-		if c, err := s.store.Collections.ByID(userID, scopeCollection); err == nil {
-			return "collection · " + c.Name
-		}
-		return "collection"
-	}
-	return "all feeds"
-}
-
 // savedViewCount counts the matching items for a view's base tab and filters.
-func (s *Server) savedViewCount(userID, scopeAuthor, scopeCollection int64, view string, filters listFilters, tz string) (int, error) {
-	f := scopedFilter(view, sortNewest, 0, scopeAuthor, scopeCollection, filters, tz)
+func (s *Server) savedViewCount(userID int64, view string, filters listFilters, tz string) (int, error) {
+	f := scopedFilter(view, sortNewest, 0, 0, 0, filters, tz)
 	f.Limit = 0
 	return s.store.Items.CountFiltered(userID, f)
 }
 
-// savedViewFilters validates a view's filter rows against its scope: feed ids
-// must belong to the user (and to the scoped author/collection), and labels are
-// resolved from their titles. Stale rows are dropped rather than failing the
-// whole view.
-func (s *Server) savedViewFilters(userID, scopeAuthor, scopeCollection int64, filters listFilters) listFilters {
+// savedViewFilters validates a view's filter rows against the user's feeds:
+// feed ids must belong to the user and labels are resolved from their titles.
+// Stale rows are dropped rather than failing the whole view.
+func (s *Server) savedViewFilters(userID int64, filters listFilters) listFilters {
 	if len(filters) == 0 {
 		return nil
 	}
-	titles := s.savedViewFeedTitles(userID, scopeAuthor, scopeCollection)
+	titles := s.savedViewFeedTitles(userID)
 	out := make(listFilters, 0, len(filters))
 	for _, f := range filters {
 		if f.isFeed() {
@@ -222,41 +195,13 @@ func (s *Server) savedViewFilters(userID, scopeAuthor, scopeCollection int64, fi
 }
 
 // savedViewFeedTitles maps the feeds a view may filter on.
-func (s *Server) savedViewFeedTitles(userID, scopeAuthor, scopeCollection int64) map[int64]string {
-	var feeds []store.Feed
-	switch {
-	case scopeAuthor > 0:
-		feeds, _ = s.store.Feeds.ListByAuthor(userID, scopeAuthor)
-	case scopeCollection > 0:
-		feeds, _ = s.store.Collections.Feeds(userID, scopeCollection)
-	default:
-		feeds, _ = s.store.Feeds.List(userID)
-	}
+func (s *Server) savedViewFeedTitles(userID int64) map[int64]string {
+	feeds, _ := s.store.Feeds.List(userID)
 	titles := make(map[int64]string, len(feeds))
 	for _, f := range feeds {
 		titles[f.ID] = f.Title
 	}
 	return titles
-}
-
-// savedViewScope resolves the create form's requested scope, verifying that the
-// author/collection belongs to the user.
-func (s *Server) savedViewScope(userID int64, authorRaw, collectionRaw string) (authorID, collectionID int64, ok bool) {
-	authorID, _ = strconv.ParseInt(strings.TrimSpace(authorRaw), 10, 64)
-	collectionID, _ = strconv.ParseInt(strings.TrimSpace(collectionRaw), 10, 64)
-	if authorID > 0 {
-		if _, err := s.store.Authors.ByID(userID, authorID); err != nil {
-			return 0, 0, false
-		}
-		return authorID, 0, true
-	}
-	if collectionID > 0 {
-		if _, err := s.store.Collections.ByID(userID, collectionID); err != nil {
-			return 0, 0, false
-		}
-		return 0, collectionID, true
-	}
-	return 0, 0, true
 }
 
 // savedViewAssignedAuthor validates the assignment picker.
@@ -271,60 +216,42 @@ func (s *Server) savedViewAssignedAuthor(userID int64, raw string) (int64, bool)
 	return id, true
 }
 
-// savedViewFormData builds the create/edit form, including the option lists for
-// the scope it will filter over.
+// savedViewFormData builds the create/edit form's option lists. A view always
+// spans all of the user's feeds.
 func (s *Server) savedViewFormData(userID int64, v savedViewForm) savedViewForm {
 	authors, _ := s.store.Authors.List(userID)
 	v.AuthorOptions = savedViewAuthorItems(authors)
-	v.ScopeLabel = s.savedViewScopeLabel(userID, v.ScopeAuthorID, v.ScopeCollectionID)
-	cats, _ := s.store.Items.ListCategories(userID, store.ItemFilter{
-		AuthorID: v.ScopeAuthorID, CollectionID: v.ScopeCollectionID,
-	})
+	cats, _ := s.store.Items.ListCategoriesFilter(userID, store.ItemFilter{})
 	v.TagOptions = tagItems(cats)
-	var feeds []comboItem
-	if v.ScopeAuthorID > 0 {
-		fs, _ := s.store.Feeds.ListByAuthor(userID, v.ScopeAuthorID)
-		for _, f := range fs {
-			feeds = append(feeds, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
-		}
-	} else if v.ScopeCollectionID > 0 {
-		fs, _ := s.store.Collections.Feeds(userID, v.ScopeCollectionID)
-		for _, f := range fs {
-			feeds = append(feeds, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
-		}
-	} else {
-		fs, _ := s.store.Feeds.List(userID)
-		for _, f := range fs {
-			feeds = append(feeds, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
-		}
+	fs, _ := s.store.Feeds.List(userID)
+	feeds := make([]comboItem, 0, len(fs))
+	for _, f := range fs {
+		feeds = append(feeds, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
 	}
 	v.FeedOptions = feeds
 	return v
 }
 
 // savedViewNew renders the create form prefilled from the list the user saved
-// from (?view=, ?sort=, ?scope_author=, ?scope_collection=, ?f=).
+// from (?view= or ?tab=, ?sort=, ?author_id=, and the filter fields).
 func (s *Server) savedViewNew(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	authorID, collectionID, ok := s.savedViewScope(u.ID,
-		r.URL.Query().Get("scope_author"), r.URL.Query().Get("scope_collection"))
+	authorID, ok := s.savedViewAssignedAuthor(u.ID, r.URL.Query().Get("author_id"))
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	filters := s.savedViewFilters(u.ID, authorID, collectionID, filtersFromRequest(r))
+	filters := s.savedViewFilters(u.ID, filtersFromRequest(r))
 	baseView := r.URL.Query().Get("tab")
 	if baseView == "" {
 		baseView = r.URL.Query().Get("view")
 	}
 	form := savedViewForm{
-		Title:             "",
-		BaseView:          normalizeSavedViewBase(baseView),
-		Sort:              itemSortOf(r),
-		Filters:           filters,
-		AuthorID:          authorID,
-		ScopeAuthorID:     authorID,
-		ScopeCollectionID: collectionID,
+		Title:    "",
+		BaseView: normalizeSavedViewBase(baseView),
+		Sort:     itemSortOf(r),
+		Filters:  filters,
+		AuthorID: authorID,
 	}
 	web.Render(w, r, basePage("new view", u, savedViewFormPage(u, s.savedViewFormData(u.ID, form))))
 }
@@ -357,7 +284,6 @@ func (s *Server) savedViewCreate(w http.ResponseWriter, r *http.Request) {
 	created, err := s.store.SavedViews.Create(u.ID, store.SavedView{
 		AuthorID: form.AuthorID, Title: form.Title, BaseView: form.BaseView,
 		Sort: form.Sort.param(), Filters: form.Filters.params(),
-		ScopeAuthorID: form.ScopeAuthorID, ScopeCollectionID: form.ScopeCollectionID,
 	})
 	if err != nil {
 		log.Error("create saved view", "err", err)
@@ -383,11 +309,9 @@ func (s *Server) savedViewEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	form := savedViewForm{
 		ID: v.ID, Title: v.Title, BaseView: normalizeSavedViewBase(v.BaseView),
-		Sort: itemSortFromParam(v.Sort),
-		Filters: s.savedViewFilters(u.ID, v.ScopeAuthorID, v.ScopeCollectionID,
-			filtersFromParams(v.Filters)),
-		AuthorID: v.AuthorID, ScopeAuthorID: v.ScopeAuthorID,
-		ScopeCollectionID: v.ScopeCollectionID,
+		Sort:     itemSortFromParam(v.Sort),
+		Filters:  s.savedViewFilters(u.ID, filtersFromParams(v.Filters)),
+		AuthorID: v.AuthorID,
 	}
 	web.Render(w, r, basePage("edit view", u, savedViewFormPage(u, s.savedViewFormData(u.ID, form))))
 }
@@ -400,8 +324,7 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	v, err := s.store.SavedViews.ByID(u.ID, id)
-	if err != nil {
+	if _, err := s.store.SavedViews.ByID(u.ID, id); err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -419,13 +342,10 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 		s.renderSavedViewForm(w, r, u, form, http.StatusBadRequest)
 		return
 	}
-	// The scope is fixed at creation; a crafted form cannot widen it.
-	form.ScopeAuthorID, form.ScopeCollectionID = v.ScopeAuthorID, v.ScopeCollectionID
-	form.Filters = s.savedViewFilters(u.ID, form.ScopeAuthorID, form.ScopeCollectionID, form.Filters)
+	form.Filters = s.savedViewFilters(u.ID, form.Filters)
 	if err := s.store.SavedViews.Update(u.ID, id, store.SavedView{
 		AuthorID: form.AuthorID, Title: form.Title, BaseView: form.BaseView,
 		Sort: form.Sort.param(), Filters: form.Filters.params(),
-		ScopeAuthorID: form.ScopeAuthorID, ScopeCollectionID: form.ScopeCollectionID,
 	}); err != nil {
 		log.Error("update saved view", "err", err)
 		form.Error = "could not save this view"
@@ -455,12 +375,7 @@ func (s *Server) savedViewFormFromRequest(userID int64, r *http.Request) (savedV
 		Filters:  filtersFromValues(r.Form),
 	}
 	var ok bool
-	form.ScopeAuthorID, form.ScopeCollectionID, ok = s.savedViewScope(userID,
-		r.FormValue("scope_author"), r.FormValue("scope_collection"))
-	if !ok {
-		return form, false
-	}
-	form.Filters = s.savedViewFilters(userID, form.ScopeAuthorID, form.ScopeCollectionID, form.Filters)
+	form.Filters = s.savedViewFilters(userID, form.Filters)
 	form.AuthorID, ok = s.savedViewAssignedAuthor(userID, r.FormValue("author_id"))
 	if !ok {
 		return form, false
@@ -537,14 +452,14 @@ func (s *Server) savedViewItems(w http.ResponseWriter, r *http.Request) {
 	filters := s.savedViewActiveFilters(u.ID, v, r)
 	if cursor := cursorID(r, sort); cursor > 0 {
 		items, more, err := s.store.Items.ListPage(u.ID,
-			scopedFilter(view, sort, cursor, v.ScopeAuthorID, v.ScopeCollectionID, filters, u.Timezone))
+			scopedFilter(view, sort, cursor, 0, 0, filters, u.Timezone))
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		base := s.savedViewItemsBase(v, view, sort, filters)
 		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)),
-			pageCursorFor(base, items, more, sort, int(cursor)), v.ScopeAuthorID != 0))
+			pageCursorFor(base, items, more, sort, int(cursor)), false))
 		return
 	}
 	web.Render(w, r, ScopedItems(s.savedViewScopedData(u, v, view, sort, filters)))
@@ -566,7 +481,6 @@ func (s *Server) savedViewReadAll(w http.ResponseWriter, r *http.Request) {
 	filters := s.savedViewActiveFilters(u.ID, v, r)
 	tagGroups, feedGroups, _ := filters.storeGroups()
 	if _, err := s.store.Items.MarkAllReadFiltered(u.ID, store.ItemFilter{
-		AuthorID: v.ScopeAuthorID, CollectionID: v.ScopeCollectionID,
 		TagGroups: tagGroups, FeedGroups: feedGroups,
 		TimeGroups: filters.timeGroups(u.Timezone),
 	}); err != nil {
@@ -581,7 +495,7 @@ func (s *Server) savedViewPageData(u store.User, v store.SavedView, r *http.Requ
 	view := savedViewTab(r, v)
 	sort := savedViewSort(r, v)
 	filters := s.savedViewActiveFilters(u.ID, v, r)
-	unread, _ := s.savedViewCount(u.ID, v.ScopeAuthorID, v.ScopeCollectionID, "unread", filters, u.Timezone)
+	unread, _ := s.savedViewCount(u.ID, "unread", filters, u.Timezone)
 	markAll := markAllReadData{
 		Action: savedViewFiltersURL("/views/"+strconv.FormatInt(v.ID, 10)+"/read-all", filters),
 		Unread: unread,
@@ -619,14 +533,13 @@ func savedViewSort(r *http.Request, v store.SavedView) itemSort {
 func (s *Server) savedViewActiveFilters(userID int64, v store.SavedView, r *http.Request) listFilters {
 	q := r.URL.Query()
 	if q.Has("filter_row") || q.Has("f") || q.Has("tags") || q.Has("feed") {
-		return s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID, filtersFromRequest(r))
+		return s.savedViewFilters(userID, filtersFromRequest(r))
 	}
 	if q.Has("view") || q.Has("sort") {
 		// An explicit tab/sort link with no filter params means "no filters".
 		return nil
 	}
-	return s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
-		filtersFromParams(v.Filters))
+	return s.savedViewFilters(userID, filtersFromParams(v.Filters))
 }
 
 // hasSavedViewListParams reports whether the request already carries a list
@@ -643,8 +556,7 @@ func hasSavedViewListParams(r *http.Request) bool {
 
 // savedViewCanonicalURL is the bare view link's redirect target.
 func (s *Server) savedViewCanonicalURL(userID int64, v store.SavedView) string {
-	filters := s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
-		filtersFromParams(v.Filters))
+	filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
 	base := "/views/" + strconv.FormatInt(v.ID, 10)
 	return filterPageURL(base, normalizeSavedViewBase(v.BaseView), itemSortFromParam(v.Sort), filters)
 }
@@ -660,50 +572,34 @@ func (s *Server) savedViewScopedData(u store.User, v store.SavedView, view strin
 	id := v.ID
 	base := "/views/" + strconv.FormatInt(id, 10)
 	items, more, _ := s.store.Items.ListPage(u.ID,
-		scopedFilter(view, sort, 0, v.ScopeAuthorID, v.ScopeCollectionID, filters, u.Timezone))
-	unread, _ := s.savedViewCount(u.ID, v.ScopeAuthorID, v.ScopeCollectionID, "unread", filters, u.Timezone)
-	read, _ := s.savedViewCount(u.ID, v.ScopeAuthorID, v.ScopeCollectionID, "read", filters, u.Timezone)
-	favs, _ := s.savedViewCount(u.ID, v.ScopeAuthorID, v.ScopeCollectionID, "favorites", filters, u.Timezone)
+		scopedFilter(view, sort, 0, 0, 0, filters, u.Timezone))
+	unread, _ := s.savedViewCount(u.ID, "unread", filters, u.Timezone)
+	read, _ := s.savedViewCount(u.ID, "read", filters, u.Timezone)
+	favs, _ := s.savedViewCount(u.ID, "favorites", filters, u.Timezone)
 	filtered := 0
 	if len(filters) > 0 {
-		filtered, _ = s.savedViewCount(u.ID, v.ScopeAuthorID, v.ScopeCollectionID, view, filters, u.Timezone)
+		filtered, _ = s.savedViewCount(u.ID, view, filters, u.Timezone)
 	}
 	itemsBase := s.savedViewItemsBase(v, view, sort, filters)
-	cats, _ := s.store.Items.ListCategories(u.ID, store.ItemFilter{
-		AuthorID: v.ScopeAuthorID, CollectionID: v.ScopeCollectionID,
-	})
-	feedOpts := s.savedViewFeedOptions(u.ID, v.ScopeAuthorID, v.ScopeCollectionID)
+	cats, _ := s.store.Items.ListCategoriesFilter(u.ID, store.ItemFilter{})
+	feedOpts := s.savedViewFeedOptions(u.ID)
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(u.Timezone, dedupItems(items)),
-		More:       pageCursorFor(itemsBase, items, more, sort, 0),
-		HideAuthor: v.ScopeAuthorID != 0, Mode: s.store.ViewPrefs.Mode(u.ID, base),
+		More:   pageCursorFor(itemsBase, items, more, sort, 0),
+		Mode:   s.store.ViewPrefs.Mode(u.ID, base),
 		FavTab: favs > 0 || view == "favorites", FavCount: favs,
 		Filters: filters, FilteredCount: filtered, TagOptions: tagItems(cats),
-		FeedOptions:   feedOpts,
-		ScopeAuthorID: v.ScopeAuthorID, ScopeCollectionID: v.ScopeCollectionID,
+		FeedOptions: feedOpts,
 	}
 }
 
 // savedViewFeedOptions maps the feeds the view's filter modal may offer.
-func (s *Server) savedViewFeedOptions(userID, scopeAuthor, scopeCollection int64) []comboItem {
-	var out []comboItem
-	switch {
-	case scopeAuthor > 0:
-		fs, _ := s.store.Feeds.ListByAuthorWithUnread(userID, scopeAuthor)
-		for _, f := range fs {
-			out = append(out, comboItem{Value: strconv.FormatInt(f.Feed.ID, 10), Label: f.Feed.Title})
-		}
-	case scopeCollection > 0:
-		fs, _ := s.store.Collections.Feeds(userID, scopeCollection)
-		for _, f := range fs {
-			out = append(out, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
-		}
-	default:
-		fs, _ := s.store.Feeds.ListWithUnread(userID)
-		for _, f := range fs {
-			out = append(out, comboItem{Value: strconv.FormatInt(f.Feed.ID, 10), Label: f.Feed.Title})
-		}
+func (s *Server) savedViewFeedOptions(userID int64) []comboItem {
+	fs, _ := s.store.Feeds.ListWithUnread(userID)
+	out := make([]comboItem, 0, len(fs))
+	for _, f := range fs {
+		out = append(out, comboItem{Value: strconv.FormatInt(f.Feed.ID, 10), Label: f.Feed.Title})
 	}
 	return out
 }
@@ -713,8 +609,7 @@ func (s *Server) savedViewsForAuthor(userID, authorID int64, tz string) []savedV
 	views, _ := s.store.SavedViews.ListByAuthor(userID, authorID)
 	rows := make([]savedViewRow, 0, len(views))
 	for _, v := range views {
-		if len(s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
-			filtersFromParams(v.Filters))) == 0 {
+		if len(s.savedViewFilters(userID, filtersFromParams(v.Filters))) == 0 {
 			continue
 		}
 		rows = append(rows, s.savedViewRow(userID, v, tz))
@@ -723,14 +618,12 @@ func (s *Server) savedViewsForAuthor(userID, authorID int64, tz string) []savedV
 }
 
 // storeViewFilter converts a saved view into the store's query predicate. An
-// unfiltered view is skipped by callers: without a filter it would match the
-// whole scope, which is not a useful author source.
+// unfiltered view is skipped by callers: without a filter it would match every
+// post, which is not a useful author source.
 func (s *Server) storeViewFilter(userID int64, v store.SavedView, tz string) store.ViewFilter {
-	filters := s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
-		filtersFromParams(v.Filters))
+	filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
 	tagGroups, feedGroups, _ := filters.storeGroups()
 	return store.ViewFilter{
-		AuthorID: v.ScopeAuthorID, CollectionID: v.ScopeCollectionID,
 		TagGroups: tagGroups, FeedGroups: feedGroups, TimeGroups: filters.timeGroups(tz),
 	}
 }
@@ -745,8 +638,7 @@ func (s *Server) savedViewsByAuthor(userID int64, tz string) (map[int64][]store.
 		if v.AuthorID <= 0 {
 			continue
 		}
-		if len(s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
-			filtersFromParams(v.Filters))) == 0 {
+		if len(s.savedViewFilters(userID, filtersFromParams(v.Filters))) == 0 {
 			continue
 		}
 		counts[v.AuthorID]++
@@ -762,8 +654,7 @@ func (s *Server) authorStoreViewFilters(userID, authorID int64, tz string) []sto
 	views, _ := s.store.SavedViews.ListByAuthor(userID, authorID)
 	out := make([]store.ViewFilter, 0, len(views))
 	for _, v := range views {
-		if len(s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
-			filtersFromParams(v.Filters))) == 0 {
+		if len(s.savedViewFilters(userID, filtersFromParams(v.Filters))) == 0 {
 			continue
 		}
 		out = append(out, s.storeViewFilter(userID, v, tz))
@@ -777,8 +668,7 @@ func (s *Server) authorStoreViewFilter(userID, authorID, viewID int64, tz string
 	if err != nil || v.AuthorID != authorID {
 		return store.ViewFilter{}, false
 	}
-	filters := s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID,
-		filtersFromParams(v.Filters))
+	filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
 	if len(filters) == 0 {
 		return store.ViewFilter{}, false
 	}

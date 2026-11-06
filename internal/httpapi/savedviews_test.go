@@ -53,17 +53,15 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	author, _ := s.store.Authors.Create(u.ID, "Example Poster", "", "")
 
 	form := url.Values{
-		"title":            {"Example posts"},
-		"author_id":        {itoa(author.ID)},
-		"scope_author":     {"0"},
-		"scope_collection": {"0"},
-		"view":             {"unread"},
-		"sort":             {"newest"},
-		"filter_row":       {"0"},
-		"filter_action":    {"show"},
-		"filter_kind":      {"tag"},
-		"filter_combine":   {"all"},
-		"filter_value_0":   {"u/example-poster"},
+		"title":          {"Example posts"},
+		"author_id":      {itoa(author.ID)},
+		"view":           {"unread"},
+		"sort":           {"newest"},
+		"filter_row":     {"0"},
+		"filter_action":  {"show"},
+		"filter_kind":    {"tag"},
+		"filter_combine": {"all"},
+		"filter_value_0": {"u/example-poster"},
 	}
 	rr := doForm(h, http.MethodPost, "/views", form, cookie)
 	if rr.Code != http.StatusSeeOther {
@@ -83,7 +81,7 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	}
 
 	// The create page carries the filter rows and the author picker.
-	formPage := doGet(h, "/views/new?scope_author=0&view=unread&sort=newest&f="+url.QueryEscape("tag:show:u/example-poster"), cookie).Body.String()
+	formPage := doGet(h, "/views/new?view=unread&sort=newest&f="+url.QueryEscape("tag:show:u/example-poster"), cookie).Body.String()
 	if !strings.Contains(formPage, `name="title"`) || !strings.Contains(formPage, `name="author_id"`) || !strings.Contains(formPage, `name="filter_value_empty"`) && !strings.Contains(formPage, `name="filter_value_0"`) {
 		t.Fatalf("new view form is missing fields: %s", formPage)
 	}
@@ -132,7 +130,7 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 		t.Fatalf("authors index should count view unread items and views: %s", body)
 	}
 
-	// An empty view is rejected: it would pull the whole scope into the author.
+	// An empty view is rejected: it would pull every post into the author.
 	empty := url.Values{"title": {"Empty"}, "author_id": {itoa(author.ID)}, "view": {"unread"}, "sort": {"newest"}}
 	if rr := doForm(h, http.MethodPost, "/views", empty, cookie); rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "add at least one filter") {
 		t.Fatalf("empty view should be rejected: %d", rr.Code)
@@ -144,19 +142,17 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 		t.Fatalf("author page should list the assigned view under sources: %s", body)
 	}
 
-	// Edit renames and unassigns the view; the scope stays fixed.
+	// Edit renames and unassigns the view.
 	edit := url.Values{
-		"title":            {"Renamed view"},
-		"author_id":        {"0"},
-		"scope_author":     {"0"},
-		"scope_collection": {"0"},
-		"view":             {"read"},
-		"sort":             {"oldest"},
-		"filter_row":       {"0"},
-		"filter_action":    {"show"},
-		"filter_kind":      {"tag"},
-		"filter_combine":   {"all"},
-		"filter_value_0":   {"u/example-poster"},
+		"title":          {"Renamed view"},
+		"author_id":      {"0"},
+		"view":           {"read"},
+		"sort":           {"oldest"},
+		"filter_row":     {"0"},
+		"filter_action":  {"show"},
+		"filter_kind":    {"tag"},
+		"filter_combine": {"all"},
+		"filter_value_0": {"u/example-poster"},
 	}
 	if rr := doForm(h, http.MethodPost, "/views/"+id+"/edit", edit, cookie); rr.Code != http.StatusSeeOther {
 		t.Fatalf("edit view: %d %s", rr.Code, rr.Body.String())
@@ -180,38 +176,33 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	}
 }
 
-func TestSavedViewScopeDropsForeignFeedFilter(t *testing.T) {
+func TestSavedViewDropsUnknownFeedFilter(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, author, _ := savedViewFixture(t, s)
 
-	// A feed owned by a different author cannot be used as a filter value in an
-	// author-scoped view.
-	other, _ := s.store.Authors.Create(u.ID, "Other", "", "")
-	otherFeed, _ := s.store.Feeds.Create(u.ID, other.ID, "Other feed", "https://other.dev/feed.xml", "", "", 900)
-
+	// A feed id that does not belong to the user is dropped; the tag survives.
 	form := url.Values{
-		"title":          {"Scoped"},
+		"title":          {"Filtered"},
 		"author_id":      {itoa(author.ID)},
-		"scope_author":   {itoa(author.ID)},
 		"view":           {"unread"},
 		"sort":           {"newest"},
 		"filter_row":     {"0", "1"},
 		"filter_action":  {"show", "show"},
 		"filter_kind":    {"feed", "tag"},
 		"filter_combine": {"all", "all"},
-		"filter_value_0": {itoa(otherFeed.ID)},
+		"filter_value_0": {"999999"},
 		"filter_value_1": {"u/example-poster"},
 	}
 	if rr := doForm(h, http.MethodPost, "/views", form, cookie); rr.Code != http.StatusSeeOther {
-		t.Fatalf("create scoped view: %d %s", rr.Code, rr.Body.String())
+		t.Fatalf("create view: %d %s", rr.Code, rr.Body.String())
 	}
 	views, _ := s.store.SavedViews.List(u.ID)
 	if len(views) != 1 {
 		t.Fatalf("expected one view, got %d", len(views))
 	}
 	if len(views[0].Filters) != 1 || !strings.HasPrefix(views[0].Filters[0], "tag:") {
-		t.Fatalf("foreign feed filter should be dropped and the tag kept, got %v", views[0].Filters)
+		t.Fatalf("unknown feed filter should be dropped and the tag kept, got %v", views[0].Filters)
 	}
 }
 
@@ -223,7 +214,6 @@ func TestSavedViewReadAllHonorsFilters(t *testing.T) {
 	form := url.Values{
 		"title":          {"Go"},
 		"author_id":      {itoa(author.ID)},
-		"scope_author":   {"0"},
 		"view":           {"unread"},
 		"sort":           {"newest"},
 		"filter_row":     {"0"},
@@ -256,10 +246,10 @@ func TestSavedViewReadAllHonorsFilters(t *testing.T) {
 	}
 }
 
-// TestSavedViewTagOptionsAllFeedsScope covers the edit form and filter dialog for
-// a view with all-feeds scope: the option lookup has no author or collection id,
-// and it must still offer the user's tags.
-func TestSavedViewTagOptionsAllFeedsScope(t *testing.T) {
+// TestSavedViewTagOptionsAllFeeds covers the edit form and filter dialog for an
+// all-feeds view: the option lookup has no author or collection id, and it must
+// still offer the user's tags.
+func TestSavedViewTagOptionsAllFeeds(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
@@ -275,17 +265,15 @@ func TestSavedViewTagOptionsAllFeedsScope(t *testing.T) {
 	}
 
 	form := url.Values{
-		"title":            {"All feeds"},
-		"author_id":        {"0"},
-		"scope_author":     {"0"},
-		"scope_collection": {"0"},
-		"view":             {"unread"},
-		"sort":             {"newest"},
-		"filter_row":       {"0"},
-		"filter_action":    {"show"},
-		"filter_kind":      {"tag"},
-		"filter_combine":   {"all"},
-		"filter_value_0":   {"r/golang"},
+		"title":          {"All feeds"},
+		"author_id":      {"0"},
+		"view":           {"unread"},
+		"sort":           {"newest"},
+		"filter_row":     {"0"},
+		"filter_action":  {"show"},
+		"filter_kind":    {"tag"},
+		"filter_combine": {"all"},
+		"filter_value_0": {"r/golang"},
 	}
 	rr := doForm(h, http.MethodPost, "/views", form, cookie)
 	if rr.Code != http.StatusSeeOther {

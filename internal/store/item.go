@@ -166,16 +166,12 @@ type TimeGroup struct {
 	Exclude bool
 }
 
-// ViewFilter is one saved view as an item predicate. AuthorID/CollectionID are
-// the view's stored scope (0 = all feeds); the groups and time windows are its
-// filters. ItemFilter.Views ORs these with the author/feed scope, so a view can
-// act as a source under an author it is assigned to.
+// ViewFilter is one saved view as an item predicate. It carries the view's tag
+// and feed groups and time windows; a view always matches all feeds.
 type ViewFilter struct {
-	AuthorID     int64
-	CollectionID int64
-	TagGroups    []TagGroup
-	FeedGroups   []FeedGroup
-	TimeGroups   []TimeGroup
+	TagGroups  []TagGroup
+	FeedGroups []FeedGroup
+	TimeGroups []TimeGroup
 }
 
 type ItemFilter struct {
@@ -777,23 +773,13 @@ func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilt
 }
 
 // viewFilterClause builds one saved view's predicate over an item alias. The
-// view's stored scope is applied first, then its tag/feed groups and time
-// windows. System-feed (saved page) items never match a view.
+// view always matches all feeds; its tag/feed groups and time windows are the
+// only restrictions. System-feed (saved page) items never match a view.
 func viewFilterClause(itemID, timeExpr string, v ViewFilter) (string, []any) {
 	parts := []string{
 		itemID + " NOT IN (SELECT si.id FROM items si JOIN feeds sisf ON sisf.id = si.feed_id WHERE sisf.is_system = 1)",
 	}
 	var args []any
-	if v.AuthorID != 0 {
-		parts = append(parts,
-			"EXISTS (SELECT 1 FROM item_feeds vmf JOIN feeds vsf ON vsf.id = vmf.feed_id WHERE vmf.item_id = "+itemID+" AND vsf.author_id = ?)")
-		args = append(args, v.AuthorID)
-	}
-	if v.CollectionID != 0 {
-		parts = append(parts,
-			"EXISTS (SELECT 1 FROM item_feeds vmf WHERE vmf.item_id = "+itemID+" AND vmf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))")
-		args = append(args, v.CollectionID)
-	}
 	if clause, groupArgs := filterGroupsClause(itemID, v.TagGroups, v.FeedGroups); clause != "" {
 		parts = append(parts, "("+clause+")")
 		args = append(args, groupArgs...)

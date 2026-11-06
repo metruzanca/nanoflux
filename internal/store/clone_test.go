@@ -57,8 +57,7 @@ func TestCloneUser(t *testing.T) {
 	}
 	if _, err := s.SavedViews.Create(seed.ID, SavedView{
 		AuthorID: a.ID, Title: "Blog view", BaseView: "unread", Sort: "newest",
-		Filters:       []string{"feed:show:" + itoa(f.ID), "tag:show:dev"},
-		ScopeAuthorID: a.ID,
+		Filters: []string{"feed:show:" + itoa(f.ID), "tag:show:dev"},
 	}); err != nil {
 		t.Fatalf("saved view: %v", err)
 	}
@@ -108,14 +107,14 @@ func TestCloneUser(t *testing.T) {
 		t.Fatalf("cloned author filters should remap the feed id: %v %+v", err, rules)
 	}
 
-	// Saved views keep their assignment and scope, remapping the feed filter.
+	// Saved views keep their assignment, remapping the feed filter.
 	views, err := s.SavedViews.List(clone.ID)
 	if err != nil || len(views) != 1 {
 		t.Fatalf("clone saved views: %v %+v", err, views)
 	}
 	cv := views[0]
-	if cv.AuthorID != cf.AuthorID || cv.ScopeAuthorID != cf.AuthorID {
-		t.Fatalf("cloned view should remap its author/scope: %+v", cv)
+	if cv.AuthorID != cf.AuthorID {
+		t.Fatalf("cloned view should remap its author: %+v", cv)
 	}
 	if len(cv.Filters) != 2 || cv.Filters[0] != "feed:show:"+itoa(cf.ID) || cv.Filters[1] != "tag:show:dev" {
 		t.Fatalf("cloned view should remap the feed filter: %v", cv.Filters)

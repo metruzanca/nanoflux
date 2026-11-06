@@ -231,8 +231,9 @@ type scopedItemsData struct {
 	TagOptions    []comboItem // distinct tags in scope, for the filter modal
 	// FeedOptions are the author's feeds for the filter modal.
 	FeedOptions []comboItem
-	// ScopeAuthorID/ScopeCollectionID identify the list a "save view" was
-	// created from; both zero mean the global stream.
+	// ScopeAuthorID/ScopeCollectionID identify the list the save-view action was
+	// opened from. Only the author id is used, as the create form's default
+	// assignment; the view itself always spans all feeds.
 	ScopeAuthorID     int64
 	ScopeCollectionID int64
 	// ViewID is the selected saved view on a view-scoped author page.
@@ -2211,7 +2212,7 @@ func (s *Server) authorFilters(userID, authorID int64, filters listFilters) list
 func (s *Server) authorHasViews(userID, authorID int64) bool {
 	views, _ := s.store.SavedViews.ListByAuthor(userID, authorID)
 	for _, v := range views {
-		if len(s.savedViewFilters(userID, v.ScopeAuthorID, v.ScopeCollectionID, filtersFromParams(v.Filters))) > 0 {
+		if len(s.savedViewFilters(userID, filtersFromParams(v.Filters))) > 0 {
 			return true
 		}
 	}

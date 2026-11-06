@@ -669,8 +669,8 @@ type filterPanelData struct {
 	TagOptions    []comboItem
 	FeedOptions   []comboItem
 	AllowTime     bool
-	// ScopeAuthorID/ScopeCollectionID are the list's scope, carried into the
-	// save-view link so a view remembers where it was created.
+	// ScopeAuthorID/ScopeCollectionID are the list's own scope. The author id
+	// pre-fills the save-view assignment; collection scope has no view effect.
 	ScopeAuthorID     int64
 	ScopeCollectionID int64
 	// ViewID is the selected saved view on a view-scoped author page (0 when no
