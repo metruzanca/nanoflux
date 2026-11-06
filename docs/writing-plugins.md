@@ -530,12 +530,15 @@ cases:
   internal whitespace, drop blanks, and de-duplicate while preserving order.
   The resulting tags become the item's chips and the values the tag filter
   matches, so do not also repeat them as `#tag` links in `Summary`.
-- **Reblogs and reposts.** Add the exact category `reblog` when an entry
-  reblogs or reposts another post. A user can then hide reblogs with one
-  category filter regardless of the site.
+- **Reblogs and self-reblogs.** A repost of another author's post and a repost
+  of the same author's own earlier post are different things. Add the exact
+  category `reblog` for the former and `self-reblog` for the latter. A post must
+  carry at most one of them, so hiding `reblog` does not also hide a site's
+  self-reposts. Derive the answer from the site's origin author, preferring an
+  id over a display name, not merely from a "this is a repost" flag.
 
 ```go
-// postCategories returns the site's tags plus the reblog marker.
+// postCategories returns the site's tags plus a reblog marker.
 func postCategories(p *post) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -550,7 +553,10 @@ func postCategories(p *post) []string {
 	for _, t := range p.Tags {
 		add(t)
 	}
-	if p.IsReblog {
+	switch {
+	case p.IsSelfReblog:
+		add("self-reblog")
+	case p.IsReblog:
 		add("reblog")
 	}
 	return out

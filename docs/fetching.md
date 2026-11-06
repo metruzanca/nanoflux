@@ -513,7 +513,10 @@ normalized at parse time from:
 - each item author name (a leading slash is dropped).
 
 One feed therefore gives each item its section as a category and its poster as
-the author; another gives the destination section. Categories are
+the author; another gives the destination section. Plugins that know a post's
+origin should also use the conventional post-kind labels: `reblog` when the
+item reposts another author's post, and `self-reblog` when it reposts the same
+author's earlier post (never both). Categories are
 stored newline-joined in `items.categories` (schemaV36) and refreshed on re-poll,
 so an item already stored gains them without a re-fetch. They power the scoped
 show/hide tag filter (and are available to plugins via

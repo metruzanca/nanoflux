@@ -317,7 +317,11 @@ gives the destination section as the category.
   generic parser path. Plugin-fetched items set `pluginapi.Item.
   Categories` directly; `plugin/dispatch.go` copies them into `feedparse.Item`,
   so both paths reach the same store (a plugin can mark a post kind, e.g. a
-  reblog, with a single label).
+  reblog or self-reblog, with a single label).
+- Plugins that know a post's origin use the conventional labels `reblog` (the
+  item reposts another author's post) and `self-reblog` (it reposts the same
+  author's earlier post). They are mutually exclusive: never apply both, and
+  prefer the site's origin author id over a display name when deciding.
 - `items.categories` (schemaV36) stores them newline-joined (denormalized);
   `Upsert`/`UpdateItemSnapshot` write them, so an already-stored item gains
   categories on re-poll without a re-fetch. `poller.ingest` copies them through.
