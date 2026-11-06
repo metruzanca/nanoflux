@@ -104,6 +104,12 @@ const (
 	// (a deleted profile, a banned community) can pause the feed instead of
 	// retrying it forever. It is matched on the feed URL.
 	CapFetchFailure
+	// CapCategorize asks whether the plugin adds categories (tags) to a feed's
+	// freshly parsed items at ingest time. It runs after either fetch path
+	// (plugin or generic parser), matched on the feed URL via CapCategorize, so
+	// a plugin can tag items it does not fetch: a link aggregator where a post
+	// points at another site can label the item with that site's domain.
+	CapCategorize
 )
 
 // Meta describes a plugin to the host.
@@ -457,6 +463,43 @@ type SharedKeyRequest struct {
 type ItemSharedKey struct {
 	Index     int
 	SharedKey string
+}
+
+// Categorizer is an optional capability a plugin may implement to add
+// categories (tags) to a feed's freshly parsed items at ingest time. It runs
+// after either fetch path (the plugin's own Fetch, or the generic parser for a
+// feed the plugin does not own), matched on the feed URL via CapCategorize. It
+// lets a plugin surface context it can read from an item it does not fetch, for
+// example the domain of a link post's destination, so users can filter on it.
+//
+// Categorize must not reorder or drop items: it returns entries addressed by
+// Index. The host merges the returned categories into the item's existing ones
+// (the generic parser's <category> values and author names), trimming and
+// deduplicating case-insensitively, so a categorizer only adds labels. It may
+// use Host.Do, but a pure function of the parsed items is strongly preferred
+// since it runs on every poll.
+type Categorizer interface {
+	// Categorize returns the extra categories for the items it can label, each
+	// addressed by its index in the request.
+	Categorize(ctx context.Context, req CategorizeRequest, h Host) ([]ItemCategories, error)
+}
+
+// CategorizeRequest is one feed's parsed output, offered to a Categorizer.
+type CategorizeRequest struct {
+	// FeedURL is the feed the items came from.
+	FeedURL string
+	// Feed is the feed-level metadata.
+	Feed Feed
+	// Items are the freshly parsed items, in order.
+	Items []Item
+}
+
+// ItemCategories is a set of categories for one item in a CategorizeRequest,
+// addressed by its position in CategorizeRequest.Items. The host appends them
+// to the item's existing categories; empty means "no extra labels".
+type ItemCategories struct {
+	Index      int
+	Categories []string
 }
 
 // Enricher is an optional capability a plugin may implement to enrich an item's

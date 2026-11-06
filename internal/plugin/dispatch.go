@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"net/url"
+	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/pluginapi"
@@ -89,6 +90,80 @@ func (d *Dispatcher) SharedKeysPlugin(ctx context.Context, req feedparse.FetchRe
 		res.Items[e.Index].SharedKey = e.SharedKey
 	}
 	return nil
+}
+
+// MatchCategorize reports whether any plugin adds categories to the feed's
+// parsed items.
+func (d *Dispatcher) MatchCategorize(req feedparse.FetchRequest) bool {
+	if d.reg.Empty() {
+		return false
+	}
+	c, _ := d.reg.MatchCategorizer(mustParse(req.URL))
+	return c != nil
+}
+
+// CategorizePlugin runs the matching plugin's Categorize pass and merges its
+// categories into the result's items. A plugin that does not implement
+// Categorizer, or returns ErrUnsupportedCapability, is a no-op.
+func (d *Dispatcher) CategorizePlugin(ctx context.Context, req feedparse.FetchRequest, res *feedparse.Result) error {
+	c, f := d.reg.MatchCategorizer(mustParse(req.URL))
+	if c == nil {
+		return nil
+	}
+	items := make([]pluginapi.Item, 0, len(res.Items))
+	for _, it := range res.Items {
+		items = append(items, fromFeedparseItem(it))
+	}
+	entries, err := c.Categorize(ctx, pluginapi.CategorizeRequest{
+		FeedURL: req.URL,
+		Feed: pluginapi.Feed{
+			Title:       res.Feed.Title,
+			HomeURL:     res.Feed.HomeURL,
+			Description: res.Feed.Description,
+			ImageURL:    res.Feed.ImageURL,
+		},
+		Items: items,
+	}, d.hosts(f))
+	if err != nil {
+		if err == pluginapi.ErrUnsupportedCapability {
+			return nil
+		}
+		return convertError(err)
+	}
+	for _, e := range entries {
+		if e.Index < 0 || e.Index >= len(res.Items) {
+			continue
+		}
+		res.Items[e.Index].Categories = mergeCategories(res.Items[e.Index].Categories, e.Categories)
+	}
+	return nil
+}
+
+// mergeCategories appends extra to base, trimming each value and dropping
+// empties and case-insensitive duplicates. The first spelling of a category
+// wins, so a plugin never rewrites a label the feed already provided.
+func mergeCategories(base, extra []string) []string {
+	out := make([]string, 0, len(base)+len(extra))
+	seen := make(map[string]bool, len(base)+len(extra))
+	add := func(c string) {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			return
+		}
+		key := strings.ToLower(c)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		out = append(out, c)
+	}
+	for _, c := range base {
+		add(c)
+	}
+	for _, c := range extra {
+		add(c)
+	}
+	return out
 }
 
 // ClassifyFetchFailure asks the matching plugin to interpret a failed feed

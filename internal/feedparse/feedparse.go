@@ -185,7 +185,8 @@ type Result struct {
 
 // Plugin is a feed integration installed by the plugin host. When set, Fetch
 // defers to it for feeds it matches, before the generic parser, and runs the
-// plugin's SharedKeys pass over every parsed result.
+// plugin's ingest passes (SharedKeys, then Categorize) over every parsed
+// result.
 type Plugin interface {
 	// MatchFetch reports whether the plugin handles the request's feed.
 	MatchFetch(req FetchRequest) bool
@@ -196,6 +197,17 @@ type Plugin interface {
 	MatchSharedKeys(req FetchRequest) bool
 	// SharedKeysPlugin assigns each result item's SharedKey in place.
 	SharedKeysPlugin(ctx context.Context, req FetchRequest, res *Result) error
+}
+
+// categorizer is the optional ingest-categorize half of a Plugin. It is a
+// separate interface so adding the capability does not break an existing
+// Plugin implementation (the plugin host's Dispatcher implements it).
+type categorizer interface {
+	// MatchCategorize reports whether the plugin adds categories to a feed's
+	// parsed items.
+	MatchCategorize(req FetchRequest) bool
+	// CategorizePlugin merges the plugin's categories into each result item.
+	CategorizePlugin(ctx context.Context, req FetchRequest, res *Result) error
 }
 
 // FetchRequest is one feed fetch: the URL and conditional-GET validators.
@@ -227,7 +239,7 @@ func FetchFeed(ctx context.Context, req FetchRequest, client *http.Client) (Resu
 		if err != nil {
 			return Result{}, err
 		}
-		return runSharedKeys(ctx, req, res)
+		return runIngestPasses(ctx, req, res)
 	}
 	feedURL, etag, lastModified := req.URL, req.ETag, req.LastModified
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
@@ -306,19 +318,26 @@ func FetchFeed(ctx context.Context, req FetchRequest, client *http.Client) (Resu
 	for _, it := range parsed.Items {
 		res.Items = append(res.Items, normalizeItem(it))
 	}
-	return runSharedKeys(ctx, req, res)
+	return runIngestPasses(ctx, req, res)
 }
 
-// runSharedKeys runs the installed plugin's SharedKeys pass over a parsed result
-// when one matches the feed URL. A plugin error is returned so the caller
-// records it as a poll failure rather than storing partially-keyed items; a
-// no-op when no plugin matches.
-func runSharedKeys(ctx context.Context, req FetchRequest, res Result) (Result, error) {
-	if installedPlugin == nil || !installedPlugin.MatchSharedKeys(req) {
+// runIngestPasses runs the installed plugin's ingest hooks over a parsed result:
+// SharedKeys first (identity), then Categorize (labels). A plugin error is
+// returned so the caller records it as a poll failure rather than storing
+// partially-processed items; a no-op when no plugin matches.
+func runIngestPasses(ctx context.Context, req FetchRequest, res Result) (Result, error) {
+	if installedPlugin == nil {
 		return res, nil
 	}
-	if err := installedPlugin.SharedKeysPlugin(ctx, req, &res); err != nil {
-		return Result{}, err
+	if installedPlugin.MatchSharedKeys(req) {
+		if err := installedPlugin.SharedKeysPlugin(ctx, req, &res); err != nil {
+			return Result{}, err
+		}
+	}
+	if c, ok := installedPlugin.(categorizer); ok && c.MatchCategorize(req) {
+		if err := c.CategorizePlugin(ctx, req, &res); err != nil {
+			return Result{}, err
+		}
 	}
 	return res, nil
 }

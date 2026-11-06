@@ -204,6 +204,7 @@ const (
 	Fetcher_Render_FullMethodName               = "/nanoflux.plugin.v1.Fetcher/Render"
 	Fetcher_Docs_FullMethodName                 = "/nanoflux.plugin.v1.Fetcher/Docs"
 	Fetcher_SharedKeys_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/SharedKeys"
+	Fetcher_Categorize_FullMethodName           = "/nanoflux.plugin.v1.Fetcher/Categorize"
 	Fetcher_Enrich_FullMethodName               = "/nanoflux.plugin.v1.Fetcher/Enrich"
 	Fetcher_Decorate_FullMethodName             = "/nanoflux.plugin.v1.Fetcher/Decorate"
 	Fetcher_CanonicalizeFeedURL_FullMethodName  = "/nanoflux.plugin.v1.Fetcher/CanonicalizeFeedURL"
@@ -232,6 +233,8 @@ type FetcherClient interface {
 	Docs(ctx context.Context, in *DocsRequest, opts ...grpc.CallOption) (*DocsResponse, error)
 	// SharedKeys is optional: ingest-time per-item cross-feed identity.
 	SharedKeys(ctx context.Context, in *SharedKeyRequest, opts ...grpc.CallOption) (*SharedKeyResponse, error)
+	// Categorize is optional: ingest-time per-item categories (tags).
+	Categorize(ctx context.Context, in *CategorizeRequest, opts ...grpc.CallOption) (*CategorizeResponse, error)
 	// Enrich is optional: ingest-time per-item body enrichment (full text,
 	// translation, transcript).
 	Enrich(ctx context.Context, in *EnrichRequest, opts ...grpc.CallOption) (*EnrichResponse, error)
@@ -341,6 +344,16 @@ func (c *fetcherClient) SharedKeys(ctx context.Context, in *SharedKeyRequest, op
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SharedKeyResponse)
 	err := c.cc.Invoke(ctx, Fetcher_SharedKeys_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *fetcherClient) Categorize(ctx context.Context, in *CategorizeRequest, opts ...grpc.CallOption) (*CategorizeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CategorizeResponse)
+	err := c.cc.Invoke(ctx, Fetcher_Categorize_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -481,6 +494,8 @@ type FetcherServer interface {
 	Docs(context.Context, *DocsRequest) (*DocsResponse, error)
 	// SharedKeys is optional: ingest-time per-item cross-feed identity.
 	SharedKeys(context.Context, *SharedKeyRequest) (*SharedKeyResponse, error)
+	// Categorize is optional: ingest-time per-item categories (tags).
+	Categorize(context.Context, *CategorizeRequest) (*CategorizeResponse, error)
 	// Enrich is optional: ingest-time per-item body enrichment (full text,
 	// translation, transcript).
 	Enrich(context.Context, *EnrichRequest) (*EnrichResponse, error)
@@ -546,6 +561,9 @@ func (UnimplementedFetcherServer) Docs(context.Context, *DocsRequest) (*DocsResp
 }
 func (UnimplementedFetcherServer) SharedKeys(context.Context, *SharedKeyRequest) (*SharedKeyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SharedKeys not implemented")
+}
+func (UnimplementedFetcherServer) Categorize(context.Context, *CategorizeRequest) (*CategorizeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Categorize not implemented")
 }
 func (UnimplementedFetcherServer) Enrich(context.Context, *EnrichRequest) (*EnrichResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Enrich not implemented")
@@ -726,6 +744,24 @@ func _Fetcher_SharedKeys_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(FetcherServer).SharedKeys(ctx, req.(*SharedKeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Fetcher_Categorize_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CategorizeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FetcherServer).Categorize(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Fetcher_Categorize_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FetcherServer).Categorize(ctx, req.(*CategorizeRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -980,6 +1016,10 @@ var Fetcher_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SharedKeys",
 			Handler:    _Fetcher_SharedKeys_Handler,
+		},
+		{
+			MethodName: "Categorize",
+			Handler:    _Fetcher_Categorize_Handler,
 		},
 		{
 			MethodName: "Enrich",

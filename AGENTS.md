@@ -178,6 +178,14 @@ executables loaded from `NF_PLUGINS_DIR`.
   `cross_key` (`crossFeedKey` now just trims the plugin-supplied key); the
   plugin decides the key's shape. `MergeCrossFeedDuplicates` merges rows that
   already share one.
+- **`Categorizer`** (`CapCategorize`): `Categorize` adds categories (tags) to a
+  feed's freshly parsed items after either fetch path (index-addressed entries).
+  `feedparse.FetchFeed` runs it via `runIngestPasses`, after `SharedKeys`, and
+  merges the result into each item's existing categories (trimmed,
+  case-insensitively deduped, existing spelling wins). The generic parser's
+  `<category>` and author labels are never removed, so a categorizer only adds
+  labels. A plugin uses it to surface context the parser cannot see, such as the
+  destination domain of an aggregator's link post.
 - **`Decoration`** (`CapDecorate`): `Decorate` returns each item's source
   attribution parts (with tokens) and card `Kind`. It is view-time and pure (no
   network). `cmd/server/main.go` installs the registry's `StoreDecorator`
@@ -235,8 +243,9 @@ gRPC client's unsupported RPC is handled), but Match-only ones are not.
 
 A plugin that owns URL-matched capabilities is the reference for all of
 these: `Match` returns true only for the
-capabilities it claims (`CapSharedKey`, `CapDecorate`, `CapURLPolicy`,
-`CapDiscover`, `CapRender`, `CapDocs`, `CapFetchFailure`) on its hosts; it does
+capabilities it claims (`CapSharedKey`, `CapCategorize`, `CapDecorate`,
+`CapURLPolicy`, `CapDiscover`, `CapRender`, `CapDocs`, `CapFetchFailure`) on its
+hosts; it does
 **not** claim
 `CapFetch` when the generic parser reads its feeds. A URL that is not a feed is a
 case where the plugin returns false for the URL-matched capabilities that would

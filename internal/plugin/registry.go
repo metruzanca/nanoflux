@@ -155,6 +155,24 @@ func (r *Registry) MatchSharedKeyer(u *url.URL) (pluginapi.SharedKeyer, pluginap
 	return nil, nil
 }
 
+// MatchCategorizer returns the first plugin that adds categories to u's parsed
+// items at ingest, along with its Fetcher (for the host factory), or
+// (nil, nil).
+func (r *Registry) MatchCategorizer(u *url.URL) (pluginapi.Categorizer, pluginapi.Fetcher) {
+	if u == nil {
+		return nil, nil
+	}
+	for _, f := range r.all() {
+		if !f.Match(u, pluginapi.CapCategorize) {
+			continue
+		}
+		if c, ok := f.(pluginapi.Categorizer); ok {
+			return c, f
+		}
+	}
+	return nil, nil
+}
+
 // RenderItem runs the plugin that handles view-time rendering for the item's
 // link and returns its media. When no plugin matches (or the match does not
 // implement Renderer), it returns an empty Media so the caller falls back to
