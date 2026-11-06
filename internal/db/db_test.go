@@ -43,6 +43,17 @@ func TestMigrate(t *testing.T) {
 		t.Errorf("visible_items view not created")
 	}
 
+	// schemaV60 removed saved-view scope columns: a view always matches all feeds.
+	var scopeCols int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('saved_views') WHERE name IN ('scope_author_id','scope_collection_id')`,
+	).Scan(&scopeCols); err != nil {
+		t.Fatal(err)
+	}
+	if scopeCols != 0 {
+		t.Errorf("saved_views should not have scope columns after schemaV60")
+	}
+
 	// The ingest filter-rule system (schemaV53) is gone: no filters table and no
 	// filter_mode column on feeds.
 	var filtersTable int

@@ -157,16 +157,14 @@ type ListItem struct {
 }
 
 type SavedView struct {
-	ID                int64         `json:"id"`
-	UserID            int64         `json:"user_id"`
-	AuthorID          sql.NullInt64 `json:"author_id"`
-	Title             string        `json:"title"`
-	BaseView          string        `json:"base_view"`
-	Sort              string        `json:"sort"`
-	Filters           string        `json:"filters"`
-	ScopeAuthorID     sql.NullInt64 `json:"scope_author_id"`
-	ScopeCollectionID sql.NullInt64 `json:"scope_collection_id"`
-	CreatedAt         string        `json:"created_at"`
+	ID        int64         `json:"id"`
+	UserID    int64         `json:"user_id"`
+	AuthorID  sql.NullInt64 `json:"author_id"`
+	Title     string        `json:"title"`
+	BaseView  string        `json:"base_view"`
+	Sort      string        `json:"sort"`
+	Filters   string        `json:"filters"`
+	CreatedAt string        `json:"created_at"`
 }
 
 type Session struct {

@@ -10,20 +10,17 @@ import (
 
 // SavedView is a private, named filter recipe over the user's item lists. It
 // stores a base tab (unread/read/favorites/bookmarks), a sort and the canonical
-// list filter params. AuthorID groups the view on an author page; it does not
-// limit the items. ScopeAuthorID/ScopeCollectionID record the list the view was
-// created over (0 = all feeds).
+// list filter params. AuthorID only assigns the view to an author page; the
+// view always matches all feeds.
 type SavedView struct {
-	ID                int64
-	UserID            int64
-	AuthorID          int64 // 0 = unassigned
-	Title             string
-	BaseView          string
-	Sort              string
-	Filters           []string // canonical ?f= params
-	ScopeAuthorID     int64    // 0 = all feeds
-	ScopeCollectionID int64    // 0 = no collection scope
-	CreatedAt         string
+	ID        int64
+	UserID    int64
+	AuthorID  int64 // 0 = unassigned
+	Title     string
+	BaseView  string
+	Sort      string
+	Filters   []string // canonical ?f= params
+	CreatedAt string
 }
 
 // MaxSavedViewsPerUser caps how many views an account can keep, so a crafted
@@ -34,8 +31,7 @@ const MaxSavedViewsPerUser = 200
 // generated because the filter list is an opaque JSON array.
 type SavedViewStore struct{ db *sql.DB }
 
-const savedViewColumns = `id, user_id, author_id, title, base_view, sort, filters,
-	scope_author_id, scope_collection_id, created_at`
+const savedViewColumns = `id, user_id, author_id, title, base_view, sort, filters, created_at`
 
 // List returns all of a user's saved views, newest first.
 func (s *SavedViewStore) List(userID int64) ([]SavedView, error) {
@@ -86,11 +82,9 @@ func (s *SavedViewStore) Create(userID int64, v SavedView) (SavedView, error) {
 	}
 	res, err := s.db.ExecContext(context.Background(), `
 		INSERT INTO saved_views (
-			user_id, author_id, title, base_view, sort, filters,
-			scope_author_id, scope_collection_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		userID, savedViewAuthor(v.AuthorID), v.Title, v.BaseView, v.Sort, filters,
-		savedViewAuthor(v.ScopeAuthorID), savedViewCollection(v.ScopeCollectionID))
+			user_id, author_id, title, base_view, sort, filters
+		) VALUES (?, ?, ?, ?, ?, ?)`,
+		userID, savedViewAuthor(v.AuthorID), v.Title, v.BaseView, v.Sort, filters)
 	if err != nil {
 		return SavedView{}, fmt.Errorf("create saved view: %w", err)
 	}
@@ -110,11 +104,9 @@ func (s *SavedViewStore) Update(userID, id int64, v SavedView) error {
 	}
 	res, err := s.db.ExecContext(context.Background(), `
 		UPDATE saved_views SET
-			author_id = ?, title = ?, base_view = ?, sort = ?, filters = ?,
-			scope_author_id = ?, scope_collection_id = ?
+			author_id = ?, title = ?, base_view = ?, sort = ?, filters = ?
 		WHERE user_id = ? AND id = ?`,
 		savedViewAuthor(v.AuthorID), v.Title, v.BaseView, v.Sort, filters,
-		savedViewAuthor(v.ScopeAuthorID), savedViewCollection(v.ScopeCollectionID),
 		userID, id)
 	if err != nil {
 		return fmt.Errorf("update saved view: %w", err)
@@ -173,21 +165,16 @@ type savedViewScanner interface {
 
 func scanSavedView(row savedViewScanner) (SavedView, error) {
 	var (
-		v                 SavedView
-		authorID          sql.NullInt64
-		scopeAuthorID     sql.NullInt64
-		scopeCollectionID sql.NullInt64
-		filters           string
+		v        SavedView
+		authorID sql.NullInt64
+		filters  string
 	)
 	if err := row.Scan(
-		&v.ID, &v.UserID, &authorID, &v.Title, &v.BaseView, &v.Sort, &filters,
-		&scopeAuthorID, &scopeCollectionID, &v.CreatedAt,
+		&v.ID, &v.UserID, &authorID, &v.Title, &v.BaseView, &v.Sort, &filters, &v.CreatedAt,
 	); err != nil {
 		return SavedView{}, err
 	}
 	v.AuthorID = authorID.Int64
-	v.ScopeAuthorID = scopeAuthorID.Int64
-	v.ScopeCollectionID = scopeCollectionID.Int64
 	v.Filters = unmarshalSavedViewFilters(filters)
 	return v, nil
 }
@@ -215,13 +202,6 @@ func unmarshalSavedViewFilters(raw string) []string {
 }
 
 func savedViewAuthor(id int64) any {
-	if id <= 0 {
-		return nil
-	}
-	return id
-}
-
-func savedViewCollection(id int64) any {
 	if id <= 0 {
 		return nil
 	}

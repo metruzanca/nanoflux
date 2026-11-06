@@ -61,7 +61,7 @@ templ savedViewCard(r savedViewRow) {
 					<span class="badge">{ r.BaseView }</span>
 				</div>
 				<div class="item-meta">
-					{ r.ScopeLabel } · { r.Count } matching
+					{ r.Count } matching
 					if r.AuthorID > 0 && r.AuthorName != "" {
 						· assigned to <a href={ templ.URL("/authors/" + strconv.FormatInt(r.AuthorID, 10)) }>{ r.AuthorName }</a>
 					}
@@ -96,7 +96,7 @@ templ savedViewPage(u store.User, d savedViewPageData) {
 			</div>
 		</div>
 		<p class="muted small">
-			{ d.Row.ScopeLabel } · starts on { d.Row.BaseView } · { d.Row.Sort.param() } first
+			starts on { d.Row.BaseView } · { d.Row.Sort.param() } first
 			if d.Row.AuthorID > 0 && d.Row.AuthorName != "" {
 				· assigned to <a href={ templ.URL("/authors/" + strconv.FormatInt(d.Row.AuthorID, 10)) }>{ d.Row.AuthorName }</a>
 			}
@@ -110,9 +110,8 @@ templ savedViewPage(u store.User, d savedViewPageData) {
 	</div>
 }
 
-// savedViewFormPage is the create/edit page. The scope is captured at creation
-// and shown read-only; title, assignment, base tab, sort and filters are
-// editable.
+// savedViewFormPage is the create/edit page. Title, assignment, base tab, sort
+// and filters are editable; the view always matches all feeds.
 templ savedViewFormPage(u store.User, f savedViewForm) {
 	{{ action := "/views" }}
 	if f.ID > 0 {
@@ -130,8 +129,6 @@ templ savedViewFormPage(u store.User, f savedViewForm) {
 	</div>
 	<form class="stack card" method="post" action={ templ.URL(action) } data-filter-scope>
 		@csrfField()
-		<input type="hidden" name="scope_author" value={ strconv.FormatInt(f.ScopeAuthorID, 10) }/>
-		<input type="hidden" name="scope_collection" value={ strconv.FormatInt(f.ScopeCollectionID, 10) }/>
 		if f.Error != "" {
 			<div class="error" role="alert">{ f.Error }</div>
 		}
@@ -139,7 +136,7 @@ templ savedViewFormPage(u store.User, f savedViewForm) {
 			<input name="title" value={ f.Title } maxlength="120" required autofocus/>
 		</label>
 		@comboSelect("author_id", savedViewAuthorValue(f.AuthorID), "assign to author", "search authors", f.AuthorOptions, nil)
-		<p class="muted small">scope · { f.ScopeLabel }. The scope is fixed when the view is created; assignment only decides where it is listed.</p>
+		<p class="muted small">The view matches every feed; use its filters to limit the posts. Assignment only decides where it is listed.</p>
 		<div class="row">
 			<label>starts on
 				<select name="view">

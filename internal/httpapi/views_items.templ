@@ -561,10 +561,7 @@ templ filterDialog(fp filterPanelData) {
 				}
 				<input type="hidden" name="sort" value={ fp.Sort.param() }/>
 				if fp.ScopeAuthorID > 0 {
-					<input type="hidden" name="scope_author" value={ strconv.FormatInt(fp.ScopeAuthorID, 10) }/>
-				}
-				if fp.ScopeCollectionID > 0 {
-					<input type="hidden" name="scope_collection" value={ strconv.FormatInt(fp.ScopeCollectionID, 10) }/>
+					<input type="hidden" name="author_id" value={ strconv.FormatInt(fp.ScopeAuthorID, 10) }/>
 				}
 				<p class="muted small">show matching posts, or hide them. tag and feed rows combine their values with any (or) or all (and); time rows match a window on the post time, in your timezone. show rows must all match, and any hide row excludes.</p>
 				<div class="filter-rows" id="filter-rows" data-filter-rows>

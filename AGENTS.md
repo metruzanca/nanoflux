@@ -490,19 +490,19 @@ the author page's scope stays `/authors/{id}`.
 
 A saved view is a private, named filter recipe that acts as a **source** on an
 author page. It never polls, has no URL, and is absent from OPML/plugin/poller
-code. The entity lives in `saved_views` (schemaV57), separate from `feeds`.
+code.
 
+- The entity lives in `saved_views` (schemaV57; schemaV60 removed its scope
+  columns), separate from `feeds`.
 - A view stores a base tab (`unread`/`read`/`favorites`/`bookmarks`), a sort and
-  the canonical `?f=` filter params, plus the scope it was created over
-  (`scope_author_id` or `scope_collection_id`; both empty means all feeds).
+  the canonical `?f=` filter params. It always matches **all feeds**; limiting
+  it is expressed through its own filter rows.
 - `author_id` is the author the view feeds. An author page's scope is
   `author's own feeds OR every assigned view`, so a subreddit feed plus a view
   such as `tag=u/example-poster` can replace a per-user profile feed.
-- A view must have at least one filter row. An unfiltered view would pull its
-  whole scope into the author, so `savedViewFormFromRequest` rejects one and
+- A view must have at least one filter row. An unfiltered view would pull every
+  post into the author, so `savedViewFormFromRequest` rejects one and
   `authorStoreViewFilters` skips any legacy blank view.
-- The scope is fixed when the view is created. The edit form changes the title,
-  assignment, base tab, sort and filters; it cannot widen the scope.
 - `?view=<id>` on an author page selects a saved view; `?tab=unread|read|favorites`
   selects the tab (default unread). A non-numeric `?view=unread|read` keeps its
   historical tab meaning. The shared tab, sort, filter-chip, filter-dialog and
@@ -510,9 +510,9 @@ code. The entity lives in `saved_views` (schemaV57), separate from `feeds`.
   `scopedViewSep`.
 - The store scope is `store.ViewFilter` + `ItemFilter.Views`. `authorScopeClause`
   builds the OR of author-owned feeds and each view predicate; `viewFilterClause`
-  applies the view's stored scope, groups and time windows. `listPageTagged` is
-  forced whenever `Views` is non-empty, and `unreadFilteredQuery` delegates to the
-  same predicate builder so mark-all and unread counts include views.
+  applies the view's tag/feed groups and time windows. `listPageTagged` is forced
+  whenever `Views` is non-empty, and `unreadFilteredQuery` delegates to the same
+  predicate builder so mark-all and unread counts include views.
 - Author stats, posting frequency, tag options and `/authors` unread counts use
   the same union (`StatsFilter`, `RecentTimesFilter`, `ListCategoriesFilter`).
 - Author allow/block rules still apply to the author who owns the feed, not to
@@ -520,7 +520,7 @@ code. The entity lives in `saved_views` (schemaV57), separate from `feeds`.
 - A bare `/views/{id}` redirects to the assigned author's
   `/authors/{id}?view={viewID}`, or to its canonical query for an unassigned
   view. The edit page always keeps the delete control.
-- Feed filter values are validated on save and load against the view's scope, so
+- Feed filter values are validated on save and load against the user's feeds, so
   deleting a feed degrades the view rather than breaking it.
 - Creation happens from the filter dialog's `save as view` submit, which posts
   the draft filter rows to `/views/new`; the topbar add-caret menu also links
@@ -530,9 +530,8 @@ code. The entity lives in `saved_views` (schemaV57), separate from `feeds`.
   and assigned views; the page itself has no add-feed/add-view controls.
 - `/views` is the private index, grouped by assigned author, and is linked from
   the user menu.
-- `CloneUser` copies saved views and remaps author/collection/feed ids; a view
-  whose scoped author or collection did not survive the clone is skipped rather
-  than widened.
+- `CloneUser` copies saved views and remaps the assigned author and feed ids; a
+  view whose assigned author did not survive the clone becomes unassigned.
 
 ## Appearance
 
