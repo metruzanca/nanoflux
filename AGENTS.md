@@ -7,6 +7,8 @@
 - App links are internal by default, ↗ on every external link.
 - mise is for development, make is for selfhosting an instance
 - Do not mention any external plugins in internal code, comments or docs
+- In tests and code examples, always use made-up usernames and handles for
+  sites. Do not copy real account names or usage data into the repository.
 - Prefer extending `pluginapi` over site-specific core changes. When a request
   concerns one site and the direct fix would add a special case to the core app,
   stop and extend `pluginapi` instead, then have the core call into a plugin.
