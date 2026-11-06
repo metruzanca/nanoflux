@@ -2048,22 +2048,23 @@ func (q *Queries) SetItemContent(ctx context.Context, arg SetItemContentParams) 
 	return err
 }
 
-const setItemCrossKey = `-- name: SetItemCrossKey :exec
+const setItemCrossKeyByID = `-- name: SetItemCrossKeyByID :exec
 UPDATE items
 SET cross_key = ?
-WHERE feed_id = ? AND dedup_key = ?
+WHERE id = ? AND cross_key = ''
 `
 
-type SetItemCrossKeyParams struct {
+type SetItemCrossKeyByIDParams struct {
 	CrossKey string `json:"cross_key"`
-	FeedID   int64  `json:"feed_id"`
-	DedupKey string `json:"dedup_key"`
+	ID       int64  `json:"id"`
 }
 
-// Adopt a cross-feed identity on an already-stored item (e.g. a row that
-// predates the backfill), within its owning feed.
-func (q *Queries) SetItemCrossKey(ctx context.Context, arg SetItemCrossKeyParams) error {
-	_, err := q.db.ExecContext(ctx, setItemCrossKey, arg.CrossKey, arg.FeedID, arg.DedupKey)
+// Adopt a cross-feed identity on one specific already-stored item (e.g. a row
+// that predates the backfill). Scoped by id, never by (feed_id, dedup_key):
+// that pair can match a stray duplicate whose key is already owned by the
+// cross-feed row, and assigning it there violates the per-user unique index.
+func (q *Queries) SetItemCrossKeyByID(ctx context.Context, arg SetItemCrossKeyByIDParams) error {
+	_, err := q.db.ExecContext(ctx, setItemCrossKeyByID, arg.CrossKey, arg.ID)
 	return err
 }
 

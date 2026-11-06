@@ -548,19 +548,31 @@ func TestFeedDeleteMergesDedupCollision(t *testing.T) {
 	post := Item{GUID: "t3_collide", SharedKey: "reddit:t3_collide", Title: "Post",
 		Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now()}
 
-	// A pre-cross-dedup row owned by the user feed.
-	if _, err := s.Items.Upsert(userFeed.ID, Item{GUID: "t3_collide", Title: "Post", FetchedAt: db.Now()}); err != nil {
-		t.Fatalf("user feed item: %v", err)
-	}
-	// A second row owned by the sub feed, then given a user-feed membership.
+	// The keyed row owned by the sub feed, also a member of the user feed.
 	if _, err := s.Items.Upsert(subFeed.ID, post); err != nil {
 		t.Fatalf("sub feed item: %v", err)
 	}
-	if _, err := s.Items.Upsert(userFeed.ID, post); err != nil {
-		t.Fatalf("membership: %v", err)
-	}
 	subID, _ := s.Items.ByFeedIdentity(subFeed.ID, "t3_collide")
-	userID, _ := s.Items.ByFeedIdentity(userFeed.ID, "t3_collide")
+
+	// A stale duplicate owned by the user feed, as an older build left it.
+	// Inserted directly: today's ingest path folds such a row into the keyed
+	// row before a delete could collide.
+	res, err := s.db.Exec(`INSERT INTO items
+		(feed_id, user_id, guid, dedup_key, cross_key, title, fetched_at)
+		VALUES (?, ?, 't3_collide', 't3_collide', 'reddit:t3_collide', 'Post', ?)`,
+		userFeed.ID, u.ID, db.Now())
+	if err != nil {
+		t.Fatalf("stray user-feed row: %v", err)
+	}
+	userID, _ := res.LastInsertId()
+	if _, err := s.db.Exec(`INSERT INTO item_feeds (item_id, feed_id) VALUES (?, ?)`, userID, userFeed.ID); err != nil {
+		t.Fatalf("stray membership: %v", err)
+	}
+	// The keyed row is also visible through the user feed, so deleting the sub
+	// feed re-homes it there and hits the duplicate.
+	if _, err := s.db.Exec(`INSERT INTO item_feeds (item_id, feed_id) VALUES (?, ?)`, subID, userFeed.ID); err != nil {
+		t.Fatalf("keyed membership: %v", err)
+	}
 	if subID == 0 || userID == 0 || subID == userID {
 		t.Fatalf("expected two rows before delete, sub=%d user=%d", subID, userID)
 	}
@@ -662,6 +674,69 @@ func TestMergeCrossFeedDuplicates(t *testing.T) {
 	userItems, _ := s.Items.List(u.ID, ItemFilter{FeedID: userFeed.ID, Limit: 10})
 	if len(subItems) != 1 || len(userItems) != 1 {
 		t.Fatalf("both feeds should see the merged item: sub=%d user=%d", len(subItems), len(userItems))
+	}
+}
+
+// MergeCrossFeedDuplicates also folds a row stored before cross keys were
+// derived into the keyed row for the same post, keeping the keyed row as the
+// survivor so the merged item stays cross-feed deduplicated.
+func TestMergeCrossFeedStrayDuplicates(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a1, _ := s.Authors.Create(u.ID, "r/cats", "", "")
+	a2, _ := s.Authors.Create(u.ID, "sam", "", "")
+	subFeed, _ := s.Feeds.Create(u.ID, a1.ID, "r/cats", "https://example.test/r/cats.rss", "", "", 900)
+	userFeed, _ := s.Feeds.Create(u.ID, a2.ID, "u/sam", "https://example.test/u/sam.rss", "", "", 900)
+	if _, err := s.Items.MergeCrossFeedDuplicates(false); err != nil {
+		t.Fatalf("create cross index: %v", err)
+	}
+
+	// A stray row with no cross key, favorited by the user.
+	if _, err := s.Items.Upsert(userFeed.ID, Item{
+		GUID: "t3_stray", Title: "Post", FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatalf("stray ingest: %v", err)
+	}
+	strayID, _ := s.Items.ByFeedIdentity(userFeed.ID, "t3_stray")
+	if err := s.Items.SetFavorite(u.ID, strayID, true); err != nil {
+		t.Fatal(err)
+	}
+	// The keyed row for the same post through the subreddit feed.
+	if _, err := s.Items.Upsert(subFeed.ID, Item{
+		GUID: "t3_stray", SharedKey: "reddit:t3_stray", Title: "Post",
+		FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatalf("keyed ingest: %v", err)
+	}
+
+	report, err := s.Items.MergeCrossFeedDuplicates(false)
+	if err != nil {
+		t.Fatalf("MergeCrossFeedDuplicates: %v", err)
+	}
+	if report.ItemsMerged != 1 {
+		t.Fatalf("merged %d, want 1", report.ItemsMerged)
+	}
+	items, _ := s.Items.List(u.ID, ItemFilter{Limit: 10})
+	if len(items) != 1 {
+		t.Fatalf("want one item after merge, got %d", len(items))
+	}
+	survivor := items[0]
+	if survivor.CrossKey != "reddit:t3_stray" {
+		t.Fatalf("survivor should keep the cross key, got %q", survivor.CrossKey)
+	}
+	if !survivor.Favorite {
+		t.Fatalf("favorite state should carry to the survivor")
+	}
+	// Both feeds still see it (memberships folded).
+	subItems, _ := s.Items.List(u.ID, ItemFilter{FeedID: subFeed.ID, Limit: 10})
+	userItems, _ := s.Items.List(u.ID, ItemFilter{FeedID: userFeed.ID, Limit: 10})
+	if len(subItems) != 1 || len(userItems) != 1 {
+		t.Fatalf("both feeds should see the merged item: sub=%d user=%d", len(subItems), len(userItems))
+	}
+	// Idempotent.
+	report, err = s.Items.MergeCrossFeedDuplicates(false)
+	if err != nil || report.ItemsMerged != 0 {
+		t.Fatalf("second run: merged=%d err=%v", report.ItemsMerged, err)
 	}
 }
 
