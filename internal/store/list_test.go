@@ -534,6 +534,81 @@ func TestFeedDeleteRehomesSharedItem(t *testing.T) {
 	}
 }
 
+// Deleting a feed whose item would collide with an existing row in the target
+// feed merges the duplicate instead of failing the unique (feed_id, dedup_key)
+// index. State, categories and list memberships move to the survivor.
+func TestFeedDeleteMergesDedupCollision(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a1, _ := s.Authors.Create(u.ID, "r/cats", "", "")
+	a2, _ := s.Authors.Create(u.ID, "sam", "", "")
+	subFeed, _ := s.Feeds.Create(u.ID, a1.ID, "r/cats", "https://example.test/r/cats.rss", "", "", 900)
+	userFeed, _ := s.Feeds.Create(u.ID, a2.ID, "u/sam", "https://example.test/u/sam.rss", "", "", 900)
+
+	post := Item{GUID: "t3_collide", SharedKey: "reddit:t3_collide", Title: "Post",
+		Categories: []string{"r/cats", "u/sam"}, FetchedAt: db.Now()}
+
+	// A pre-cross-dedup row owned by the user feed.
+	if _, err := s.Items.Upsert(userFeed.ID, Item{GUID: "t3_collide", Title: "Post", FetchedAt: db.Now()}); err != nil {
+		t.Fatalf("user feed item: %v", err)
+	}
+	// A second row owned by the sub feed, then given a user-feed membership.
+	if _, err := s.Items.Upsert(subFeed.ID, post); err != nil {
+		t.Fatalf("sub feed item: %v", err)
+	}
+	if _, err := s.Items.Upsert(userFeed.ID, post); err != nil {
+		t.Fatalf("membership: %v", err)
+	}
+	subID, _ := s.Items.ByFeedIdentity(subFeed.ID, "t3_collide")
+	userID, _ := s.Items.ByFeedIdentity(userFeed.ID, "t3_collide")
+	if subID == 0 || userID == 0 || subID == userID {
+		t.Fatalf("expected two rows before delete, sub=%d user=%d", subID, userID)
+	}
+
+	if err := s.Items.SetRead(u.ID, subID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Items.SetFavorite(u.ID, subID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Items.SetBookmark(u.ID, subID, true); err != nil {
+		t.Fatal(err)
+	}
+	lst, _ := s.Lists.Create(u.ID, "reading")
+	if err := s.Lists.AddItem(u.ID, lst.ID, subID); err != nil {
+		t.Fatal(err)
+	}
+
+	keys, err := s.Feeds.Delete(u.ID, subFeed.ID)
+	if err != nil {
+		t.Fatalf("delete should merge the collision: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Fatalf("colliding item is merged, so no cache keys should be doomed: %v", keys)
+	}
+	survivor, err := s.Items.ByFeedIdentity(userFeed.ID, "t3_collide")
+	if err != nil || survivor == 0 {
+		t.Fatalf("survivor lookup: %v", err)
+	}
+	if survivor != userID {
+		t.Fatalf("survivor should be the existing user-feed row %d, got %d", userID, survivor)
+	}
+	it, err := s.Items.ByID(u.ID, survivor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !it.Read || !it.Favorite || !it.Bookmark {
+		t.Fatalf("state should move to the survivor: read=%v fav=%v bookmark=%v", it.Read, it.Favorite, it.Bookmark)
+	}
+	listIDs, _ := s.Lists.ItemListIDs(u.ID, survivor)
+	if len(listIDs) != 1 || listIDs[0] != lst.ID {
+		t.Fatalf("list membership should move to the survivor: %v", listIDs)
+	}
+	if gone, _ := s.Items.ByFeedIdentity(subFeed.ID, "t3_collide"); gone != 0 {
+		t.Fatalf("duplicate row should be gone, got %d", gone)
+	}
+}
+
 // MergeCrossFeedDuplicates collapses rows that were stored separately before the
 // cross-feed model existed, carrying read state onto the survivor.
 func TestMergeCrossFeedDuplicates(t *testing.T) {

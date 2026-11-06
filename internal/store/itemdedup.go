@@ -144,58 +144,67 @@ func (s *ItemStore) mergeDedupGroup(g DedupGroup) error {
 	ctx := context.Background()
 
 	for _, loser := range g.Losers {
-		// Carry read/favorite/bookmark state onto the survivor (never un-read,
-		// un-favorite or un-bookmark something).
-		if err := exec(ctx, tx, `
-			UPDATE items
-			SET read = MAX(read, (SELECT read FROM items WHERE id = ?)),
-			    favorite = MAX(favorite, (SELECT favorite FROM items WHERE id = ?)),
-			    bookmark = MAX(bookmark, (SELECT bookmark FROM items WHERE id = ?)),
-			    read_at = COALESCE(read_at, (SELECT read_at FROM items WHERE id = ?))
-			WHERE id = ?`, loser, loser, loser, loser, g.Survivor); err != nil {
-			return err
-		}
-		// Fold the loser's feed memberships into the survivor, then repoint
-		// every other reference to the loser.
-		if err := exec(ctx, tx, `
-			INSERT OR IGNORE INTO item_feeds (item_id, feed_id, created_at)
-			SELECT ?, feed_id, created_at FROM item_feeds WHERE item_id = ?`, g.Survivor, loser); err != nil {
-			return err
-		}
-		if err := exec(ctx, tx, `UPDATE item_enclosures SET item_id = ? WHERE item_id = ?`, g.Survivor, loser); err != nil {
-			return err
-		}
-		// Fold the loser's tags into the survivor (its rows cascade away with
-		// the loser) so a merge never loses a category.
-		if err := exec(ctx, tx, `
-			INSERT OR IGNORE INTO item_categories (item_id, category)
-			SELECT ?, category FROM item_categories WHERE item_id = ?`, g.Survivor, loser); err != nil {
-			return err
-		}
-		// list_items is keyed (list_id, item_id): insert-or-ignore then drop.
-		if err := exec(ctx, tx, `
-			INSERT OR IGNORE INTO list_items (list_id, item_id, created_at)
-			SELECT list_id, ?, created_at FROM list_items WHERE item_id = ?`, g.Survivor, loser); err != nil {
-			return err
-		}
-		if err := exec(ctx, tx, `DELETE FROM list_items WHERE item_id = ?`, loser); err != nil {
-			return err
-		}
-		// shared_items.item_id is UNIQUE: keep the survivor's token if it has
-		// one, otherwise adopt the loser's.
-		if err := exec(ctx, tx, `
-			INSERT OR IGNORE INTO shared_items (item_id, token, created_at)
-			SELECT ?, token, created_at FROM shared_items WHERE item_id = ?`, g.Survivor, loser); err != nil {
-			return err
-		}
-		if err := exec(ctx, tx, `DELETE FROM shared_items WHERE item_id = ?`, loser); err != nil {
-			return err
-		}
-		if err := exec(ctx, tx, `DELETE FROM items WHERE id = ?`, loser); err != nil {
+		if err := mergeItemInto(ctx, tx, g.Survivor, loser); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+// mergeItemInto folds one duplicate item row into a survivor and deletes the
+// loser. It carries read/favorite/bookmark state, feed memberships, enclosures,
+// categories, list memberships and shares, then removes the loser. It is shared
+// by the explicit dedup command and by feed deletion when a re-home would collide
+// on (feed_id, dedup_key).
+func mergeItemInto(ctx context.Context, tx *sql.Tx, survivor, loser int64) error {
+	// Carry read/favorite/bookmark state onto the survivor (never un-read,
+	// un-favorite or un-bookmark something).
+	if err := exec(ctx, tx, `
+		UPDATE items
+		SET read = MAX(read, (SELECT read FROM items WHERE id = ?)),
+		    favorite = MAX(favorite, (SELECT favorite FROM items WHERE id = ?)),
+		    bookmark = MAX(bookmark, (SELECT bookmark FROM items WHERE id = ?)),
+		    read_at = COALESCE(read_at, (SELECT read_at FROM items WHERE id = ?))
+		WHERE id = ?`, loser, loser, loser, loser, survivor); err != nil {
+		return err
+	}
+	// Fold the loser's feed memberships into the survivor, then repoint
+	// every other reference to the loser.
+	if err := exec(ctx, tx, `
+		INSERT OR IGNORE INTO item_feeds (item_id, feed_id, created_at)
+		SELECT ?, feed_id, created_at FROM item_feeds WHERE item_id = ?`, survivor, loser); err != nil {
+		return err
+	}
+	if err := exec(ctx, tx, `UPDATE item_enclosures SET item_id = ? WHERE item_id = ?`, survivor, loser); err != nil {
+		return err
+	}
+	// Fold the loser's tags into the survivor (its rows cascade away with
+	// the loser) so a merge never loses a category.
+	if err := exec(ctx, tx, `
+		INSERT OR IGNORE INTO item_categories (item_id, category)
+		SELECT ?, category FROM item_categories WHERE item_id = ?`, survivor, loser); err != nil {
+		return err
+	}
+	// list_items is keyed (list_id, item_id): insert-or-ignore then drop.
+	if err := exec(ctx, tx, `
+		INSERT OR IGNORE INTO list_items (list_id, item_id, created_at)
+		SELECT list_id, ?, created_at FROM list_items WHERE item_id = ?`, survivor, loser); err != nil {
+		return err
+	}
+	if err := exec(ctx, tx, `DELETE FROM list_items WHERE item_id = ?`, loser); err != nil {
+		return err
+	}
+	// shared_items.item_id is UNIQUE: keep the survivor's token if it has
+	// one, otherwise adopt the loser's.
+	if err := exec(ctx, tx, `
+		INSERT OR IGNORE INTO shared_items (item_id, token, created_at)
+		SELECT ?, token, created_at FROM shared_items WHERE item_id = ?`, survivor, loser); err != nil {
+		return err
+	}
+	if err := exec(ctx, tx, `DELETE FROM shared_items WHERE item_id = ?`, loser); err != nil {
+		return err
+	}
+	return exec(ctx, tx, `DELETE FROM items WHERE id = ?`, loser)
 }
 
 func exec(ctx context.Context, tx *sql.Tx, query string, args ...any) error {
