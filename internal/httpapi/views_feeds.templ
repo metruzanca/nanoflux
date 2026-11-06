@@ -252,6 +252,7 @@ templ feedEditorBody(d feedsData) {
 // name prefix (feedFieldPrefix) so the combined author edit form can carry
 // several feeds' settings at once; the standalone feed form passes "".
 templ feedFields(d feedsData, p string) {
+	{{ id := strconv.FormatInt(d.Form.ID, 10) }}
 	{{ cacheHelp := "download this feed's images into nanoflux so they keep working if the site's image links expire." }}
 	if d.Form.CacheForced {
 		{{ cacheHelp = "on for this site: its plugin serves image links that expire, so nanoflux keeps a copy. it cannot be turned off." }}
@@ -291,6 +292,46 @@ templ feedFields(d feedsData, p string) {
 			@comboMulti(p+"collections", "collections", nonAutoCollectionValues(d.Collections, d.Form.CollectionIDs), nonAutoCollections(d.Collections))
 		}
 	</div>
+	<div class="field-group">
+		<h3>author</h3>
+		<p class="muted small">move this feed and its items to a different author.</p>
+		<button type="button" class="small" data-change-author={ id }>change author</button>
+	</div>
+}
+
+// changeAuthorForm is the content of the shared #change-author-dialog: the feed
+// being moved and a shadcn combobox of the user's other authors. Saving posts to
+// /feeds/{id}/author and swaps the feed's accordion item out, removing it from
+// the current author's edit page. The form lives in a topbar dialog, outside the
+// author edit page's own <form>, so the nested form is valid.
+templ changeAuthorForm(d changeAuthorData) {
+	{{ id := strconv.FormatInt(d.FeedID, 10) }}
+	<div class="row">
+		<h2>change author</h2>
+		<button type="button" class="link" title="close" data-close-dialog>@web.Lucide("x")</button>
+	</div>
+	<p class="muted small">move “{ d.FeedTitle }” and its items to another author.</p>
+	if len(d.Authors) == 0 {
+		<p class="muted">there are no other authors yet.</p>
+		<div class="row">
+			<button type="button" data-close-dialog>cancel</button>
+		</div>
+	} else {
+		<form class="stack"
+			hx-post={ "/feeds/" + id + "/author" }
+			hx-target={ "#feed-acc-" + id }
+			hx-swap="outerHTML"
+			data-form-close-reset>
+			@comboSelect("author_id", "", "author", "search authors", d.Authors, nil)
+			if d.Err != "" {
+				@FormError(d.Err)
+			}
+			<div class="row">
+				<button type="submit">save</button>
+				<button type="button" data-close-dialog>cancel</button>
+			</div>
+		</form>
+	}
 }
 
 // feedHistoryData backs a feed's history card in its settings panel: the feed's

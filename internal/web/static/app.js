@@ -980,6 +980,23 @@ function openPluginDocs(name) {
     .catch(function () { d.innerHTML = '<p class="error">could not load the documentation</p>'; });
 }
 
+// openChangeAuthor fetches a feed's change-author form into the shared
+// #change-author-dialog and shows it. The author edit page's feed panels open it
+// from a data-change-author button.
+function openChangeAuthor(feedID) {
+  var d = document.getElementById('change-author-dialog');
+  if (!d) return;
+  d.innerHTML = '<p class="muted">loading…</p>';
+  d.showModal();
+  fetch('/fragments/change-author?feed=' + encodeURIComponent(feedID), { credentials: 'same-origin' })
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      d.innerHTML = html;
+      htmx.process(d);
+    })
+    .catch(function () { d.innerHTML = '<p class="error">could not load the form</p>'; });
+}
+
 // ACTIONS is the single source of truth for the "add" actions shared by the
 // command palette and the nav "add" dropdown. Server-rendered buttons invoke
 // them through data-action (see the delegated click handler below); palette
@@ -1559,6 +1576,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     if ((el = t.closest('[data-toggle-nav]'))) { toggleNav(e); return; }
     if ((el = t.closest('[data-item-nav]'))) { itemNav(parseInt(el.getAttribute('data-item-nav'), 10)); return; }
     if ((el = t.closest('[data-plugin-docs]'))) { e.preventDefault(); openPluginDocs(el.dataset.plugin); return; }
+    if ((el = t.closest('[data-change-author]'))) { e.preventDefault(); openChangeAuthor(el.getAttribute('data-change-author')); return; }
     if ((el = t.closest('[data-add-author-link]'))) { addAuthorLinkRow(); return; }
     if ((el = t.closest('[data-add-filter-row]'))) { addFilterRow(el.closest('.filter-row'), el); return; }
     if ((el = t.closest('[data-remove-chip]'))) { removeChip(el); return; }

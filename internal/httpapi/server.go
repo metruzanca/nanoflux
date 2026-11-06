@@ -168,6 +168,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /feeds/{id}/edit-fragment", s.auth.Require(http.HandlerFunc(s.feedEditFragment)))
 	mux.Handle("POST /feeds/{id}/edit", s.auth.Require(http.HandlerFunc(s.feedUpdate)))
 	mux.Handle("POST /feeds/{id}/delete", s.auth.Require(http.HandlerFunc(s.feedDelete)))
+	mux.Handle("POST /feeds/{id}/author", s.auth.Require(http.HandlerFunc(s.feedChangeAuthor)))
 	mux.Handle("POST /feeds/{id}/refresh", s.auth.Require(http.HandlerFunc(s.feedRefresh)))
 	mux.Handle("POST /feeds/{id}/older", s.auth.Require(http.HandlerFunc(s.feedOlder)))
 	mux.Handle("POST /feeds/{id}/toggle", s.auth.Require(http.HandlerFunc(s.feedToggle)))
@@ -243,6 +244,8 @@ func (s *Server) Handler() http.Handler {
 	// Plugin docs are available to every signed-in user: the feed edit page
 	// offers them next to the filter rules, not just the admin plugin card.
 	mux.Handle("GET /fragments/plugin-docs", s.auth.Require(http.HandlerFunc(s.pluginDocsFragment)))
+	// Change-author dialog for the author edit page's feed panels.
+	mux.Handle("GET /fragments/change-author", s.auth.Require(http.HandlerFunc(s.changeAuthorFragment)))
 
 	// Saved pages (in-app "save url for later").
 	mux.Handle("POST /save-page", s.auth.Require(http.HandlerFunc(s.savePageWeb)))

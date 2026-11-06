@@ -935,6 +935,24 @@ func (q *Queries) ReenableAutoDisabledFeed(ctx context.Context, id int64) (int64
 	return result.RowsAffected()
 }
 
+const setFeedAuthor = `-- name: SetFeedAuthor :execresult
+UPDATE feeds
+SET author_id = ?
+WHERE id = ? AND user_id = ?
+`
+
+type SetFeedAuthorParams struct {
+	AuthorID int64 `json:"author_id"`
+	ID       int64 `json:"id"`
+	UserID   int64 `json:"user_id"`
+}
+
+// Move a feed to another author. Only the owner is changed; items, collections
+// and list memberships follow the feed unchanged.
+func (q *Queries) SetFeedAuthor(ctx context.Context, arg SetFeedAuthorParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, setFeedAuthor, arg.AuthorID, arg.ID, arg.UserID)
+}
+
 const setFeedCacheImages = `-- name: SetFeedCacheImages :execresult
 UPDATE feeds
 SET cache_images = ?
