@@ -251,6 +251,20 @@ func (m *managedExternal) SharedKeys(ctx context.Context, req pluginapi.SharedKe
 	return out, err
 }
 
+func (m *managedExternal) Categorize(ctx context.Context, req pluginapi.CategorizeRequest, h pluginapi.Host) ([]pluginapi.ItemCategories, error) {
+	var out []pluginapi.ItemCategories
+	err := m.call(true, func(f pluginapi.Fetcher) error {
+		c, ok := f.(pluginapi.Categorizer)
+		if !ok {
+			return pluginapi.ErrUnsupportedCapability
+		}
+		var e error
+		out, e = c.Categorize(ctx, req, h)
+		return e
+	})
+	return out, err
+}
+
 func (m *managedExternal) Enrich(ctx context.Context, req pluginapi.EnrichRequest, h pluginapi.Host) ([]pluginapi.Enriched, error) {
 	var out []pluginapi.Enriched
 	err := m.call(true, func(f pluginapi.Fetcher) error {
@@ -404,6 +418,7 @@ var (
 	_ pluginapi.Renderer     = (*managedExternal)(nil)
 	_ pluginapi.Docser       = (*managedExternal)(nil)
 	_ pluginapi.SharedKeyer  = (*managedExternal)(nil)
+	_ pluginapi.Categorizer  = (*managedExternal)(nil)
 	_ pluginapi.Enricher     = (*managedExternal)(nil)
 	_ pluginapi.Decoration   = (*managedExternal)(nil)
 	_ pluginapi.URLPolicy    = (*managedExternal)(nil)

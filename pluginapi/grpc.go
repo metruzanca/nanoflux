@@ -166,6 +166,30 @@ func (s *grpcFetcherServer) SharedKeys(ctx context.Context, req *pb.SharedKeyReq
 	return &pb.SharedKeyResponse{Entries: out}, nil
 }
 
+func (s *grpcFetcherServer) Categorize(ctx context.Context, req *pb.CategorizeRequest) (*pb.CategorizeResponse, error) {
+	c, ok := s.impl.(Categorizer)
+	if !ok {
+		return &pb.CategorizeResponse{Error: toPBError(ErrUnsupportedCapability)}, nil
+	}
+	host, err := s.dialHost(req.HostServer)
+	if err != nil {
+		return &pb.CategorizeResponse{Error: toPBError(err)}, nil
+	}
+	entries, err := c.Categorize(ctx, CategorizeRequest{
+		FeedURL: req.FeedUrl,
+		Feed:    fromPBFeed(req.Feed),
+		Items:   fromPBItems(req.Items),
+	}, host)
+	if err != nil {
+		return &pb.CategorizeResponse{Error: toPBError(err)}, nil
+	}
+	out := make([]*pb.ItemCategories, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, &pb.ItemCategories{Index: int32(e.Index), Categories: e.Categories})
+	}
+	return &pb.CategorizeResponse{Entries: out}, nil
+}
+
 func (s *grpcFetcherServer) Enrich(ctx context.Context, req *pb.EnrichRequest) (*pb.EnrichResponse, error) {
 	en, ok := s.impl.(Enricher)
 	if !ok {
@@ -506,6 +530,25 @@ func (c *grpcFetcherClient) SharedKeys(ctx context.Context, req SharedKeyRequest
 	return out, nil
 }
 
+func (c *grpcFetcherClient) Categorize(ctx context.Context, req CategorizeRequest, h Host) ([]ItemCategories, error) {
+	id, stop := c.serveHost(h)
+	defer stop()
+	resp, err := c.client.Categorize(ctx, &pb.CategorizeRequest{
+		HostServer: id, FeedUrl: req.FeedURL, Feed: toPBFeed(req.Feed), Items: toPBItems(req.Items),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fromPBError(resp.Error)
+	}
+	out := make([]ItemCategories, 0, len(resp.Entries))
+	for _, e := range resp.Entries {
+		out = append(out, ItemCategories{Index: int(e.Index), Categories: e.Categories})
+	}
+	return out, nil
+}
+
 func (c *grpcFetcherClient) Enrich(ctx context.Context, req EnrichRequest, h Host) ([]Enriched, error) {
 	id, stop := c.serveHost(h)
 	defer stop()
@@ -647,6 +690,7 @@ var (
 	_ Renderer               = (*grpcFetcherClient)(nil)
 	_ Docser                 = (*grpcFetcherClient)(nil)
 	_ SharedKeyer            = (*grpcFetcherClient)(nil)
+	_ Categorizer            = (*grpcFetcherClient)(nil)
 	_ Enricher               = (*grpcFetcherClient)(nil)
 	_ Decoration             = (*grpcFetcherClient)(nil)
 	_ URLPolicy              = (*grpcFetcherClient)(nil)

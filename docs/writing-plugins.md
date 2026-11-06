@@ -99,8 +99,9 @@ forwarded to nanoflux's logs prefixed with the plugin name.
 ## The capabilities
 
 A plugin implements `Fetcher`; it may also implement the optional `Renderer`,
-`PlaybackProvider`, `SharedKeyer`, `Enricher`, `Decoration`, `URLPolicy`,
-`Docser`, `Provisioner`, `FeedAdmin` and `Configurable` interfaces. `Match` tells the host which URL
+`PlaybackProvider`, `SharedKeyer`, `Categorizer`, `Enricher`, `Decoration`,
+`URLPolicy`, `Docser`, `Provisioner`, `FeedAdmin` and `Configurable` interfaces.
+`Match` tells the host which URL
 shapes (and which capability) each applies to. A plugin may own a site's whole
 shape (fetch + discover + shared keys + enrich + render + URL rules) or decorate
 a feed it does not fetch at all.
@@ -116,6 +117,10 @@ a feed it does not fetch at all.
 - **`SharedKeys` (optional)** — given a feed's freshly parsed items, return each
   item's `SharedKey` (cross-feed identity). Runs at ingest after either fetch
   path.
+- **`Categorize` (optional)**: given a feed's freshly parsed items, return extra
+  categories (tags) for each. Runs at ingest after either fetch path, matched on
+  the feed URL via `CapCategorize`. The host merges them into the item's existing
+  categories: a link aggregator can label a post with the domain it points at.
 - **`Enrich` (optional)** — given a feed's newly stored items, return an enriched
   body for each (full text, translation, transcript). Runs at ingest on new
   items only, after either fetch path.
@@ -218,6 +223,33 @@ stores one item per `(user, SharedKey)`, so the same entry seen through two
 subscriptions shares read/favorite/list state — a plugin sets the key to the
 post's stable fullname. This is separate from `Enrich` (full text, translation): an
 `Enricher` produces a body, whereas `SharedKeys` only assigns identity.
+
+### Ingest categories (`Categorize`)
+
+`Categorize` runs on a feed's parsed items after either fetch path, like
+`SharedKeys`, and returns extra labels for the items it can resolve, addressed by
+index. The host appends them to the categories the parser already produced
+(an entry's `<category>` values and author name), trimming each value and
+dropping case-insensitive duplicates, so a plugin only adds labels.
+
+Use it when a site carries context the generic parser cannot see. A link
+aggregator is the common case: the post's destination is marked only in its HTML,
+so the plugin can extract it and tag the item with the site's domain, giving the
+user a `imgur.com` tag they can filter on.
+
+```go
+func (Aggregator) Categorize(ctx context.Context, req pluginapi.CategorizeRequest, h pluginapi.Host) ([]pluginapi.ItemCategories, error) {
+	var out []pluginapi.ItemCategories
+	for i, it := range req.Items {
+		if domain := destinationDomain(it.Summary); domain != "" {
+			out = append(out, pluginapi.ItemCategories{Index: i, Categories: []string{domain}})
+		}
+	}
+	return out, nil
+}
+```
+
+A pure function of the parsed items is strongly preferred: it runs on every poll.
 
 ### Ingest content enrichment (`Enrich`)
 

@@ -207,6 +207,59 @@ func TestFetchFailureClassifier(t *testing.T) {
 	}
 }
 
+// fakeCategorizer is a fakeFetcher that also implements Categorizer.
+type fakeCategorizer struct {
+	fakeFetcher
+	entries []pluginapi.ItemCategories
+}
+
+func (f fakeCategorizer) Categorize(context.Context, pluginapi.CategorizeRequest, pluginapi.Host) ([]pluginapi.ItemCategories, error) {
+	return f.entries, nil
+}
+
+// TestCategorizer covers the ingest capability routing and the host-side merge:
+// a matching plugin's categories are appended to the parser's, with trimming
+// and case-insensitive deduplication, and an unmatched URL adds nothing.
+func TestCategorizer(t *testing.T) {
+	reg := NewRegistry()
+	reg.RegisterExternal(fakeCategorizer{
+		fakeFetcher: fakeFetcher{
+			name: "c",
+			match: func(u *url.URL, cap pluginapi.Capability) bool {
+				return cap == pluginapi.CapCategorize && u.Hostname() == "feed.example"
+			},
+		},
+		entries: []pluginapi.ItemCategories{
+			{Index: 0, Categories: []string{"imgur.com", " R/Cats ", "r/cats"}},
+			{Index: 9, Categories: []string{"ignored.example"}},
+		},
+	})
+	reg.RegisterExternal(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
+
+	d := NewDispatcher(reg, func(pluginapi.Fetcher) pluginapi.Host { return nil })
+	u, _ := url.Parse("https://feed.example/.rss")
+	if !d.MatchCategorize(feedparse.FetchRequest{URL: u.String()}) {
+		t.Fatal("MatchCategorize should match")
+	}
+	if d.MatchCategorize(feedparse.FetchRequest{URL: "https://other.example/feed"}) {
+		t.Fatal("unmatched URL should not match")
+	}
+
+	res := &feedparse.Result{Items: []feedparse.Item{
+		{Categories: []string{"r/cats", "u/sam"}},
+		{Categories: []string{"u/sam"}},
+	}}
+	if err := d.CategorizePlugin(context.Background(), feedparse.FetchRequest{URL: u.String()}, res); err != nil {
+		t.Fatalf("CategorizePlugin: %v", err)
+	}
+	if got, want := strings.Join(res.Items[0].Categories, ","), "r/cats,u/sam,imgur.com"; got != want {
+		t.Errorf("merged categories = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(res.Items[1].Categories, ","), "u/sam"; got != want {
+		t.Errorf("untouched categories = %q, want %q", got, want)
+	}
+}
+
 // fakeIconer is a fakeFetcher that also implements IconProvider.
 type fakeIconer struct {
 	fakeFetcher
