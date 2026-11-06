@@ -16,7 +16,8 @@ type apiEntity struct {
 	ID     int64  `json:"id"`
 	Name   string `json:"name"`
 	URL    string `json:"url"`
-	Unread int    `json:"unread"` // unread items owned by this entity
+	Avatar string `json:"avatar,omitempty"` // author avatar; empty when there is none
+	Unread int    `json:"unread"`           // unread items owned by this entity
 }
 
 // apiEntities lists the user's authors, collections, and feeds for the
@@ -43,7 +44,7 @@ func (s *Server) apiEntities(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]apiEntity, 0, len(authors)+len(collections)+len(feeds))
 	for _, a := range authors {
-		out = append(out, apiEntity{Kind: "author", ID: a.ID, Name: a.Name, URL: "/authors/" + strconv.FormatInt(a.ID, 10), Unread: a.UnreadCount})
+		out = append(out, apiEntity{Kind: "author", ID: a.ID, Name: a.Name, URL: "/authors/" + strconv.FormatInt(a.ID, 10), Avatar: authorAvatarSrc(a.Author), Unread: a.UnreadCount})
 	}
 	for _, c := range collections {
 		out = append(out, apiEntity{Kind: "collection", ID: c.ID, Name: c.Name, URL: "/collections/" + strconv.FormatInt(c.ID, 10), Unread: c.Unread})

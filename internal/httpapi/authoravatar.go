@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -33,6 +34,19 @@ func (s *Server) authorAvatarCardData(a store.Author, tz, flash string) authorAv
 		ID: a.ID, AvatarURL: a.AvatarURL, AvatarKey: a.AvatarKey,
 		LastFetchedAt: a.LastFetchedAt, Timezone: tz, Flash: flash,
 	}
+}
+
+// authorAvatarSrc returns the URL that renders an author's avatar, mirroring
+// the precedence used on the author pages: the cached, auth-served copy when
+// one exists, else the remote URL through the image proxy, else "".
+func authorAvatarSrc(a store.Author) string {
+	if a.AvatarKey != "" {
+		return "/authors/" + strconv.FormatInt(a.ID, 10) + "/avatar?v=" + url.QueryEscape(a.LastFetchedAt)
+	}
+	if a.AvatarURL != "" {
+		return web.ProxiedImageURL(a.AvatarURL)
+	}
+	return ""
 }
 
 // authorAvatarKey returns the deterministic object-storage key for an author's

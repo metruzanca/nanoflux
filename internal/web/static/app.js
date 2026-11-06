@@ -832,11 +832,20 @@ function paletteItemEl(row) {
   var li = document.createElement('li');
   li.className = 'palette-item';
   li.setAttribute('role', 'option');
-  if (row.sigil) {
-    var s = document.createElement('span');
-    s.className = 'palette-sigil sigil-' + row.kind;
-    s.textContent = row.sigil;
-    li.appendChild(s);
+  if (row.avatar) {
+    var img = document.createElement('img');
+    img.className = 'palette-avatar';
+    img.src = row.avatar;
+    img.alt = '';
+    img.loading = 'lazy';
+    li.appendChild(img);
+    // An expired or missing avatar falls back to the entity's sigil rather
+    // than leaving the row without a glyph.
+    img.addEventListener('error', function () {
+      if (img.parentNode === li) li.replaceChild(paletteSigilEl(row), img);
+    });
+  } else if (row.sigil) {
+    li.appendChild(paletteSigilEl(row));
   }
   var name = document.createElement('span');
   name.className = 'palette-name';
@@ -855,6 +864,13 @@ function paletteItemEl(row) {
     li.appendChild(hint);
   }
   return li;
+}
+
+function paletteSigilEl(row) {
+  var s = document.createElement('span');
+  s.className = 'palette-sigil sigil-' + row.kind;
+  s.textContent = row.sigil || SIGILS[row.kind] || '';
+  return s;
 }
 
 // wirePalette binds an input + result list into a keyboard-navigable dropdown.
@@ -1128,7 +1144,7 @@ function filterEntities(q) {
   }).map(function (e) {
     return {
       kind: e.kind, sigil: SIGILS[e.kind], label: e.name, count: e.unread,
-      hint: e.kind, url: e.url,
+      avatar: e.avatar, hint: e.kind, url: e.url,
     };
   });
 }
