@@ -126,6 +126,8 @@ type feedsData struct {
 	LastError    string
 	LastPolledAt string
 	PluginName   string
+	// FormError renders a validation error after an auto-save attempt.
+	FormError string
 }
 
 type authorRow struct {
@@ -169,6 +171,11 @@ type authorsData struct {
 	// day count); AutoReadDefault labels the account window it inherits from.
 	AutoReadValue   string
 	AutoReadDefault string
+	// FormError/AutoReadError/FilterError render validation errors in the
+	// auto-saving author basics, auto-read and filter cards.
+	FormError     string
+	AutoReadError string
+	FilterError   string
 }
 
 type authorData struct {
@@ -1463,7 +1470,7 @@ func (s *Server) feedEditFragment(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	web.Render(w, r, feedEditorBody(*s.feedEditorData(u, f)))
+	web.Render(w, r, feedEditorPanel(*s.feedEditorData(u, f)))
 }
 
 // feedEditorData assembles the editor for a single feed: its form fields, the
@@ -1519,31 +1526,51 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	back := "/authors/" + strconv.FormatInt(old.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(id, 10)
-	if ok, err := s.applyFeedForm(u, old, "", r.Form); err != nil {
-		log.Error("update feed", "feed_id", id, "err", err)
-		http.Error(w, "update failed", http.StatusInternalServerError)
+	ok, applyErr := s.applyFeedForm(u, old, r.Form)
+	if applyErr != nil {
+		log.Error("update feed", "feed_id", id, "err", applyErr)
+	}
+	if r.Header.Get("HX-Request") != "" {
+		f, err := s.store.Feeds.ByID(u.ID, id)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		editor := s.feedEditorData(u, f)
+		switch {
+		case applyErr != nil:
+			editor.FormError = "could not save this feed"
+		case !ok:
+			editor.FormError = "title and feed url are required"
+		}
+		author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
+		unread, _ := s.store.Items.CountUnread(u.ID, f.ID)
+		status := http.StatusOK
+		if editor.FormError != "" {
+			status = http.StatusBadRequest
+		}
+		w.WriteHeader(status)
+		web.Render(w, r, feedAccordionItem(s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread), editor))
 		return
-	} else if !ok {
-		http.Redirect(w, r, back, http.StatusFound)
+	}
+	if applyErr != nil {
+		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, back, http.StatusFound)
 }
 
-// applyFeedForm persists one feed's settings from form values. prefix namespaces
-// the fields: "" for the standalone feed form (POST /feeds/{id}/edit), and
-// feedFieldPrefix(id) for the combined author edit form, which carries every
-// loaded feed at once. It reports ok=false when the form is incomplete (a blank
-// title or url), leaving the feed untouched.
-func (s *Server) applyFeedForm(u store.User, old store.Feed, prefix string, form url.Values) (bool, error) {
+// applyFeedForm persists one feed's settings from form values. It reports ok=false
+// when the form is incomplete (a blank title or url), leaving the feed untouched.
+func (s *Server) applyFeedForm(u store.User, old store.Feed, form url.Values) (bool, error) {
 	id := old.ID
-	title := strings.TrimSpace(form.Get(prefix + "title"))
-	feedURL := normalizeURL(form.Get(prefix + "feed_url"))
+	title := strings.TrimSpace(form.Get("title"))
+	feedURL := normalizeURL(form.Get("feed_url"))
 	if title == "" || feedURL == "" {
 		return false, nil
 	}
-	interval, _ := strconv.Atoi(form.Get(prefix + "poll_interval_sec"))
-	auto := form.Get(prefix+"poll_interval_auto") == "1"
+	interval, _ := strconv.Atoi(form.Get("poll_interval_sec"))
+	auto := form.Get("poll_interval_auto") == "1"
 	if auto {
 		// Adaptive polling owns the interval; keep the stored value.
 		interval = old.PollIntervalSec
@@ -1551,11 +1578,11 @@ func (s *Server) applyFeedForm(u store.User, old store.Feed, prefix string, form
 	// The configured minimum (raised by a plugin floor) wins over a user value
 	// below it, so editing a feed cannot undercut its pacing.
 	interval = s.clampPollIntervalSec(feedURL, interval)
-	homeURL := form.Get(prefix + "home_url")
+	homeURL := form.Get("home_url")
 	// Editing happens on the feed's author's page, so the feed keeps its author.
-	cacheImages := form.Get(prefix+"cache_images") == "1" || s.imageCacheForced(feedURL)
+	cacheImages := form.Get("cache_images") == "1" || s.imageCacheForced(feedURL)
 	if err := s.store.Feeds.Update(u.ID, id, old.AuthorID, title, feedURL,
-		homeURL, "", interval, auto, form.Get(prefix+"enabled") == "1", cacheImages); err != nil {
+		homeURL, "", interval, auto, form.Get("enabled") == "1", cacheImages); err != nil {
 		return false, err
 	}
 	// Auto collections track the feed's website; re-assign when its host
@@ -1567,8 +1594,8 @@ func (s *Server) applyFeedForm(u store.User, old store.Feed, prefix string, form
 		log.Error("assign auto collection", "feed_id", id, "err", err)
 	}
 	// Sync collection memberships.
-	want := make([]int64, 0, len(form[prefix+"collections"]))
-	for _, cid := range form[prefix+"collections"] {
+	want := make([]int64, 0, len(form["collections"]))
+	for _, cid := range form["collections"] {
 		if n, err := strconv.ParseInt(cid, 10, 64); err == nil {
 			want = append(want, n)
 		}
@@ -1602,12 +1629,6 @@ func (s *Server) applyFeedForm(u store.User, old store.Feed, prefix string, form
 		}
 	}
 	return true, nil
-}
-
-// feedFieldPrefix namespaces a feed's fields in the combined author edit form,
-// so several feeds can share one form without name collisions.
-func feedFieldPrefix(id int64) string {
-	return "feed_" + strconv.FormatInt(id, 10) + "_"
 }
 
 func unique(ids []int64) []int64 {
@@ -2565,25 +2586,13 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.FormValue("name")
 	if name == "" {
-		writeFormError(w, r, "author-edit-error", "name is required")
-		return
-	}
-	// Validate the auto-read override before any write, so a bad value does not
-	// half-save the author.
-	setAutoRead := r.FormValue("author_auto_read_present") != ""
-	var autoRead *int
-	if setAutoRead {
-		value := strings.TrimSpace(r.FormValue("author_auto_read_after_days"))
-		if value == "inherit" {
-			autoRead = nil
-		} else {
-			days, ok := parseAutoReadValue(value)
-			if !ok {
-				writeFormError(w, r, "author-edit-error", "choose an auto-read option")
-				return
-			}
-			autoRead = &days
+		if r.Header.Get("HX-Request") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			web.Render(w, r, authorBasicsCard(s.authorBasicsData(u, old, "name is required")))
+			return
 		}
+		http.Redirect(w, r, "/authors", http.StatusFound)
+		return
 	}
 	avatarURL := r.FormValue("avatar_url")
 	if avatarURL != old.AvatarURL {
@@ -2593,66 +2602,15 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.Authors.Update(u.ID, id, name, avatarURL, r.FormValue("description")); err != nil {
 		log.Error("update author", "err", err)
-		writeFormError(w, r, "author-edit-error", "update failed")
+		if r.Header.Get("HX-Request") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			web.Render(w, r, authorBasicsCard(s.authorBasicsData(u, old, "could not save this author")))
+			return
+		}
+		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
 	}
-	if setAutoRead {
-		if err := s.store.Authors.SetAutoReadAfterDays(u.ID, id, autoRead); err != nil {
-			log.Error("update author auto-read", "author_id", id, "err", err)
-			writeFormError(w, r, "author-edit-error", "update failed")
-			return
-		}
-		// Apply the (possibly newly enabled) window to this author right away.
-		if _, err := s.store.Items.MarkAutoReadForAuthor(u.ID, id); err != nil {
-			log.Error("auto-read sweep on author save", "author_id", id, "err", err)
-		}
-	}
 	s.reconcileAuthorLinks(u.ID, id, r)
-	// Author filters are part of the same form. The marker keeps partial saves
-	// (an API client that does not render the card) from clearing them.
-	if r.FormValue("author_filters_present") != "" {
-		rules := s.validateAuthorRules(u.ID, id, filtersFromValues(r.Form))
-		if err := s.store.AuthorFilters.Replace(u.ID, id, rules.rules()); err != nil {
-			log.Error("save author filters", "author_id", id, "err", err)
-			writeFormError(w, r, "author-edit-error", "update failed")
-			return
-		}
-	}
-	// The combined edit form carries every feed panel the user loaded, each
-	// namespaced by feedFieldPrefix and marked with a hidden feed_ids value.
-	// Feeds not present (never opened) are left untouched.
-	for _, raw := range r.Form["feed_ids"] {
-		fid, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil {
-			continue
-		}
-		f, err := s.store.Feeds.ByID(u.ID, fid)
-		if err != nil || f.AuthorID != id {
-			continue
-		}
-		if _, err := s.applyFeedForm(u, f, feedFieldPrefix(fid), r.Form); err != nil {
-			log.Error("update feed", "feed_id", fid, "err", err)
-			writeFormError(w, r, "author-edit-error", "update failed")
-			return
-		}
-	}
-	// Views are part of the same form. Each opened panel carries a hidden
-	// view_ids marker and namespaced fields, so a collapsed panel is untouched.
-	for _, raw := range r.Form["view_ids"] {
-		vid, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil {
-			continue
-		}
-		v, err := s.store.SavedViews.ByID(u.ID, vid)
-		if err != nil || v.AuthorID != id {
-			continue
-		}
-		if _, err := s.applyViewForm(u, v, viewFieldPrefix(vid), r.Form); err != nil {
-			log.Error("update view", "view_id", vid, "err", err)
-			writeFormError(w, r, "author-edit-error", "update failed")
-			return
-		}
-	}
 	if avatarURL != "" {
 		a, _ := s.store.Authors.ByID(u.ID, id)
 		if a.ID != 0 {
@@ -2662,13 +2620,151 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.Header.Get("HX-Request") != "" {
-		// The edit page is a single htmx form: save in place and refresh the
-		// current URL instead of navigating away.
-		w.Header().Set("HX-Refresh", "true")
-		w.WriteHeader(http.StatusOK)
+		a, err := s.store.Authors.ByID(u.ID, id)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		web.Render(w, r, authorBasicsCard(s.authorBasicsData(u, a, "")))
 		return
 	}
 	http.Redirect(w, r, "/authors/"+strconv.FormatInt(id, 10), http.StatusFound)
+}
+
+// authorBasicsData assembles just the top author card: its fields, links and
+// cached-avatar state, with an optional validation error.
+func (s *Server) authorBasicsData(u store.User, a store.Author, formErr string) authorsData {
+	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
+	return authorsData{
+		Form:       authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
+		Links:      links,
+		AvatarCard: s.authorAvatarCardData(a, u.Timezone, ""),
+		FormError:  formErr,
+	}
+}
+
+// authorAutoReadData assembles the auto-read card for its auto-save response.
+func (s *Server) authorAutoReadData(u store.User, a store.Author, errMsg string) authorsData {
+	return authorsData{
+		Form:            authorForm{ID: a.ID},
+		AutoReadValue:   authorAutoReadValue(a.AutoReadAfterDays),
+		AutoReadDefault: autoReadLabel(u.AutoReadAfterDays),
+		AutoReadError:   errMsg,
+	}
+}
+
+// authorFilterData assembles the always-on filter card with its option lists
+// and a fresh allowed/blocked preview.
+func (s *Server) authorFilterData(u store.User, a store.Author, errMsg string) authorsData {
+	rules, _ := s.store.AuthorFilters.List(u.ID, a.ID)
+	ruleFilters := s.authorRulesToFilters(u.ID, a.ID, rules)
+	tagGroups, feedGroups, _ := ruleFilters.storeGroups()
+	preview, _ := s.store.Items.PreviewAuthorFilters(u.ID, a.ID, tagGroups, feedGroups, 5)
+	cats, _ := s.store.Items.ListCategories(u.ID, store.ItemFilter{AuthorID: a.ID})
+	feeds, _ := s.store.Feeds.ListByAuthor(u.ID, a.ID)
+	feedOpts := make([]comboItem, 0, len(feeds))
+	for _, f := range feeds {
+		feedOpts = append(feedOpts, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
+	}
+	return authorsData{
+		Form:              authorForm{ID: a.ID},
+		Rules:             ruleFilters,
+		FilterTagOptions:  tagItems(cats),
+		FilterFeedOptions: feedOpts,
+		FilterPreview:     preview,
+		FilterError:       errMsg,
+	}
+}
+
+// authorAutoReadUpdate saves the per-author auto-read override and re-renders
+// its card on htmx requests.
+func (s *Server) authorAutoReadUpdate(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	a, err := s.store.Authors.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	var autoRead *int
+	value := strings.TrimSpace(r.FormValue("author_auto_read_after_days"))
+	if value != "inherit" {
+		days, ok := parseAutoReadValue(value)
+		if !ok {
+			if r.Header.Get("HX-Request") != "" {
+				w.WriteHeader(http.StatusBadRequest)
+				web.Render(w, r, authorAutoReadCard(s.authorAutoReadData(u, a, "choose an auto-read option")))
+				return
+			}
+			http.Error(w, "choose an auto-read option", http.StatusBadRequest)
+			return
+		}
+		autoRead = &days
+	}
+	if err := s.store.Authors.SetAutoReadAfterDays(u.ID, id, autoRead); err != nil {
+		log.Error("update author auto-read", "author_id", id, "err", err)
+		if r.Header.Get("HX-Request") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			web.Render(w, r, authorAutoReadCard(s.authorAutoReadData(u, a, "could not save this setting")))
+			return
+		}
+		http.Error(w, "update failed", http.StatusInternalServerError)
+		return
+	}
+	// Apply the (possibly newly enabled) window to this author right away.
+	if _, err := s.store.Items.MarkAutoReadForAuthor(u.ID, id); err != nil {
+		log.Error("auto-read sweep on author save", "author_id", id, "err", err)
+	}
+	if r.Header.Get("HX-Request") != "" {
+		a, err := s.store.Authors.ByID(u.ID, id)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		web.Render(w, r, authorAutoReadCard(s.authorAutoReadData(u, a, "")))
+		return
+	}
+	http.Redirect(w, r, "/authors/"+strconv.FormatInt(id, 10)+"/edit", http.StatusSeeOther)
+}
+
+// authorFiltersUpdate persists the always-on filter rows from the card's
+// explicit apply button and re-renders the card on htmx requests.
+func (s *Server) authorFiltersUpdate(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	a, err := s.store.Authors.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	rules := s.validateAuthorRules(u.ID, id, filtersFromValues(r.Form))
+	if err := s.store.AuthorFilters.Replace(u.ID, id, rules.rules()); err != nil {
+		log.Error("save author filters", "author_id", id, "err", err)
+		if r.Header.Get("HX-Request") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			web.Render(w, r, authorFilterCard(s.authorFilterData(u, a, "could not save these filters")))
+			return
+		}
+		http.Error(w, "update failed", http.StatusInternalServerError)
+		return
+	}
+	if r.Header.Get("HX-Request") != "" {
+		web.Render(w, r, authorFilterCard(s.authorFilterData(u, a, "")))
+		return
+	}
+	http.Redirect(w, r, "/authors/"+strconv.FormatInt(id, 10)+"/edit", http.StatusSeeOther)
 }
 
 func (s *Server) authorDelete(w http.ResponseWriter, r *http.Request) {

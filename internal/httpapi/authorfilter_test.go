@@ -29,18 +29,24 @@ func TestAuthorAutoReadSettings(t *testing.T) {
 	}
 
 	editURL := "/authors/" + itoa(a.ID) + "/edit"
+	autoReadURL := "/authors/" + itoa(a.ID) + "/auto-read"
 	body := doGet(h, editURL, cookie).Body.String()
 	if !strings.Contains(body, `name="author_auto_read_after_days"`) || !strings.Contains(body, "use account default") {
 		t.Fatalf("edit page missing the auto-read override card: %s", body)
 	}
 
 	// Saving a window sweeps this author immediately, even though the account
-	// window is off.
-	if rr := doForm(h, http.MethodPost, editURL, url.Values{
-		"name":                        {"Busy"},
+	// window is off. The htmx path returns the refreshed card.
+	if rr := doHtmxForm(h, http.MethodPost, autoReadURL, url.Values{
+		"author_auto_read_present":    {"1"},
+		"author_auto_read_after_days": {"7"},
+	}, cookie); rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `id="author-auto-read-card"`) {
+		t.Fatalf("htmx auto-read save: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := doForm(h, http.MethodPost, autoReadURL, url.Values{
 		"author_auto_read_present":    {"1"},
 		"author_auto_read_after_days": {"3"},
-	}, cookie); rr.Code != http.StatusFound {
+	}, cookie); rr.Code != http.StatusSeeOther {
 		t.Fatalf("save author auto-read: %d %s", rr.Code, rr.Body.String())
 	}
 	got, _ := s.store.Authors.ByID(u.ID, a.ID)
@@ -52,8 +58,7 @@ func TestAuthorAutoReadSettings(t *testing.T) {
 	}
 
 	// An invalid value is rejected and does not overwrite the stored one.
-	if rr := doForm(h, http.MethodPost, editURL, url.Values{
-		"name":                        {"Busy"},
+	if rr := doForm(h, http.MethodPost, autoReadURL, url.Values{
 		"author_auto_read_present":    {"1"},
 		"author_auto_read_after_days": {"99"},
 	}, cookie); rr.Code != http.StatusBadRequest {
@@ -65,11 +70,10 @@ func TestAuthorAutoReadSettings(t *testing.T) {
 	}
 
 	// "off" is a real override, distinct from inherit.
-	if rr := doForm(h, http.MethodPost, editURL, url.Values{
-		"name":                        {"Busy"},
+	if rr := doForm(h, http.MethodPost, autoReadURL, url.Values{
 		"author_auto_read_present":    {"1"},
 		"author_auto_read_after_days": {"off"},
-	}, cookie); rr.Code != http.StatusFound {
+	}, cookie); rr.Code != http.StatusSeeOther {
 		t.Fatalf("save off: %d %s", rr.Code, rr.Body.String())
 	}
 	got, _ = s.store.Authors.ByID(u.ID, a.ID)
@@ -77,26 +81,55 @@ func TestAuthorAutoReadSettings(t *testing.T) {
 		t.Fatalf("off override = %v; want 0", got.AutoReadAfterDays)
 	}
 
-	// A partial save without the marker leaves the override alone.
-	if rr := doForm(h, http.MethodPost, editURL, url.Values{"name": {"Busy"}}, cookie); rr.Code != http.StatusFound {
-		t.Fatalf("partial save: %d %s", rr.Code, rr.Body.String())
-	}
-	got, _ = s.store.Authors.ByID(u.ID, a.ID)
-	if got.AutoReadAfterDays == nil || *got.AutoReadAfterDays != 0 {
-		t.Fatalf("partial save changed the override: %v", got.AutoReadAfterDays)
-	}
-
 	// Inherit clears the override.
-	if rr := doForm(h, http.MethodPost, editURL, url.Values{
-		"name":                        {"Busy"},
+	if rr := doForm(h, http.MethodPost, autoReadURL, url.Values{
 		"author_auto_read_present":    {"1"},
 		"author_auto_read_after_days": {"inherit"},
-	}, cookie); rr.Code != http.StatusFound {
+	}, cookie); rr.Code != http.StatusSeeOther {
 		t.Fatalf("save inherit: %d %s", rr.Code, rr.Body.String())
 	}
 	got, _ = s.store.Authors.ByID(u.ID, a.ID)
 	if got.AutoReadAfterDays != nil {
 		t.Fatalf("inherit should clear the override, got %v", got.AutoReadAfterDays)
+	}
+}
+
+// TestAuthorEditAutoSaveLayout covers the per-section forms on the author edit
+// page: basics, auto-read, filters (manual apply), and one sources accordion
+// with no page-level save button.
+func TestAuthorEditAutoSaveLayout(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+
+	body := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
+	for _, want := range []string{
+		`id="author-basics-card"`,
+		`hx-post="/authors/` + itoa(a.ID) + `/edit"`,
+		`hx-trigger="change delay:600ms, submit"`,
+		`id="author-auto-read-card"`,
+		`hx-post="/authors/` + itoa(a.ID) + `/auto-read"`,
+		`id="author-filter-card"`,
+		`hx-post="/authors/` + itoa(a.ID) + `/filters"`,
+		`<h2>sources</h2>`,
+		`move this feed and its items to a <button`,
+		`hx-post="/feeds/` + itoa(f.ID) + `/edit"`,
+		`data-autosave`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("author edit missing %q: %s", want, body)
+		}
+	}
+	for _, unwanted := range []string{"+ new view", "save author and feeds"} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("author edit should not contain %q: %s", unwanted, body)
+		}
+	}
+	// With no saved rules the filter card starts collapsed.
+	if strings.Contains(body, ` open data-author-filters`) {
+		t.Fatalf("empty filter card should start collapsed: %s", body)
 	}
 }
 
@@ -140,9 +173,8 @@ func TestAuthorFilterSettings(t *testing.T) {
 		t.Fatalf("initial preview should allow all author posts: %s", body)
 	}
 
-	// Save a block rule through the same author form.
+	// Save a block rule through the filter card's apply action.
 	form := url.Values{
-		"name":                   {"Filtered"},
 		"author_filters_present": {"1"},
 		"filter_row":             {"0"},
 		"filter_action":          {"hide"},
@@ -150,13 +182,20 @@ func TestAuthorFilterSettings(t *testing.T) {
 		"filter_combine":         {"any"},
 		"filter_value_0":         {"r/rust"},
 	}
-	if rr := doForm(h, http.MethodPost, editURL, form, cookie); rr.Code != http.StatusFound {
+	if rr := doForm(h, http.MethodPost, "/authors/"+itoa(a.ID)+"/filters", form, cookie); rr.Code != http.StatusSeeOther {
 		t.Fatalf("save author filters: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := doHtmxForm(h, http.MethodPost, "/authors/"+itoa(a.ID)+"/filters", form, cookie); rr.Code != http.StatusOK ||
+		!strings.Contains(rr.Body.String(), `id="author-filter-card"`) {
+		t.Fatalf("htmx save author filters: %d %s", rr.Code, rr.Body.String())
 	}
 
 	body = doGet(h, editURL, cookie).Body.String()
 	if !strings.Contains(body, `name="filter_value_0" value="r/rust"`) {
 		t.Fatalf("edit page should reload the saved block rule: %s", body)
+	}
+	if !strings.Contains(body, ` open data-author-filters`) {
+		t.Fatalf("filter card should auto-open when rules exist: %s", body)
 	}
 	if !strings.Contains(body, "allowed (1)") || !strings.Contains(body, "blocked (1)") {
 		t.Fatalf("saved preview should show one allowed and one blocked: %s", body)

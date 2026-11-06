@@ -1552,6 +1552,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     }
     if ((el = t.closest('[data-remove-closest]'))) {
       var rm = closest(el, el.getAttribute('data-remove-closest'));
+      var autosaveForm = el.closest('form[data-autosave]');
       if (rm && rm.classList.contains('filter-row')) {
         var card = rm.closest('[data-author-filters]');
         var scope = filterRowScope(rm);
@@ -1562,6 +1563,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
       } else if (rm) {
         rm.remove();
       }
+      if (autosaveForm) htmx.trigger(autosaveForm, 'change');
       return;
     }
     if ((el = t.closest('[data-select-on-click]'))) { el.select(); return; }

@@ -196,16 +196,74 @@ templ noFeedFound(d noFeedFoundData) {
 	</div>
 }
 
-// feedEditorBody is one feed's settings as fields, with no <form> of its own:
-// it is what the author edit page's feed accordion loads into each panel
-// (lazily via /feeds/{id}/edit-fragment), and that page submits every panel in
-// one form. Its fields are namespaced with feedFieldPrefix so several feeds can
-// share the form. The hidden feed_ids marker is what tells the combined handler
-// which feeds this submission actually carries.
+// feedAccordionItem is one feed panel in the author edit page's sources
+// accordion. A selected panel renders its form inline; the rest lazy-load it
+// the first time they are opened.
+templ feedAccordionItem(r feedRow, editor *feedsData) {
+	{{ id := strconv.FormatInt(r.ID, 10) }}
+	{{ selected := editor != nil && editor.Form.ID == r.ID }}
+	<details class="feed-accordion-item" name="author-sources" id={ "feed-acc-" + id } if selected { open }>
+		<summary>
+			@web.SourceIcon(feedIconURL(r.Feed))
+			<span class="feed-accordion-title">{ r.Title }</span>
+			if !r.Enabled {
+				if r.DisabledReason != "" {
+					<span class="badge danger" title={ r.DisabledReason }>disabled</span>
+				} else {
+					<span class="badge">paused</span>
+				}
+			}
+			if r.LastError != "" {
+				<span id={ "feed-error-badge-" + id } class="badge danger" title={ r.LastError }>last poll failed</span>
+			}
+			if r.Cooling() {
+				<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited</span>
+			}
+		</summary>
+		if selected {
+			<div class="feed-accordion-body">@feedEditorPanel(*editor)</div>
+		} else {
+			<div class="feed-accordion-body" hx-get={ "/feeds/" + id + "/edit-fragment" } hx-trigger="toggle from:closest details once" hx-swap="innerHTML">
+				<p class="muted small">loading…</p>
+			</div>
+		}
+	</details>
+}
+
+// feedEditorPanel wraps one feed's settings in its own auto-saving form. The
+// form targets the whole accordion item so the summary title and badges update
+// along with the body. The delete block stays outside the form so its remote
+// checkbox does not trigger an auto-save.
+templ feedEditorPanel(d feedsData) {
+	{{ id := strconv.FormatInt(d.Form.ID, 10) }}
+	<form class="stack" method="post" action={ "/feeds/" + id + "/edit" } hx-post={ "/feeds/" + id + "/edit" } hx-trigger="change delay:600ms, submit" hx-sync="closest form:replace" hx-target={ "#feed-acc-" + id } hx-swap="outerHTML" hx-disinherit="*" data-autosave>
+		@csrfField()
+		@feedEditorBody(d)
+	</form>
+	@feedDeleteBlock(d)
+}
+
+// feedDeleteBlock is the feed's destructive action, kept outside the
+// auto-saving form.
+templ feedDeleteBlock(d feedsData) {
+	{{ id := strconv.FormatInt(d.Form.ID, 10) }}
+	<div class="stack delete-form">
+		if d.Panel != nil {
+			<label class="check">
+				<input type="checkbox" name={ "delete_remote_" + id } value="1"/>
+				also delete it on the remote service
+			</label>
+		}
+		<button type="button" class="danger" data-post-action={ "/feeds/" + id + "/delete" } data-include={ "delete_remote_" + id } data-confirm="delete this feed?">delete</button>
+	</div>
+}
+
+// feedEditorBody is one feed's settings as fields, with no <form> of its own.
 templ feedEditorBody(d feedsData) {
 	{{ id := strconv.FormatInt(d.Form.ID, 10) }}
-	{{ p := feedFieldPrefix(d.Form.ID) }}
-	<input type="hidden" name="feed_ids" value={ id }/>
+	if d.FormError != "" {
+		<div class="error" role="alert">{ d.FormError }</div>
+	}
 	if d.DocsPlugin != "" {
 		<div class="row">
 			<button type="button" class="link" data-plugin={ d.DocsPlugin } title="read this feed's plugin documentation" data-plugin-docs>plugin docs</button>
@@ -229,30 +287,19 @@ templ feedEditorBody(d feedsData) {
 			<p class="feed-error-msg">{ d.LastError }</p>
 		</div>
 	}
-	@feedFields(d, p)
+	@feedFields(d)
 	@feedHistoryCard(feedHistoryData{
 		FeedID: d.Form.ID, Unread: d.Stats.Unread, Read: d.Stats.Read,
 		OldestAt: d.Stats.FirstAt, Timezone: d.Timezone, NextPageURL: d.NextPageURL,
 	})
-	<div class="stack delete-form">
-		if d.Panel != nil {
-			<label class="check">
-				<input type="checkbox" name={ "delete_remote_" + id } value="1"/>
-				also delete it on the remote service
-			</label>
-		}
-		<button type="button" class="danger" data-post-action={ "/feeds/" + id + "/delete" } data-include={ "delete_remote_" + id } data-confirm="delete this feed?">delete</button>
-	</div>
 	if d.Panel != nil {
 		@feedPluginPanel(*d.Panel)
 	}
 }
 
 // feedFields is a feed's editable settings, grouped by concern: how nanoflux
-// fetches the feed, and how the feed is presented in the app. p is the field
-// name prefix (feedFieldPrefix) so the combined author edit form can carry
-// several feeds' settings at once; the standalone feed form passes "".
-templ feedFields(d feedsData, p string) {
+// fetches the feed, and how the feed is presented in the app.
+templ feedFields(d feedsData) {
 	{{ id := strconv.FormatInt(d.Form.ID, 10) }}
 	{{ cacheHelp := "download this feed's images into nanoflux so they keep working if the site's image links expire." }}
 	if d.Form.CacheForced {
@@ -264,39 +311,38 @@ templ feedFields(d feedsData, p string) {
 	}
 	<div class="field-group">
 		<h3>fetching</h3>
-		@switchField(p+"enabled", "enabled (poll this feed)", d.Form.Enabled, "", nil)
-		@switchField(p+"poll_interval_auto", "auto-adjust poll interval", d.Form.PollIntervalAuto, "", nil)
+		@switchField("enabled", "enabled (poll this feed)", d.Form.Enabled, "", nil)
+		@switchField("poll_interval_auto", "auto-adjust poll interval", d.Form.PollIntervalAuto, "", nil)
 		<label>
 			poll interval (seconds), used when auto-adjust is off
-			<input name={ p + "poll_interval_sec" } type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min={ strconv.Itoa(minPoll) }/>
+			<input name="poll_interval_sec" type="number" value={ strconv.Itoa(d.Form.PollIntervalSec) } min={ strconv.Itoa(minPoll) }/>
 			if d.Form.MinPollIntervalSec > 0 {
 				<span class="muted small">minimum { strconv.Itoa(d.Form.MinPollIntervalSec) } seconds for this feed</span>
 			}
 		</label>
 		<label>
 			feed url
-			<input name={ p + "feed_url" } type="text" value={ d.Form.FeedURL } required/>
+			<input name="feed_url" type="text" value={ d.Form.FeedURL } required/>
 		</label>
-		@switchField(p+"cache_images", "cache images locally", d.Form.CacheImages || d.Form.CacheForced, cacheHelp, nil)
+		@switchField("cache_images", "cache images locally", d.Form.CacheImages || d.Form.CacheForced, cacheHelp, nil)
 	</div>
 	<div class="field-group">
 		<h3>display</h3>
 		<label>
 			title
-			<input name={ p + "title" } value={ d.Form.Title } required/>
+			<input name="title" value={ d.Form.Title } required/>
 		</label>
 		<label>
 			home url
-			<input name={ p + "home_url" } type="url" value={ d.Form.HomeURL }/>
+			<input name="home_url" type="url" value={ d.Form.HomeURL }/>
 		</label>
 		if len(d.Collections) > 0 {
-			@comboMulti(p+"collections", "collections", nonAutoCollectionValues(d.Collections, d.Form.CollectionIDs), nonAutoCollections(d.Collections))
+			@comboMulti("collections", "collections", nonAutoCollectionValues(d.Collections, d.Form.CollectionIDs), nonAutoCollections(d.Collections))
 		}
 	</div>
 	<div class="field-group">
 		<h3>author</h3>
-		<p class="muted small">move this feed and its items to a different author.</p>
-		<button type="button" class="small" data-change-author={ id }>change author</button>
+		<p class="muted small">move this feed and its items to a <button type="button" class="link" data-change-author={ id }>different author</button>.</p>
 	</div>
 }
 

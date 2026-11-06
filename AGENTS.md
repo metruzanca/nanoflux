@@ -370,12 +370,11 @@ Categories are also normalized for tag browsing and list filtering.
   for `hide` (any matching hide row excludes). The modal form submits one
   `filter_row` token per row plus repeated `filter_value_<token>` values (and
   `filter_time_*_<token>` for a time row). Tags are capped at `maxTagFilters`.
-  `filterRow` takes a name prefix so several editors can share one form; the
-  author edit page's inline view panels use `viewFieldPrefix(id)`, and
-  `filtersFromValuesAt` reads the matching prefixed fields. The hidden token
-  input carries `data-filter-row-token`, which is what `app.js` rewrites when it
-  clones a row. Tab, sort, chip and pagination links carry the filters with
-  `listFilters.appendFilters`.
+  `filterRow` takes a name prefix for cloned/namespaced editors; the author
+  edit page's view panels and filter card use the unprefixed fields. The hidden
+  token input carries `data-filter-row-token`, which is what `app.js` rewrites
+  when it clones a row. Tab, sort, chip and pagination links carry the filters
+  with `listFilters.appendFilters`.
 - Time rows are resolved at query time in the user's timezone and converted to
   the canonical UTC storage format: a date-only lower bound means start of day,
   a date-only upper bound means the last second of that day, and a supplied
@@ -463,34 +462,39 @@ older items" (`POST /feeds/{id}/older`, which appends OOB to the author's item
 list), the external home/feed link, the last-polled line and the cached-media
 stat. `GET /feeds/{id}/edit` still redirects to the author edit page.
 
-The author edit page is **one form**: the author's fields and every loaded feed
-panel submit together to `POST /authors/{id}/edit`, so a user can change several
-feeds (or the author and a feed) and save once. `feedEditorBody` therefore
-carries no `<form>` of its own; `feedFields` takes a name prefix
-(`feedFieldPrefix(id)`, `feed_<id>_title` etc.) and each panel has a hidden
-`feed_ids` marker, so `authorUpdate` only touches the feeds present in the
-submission (a collapsed, never-opened panel is left untouched). `applyFeedForm`
-is the shared per-feed writer, called with prefix `""` by the standalone
-`POST /feeds/{id}/edit`. Nested forms are avoided. The feed delete control is a
-`type="button"` action (`data-post-action="/feeds/{id}/delete"`, `data-confirm`,
-`data-include="delete_remote_<id>"`) handled by `postAction` in `app.js`, never a
-submit button, so pressing Enter saves instead of deleting. The remote opt-in is
-`delete_remote_<id>`, and the plugin panel's sync is an htmx button
-(`hx-params="action"`, `hx-vals`) rather than a form. Every delete control (feed,
-author, list, collection, saved view) follows the same rule: a `type="button"`
-explicit action, never a submit button. htmx-in-panel actions (refetch, refresh
-now, load older) use `hx-params="none"` so clicking them does not post the whole
-page form.
+The author edit page auto-saves per section. The author basics form posts to
+`POST /authors/{id}/edit` (name, description, avatar, links), the auto-read card
+posts to `POST /authors/{id}/auto-read`, and the always-on filters card saves
+only from its explicit `apply` button to `POST /authors/{id}/filters`. Feeds and
+views share one `sources` accordion, and each panel is its own auto-saving form
+(`POST /feeds/{id}/edit`, `POST /views/{id}/edit`) that re-renders the whole
+`<details>` so its summary title and badges stay current. There is no page-level
+save button. `feedEditorPanel`/`viewEditorPanel` supply the form, and
+`feedEditorBody`/`viewEditorBody` stay form-less; the lazy fragment routes
+(`GET /feeds/{id}/edit-fragment`, `GET /views/{id}/edit-fragment`) return the
+form-wrapped panel. `applyFeedForm` is the per-feed writer. The feed delete
+control is a `type="button"` action (`data-post-action="/feeds/{id}/delete"`,
+`data-confirm`, `data-include="delete_remote_<id>"`) handled by `postAction` in
+`app.js`, never a submit button, so pressing Enter saves instead of deleting.
+The remote opt-in is `delete_remote_<id>`, and the plugin panel's sync is an htmx
+button (`hx-params="action"`, `hx-vals`) rather than a form. Every delete control
+(feed, author, list, collection, saved view) follows the same rule: a
+`type="button"` explicit action, never a submit button. htmx-in-panel actions
+(refetch, refresh now, load older) use `hx-params="none"` so clicking them does
+not post the panel form. Removing an author link or view filter row fires the
+enclosing auto-save form's `change` event from `app.js`.
 
-A feed can move between authors from its expanded panel's "author" group. The
-button (`data-change-author`) loads `GET /fragments/change-author` into the
-shared `#change-author-dialog` (a topbar dialog, outside the page form, so its
-own `<form>` is valid) and `POST /feeds/{id}/author` performs the move through
-`FeedStore.SetAuthor`. Only `feeds.author_id` changes: items, collections and
-list memberships follow the feed, and the old author is not deleted when it ends
-up empty. The picker excludes the current author, and a successful save returns
-an empty `200` so the `outerHTML` swap removes that feed's accordion item from
-the current author's edit page without a reload.
+A feed can move between authors from its expanded panel's "author" group, which
+is an inline link-style button in the sentence "move this feed and its items to
+a different author". The button (`data-change-author`) loads
+`GET /fragments/change-author` into the shared `#change-author-dialog` (a topbar
+dialog, outside the panel form, so its own `<form>` is valid) and
+`POST /feeds/{id}/author` performs the move through `FeedStore.SetAuthor`. Only
+`feeds.author_id` changes: items, collections and list memberships follow the
+feed, and the old author is not deleted when it ends up empty. The picker
+excludes the current author, and a successful save returns an empty `200` so the
+`outerHTML` swap removes that feed's accordion item from the current author's
+edit page without a reload.
 
 A feed's item list is the author page filtered with `?feed={id}`
 (`Server.authorFeedFilter` validates ownership; `authorScopedItems` sets
@@ -573,11 +577,10 @@ code.
   and assigned views; the page itself has no add-feed/add-view controls. The
   collection page's `sources` tab, the collection edit page and the home
   dashboard's pinned collection sections include view-sourced items.
-- The author edit page inlines assigned views as a lazy accordion below feeds.
-  Each panel is part of the one author form: `viewEditorBody` carries a hidden
-  `view_ids` marker and namespaces its fields with `viewFieldPrefix(id)`; the
-  fragment route is `GET /views/{id}/edit-fragment`. `authorUpdate` applies only
-  the panels present in the submission. Inline delete is a `type=button`
+- The author edit page inlines assigned views in the same auto-saving `sources`
+  accordion as feeds. Each view panel is its own form (`POST /views/{id}/edit`)
+  that re-renders the whole `<details>`; the lazy fragment route is
+  `GET /views/{id}/edit-fragment`. Inline delete is a `type=button`
   `data-post-action` to `/views/{id}/delete?back=author`.
 - `/views` is the private index, grouped by assigned author, and is linked from
   the user menu. View cards show their collection chips.

@@ -215,7 +215,7 @@ func TestAutoCollectionHiddenFromFeedEditCheckboxes(t *testing.T) {
 	yt := autoCollection(t, s, u.ID, "youtube.com")
 	// The auto collection's id must not appear as a selected value or as an
 	// option in the feed edit collections combobox.
-	field := "feed_" + itoa(f.ID) + "_collections"
+	field := "collections"
 	if !strings.Contains(body, `data-combo="`+field+`"`) {
 		t.Fatalf("feed edit should render the collections combo: %s", body)
 	}
