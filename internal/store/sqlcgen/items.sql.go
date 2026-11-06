@@ -1918,6 +1918,46 @@ func (q *Queries) MarkItemsAfterRead(ctx context.Context, arg MarkItemsAfterRead
 	return err
 }
 
+const markItemsAutoRead = `-- name: MarkItemsAutoRead :execresult
+UPDATE items
+SET read = 1, read_at = ?1
+WHERE read = 0
+  AND items.user_id = ?2
+  AND items.feed_id IN (
+    SELECT f.id
+    FROM feeds f
+    JOIN authors a ON a.id = f.author_id
+    JOIN users u ON u.id = f.user_id
+    WHERE f.user_id = ?2
+      AND (CAST(?3 AS INTEGER) = 0 OR f.author_id = CAST(?3 AS INTEGER))
+      AND COALESCE(a.auto_read_after_days, u.auto_read_after_days) > 0
+      AND COALESCE(items.published_at, items.fetched_at) < datetime(
+            CAST(?4 AS TEXT),
+            printf('-%d days', COALESCE(a.auto_read_after_days, u.auto_read_after_days)))
+  )
+`
+
+type MarkItemsAutoReadParams struct {
+	ReadAt   sql.NullString `json:"readAt"`
+	UserID   int64          `json:"userID"`
+	AuthorID int64          `json:"authorID"`
+	Now      string         `json:"now"`
+}
+
+// Mark unread items read according to each item's effective auto-read window:
+// the owner author's override when set, else the account's window. authorID 0
+// means every author of the user's feeds. An effective window of 0 disables
+// the sweep for that author. COALESCE(published_at, fetched_at) is the
+// canonical item time; favorites and bookmarks are swept too.
+func (q *Queries) MarkItemsAutoRead(ctx context.Context, arg MarkItemsAutoReadParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, markItemsAutoRead,
+		arg.ReadAt,
+		arg.UserID,
+		arg.AuthorID,
+		arg.Now,
+	)
+}
+
 const markItemsBeforeRead = `-- name: MarkItemsBeforeRead :exec
 UPDATE items
 SET read = 1, read_at = ?1
@@ -1953,27 +1993,6 @@ func (q *Queries) MarkItemsBeforeRead(ctx context.Context, arg MarkItemsBeforeRe
 		arg.UserID,
 	)
 	return err
-}
-
-const markItemsOlderThanRead = `-- name: MarkItemsOlderThanRead :execresult
-UPDATE items
-SET read = 1, read_at = ?1
-WHERE read = 0
-  AND COALESCE(items.published_at, items.fetched_at) < ?2
-  AND items.user_id = ?3
-`
-
-type MarkItemsOlderThanReadParams struct {
-	ReadAt sql.NullString `json:"readAt"`
-	Cutoff sql.NullString `json:"cutoff"`
-	UserID int64          `json:"userID"`
-}
-
-// Mark unread items older than a cutoff read for a user, regardless of favorite
-// state. Used by the auto-read sweep. COALESCE(published_at, fetched_at) is the
-// canonical item time.
-func (q *Queries) MarkItemsOlderThanRead(ctx context.Context, arg MarkItemsOlderThanReadParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, markItemsOlderThanRead, arg.ReadAt, arg.Cutoff, arg.UserID)
 }
 
 const setEnclosureCacheSizeByKey = `-- name: SetEnclosureCacheSizeByKey :exec

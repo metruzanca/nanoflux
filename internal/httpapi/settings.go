@@ -116,6 +116,13 @@ var autoReadItems = func() []comboItem {
 	return out
 }()
 
+// authorAutoReadItems adds the inherit option to the per-author override.
+var authorAutoReadItems = func() []comboItem {
+	out := make([]comboItem, 0, len(autoReadItems)+1)
+	out = append(out, comboItem{Value: "inherit", Label: "use account default"})
+	return append(out, autoReadItems...)
+}()
+
 type settingsAutoReadData struct {
 	Value string // selected option value, matching autoReadOptions
 	Error string
@@ -127,6 +134,40 @@ func autoReadValue(days int) string {
 		return "off"
 	}
 	return strconv.Itoa(days)
+}
+
+// autoReadLabel renders a day count for help text.
+func autoReadLabel(days int) string {
+	if days <= 0 {
+		return "off"
+	}
+	return strconv.Itoa(days) + " days"
+}
+
+// authorAutoReadValue maps an author's override to its option value. nil
+// inherits the account window.
+func authorAutoReadValue(days *int) string {
+	if days == nil {
+		return "inherit"
+	}
+	return autoReadValue(*days)
+}
+
+// parseAutoReadValue maps a saved auto-read option to its day count. ok is
+// false for an unrecognized value.
+func parseAutoReadValue(value string) (days int, ok bool) {
+	switch value {
+	case "off":
+		return 0, true
+	case "3", "7", "30", "60":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	default:
+		return 0, false
+	}
 }
 
 // settingsExtensionData drives the browser-extension download card.
@@ -340,18 +381,8 @@ func (s *Server) settingsAutoRead(w http.ResponseWriter, r *http.Request) {
 		}
 		web.Render(w, r, settingsAutoRead(settingsAutoReadData{Value: v, Error: errMsg}))
 	}
-	days := 0
-	switch value {
-	case "off":
-		days = 0
-	case "3", "7", "30", "60":
-		n, err := strconv.Atoi(value)
-		if err != nil {
-			render(autoReadValue(u.AutoReadAfterDays), "choose an option")
-			return
-		}
-		days = n
-	default:
+	days, ok := parseAutoReadValue(value)
+	if !ok {
 		render(autoReadValue(u.AutoReadAfterDays), "choose an option")
 		return
 	}
@@ -360,10 +391,10 @@ func (s *Server) settingsAutoRead(w http.ResponseWriter, r *http.Request) {
 		render(autoReadValue(u.AutoReadAfterDays), "could not save")
 		return
 	}
-	if days > 0 {
-		if _, err := s.store.Items.MarkOlderThanRead(u.ID, days); err != nil {
-			log.Error("auto-read sweep on save", "err", err)
-		}
+	// Sweep even when the account window is off: an author override may still
+	// be enabled, and the query applies each author's effective window.
+	if _, err := s.store.Items.MarkAutoRead(u.ID); err != nil {
+		log.Error("auto-read sweep on save", "err", err)
 	}
 	render(autoReadValue(days), "")
 }

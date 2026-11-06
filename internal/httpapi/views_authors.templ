@@ -113,6 +113,7 @@ templ authorEditPage(u store.User, d authorsData) {
 			@authorLinkFields(d)
 		</section>
 		@authorFilterCard(d)
+		@authorAutoReadCard(d)
 		if len(d.Feeds) > 0 {
 			<div class="author-feeds">
 				<h2>feeds</h2>
@@ -234,6 +235,19 @@ templ authorFilterCard(d authorsData) {
 		<div id="author-filter-preview" class="author-filter-preview">
 			@authorFilterPreviewFragment(d.FilterPreview)
 		</div>
+	</section>
+}
+
+// authorAutoReadCard overrides the account auto-read window for this author's
+// feeds. "inherit" follows the account setting; off keeps the author's items
+// unread. It is part of the one author-edit form.
+templ authorAutoReadCard(d authorsData) {
+	<section class="card">
+		<h2>auto-read</h2>
+		<p class="muted small">Overrides the account auto-read window for this author's feeds. Items older than the effective window are marked read automatically, including favorites and bookmarks. Off keeps this author's items unread.</p>
+		<input type="hidden" name="author_auto_read_present" value="1"/>
+		@comboSelect("author_auto_read_after_days", d.AutoReadValue, "mark items read after", "select a window", authorAutoReadItems, nil)
+		<p class="muted small">account default: { d.AutoReadDefault }</p>
 	</section>
 }
 

@@ -1,6 +1,7 @@
 // Package maintenance runs low-frequency background housekeeping that is not
 // tied to feed fetching. Today that is the auto-read sweep: per user, unread
-// items older than the user's chosen window are marked read.
+// items older than the effective window are marked read (an author's override,
+// else the user's chosen window).
 package maintenance
 
 import (
@@ -66,16 +67,16 @@ func (s *Sweeper) Sweep() {
 		return
 	}
 	for _, u := range users {
-		if u.AutoReadAfterDays <= 0 {
-			continue
-		}
-		n, err := s.store.Items.MarkOlderThanRead(u.ID, u.AutoReadAfterDays)
+		// The account window may be off while an author overrides it on, so the
+		// sweep runs for every user; the query no-ops where every effective
+		// window is 0.
+		n, err := s.store.Items.MarkAutoRead(u.ID)
 		if err != nil {
 			log.Error("auto-read sweep", "user_id", u.ID, "err", err)
 			continue
 		}
 		if n > 0 {
-			log.Info("auto-read sweep marked items read", "user_id", u.ID, "count", n, "days", u.AutoReadAfterDays)
+			log.Info("auto-read sweep marked items read", "user_id", u.ID, "count", n)
 		}
 	}
 	if s.progressRetention > 0 {

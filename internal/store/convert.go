@@ -168,7 +168,14 @@ func toAuthor(a sqlcgen.Author) Author {
 		LastFetchedAt: a.LastFetchedAt.String,
 		Description:   a.Description.String,
 		IsSystem:      a.IsSystem != 0,
-		CreatedAt:     a.CreatedAt,
+		AutoReadAfterDays: func() *int {
+			if !a.AutoReadAfterDays.Valid {
+				return nil
+			}
+			v := int(a.AutoReadAfterDays.Int64)
+			return &v
+		}(),
+		CreatedAt: a.CreatedAt,
 	}
 }
 

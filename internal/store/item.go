@@ -1861,19 +1861,26 @@ func (s *ItemStore) MarkAuthorRead(userID, authorID int64) error {
 	})
 }
 
-// MarkOlderThanRead marks every unread item older than days (by
-// COALESCE(published_at, fetched_at)) as read for a user, regardless of
-// favorite state. It returns how many items were marked. days must be > 0;
-// callers pass 0 to mean "disabled" and skip the call.
-func (s *ItemStore) MarkOlderThanRead(userID int64, days int) (int64, error) {
-	if days <= 0 {
-		return 0, nil
-	}
-	cutoff := db.FormatTime(time.Now().AddDate(0, 0, -days))
-	res, err := s.q.MarkItemsOlderThanRead(context.Background(), sqlcgen.MarkItemsOlderThanReadParams{
-		ReadAt: ns(db.Now()),
-		Cutoff: ns(cutoff),
-		UserID: userID,
+// MarkAutoRead applies the auto-read retention policy across a user's feeds.
+// Each item is governed by its owner author's override when set, otherwise by
+// the account's auto-read window. An effective window of 0 (off) excludes that
+// author. It returns how many items were marked read.
+func (s *ItemStore) MarkAutoRead(userID int64) (int64, error) {
+	return s.markAutoRead(userID, 0)
+}
+
+// MarkAutoReadForAuthor applies the same policy to one author's feeds only. It
+// is the immediate sweep after an author's auto-read setting changes.
+func (s *ItemStore) MarkAutoReadForAuthor(userID, authorID int64) (int64, error) {
+	return s.markAutoRead(userID, authorID)
+}
+
+func (s *ItemStore) markAutoRead(userID, authorID int64) (int64, error) {
+	res, err := s.q.MarkItemsAutoRead(context.Background(), sqlcgen.MarkItemsAutoReadParams{
+		ReadAt:   ns(db.Now()),
+		Now:      db.FormatTime(time.Now()),
+		UserID:   userID,
+		AuthorID: authorID,
 	})
 	if err != nil {
 		return 0, err

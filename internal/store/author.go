@@ -18,7 +18,11 @@ type Author struct {
 	LastFetchedAt string
 	Description   string
 	IsSystem      bool // hidden author owning the system feed; never listed
-	CreatedAt     string
+	// AutoReadAfterDays overrides the account's auto-read window for this
+	// author's feeds. nil inherits users.auto_read_after_days; 0 disables
+	// auto-read for this author.
+	AutoReadAfterDays *int
+	CreatedAt         string
 }
 
 // AuthorWithCount joins an author with its number of feeds and unread items,
@@ -96,14 +100,16 @@ func (s *AuthorStore) ListWithFeedCount(userID int64) ([]AuthorWithCount, error)
 	for _, r := range rows {
 		out = append(out, AuthorWithCount{
 			Author: toAuthor(sqlcgen.Author{
-				ID:            r.ID,
-				UserID:        r.UserID,
-				Name:          r.Name,
-				AvatarUrl:     r.AvatarUrl,
-				AvatarKey:     r.AvatarKey,
-				LastFetchedAt: r.LastFetchedAt,
-				Description:   r.Description,
-				CreatedAt:     r.CreatedAt,
+				ID:                r.ID,
+				UserID:            r.UserID,
+				Name:              r.Name,
+				AvatarUrl:         r.AvatarUrl,
+				AvatarKey:         r.AvatarKey,
+				LastFetchedAt:     r.LastFetchedAt,
+				Description:       r.Description,
+				IsSystem:          0,
+				AutoReadAfterDays: r.AutoReadAfterDays,
+				CreatedAt:         r.CreatedAt,
 			}),
 			FeedCount:   int(r.FeedCount),
 			UnreadCount: int(r.UnreadCount),
@@ -160,6 +166,28 @@ func (s *AuthorStore) SetAvatarKey(userID, id int64, key, fetchedAt string) erro
 // served.
 func (s *AuthorStore) ClearAvatarKey(userID, id int64) error {
 	return s.SetAvatarKey(userID, id, "", "")
+}
+
+// SetAutoReadAfterDays stores the author's auto-read override. nil inherits the
+// account window, 0 disables auto-read for this author, and a positive value is
+// its own retention window.
+func (s *AuthorStore) SetAutoReadAfterDays(userID, id int64, days *int) error {
+	var value sql.NullInt64
+	if days != nil {
+		value = sql.NullInt64{Int64: int64(*days), Valid: true}
+	}
+	res, err := s.q.SetAuthorAutoReadAfterDays(context.Background(), sqlcgen.SetAuthorAutoReadAfterDaysParams{
+		AutoReadAfterDays: value,
+		ID:                id,
+		UserID:            userID,
+	})
+	if err != nil {
+		return fmt.Errorf("set author auto-read: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // Delete removes an author and cascades to their feeds (and those feeds'

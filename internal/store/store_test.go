@@ -1982,7 +1982,7 @@ func TestAutoReadAfterDays(t *testing.T) {
 	}
 }
 
-func TestMarkOlderThanRead(t *testing.T) {
+func TestMarkAutoRead(t *testing.T) {
 	s := newTestStore(t)
 	alice := mustUser(t, s, "alice")
 	bob := mustUser(t, s, "bob")
@@ -2015,9 +2015,10 @@ func TestMarkOlderThanRead(t *testing.T) {
 		t.Fatalf("SetFavorite: %v", err)
 	}
 
-	n, err := s.Items.MarkOlderThanRead(alice.ID, 30)
+	// Alice keeps the default 30-day window.
+	n, err := s.Items.MarkAutoRead(alice.ID)
 	if err != nil {
-		t.Fatalf("MarkOlderThanRead: %v", err)
+		t.Fatalf("MarkAutoRead: %v", err)
 	}
 	if n != 2 {
 		t.Fatalf("marked %d; want 2 (old + old favorite)", n)
@@ -2031,9 +2032,94 @@ func TestMarkOlderThanRead(t *testing.T) {
 	if bobUnread != 1 {
 		t.Fatalf("bob unread = %d; want 1 (sweep is user-scoped)", bobUnread)
 	}
-	// Off (0) is a no-op.
-	if n, err := s.Items.MarkOlderThanRead(alice.ID, 0); err != nil || n != 0 {
-		t.Fatalf("MarkOlderThanRead(0) = %d, %v; want 0, nil", n, err)
+	// The account window off is a no-op for authors that inherit it.
+	if err := s.Users.SetAutoReadAfterDays(alice.ID, 0); err != nil {
+		t.Fatalf("SetAutoReadAfterDays: %v", err)
+	}
+	// Reset the recent item to unread so a no-op is observable.
+	s.Items.Upsert(f.ID, Item{GUID: "recent2", Title: "recent2", PublishedAt: recent, FetchedAt: db.Now()})
+	if n, err := s.Items.MarkAutoRead(alice.ID); err != nil || n != 0 {
+		t.Fatalf("MarkAutoRead(off) = %d, %v; want 0, nil", n, err)
+	}
+}
+
+func TestMarkAutoReadAuthorOverride(t *testing.T) {
+	s := newTestStore(t)
+	alice := mustUser(t, s, "alice")
+	// Start with the account window off so every effect below comes from an
+	// author override.
+	if err := s.Users.SetAutoReadAfterDays(alice.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := s.Authors.Create(alice.ID, "A", "", "")
+	af, err := s.Feeds.Create(alice.ID, a.ID, "A feed", "https://a.dev/rss.xml", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := s.Authors.Create(alice.ID, "B", "", "")
+	bf, err := s.Feeds.Create(alice.ID, b.ID, "B feed", "https://b.dev/rss.xml", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := db.FormatTime(time.Now().AddDate(0, 0, -10))
+	older := db.FormatTime(time.Now().AddDate(0, 0, -40))
+	s.Items.Upsert(af.ID, Item{GUID: "a-old", Title: "a-old", PublishedAt: old, FetchedAt: db.Now()})
+	s.Items.Upsert(bf.ID, Item{GUID: "b-old", Title: "b-old", PublishedAt: older, FetchedAt: db.Now()})
+
+	// A shortens its window to 3 days; B still inherits the account's off.
+	three := 3
+	if err := s.Authors.SetAutoReadAfterDays(alice.ID, a.ID, &three); err != nil {
+		t.Fatalf("SetAutoReadAfterDays: %v", err)
+	}
+	got, err := s.Authors.ByID(alice.ID, a.ID)
+	if err != nil {
+		t.Fatalf("ByID: %v", err)
+	}
+	if got.AutoReadAfterDays == nil || *got.AutoReadAfterDays != 3 {
+		t.Fatalf("author override not stored: %v", got.AutoReadAfterDays)
+	}
+	n, err := s.Items.MarkAutoRead(alice.ID)
+	if err != nil {
+		t.Fatalf("MarkAutoRead: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("marked %d; want 1 (only author A's old item)", n)
+	}
+	if unread, _ := s.Items.CountUnread(alice.ID, bf.ID); unread != 1 {
+		t.Fatalf("author B unread = %d; want 1 (inherits account off)", unread)
+	}
+
+	// A scoped sweep cannot override an inheriting author's off window.
+	if n, err := s.Items.MarkAutoReadForAuthor(alice.ID, b.ID); err != nil || n != 0 {
+		t.Fatalf("MarkAutoReadForAuthor(B) = %d, %v; want 0, nil", n, err)
+	}
+
+	// B opts into 30 days and its old item is swept on the account-wide pass.
+	thirty := 30
+	if err := s.Authors.SetAutoReadAfterDays(alice.ID, b.ID, &thirty); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.Items.MarkAutoRead(alice.ID); err != nil || n != 1 {
+		t.Fatalf("MarkAutoRead = %d, %v; want 1 (author B)", n, err)
+	}
+
+	// Off for A is explicit: a new old item under A survives the sweep.
+	off := 0
+	if err := s.Authors.SetAutoReadAfterDays(alice.ID, a.ID, &off); err != nil {
+		t.Fatal(err)
+	}
+	s.Items.Upsert(af.ID, Item{GUID: "a-old-2", Title: "a-old-2", PublishedAt: old, FetchedAt: db.Now()})
+	if n, err := s.Items.MarkAutoRead(alice.ID); err != nil || n != 0 {
+		t.Fatalf("MarkAutoRead(off author) = %d, %v; want 0, nil", n, err)
+	}
+
+	// Clearing the override inherits the account window again (off here).
+	if err := s.Authors.SetAutoReadAfterDays(alice.ID, a.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Authors.ByID(alice.ID, a.ID)
+	if got.AutoReadAfterDays != nil {
+		t.Fatalf("cleared override = %v; want nil (inherit)", got.AutoReadAfterDays)
 	}
 }
 

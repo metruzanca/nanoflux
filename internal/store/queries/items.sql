@@ -254,15 +254,28 @@ WHERE items.user_id = sqlc.arg('userID')
   )
   AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = sqlc.arg('userID'));
 
--- name: MarkItemsOlderThanRead :execresult
--- Mark unread items older than a cutoff read for a user, regardless of favorite
--- state. Used by the auto-read sweep. COALESCE(published_at, fetched_at) is the
--- canonical item time.
+-- name: MarkItemsAutoRead :execresult
+-- Mark unread items read according to each item's effective auto-read window:
+-- the owner author's override when set, else the account's window. authorID 0
+-- means every author of the user's feeds. An effective window of 0 disables
+-- the sweep for that author. COALESCE(published_at, fetched_at) is the
+-- canonical item time; favorites and bookmarks are swept too.
 UPDATE items
 SET read = 1, read_at = sqlc.arg('readAt')
 WHERE read = 0
-  AND COALESCE(items.published_at, items.fetched_at) < sqlc.arg('cutoff')
-  AND items.user_id = sqlc.arg('userID');
+  AND items.user_id = sqlc.arg('userID')
+  AND items.feed_id IN (
+    SELECT f.id
+    FROM feeds f
+    JOIN authors a ON a.id = f.author_id
+    JOIN users u ON u.id = f.user_id
+    WHERE f.user_id = sqlc.arg('userID')
+      AND (CAST(sqlc.arg('authorID') AS INTEGER) = 0 OR f.author_id = CAST(sqlc.arg('authorID') AS INTEGER))
+      AND COALESCE(a.auto_read_after_days, u.auto_read_after_days) > 0
+      AND COALESCE(items.published_at, items.fetched_at) < datetime(
+            CAST(sqlc.arg('now') AS TEXT),
+            printf('-%d days', COALESCE(a.auto_read_after_days, u.auto_read_after_days)))
+  );
 
 -- name: MarkAllItemsUnread :exec
 -- The mirror of MarkAllItemsRead: membership-scoped, non-system feeds only.
