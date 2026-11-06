@@ -48,6 +48,23 @@ func doGet(h http.Handler, path string, cookie *http.Cookie) *httptest.ResponseR
 	return rr
 }
 
+// doHtmxForm posts a form the way app.js's htmx requests do, so handlers that
+// branch on HX-Request take their fragment path.
+func doHtmxForm(h http.Handler, method, path string, form url.Values, cookie *http.Cookie) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	if cookie != nil {
+		req.AddCookie(cookie)
+		if method != http.MethodGet && method != http.MethodHead {
+			req.Header.Set("X-CSRF-Token", csrfToken(cookie.Value))
+		}
+	}
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	return rr
+}
+
 // doGetRaw issues a GET with no session, for unauthenticated routes.
 func doGetRaw(h http.Handler, path string) *httptest.ResponseRecorder {
 	return doGet(h, path, nil)
@@ -1500,6 +1517,33 @@ func TestAuthorLinkScopedToOwner(t *testing.T) {
 	}
 	if _, err := s.store.AuthorLinks.ByID(u.ID, link.ID); err != nil {
 		t.Fatalf("link should survive a save without link fields: %v", err)
+	}
+}
+
+func TestAuthorSaveStaysOnEditPage(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+
+	// An htmx save asks htmx to refresh the current edit URL instead of
+	// redirecting to the author page.
+	rr := doHtmxForm(h, "POST", "/authors/"+itoa(a.ID)+"/edit", url.Values{"name": {"Renamed"}}, cookie)
+	if rr.Code != http.StatusOK || rr.Header().Get("HX-Refresh") != "true" {
+		t.Fatalf("htmx save should request a refresh: %d %q", rr.Code, rr.Header().Get("HX-Refresh"))
+	}
+	if loc := rr.Header().Get("Location"); loc != "" {
+		t.Fatalf("htmx save should not redirect, got %q", loc)
+	}
+	got, err := s.store.Authors.ByID(u.ID, a.ID)
+	if err != nil || got.Name != "Renamed" {
+		t.Fatalf("author not saved: %+v %v", got, err)
+	}
+
+	// The plain form post still redirects, so no-JS saves keep working.
+	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/edit", url.Values{"name": {"Plain"}}, cookie)
+	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/authors/"+itoa(a.ID) {
+		t.Fatalf("plain save should redirect to the author: %d %q", rr.Code, rr.Header().Get("Location"))
 	}
 }
 

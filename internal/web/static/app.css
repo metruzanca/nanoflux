@@ -272,10 +272,10 @@ main:has(#home-sections) {
 }
 
 /* The admin page carries wide tables (poll backlog, failing feeds, users,
-   plugin ownership). Let it grow to ~2x the reading width, capped at the
-   viewport so it never overflows. */
+   plugin ownership). Let it grow to a middle ground between the reading width
+   and the full-width layout, capped at the viewport so it never overflows. */
 main:has(.admin-page) {
-  max-width: min(100%, 92rem);
+  max-width: min(100%, 69rem);
 }
 
 .card {

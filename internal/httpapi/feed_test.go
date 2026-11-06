@@ -79,6 +79,66 @@ func TestFeedErrorHiddenAfterSuccess(t *testing.T) {
 	}
 }
 
+func TestFeedClearError(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
+	f, err := s.store.Feeds.Create(u.ID, a.ID, "Paused Feed", "https://paused.dev/feed.xml", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.Feeds.SetPollMeta(f.ID, "", "", db.Now(), "boom: dns lookup failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.Feeds.SetEnabled(u.ID, f.ID, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// A paused feed offers the clear action inside its error block.
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
+	if !strings.Contains(edit, "data-clear-feed-error") || !strings.Contains(edit, "/clear-error") {
+		t.Fatalf("paused feed missing the clear-error action: %s", edit)
+	}
+	if !strings.Contains(edit, `id="feed-error-badge-`+itoa(f.ID)+`"`) {
+		t.Fatalf("summary error badge missing its id: %s", edit)
+	}
+
+	rr := doHtmxForm(h, "POST", "/feeds/"+itoa(f.ID)+"/clear-error", nil, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("clear error: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `id="feed-error-badge-`+itoa(f.ID)+`" hx-swap-oob="true"`) {
+		t.Fatalf("clear error should empty the summary badge out of band: %s", rr.Body.String())
+	}
+	got, err := s.store.Feeds.ByID(u.ID, f.ID)
+	if err != nil || got.LastError != "" {
+		t.Fatalf("last error not cleared: %+v %v", got, err)
+	}
+	edit = doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
+	if strings.Contains(edit, "boom: dns lookup failed") {
+		t.Fatalf("cleared error still renders: %s", edit)
+	}
+}
+
+func TestFeedClearErrorEnabledHidesAction(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
+	f, err := s.store.Feeds.Create(u.ID, a.ID, "Broken Feed", "https://broken.dev/feed.xml", "", "", 900)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.Feeds.SetPollMeta(f.ID, "", "", db.Now(), "boom"); err != nil {
+		t.Fatal(err)
+	}
+	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
+	if !strings.Contains(edit, "data-clear-feed-error hidden") {
+		t.Fatalf("enabled feed should hide the clear-error action: %s", edit)
+	}
+}
+
 func TestFeedOlder(t *testing.T) {
 	s, h := newTestServer(t)
 	s.SetPoller(poller.New(s.store, time.Minute, 1))

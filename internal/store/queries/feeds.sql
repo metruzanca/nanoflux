@@ -108,6 +108,13 @@ SET enabled = sqlc.arg('enabled'),
     disabled_reason = CASE WHEN sqlc.arg('enabled') THEN NULL ELSE disabled_reason END
 WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('userID');
 
+-- name: ClearFeedError :exec
+-- Clear a feed's last poll error, verifying ownership. Used by the feed
+-- editor's "clear error" action on a paused feed.
+UPDATE feeds
+SET last_error = NULL
+WHERE id = ? AND user_id = ?;
+
 -- name: PauseFeed :exec
 -- Stop polling a feed permanently (a deleted profile, a banned community).
 -- The poller owns this write: it is not user-scoped, and enabling the feed

@@ -101,8 +101,9 @@ templ AuthorRow(r authorRow) {
 // deletion is a type=button action (data-post-action) inside this form, never a
 // submit button, so Enter saves instead of deleting.
 templ authorEditPage(u store.User, d authorsData) {
-	<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" }>
+	<form class="stack" method="post" action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" } hx-post={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/edit" } hx-disinherit="*">
 		@csrfField()
+		<div id="author-edit-error"></div>
 		<section class="card">
 			<div class="row">
 				<h1>edit author</h1>
@@ -136,7 +137,7 @@ templ authorEditPage(u store.User, d authorsData) {
 									}
 								}
 								if r.LastError != "" {
-									<span class="badge danger" title={ r.LastError }>last poll failed</span>
+									<span id={ "feed-error-badge-" + id } class="badge danger" title={ r.LastError }>last poll failed</span>
 								}
 								if r.Cooling() {
 									<span class="badge warn" title="a rate limit asked us to wait before retrying">rate limited</span>

@@ -1589,6 +1589,17 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     if (t.matches('[data-submit-on-change]')) { if (t.form) t.form.requestSubmit(); return; }
     if (t.matches('[data-filter-kind]')) { syncFilterRowKind(t.closest('.filter-row')); return; }
     if (t.matches('[data-filter-time-mode]')) { syncFilterTimeMode(t.closest('.filter-row')); return; }
+    // The feed editor's "clear error" action is only offered while the feed is
+    // paused, so follow the enabled switch as the user flips it.
+    if (t.matches('input[type="checkbox"][aria-hidden="true"]')) {
+      var field = t.closest('[data-switch-field]');
+      var name = (field && field.getAttribute('data-switch-field')) || '';
+      if (name === 'enabled' || /_enabled$/.test(name)) {
+        var scope = field.closest('.feed-accordion-body') || document;
+        var clear = scope.querySelector('[data-clear-feed-error]');
+        if (clear) clear.hidden = t.checked;
+      }
+    }
   });
 
   document.addEventListener('submit', function (e) {

@@ -110,6 +110,14 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	if !strings.Contains(body, "?view="+id+"&amp;tab=read") {
 		t.Fatalf("read tab should preserve the selected view: %s", body)
 	}
+	// The selected view is shown as a removable chip carrying its title; the
+	// chip drops ?view=<id> and keeps the tab/sort.
+	if !strings.Contains(body, `title="remove view filter"`) || !strings.Contains(body, "Example posts <span") {
+		t.Fatalf("view-scoped author page missing the view chip: %s", body)
+	}
+	if !strings.Contains(body, `href="/authors/`+itoa(author.ID)+`?view=unread&amp;sort=newest"`) {
+		t.Fatalf("view chip should link back to the un-scoped author list: %s", body)
+	}
 
 	// The default author page aggregates assigned views, so it shows the post.
 	body = doGet(h, "/authors/"+itoa(author.ID), cookie).Body.String()

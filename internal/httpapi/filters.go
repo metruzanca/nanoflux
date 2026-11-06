@@ -692,6 +692,9 @@ type filterPanelData struct {
 	// ViewID is the selected saved view on a view-scoped author page (0 when no
 	// view is selected). It makes links carry ?view=<id>&tab=<tab>.
 	ViewID int64
+	// ViewName is the title of the selected saved view, shown as a removable
+	// chip alongside the filter chips.
+	ViewName string
 }
 
 // effectiveFeedOptions drops the feed kind when the scope has only one feed
@@ -754,7 +757,7 @@ func (d scopedItemsData) filterPanel() filterPanelData {
 		Filters: d.Filters, FilteredCount: d.FilteredCount,
 		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
 		ScopeAuthorID: d.ScopeAuthorID, ScopeCollectionID: d.ScopeCollectionID,
-		ViewID: d.ViewID,
+		ViewID: d.ViewID, ViewName: d.ViewName,
 	}
 }
 
