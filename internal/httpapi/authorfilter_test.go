@@ -218,3 +218,101 @@ func TestAuthorFilterSettings(t *testing.T) {
 		t.Fatalf("preview body = %s", rr.Body.String())
 	}
 }
+
+// TestAuthorViewFollowsAssignedAuthorRules verifies the saved-view rule source
+// end to end: a view is filtered by the author it is assigned to, not by the
+// author who owns the feed it draws from, and an unassigned view has no rules.
+func TestAuthorViewFollowsAssignedAuthorRules(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	aggregate, _ := s.store.Authors.Create(u.ID, "Aggregate", "", "")
+	feed, _ := s.store.Feeds.Create(u.ID, aggregate.ID, "Sub", "https://sub.example/rss.xml", "", "", 900)
+	captain, _ := s.store.Authors.Create(u.ID, "Captain", "", "")
+
+	upsert := func(guid, title, tag string) int64 {
+		t.Helper()
+		if _, err := s.store.Items.Upsert(feed.ID, store.Item{
+			GUID: guid, Title: title, Link: "https://x/" + guid,
+			Categories: []string{tag}, FetchedAt: db.Now(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		id, err := s.store.Items.ByFeedIdentity(feed.ID, guid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	upsert("agg", "Aggregate post", "u/aggregate")
+	upsert("cap", "Captain post", "u/captain")
+
+	if err := s.store.AuthorFilters.Replace(u.ID, aggregate.ID, []store.FilterRule{{
+		Kind: store.FilterKindTag, Action: store.FilterActionHide, Combine: store.FilterCombineAny, Values: []string{"u/captain"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.AuthorFilters.Replace(u.ID, captain.ID, []store.FilterRule{{
+		Kind: store.FilterKindTag, Action: store.FilterActionHide, Combine: store.FilterCombineAny, Values: []string{"u/aggregate"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	createView := func(authorID int64, title, filter string) store.SavedView {
+		t.Helper()
+		v, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+			AuthorID: authorID, Title: title, Filters: []string{filter},
+		})
+		if err != nil {
+			t.Fatalf("create view: %v", err)
+		}
+		return v
+	}
+	capView := createView(captain.ID, "Cap view", "tag:show:u/captain")
+	aggView := createView(captain.ID, "Agg view", "tag:show:u/aggregate")
+	freeView := createView(0, "Free view", "tag:show:u/captain")
+
+	captainURL := "/authors/" + itoa(captain.ID)
+	aggregateURL := "/authors/" + itoa(aggregate.ID)
+
+	// The aggregator still hides the captain's post from its own page.
+	body := doGet(h, aggregateURL, cookie).Body.String()
+	if !strings.Contains(body, "Aggregate post") || strings.Contains(body, "Captain post") {
+		t.Fatalf("aggregator page should hide the blocked post: %s", body)
+	}
+
+	// The captain's page shows it: the view follows the captain's rules.
+	body = doGet(h, captainURL, cookie).Body.String()
+	if !strings.Contains(body, "Captain post") || strings.Contains(body, "Aggregate post") {
+		t.Fatalf("captain page should show its view item and hide its own block: %s", body)
+	}
+	// The view matching the post the captain blocks stays empty.
+	body = doGet(h, captainURL+"?view="+itoa(aggView.ID), cookie).Body.String()
+	if strings.Contains(body, "Aggregate post") || strings.Contains(body, "Captain post") {
+		t.Fatalf("captain's blocked view should be empty: %s", body)
+	}
+
+	// Global unread still follows the owner author's rule.
+	body = doGet(h, "/unread", cookie).Body.String()
+	if !strings.Contains(body, "Aggregate post") || strings.Contains(body, "Captain post") {
+		t.Fatalf("global unread should hide the aggregator-blocked post: %s", body)
+	}
+
+	// An unassigned view has no author rules, so it surfaces the post the
+	// aggregator hides from itself.
+	body = doGet(h, "/views/"+itoa(freeView.ID)+"?view=unread&sort=newest&f="+url.QueryEscape("tag:show:u/captain"), cookie).Body.String()
+	if !strings.Contains(body, "Captain post") {
+		t.Fatalf("unassigned view should be unfiltered: %s", body)
+	}
+
+	// A collection's member view carries the same rule source.
+	col, _ := s.store.Collections.Create(u.ID, "Slice")
+	if err := s.store.SavedViews.SetCollections(u.ID, capView.ID, []int64{col.ID}); err != nil {
+		t.Fatal(err)
+	}
+	body = doGet(h, "/collections/"+itoa(col.ID), cookie).Body.String()
+	if !strings.Contains(body, "Captain post") || strings.Contains(body, "Aggregate post") {
+		t.Fatalf("collection view scope should follow the assigned author: %s", body)
+	}
+}

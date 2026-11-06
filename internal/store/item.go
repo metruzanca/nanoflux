@@ -182,6 +182,10 @@ type TimeGroup struct {
 // ViewFilter is one saved view as an item predicate. It carries the view's tag
 // and feed groups and time windows; a view always matches all feeds.
 type ViewFilter struct {
+	// AuthorID is the author the view is assigned to. A view follows that
+	// author's always-on rules, not the rules of the author who owns the feed
+	// its items come from. 0 means the view is unassigned and unfiltered.
+	AuthorID   int64
 	TagGroups  []TagGroup
 	FeedGroups []FeedGroup
 	TimeGroups []TimeGroup
@@ -656,7 +660,17 @@ func scanItemList(rows *sql.Rows, limit int) ([]ItemWithFeed, bool, error) {
 // read/favorite/bookmark, saved-page and cursor semantics, and supports all
 // three sorts. limit is the caller's already-clamped page size.
 func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]ItemWithFeed, bool, error) {
-	return s.listPageTaggedFrom(userID, f, limit, "visible_items")
+	return s.listPageTaggedFrom(userID, f, limit, f.itemSource())
+}
+
+// itemSource is the table a scoped read starts from. A saved-view scope reads
+// raw items because its items follow the view's assigned author, not the feed
+// owner; every other read uses the author-filtered visible_items view.
+func (f ItemFilter) itemSource() string {
+	if len(f.Views) > 0 || len(f.CollectionViews) > 0 {
+		return "items"
+	}
+	return "visible_items"
 }
 
 func (s *ItemStore) listPageTaggedFrom(userID int64, f ItemFilter, limit int, from string) ([]ItemWithFeed, bool, error) {
@@ -672,7 +686,7 @@ func (s *ItemStore) listPageTaggedFrom(userID int64, f ItemFilter, limit int, fr
 	}
 	b.WriteString(" WHERE i.user_id = ?")
 	args = append(args, userID)
-	appendItemFilterPredicates(&b, &args, f)
+	appendItemFilterPredicates(&b, &args, f, from == "items")
 	switch {
 	case f.Magic:
 		b.WriteString(" ORDER BY CASE WHEN f.rank > 0 THEN 0 WHEN f.rank < 0 THEN 2 ELSE 1 END ASC, COALESCE(fc.fav_count, 0) DESC, COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ? OFFSET ?")
@@ -709,14 +723,16 @@ func (s *ItemStore) listPageTaggedFrom(userID int64, f ItemFilter, limit int, fr
 
 // appendItemFilterPredicates adds the scope, view state, saved-page and
 // tag/feed predicates shared by the dynamic item list and its count. The query
-// must join feeds as f and items as i.
-func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
+// must join feeds as f and items as i. rawBase reports that the caller selected
+// from raw items rather than visible_items, so the author/collection feed
+// branches have to carry their own visibility check.
+func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter, rawBase bool) {
 	if f.FeedID != 0 {
 		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = ?)")
 		*args = append(*args, f.FeedID)
 	}
 	if f.AuthorID != 0 || len(f.Views) > 0 {
-		clause, scopeArgs := authorScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", f.AuthorID, f.Views)
+		clause, scopeArgs := authorScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", f.AuthorID, f.Views, rawBase)
 		if clause != "" {
 			b.WriteString(" AND ")
 			b.WriteString(clause)
@@ -728,7 +744,7 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
 		*args = append(*args, f.OwnerAuthorID)
 	}
 	if f.CollectionID != 0 || len(f.CollectionViews) > 0 {
-		clause, scopeArgs := collectionScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", f.CollectionID, f.CollectionViews)
+		clause, scopeArgs := collectionScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", f.CollectionID, f.CollectionViews, rawBase)
 		if clause != "" {
 			b.WriteString(" AND ")
 			b.WriteString(clause)
@@ -770,13 +786,19 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
 
 // authorScopeClause builds the OR of an author's owned feeds and any saved views
 // assigned to that author. itemID is the item-id expression of the caller's
-// query; timeExpr is its item-time expression.
-func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilter) (string, []any) {
+// query; timeExpr is its item-time expression. When rawBase is true the caller
+// reads raw items, so the owned-feed branch carries its own visible_items check:
+// the author's rules still apply to those feeds, while a view branch applies the
+// rules of the author the view is assigned to (see viewFilterClause).
+func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilter, rawBase bool) (string, []any) {
 	var branches []string
 	var args []any
 	if authorID != 0 {
-		branches = append(branches,
-			"EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds sf ON sf.id = mf.feed_id WHERE mf.item_id = "+itemID+" AND sf.author_id = ?)")
+		branch := "EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds sf ON sf.id = mf.feed_id WHERE mf.item_id = " + itemID + " AND sf.author_id = ?)"
+		if rawBase {
+			branch = "(" + branch + " AND " + visibleItemExists(itemID) + ")"
+		}
+		branches = append(branches, branch)
 		args = append(args, authorID)
 	}
 	for _, v := range views {
@@ -795,13 +817,17 @@ func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilt
 
 // collectionScopeClause builds the OR of a collection's member feeds and its
 // member views. itemID is the item-id expression of the caller's query; timeExpr
-// is its item-time expression.
-func collectionScopeClause(itemID, timeExpr string, collectionID int64, views []ViewFilter) (string, []any) {
+// is its item-time expression. rawBase has the same meaning as in
+// authorScopeClause.
+func collectionScopeClause(itemID, timeExpr string, collectionID int64, views []ViewFilter, rawBase bool) (string, []any) {
 	var branches []string
 	var args []any
 	if collectionID != 0 {
-		branches = append(branches,
-			"EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = "+itemID+" AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))")
+		branch := "EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = " + itemID + " AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))"
+		if rawBase {
+			branch = "(" + branch + " AND " + visibleItemExists(itemID) + ")"
+		}
+		branches = append(branches, branch)
 		args = append(args, collectionID)
 	}
 	for _, v := range views {
@@ -820,7 +846,10 @@ func collectionScopeClause(itemID, timeExpr string, collectionID int64, views []
 
 // viewFilterClause builds one saved view's predicate over an item alias. The
 // view always matches all feeds; its tag/feed groups and time windows are the
-// only restrictions. System-feed (saved page) items never match a view.
+// only content restrictions. System-feed (saved page) items never match a view.
+// When the view is assigned to an author, that author's always-on rules also
+// apply: a view is filtered by its assigned author, not by the author who owns
+// the feed its items come from.
 func viewFilterClause(itemID, timeExpr string, v ViewFilter) (string, []any) {
 	parts := []string{
 		itemID + " NOT IN (SELECT si.id FROM items si JOIN feeds sisf ON sisf.id = si.feed_id WHERE sisf.is_system = 1)",
@@ -834,20 +863,80 @@ func viewFilterClause(itemID, timeExpr string, v ViewFilter) (string, []any) {
 		parts = append(parts, "("+clause+")")
 		args = append(args, timeArgs...)
 	}
+	if v.AuthorID != 0 {
+		parts = append(parts, "("+authorRulesVisibleSQL(itemID)+")")
+		// authorRulesVisibleSQL binds the author twice (hide and show rules).
+		args = append(args, v.AuthorID, v.AuthorID)
+	}
 	return strings.Join(parts, " AND "), args
+}
+
+// visibleItemExists reports whether itemID is visible under the rules of the
+// author who owns its feed. It is the guard the owned-feed branches need when
+// the query reads raw items so a view branch can bypass those rules.
+func visibleItemExists(itemID string) string {
+	return "EXISTS (SELECT 1 FROM visible_items vi WHERE vi.id = " + itemID + ")"
+}
+
+// authorRulesVisibleSQL is the per-author form of the visible_items predicate:
+// the item is visible under the rules of the author bound to its two
+// placeholders (the hide subquery and the show subquery). visible_items applies
+// the same expression to the item's owner author; a saved view applies it to the
+// author the view is assigned to. Keep the two in sync (TestAuthorRulesVisibleSQL
+// guards the duplication).
+func authorRulesVisibleSQL(itemID string) string {
+	match := authorRuleMatchSQL(itemID)
+	return `NOT EXISTS (
+		SELECT 1 FROM author_filter_rules r
+		WHERE r.author_id = ? AND r.action = 'hide' AND (` + match + `)
+	)
+	AND NOT EXISTS (
+		SELECT 1 FROM author_filter_rules r
+		WHERE r.author_id = ? AND r.action = 'show' AND NOT (` + match + `)
+	)`
+}
+
+// authorRuleMatchSQL is one rule's match expression over an item alias, the same
+// shape visible_items uses. r is the author_filter_rules row.
+func authorRuleMatchSQL(itemID string) string {
+	return `CASE r.kind
+		WHEN 'tag' THEN CASE r.combine
+			WHEN 'all' THEN
+				(SELECT COUNT(DISTINCT ic.category) FROM item_categories ic
+				   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+				  WHERE ic.item_id = ` + itemID + `)
+				= (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+			ELSE EXISTS (SELECT 1 FROM item_categories ic
+				   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+				  WHERE ic.item_id = ` + itemID + `)
+		END
+		WHEN 'feed' THEN CASE r.combine
+			WHEN 'all' THEN
+				(SELECT COUNT(DISTINCT mf.feed_id) FROM item_feeds mf
+				   JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
+				   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
+				  WHERE mf.item_id = ` + itemID + `)
+				= (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+			ELSE EXISTS (SELECT 1 FROM item_feeds mf
+				   JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
+				   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
+				  WHERE mf.item_id = ` + itemID + `)
+		END
+		ELSE 0
+	END`
 }
 
 // CountFiltered counts the items ListPage would return for f, ignoring its
 // cursor and limit. It backs the "N matching" badge on a filtered item list.
 func (s *ItemStore) CountFiltered(userID int64, f ItemFilter) (int, error) {
-	return s.countFilteredFrom(userID, f, "visible_items")
+	return s.countFilteredFrom(userID, f, f.itemSource())
 }
 
 func (s *ItemStore) countFilteredFrom(userID int64, f ItemFilter, from string) (int, error) {
 	var b strings.Builder
 	b.WriteString(`SELECT COUNT(*) FROM ` + from + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 	args := []any{userID}
-	appendItemFilterPredicates(&b, &args, f)
+	appendItemFilterPredicates(&b, &args, f, from == "items")
 	var n int
 	if err := s.db.QueryRowContext(context.Background(), b.String(), args...).Scan(&n); err != nil {
 		return 0, err
@@ -872,7 +961,7 @@ func (s *ItemStore) MatchingViews(userID int64, itemIDs []int64, views []ViewFil
 			b.WriteString(" UNION ALL ")
 		}
 		clause, viewArgs := viewFilterClause("i.id", "COALESCE(i.published_at, i.fetched_at)", v)
-		b.WriteString("SELECT ? AS view_index, i.id FROM visible_items i WHERE i.user_id = ? AND i.id IN (")
+		b.WriteString("SELECT ? AS view_index, i.id FROM items i WHERE i.user_id = ? AND i.id IN (")
 		b.WriteString(placeholders)
 		b.WriteString(") AND (")
 		b.WriteString(clause)
@@ -1073,6 +1162,7 @@ func (s *ItemStore) StatsAuthor(userID, authorID int64) (AuthorItemStats, error)
 // storage figure remains the author's own feed media, since view items belong to
 // other authors' feeds.
 func (s *ItemStore) StatsFilter(userID int64, f ItemFilter) (AuthorItemStats, error) {
+	source := f.itemSource()
 	var b strings.Builder
 	b.WriteString(`SELECT COUNT(i.id),
 		COUNT(CASE WHEN i.read = 0 THEN 1 END),
@@ -1081,9 +1171,9 @@ func (s *ItemStore) StatsFilter(userID int64, f ItemFilter) (AuthorItemStats, er
 		COUNT(CASE WHEN COALESCE(i.published_at, i.fetched_at) >= ? THEN 1 END),
 		CAST(COALESCE(MIN(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT),
 		CAST(COALESCE(MAX(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT)
-		FROM visible_items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+		FROM ` + source + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 	args := []any{db.FormatTime(time.Now().AddDate(0, 0, -30)), userID}
-	appendItemFilterPredicates(&b, &args, f)
+	appendItemFilterPredicates(&b, &args, f, source == "items")
 	var (
 		total, unread, read, favorites, recent int
 		firstAt, lastAt                        string
@@ -1106,11 +1196,12 @@ func (s *ItemStore) RecentTimesFilter(userID int64, f ItemFilter, limit int) ([]
 	if limit <= 0 {
 		limit = 30
 	}
+	source := f.itemSource()
 	var b strings.Builder
 	b.WriteString(`SELECT COALESCE(i.published_at, i.fetched_at)
-		FROM visible_items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+		FROM ` + source + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 	args := []any{userID}
-	appendItemFilterPredicates(&b, &args, f)
+	appendItemFilterPredicates(&b, &args, f, source == "items")
 	b.WriteString(" ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ?")
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
@@ -1133,12 +1224,13 @@ func (s *ItemStore) RecentTimesFilter(userID int64, f ItemFilter, limit int) ([]
 // arbitrary item scope, most-used first. It backs the filter modal when an
 // author's items include view matches from other feeds.
 func (s *ItemStore) ListCategoriesFilter(userID int64, f ItemFilter) ([]CategoryCount, error) {
+	source := f.itemSource()
 	var b strings.Builder
 	b.WriteString(`SELECT ic.category, COUNT(DISTINCT ic.item_id)
 		FROM item_categories ic WHERE ic.item_id IN (
-			SELECT i.id FROM visible_items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+			SELECT i.id FROM ` + source + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 	args := []any{userID}
-	appendItemFilterPredicates(&b, &args, f)
+	appendItemFilterPredicates(&b, &args, f, source == "items")
 	b.WriteString(`) GROUP BY ic.category ORDER BY COUNT(DISTINCT ic.item_id) DESC, ic.category`)
 	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
 	if err != nil {
@@ -1815,18 +1907,19 @@ func (s *ItemStore) CountUnreadFiltered(userID int64, f ItemFilter) (int, error)
 // views, tags, groups and time windows all mean the same thing here as in the
 // list and count paths.
 func unreadFilteredQuery(userID int64, f ItemFilter, mark bool) (string, []any) {
+	source := f.itemSource()
 	var b strings.Builder
 	var args []any
 	if mark {
 		b.WriteString(`UPDATE items SET read = 1, read_at = ? WHERE user_id = ? AND read = 0
-		AND items.id IN (SELECT i.id FROM visible_items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+		AND items.id IN (SELECT i.id FROM ` + source + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 		args = append(args, ns(db.Now()), userID, userID)
 	} else {
 		b.WriteString(`SELECT COUNT(*) FROM items WHERE user_id = ? AND read = 0
-		AND items.id IN (SELECT i.id FROM visible_items i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+		AND items.id IN (SELECT i.id FROM ` + source + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 		args = append(args, userID, userID)
 	}
-	appendItemFilterPredicates(&b, &args, f)
+	appendItemFilterPredicates(&b, &args, f, source == "items")
 	b.WriteString(")")
 	return b.String(), args
 }

@@ -140,7 +140,7 @@ func groupSavedViews(rows []savedViewRow) []savedViewGroup {
 // savedViewRow resolves one view's display fields and matching count.
 func (s *Server) savedViewRow(userID int64, v store.SavedView, tz string) savedViewRow {
 	filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
-	count, _ := s.savedViewCount(userID, "unread", filters, tz)
+	count, _ := s.savedViewCount(userID, v.AuthorID, "unread", filters, tz)
 	row := savedViewRow{
 		ID: v.ID, Title: v.Title, AuthorID: v.AuthorID,
 		Filters: filters, Count: count, CreatedAt: v.CreatedAt,
@@ -154,10 +154,27 @@ func (s *Server) savedViewRow(userID int64, v store.SavedView, tz string) savedV
 }
 
 // savedViewCount counts the matching items for a view's base tab and filters.
-func (s *Server) savedViewCount(userID int64, view string, filters listFilters, tz string) (int, error) {
-	f := scopedFilter(view, sortNewest, 0, 0, 0, filters, tz)
+// authorID is the author the view is assigned to; the view follows that
+// author's rules (0 means unassigned and unfiltered).
+func (s *Server) savedViewCount(userID, authorID int64, view string, filters listFilters, tz string) (int, error) {
+	f := savedViewItemFilter(view, sortNewest, 0, authorID, filters, tz)
 	f.Limit = 0
 	return s.store.Items.CountFiltered(userID, f)
+}
+
+// savedViewItemFilter builds the item scope of a saved view's own page: the
+// view's current filter rows as its view predicate, so the page is unfiltered by
+// the feed owners but still follows the view's assigned author.
+func savedViewItemFilter(view string, sort itemSort, cursor, authorID int64, filters listFilters, tz string) store.ItemFilter {
+	f := scopedFilter(view, sort, cursor, 0, 0, nil, tz)
+	tagGroups, feedGroups, _ := filters.storeGroups()
+	f.Views = []store.ViewFilter{{
+		AuthorID:   authorID,
+		TagGroups:  tagGroups,
+		FeedGroups: feedGroups,
+		TimeGroups: filters.timeGroups(tz),
+	}}
+	return f
 }
 
 // savedViewFilters validates a view's filter rows against the user's feeds:
@@ -229,7 +246,9 @@ func (s *Server) savedViewFormData(userID int64, v savedViewForm) savedViewForm 
 	v.AuthorOptions = savedViewAuthorItems(authors)
 	collections, _ := s.store.Collections.List(userID)
 	v.CollectionOptions = nonAutoCollections(collections)
-	cats, _ := s.store.Items.ListCategoriesFilter(userID, store.ItemFilter{})
+	cats, _ := s.store.Items.ListCategoriesFilter(userID, store.ItemFilter{
+		Views: []store.ViewFilter{{AuthorID: v.AuthorID}},
+	})
 	v.TagOptions = tagItems(cats)
 	fs, _ := s.store.Feeds.List(userID)
 	feeds := make([]comboItem, 0, len(fs))
@@ -548,7 +567,7 @@ func (s *Server) savedViewItems(w http.ResponseWriter, r *http.Request) {
 	filters := s.savedViewActiveFilters(u.ID, v, r)
 	if cursor := cursorID(r, sort); cursor > 0 {
 		items, more, err := s.store.Items.ListPage(u.ID,
-			scopedFilter(view, sort, cursor, 0, 0, filters, u.Timezone))
+			savedViewItemFilter(view, sort, cursor, v.AuthorID, filters, u.Timezone))
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
@@ -577,8 +596,12 @@ func (s *Server) savedViewReadAll(w http.ResponseWriter, r *http.Request) {
 	filters := s.savedViewActiveFilters(u.ID, v, r)
 	tagGroups, feedGroups, _ := filters.storeGroups()
 	if _, err := s.store.Items.MarkAllReadFiltered(u.ID, store.ItemFilter{
-		TagGroups: tagGroups, FeedGroups: feedGroups,
-		TimeGroups: filters.timeGroups(u.Timezone),
+		Views: []store.ViewFilter{{
+			AuthorID:   v.AuthorID,
+			TagGroups:  tagGroups,
+			FeedGroups: feedGroups,
+			TimeGroups: filters.timeGroups(u.Timezone),
+		}},
 	}); err != nil {
 		log.Error("mark saved view read", "view_id", id, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -591,7 +614,7 @@ func (s *Server) savedViewPageData(u store.User, v store.SavedView, r *http.Requ
 	view := savedViewTab(r)
 	sort := savedViewSort(r)
 	filters := s.savedViewActiveFilters(u.ID, v, r)
-	unread, _ := s.savedViewCount(u.ID, "unread", filters, u.Timezone)
+	unread, _ := s.savedViewCount(u.ID, v.AuthorID, "unread", filters, u.Timezone)
 	markAll := markAllReadData{
 		Action: savedViewFiltersURL("/views/"+strconv.FormatInt(v.ID, 10)+"/read-all", filters),
 		Unread: unread,
@@ -666,16 +689,18 @@ func (s *Server) savedViewScopedData(u store.User, v store.SavedView, view strin
 	id := v.ID
 	base := "/views/" + strconv.FormatInt(id, 10)
 	items, more, _ := s.store.Items.ListPage(u.ID,
-		scopedFilter(view, sort, 0, 0, 0, filters, u.Timezone))
-	unread, _ := s.savedViewCount(u.ID, "unread", filters, u.Timezone)
-	read, _ := s.savedViewCount(u.ID, "read", filters, u.Timezone)
-	favs, _ := s.savedViewCount(u.ID, "favorites", filters, u.Timezone)
+		savedViewItemFilter(view, sort, 0, v.AuthorID, filters, u.Timezone))
+	unread, _ := s.savedViewCount(u.ID, v.AuthorID, "unread", filters, u.Timezone)
+	read, _ := s.savedViewCount(u.ID, v.AuthorID, "read", filters, u.Timezone)
+	favs, _ := s.savedViewCount(u.ID, v.AuthorID, "favorites", filters, u.Timezone)
 	filtered := 0
 	if len(filters) > 0 {
-		filtered, _ = s.savedViewCount(u.ID, view, filters, u.Timezone)
+		filtered, _ = s.savedViewCount(u.ID, v.AuthorID, view, filters, u.Timezone)
 	}
 	itemsBase := s.savedViewItemsBase(v, view, sort, filters)
-	cats, _ := s.store.Items.ListCategoriesFilter(u.ID, store.ItemFilter{})
+	cats, _ := s.store.Items.ListCategoriesFilter(u.ID, store.ItemFilter{
+		Views: []store.ViewFilter{{AuthorID: v.AuthorID}},
+	})
 	feedOpts := s.savedViewFeedOptions(u.ID)
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
@@ -758,6 +783,7 @@ func (s *Server) collectionViewMatches(userID, collectionID int64, tz string) []
 		out = append(out, collectionViewMatch{
 			ID: v.ID, Title: v.Title,
 			Predicate: store.ViewFilter{
+				AuthorID:  v.AuthorID,
 				TagGroups: tagGroups, FeedGroups: feedGroups,
 				TimeGroups: filters.timeGroups(tz),
 			},
@@ -843,6 +869,7 @@ func (s *Server) storeViewFilter(userID int64, v store.SavedView, tz string) sto
 	filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
 	tagGroups, feedGroups, _ := filters.storeGroups()
 	return store.ViewFilter{
+		AuthorID:  v.AuthorID,
 		TagGroups: tagGroups, FeedGroups: feedGroups, TimeGroups: filters.timeGroups(tz),
 	}
 }
