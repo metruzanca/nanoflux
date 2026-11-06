@@ -71,6 +71,7 @@ var migrations = []migration{
 	{58, schemaV58},
 	{59, schemaV59},
 	{60, schemaV60},
+	{61, schemaV61},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -945,6 +946,26 @@ INSERT INTO saved_views_v60 (id, user_id, author_id, title, base_view, sort, fil
 SELECT id, user_id, author_id, title, base_view, sort, filters, created_at FROM saved_views;
 DROP TABLE saved_views;
 ALTER TABLE saved_views_v60 RENAME TO saved_views;
+CREATE INDEX idx_saved_views_user ON saved_views(user_id);
+CREATE INDEX idx_saved_views_author ON saved_views(author_id);
+`
+
+// schemaV61 removes the saved-view base tab and sort. A view now stores only its
+// title, assigned author and filter rows; the author page and the view page
+// choose the tab and sort themselves.
+const schemaV61 = `
+CREATE TABLE saved_views_v61 (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id  INTEGER REFERENCES authors(id) ON DELETE CASCADE,
+    title      TEXT NOT NULL,
+    filters    TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT INTO saved_views_v61 (id, user_id, author_id, title, filters, created_at)
+SELECT id, user_id, author_id, title, filters, created_at FROM saved_views;
+DROP TABLE saved_views;
+ALTER TABLE saved_views_v61 RENAME TO saved_views;
 CREATE INDEX idx_saved_views_user ON saved_views(user_id);
 CREATE INDEX idx_saved_views_author ON saved_views(author_id);
 `

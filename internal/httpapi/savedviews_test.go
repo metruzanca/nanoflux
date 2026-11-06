@@ -55,8 +55,6 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	form := url.Values{
 		"title":          {"Example posts"},
 		"author_id":      {itoa(author.ID)},
-		"view":           {"unread"},
-		"sort":           {"newest"},
 		"filter_row":     {"0"},
 		"filter_action":  {"show"},
 		"filter_kind":    {"tag"},
@@ -81,7 +79,7 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	}
 
 	// The create page carries the filter rows and the author picker.
-	formPage := doGet(h, "/views/new?view=unread&sort=newest&f="+url.QueryEscape("tag:show:u/example-poster"), cookie).Body.String()
+	formPage := doGet(h, "/views/new?f="+url.QueryEscape("tag:show:u/example-poster"), cookie).Body.String()
 	if !strings.Contains(formPage, `name="title"`) || !strings.Contains(formPage, `name="author_id"`) || !strings.Contains(formPage, `name="filter_value_empty"`) && !strings.Contains(formPage, `name="filter_value_0"`) {
 		t.Fatalf("new view form is missing fields: %s", formPage)
 	}
@@ -131,7 +129,7 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	}
 
 	// An empty view is rejected: it would pull every post into the author.
-	empty := url.Values{"title": {"Empty"}, "author_id": {itoa(author.ID)}, "view": {"unread"}, "sort": {"newest"}}
+	empty := url.Values{"title": {"Empty"}, "author_id": {itoa(author.ID)}}
 	if rr := doForm(h, http.MethodPost, "/views", empty, cookie); rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "add at least one filter") {
 		t.Fatalf("empty view should be rejected: %d", rr.Code)
 	}
@@ -146,8 +144,6 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	edit := url.Values{
 		"title":          {"Renamed view"},
 		"author_id":      {"0"},
-		"view":           {"read"},
-		"sort":           {"oldest"},
 		"filter_row":     {"0"},
 		"filter_action":  {"show"},
 		"filter_kind":    {"tag"},
@@ -162,7 +158,7 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	if len(views) != 1 {
 		t.Fatalf("expected one saved view, got %d", len(views))
 	}
-	if views[0].Title != "Renamed view" || views[0].AuthorID != 0 || views[0].BaseView != "read" {
+	if views[0].Title != "Renamed view" || views[0].AuthorID != 0 {
 		t.Fatalf("view not updated: %+v", views[0])
 	}
 
@@ -185,8 +181,6 @@ func TestSavedViewDropsUnknownFeedFilter(t *testing.T) {
 	form := url.Values{
 		"title":          {"Filtered"},
 		"author_id":      {itoa(author.ID)},
-		"view":           {"unread"},
-		"sort":           {"newest"},
 		"filter_row":     {"0", "1"},
 		"filter_action":  {"show", "show"},
 		"filter_kind":    {"feed", "tag"},
@@ -214,8 +208,6 @@ func TestSavedViewReadAllHonorsFilters(t *testing.T) {
 	form := url.Values{
 		"title":          {"Go"},
 		"author_id":      {itoa(author.ID)},
-		"view":           {"unread"},
-		"sort":           {"newest"},
 		"filter_row":     {"0"},
 		"filter_action":  {"show"},
 		"filter_kind":    {"tag"},
@@ -267,8 +259,6 @@ func TestSavedViewTagOptionsAllFeeds(t *testing.T) {
 	form := url.Values{
 		"title":          {"All feeds"},
 		"author_id":      {"0"},
-		"view":           {"unread"},
-		"sort":           {"newest"},
 		"filter_row":     {"0"},
 		"filter_action":  {"show"},
 		"filter_kind":    {"tag"},

@@ -704,7 +704,7 @@ func cloneAuthorFilters(ctx context.Context, tx *sql.Tx, seedID int64, authorMap
 // clone becomes unassigned.
 func cloneSavedViews(ctx context.Context, tx *sql.Tx, seedID, newID int64, authorMap, feedMap map[int64]int64) error {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT author_id, title, base_view, sort, filters, created_at
+		SELECT author_id, title, filters, created_at
 		FROM saved_views WHERE user_id = ?`, seedID)
 	if err != nil {
 		return fmt.Errorf("clone saved views select: %w", err)
@@ -713,15 +713,13 @@ func cloneSavedViews(ctx context.Context, tx *sql.Tx, seedID, newID int64, autho
 	type view struct {
 		authorID  sql.NullInt64
 		title     string
-		baseView  string
-		sort      string
 		filters   string
 		createdAt string
 	}
 	var views []view
 	for rows.Next() {
 		var v view
-		if err := rows.Scan(&v.authorID, &v.title, &v.baseView, &v.sort, &v.filters, &v.createdAt); err != nil {
+		if err := rows.Scan(&v.authorID, &v.title, &v.filters, &v.createdAt); err != nil {
 			return fmt.Errorf("clone saved views scan: %w", err)
 		}
 		views = append(views, v)
@@ -752,9 +750,9 @@ func cloneSavedViews(ctx context.Context, tx *sql.Tx, seedID, newID int64, autho
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO saved_views (
-				user_id, author_id, title, base_view, sort, filters, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			newID, assigned, v.title, v.baseView, v.sort, string(encoded), v.createdAt); err != nil {
+				user_id, author_id, title, filters, created_at
+			) VALUES (?, ?, ?, ?, ?)`,
+			newID, assigned, v.title, string(encoded), v.createdAt); err != nil {
 			return fmt.Errorf("clone saved view insert: %w", err)
 		}
 	}

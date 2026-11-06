@@ -161,8 +161,6 @@ type SavedView struct {
 	UserID    int64         `json:"user_id"`
 	AuthorID  sql.NullInt64 `json:"author_id"`
 	Title     string        `json:"title"`
-	BaseView  string        `json:"base_view"`
-	Sort      string        `json:"sort"`
 	Filters   string        `json:"filters"`
 	CreatedAt string        `json:"created_at"`
 }

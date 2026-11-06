@@ -25,8 +25,6 @@ type savedViewRow struct {
 	Title      string
 	AuthorID   int64
 	AuthorName string
-	BaseView   string
-	Sort       itemSort
 	Filters    listFilters
 	Count      int
 	CreatedAt  string
@@ -48,8 +46,6 @@ type savedViewsPageData struct {
 type savedViewForm struct {
 	ID            int64
 	Title         string
-	BaseView      string
-	Sort          itemSort
 	Filters       listFilters
 	AuthorID      int64
 	AuthorOptions []comboItem
@@ -62,17 +58,6 @@ type savedViewPageData struct {
 	Row     savedViewRow
 	Scoped  scopedItemsData
 	MarkAll markAllReadData
-}
-
-// normalizeSavedViewBase maps a base tab onto the supported set.
-func normalizeSavedViewBase(v string) string {
-	switch v {
-	case "read", "favorites", "bookmarks":
-		return v
-	case "unread":
-		return "unread"
-	}
-	return "unread"
 }
 
 // savedViewAuthorItems is the assignment picker: an explicit "unassigned"
@@ -141,12 +126,10 @@ func groupSavedViews(rows []savedViewRow) []savedViewGroup {
 // savedViewRow resolves one view's display fields and matching count.
 func (s *Server) savedViewRow(userID int64, v store.SavedView, tz string) savedViewRow {
 	filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
-	base := normalizeSavedViewBase(v.BaseView)
-	count, _ := s.savedViewCount(userID, base, filters, tz)
+	count, _ := s.savedViewCount(userID, "unread", filters, tz)
 	row := savedViewRow{
-		ID: v.ID, Title: v.Title, AuthorID: v.AuthorID, BaseView: base,
-		Sort: itemSortFromParam(v.Sort), Filters: filters,
-		Count: count, CreatedAt: v.CreatedAt,
+		ID: v.ID, Title: v.Title, AuthorID: v.AuthorID,
+		Filters: filters, Count: count, CreatedAt: v.CreatedAt,
 	}
 	if v.AuthorID > 0 {
 		if a, err := s.store.Authors.ByID(userID, v.AuthorID); err == nil {
@@ -233,7 +216,7 @@ func (s *Server) savedViewFormData(userID int64, v savedViewForm) savedViewForm 
 }
 
 // savedViewNew renders the create form prefilled from the list the user saved
-// from (?view= or ?tab=, ?sort=, ?author_id=, and the filter fields).
+// from (?author_id= and the filter fields).
 func (s *Server) savedViewNew(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	authorID, ok := s.savedViewAssignedAuthor(u.ID, r.URL.Query().Get("author_id"))
@@ -241,16 +224,9 @@ func (s *Server) savedViewNew(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	filters := s.savedViewFilters(u.ID, filtersFromRequest(r))
-	baseView := r.URL.Query().Get("tab")
-	if baseView == "" {
-		baseView = r.URL.Query().Get("view")
-	}
 	form := savedViewForm{
 		Title:    "",
-		BaseView: normalizeSavedViewBase(baseView),
-		Sort:     itemSortOf(r),
-		Filters:  filters,
+		Filters:  s.savedViewFilters(u.ID, filtersFromRequest(r)),
 		AuthorID: authorID,
 	}
 	web.Render(w, r, basePage("new view", u, savedViewFormPage(u, s.savedViewFormData(u.ID, form))))
@@ -282,8 +258,7 @@ func (s *Server) savedViewCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, err := s.store.SavedViews.Create(u.ID, store.SavedView{
-		AuthorID: form.AuthorID, Title: form.Title, BaseView: form.BaseView,
-		Sort: form.Sort.param(), Filters: form.Filters.params(),
+		AuthorID: form.AuthorID, Title: form.Title, Filters: form.Filters.params(),
 	})
 	if err != nil {
 		log.Error("create saved view", "err", err)
@@ -308,8 +283,8 @@ func (s *Server) savedViewEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	form := savedViewForm{
-		ID: v.ID, Title: v.Title, BaseView: normalizeSavedViewBase(v.BaseView),
-		Sort:     itemSortFromParam(v.Sort),
+		ID:       v.ID,
+		Title:    v.Title,
 		Filters:  s.savedViewFilters(u.ID, filtersFromParams(v.Filters)),
 		AuthorID: v.AuthorID,
 	}
@@ -344,8 +319,7 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	form.Filters = s.savedViewFilters(u.ID, form.Filters)
 	if err := s.store.SavedViews.Update(u.ID, id, store.SavedView{
-		AuthorID: form.AuthorID, Title: form.Title, BaseView: form.BaseView,
-		Sort: form.Sort.param(), Filters: form.Filters.params(),
+		AuthorID: form.AuthorID, Title: form.Title, Filters: form.Filters.params(),
 	}); err != nil {
 		log.Error("update saved view", "err", err)
 		form.Error = "could not save this view"
@@ -369,10 +343,8 @@ func (s *Server) renderSavedViewForm(w http.ResponseWriter, r *http.Request, u s
 // savedViewFormFromRequest reads and validates the shared create/edit fields.
 func (s *Server) savedViewFormFromRequest(userID int64, r *http.Request) (savedViewForm, bool) {
 	form := savedViewForm{
-		Title:    strings.TrimSpace(r.FormValue("title")),
-		BaseView: normalizeSavedViewBase(r.FormValue("view")),
-		Sort:     itemSortFromParam(r.FormValue("sort")),
-		Filters:  filtersFromValues(r.Form),
+		Title:   strings.TrimSpace(r.FormValue("title")),
+		Filters: filtersFromValues(r.Form),
 	}
 	var ok bool
 	form.Filters = s.savedViewFilters(userID, form.Filters)
@@ -447,8 +419,8 @@ func (s *Server) savedViewItems(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	view := savedViewTab(r, v)
-	sort := savedViewSort(r, v)
+	view := savedViewTab(r)
+	sort := savedViewSort(r)
 	filters := s.savedViewActiveFilters(u.ID, v, r)
 	if cursor := cursorID(r, sort); cursor > 0 {
 		items, more, err := s.store.Items.ListPage(u.ID,
@@ -492,8 +464,8 @@ func (s *Server) savedViewReadAll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) savedViewPageData(u store.User, v store.SavedView, r *http.Request) savedViewPageData {
-	view := savedViewTab(r, v)
-	sort := savedViewSort(r, v)
+	view := savedViewTab(r)
+	sort := savedViewSort(r)
 	filters := s.savedViewActiveFilters(u.ID, v, r)
 	unread, _ := s.savedViewCount(u.ID, "unread", filters, u.Timezone)
 	markAll := markAllReadData{
@@ -507,23 +479,21 @@ func (s *Server) savedViewPageData(u store.User, v store.SavedView, r *http.Requ
 	}
 }
 
-// savedViewTab reads ?view=, falling back to the view's stored base tab.
-func savedViewTab(r *http.Request, v store.SavedView) string {
-	if raw := r.URL.Query().Get("view"); raw != "" {
-		switch raw {
-		case "read", "favorites", "bookmarks", "unread":
-			return raw
-		}
+// savedViewTab reads ?view=, defaulting to unread.
+func savedViewTab(r *http.Request) string {
+	switch r.URL.Query().Get("view") {
+	case "read", "favorites", "bookmarks", "unread":
+		return r.URL.Query().Get("view")
 	}
-	return normalizeSavedViewBase(v.BaseView)
+	return "unread"
 }
 
-// savedViewSort reads ?sort=, falling back to the stored sort.
-func savedViewSort(r *http.Request, v store.SavedView) itemSort {
+// savedViewSort reads ?sort=, defaulting to newest.
+func savedViewSort(r *http.Request) itemSort {
 	if raw := r.URL.Query().Get("sort"); raw != "" {
 		return itemSortFromParam(raw)
 	}
-	return itemSortFromParam(v.Sort)
+	return sortNewest
 }
 
 // savedViewActiveFilters returns explicit request filters when the list was
@@ -558,7 +528,7 @@ func hasSavedViewListParams(r *http.Request) bool {
 func (s *Server) savedViewCanonicalURL(userID int64, v store.SavedView) string {
 	filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
 	base := "/views/" + strconv.FormatInt(v.ID, 10)
-	return filterPageURL(base, normalizeSavedViewBase(v.BaseView), itemSortFromParam(v.Sort), filters)
+	return filterPageURL(base, "unread", sortNewest, filters)
 }
 
 // savedViewItemsBase builds the load-more URL for the active view state.

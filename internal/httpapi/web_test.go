@@ -1324,7 +1324,7 @@ func TestAuthorPageSourcesSection(t *testing.T) {
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.example/rss.xml", "", "", 900)
 	if _, err := s.store.SavedViews.Create(u.ID, store.SavedView{
-		AuthorID: a.ID, Title: "Captain posts", BaseView: "unread", Sort: "newest",
+		AuthorID: a.ID, Title: "Captain posts",
 		Filters: []string{"tag:show:u/Captain"},
 	}); err != nil {
 		t.Fatalf("saved view: %v", err)

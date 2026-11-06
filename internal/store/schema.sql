@@ -266,14 +266,13 @@ CREATE TABLE collection_feeds (
 
 -- Saved views: private named filter recipes over the item lists (schemaV57).
 -- author_id groups a view on an author page. filters is a JSON array of
--- canonical ?f= params. A view always matches all feeds (schemaV60).
+-- canonical ?f= params. A view always matches all feeds (schemaV60); it stores
+-- no tab or sort (schemaV61).
 CREATE TABLE saved_views (
     id         INTEGER PRIMARY KEY,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     author_id  INTEGER REFERENCES authors(id) ON DELETE CASCADE,
     title      TEXT NOT NULL,
-    base_view  TEXT NOT NULL DEFAULT 'unread',
-    sort       TEXT NOT NULL DEFAULT 'newest',
     filters    TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

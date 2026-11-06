@@ -17,7 +17,7 @@ func TestViewFilterAuthorScope(t *testing.T) {
 	feed, _ := s.Feeds.Create(u.ID, aggregate.ID, "Sub", "https://sub.example/rss.xml", "", "", 900)
 	viewAuthor, _ := s.Authors.Create(u.ID, "Captain", "", "")
 	if _, err := s.SavedViews.Create(u.ID, SavedView{
-		AuthorID: viewAuthor.ID, Title: "Captain posts", BaseView: "unread", Sort: "newest",
+		AuthorID: viewAuthor.ID, Title: "Captain posts",
 		Filters: []string{"tag:show:u/Captain"},
 	}); err != nil {
 		t.Fatalf("saved view: %v", err)
