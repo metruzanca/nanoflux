@@ -411,11 +411,12 @@ parallel implementation.
   are `show`/`hide` internally; the author card labels them **allow**/**block**.
 - **Semantics.** Every allow row must match (like show rows); any matching block
   row excludes (like hide rows). An author with no allow rows allows everything
-  not blocked. Matching keys on the author the rule set belongs to: normally the
-  item's owner author (`items.feed_id -> feeds.author_id`), which is the author a
-  row displays, and for a saved view the author the view is assigned to (see
-  "Saved views"). Feed rules match through `item_feeds` membership restricted to
-  that author's feeds.
+  not blocked. Matching keys on the author the rule set belongs to: the item's
+  owner author (`items.feed_id -> feeds.author_id`) for global reads, the scoped
+  author for that author's page (a cross-feed post can be owned by another
+  author but still belong to this author's feed), and the assigned author for a
+  saved view (see "Saved views"). Feed rules match through `item_feeds`
+  membership restricted to that author's feeds.
 - **Storage (schemaV55).** `author_filter_rules` + `author_filter_values`, owned
   by `AuthorFilterStore` (`store.AuthorFilters`). `POST /authors/{id}/edit`
   replaces them when the form carries `author_filters_present`; a partial save
@@ -429,17 +430,21 @@ parallel implementation.
   retention (`ItemStore.MarkAutoRead`) deliberately stays on raw `items`. Any new
   item read path must use `visible_items`; write paths and storage/dedup stay on
   `items`.
-  The one exception is a saved-view scope: because its items follow the view's
-  assigned author, `ItemFilter.itemSource()` selects raw `items` whenever
-  `Views`/`CollectionViews` are present, and the owned-feed/collection branches
-  add their own `visibleItemExists` guard. `viewFilterClause` then applies
-  `authorRulesVisibleSQL`, the per-author form of the same rule expression
-  (`TestAuthorRulesVisibleSQLMatchesView` guards the duplication with
-  `visible_items`).
+  Two scopes read raw `items` because the rule source is not the item's owner
+  feed. An author scope (`AuthorID != 0`) applies the scoped author's rules to
+  the membership branch (`authorScopeClause`), so a cross-feed post follows the
+  rules of the author whose feed surfaces it, and `ListPage` forces the dynamic
+  query for it. A saved-view scope (`Views`/`CollectionViews`) applies the
+  view's assigned author. `ItemFilter.itemSource()` picks the base; a collection
+  member-feed branch inside a raw view scope still carries the
+  `visibleItemExists` guard (owner author). `authorRulesVisibleSQL` is the
+  per-author form of the rule expression; `TestAuthorRulesVisibleSQLMatchesView`
+  guards the duplication with `visible_items`.
   `visible_items` is `SELECT i.*`, so a future migration that adds an `items`
   column must recreate the view in the same migration.
 - **Writes respect it too.** Mark-all read/unread and the scoped filtered mark
-  gate on `visible_items`, so hidden items keep their state.
+  gate on the same predicates as the list (`visible_items`, or an author/view
+  branch's own rule check), so hidden items keep their state.
 - **Preview.** `POST /authors/{id}/filters/preview` evaluates the submitted
   (draft) rows against raw items scoped to the author's owned feeds: allowed is
   the normal group predicate, blocked is its complement. It never persists and
@@ -461,6 +466,11 @@ list, refresh (`POST /feeds/{id}/refresh`), feed-scoped mark-all-read, "load
 older items" (`POST /feeds/{id}/older`, which appends OOB to the author's item
 list), the external home/feed link, the last-polled line and the cached-media
 stat. `GET /feeds/{id}/edit` still redirects to the author edit page.
+
+The feed-scoped list (`/authors/{id}?feed=`) and the feed card's unread badge
+use the same author-scoped predicate (`CountFiltered` with `AuthorID` +
+`FeedID`), so a cross-feed post owned by another author but reachable through
+this author's feed is filtered and counted by this author's rules.
 
 The author edit page auto-saves per section. The author basics form posts to
 `POST /authors/{id}/edit` (name, description, avatar, links), the auto-read card

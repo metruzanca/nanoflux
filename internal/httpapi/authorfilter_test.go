@@ -355,3 +355,45 @@ func TestAuthorViewFollowsAssignedAuthorRules(t *testing.T) {
 		t.Fatalf("collection view scope should follow the assigned author: %s", body)
 	}
 }
+
+// TestAuthorFeedPageAppliesRulesToCrossFeedItems reproduces the membership leak:
+// a cross-feed post owned by another author's feed is also a member of this
+// author's feed, so this author's rules must hide it on the author page and its
+// ?feed= view.
+func TestAuthorFeedPageAppliesRulesToCrossFeedItems(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	owner, _ := s.store.Authors.Create(u.ID, "Owner", "", "")
+	ownerFeed, _ := s.store.Feeds.Create(u.ID, owner.ID, "Owner feed", "https://owner.example/feed", "", "", 900)
+	page, _ := s.store.Authors.Create(u.ID, "Page", "", "")
+	pageFeed, _ := s.store.Feeds.Create(u.ID, page.ID, "Page feed", "https://page.example/feed", "", "", 900)
+
+	post := store.Item{
+		GUID: "cross", SharedKey: "site:cross", Title: "Cross post",
+		Link: "https://x/cross", Categories: []string{"r/shared", "u/blocked"}, FetchedAt: db.Now(),
+	}
+	if _, err := s.store.Items.Upsert(ownerFeed.ID, post); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.store.Items.Upsert(pageFeed.ID, post); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.AuthorFilters.Replace(u.ID, page.ID, []store.FilterRule{{
+		Kind: store.FilterKindTag, Action: store.FilterActionHide, Combine: store.FilterCombineAny, Values: []string{"u/blocked"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	pageURL := "/authors/" + itoa(page.ID)
+	for _, url := range []string{pageURL + "?feed=" + itoa(pageFeed.ID), pageURL} {
+		if body := doGet(h, url, cookie).Body.String(); strings.Contains(body, "Cross post") {
+			t.Fatalf("author page %s should hide the blocked cross-feed post", url)
+		}
+	}
+	// The owner's page keeps it: the owner has no rules.
+	if body := doGet(h, "/authors/"+itoa(owner.ID), cookie).Body.String(); !strings.Contains(body, "Cross post") {
+		t.Fatalf("owner page should show the post")
+	}
+}

@@ -424,9 +424,11 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	}
 	// Tag exclusion and feed exclusion are variable-shape predicates the
 	// generated queries (fixed placeholders) cannot express, so any active tag
-	// filter or negative filter uses the hand-written dynamic query. sqlc owns
-	// the rest of the list paths.
-	if len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 ||
+	// filter or negative filter uses the hand-written dynamic query. An author
+	// scope also uses it: the author's own rules must apply to items reached
+	// through feed membership, which visible_items (keyed on the owner feed's
+	// author) cannot express. sqlc owns the rest of the list paths.
+	if f.AuthorID != 0 || len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 ||
 		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.TimeGroups) > 0 ||
 		len(f.Views) > 0 || len(f.CollectionViews) > 0 {
 		return s.listPageTagged(userID, f, limit)
@@ -663,11 +665,13 @@ func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]Ite
 	return s.listPageTaggedFrom(userID, f, limit, f.itemSource())
 }
 
-// itemSource is the table a scoped read starts from. A saved-view scope reads
-// raw items because its items follow the view's assigned author, not the feed
-// owner; every other read uses the author-filtered visible_items view.
+// itemSource is the table a scoped read starts from. An author scope and a
+// saved-view scope read raw items: an author page applies the scoped author's
+// rules to items reached through the author's feeds (a cross-feed item can be
+// owned by another author), and a view follows its assigned author. Every other
+// read uses the author-filtered visible_items view.
 func (f ItemFilter) itemSource() string {
-	if len(f.Views) > 0 || len(f.CollectionViews) > 0 {
+	if f.AuthorID != 0 || len(f.Views) > 0 || len(f.CollectionViews) > 0 {
 		return "items"
 	}
 	return "visible_items"
@@ -732,7 +736,7 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter, r
 		*args = append(*args, f.FeedID)
 	}
 	if f.AuthorID != 0 || len(f.Views) > 0 {
-		clause, scopeArgs := authorScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", f.AuthorID, f.Views, rawBase)
+		clause, scopeArgs := authorScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", f.AuthorID, f.Views)
 		if clause != "" {
 			b.WriteString(" AND ")
 			b.WriteString(clause)
@@ -786,18 +790,16 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter, r
 
 // authorScopeClause builds the OR of an author's owned feeds and any saved views
 // assigned to that author. itemID is the item-id expression of the caller's
-// query; timeExpr is its item-time expression. When rawBase is true the caller
-// reads raw items, so the owned-feed branch carries its own visible_items check:
-// the author's rules still apply to those feeds, while a view branch applies the
-// rules of the author the view is assigned to (see viewFilterClause).
-func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilter, rawBase bool) (string, []any) {
+// query; timeExpr is its item-time expression. The owned-feed branch applies the
+// scoped author's rules to items reached through feed membership, not the rules
+// of the author who owns the item's feed: a cross-feed post can be owned by
+// another author while still being part of this author's feed. A view branch
+// applies the rules of the author the view is assigned to (see viewFilterClause).
+func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilter) (string, []any) {
 	var branches []string
 	var args []any
 	if authorID != 0 {
-		branch := "EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds sf ON sf.id = mf.feed_id WHERE mf.item_id = " + itemID + " AND sf.author_id = ?)"
-		if rawBase {
-			branch = "(" + branch + " AND " + visibleItemExists(itemID) + ")"
-		}
+		branch := "EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds sf ON sf.id = mf.feed_id WHERE mf.item_id = " + itemID + " AND sf.author_id = ? AND (" + authorRulesVisibleSQL(itemID, "sf.author_id") + "))"
 		branches = append(branches, branch)
 		args = append(args, authorID)
 	}
@@ -817,8 +819,8 @@ func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilt
 
 // collectionScopeClause builds the OR of a collection's member feeds and its
 // member views. itemID is the item-id expression of the caller's query; timeExpr
-// is its item-time expression. rawBase has the same meaning as in
-// authorScopeClause.
+// is its item-time expression. When rawBase is true the caller reads raw items,
+// so the member-feed branch carries its own visible_items check.
 func collectionScopeClause(itemID, timeExpr string, collectionID int64, views []ViewFilter, rawBase bool) (string, []any) {
 	var branches []string
 	var args []any
@@ -864,7 +866,7 @@ func viewFilterClause(itemID, timeExpr string, v ViewFilter) (string, []any) {
 		args = append(args, timeArgs...)
 	}
 	if v.AuthorID != 0 {
-		parts = append(parts, "("+authorRulesVisibleSQL(itemID)+")")
+		parts = append(parts, "("+authorRulesVisibleSQL(itemID, "?")+")")
 		// authorRulesVisibleSQL binds the author twice (hide and show rules).
 		args = append(args, v.AuthorID, v.AuthorID)
 	}
@@ -879,20 +881,21 @@ func visibleItemExists(itemID string) string {
 }
 
 // authorRulesVisibleSQL is the per-author form of the visible_items predicate:
-// the item is visible under the rules of the author bound to its two
-// placeholders (the hide subquery and the show subquery). visible_items applies
-// the same expression to the item's owner author; a saved view applies it to the
-// author the view is assigned to. Keep the two in sync (TestAuthorRulesVisibleSQL
-// guards the duplication).
-func authorRulesVisibleSQL(itemID string) string {
+// the item is visible under the rules of the author identified by authorExpr. An
+// author page passes the membership feed's author (`sf.author_id`); a saved view
+// passes `?` and binds its assigned author twice (the hide subquery and the show
+// subquery). visible_items applies the same expression to the item's owner
+// author. Keep the three in sync (TestAuthorRulesVisibleSQLMatchesView guards
+// the view/duplication).
+func authorRulesVisibleSQL(itemID, authorExpr string) string {
 	match := authorRuleMatchSQL(itemID)
 	return `NOT EXISTS (
 		SELECT 1 FROM author_filter_rules r
-		WHERE r.author_id = ? AND r.action = 'hide' AND (` + match + `)
+		WHERE r.author_id = ` + authorExpr + ` AND r.action = 'hide' AND (` + match + `)
 	)
 	AND NOT EXISTS (
 		SELECT 1 FROM author_filter_rules r
-		WHERE r.author_id = ? AND r.action = 'show' AND NOT (` + match + `)
+		WHERE r.author_id = ` + authorExpr + ` AND r.action = 'show' AND NOT (` + match + `)
 	)`
 }
 

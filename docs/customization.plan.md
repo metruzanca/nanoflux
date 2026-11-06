@@ -186,10 +186,12 @@ analytics and public demo mode are env-driven.
   rows. They reuse the same `FilterRule` shape, `store.FilterGroups` conversion
   and row component as the transient dialog. The `visible_items` view applies
   them to every item read (lists, counts, badges, read history, list items and
-  public shares); item detail stays reachable by direct link. A saved view
-  instead follows the rules of the author it is assigned to, not the author who
-  owns the feed it draws from, so a saved-view scope reads raw `items`. The
-  settings card shows a live allowed/blocked preview
+  public shares); item detail stays reachable by direct link. An author page
+  applies that author's rules to items reached through the author's feeds, even
+  a cross-feed post owned by another author, so its feed-scoped `?feed=` view
+  stays filtered. A saved view instead follows the rules of the author it is
+  assigned to, not the author who owns the feed it draws from, so a saved-view
+  scope reads raw `items`. The settings card shows a live allowed/blocked preview
   (`POST /authors/{id}/filters/preview`).
 - Item full-text search was removed (schemaV58) so it can be redesigned from
   scratch later. The command palette still filters authors, collections and

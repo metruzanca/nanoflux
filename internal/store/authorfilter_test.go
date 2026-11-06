@@ -226,3 +226,69 @@ func TestAuthorFilterViewMatchesGroups(t *testing.T) {
 		}
 	}
 }
+
+// TestAuthorScopeAppliesRulesToMembership covers the cross-feed case: an item
+// owned by one author's feed can also be a member of another author's feed. On
+// the second author's page the second author's rules apply, not the owner's.
+func TestAuthorScopeAppliesRulesToMembership(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	owner, _ := s.Authors.Create(u.ID, "Owner", "", "")
+	ownerFeed, _ := s.Feeds.Create(u.ID, owner.ID, "Owner feed", "https://owner.example/feed", "", "", 900)
+	page, _ := s.Authors.Create(u.ID, "Page", "", "")
+	pageFeed, _ := s.Feeds.Create(u.ID, page.ID, "Page feed", "https://page.example/feed", "", "", 900)
+
+	post := Item{
+		GUID: "cross", SharedKey: "site:cross", Title: "Cross post",
+		Link: "https://x/cross", Categories: []string{"r/shared", "u/blocked"}, FetchedAt: db.Now(),
+	}
+	if _, err := s.Items.Upsert(ownerFeed.ID, post); err != nil {
+		t.Fatalf("owner ingest: %v", err)
+	}
+	if _, err := s.Items.Upsert(pageFeed.ID, post); err != nil {
+		t.Fatalf("page ingest: %v", err)
+	}
+
+	// The page author blocks the tag. The owner has no rules.
+	if err := s.AuthorFilters.Replace(u.ID, page.ID, []FilterRule{{
+		Kind: FilterKindTag, Action: FilterActionHide, Combine: FilterCombineAny, Values: []string{"u/blocked"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	pageScope := ItemFilter{AuthorID: page.ID}
+	if items, _, err := s.Items.ListPage(u.ID, pageScope); err != nil || len(items) != 0 {
+		t.Fatalf("page scope = %v, %v; want none", items, err)
+	}
+	// The ?feed= view of the page is the same membership scope.
+	feedScope := ItemFilter{AuthorID: page.ID, FeedID: pageFeed.ID}
+	if items, _, err := s.Items.ListPage(u.ID, feedScope); err != nil || len(items) != 0 {
+		t.Fatalf("page feed scope = %v, %v; want none", items, err)
+	}
+	// The owner's page shows it: the item's owner author allows it.
+	if items, _, err := s.Items.ListPage(u.ID, ItemFilter{AuthorID: owner.ID}); err != nil || len(items) != 1 {
+		t.Fatalf("owner scope = %v, %v; want the post", items, err)
+	}
+	if n, _ := s.Items.CountFiltered(u.ID, pageScope); n != 0 {
+		t.Fatalf("page count = %d, want 0", n)
+	}
+	if stats, err := s.Items.StatsFilter(u.ID, pageScope); err != nil || stats.Total != 0 {
+		t.Fatalf("page stats = %+v, %v; want 0", stats, err)
+	}
+	if cats, err := s.Items.ListCategoriesFilter(u.ID, pageScope); err != nil || len(cats) != 0 {
+		t.Fatalf("page categories = %+v, %v; want none", cats, err)
+	}
+	// Global reads keep the owner rule (the owner allows it).
+	if items, err := s.Items.List(u.ID, ItemFilter{Limit: 10}); err != nil || len(items) != 1 {
+		t.Fatalf("global list = %v, %v; want the post", items, err)
+	}
+	// Mark-all on the page must not touch it.
+	if _, err := s.Items.MarkAllReadFiltered(u.ID, pageScope); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := s.Items.ByFeedIdentity(ownerFeed.ID, "cross")
+	it, _ := s.Items.ByID(u.ID, id)
+	if it.Read {
+		t.Fatalf("blocked cross-feed post should stay unread")
+	}
+}
