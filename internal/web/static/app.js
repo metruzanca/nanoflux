@@ -418,9 +418,10 @@ function syncItemHash(id, wasOpen) {
   else history.pushState({ item: id }, '', target);
 }
 function openItem(el) {
-  return openItemData(el.dataset.itemId);
+  var ctx = el.closest('[data-collection-id]');
+  return openItemData(el.dataset.itemId, ctx && ctx.getAttribute('data-collection-id'));
 }
-function openItemData(id) {
+function openItemData(id, collectionID) {
   if (!itemDialog) return;
   var wasOpen = itemDialog.open;
   if (!wasOpen) savedPageTitle = document.title;
@@ -431,7 +432,9 @@ function openItemData(id) {
   body.innerHTML = '<p class="muted">loading…</p>';
   var slot = document.getElementById('item-dialog-controls');
   if (slot) slot.replaceChildren();
-  fetch('/items/' + id + '/view')
+  var viewURL = '/items/' + id + '/view';
+  if (collectionID) viewURL += '?collection=' + encodeURIComponent(collectionID);
+  fetch(viewURL)
     .then(function (r) { return r.text(); })
     .then(function (html) {
       body.innerHTML = html;

@@ -360,6 +360,10 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 	if strings.Contains(body, "Misc post") {
 		t.Fatalf("non-matching view item leaked into the collection: %s", body)
 	}
+	// The post that only the view brings in names that view and links to it.
+	if !strings.Contains(body, "from view") || !strings.Contains(body, `href="/views/`+viewID+`"`) {
+		t.Fatalf("view-sourced item should link its view: %s", body)
+	}
 	if !strings.Contains(body, "sources (2)") {
 		t.Fatalf("collection sources count should include the view: %s", body)
 	}
@@ -381,6 +385,74 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 	body = doGet(h, base, cookie).Body.String()
 	if strings.Contains(body, "Rust post") {
 		t.Fatalf("removed view items should leave the collection: %s", body)
+	}
+}
+
+// TestCollectionViewSourceOnlyWhenViewSoleSource checks that the "from view"
+// line appears only for items the view is the sole reason for: an item already
+// in a member feed does not claim the view even when it matches.
+func TestCollectionViewSourceOnlyWhenViewSoleSource(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, author, member := savedViewFixture(t, s)
+
+	if _, err := s.store.Items.Upsert(member.ID, store.Item{
+		GUID: "member-rust", Title: "Member Rust post", Link: "https://x/member-rust",
+		Categories: []string{"r/rust"}, FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	outside, _ := s.store.Feeds.Create(u.ID, author.ID, "Outside", "https://outside.example/feed.xml", "", "", 900)
+	if _, err := s.store.Items.Upsert(outside.ID, store.Item{
+		GUID: "outside-rust", Title: "Outside Rust post", Link: "https://outside.example/rust",
+		Categories: []string{"r/rust"}, FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	outsideID, _ := s.store.Items.ByFeedIdentity(outside.ID, "outside-rust")
+
+	c, _ := s.store.Collections.Create(u.ID, "Dev")
+	if err := s.store.Collections.AddFeed(u.ID, c.ID, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+		Title: "Rust", Filters: []string{"tag:show:r/rust"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.SavedViews.SetCollections(u.ID, view.ID, []int64{c.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
+	if !strings.Contains(body, "Member Rust post") || !strings.Contains(body, "Outside Rust post") {
+		t.Fatalf("collection should show both rust posts: %s", body)
+	}
+	if got := strings.Count(body, "from view"); got != 1 {
+		t.Fatalf("only the view-only item should claim the view, got %d: %s", got, body)
+	}
+	if !strings.Contains(body, `href="/views/`+itoa(view.ID)+`"`) ||
+		!strings.Contains(body, "from view") {
+		t.Fatalf("view-only item should link its view: %s", body)
+	}
+	if !strings.Contains(body, `id="item-`+itoa(outsideID)+`"`) {
+		t.Fatalf("outside item should be the linked view row: %s", body)
+	}
+
+	modal := doGet(h, "/items/"+itoa(outsideID)+"/view?collection="+itoa(c.ID), cookie).Body.String()
+	if !strings.Contains(modal, "from view") || !strings.Contains(modal, `href="/views/`+itoa(view.ID)+`"`) {
+		t.Fatalf("item modal should link the view when opened from the collection: %s", modal)
+	}
+	plainModal := doGet(h, "/items/"+itoa(outsideID)+"/view", cookie).Body.String()
+	if strings.Contains(plainModal, "from view") {
+		t.Fatalf("item modal outside a collection should not claim a view source: %s", plainModal)
+	}
+
+	// A row toggle carries the collection context and keeps the link.
+	rr := doForm(h, "POST", "/items/"+itoa(outsideID)+"/favorite", url.Values{"collection": {itoa(c.ID)}}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "from view") {
+		t.Fatalf("toggled row should keep its view link: %d %s", rr.Code, rr.Body.String())
 	}
 }
 

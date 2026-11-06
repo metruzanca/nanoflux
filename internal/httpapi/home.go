@@ -198,6 +198,7 @@ func (s *Server) homeSectionData(u store.User, sec homeSection) (homeSectionData
 	if len(items) == 0 {
 		return homeSectionData{}, false // hide sections with no unread
 	}
+	s.annotateCollectionViews(u.ID, c.ID, u.Timezone, items)
 	return homeSectionData{Collection: c, Items: withTZ(u.Timezone, items), Mode: normalizeHomeMode(sec.Mode), Sort: sort}, true
 }
 
