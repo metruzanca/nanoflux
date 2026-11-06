@@ -172,8 +172,19 @@ func filtersFromRequest(r *http.Request) listFilters {
 // rows are ignored). Otherwise canonical ?f= values are read, then the legacy
 // ?tags=/?feed= aliases.
 func filtersFromValues(vals url.Values) listFilters {
-	if vals.Has("filter_row") {
-		return normalizeFilters(filtersFromRows(vals))
+	return filtersFromValuesAt(vals, "")
+}
+
+// filtersFromValuesAt is filtersFromValues for a namespaced field set. A prefix
+// lets several filter editors share one form (the author edit page's feed or
+// view panels) without their rows mixing. The canonical ?f= fallback only
+// applies to the unprefixed form.
+func filtersFromValuesAt(vals url.Values, prefix string) listFilters {
+	if vals.Has(prefix + "filter_row") {
+		return normalizeFilters(filtersFromRowsAt(vals, prefix))
+	}
+	if prefix != "" {
+		return nil
 	}
 	var out listFilters
 	for _, raw := range vals["f"] {
@@ -194,25 +205,30 @@ func filtersFromValues(vals url.Values) listFilters {
 // and that row's selected values are repeated as filter_value_<token> (time
 // rows instead carry their window in filter_time_*_<token> fields).
 func filtersFromRows(vals url.Values) listFilters {
-	tokens := vals["filter_row"]
-	actions := vals["filter_action"]
-	kinds := vals["filter_kind"]
-	combines := vals["filter_combine"]
+	return filtersFromRowsAt(vals, "")
+}
+
+// filtersFromRowsAt is filtersFromRows for a namespaced field set.
+func filtersFromRowsAt(vals url.Values, prefix string) listFilters {
+	tokens := vals[prefix+"filter_row"]
+	actions := vals[prefix+"filter_action"]
+	kinds := vals[prefix+"filter_kind"]
+	combines := vals[prefix+"filter_combine"]
 	out := make(listFilters, 0, len(tokens))
 	for i, token := range tokens {
 		kind := at(kinds, i)
 		action := at(actions, i)
 		combine := at(combines, i)
 		if strings.ToLower(strings.TrimSpace(kind)) == filterKindTime {
-			mode := vals.Get("filter_time_mode_" + token)
-			primary := joinDateClock(vals.Get("filter_time_start_"+token), vals.Get("filter_time_start_clock_"+token))
-			secondary := joinDateClock(vals.Get("filter_time_end_"+token), vals.Get("filter_time_end_clock_"+token))
+			mode := vals.Get(prefix + "filter_time_mode_" + token)
+			primary := joinDateClock(vals.Get(prefix+"filter_time_start_"+token), vals.Get(prefix+"filter_time_start_clock_"+token))
+			secondary := joinDateClock(vals.Get(prefix+"filter_time_end_"+token), vals.Get(prefix+"filter_time_end_clock_"+token))
 			if f, ok := newTimeFilter(action, []string{mode, primary, secondary}); ok {
 				out = append(out, f)
 			}
 			continue
 		}
-		values := vals["filter_value_"+token]
+		values := vals[prefix+"filter_value_"+token]
 		if f, ok := newFilter(kind, action, combine, values); ok {
 			out = append(out, f)
 		}

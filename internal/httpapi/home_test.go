@@ -313,3 +313,35 @@ func TestHomeRequiresAuth(t *testing.T) {
 		t.Fatalf("unauthenticated unread should redirect to login, got %d", rr.Code)
 	}
 }
+
+// TestHomePinnedCollectionIncludesViews pins a collection whose only source is
+// a saved view: home must show that view's matching items.
+func TestHomePinnedCollectionIncludesViews(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	author, _ := s.store.Authors.Create(u.ID, "Poster", "", "")
+	feed, _ := s.store.Feeds.Create(u.ID, author.ID, "Feed", "https://view.example/feed.xml", "", "", 900)
+	if _, err := s.store.Items.Upsert(feed.ID, store.Item{
+		GUID: "view", Title: "View cat", Link: "https://view.example/1",
+		Categories: []string{"r/golang"}, FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+		Title: "Go view", Filters: []string{"tag:show:r/golang"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	col, _ := s.store.Collections.Create(u.ID, "view only")
+	if err := s.store.SavedViews.SetCollections(u.ID, view.ID, []int64{col.ID}); err != nil {
+		t.Fatal(err)
+	}
+	s.store.Users.SetHomeConfig(u.ID, `[{"kind":"collection","ref_id":`+itoa(col.ID)+`}]`)
+
+	body := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(body, "View cat") {
+		t.Fatalf("pinned collection should include its view's items: %s", body)
+	}
+}

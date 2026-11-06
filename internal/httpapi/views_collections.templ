@@ -84,7 +84,11 @@ templ CollectionRow(c store.CollectionWithCounts) {
 				</div>
 			</div>
 			<div class="item-meta">
-				{ c.FeedCount } feeds · { c.Unread } unread
+				{ c.FeedCount } feeds
+				if c.ViewCount > 0 {
+					· { c.ViewCount } views
+				}
+				· { c.Unread } unread
 			</div>
 			if c.IsNoCollection() {
 				<p class="muted small">feeds you have not added to any collection.</p>
@@ -101,6 +105,9 @@ templ collectionPage(u store.User, d collectionData) {
 				<span class="badge">auto</span>
 			}
 			<a class="small" title="edit" href={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>@web.EditIcon()</a>
+			if !d.Collection.IsAuto && len(d.AllViews) > 0 {
+				<button type="button" data-open="collection-add-view-dialog">+ add view</button>
+			}
 			if !d.Collection.IsAuto {
 				<button type="button" data-open="collection-add-feed-dialog">+ add feed</button>
 			}
@@ -125,6 +132,19 @@ templ collectionPage(u store.User, d collectionData) {
 				<button type="submit">add</button>
 			</form>
 		</dialog>
+		if len(d.AllViews) > 0 {
+			<dialog id="collection-add-view-dialog" class="modal">
+				<div class="row">
+					<h2>add view</h2>
+					<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
+				</div>
+				<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-view" } hx-target="#scoped-items" hx-swap="outerHTML" data-form-close-reset>
+					<input type="hidden" name="view" value={ d.Scoped.View }/>
+					@comboSelect("view_id", firstSavedViewValue(d.AllViews), "view", "search views", d.AllViews, nil)
+					<button type="submit">add</button>
+				</form>
+			</dialog>
+		}
 	}
 }
 
@@ -162,30 +182,34 @@ templ collectionEditPage(u store.User, d collectionData) {
 		</div>
 	</section>
 	<section class="card">
-		<h2>feeds</h2>
+		<h2>sources</h2>
+		<h3>feeds</h3>
 		@collectionFeeds(d)
+		<h3>views</h3>
+		@collectionViews(d)
 	</section>
 }
 
-// CollectionFeedCards lists a collection's feeds as cards for the collection
-// page's "feeds" tab. Each card names the feed's author and shows its unread
-// count, so a collection's sources can be scanned without opening each feed.
-// showEdit adds a per-card edit link to the feed's edit page. The collection
-// feeds tab keeps it off; the author edit page turns it on so a user who opened
-// author edit meaning to edit a feed can get there in one click.
-templ CollectionFeedCards(rows []feedRow, showEdit bool) {
+// CollectionSourceCards lists a collection's feeds and views as one card list
+// for the collection page's "sources" tab. They are interleaved by title so a
+// collection reads as a single set of sources, not two separate groups.
+templ CollectionSourceCards(rows []collectionSourceRow) {
 	if len(rows) == 0 {
-		<p class="muted">no feeds in this collection</p>
+		<p class="muted">no sources in this collection</p>
 		return
 	}
 	<ul class="plain" id="collection-feeds-list" data-feed-sort-list>
 		for _, r := range rows {
-			@CollectionFeedCard(r, showEdit)
+			if r.Kind == "view" {
+				@CollectionViewCard(r.View)
+			} else {
+				@CollectionFeedCard(r.Feed)
+			}
 		}
 	</ul>
 }
 
-templ CollectionFeedCard(r feedRow, showEdit bool) {
+templ CollectionFeedCard(r feedRow) {
 	<li id={ "collection-feed-" + strconv.FormatInt(r.ID, 10) } data-title={ r.Title } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Unread) }>
 		<div class="card">
 			<div class="row">
@@ -197,11 +221,6 @@ templ CollectionFeedCard(r feedRow, showEdit bool) {
 						</strong>
 					</a>
 				</div>
-				if showEdit {
-					<div class="row-actions">
-						<a class="small" title="edit feed" href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(r.ID, 10) }>@web.EditIcon()</a>
-					</div>
-				}
 			</div>
 			<div class="item-meta">
 				if r.AuthorName != "" {
@@ -210,6 +229,35 @@ templ CollectionFeedCard(r feedRow, showEdit bool) {
 					no author
 				}
 				· <span class="unread-count">{ r.Unread } unread</span>
+			</div>
+		</div>
+	</li>
+}
+
+templ CollectionViewCard(r savedViewRow) {
+	{{ id := strconv.FormatInt(r.ID, 10) }}
+	{{ href := "/views/" + id }}
+	if r.AuthorID > 0 {
+		{{ href = "/authors/" + strconv.FormatInt(r.AuthorID, 10) + "?view=" + id }}
+	}
+	<li id={ "collection-view-" + id } data-title={ r.Title } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Count) }>
+		<div class="card">
+			<div class="row">
+				<div>
+					<a href={ templ.URL(href) }>
+						<strong>@web.Lucide("bookmark-plus") { r.Title }</strong>
+					</a>
+				</div>
+				<div class="row-actions">
+					<a class="small" title="edit view" href={ templ.URL("/views/" + id + "/edit") }>@web.EditIcon()</a>
+				</div>
+			</div>
+			<div class="item-meta">
+				view
+				if r.AuthorID > 0 && r.AuthorName != "" {
+					· <a href={ templ.URL("/authors/" + strconv.FormatInt(r.AuthorID, 10)) }>{ r.AuthorName }</a>
+				}
+				· <span class="unread-count">{ r.Count } unread</span>
 			</div>
 		</div>
 	</li>
@@ -227,4 +275,14 @@ templ collectionFeeds(d collectionData) {
 		return
 	}
 	@comboChips(removeFeedURL(d.Collection), feedIDs(d.Feeds), feedItems(d.Feeds), d.Collection.IsAuto)
+}
+
+// collectionViews renders the collection's views as remove-able chips, mirroring
+// the feed chips above. Auto collections never hold views.
+templ collectionViews(d collectionData) {
+	if len(d.Views) == 0 {
+		<p class="muted">no views in this collection</p>
+		return
+	}
+	@comboChips(removeViewURL(d.Collection), viewIDs(d.Views), viewItems(d.Views), d.Collection.IsAuto)
 }

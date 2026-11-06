@@ -101,7 +101,7 @@ func (s *Store) CloneUser(seedID int64, newUsername, passwordHash, expiresAt str
 	if err != nil {
 		return User{}, err
 	}
-	if err := cloneSavedViews(ctx, tx, seedID, newID, authorMap, feedMap); err != nil {
+	if err := cloneSavedViews(ctx, tx, seedID, newID, authorMap, collectionMap, feedMap); err != nil {
 		return User{}, err
 	}
 	if err := cloneLists(ctx, tx, seedID, newID, itemMap); err != nil {
@@ -699,18 +699,19 @@ func cloneAuthorFilters(ctx context.Context, tx *sql.Tx, seedID int64, authorMap
 	return nil
 }
 
-// cloneSavedViews copies private saved views, remapping the assigned author and
-// any feed-id filter values. A view whose assigned author did not survive the
-// clone becomes unassigned.
-func cloneSavedViews(ctx context.Context, tx *sql.Tx, seedID, newID int64, authorMap, feedMap map[int64]int64) error {
+// cloneSavedViews copies private saved views, remapping the assigned author,
+// any feed-id filter values and collection memberships. A view whose assigned
+// author did not survive the clone becomes unassigned.
+func cloneSavedViews(ctx context.Context, tx *sql.Tx, seedID, newID int64, authorMap, collectionMap, feedMap map[int64]int64) error {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT author_id, title, filters, created_at
+		SELECT id, author_id, title, filters, created_at
 		FROM saved_views WHERE user_id = ?`, seedID)
 	if err != nil {
 		return fmt.Errorf("clone saved views select: %w", err)
 	}
 	defer rows.Close()
 	type view struct {
+		id        int64
 		authorID  sql.NullInt64
 		title     string
 		filters   string
@@ -719,7 +720,7 @@ func cloneSavedViews(ctx context.Context, tx *sql.Tx, seedID, newID int64, autho
 	var views []view
 	for rows.Next() {
 		var v view
-		if err := rows.Scan(&v.authorID, &v.title, &v.filters, &v.createdAt); err != nil {
+		if err := rows.Scan(&v.id, &v.authorID, &v.title, &v.filters, &v.createdAt); err != nil {
 			return fmt.Errorf("clone saved views scan: %w", err)
 		}
 		views = append(views, v)
@@ -748,15 +749,55 @@ func cloneSavedViews(ctx context.Context, tx *sql.Tx, seedID, newID int64, autho
 		if err != nil {
 			return fmt.Errorf("clone saved view encode: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `
+		res, err := tx.ExecContext(ctx, `
 			INSERT INTO saved_views (
 				user_id, author_id, title, filters, created_at
 			) VALUES (?, ?, ?, ?, ?)`,
-			newID, assigned, v.title, string(encoded), v.createdAt); err != nil {
+			newID, assigned, v.title, string(encoded), v.createdAt)
+		if err != nil {
 			return fmt.Errorf("clone saved view insert: %w", err)
+		}
+		newViewID, err := res.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("clone saved view id: %w", err)
+		}
+		memberships, err := collectionIDsForSeedView(ctx, tx, seedID, v.id)
+		if err != nil {
+			return err
+		}
+		for _, oldCollectionID := range memberships {
+			if newCollectionID, ok := collectionMap[oldCollectionID]; ok {
+				if _, err := tx.ExecContext(ctx,
+					`INSERT OR IGNORE INTO collection_views (collection_id, view_id) VALUES (?, ?)`,
+					newCollectionID, newViewID); err != nil {
+					return fmt.Errorf("clone view collection: %w", err)
+				}
+			}
 		}
 	}
 	return nil
+}
+
+// collectionIDsForSeedView reads a seed view's collection memberships.
+func collectionIDsForSeedView(ctx context.Context, tx *sql.Tx, seedID, viewID int64) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT cv.collection_id
+		FROM collection_views cv
+		JOIN saved_views v ON v.id = cv.view_id
+		WHERE cv.view_id = ? AND v.user_id = ?`, viewID, seedID)
+	if err != nil {
+		return nil, fmt.Errorf("clone view collections: %w", err)
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("clone view collection scan: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // remapSavedViewFilter rewrites a canonical feed filter param to the cloned feed

@@ -57,6 +57,11 @@ type CollectionFeed struct {
 	FeedID       int64 `json:"feed_id"`
 }
 
+type CollectionView struct {
+	CollectionID int64 `json:"collection_id"`
+	ViewID       int64 `json:"view_id"`
+}
+
 type Feed struct {
 	ID                int64          `json:"id"`
 	UserID            int64          `json:"user_id"`

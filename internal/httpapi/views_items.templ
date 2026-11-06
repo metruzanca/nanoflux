@@ -429,10 +429,10 @@ templ scopedTab(path, itemsPath, view, label, count string, active bool, sort it
 // Each possible kind's value editor is rendered as a <template>. app.js swaps
 // the value cell when the kind changes, so no client-side option hydration is
 // needed.
-templ filterRow(id, token, kind, action, combine string, values []string, tagItems, feedItems []comboItem, kinds []string, allowBlock bool) {
+templ filterRow(id, token, kind, action, combine string, values []string, tagItems, feedItems []comboItem, kinds []string, allowBlock bool, namePrefix string) {
 	<div class="filter-row" data-filter-row>
-		<input type="hidden" name="filter_row" value={ token }/>
-		<select name="filter_action" class="filter-select filter-action" aria-label="filter action">
+		<input type="hidden" name={ namePrefix + "filter_row" } value={ token } data-filter-row-token/>
+		<select name={ namePrefix + "filter_action" } class="filter-select filter-action" aria-label="filter action">
 			if allowBlock {
 				<option value={ filterShow } selected?={ action == filterShow }>allow</option>
 				<option value={ filterHide } selected?={ action == filterHide }>block</option>
@@ -442,41 +442,41 @@ templ filterRow(id, token, kind, action, combine string, values []string, tagIte
 			}
 		</select>
 		if len(kinds) > 1 {
-			<select name="filter_kind" class="filter-select filter-kind" aria-label="filter kind" data-filter-kind>
+			<select name={ namePrefix + "filter_kind" } class="filter-select filter-kind" aria-label="filter kind" data-filter-kind>
 				for _, k := range kinds {
 					<option value={ k } selected?={ kind == k }>{ k }</option>
 				}
 			</select>
 		} else {
-			<input type="hidden" name="filter_kind" value={ kind }/>
+			<input type="hidden" name={ namePrefix + "filter_kind" } value={ kind }/>
 		}
 		<span data-filter-combine hidden?={ kind == filterKindTime }>
-			<select name="filter_combine" class="filter-select filter-combine" aria-label="how values combine">
+			<select name={ namePrefix + "filter_combine" } class="filter-select filter-combine" aria-label="how values combine">
 				<option value={ filterAny } selected?={ combine == filterAny }>any</option>
 				<option value={ filterAll } selected?={ combine == filterAll }>all</option>
 			</select>
 		</span>
 		<div class="filter-value" data-filter-value data-filter-value-kind={ kind }>
 			if kind == filterKindTime {
-				@filterTimeRow(id+"-value", token, values)
+				@filterTimeRow(id+"-value", token, values, namePrefix)
 			} else if kind == filterKindFeed {
-				@comboMultiID(id+"-value", "filter_value_"+token, "", values, feedItems)
+				@comboMultiID(id+"-value", namePrefix+"filter_value_"+token, "", values, feedItems)
 			} else {
-				@comboMultiID(id+"-value", "filter_value_"+token, "", values, tagItems)
+				@comboMultiID(id+"-value", namePrefix+"filter_value_"+token, "", values, tagItems)
 			}
 		</div>
 		for _, k := range kinds {
 			if k == filterKindTime {
 				<template data-filter-value-template="time">
-					@filterTimeRow(id+"-value-time", token, nil)
+					@filterTimeRow(id+"-value-time", token, nil, namePrefix)
 				</template>
 			} else if k == filterKindFeed {
 				<template data-filter-value-template="feed">
-					@comboMultiID(id+"-value-feed", "filter_value_"+token, "", nil, feedItems)
+					@comboMultiID(id+"-value-feed", namePrefix+"filter_value_"+token, "", nil, feedItems)
 				</template>
 			} else {
 				<template data-filter-value-template="tag">
-					@comboMultiID(id+"-value-tag", "filter_value_"+token, "", nil, tagItems)
+					@comboMultiID(id+"-value-tag", namePrefix+"filter_value_"+token, "", nil, tagItems)
 				</template>
 			}
 		}
@@ -488,28 +488,28 @@ templ filterRow(id, token, kind, action, combine string, values []string, tagIte
 // filterTimeRow is the value editor for a time row: a mode select, the primary
 // date and optional time, and (for "between") the end date and optional time.
 // A date-only bound means the whole day in the user's timezone.
-templ filterTimeRow(id, token string, values []string) {
+templ filterTimeRow(id, token string, values []string, namePrefix string) {
 	{{ mode := timeModeOf(values) }}
 	{{ startDate, startClock := splitTimeInput(timePrimary(values)) }}
 	{{ endDate, endClock := splitTimeInput(timeSecondary(values)) }}
 	<div class="filter-time" data-filter-time>
-		<select name={ "filter_time_mode_" + token } class="filter-select filter-time-mode" aria-label="time window" data-filter-time-mode>
+		<select name={ namePrefix + "filter_time_mode_" + token } class="filter-select filter-time-mode" aria-label="time window" data-filter-time-mode>
 			<option value={ filterTimeBetween } selected?={ mode == filterTimeBetween }>between</option>
 			<option value={ filterTimeBefore } selected?={ mode == filterTimeBefore }>before</option>
 			<option value={ filterTimeAfter } selected?={ mode == filterTimeAfter }>after</option>
 		</select>
 		<label class="filter-time-field">date
-			<input type="date" name={ "filter_time_start_" + token } value={ startDate }/>
+			<input type="date" name={ namePrefix + "filter_time_start_" + token } value={ startDate }/>
 		</label>
 		<label class="filter-time-field">time
-			<input type="time" name={ "filter_time_start_clock_" + token } value={ startClock }/>
+			<input type="time" name={ namePrefix + "filter_time_start_clock_" + token } value={ startClock }/>
 		</label>
 		<span class="filter-time-end" data-filter-time-end hidden?={ mode != filterTimeBetween }>
 			<label class="filter-time-field">to date
-				<input type="date" name={ "filter_time_end_" + token } value={ endDate }/>
+				<input type="date" name={ namePrefix + "filter_time_end_" + token } value={ endDate }/>
 			</label>
 			<label class="filter-time-field">to time
-				<input type="time" name={ "filter_time_end_clock_" + token } value={ endClock }/>
+				<input type="time" name={ namePrefix + "filter_time_end_clock_" + token } value={ endClock }/>
 			</label>
 		</span>
 	</div>
@@ -566,14 +566,14 @@ templ filterDialog(fp filterPanelData) {
 				<p class="muted small">show matching posts, or hide them. tag and feed rows combine their values with any (or) or all (and); time rows match a window on the post time, in your timezone. show rows must all match, and any hide row excludes.</p>
 				<div class="filter-rows" id="filter-rows" data-filter-rows>
 					for i, f := range fp.Filters {
-						@filterRow("filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, fp.TagOptions, feedItems, kinds, false)
+						@filterRow("filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, fp.TagOptions, feedItems, kinds, false, "")
 					}
 					if len(fp.Filters) == 0 {
-						@filterRow("filter-empty", "empty", defaultKind, filterShow, filterAll, nil, fp.TagOptions, feedItems, kinds, false)
+						@filterRow("filter-empty", "empty", defaultKind, filterShow, filterAll, nil, fp.TagOptions, feedItems, kinds, false, "")
 					}
 				</div>
 				<template id="filter-row-template" data-filter-row-template>
-					@filterRow("filter-__token__", "__token__", defaultKind, filterShow, filterAll, nil, fp.TagOptions, feedItems, kinds, false)
+					@filterRow("filter-__token__", "__token__", defaultKind, filterShow, filterAll, nil, fp.TagOptions, feedItems, kinds, false, "")
 				</template>
 				<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 				<div class="row-actions">
@@ -593,7 +593,7 @@ templ scopedItemsInner(d scopedItemsData) {
 			@scopedTab(d.Path, d.ItemsPath, "unread", "unread", strconv.Itoa(d.UnreadCount), d.View == "unread", d.Sort, d.Filters, d.ViewID)
 			@scopedTab(d.Path, d.ItemsPath, "read", "read", strconv.Itoa(d.ReadCount), d.View == "read", d.Sort, d.Filters, d.ViewID)
 			if d.FeedsTab {
-				@scopedTab(d.Path, d.ItemsPath, "feeds", "feeds", strconv.Itoa(d.FeedCount), d.View == "feeds", d.Sort, d.Filters, d.ViewID)
+				@scopedTab(d.Path, d.ItemsPath, "feeds", "sources", strconv.Itoa(d.FeedCount+d.ViewCount), d.View == "feeds", d.Sort, d.Filters, d.ViewID)
 			}
 			if d.FavTab {
 				@scopedTab(d.Path, d.ItemsPath, "favorites", "favorites", strconv.Itoa(d.FavCount), d.View == "favorites", d.Sort, d.Filters, d.ViewID)
@@ -612,7 +612,7 @@ templ scopedItemsInner(d scopedItemsData) {
 		}
 	</div>
 	if d.View == "feeds" {
-		@CollectionFeedCards(d.Feeds, false)
+		@CollectionSourceCards(mergeCollectionSources(d.Feeds, d.Views))
 	} else {
 		@filterChips(fp)
 		@ItemsListPage(d.Items, d.More, d.HideAuthor, d.Mode)

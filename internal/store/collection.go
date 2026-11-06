@@ -22,6 +22,7 @@ type Collection struct {
 type CollectionWithCounts struct {
 	Collection
 	FeedCount int
+	ViewCount int
 	Unread    int
 	Read      int
 }
@@ -172,8 +173,8 @@ func (s *CollectionStore) List(userID int64) ([]Collection, error) {
 	return out, nil
 }
 
-// ListWithCounts returns the user's collections with their feed, unread, and
-// read counts in one query, for the collections index cards.
+// ListWithCounts returns the user's collections with their feed, view, unread,
+// and read counts in one query, for the collections index cards.
 func (s *CollectionStore) ListWithCounts(userID int64) ([]CollectionWithCounts, error) {
 	rows, err := s.q.ListCollectionsWithCounts(context.Background(), userID)
 	if err != nil {
@@ -186,6 +187,7 @@ func (s *CollectionStore) ListWithCounts(userID int64) ([]CollectionWithCounts, 
 				ID: r.ID, UserID: r.UserID, Name: r.Name, IsAuto: r.IsAuto, CreatedAt: r.CreatedAt,
 			}),
 			FeedCount: int(r.FeedCount),
+			ViewCount: int(r.ViewCount),
 			Unread:    int(r.UnreadCount),
 			Read:      int(r.ReadCount),
 		})

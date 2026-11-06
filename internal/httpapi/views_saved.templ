@@ -72,6 +72,13 @@ templ savedViewCard(r savedViewRow) {
 						}
 					</div>
 				}
+				if len(r.Collections) > 0 {
+					<div class="chips active-tags" aria-label="collections">
+						for _, c := range r.Collections {
+							<a class="tag" href={ templ.URL("/collections/" + strconv.FormatInt(c.ID, 10)) } title={ c.Name }>#{ c.Name }</a>
+						}
+					</div>
+				}
 			</div>
 			<div class="feed-card-side">
 				<div class="row-actions">
@@ -108,8 +115,8 @@ templ savedViewPage(u store.User, d savedViewPageData) {
 	</div>
 }
 
-// savedViewFormPage is the create/edit page. Only the title, assigned author and
-// filter rows are editable; the view always matches all feeds.
+// savedViewFormPage is the create/edit page. The title, assigned author,
+// collections and filter rows are editable; the view always matches all feeds.
 templ savedViewFormPage(u store.User, f savedViewForm) {
 	{{ action := "/views" }}
 	if f.ID > 0 {
@@ -125,44 +132,66 @@ templ savedViewFormPage(u store.User, f savedViewForm) {
 		</h1>
 		<a class="button small" href="/views">back to views</a>
 	</div>
-	<form class="stack card" method="post" action={ templ.URL(action) } data-filter-scope>
+	<form class="stack card" method="post" action={ templ.URL(action) }>
 		@csrfField()
 		if f.Error != "" {
 			<div class="error" role="alert">{ f.Error }</div>
 		}
-		<label>title
-			<input name="title" value={ f.Title } maxlength="120" required autofocus/>
-		</label>
-		@comboSelect("author_id", savedViewAuthorValue(f.AuthorID), "assign to author", "search authors", f.AuthorOptions, nil)
-		<p class="muted small">The view matches every feed; use its filters to limit the posts. Assignment only decides where it is listed.</p>
-		<div class="field-group">
-			<h3>filters</h3>
-			{{ kinds := []string{filterKindTag} }}
-			if len(f.FeedOptions) > 0 {
-				{{ kinds = append(kinds, filterKindFeed) }}
-			}
-			{{ kinds = append(kinds, filterKindTime) }}
-			<div class="filter-rows" id="saved-view-filter-rows" data-filter-rows>
-				for i, flt := range f.Filters {
-					@filterRow("saved-view-filter-"+strconv.Itoa(i), strconv.Itoa(i), flt.Kind, flt.Action, flt.Combine, flt.Values, f.TagOptions, f.FeedOptions, kinds, false)
-				}
-				if len(f.Filters) == 0 {
-					@filterRow("saved-view-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, kinds, false)
-				}
-			</div>
-			<template id="saved-view-filter-row-template" data-filter-row-template>
-				@filterRow("saved-view-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, kinds, false)
-			</template>
-			<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
-		</div>
+		@viewEditorBody(u, f, "")
 		<div class="row-actions">
 			<a class="link" href="/views">cancel</a>
 			<button type="submit">save view</button>
 		</div>
 	</form>
+}
+
+// viewEditorBody is one view's editable settings without a <form>: title,
+// assigned author, collection memberships and filter rows. It is shared by the
+// standalone edit page and the combined author edit form, where a name prefix
+// namespaces every field so several views can submit together. The delete
+// control is a type=button action, never a submit, so Enter saves the author.
+templ viewEditorBody(u store.User, f savedViewForm, prefix string) {
+	{{ id := strconv.FormatInt(f.ID, 10) }}
+	if prefix != "" {
+		<input type="hidden" name="view_ids" value={ id }/>
+	}
+	<label>title
+		<input name={ prefix + "title" } value={ f.Title } maxlength="120" required autofocus?={ prefix == "" && f.ID == 0 }/>
+	</label>
+	@comboSelect(prefix+"author_id", savedViewAuthorValue(f.AuthorID), "assign to author", "search authors", f.AuthorOptions, nil)
+	@comboMulti(prefix+"collections", "collections", savedViewCollectionValues(f.CollectionIDs), f.CollectionOptions)
+	<p class="muted small">The view matches every feed; use its filters to limit the posts. Assignment decides its author page, and collections add it as a source.</p>
+	<div class="field-group" data-filter-scope>
+		<h3>filters</h3>
+		{{ kinds := []string{filterKindTag} }}
+		if len(f.FeedOptions) > 0 {
+			{{ kinds = append(kinds, filterKindFeed) }}
+		}
+		{{ kinds = append(kinds, filterKindTime) }}
+		<div class="filter-rows" id={ prefix + "saved-view-filter-rows" } data-filter-rows>
+			for i, flt := range f.Filters {
+				@filterRow(prefix+"saved-view-filter-"+strconv.Itoa(i), strconv.Itoa(i), flt.Kind, flt.Action, flt.Combine, flt.Values, f.TagOptions, f.FeedOptions, kinds, false, prefix)
+			}
+			if len(f.Filters) == 0 {
+				@filterRow(prefix+"saved-view-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, kinds, false, prefix)
+			}
+		</div>
+		<template id={ prefix + "saved-view-filter-row-template" } data-filter-row-template>
+			@filterRow(prefix+"saved-view-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, kinds, false, prefix)
+		</template>
+		<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
+	</div>
 	if f.ID > 0 {
 		<div class="stack delete-form">
-			<button type="button" class="danger" data-post-action={ templ.URL("/views/" + strconv.FormatInt(f.ID, 10) + "/delete") } data-confirm="delete this view?">delete view</button>
+			<button type="button" class="danger" data-post-action={ templ.URL("/views/" + id + "/delete" + deleteBack(prefix)) } data-confirm="delete this view?">delete view</button>
 		</div>
 	}
+}
+
+// deleteBack returns the author-edit return marker for an inline view panel.
+func deleteBack(prefix string) string {
+	if prefix == "" {
+		return ""
+	}
+	return "?back=author"
 }

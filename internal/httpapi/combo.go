@@ -163,3 +163,29 @@ func removeFeedURL(c store.Collection) string {
 	}
 	return "/collections/" + strconv.FormatInt(c.ID, 10) + "/remove-feed/"
 }
+
+// removeViewURL is the per-view remove endpoint prefix for a user collection.
+func removeViewURL(c store.Collection) string {
+	if c.IsAuto {
+		return ""
+	}
+	return "/collections/" + strconv.FormatInt(c.ID, 10) + "/remove-view/"
+}
+
+// viewIDs renders view ids as combo values, in the same order as viewItems.
+func viewIDs(views []savedViewRow) []string {
+	out := make([]string, 0, len(views))
+	for _, v := range views {
+		out = append(out, strconv.FormatInt(v.ID, 10))
+	}
+	return out
+}
+
+// viewItems maps view rows to combo items (id value, title label).
+func viewItems(views []savedViewRow) []comboItem {
+	out := make([]comboItem, 0, len(views))
+	for _, v := range views {
+		out = append(out, comboItem{Value: strconv.FormatInt(v.ID, 10), Label: v.Title})
+	}
+	return out
+}
