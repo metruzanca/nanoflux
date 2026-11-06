@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -21,13 +22,14 @@ const maxSavedViewTitle = 120
 // savedViewRow is one view in the index or on an author card, with its resolved
 // display fields and matching-item count.
 type savedViewRow struct {
-	ID         int64
-	Title      string
-	AuthorID   int64
-	AuthorName string
-	Filters    listFilters
-	Count      int
-	CreatedAt  string
+	ID          int64
+	Title       string
+	AuthorID    int64
+	AuthorName  string
+	Filters     listFilters
+	Collections []store.Collection
+	Count       int
+	CreatedAt   string
 }
 
 // savedViewGroup is one assigned-author block on the views index.
@@ -44,14 +46,16 @@ type savedViewsPageData struct {
 
 // savedViewForm is the create/edit page's data.
 type savedViewForm struct {
-	ID            int64
-	Title         string
-	Filters       listFilters
-	AuthorID      int64
-	AuthorOptions []comboItem
-	TagOptions    []comboItem
-	FeedOptions   []comboItem
-	Error         string
+	ID                int64
+	Title             string
+	Filters           listFilters
+	AuthorID          int64
+	CollectionIDs     []int64
+	AuthorOptions     []comboItem
+	CollectionOptions []comboItem
+	TagOptions        []comboItem
+	FeedOptions       []comboItem
+	Error             string
 }
 
 type savedViewPageData struct {
@@ -89,13 +93,23 @@ func (s *Server) savedViewsIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	rows := make([]savedViewRow, 0, len(views))
-	for _, v := range views {
-		rows = append(rows, s.savedViewRow(u.ID, v, u.Timezone))
-	}
+	rows := s.savedViewRows(u.ID, views, u.Timezone)
 	web.Render(w, r, basePage("views", u, savedViewsPage(savedViewsPageData{
 		Groups: groupSavedViews(rows), Total: len(rows),
 	})))
+}
+
+// savedViewRows resolves a batch of views, attaching their collection
+// memberships in one read.
+func (s *Server) savedViewRows(userID int64, views []store.SavedView, tz string) []savedViewRow {
+	memberships, _ := s.store.SavedViews.CollectionsByView(userID)
+	rows := make([]savedViewRow, 0, len(views))
+	for _, v := range views {
+		row := s.savedViewRow(userID, v, tz)
+		row.Collections = memberships[v.ID]
+		rows = append(rows, row)
+	}
+	return rows
 }
 
 // savedViewsGroupRows keeps assigned views in author order and unassigned last.
@@ -199,11 +213,22 @@ func (s *Server) savedViewAssignedAuthor(userID int64, raw string) (int64, bool)
 	return id, true
 }
 
+// savedViewCollectionValues renders selected collection ids as combo values.
+func savedViewCollectionValues(ids []int64) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, strconv.FormatInt(id, 10))
+	}
+	return out
+}
+
 // savedViewFormData builds the create/edit form's option lists. A view always
 // spans all of the user's feeds.
 func (s *Server) savedViewFormData(userID int64, v savedViewForm) savedViewForm {
 	authors, _ := s.store.Authors.List(userID)
 	v.AuthorOptions = savedViewAuthorItems(authors)
+	collections, _ := s.store.Collections.List(userID)
+	v.CollectionOptions = nonAutoCollections(collections)
 	cats, _ := s.store.Items.ListCategoriesFilter(userID, store.ItemFilter{})
 	v.TagOptions = tagItems(cats)
 	fs, _ := s.store.Feeds.List(userID)
@@ -213,6 +238,25 @@ func (s *Server) savedViewFormData(userID int64, v savedViewForm) savedViewForm 
 	}
 	v.FeedOptions = feeds
 	return v
+}
+
+// viewFieldPrefix namespaces a view's fields in the combined author edit form,
+// so several views can share one form without name collisions.
+func viewFieldPrefix(id int64) string {
+	return "view_" + strconv.FormatInt(id, 10) + "_"
+}
+
+// viewEditorData assembles one view's editor: its form values, collection
+// memberships and the option lists for the filters it may edit.
+func (s *Server) viewEditorData(u store.User, v store.SavedView) savedViewForm {
+	form := savedViewForm{
+		ID:       v.ID,
+		Title:    v.Title,
+		Filters:  s.savedViewFilters(u.ID, filtersFromParams(v.Filters)),
+		AuthorID: v.AuthorID,
+	}
+	form.CollectionIDs, _ = s.store.SavedViews.CollectionIDs(u.ID, v.ID)
+	return s.savedViewFormData(u.ID, form)
 }
 
 // savedViewNew renders the create form prefilled from the list the user saved
@@ -239,7 +283,7 @@ func (s *Server) savedViewCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	form, ok := s.savedViewFormFromRequest(u.ID, r)
+	form, ok := s.savedViewFormFromRequest(u.ID, "", r)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -266,6 +310,9 @@ func (s *Server) savedViewCreate(w http.ResponseWriter, r *http.Request) {
 		s.renderSavedViewForm(w, r, u, form, http.StatusInternalServerError)
 		return
 	}
+	if err := s.store.SavedViews.SetCollections(u.ID, created.ID, form.CollectionIDs); err != nil {
+		log.Error("set view collections", "view_id", created.ID, "err", err)
+	}
 	http.Redirect(w, r, "/views/"+strconv.FormatInt(created.ID, 10), http.StatusSeeOther)
 }
 
@@ -282,13 +329,25 @@ func (s *Server) savedViewEdit(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	form := savedViewForm{
-		ID:       v.ID,
-		Title:    v.Title,
-		Filters:  s.savedViewFilters(u.ID, filtersFromParams(v.Filters)),
-		AuthorID: v.AuthorID,
+	form := s.viewEditorData(u, v)
+	web.Render(w, r, basePage("edit view", u, savedViewFormPage(u, form)))
+}
+
+// savedViewEditFragment returns one view's inline editor body for the author
+// edit page's lazy accordion.
+func (s *Server) savedViewEditFragment(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
 	}
-	web.Render(w, r, basePage("edit view", u, savedViewFormPage(u, s.savedViewFormData(u.ID, form))))
+	v, err := s.store.SavedViews.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	web.Render(w, r, viewEditorBody(u, s.viewEditorData(u, v), viewFieldPrefix(v.ID)))
 }
 
 // savedViewUpdate persists the edit form.
@@ -307,7 +366,7 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	form, ok := s.savedViewFormFromRequest(u.ID, r)
+	form, ok := s.savedViewFormFromRequest(u.ID, "", r)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -326,6 +385,12 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 		s.renderSavedViewForm(w, r, u, form, http.StatusInternalServerError)
 		return
 	}
+	if err := s.store.SavedViews.SetCollections(u.ID, id, form.CollectionIDs); err != nil {
+		log.Error("set view collections", "view_id", id, "err", err)
+		form.Error = "could not save this view's collections"
+		s.renderSavedViewForm(w, r, u, form, http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "/views/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
@@ -341,25 +406,75 @@ func (s *Server) renderSavedViewForm(w http.ResponseWriter, r *http.Request, u s
 }
 
 // savedViewFormFromRequest reads and validates the shared create/edit fields.
-func (s *Server) savedViewFormFromRequest(userID int64, r *http.Request) (savedViewForm, bool) {
-	form := savedViewForm{
-		Title:   strings.TrimSpace(r.FormValue("title")),
-		Filters: filtersFromValues(r.Form),
+// prefix namespaces the field set: "" for the standalone form, and
+// viewFieldPrefix(id) for a panel in the combined author edit form.
+func (s *Server) savedViewFormFromRequest(userID int64, prefix string, r *http.Request) (savedViewForm, bool) {
+	return s.savedViewFormFromRequestValues(userID, prefix, r.Form)
+}
+
+// savedViewCollectionIDs validates a view form's collection selections against
+// the user's non-auto collections, silently dropping stale values.
+func (s *Server) savedViewCollectionIDs(userID int64, raw []string) []int64 {
+	collections, _ := s.store.Collections.List(userID)
+	allowed := make(map[int64]bool, len(collections))
+	for _, c := range collections {
+		if !c.IsAuto {
+			allowed[c.ID] = true
+		}
+	}
+	out := make([]int64, 0, len(raw))
+	seen := make(map[int64]bool, len(raw))
+	for _, value := range raw {
+		id, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil || !allowed[id] || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
+// applyViewForm persists one view's settings from a namespaced (or unprefixed)
+// field set. It reports whether a complete form was applied.
+func (s *Server) applyViewForm(u store.User, old store.SavedView, prefix string, form url.Values) (bool, error) {
+	parsed, ok := s.savedViewFormFromRequestValues(u.ID, prefix, form)
+	if !ok || parsed.Error != "" {
+		return false, nil
+	}
+	if err := s.store.SavedViews.Update(u.ID, old.ID, store.SavedView{
+		AuthorID: parsed.AuthorID, Title: parsed.Title, Filters: parsed.Filters.params(),
+	}); err != nil {
+		return false, err
+	}
+	if err := s.store.SavedViews.SetCollections(u.ID, old.ID, parsed.CollectionIDs); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// savedViewFormFromRequestValues is savedViewFormFromRequest for an already
+// parsed form.
+func (s *Server) savedViewFormFromRequestValues(userID int64, prefix string, form url.Values) (savedViewForm, bool) {
+	parsed := savedViewForm{
+		Title:         strings.TrimSpace(form.Get(prefix + "title")),
+		CollectionIDs: s.savedViewCollectionIDs(userID, form[prefix+"collections"]),
+		Filters:       filtersFromValuesAt(form, prefix),
 	}
 	var ok bool
-	form.Filters = s.savedViewFilters(userID, form.Filters)
-	form.AuthorID, ok = s.savedViewAssignedAuthor(userID, r.FormValue("author_id"))
+	parsed.Filters = s.savedViewFilters(userID, parsed.Filters)
+	parsed.AuthorID, ok = s.savedViewAssignedAuthor(userID, form.Get(prefix+"author_id"))
 	if !ok {
-		return form, false
+		return parsed, false
 	}
-	if form.Title == "" {
-		form.Error = "title is required"
-	} else if len(form.Title) > maxSavedViewTitle {
-		form.Error = "title is too long"
-	} else if len(form.Filters) == 0 {
-		form.Error = "add at least one filter"
+	if parsed.Title == "" {
+		parsed.Error = "title is required"
+	} else if len(parsed.Title) > maxSavedViewTitle {
+		parsed.Error = "title is too long"
+	} else if len(parsed.Filters) == 0 {
+		parsed.Error = "add at least one filter"
 	}
-	return form, true
+	return parsed, true
 }
 
 // savedViewDelete removes a view and returns to the index.
@@ -370,9 +485,18 @@ func (s *Server) savedViewDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	v, err := s.store.SavedViews.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
 	if err := s.store.SavedViews.Delete(u.ID, id); err != nil && err != store.ErrNotFound {
 		log.Error("delete saved view", "id", id, "err", err)
 		http.Error(w, "delete failed", http.StatusInternalServerError)
+		return
+	}
+	if r.URL.Query().Get("back") == "author" && v.AuthorID > 0 {
+		http.Redirect(w, r, "/authors/"+strconv.FormatInt(v.AuthorID, 10)+"/edit", http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/views", http.StatusSeeOther)
@@ -577,14 +701,34 @@ func (s *Server) savedViewFeedOptions(userID int64) []comboItem {
 // savedViewsForAuthor returns the views assigned to an author, for its page.
 func (s *Server) savedViewsForAuthor(userID, authorID int64, tz string) []savedViewRow {
 	views, _ := s.store.SavedViews.ListByAuthor(userID, authorID)
-	rows := make([]savedViewRow, 0, len(views))
+	usable := make([]store.SavedView, 0, len(views))
 	for _, v := range views {
 		if len(s.savedViewFilters(userID, filtersFromParams(v.Filters))) == 0 {
 			continue
 		}
-		rows = append(rows, s.savedViewRow(userID, v, tz))
+		usable = append(usable, v)
 	}
-	return rows
+	return s.savedViewRows(userID, usable, tz)
+}
+
+// viewFiltersFromViews converts a set of saved views into item predicates,
+// skipping unfiltered legacy rows (they would match every post).
+func (s *Server) viewFiltersFromViews(userID int64, views []store.SavedView, tz string) []store.ViewFilter {
+	out := make([]store.ViewFilter, 0, len(views))
+	for _, v := range views {
+		if len(s.savedViewFilters(userID, filtersFromParams(v.Filters))) == 0 {
+			continue
+		}
+		out = append(out, s.storeViewFilter(userID, v, tz))
+	}
+	return out
+}
+
+// collectionViewFilters returns the item predicates of a collection's member
+// views, for the collection's item scope.
+func (s *Server) collectionViewFilters(userID, collectionID int64, tz string) []store.ViewFilter {
+	views, _ := s.store.SavedViews.ListByCollection(userID, collectionID)
+	return s.viewFiltersFromViews(userID, views, tz)
 }
 
 // storeViewFilter converts a saved view into the store's query predicate. An
@@ -622,14 +766,7 @@ func (s *Server) savedViewsByAuthor(userID int64, tz string) (map[int64][]store.
 // whole stream into the author by accident.
 func (s *Server) authorStoreViewFilters(userID, authorID int64, tz string) []store.ViewFilter {
 	views, _ := s.store.SavedViews.ListByAuthor(userID, authorID)
-	out := make([]store.ViewFilter, 0, len(views))
-	for _, v := range views {
-		if len(s.savedViewFilters(userID, filtersFromParams(v.Filters))) == 0 {
-			continue
-		}
-		out = append(out, s.storeViewFilter(userID, v, tz))
-	}
-	return out
+	return s.viewFiltersFromViews(userID, views, tz)
 }
 
 // authorStoreViewFilter returns one assigned, filtered view as a predicate.

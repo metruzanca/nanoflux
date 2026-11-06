@@ -104,6 +104,9 @@ func (s *Server) apiItems(w http.ResponseWriter, r *http.Request) {
 	filter.FeedID, _ = strconv.ParseInt(q.Get("feed"), 10, 64)
 	filter.AuthorID, _ = strconv.ParseInt(q.Get("author"), 10, 64)
 	filter.CollectionID, _ = strconv.ParseInt(q.Get("collection"), 10, 64)
+	if filter.CollectionID != 0 {
+		filter.CollectionViews = s.collectionViewFilters(u.ID, filter.CollectionID, u.Timezone)
+	}
 	filter.BeforeID, _ = strconv.ParseInt(q.Get("before"), 10, 64)
 	filter.Limit, _ = strconv.Atoi(q.Get("limit"))
 

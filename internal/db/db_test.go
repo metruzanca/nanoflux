@@ -17,7 +17,7 @@ func TestMigrate(t *testing.T) {
 
 	tables := []string{
 		"users", "sessions", "authors", "feeds",
-		"items", "collections", "collection_feeds", "schema_migrations",
+		"items", "collections", "collection_feeds", "collection_views", "schema_migrations",
 		"author_filter_rules", "author_filter_values", "saved_views",
 	}
 	for _, name := range tables {

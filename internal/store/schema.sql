@@ -279,6 +279,15 @@ CREATE TABLE saved_views (
 CREATE INDEX idx_saved_views_user ON saved_views(user_id);
 CREATE INDEX idx_saved_views_author ON saved_views(author_id);
 
+-- A saved view can be a collection source (schemaV62). A collection's item
+-- scope is the union of its member feeds and its member views.
+CREATE TABLE collection_views (
+    collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    view_id       INTEGER NOT NULL REFERENCES saved_views(id) ON DELETE CASCADE,
+    PRIMARY KEY (collection_id, view_id)
+);
+CREATE INDEX idx_collection_views_view ON collection_views(view_id);
+
 CREATE TABLE item_enclosures (
     id        INTEGER PRIMARY KEY,
     item_id   INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,

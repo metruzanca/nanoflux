@@ -210,7 +210,10 @@ type ItemFilter struct {
 	// Views extend the scope with OR branches. With AuthorID set they are added
 	// to the author's own feeds; without AuthorID they are the whole scope.
 	Views []ViewFilter
-	Limit int
+	// CollectionViews extend a collection's scope with OR branches (the
+	// collection's member feeds OR any matching view).
+	CollectionViews []ViewFilter
+	Limit           int
 }
 
 type ItemStore struct {
@@ -407,7 +410,8 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	// filter or negative filter uses the hand-written dynamic query. sqlc owns
 	// the rest of the list paths.
 	if len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 ||
-		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.TimeGroups) > 0 || len(f.Views) > 0 {
+		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.TimeGroups) > 0 ||
+		len(f.Views) > 0 || len(f.CollectionViews) > 0 {
 		return s.listPageTagged(userID, f, limit)
 	}
 	if f.Magic {
@@ -710,9 +714,13 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
 		b.WriteString(" AND i.feed_id IN (SELECT oa.id FROM feeds oa WHERE oa.author_id = ?)")
 		*args = append(*args, f.OwnerAuthorID)
 	}
-	if f.CollectionID != 0 {
-		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))")
-		*args = append(*args, f.CollectionID)
+	if f.CollectionID != 0 || len(f.CollectionViews) > 0 {
+		clause, scopeArgs := collectionScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", f.CollectionID, f.CollectionViews)
+		if clause != "" {
+			b.WriteString(" AND ")
+			b.WriteString(clause)
+			*args = append(*args, scopeArgs...)
+		}
 	}
 	if f.UnreadOnly {
 		b.WriteString(" AND i.read = 0")
@@ -757,6 +765,31 @@ func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilt
 		branches = append(branches,
 			"EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds sf ON sf.id = mf.feed_id WHERE mf.item_id = "+itemID+" AND sf.author_id = ?)")
 		args = append(args, authorID)
+	}
+	for _, v := range views {
+		clause, viewArgs := viewFilterClause(itemID, timeExpr, v)
+		if clause == "" {
+			clause = "1=1"
+		}
+		branches = append(branches, "("+clause+")")
+		args = append(args, viewArgs...)
+	}
+	if len(branches) == 0 {
+		return "", nil
+	}
+	return "(" + strings.Join(branches, " OR ") + ")", args
+}
+
+// collectionScopeClause builds the OR of a collection's member feeds and its
+// member views. itemID is the item-id expression of the caller's query; timeExpr
+// is its item-time expression.
+func collectionScopeClause(itemID, timeExpr string, collectionID int64, views []ViewFilter) (string, []any) {
+	var branches []string
+	var args []any
+	if collectionID != 0 {
+		branches = append(branches,
+			"EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = "+itemID+" AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))")
+		args = append(args, collectionID)
 	}
 	for _, v := range views {
 		clause, viewArgs := viewFilterClause(itemID, timeExpr, v)

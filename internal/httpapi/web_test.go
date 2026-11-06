@@ -486,8 +486,8 @@ func TestCollectionFeedsTab(t *testing.T) {
 
 	// The tabs always carry the feeds tab with its count.
 	body := doGet(h, base, cookie).Body.String()
-	if !strings.Contains(body, "feeds (1)") {
-		t.Fatalf("collection page missing feeds tab: %s", body)
+	if !strings.Contains(body, "sources (1)") {
+		t.Fatalf("collection page missing sources tab: %s", body)
 	}
 
 	// The feeds view lists the feed card with its author and unread count, and
@@ -526,8 +526,8 @@ func TestCollectionFeedsTab(t *testing.T) {
 	// An empty collection shows its empty state on the feeds tab.
 	empty, _ := s.store.Collections.Create(u.ID, "empty")
 	body = doGet(h, "/collections/"+itoa(empty.ID)+"?view=feeds", cookie).Body.String()
-	if !strings.Contains(body, "no feeds in this collection") {
-		t.Fatalf("empty feeds view missing empty state: %s", body)
+	if !strings.Contains(body, "no sources in this collection") {
+		t.Fatalf("empty sources view missing empty state: %s", body)
 	}
 }
 

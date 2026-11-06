@@ -366,7 +366,11 @@ Categories are also normalized for tag browsing and list filtering.
   for `hide` (any matching hide row excludes). The modal form submits one
   `filter_row` token per row plus repeated `filter_value_<token>` values (and
   `filter_time_*_<token>` for a time row). Tags are capped at `maxTagFilters`.
-  Tab, sort, chip and pagination links carry the filters with
+  `filterRow` takes a name prefix so several editors can share one form; the
+  author edit page's inline view panels use `viewFieldPrefix(id)`, and
+  `filtersFromValuesAt` reads the matching prefixed fields. The hidden token
+  input carries `data-filter-row-token`, which is what `app.js` rewrites when it
+  clones a row. Tab, sort, chip and pagination links carry the filters with
   `listFilters.appendFilters`.
 - Time rows are resolved at query time in the user's timezone and converted to
   the canonical UTC storage format: a date-only lower bound means start of day,
@@ -497,6 +501,17 @@ code.
 - A view stores its title, assigned author and the canonical `?f=` filter
   params. It always matches **all feeds**; limiting it is expressed through its
   own filter rows. The tab and sort are page state, not saved on the view.
+- Views can be collection sources too (`collection_views`, schemaV62). A
+  collection's item scope is the union of its member feeds and its member views:
+  `ItemFilter.CollectionViews` feeds `collectionScopeClause`, and every
+  collection read (list, counts, tag options, home sections, the JSON API) must
+  pass the collection's view predicates. Auto and no-collection never hold
+  views; the view form's picker and the membership writer exclude auto
+  collections.
+- A view's collection memberships are edited with the `collections` multi-select
+  in its form (`SavedViewStore.SetCollections`, `CollectionIDs`,
+  `ListByCollection`, `CollectionsByView`). Removing a view from a collection
+  leaves the view itself intact.
 - `author_id` is the author the view feeds. An author page's scope is
   `author's own feeds OR every assigned view`, so a subreddit feed plus a view
   such as `tag=u/example-poster` can replace a per-user profile feed.
@@ -511,10 +526,13 @@ code.
 - The store scope is `store.ViewFilter` + `ItemFilter.Views`. `authorScopeClause`
   builds the OR of author-owned feeds and each view predicate; `viewFilterClause`
   applies the view's tag/feed groups and time windows. `listPageTagged` is forced
-  whenever `Views` is non-empty, and `unreadFilteredQuery` delegates to the same
-  predicate builder so mark-all and unread counts include views.
+  whenever `Views` or `CollectionViews` is non-empty, and `unreadFilteredQuery`
+  delegates to the same predicate builder so mark-all and unread counts include
+  views.
 - Author stats, posting frequency, tag options and `/authors` unread counts use
   the same union (`StatsFilter`, `RecentTimesFilter`, `ListCategoriesFilter`).
+  Collection index counts and tag options use it too when the collection has
+  views (`applyCollectionViewCounts`, `ListCategoriesFilter`).
 - Author allow/block rules still apply to the author who owns the feed, not to
   the viewed author, so view items from another author keep that author's rules.
 - A bare `/views/{id}` redirects to the assigned author's
@@ -527,11 +545,20 @@ code.
   there. The create/edit page reuses `filterRow`; a view-scoped author page reuses
   `scopedItemsData` with its `ViewID` set.
 - An author page has one collapsible `sources (N)` section combining its feeds
-  and assigned views; the page itself has no add-feed/add-view controls.
+  and assigned views; the page itself has no add-feed/add-view controls. The
+  collection page's `sources` tab, the collection edit page and the home
+  dashboard's pinned collection sections include view-sourced items.
+- The author edit page inlines assigned views as a lazy accordion below feeds.
+  Each panel is part of the one author form: `viewEditorBody` carries a hidden
+  `view_ids` marker and namespaces its fields with `viewFieldPrefix(id)`; the
+  fragment route is `GET /views/{id}/edit-fragment`. `authorUpdate` applies only
+  the panels present in the submission. Inline delete is a `type=button`
+  `data-post-action` to `/views/{id}/delete?back=author`.
 - `/views` is the private index, grouped by assigned author, and is linked from
-  the user menu.
-- `CloneUser` copies saved views and remaps the assigned author and feed ids; a
-  view whose assigned author did not survive the clone becomes unassigned.
+  the user menu. View cards show their collection chips.
+- `CloneUser` copies saved views and remaps the assigned author, feed filter ids
+  and collection memberships; a view whose assigned author did not survive the
+  clone becomes unassigned.
 
 ## Appearance
 

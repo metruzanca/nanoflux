@@ -348,7 +348,7 @@ func settingsHomeCard(d settingsHomeData) templ.Component {
 			templ_7745c5c3_Var12 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<section class=\"card\" id=\"settings-home-card\"><h2>home screen</h2><p class=\"muted small\">Pin collections to your home page. Each shows that collection's unread items; a collection with no unread items is hidden. Pick list or grid per section, choose how each section sorts (magic is the default), and drag a row to reorder. With nothing pinned, home is your unread list.</p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "<section class=\"card\" id=\"settings-home-card\"><h2>home screen</h2><p class=\"muted small\">Pin collections to your home page. Each shows that collection's unread items, including items matched by any views it contains; a collection with no unread items is hidden. Pick list or grid per section, choose how each section sorts (magic is the default), and drag a row to reorder. With nothing pinned, home is your unread list.</p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

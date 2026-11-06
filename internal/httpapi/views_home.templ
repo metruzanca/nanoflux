@@ -117,7 +117,7 @@ templ homeSortControl(collectionID int64, sort string) {
 templ settingsHomeCard(d settingsHomeData) {
 	<section class="card" id="settings-home-card">
 		<h2>home screen</h2>
-		<p class="muted small">Pin collections to your home page. Each shows that collection's unread items; a collection with no unread items is hidden. Pick list or grid per section, choose how each section sorts (magic is the default), and drag a row to reorder. With nothing pinned, home is your unread list.</p>
+		<p class="muted small">Pin collections to your home page. Each shows that collection's unread items, including items matched by any views it contains; a collection with no unread items is hidden. Pick list or grid per section, choose how each section sorts (magic is the default), and drag a row to reorder. With nothing pinned, home is your unread list.</p>
 		if d.Error != "" {
 			<div class="error" role="alert">{ d.Error }</div>
 		}

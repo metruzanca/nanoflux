@@ -349,7 +349,7 @@ function addFilterRow(after, trigger) {
   holder.innerHTML = tpl.innerHTML.split('__token__').join(token);
   var row = holder.firstElementChild;
   if (!row) return null;
-  var tokenInput = row.querySelector('input[name="filter_row"]');
+  var tokenInput = row.querySelector('input[data-filter-row-token]');
   if (tokenInput) tokenInput.value = token;
   if (after && after.parentNode === list) after.after(row);
   else list.appendChild(row);

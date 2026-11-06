@@ -182,6 +182,7 @@ func (s *Server) homeSectionData(u store.User, sec homeSection) (homeSectionData
 	sort := homeSort(sec.Sort)
 	filter := store.ItemFilter{
 		CollectionID: c.ID, UnreadOnly: true, Limit: homeSectionLimit,
+		CollectionViews: s.collectionViewFilters(u.ID, c.ID, u.Timezone),
 	}
 	switch sort {
 	case sortOldest:

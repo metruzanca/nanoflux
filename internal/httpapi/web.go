@@ -153,6 +153,10 @@ type authorsData struct {
 	// Editor is the combined page's feed editor, for the feed named by the
 	// ?feed= query. nil when no feed is selected.
 	Editor *feedsData
+	// Views are the views assigned to this author, rendered as an accordion
+	// below the feeds. ViewEditor is the panel selected by ?view=.
+	Views      []savedViewRow
+	ViewEditor *savedViewForm
 	// Rules are the author's always-on filters, rendered as allow/block rows.
 	Rules listFilters
 	// FilterTagOptions/FilterFeedOptions back the rule row value pickers.
@@ -191,7 +195,9 @@ type markAllReadData struct {
 type collectionData struct {
 	Collection store.Collection
 	Feeds      []store.Feed
+	Views      []savedViewRow
 	AllFeeds   []collectionFeedGroup
+	AllViews   []comboItem
 	Scoped     scopedItemsData
 }
 
@@ -214,16 +220,18 @@ type scopedItemsData struct {
 	UnreadCount int
 	ReadCount   int
 	Items       []store.ItemWithFeed
-	More        *loadMoreData // "load more" cursor, nil when no next page
-	SwapOOB     bool          // render with hx-swap-oob for the collection OOB fragment
-	HideAuthor  bool          // drop the author link from item meta (author-scoped page)
-	Mode        string        // saved display mode for this scope ("list" or "grid")
-	FeedsTab    bool          // collection scope only: render the "feeds" tab
-	FeedCount   int           // feeds in the collection, for the "feeds (N)" tab
-	Feeds       []feedRow     // feed cards for the "feeds" view
-	FavTab      bool          // author scope only: render the "favorites" tab
-	FavCount    int           // favorited items in scope, for the "favorites (N)" tab
-	Filters     listFilters   // active tag/feed filters (show or hide)
+	More        *loadMoreData  // "load more" cursor, nil when no next page
+	SwapOOB     bool           // render with hx-swap-oob for the collection OOB fragment
+	HideAuthor  bool           // drop the author link from item meta (author-scoped page)
+	Mode        string         // saved display mode for this scope ("list" or "grid")
+	FeedsTab    bool           // collection scope only: render the "sources" tab
+	FeedCount   int            // feeds in the collection, for the "sources (N)" tab
+	Feeds       []feedRow      // feed cards for the sources view
+	Views       []savedViewRow // view cards for the sources view
+	ViewCount   int            // views in the collection, for the "sources (N)" tab
+	FavTab      bool           // author scope only: render the "favorites" tab
+	FavCount    int            // favorited items in scope, for the "favorites (N)" tab
+	Filters     listFilters    // active tag/feed filters (show or hide)
 	// FilteredCount is how many items in the current view match the active
 	// filters, shown as a "N matching" badge. Only meaningful when Filters is
 	// non-empty.
@@ -2016,9 +2024,10 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 		Action: authorReadAllURL(id, filters, viewID),
 		Unread: scoped.UnreadCount,
 	}
+	views := s.savedViewsForAuthor(u.ID, id, u.Timezone)
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
-		Author: a, Rows: rows, Views: s.savedViewsForAuthor(u.ID, id, u.Timezone), Links: links,
-		Scoped: scoped, Collections: authorCollections(rows),
+		Author: a, Rows: rows, Views: views, Links: links,
+		Scoped: scoped, Collections: authorCollections(rows, views),
 		Stats: stats, Frequency: frequency, Timezone: u.Timezone,
 		MarkAll: markAll,
 	})))
@@ -2389,12 +2398,18 @@ func (s *Server) feedRowsForAuthor(userID, authorID int64, tz string) ([]feedRow
 	return out, nil
 }
 
-// authorCollections returns the distinct collections the author's feeds belong
-// to, combined and deduped, ordered by name, for the author card's chips.
-func authorCollections(rows []feedRow) []store.Collection {
+// authorCollections returns the distinct collections the author's feeds and
+// views belong to, combined and deduped, ordered by name, for the author card's
+// chips.
+func authorCollections(rows []feedRow, views []savedViewRow) []store.Collection {
 	seen := make(map[int64]store.Collection)
 	for _, r := range rows {
 		for _, c := range r.Collections {
+			seen[c.ID] = c
+		}
+	}
+	for _, v := range views {
+		for _, c := range v.Collections {
 			seen[c.ID] = c
 		}
 	}
@@ -2420,10 +2435,18 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
 	feeds, _ := s.feedRowsForAuthor(u.ID, a.ID, u.Timezone)
+	views := s.savedViewsForAuthor(u.ID, a.ID, u.Timezone)
 	var editor *feedsData
 	if fid, err := strconv.ParseInt(r.URL.Query().Get("feed"), 10, 64); err == nil && fid != 0 {
 		if f, err := s.store.Feeds.ByID(u.ID, fid); err == nil && f.AuthorID == a.ID {
 			editor = s.feedEditorData(u, f)
+		}
+	}
+	var viewEditor *savedViewForm
+	if vid, err := strconv.ParseInt(r.URL.Query().Get("view"), 10, 64); err == nil && vid != 0 {
+		if v, err := s.store.SavedViews.ByID(u.ID, vid); err == nil && v.AuthorID == a.ID {
+			form := s.viewEditorData(u, v)
+			viewEditor = &form
 		}
 	}
 	rules, _ := s.store.AuthorFilters.List(u.ID, a.ID)
@@ -2441,6 +2464,8 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 		Feeds:             feeds,
 		AvatarCard:        s.authorAvatarCardData(a, u.Timezone, ""),
 		Editor:            editor,
+		Views:             views,
+		ViewEditor:        viewEditor,
 		Rules:             ruleFilters,
 		FilterTagOptions:  tagItems(cats),
 		FilterFeedOptions: feedOpts,
@@ -2539,6 +2564,23 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Views are part of the same form. Each opened panel carries a hidden
+	// view_ids marker and namespaced fields, so a collapsed panel is untouched.
+	for _, raw := range r.Form["view_ids"] {
+		vid, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			continue
+		}
+		v, err := s.store.SavedViews.ByID(u.ID, vid)
+		if err != nil || v.AuthorID != id {
+			continue
+		}
+		if _, err := s.applyViewForm(u, v, viewFieldPrefix(vid), r.Form); err != nil {
+			log.Error("update view", "view_id", vid, "err", err)
+			http.Error(w, "update failed", http.StatusInternalServerError)
+			return
+		}
+	}
 	if avatarURL != "" {
 		a, _ := s.store.Authors.ByID(u.ID, id)
 		if a.ID != 0 {
@@ -2599,7 +2641,28 @@ func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 		log.Error("sync no-collection", "err", err)
 	}
 	rows, _ := s.store.Collections.ListWithCounts(u.ID)
+	s.applyCollectionViewCounts(u.ID, u.Timezone, rows)
 	web.Render(w, r, basePage("collections", u, collectionsPage(u, rows)))
+}
+
+// applyCollectionViewCounts replaces the feed-only unread/read counts of
+// collections that contain views, so the index cards match the collection page.
+// It also restores the most-unread-first order the index expects.
+func (s *Server) applyCollectionViewCounts(userID int64, tz string, rows []store.CollectionWithCounts) {
+	for i := range rows {
+		if rows[i].ViewCount == 0 {
+			continue
+		}
+		views := s.collectionViewFilters(userID, rows[i].ID, tz)
+		rows[i].Unread, _ = s.store.Items.CountFiltered(userID, collectionCountFilter(rows[i].ID, views, "unread", tz))
+		rows[i].Read, _ = s.store.Items.CountFiltered(userID, collectionCountFilter(rows[i].ID, views, "read", tz))
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Unread != rows[j].Unread {
+			return rows[i].Unread > rows[j].Unread
+		}
+		return rows[i].Name < rows[j].Name
+	})
 }
 
 // userCollections returns the non-auto collections, preserving the query's
@@ -2668,9 +2731,49 @@ func (s *Server) collectionDataFor(userID, id int64, view string, sort itemSort,
 		s.store.Collections.SyncNoCollection(userID)
 	}
 	feeds, _ := s.store.Collections.Feeds(userID, id)
+	views := s.collectionViewRows(userID, id, tz)
 	allFeeds, _ := s.store.Feeds.ListWithUnread(userID)
+	allViews, _ := s.store.SavedViews.List(userID)
+	member := make(map[int64]bool, len(views))
+	for _, v := range views {
+		member[v.ID] = true
+	}
+	addable := make([]store.SavedView, 0, len(allViews))
+	for _, v := range allViews {
+		if !member[v.ID] {
+			addable = append(addable, v)
+		}
+	}
 	scoped := s.collectionScopedItems(userID, id, view, sort, tz, filters)
-	return collectionData{Collection: c, Feeds: feeds, AllFeeds: groupFeedsByAuthor(allFeeds), Scoped: scoped}, nil
+	return collectionData{
+		Collection: c, Feeds: feeds, Views: views,
+		AllFeeds: groupFeedsByAuthor(allFeeds),
+		AllViews: savedViewComboItems(addable),
+		Scoped:   scoped,
+	}, nil
+}
+
+// collectionViewRows returns a collection's member views as display rows.
+func (s *Server) collectionViewRows(userID, collectionID int64, tz string) []savedViewRow {
+	views, _ := s.store.SavedViews.ListByCollection(userID, collectionID)
+	return s.savedViewRows(userID, views, tz)
+}
+
+// savedViewComboItems maps views to combo items for the add-view picker.
+func savedViewComboItems(views []store.SavedView) []comboItem {
+	out := make([]comboItem, 0, len(views))
+	for _, v := range views {
+		out = append(out, comboItem{Value: strconv.FormatInt(v.ID, 10), Label: v.Title})
+	}
+	return out
+}
+
+// firstSavedViewValue is the default selection for the add-view picker.
+func firstSavedViewValue(items []comboItem) string {
+	if len(items) == 0 {
+		return ""
+	}
+	return items[0].Value
 }
 
 // groupFeedsByAuthor groups a user's feeds by author name for the collection
@@ -2700,29 +2803,82 @@ func groupFeedsByAuthor(rows []store.FeedWithUnread) []collectionFeedGroup {
 // are loaded.
 func (s *Server) collectionScopedItems(userID, collectionID int64, view string, sort itemSort, tz string, filters listFilters) scopedItemsData {
 	memberFeeds, _ := s.store.Collections.Feeds(userID, collectionID)
-	unread, _ := s.store.Items.CountUnreadCollection(userID, collectionID)
-	read, _ := s.store.Items.CountReadCollection(userID, collectionID)
+	collectionViews := s.collectionViewFilters(userID, collectionID, tz)
+	viewRows := s.collectionViewRows(userID, collectionID, tz)
 	base := "/collections/" + strconv.FormatInt(collectionID, 10)
 	d := scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
-		UnreadCount: unread, ReadCount: read, FeedsTab: true, FeedCount: len(memberFeeds),
+		FeedsTab: true, FeedCount: len(memberFeeds), ViewCount: len(viewRows),
 		Mode: s.store.ViewPrefs.Mode(userID, base), Filters: filters,
 		ScopeCollectionID: collectionID,
 	}
 	if view == "feeds" {
 		d.Feeds = s.collectionFeedRows(userID, memberFeeds, tz)
+		d.Views = viewRows
 		return d
 	}
-	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, sort, 0, 0, collectionID, filters, tz))
+	f := scopedFilter(view, sort, 0, 0, collectionID, filters, tz)
+	f.CollectionViews = collectionViews
+	items, more, _ := s.store.Items.ListPage(userID, f)
 	itemsBase := filters.appendFilters(base + "/items?view=" + view + "&sort=" + sort.param())
-	cats, _ := s.store.Items.ListCategories(userID, store.ItemFilter{CollectionID: collectionID})
-	d.TagOptions = tagItems(cats)
+	if len(collectionViews) > 0 {
+		d.UnreadCount, _ = s.store.Items.CountFiltered(userID, collectionCountFilter(collectionID, collectionViews, "unread", tz))
+		d.ReadCount, _ = s.store.Items.CountFiltered(userID, collectionCountFilter(collectionID, collectionViews, "read", tz))
+		cats, _ := s.store.Items.ListCategoriesFilter(userID, store.ItemFilter{
+			CollectionID: collectionID, CollectionViews: collectionViews,
+		})
+		d.TagOptions = tagItems(cats)
+	} else {
+		d.UnreadCount, _ = s.store.Items.CountUnreadCollection(userID, collectionID)
+		d.ReadCount, _ = s.store.Items.CountReadCollection(userID, collectionID)
+		cats, _ := s.store.Items.ListCategories(userID, store.ItemFilter{CollectionID: collectionID})
+		d.TagOptions = tagItems(cats)
+	}
 	d.Items = withTZ(tz, dedupItems(items))
 	d.More = pageCursorFor(itemsBase, items, more, sort, 0)
 	if len(filters) > 0 {
-		d.FilteredCount, _ = s.store.Items.CountFiltered(userID, scopedFilter(view, sortNewest, 0, 0, collectionID, filters, tz))
+		countFilter := scopedFilter(view, sortNewest, 0, 0, collectionID, filters, tz)
+		countFilter.CollectionViews = collectionViews
+		d.FilteredCount, _ = s.store.Items.CountFiltered(userID, countFilter)
 	}
 	return d
+}
+
+// collectionCountFilter builds a collection tab count that includes member views.
+func collectionCountFilter(collectionID int64, views []store.ViewFilter, view string, tz string) store.ItemFilter {
+	f := scopedFilter(view, sortNewest, 0, 0, collectionID, nil, tz)
+	f.CollectionViews = views
+	f.Limit = 0
+	return f
+}
+
+// collectionSourceRow is one entry in a collection's interleaved source list.
+type collectionSourceRow struct {
+	Kind string // "feed" or "view"
+	Feed feedRow
+	View savedViewRow
+}
+
+// mergeCollectionSources interleaves a collection's feeds and views by title.
+func mergeCollectionSources(feeds []feedRow, views []savedViewRow) []collectionSourceRow {
+	out := make([]collectionSourceRow, 0, len(feeds)+len(views))
+	for _, f := range feeds {
+		out = append(out, collectionSourceRow{Kind: "feed", Feed: f})
+	}
+	for _, v := range views {
+		out = append(out, collectionSourceRow{Kind: "view", View: v})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.ToLower(collectionSourceTitle(out[i])) < strings.ToLower(collectionSourceTitle(out[j]))
+	})
+	return out
+}
+
+func collectionSourceTitle(r collectionSourceRow) string {
+	if r.Kind == "view" {
+		return r.View.Title
+	}
+	return r.Feed.Title
 }
 
 // collectionFeedRows joins a collection's member feeds with their author name
@@ -2758,7 +2914,9 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
 	filters := filtersFromRequest(r).withoutFeedFilters()
 	if view != "feeds" {
 		if cursor := cursorID(r, sort); cursor > 0 {
-			items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, sort, cursor, 0, id, filters, u.Timezone))
+			f := scopedFilter(view, sort, cursor, 0, id, filters, u.Timezone)
+			f.CollectionViews = s.collectionViewFilters(u.ID, id, u.Timezone)
+			items, more, err := s.store.Items.ListPage(u.ID, f)
 			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
@@ -2807,7 +2965,8 @@ func (s *Server) collectionEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	feeds, _ := s.store.Collections.Feeds(u.ID, id)
-	web.Render(w, r, basePage("edit "+c.Name, u, collectionEditPage(u, collectionData{Collection: c, Feeds: feeds})))
+	views := s.collectionViewRows(u.ID, id, u.Timezone)
+	web.Render(w, r, basePage("edit "+c.Name, u, collectionEditPage(u, collectionData{Collection: c, Feeds: feeds, Views: views})))
 }
 
 // collectionUpdate renames a collection.
@@ -2885,6 +3044,77 @@ func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
 	s.store.Collections.RemoveFeed(u.ID, id, feedID)
 	// The feed list is a client-side multi-select: the chip is already gone, so
 	// just confirm. A failure (non-2xx) makes the client restore the chip.
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// collectionAddView adds a saved view as a collection source.
+func (s *Server) collectionAddView(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	c, err := s.store.Collections.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if c.IsAuto {
+		renderError(w, r, "auto collections are managed automatically")
+		return
+	}
+	viewID, _ := strconv.ParseInt(r.FormValue("view_id"), 10, 64)
+	if viewID != 0 {
+		if _, err := s.store.SavedViews.ByID(u.ID, viewID); err == nil {
+			ids, _ := s.store.SavedViews.CollectionIDs(u.ID, viewID)
+			ids = append(ids, id)
+			if err := s.store.SavedViews.SetCollections(u.ID, viewID, ids); err != nil {
+				log.Error("add view to collection", "collection_id", id, "view_id", viewID, "err", err)
+			}
+		}
+	}
+	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeCollectionView(r.FormValue("view")), itemSortOf(r), u.Timezone, filtersFromRequest(r).withoutFeedFilters())))
+}
+
+// collectionRemoveView removes a view from a collection.
+func (s *Server) collectionRemoveView(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	c, err := s.store.Collections.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if c.IsAuto {
+		renderError(w, r, "auto collections are managed automatically")
+		return
+	}
+	viewID, err := strconv.ParseInt(r.PathValue("view_id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	ids, err := s.store.SavedViews.CollectionIDs(u.ID, viewID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	remaining := make([]int64, 0, len(ids))
+	for _, cid := range ids {
+		if cid != id {
+			remaining = append(remaining, cid)
+		}
+	}
+	if err := s.store.SavedViews.SetCollections(u.ID, viewID, remaining); err != nil && err != store.ErrNotFound {
+		log.Error("remove view from collection", "collection_id", id, "view_id", viewID, "err", err)
+		http.Error(w, "remove failed", http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

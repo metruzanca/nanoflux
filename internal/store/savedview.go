@@ -134,6 +134,116 @@ func (s *SavedViewStore) Delete(userID, id int64) error {
 	return nil
 }
 
+// ListByCollection returns the views a collection owns, by title.
+func (s *SavedViewStore) ListByCollection(userID, collectionID int64) ([]SavedView, error) {
+	return s.query(`
+		SELECT v.id, v.user_id, v.author_id, v.title, v.filters, v.created_at
+		FROM saved_views v
+		JOIN collection_views cv ON cv.view_id = v.id
+		JOIN collections c ON c.id = cv.collection_id
+		WHERE v.user_id = ? AND cv.collection_id = ? AND c.user_id = ?
+		ORDER BY v.title, v.id`, userID, collectionID, userID)
+}
+
+// CollectionIDs returns the collections a view belongs to.
+func (s *SavedViewStore) CollectionIDs(userID, viewID int64) ([]int64, error) {
+	rows, err := s.db.QueryContext(context.Background(), `
+		SELECT cv.collection_id
+		FROM collection_views cv
+		JOIN saved_views v ON v.id = cv.view_id
+		JOIN collections c ON c.id = cv.collection_id
+		WHERE v.id = ? AND v.user_id = ? AND c.user_id = ?
+		ORDER BY c.name`, viewID, userID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list view collections: %w", err)
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan view collection: %w", err)
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// SetCollections replaces a view's collection memberships. Only the user's
+// non-auto collections are accepted; a view may be unassigned.
+func (s *SavedViewStore) SetCollections(userID, viewID int64, ids []int64) error {
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("set view collections: %w", err)
+	}
+	defer tx.Rollback()
+	var owned int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM saved_views WHERE id = ? AND user_id = ?`, viewID, userID).Scan(&owned); err != nil {
+		return fmt.Errorf("set view collections: %w", err)
+	}
+	if owned == 0 {
+		return ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM collection_views WHERE view_id = ?`, viewID); err != nil {
+		return fmt.Errorf("clear view collections: %w", err)
+	}
+	seen := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		var ok int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM collections
+			WHERE id = ? AND user_id = ? AND is_auto = 0`, id, userID).Scan(&ok); err != nil {
+			return fmt.Errorf("verify view collection: %w", err)
+		}
+		if ok == 0 {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT OR IGNORE INTO collection_views (collection_id, view_id) VALUES (?, ?)`, id, viewID); err != nil {
+			return fmt.Errorf("add view collection: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit view collections: %w", err)
+	}
+	return nil
+}
+
+// CollectionsByView maps every view id to the collections it belongs to, in one
+// read, for rendering collection chips on view cards.
+func (s *SavedViewStore) CollectionsByView(userID int64) (map[int64][]Collection, error) {
+	rows, err := s.db.QueryContext(context.Background(), `
+		SELECT cv.view_id, c.id, c.name, c.is_auto
+		FROM collection_views cv
+		JOIN collections c ON c.id = cv.collection_id
+		JOIN saved_views v ON v.id = cv.view_id
+		WHERE c.user_id = ? AND v.user_id = ?
+		ORDER BY c.name`, userID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list view collection memberships: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[int64][]Collection)
+	for rows.Next() {
+		var viewID int64
+		var c Collection
+		var isAuto int
+		if err := rows.Scan(&viewID, &c.ID, &c.Name, &isAuto); err != nil {
+			return nil, fmt.Errorf("scan view collection membership: %w", err)
+		}
+		c.UserID = userID
+		c.IsAuto = isAuto != 0
+		out[viewID] = append(out[viewID], c)
+	}
+	return out, rows.Err()
+}
+
 // query runs a saved-view select and reads every row.
 func (s *SavedViewStore) query(q string, args ...any) ([]SavedView, error) {
 	rows, err := s.db.QueryContext(context.Background(), q, args...)

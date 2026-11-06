@@ -154,6 +154,43 @@ templ authorEditPage(u store.User, d authorsData) {
 				</div>
 			</div>
 		}
+		<div class="author-views">
+			<div class="row">
+				<h2>views</h2>
+				<a class="button small" href={ templ.URL("/views/new?author_id=" + strconv.FormatInt(d.Form.ID, 10)) }>+ new view</a>
+			</div>
+			if len(d.Views) == 0 {
+				<p class="muted small">No views assigned to this author. A view is a saved filter recipe that adds its matching posts to this author and to any collections it belongs to.</p>
+			} else {
+				// Views use the same lazy accordion as feeds and submit in the same
+				// author form. Each panel's fields are namespaced with viewFieldPrefix.
+				<div class="feed-accordion">
+					for _, r := range d.Views {
+						{{ id := strconv.FormatInt(r.ID, 10) }}
+						{{ selected := d.ViewEditor != nil && d.ViewEditor.ID == r.ID }}
+						<details class="feed-accordion-item" name="author-views" id={ "view-acc-" + id } if selected { open }>
+							<summary>
+								@web.Lucide("bookmark-plus")
+								<span class="feed-accordion-title">{ r.Title }</span>
+								<span class="badge">{ r.Count } unread</span>
+								if len(r.Collections) > 0 {
+									for _, c := range r.Collections {
+										<span class="badge">{ c.Name }</span>
+									}
+								}
+							</summary>
+							if selected {
+								<div class="feed-accordion-body">@viewEditorBody(u, *d.ViewEditor, viewFieldPrefix(r.ID))</div>
+							} else {
+								<div class="feed-accordion-body" hx-get={ "/views/" + id + "/edit-fragment" } hx-trigger="toggle from:closest details once" hx-swap="innerHTML">
+									<p class="muted small">loading…</p>
+								</div>
+							}
+						</details>
+					}
+				</div>
+			}
+		</div>
 		<div class="form-save-bar">
 			<button type="submit">save author and feeds</button>
 		</div>
@@ -221,14 +258,14 @@ templ authorFilterCard(d authorsData) {
 		<div id="author-filter-fields">
 			<div class="filter-rows" id="author-filter-rows" data-filter-rows>
 				for i, f := range d.Rules {
-					@filterRow("author-filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, d.FilterTagOptions, d.FilterFeedOptions, []string{filterKindTag, filterKindFeed}, true)
+					@filterRow("author-filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, d.FilterTagOptions, d.FilterFeedOptions, []string{filterKindTag, filterKindFeed}, true, "")
 				}
 				if len(d.Rules) == 0 {
-					@filterRow("author-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, []string{filterKindTag, filterKindFeed}, true)
+					@filterRow("author-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, []string{filterKindTag, filterKindFeed}, true, "")
 				}
 			</div>
 			<template id="author-filter-row-template" data-filter-row-template>
-				@filterRow("author-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, []string{filterKindTag, filterKindFeed}, true)
+				@filterRow("author-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, d.FilterTagOptions, d.FilterFeedOptions, []string{filterKindTag, filterKindFeed}, true, "")
 			</template>
 			<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 		</div>

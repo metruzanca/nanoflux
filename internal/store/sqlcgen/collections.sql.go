@@ -271,12 +271,14 @@ func (q *Queries) ListCollectionsForAuthorFeeds(ctx context.Context, arg ListCol
 const listCollectionsWithCounts = `-- name: ListCollectionsWithCounts :many
 SELECT c.id, c.user_id, c.name, c.is_auto, c.created_at,
        COUNT(DISTINCT cf.feed_id) AS feed_count,
+       COUNT(DISTINCT cv.view_id) AS view_count,
        (SELECT COUNT(*) FROM visible_items i JOIN collection_feeds cf2 ON cf2.feed_id = i.feed_id
          WHERE cf2.collection_id = c.id AND i.read = 0) AS unread_count,
        (SELECT COUNT(*) FROM visible_items i JOIN collection_feeds cf2 ON cf2.feed_id = i.feed_id
          WHERE cf2.collection_id = c.id AND i.read = 1) AS read_count
 FROM collections c
 LEFT JOIN collection_feeds cf ON cf.collection_id = c.id
+LEFT JOIN collection_views cv ON cv.collection_id = c.id
 WHERE c.user_id = ?
 GROUP BY c.id
 ORDER BY unread_count DESC, c.name
@@ -289,6 +291,7 @@ type ListCollectionsWithCountsRow struct {
 	IsAuto      int64  `json:"is_auto"`
 	CreatedAt   string `json:"created_at"`
 	FeedCount   int64  `json:"feed_count"`
+	ViewCount   int64  `json:"view_count"`
 	UnreadCount int64  `json:"unread_count"`
 	ReadCount   int64  `json:"read_count"`
 }
@@ -309,6 +312,7 @@ func (q *Queries) ListCollectionsWithCounts(ctx context.Context, userID int64) (
 			&i.IsAuto,
 			&i.CreatedAt,
 			&i.FeedCount,
+			&i.ViewCount,
 			&i.UnreadCount,
 			&i.ReadCount,
 		); err != nil {

@@ -195,6 +195,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /views/{id}", s.auth.Require(http.HandlerFunc(s.savedView)))
 	mux.Handle("GET /views/{id}/items", s.auth.Require(http.HandlerFunc(s.savedViewItems)))
 	mux.Handle("GET /views/{id}/edit", s.auth.Require(http.HandlerFunc(s.savedViewEdit)))
+	mux.Handle("GET /views/{id}/edit-fragment", s.auth.Require(http.HandlerFunc(s.savedViewEditFragment)))
 	mux.Handle("POST /views/{id}/edit", s.auth.Require(http.HandlerFunc(s.savedViewUpdate)))
 	mux.Handle("POST /views/{id}/delete", s.auth.Require(http.HandlerFunc(s.savedViewDelete)))
 	mux.Handle("POST /views/{id}/read-all", s.auth.Require(http.HandlerFunc(s.savedViewReadAll)))
@@ -209,6 +210,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /collections/{id}/delete", s.auth.Require(http.HandlerFunc(s.collectionDelete)))
 	mux.Handle("POST /collections/{id}/add-feed", s.auth.Require(http.HandlerFunc(s.collectionAddFeed)))
 	mux.Handle("POST /collections/{id}/remove-feed/{feed_id}", s.auth.Require(http.HandlerFunc(s.collectionRemoveFeed)))
+	mux.Handle("POST /collections/{id}/add-view", s.auth.Require(http.HandlerFunc(s.collectionAddView)))
+	mux.Handle("POST /collections/{id}/remove-view/{view_id}", s.auth.Require(http.HandlerFunc(s.collectionRemoveView)))
 
 	// Lists (user-defined sets of items; favorites is the special list).
 	mux.Handle("GET /lists", s.auth.Require(http.HandlerFunc(s.listsPage)))

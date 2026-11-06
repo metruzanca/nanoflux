@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -282,5 +283,155 @@ func TestSavedViewTagOptionsAllFeeds(t *testing.T) {
 	viewPage := doGet(h, "/views/"+id+"?view=unread&sort=newest&f="+url.QueryEscape("tag:show:r/golang"), cookie).Body.String()
 	if !strings.Contains(viewPage, `data-combo-option="filter_value_0:r/rust"`) {
 		t.Fatalf("filter dialog should offer the user's tags for an all-feeds view")
+	}
+}
+
+// TestCollectionViewsScopeAndCounts covers the union between a collection's
+// member feeds and its member views: view-matched posts join the item stream and
+// counts, and removing the view drops them again.
+func TestCollectionViewsScopeAndCounts(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, author, f := savedViewFixture(t, s)
+
+	if _, err := s.store.Items.Upsert(f.ID, store.Item{
+		GUID: "other", Title: "Other post", Link: "https://x/other",
+		Categories: []string{"u/someone-else"}, FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	other, _ := s.store.Feeds.Create(u.ID, author.ID, "Other", "https://other.example/feed.xml", "", "", 900)
+	if _, err := s.store.Items.Upsert(other.ID, store.Item{
+		GUID: "rust", Title: "Rust post", Link: "https://other.example/rust",
+		Categories: []string{"r/rust"}, FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.store.Items.Upsert(other.ID, store.Item{
+		GUID: "misc", Title: "Misc post", Link: "https://other.example/misc",
+		FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	c, _ := s.store.Collections.Create(u.ID, "Dev")
+	if err := s.store.Collections.AddFeed(u.ID, c.ID, f.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	form := url.Values{
+		"title":          {"Rust view"},
+		"author_id":      {"0"},
+		"collections":    {itoa(c.ID)},
+		"filter_row":     {"0"},
+		"filter_action":  {"show"},
+		"filter_kind":    {"tag"},
+		"filter_combine": {"all"},
+		"filter_value_0": {"r/rust"},
+	}
+	rr := doForm(h, http.MethodPost, "/views", form, cookie)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("create view: %d %s", rr.Code, rr.Body.String())
+	}
+	viewID := strings.TrimPrefix(rr.Header().Get("Location"), "/views/")
+	viewIDNum, err := strconv.ParseInt(viewID, 10, 64)
+	if err != nil {
+		t.Fatalf("view id %q: %v", viewID, err)
+	}
+
+	ids, err := s.store.SavedViews.CollectionIDs(u.ID, viewIDNum)
+	if err != nil || len(ids) != 1 || ids[0] != c.ID {
+		t.Fatalf("view collection membership = %v, %v", ids, err)
+	}
+
+	base := "/collections/" + itoa(c.ID)
+	body := doGet(h, base, cookie).Body.String()
+	if !strings.Contains(body, "Rust post") || !strings.Contains(body, "Go post") {
+		t.Fatalf("collection should include feed and view items: %s", body)
+	}
+	if strings.Contains(body, "Misc post") {
+		t.Fatalf("non-matching view item leaked into the collection: %s", body)
+	}
+	if !strings.Contains(body, "sources (2)") {
+		t.Fatalf("collection sources count should include the view: %s", body)
+	}
+
+	body = doGet(h, base+"?view=feeds", cookie).Body.String()
+	if !strings.Contains(body, "Rust view") || !strings.Contains(body, `id="collection-view-`+viewID+`"`) {
+		t.Fatalf("sources tab should list the view card: %s", body)
+	}
+
+	// The index card's unread count is the union, not just the member feed.
+	body = doGet(h, "/collections", cookie).Body.String()
+	if !strings.Contains(body, "3 unread") {
+		t.Fatalf("collection index should count feed and view unread items: %s", body)
+	}
+
+	if rr := doForm(h, http.MethodPost, base+"/remove-view/"+viewID, nil, cookie); rr.Code != http.StatusNoContent {
+		t.Fatalf("remove view: %d %s", rr.Code, rr.Body.String())
+	}
+	body = doGet(h, base, cookie).Body.String()
+	if strings.Contains(body, "Rust post") {
+		t.Fatalf("removed view items should leave the collection: %s", body)
+	}
+}
+
+// TestAuthorEditViewPanel covers the inline view editor on the combined author
+// edit form: prefixed fields, lazy fragment, and saving the view and its
+// collection membership in one request.
+func TestAuthorEditViewPanel(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, author, _ := savedViewFixture(t, s)
+	c, _ := s.store.Collections.Create(u.ID, "Dev")
+
+	created, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+		AuthorID: author.ID, Title: "Inline view",
+		Filters: []string{"tag:show:u/example-poster"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := viewFieldPrefix(created.ID)
+	page := doGet(h, "/authors/"+itoa(author.ID)+"/edit?view="+itoa(created.ID), cookie).Body.String()
+	for _, want := range []string{
+		`id="view-acc-` + itoa(created.ID) + `"`,
+		`name="` + prefix + `title"`,
+		`name="` + prefix + `collections"`,
+		`name="view_ids" value="` + itoa(created.ID) + `"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("author edit view panel missing %q: %s", want, page)
+		}
+	}
+
+	frag := doGet(h, "/views/"+itoa(created.ID)+"/edit-fragment", cookie).Body.String()
+	if !strings.Contains(frag, `name="`+prefix+`title"`) || !strings.Contains(frag, `data-filter-row-token`) {
+		t.Fatalf("view edit fragment is missing its prefixed fields: %s", frag)
+	}
+
+	form := url.Values{
+		"name":                    {author.Name},
+		"view_ids":                {itoa(created.ID)},
+		prefix + "title":          {"Inline renamed"},
+		prefix + "author_id":      {itoa(author.ID)},
+		prefix + "collections":    {itoa(c.ID)},
+		prefix + "filter_row":     {"0"},
+		prefix + "filter_action":  {"show"},
+		prefix + "filter_kind":    {"tag"},
+		prefix + "filter_combine": {"all"},
+		prefix + "filter_value_0": {"u/example-poster"},
+	}
+	rr := doForm(h, http.MethodPost, "/authors/"+itoa(author.ID)+"/edit", form, cookie)
+	if rr.Code != http.StatusFound {
+		t.Fatalf("save author with inline view: %d %s", rr.Code, rr.Body.String())
+	}
+	got, err := s.store.SavedViews.ByID(u.ID, created.ID)
+	if err != nil || got.Title != "Inline renamed" || got.AuthorID != author.ID {
+		t.Fatalf("inline view not saved: %+v %v", got, err)
+	}
+	ids, _ := s.store.SavedViews.CollectionIDs(u.ID, created.ID)
+	if len(ids) != 1 || ids[0] != c.ID {
+		t.Fatalf("inline view collections = %v", ids)
 	}
 }

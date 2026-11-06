@@ -86,3 +86,62 @@ func TestViewFilterAuthorScope(t *testing.T) {
 		t.Fatalf("non-matching post should stay unread")
 	}
 }
+
+// TestViewFilterCollectionScope covers a collection's union of member feeds and
+// member views, including counts and tag options.
+func TestViewFilterCollectionScope(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	author, _ := s.Authors.Create(u.ID, "Blog", "", "")
+	inCollection, _ := s.Feeds.Create(u.ID, author.ID, "In", "https://in.example/rss.xml", "", "", 900)
+	outside, _ := s.Feeds.Create(u.ID, author.ID, "Out", "https://out.example/rss.xml", "", "", 900)
+
+	for _, it := range []Item{
+		{GUID: "in", Title: "Feed post", Link: "https://in.example/1", FetchedAt: db.Now()},
+		{GUID: "view", Title: "View post", Link: "https://out.example/1", Categories: []string{"r/golang"}, FetchedAt: db.Now()},
+		{GUID: "other", Title: "Other post", Link: "https://out.example/2", FetchedAt: db.Now()},
+	} {
+		feedID := inCollection.ID
+		if it.GUID != "in" {
+			feedID = outside.ID
+		}
+		if _, err := s.Items.Upsert(feedID, it); err != nil {
+			t.Fatalf("upsert: %v", err)
+		}
+	}
+
+	col, _ := s.Collections.Create(u.ID, "Dev")
+	if err := s.Collections.AddFeed(u.ID, col.ID, inCollection.ID); err != nil {
+		t.Fatalf("add feed: %v", err)
+	}
+	view, err := s.SavedViews.Create(u.ID, SavedView{
+		Title: "Go", Filters: []string{"tag:show:r/golang"},
+	})
+	if err != nil {
+		t.Fatalf("saved view: %v", err)
+	}
+	if err := s.SavedViews.SetCollections(u.ID, view.ID, []int64{col.ID}); err != nil {
+		t.Fatalf("set collections: %v", err)
+	}
+
+	scope := ItemFilter{
+		CollectionID: col.ID,
+		CollectionViews: []ViewFilter{
+			{TagGroups: []TagGroup{{Tags: []string{"r/golang"}, All: true}}},
+		},
+	}
+	items, _, err := s.Items.ListPage(u.ID, scope)
+	if err != nil {
+		t.Fatalf("list collection union: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("collection union should include the feed post and the view post: %+v", items)
+	}
+	if n, _ := s.Items.CountFiltered(u.ID, scope); n != 2 {
+		t.Fatalf("collection union count = %d", n)
+	}
+	cats, err := s.Items.ListCategoriesFilter(u.ID, scope)
+	if err != nil || len(cats) != 1 || cats[0].Category != "r/golang" {
+		t.Fatalf("collection union categories = %+v, %v", cats, err)
+	}
+}
