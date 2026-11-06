@@ -558,14 +558,16 @@ func (s *Server) savedView(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// A legacy unfiltered view would otherwise render every feed under the
+	// view's title. Send it to the editor to give it a recipe.
+	if len(s.storedViewFilters(u.ID, v)) == 0 {
+		http.Redirect(w, r, "/views/"+strconv.FormatInt(v.ID, 10)+"/edit", http.StatusSeeOther)
+		return
+	}
 	// An assigned view is part of its author's page now; the standalone page is
 	// only for unassigned views.
 	if v.AuthorID > 0 {
 		http.Redirect(w, r, "/authors/"+strconv.FormatInt(v.AuthorID, 10)+"?view="+strconv.FormatInt(v.ID, 10), http.StatusSeeOther)
-		return
-	}
-	if !hasSavedViewListParams(r) {
-		http.Redirect(w, r, s.savedViewCanonicalURL(u.ID, v), http.StatusFound)
 		return
 	}
 	web.Render(w, r, basePage(v.Title, u, savedViewPage(u, s.savedViewPageData(u, v, r))))
@@ -586,7 +588,7 @@ func (s *Server) savedViewItems(w http.ResponseWriter, r *http.Request) {
 	}
 	view := savedViewTab(r)
 	sort := savedViewSort(r)
-	filters := s.savedViewActiveFilters(u.ID, v, r)
+	filters := s.storedViewFilters(u.ID, v)
 	if cursor := cursorID(r, sort); cursor > 0 {
 		items, more, err := s.store.Items.ListPage(u.ID,
 			savedViewItemFilter(view, sort, cursor, v.AuthorID, filters, u.Timezone))
@@ -594,7 +596,7 @@ func (s *Server) savedViewItems(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		base := s.savedViewItemsBase(v, view, sort, filters)
+		base := s.savedViewItemsBase(v, view, sort)
 		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)),
 			pageCursorFor(base, items, more, sort, int(cursor)), false))
 		return
@@ -615,7 +617,7 @@ func (s *Server) savedViewReadAll(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	filters := s.savedViewActiveFilters(u.ID, v, r)
+	filters := s.storedViewFilters(u.ID, v)
 	tagGroups, feedGroups, _ := filters.storeGroups()
 	if _, err := s.store.Items.MarkAllReadFiltered(u.ID, store.ItemFilter{
 		Views: []store.ViewFilter{{
@@ -632,13 +634,30 @@ func (s *Server) savedViewReadAll(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// savedViewRecipeLabel renders one stored recipe row for the view page.
+func savedViewRecipeLabel(f listFilter) string {
+	action := "show "
+	if f.hidden() {
+		action = "hide "
+	}
+	return action + f.label()
+}
+
+// storedViewFilters returns a view's own recipe, validated against the user's
+// feeds. The saved view page always uses this recipe; it has no transient
+// filter layer of its own.
+func (s *Server) storedViewFilters(userID int64, v store.SavedView) listFilters {
+	return s.savedViewFilters(userID, filtersFromParams(v.Filters))
+}
+
+// savedViewPageData assembles the view page header and its scoped item list.
 func (s *Server) savedViewPageData(u store.User, v store.SavedView, r *http.Request) savedViewPageData {
 	view := savedViewTab(r)
 	sort := savedViewSort(r)
-	filters := s.savedViewActiveFilters(u.ID, v, r)
+	filters := s.storedViewFilters(u.ID, v)
 	unread, _ := s.savedViewCount(u.ID, v.AuthorID, "unread", filters, u.Timezone)
 	markAll := markAllReadData{
-		Action: savedViewFiltersURL("/views/"+strconv.FormatInt(v.ID, 10)+"/read-all", filters),
+		Action: "/views/" + strconv.FormatInt(v.ID, 10) + "/read-all",
 		Unread: unread,
 	}
 	return savedViewPageData{
@@ -648,11 +667,13 @@ func (s *Server) savedViewPageData(u store.User, v store.SavedView, r *http.Requ
 	}
 }
 
-// savedViewTab reads ?view=, defaulting to unread.
+// savedViewTab reads the page tab, defaulting to unread. A legacy non-numeric
+// ?view= is accepted as a tab fallback.
 func savedViewTab(r *http.Request) string {
-	switch r.URL.Query().Get("view") {
+	tab := tabParam(r.URL.Query())
+	switch tab {
 	case "read", "favorites", "bookmarks", "unread":
-		return r.URL.Query().Get("view")
+		return tab
 	}
 	return "unread"
 }
@@ -665,48 +686,14 @@ func savedViewSort(r *http.Request) itemSort {
 	return sortNewest
 }
 
-// savedViewActiveFilters returns explicit request filters when the list was
-// rendered with them, otherwise the stored recipe. A filter dialog submission
-// always carries filter_row, so clearing every row is distinguishable from a
-// bare link.
-func (s *Server) savedViewActiveFilters(userID int64, v store.SavedView, r *http.Request) listFilters {
-	q := r.URL.Query()
-	if q.Has("filter_row") || q.Has("f") || q.Has("tags") || q.Has("feed") {
-		return s.savedViewFilters(userID, filtersFromRequest(r))
-	}
-	if q.Has("view") || q.Has("sort") {
-		// An explicit tab/sort link with no filter params means "no filters".
-		return nil
-	}
-	return s.savedViewFilters(userID, filtersFromParams(v.Filters))
-}
-
-// hasSavedViewListParams reports whether the request already carries a list
-// state, so a bare view link can be redirected once to its canonical query.
-func hasSavedViewListParams(r *http.Request) bool {
-	q := r.URL.Query()
-	for _, key := range []string{"view", "sort", "f", "filter_row", "tags", "feed", "before", "after", "offset"} {
-		if q.Has(key) {
-			return true
-		}
-	}
-	return false
-}
-
-// savedViewCanonicalURL is the bare view link's redirect target.
-func (s *Server) savedViewCanonicalURL(userID int64, v store.SavedView) string {
-	filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
-	base := "/views/" + strconv.FormatInt(v.ID, 10)
-	return filterPageURL(base, "unread", sortNewest, filters)
-}
-
 // savedViewItemsBase builds the load-more URL for the active view state.
-func (s *Server) savedViewItemsBase(v store.SavedView, view string, sort itemSort, filters listFilters) string {
+func (s *Server) savedViewItemsBase(v store.SavedView, view string, sort itemSort) string {
 	base := scopedViewQuery("/views/"+strconv.FormatInt(v.ID, 10)+"/items", view) + "&sort=" + sort.param()
-	return filters.appendFilters(base)
+	return base
 }
 
-// savedViewScopedData renders the view's scoped item list.
+// savedViewScopedData renders the view's scoped item list. The view's stored
+// recipe is fixed, so the generic filter toolbar is intentionally absent.
 func (s *Server) savedViewScopedData(u store.User, v store.SavedView, view string, sort itemSort, filters listFilters) scopedItemsData {
 	id := v.ID
 	base := "/views/" + strconv.FormatInt(id, 10)
@@ -715,34 +702,15 @@ func (s *Server) savedViewScopedData(u store.User, v store.SavedView, view strin
 	unread, _ := s.savedViewCount(u.ID, v.AuthorID, "unread", filters, u.Timezone)
 	read, _ := s.savedViewCount(u.ID, v.AuthorID, "read", filters, u.Timezone)
 	favs, _ := s.savedViewCount(u.ID, v.AuthorID, "favorites", filters, u.Timezone)
-	filtered := 0
-	if len(filters) > 0 {
-		filtered, _ = s.savedViewCount(u.ID, v.AuthorID, view, filters, u.Timezone)
-	}
-	itemsBase := s.savedViewItemsBase(v, view, sort, filters)
-	cats, _ := s.store.Items.ListCategoriesFilter(u.ID, store.ItemFilter{
-		Views: []store.ViewFilter{{AuthorID: v.AuthorID}},
-	})
-	feedOpts := s.savedViewFeedOptions(u.ID)
+	itemsBase := s.savedViewItemsBase(v, view, sort)
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(u.Timezone, dedupItems(items)),
 		More:   pageCursorFor(itemsBase, items, more, sort, 0),
 		Mode:   s.store.ViewPrefs.Mode(u.ID, base),
 		FavTab: favs > 0 || view == "favorites", FavCount: favs,
-		Filters: filters, FilteredCount: filtered, TagOptions: tagItems(cats),
-		FeedOptions: feedOpts,
+		NoFilters: true,
 	}
-}
-
-// savedViewFeedOptions maps the feeds the view's filter modal may offer.
-func (s *Server) savedViewFeedOptions(userID int64) []comboItem {
-	fs, _ := s.store.Feeds.ListWithUnread(userID)
-	out := make([]comboItem, 0, len(fs))
-	for _, f := range fs {
-		out = append(out, comboItem{Value: strconv.FormatInt(f.Feed.ID, 10), Label: f.Feed.Title})
-	}
-	return out
 }
 
 // savedViewsForAuthor returns the views assigned to an author, for its page.
@@ -934,10 +902,4 @@ func (s *Server) authorStoreViewFilter(userID, authorID, viewID int64, tz string
 		return store.ViewFilter{}, false
 	}
 	return s.storeViewFilter(userID, v, tz), true
-}
-
-// savedViewFiltersURL encodes the active filters onto a POST action URL (the
-// mark-all handler re-reads them from the query).
-func savedViewFiltersURL(base string, filters listFilters) string {
-	return filterActionURL(base, filters)
 }

@@ -31,7 +31,7 @@ templ savedViewsPage(d savedViewsPageData) {
 				</div>
 				<ul class="feed-cards">
 					for _, r := range g.Rows {
-						@savedViewCard(r)
+						@savedViewIndexCard(r)
 					}
 				</ul>
 			</section>
@@ -39,8 +39,47 @@ templ savedViewsPage(d savedViewsPageData) {
 	}
 }
 
-// savedViewCard is one view as a feed-style card: title, base tab, scope, filter
-// chips and its matching-item count, with open/edit actions.
+// savedViewIndexCard is the compact card used on the /views index: the view
+// name, its unread count and assignment. The saved recipe is not repeated here;
+// open the view or its editor to inspect it.
+templ savedViewIndexCard(r savedViewRow) {
+	{{ id := strconv.FormatInt(r.ID, 10) }}
+	{{ href := "/views/" + id }}
+	if r.AuthorID > 0 {
+		{{ href = "/authors/" + strconv.FormatInt(r.AuthorID, 10) + "?view=" + id }}
+	}
+	if len(r.Filters) == 0 {
+		// A view from before filters became mandatory: send it to the editor.
+		{{ href = "/views/" + id + "/edit" }}
+	}
+	<li id={ "view-" + id } class="feed-card-item">
+		<div class="card feed-card">
+			<div class="feed-card-main">
+				<div class="feed-card-title">
+					<a href={ templ.URL(href) }>
+						<strong>{ r.Title }</strong>
+					</a>
+				</div>
+				<div class="item-meta">
+					{ r.Count } unread
+					if r.AuthorID > 0 && r.AuthorName != "" {
+						· assigned to <a href={ templ.URL("/authors/" + strconv.FormatInt(r.AuthorID, 10)) }>{ r.AuthorName }</a>
+					} else {
+						· unassigned
+					}
+				</div>
+			</div>
+			<div class="feed-card-side">
+				<div class="row-actions">
+					<a class="small" title="edit" href={ templ.URL("/views/" + id + "/edit") }>@web.EditIcon()</a>
+				</div>
+			</div>
+		</div>
+	</li>
+}
+
+// savedViewCard is one view as a feed-style card on an author page: title,
+// unread count, filter chips and collection links, with open/edit actions.
 templ savedViewCard(r savedViewRow) {
 	{{ id := strconv.FormatInt(r.ID, 10) }}
 	{{ href := "/views/" + id }}
@@ -104,6 +143,20 @@ templ savedViewPage(u store.User, d savedViewPageData) {
 		if d.Row.AuthorID > 0 && d.Row.AuthorName != "" {
 			<p class="muted small">
 				assigned to <a href={ templ.URL("/authors/" + strconv.FormatInt(d.Row.AuthorID, 10)) }>{ d.Row.AuthorName }</a>
+			</p>
+		} else {
+			<p class="muted small">unassigned</p>
+		}
+		if len(d.Row.Filters) > 0 {
+			<p class="muted small">
+				recipe:
+				for i, f := range d.Row.Filters {
+					if i > 0 {
+						·
+					}
+					{ savedViewRecipeLabel(f) }
+				}
+				· <a href={ templ.URL("/views/" + id + "/edit") }>edit</a>
 			</p>
 		}
 	</section>
