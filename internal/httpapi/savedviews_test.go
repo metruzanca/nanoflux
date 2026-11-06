@@ -255,3 +255,54 @@ func TestSavedViewReadAllHonorsFilters(t *testing.T) {
 		t.Fatalf("non-matching post should stay unread")
 	}
 }
+
+// TestSavedViewTagOptionsAllFeedsScope covers the edit form and filter dialog for
+// a view with all-feeds scope: the option lookup has no author or collection id,
+// and it must still offer the user's tags.
+func TestSavedViewTagOptionsAllFeedsScope(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Blogger", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://example.com/feed.xml", "", "", 900)
+	for _, it := range []store.Item{
+		{GUID: "go", Title: "Go post", Link: "https://example.com/go", Categories: []string{"r/golang"}, FetchedAt: db.Now()},
+		{GUID: "rust", Title: "Rust post", Link: "https://example.com/rust", Categories: []string{"r/rust"}, FetchedAt: db.Now()},
+	} {
+		if _, err := s.store.Items.Upsert(f.ID, it); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	form := url.Values{
+		"title":            {"All feeds"},
+		"author_id":        {"0"},
+		"scope_author":     {"0"},
+		"scope_collection": {"0"},
+		"view":             {"unread"},
+		"sort":             {"newest"},
+		"filter_row":       {"0"},
+		"filter_action":    {"show"},
+		"filter_kind":      {"tag"},
+		"filter_combine":   {"all"},
+		"filter_value_0":   {"r/golang"},
+	}
+	rr := doForm(h, http.MethodPost, "/views", form, cookie)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("create view: %d %s", rr.Code, rr.Body.String())
+	}
+	id := strings.TrimPrefix(rr.Header().Get("Location"), "/views/")
+
+	editPage := doGet(h, "/views/"+id+"/edit", cookie).Body.String()
+	for _, tag := range []string{"r/golang", "r/rust"} {
+		option := `data-combo-option="filter_value_0:` + tag + `"`
+		if !strings.Contains(editPage, option) {
+			t.Fatalf("edit form should offer tag %q for an all-feeds view", tag)
+		}
+	}
+
+	viewPage := doGet(h, "/views/"+id+"?view=unread&sort=newest&f="+url.QueryEscape("tag:show:r/golang"), cookie).Body.String()
+	if !strings.Contains(viewPage, `data-combo-option="filter_value_0:r/rust"`) {
+		t.Fatalf("filter dialog should offer the user's tags for an all-feeds view")
+	}
+}

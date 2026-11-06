@@ -1328,7 +1328,9 @@ func (s *ItemStore) ListCategories(userID int64, f ItemFilter) ([]CategoryCount,
 		}
 		return categoryCounts(len(rows), func(i int) (string, int64) { return rows[i].Category, rows[i].ItemCount }), nil
 	default:
-		return nil, nil
+		// No scope means every feed, the shape a saved view with all-feeds scope
+		// uses. ListUserCategories is the same read as the global tag picker.
+		return s.ListUserCategories(userID, false)
 	}
 }
 

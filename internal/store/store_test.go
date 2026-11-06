@@ -480,6 +480,16 @@ func TestItemTagFiltering(t *testing.T) {
 		t.Fatalf("top category = %+v, want r/golang x2", cats[0])
 	}
 
+	// No scope means every feed. A saved view with all-feeds scope reads its
+	// tag options this way, so it must not come back empty.
+	allCats, err := s.Items.ListCategories(u.ID, ItemFilter{})
+	if err != nil {
+		t.Fatalf("ListCategories all feeds: %v", err)
+	}
+	if len(allCats) != 3 {
+		t.Fatalf("all-feeds categories = %+v, want 3", allCats)
+	}
+
 	list := func(tags ...string) []string {
 		t.Helper()
 		items, _, err := s.Items.ListPage(u.ID, ItemFilter{FeedID: f.ID, Tags: tags, Limit: 10})
