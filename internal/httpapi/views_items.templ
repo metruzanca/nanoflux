@@ -164,6 +164,22 @@ templ sourcesList(sources []store.ItemSource) {
 	}
 }
 
+// viewSourcesList renders the saved views that a collection reaches an item
+// through when that item's own feeds are not collection members.
+templ viewSourcesList(sources []store.ItemViewSource) {
+	if len(sources) == 1 {
+		· from view <a href={ templ.URL("/views/" + strconv.FormatInt(sources[0].ID, 10)) } title={ "open the view that matches this post" }>{ sources[0].Title }</a>
+	} else if len(sources) > 1 {
+		· from views
+		for i, v := range sources {
+			if i > 0 {
+				{ ", " }
+			}
+			<a href={ templ.URL("/views/" + strconv.FormatInt(v.ID, 10)) } title={ "open the view that matches this post" }>{ v.Title }</a>
+		}
+	}
+}
+
 // attrParts renders an attribution as space-separated parts, linking the ones
 // that have a URL and marking external links. The parts come from the item's
 // plugin decoration (store.AttributionPart), already resolved by the store.
@@ -248,6 +264,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 							<span>{ it.FeedTitle }</span>
 							@sourcesList(it.Sources)
 						}
+						@viewSourcesList(it.ViewSources)
 						if it.PublishedAt != "" {
 							· { web.TimeFmt(it.Timezone, it.PublishedAt) }
 						}
@@ -260,7 +277,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 					}
 				</div>
 				<div class="row-actions">
-					@itemToggleButtons(it.ID, it.Favorite, it.Bookmark, it.Read, false, hideAuthor)
+					@itemToggleButtons(it.ID, it.Favorite, it.Bookmark, it.Read, false, hideAuthor, it.CollectionID)
 					@itemMenuFullSys(it.ID, menuAuthorID(it, hideAuthor), "", "", false, it.FeedIsSystem)
 				</div>
 			</div>
@@ -273,11 +290,12 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 // surface: true means the modal (swap target is the controls container and the
 // handler answers with just the fresh toggles); false means the row (swap target
 // is the row itself and the handler answers with the fresh row). hideAuthor
-// carries the author-scoped flag a swapped row needs to stay consistent.
-templ itemToggleButtons(itemID int64, favorite, bookmark, read, inView, hideAuthor bool) {
-	@favToggle(itemID, favorite, toggleTarget(itemID, inView), toggleVals(inView, hideAuthor))
-	@bookmarkToggle(itemID, bookmark, toggleTarget(itemID, inView), toggleVals(inView, hideAuthor))
-	@readToggle(itemID, read, toggleTarget(itemID, inView), toggleVals(inView, false))
+// carries the author-scoped flag a swapped row needs to stay consistent, and
+// collectionID preserves a collection row's view-source context.
+templ itemToggleButtons(itemID int64, favorite, bookmark, read, inView, hideAuthor bool, collectionID int64) {
+	@favToggle(itemID, favorite, toggleTarget(itemID, inView), toggleVals(inView, hideAuthor, collectionID))
+	@bookmarkToggle(itemID, bookmark, toggleTarget(itemID, inView), toggleVals(inView, hideAuthor, collectionID))
+	@readToggle(itemID, read, toggleTarget(itemID, inView), toggleVals(inView, false, collectionID))
 }
 
 // toggleTarget is the htmx swap target for a toggle: the modal's controls
@@ -290,22 +308,30 @@ func toggleTarget(itemID int64, inView bool) string {
 }
 
 // toggleVals builds the hx-vals JSON for a toggle: view=1 asks the handler for
-// the modal toggles; hideAuthor preserves the author-scoped row.
-func toggleVals(inView, hideAuthor bool) string {
+// the modal toggles, hideAuthor preserves the author-scoped row, and collection
+// keeps a collection row's view-source link through the swap.
+func toggleVals(inView, hideAuthor bool, collectionID int64) string {
+	var parts []string
 	if inView {
-		return `{"view":"1"}`
+		parts = append(parts, `"view":"1"`)
 	}
 	if hideAuthor {
-		return `{"hideAuthor":"1"}`
+		parts = append(parts, `"hideAuthor":"1"`)
 	}
-	return "{}"
+	if collectionID > 0 {
+		parts = append(parts, `"collection":"`+strconv.FormatInt(collectionID, 10)+`"`)
+	}
+	if len(parts) == 0 {
+		return "{}"
+	}
+	return "{" + strings.Join(parts, ",") + "}"
 }
 
 // itemViewControls is the modal header's toggle container, swapped in place when
 // a toggle is used from the modal.
-templ itemViewControls(itemID int64, favorite, bookmark, read bool) {
+templ itemViewControls(itemID int64, favorite, bookmark, read bool, collectionID int64) {
 	<div class="item-controls" id="item-view-controls">
-		@itemToggleButtons(itemID, favorite, bookmark, read, true, false)
+		@itemToggleButtons(itemID, favorite, bookmark, read, true, false, collectionID)
 	</div>
 }
 
@@ -393,11 +419,11 @@ func menuAuthorID(it store.ItemWithFeed, hideAuthor bool) int64 {
 
 templ ScopedItems(d scopedItemsData) {
 	if d.SwapOOB {
-		<div id="scoped-items" hx-swap-oob="outerHTML">
+		<div id="scoped-items" hx-swap-oob="outerHTML" if d.ScopeCollectionID > 0 { data-collection-id={ strconv.FormatInt(d.ScopeCollectionID, 10) } }>
 			@scopedItemsInner(d)
 		</div>
 	} else {
-		<div id="scoped-items">
+		<div id="scoped-items" if d.ScopeCollectionID > 0 { data-collection-id={ strconv.FormatInt(d.ScopeCollectionID, 10) } }>
 			@scopedItemsInner(d)
 		</div>
 	}
@@ -834,7 +860,7 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 		<div id="item-dialog-controls-src">
 			<h1>{ d.Title }</h1>
 			<div class="item-controls">
-				@itemViewControls(d.ID, d.Favorite, d.Bookmark, d.Read)
+				@itemViewControls(d.ID, d.Favorite, d.Bookmark, d.Read, d.CollectionID)
 				@itemMenuFullSys(d.ID, d.AuthorID, d.SourceURL, d.ShareToken, true, d.FeedIsSystem)
 			</div>
 		</div>
@@ -850,6 +876,7 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 					<a href={ templ.URL(u) }>feed</a>
 				}
 			}
+			@viewSourcesList(d.ViewSources)
 			if d.PublishedAt != "" {
 				· { web.TimeFmt(d.Timezone, d.PublishedAt) }
 			}

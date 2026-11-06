@@ -145,3 +145,48 @@ func TestViewFilterCollectionScope(t *testing.T) {
 		t.Fatalf("collection union categories = %+v, %v", cats, err)
 	}
 }
+
+// TestMatchingViews reports which view predicates each item satisfies, using
+// the same clause that scopes a collection list.
+func TestMatchingViews(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	author, _ := s.Authors.Create(u.ID, "Blog", "", "")
+	feed, _ := s.Feeds.Create(u.ID, author.ID, "Blog", "https://blog.example/rss.xml", "", "", 900)
+
+	for _, it := range []Item{
+		{GUID: "go", Title: "Go post", Link: "https://blog.example/go", Categories: []string{"r/golang"}, FetchedAt: db.Now()},
+		{GUID: "rust", Title: "Rust post", Link: "https://blog.example/rust", Categories: []string{"r/rust"}, FetchedAt: db.Now()},
+		{GUID: "both", Title: "Both post", Link: "https://blog.example/both", Categories: []string{"r/golang", "r/rust"}, FetchedAt: db.Now()},
+	} {
+		if _, err := s.Items.Upsert(feed.ID, it); err != nil {
+			t.Fatalf("upsert: %v", err)
+		}
+	}
+	goID, _ := s.Items.ByFeedIdentity(feed.ID, "go")
+	rustID, _ := s.Items.ByFeedIdentity(feed.ID, "rust")
+	bothID, _ := s.Items.ByFeedIdentity(feed.ID, "both")
+
+	views := []ViewFilter{
+		{TagGroups: []TagGroup{{Tags: []string{"r/golang"}, All: true}}},
+		{TagGroups: []TagGroup{{Tags: []string{"r/rust"}, All: true}}},
+	}
+	matched, err := s.Items.MatchingViews(u.ID, []int64{goID, rustID, bothID}, views)
+	if err != nil {
+		t.Fatalf("matching views: %v", err)
+	}
+	if got := matched[goID]; len(got) != 1 || got[0] != 0 {
+		t.Fatalf("go should match view 0, got %v", got)
+	}
+	if got := matched[rustID]; len(got) != 1 || got[0] != 1 {
+		t.Fatalf("rust should match view 1, got %v", got)
+	}
+	if got := matched[bothID]; len(got) != 2 || got[0] != 0 || got[1] != 1 {
+		t.Fatalf("both should match both views, got %v", got)
+	}
+	// Another user's items never match.
+	other := mustUser(t, s, "bob")
+	if got, _ := s.Items.MatchingViews(other.ID, []int64{goID}, views); len(got) != 0 {
+		t.Fatalf("cross-user match = %v", got)
+	}
+}

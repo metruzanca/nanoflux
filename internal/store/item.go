@@ -114,6 +114,12 @@ type ItemWithFeed struct {
 	AuthorID     int64
 	AuthorName   string
 	Sources      []ItemSource // additional feeds this item appears in (view-time dedup)
+	// ViewSources are the saved views that put this item in the collection it
+	// was loaded from when the item's own feeds are not collection members.
+	ViewSources []ItemViewSource
+	// CollectionID is the collection context this row was rendered in (0
+	// elsewhere). It lets a row toggle preserve its view-source links.
+	CollectionID int64
 	// Kind is the item's view-time display classification (from the plugin's
 	// decorator). KindText is the default.
 	Kind ItemKind
@@ -140,6 +146,13 @@ type ItemSource struct {
 	AuthorID   int64  // the source feed's author, for the source line's internal link
 	AuthorName string // "" when the source feed has no author
 	Link       string
+}
+
+// ItemViewSource is one saved view that brings an item into a collection when
+// none of the collection's member feeds do.
+type ItemViewSource struct {
+	ID    int64
+	Title string
 }
 
 // TagGroup is one tag predicate from a filter row: its tags are combined with
@@ -840,6 +853,50 @@ func (s *ItemStore) countFilteredFrom(userID int64, f ItemFilter, from string) (
 		return 0, err
 	}
 	return n, nil
+}
+
+// MatchingViews reports which of the supplied view predicates each item
+// matches. Values are positions into views. It reuses the same clause the
+// collection scope uses, so view-source attribution cannot drift from the list
+// the item appears in.
+func (s *ItemStore) MatchingViews(userID int64, itemIDs []int64, views []ViewFilter) (map[int64][]int, error) {
+	out := make(map[int64][]int)
+	if userID == 0 || len(itemIDs) == 0 || len(views) == 0 {
+		return out, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(itemIDs)), ",")
+	var b strings.Builder
+	args := make([]any, 0, len(views)*(len(itemIDs)+4))
+	for i, v := range views {
+		if i > 0 {
+			b.WriteString(" UNION ALL ")
+		}
+		clause, viewArgs := viewFilterClause("i.id", "COALESCE(i.published_at, i.fetched_at)", v)
+		b.WriteString("SELECT ? AS view_index, i.id FROM visible_items i WHERE i.user_id = ? AND i.id IN (")
+		b.WriteString(placeholders)
+		b.WriteString(") AND (")
+		b.WriteString(clause)
+		b.WriteString(")")
+		args = append(args, i, userID)
+		for _, id := range itemIDs {
+			args = append(args, id)
+		}
+		args = append(args, viewArgs...)
+	}
+	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var index int
+		var id int64
+		if err := rows.Scan(&index, &id); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], index)
+	}
+	return out, rows.Err()
 }
 
 // AuthorFilterPreview is the draft-rule preview on the author settings page.

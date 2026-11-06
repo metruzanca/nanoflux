@@ -98,6 +98,19 @@ func TestDedupItems(t *testing.T) {
 	if got := dedupItems(items); len(got) != 2 {
 		t.Fatalf("empty titles should stay separate: %d", len(got))
 	}
+
+	// Merging keeps the union of view sources, deduped by view id.
+	items = []store.ItemWithFeed{
+		item("Same post", 1),
+		item("Same post", 2),
+	}
+	items[0].ViewSources = []store.ItemViewSource{{ID: 7, Title: "First"}}
+	items[1].ViewSources = []store.ItemViewSource{{ID: 8, Title: "Second"}, {ID: 7, Title: "First"}}
+	got = dedupItems(items)
+	if len(got) != 1 || len(got[0].ViewSources) != 2 ||
+		got[0].ViewSources[0].ID != 7 || got[0].ViewSources[1].ID != 8 {
+		t.Fatalf("merged row should carry both view sources: %+v", got)
+	}
 }
 
 // A plugin decorator's DedupeKey collapses the same content reposted under

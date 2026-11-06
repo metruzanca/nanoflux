@@ -724,11 +724,116 @@ func (s *Server) viewFiltersFromViews(userID int64, views []store.SavedView, tz 
 	return out
 }
 
+// collectionViewMatch is one usable saved view in a collection: its item
+// predicate plus the id and title used by a view-source link.
+type collectionViewMatch struct {
+	ID        int64
+	Title     string
+	Predicate store.ViewFilter
+}
+
 // collectionViewFilters returns the item predicates of a collection's member
 // views, for the collection's item scope.
 func (s *Server) collectionViewFilters(userID, collectionID int64, tz string) []store.ViewFilter {
+	matches := s.collectionViewMatches(userID, collectionID, tz)
+	out := make([]store.ViewFilter, 0, len(matches))
+	for _, m := range matches {
+		out = append(out, m.Predicate)
+	}
+	return out
+}
+
+// collectionViewMatches resolves a collection's member views into item
+// predicates. Unfiltered legacy views are skipped, matching the collection
+// scope. The id and title ride along for view-source attribution.
+func (s *Server) collectionViewMatches(userID, collectionID int64, tz string) []collectionViewMatch {
 	views, _ := s.store.SavedViews.ListByCollection(userID, collectionID)
-	return s.viewFiltersFromViews(userID, views, tz)
+	out := make([]collectionViewMatch, 0, len(views))
+	for _, v := range views {
+		filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
+		if len(filters) == 0 {
+			continue
+		}
+		tagGroups, feedGroups, _ := filters.storeGroups()
+		out = append(out, collectionViewMatch{
+			ID: v.ID, Title: v.Title,
+			Predicate: store.ViewFilter{
+				TagGroups: tagGroups, FeedGroups: feedGroups,
+				TimeGroups: filters.timeGroups(tz),
+			},
+		})
+	}
+	return out
+}
+
+// annotateCollectionViews marks the items a collection reaches only through a
+// member view, meaning neither their owner feed nor any cross-feed membership
+// is a collection member feed. Those items carry a link to the matching view so
+// the reason they are here is visible, and CollectionID lets a row toggle
+// preserve the context through its swap.
+func (s *Server) annotateCollectionViews(userID, collectionID int64, tz string, items []store.ItemWithFeed) {
+	if collectionID <= 0 || len(items) == 0 {
+		return
+	}
+	matches := s.collectionViewMatches(userID, collectionID, tz)
+	if len(matches) == 0 {
+		return
+	}
+	memberFeeds, _ := s.store.Collections.Feeds(userID, collectionID)
+	member := make(map[int64]bool, len(memberFeeds))
+	for _, f := range memberFeeds {
+		member[f.ID] = true
+	}
+	index := make(map[int64]int, len(items))
+	ids := make([]int64, 0, len(items))
+	for i := range items {
+		items[i].CollectionID = collectionID
+		if collectionHasFeed(items[i], member) {
+			continue
+		}
+		index[items[i].ID] = i
+		ids = append(ids, items[i].ID)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	predicates := make([]store.ViewFilter, len(matches))
+	for i, m := range matches {
+		predicates[i] = m.Predicate
+	}
+	matched, err := s.store.Items.MatchingViews(userID, ids, predicates)
+	if err != nil {
+		log.Error("match collection views", "collection_id", collectionID, "err", err)
+		return
+	}
+	for id, viewIndexes := range matched {
+		i, ok := index[id]
+		if !ok {
+			continue
+		}
+		for _, vi := range viewIndexes {
+			if vi < 0 || vi >= len(matches) {
+				continue
+			}
+			items[i].ViewSources = append(items[i].ViewSources, store.ItemViewSource{
+				ID: matches[vi].ID, Title: matches[vi].Title,
+			})
+		}
+	}
+}
+
+// collectionHasFeed reports whether an item belongs to any of a collection's
+// member feeds (its owner feed or a cross-feed membership).
+func collectionHasFeed(it store.ItemWithFeed, member map[int64]bool) bool {
+	if member[it.FeedID] {
+		return true
+	}
+	for _, src := range it.Sources {
+		if member[src.FeedID] {
+			return true
+		}
+	}
+	return false
 }
 
 // storeViewFilter converts a saved view into the store's query predicate. An

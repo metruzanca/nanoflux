@@ -76,6 +76,20 @@ func dedupItems(items []store.ItemWithFeed) []store.ItemWithFeed {
 				Link:      it.Link,
 			})
 		}
+		// Keep the view sources of every merged duplicate: the survivor then
+		// links each view that also put the content in the collection.
+		for _, vs := range it.ViewSources {
+			seen := false
+			for _, have := range surv.ViewSources {
+				if have.ID == vs.ID {
+					seen = true
+					break
+				}
+			}
+			if !seen {
+				surv.ViewSources = append(surv.ViewSources, vs)
+			}
+		}
 		// A title match may carry a content identity too; fold both in so later
 		// items with the same key cluster with this row.
 		if matched.link == "" {

@@ -679,14 +679,20 @@ type itemViewData struct {
 	Gallery       []string                // full-res images of a gallery post
 	FeedIsSystem  bool                    // true for a saved page (hidden feed/author, no internal links)
 	Attribution   []store.AttributionPart // source line from the item's decoration; author/feed when empty
-	Enclosures    []store.Enclosure
-	ShareToken    string        // public share token, "" when the item is not shared
-	Timezone      string        // user's IANA timezone, for relative timestamps in templates
-	Favorite      bool          // drives the modal's favorite toggle
-	Bookmark      bool          // drives the modal's bookmark toggle
-	Read          bool          // drives the modal's read/unread toggle (true after auto-mark)
-	ProxyImages   bool          // route remote images through /img (authenticated modal only)
-	Progress      *itemProgress // saved playback position; nil when not resumable
+	// ViewSources link the saved views that bring this item into the collection
+	// it was opened from, when its feeds are not collection members.
+	ViewSources []store.ItemViewSource
+	// CollectionID is the collection context the modal was opened from (0 when
+	// it has none), carried through toggle requests.
+	CollectionID int64
+	Enclosures   []store.Enclosure
+	ShareToken   string        // public share token, "" when the item is not shared
+	Timezone     string        // user's IANA timezone, for relative timestamps in templates
+	Favorite     bool          // drives the modal's favorite toggle
+	Bookmark     bool          // drives the modal's bookmark toggle
+	Read         bool          // drives the modal's read/unread toggle (true after auto-mark)
+	ProxyImages  bool          // route remote images through /img (authenticated modal only)
+	Progress     *itemProgress // saved playback position; nil when not resumable
 }
 
 // imgSrc returns a remote image URL as it should be rendered: proxied through
@@ -769,6 +775,16 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 			it.Read = true
 		}
 	}
+	// A modal opened from a collection carries that context so it can show the
+	// view(s) that brought the item in. An unknown or foreign collection is
+	// ignored and the modal opens normally.
+	if cid, err := strconv.ParseInt(r.URL.Query().Get("collection"), 10, 64); err == nil && cid > 0 {
+		if _, err := s.store.Collections.ByID(u.ID, cid); err == nil {
+			rows := []store.ItemWithFeed{it}
+			s.annotateCollectionViews(u.ID, cid, u.Timezone, rows)
+			it = rows[0]
+		}
+	}
 	data := itemViewData{
 		ID:            it.ID,
 		GUID:          it.GUID,
@@ -791,6 +807,8 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		Read:          it.Read,
 		FeedIsSystem:  it.FeedIsSystem,
 		Attribution:   it.Attribution,
+		ViewSources:   it.ViewSources,
+		CollectionID:  it.CollectionID,
 		ProxyImages:   true,
 	}
 	// Enclosures are loaded before the render plugins so a renderer can see the
@@ -910,6 +928,30 @@ func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, sharedItemPage(it, data))
 }
 
+// formCollectionID reads the collection context a row toggle carries. 0 when
+// the row was not rendered in a collection.
+func formCollectionID(r *http.Request) int64 {
+	id, _ := strconv.ParseInt(r.FormValue("collection"), 10, 64)
+	return id
+}
+
+// collectionItemRow loads an item for a row swap and re-attaches the view
+// sources when the row came from a collection, so a favorite/read/bookmark
+// toggle does not drop the "from view" link.
+func (s *Server) collectionItemRow(userID, itemID, collectionID int64, tz string) (store.ItemWithFeed, error) {
+	row, err := s.store.Items.OneWithFeed(userID, itemID)
+	if err != nil {
+		return row, err
+	}
+	row.Timezone = tz
+	if collectionID > 0 {
+		rows := []store.ItemWithFeed{row}
+		s.annotateCollectionViews(userID, collectionID, tz, rows)
+		row = rows[0]
+	}
+	return row, nil
+}
+
 func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -931,21 +973,20 @@ func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
 	// plus an out-of-band update of the row behind the dialog (if the list is
 	// author-scoped, keep it author-scoped) so the two never disagree.
 	if r.FormValue("view") == "1" {
-		row, _ := s.store.Items.OneWithFeed(u.ID, id)
-		row.Timezone = u.Timezone
+		collectionID := formCollectionID(r)
+		row, _ := s.collectionItemRow(u.ID, id, collectionID, u.Timezone)
 		hideAuthor := isAuthorPageURL(r.Header.Get("HX-Current-URL"))
 		web.Render(w, r, templ.Join(
-			itemViewControls(id, it.Favorite, it.Bookmark, !it.Read),
+			itemViewControls(id, it.Favorite, it.Bookmark, !it.Read, collectionID),
 			ItemRowOOB(row, hideAuthor),
 		))
 		return
 	}
-	row, err := s.store.Items.OneWithFeed(u.ID, id)
+	row, err := s.collectionItemRow(u.ID, id, formCollectionID(r), u.Timezone)
 	if err != nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	row.Timezone = u.Timezone
 	// Author-scoped pages suppress the (self-referential) author link; the row's
 	// toggle buttons carry hideAuthor=1 so a swapped row stays consistent.
 	web.Render(w, r, ItemRow(row, r.FormValue("hideAuthor") == "1"))
@@ -983,12 +1024,11 @@ func (s *Server) itemUnread(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	row, err := s.store.Items.OneWithFeed(u.ID, id)
+	row, err := s.collectionItemRow(u.ID, id, formCollectionID(r), u.Timezone)
 	if err != nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	row.Timezone = u.Timezone
 	hideAuthor := r.FormValue("hideAuthor") == "1" || isAuthorPageURL(r.Header.Get("HX-Current-URL"))
 	web.Render(w, r, ItemRow(row, hideAuthor))
 }
@@ -1090,21 +1130,20 @@ func (s *Server) itemFavorite(w http.ResponseWriter, r *http.Request) {
 	// plus an out-of-band update of the row behind the dialog (if the list is
 	// author-scoped, keep it author-scoped) so the two never disagree.
 	if r.FormValue("view") == "1" {
-		row, _ := s.store.Items.OneWithFeed(u.ID, id)
-		row.Timezone = u.Timezone
+		collectionID := formCollectionID(r)
+		row, _ := s.collectionItemRow(u.ID, id, collectionID, u.Timezone)
 		hideAuthor := isAuthorPageURL(r.Header.Get("HX-Current-URL"))
 		web.Render(w, r, templ.Join(
-			itemViewControls(id, !it.Favorite, it.Bookmark, it.Read),
+			itemViewControls(id, !it.Favorite, it.Bookmark, it.Read, collectionID),
 			ItemRowOOB(row, hideAuthor),
 		))
 		return
 	}
-	row, err := s.store.Items.OneWithFeed(u.ID, id)
+	row, err := s.collectionItemRow(u.ID, id, formCollectionID(r), u.Timezone)
 	if err != nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	row.Timezone = u.Timezone
 	web.Render(w, r, ItemRow(row, r.FormValue("hideAuthor") == "1"))
 }
 
@@ -1129,21 +1168,20 @@ func (s *Server) itemBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.FormValue("view") == "1" {
-		row, _ := s.store.Items.OneWithFeed(u.ID, id)
-		row.Timezone = u.Timezone
+		collectionID := formCollectionID(r)
+		row, _ := s.collectionItemRow(u.ID, id, collectionID, u.Timezone)
 		hideAuthor := isAuthorPageURL(r.Header.Get("HX-Current-URL"))
 		web.Render(w, r, templ.Join(
-			itemViewControls(id, !it.Bookmark, it.Favorite, it.Read),
+			itemViewControls(id, !it.Bookmark, it.Favorite, it.Read, collectionID),
 			ItemRowOOB(row, hideAuthor),
 		))
 		return
 	}
-	row, err := s.store.Items.OneWithFeed(u.ID, id)
+	row, err := s.collectionItemRow(u.ID, id, formCollectionID(r), u.Timezone)
 	if err != nil {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	row.Timezone = u.Timezone
 	web.Render(w, r, ItemRow(row, r.FormValue("hideAuthor") == "1"))
 }
 
@@ -2861,6 +2899,7 @@ func (s *Server) collectionScopedItems(userID, collectionID int64, view string, 
 	f := scopedFilter(view, sort, 0, 0, collectionID, filters, tz)
 	f.CollectionViews = collectionViews
 	items, more, _ := s.store.Items.ListPage(userID, f)
+	s.annotateCollectionViews(userID, collectionID, tz, items)
 	itemsBase := filters.appendFilters(base + "/items?view=" + view + "&sort=" + sort.param())
 	if len(collectionViews) > 0 {
 		d.UnreadCount, _ = s.store.Items.CountFiltered(userID, collectionCountFilter(collectionID, collectionViews, "unread", tz))

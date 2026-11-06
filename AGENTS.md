@@ -512,6 +512,13 @@ code.
   pass the collection's view predicates. Auto and no-collection never hold
   views; the view form's picker and the membership writer exclude auto
   collections.
+- A collection item reached only through a member view (its owner feed and
+  cross-feed memberships are outside the collection's feeds) carries
+  `ItemWithFeed.ViewSources` and renders "from view <title>" linking
+  `/views/<id>` in its row and modal. `annotateCollectionViews` computes this
+  with `ItemStore.MatchingViews`, which reuses `viewFilterClause`; `dedupItems`
+  unions the view sources of merged rows. `ItemWithFeed.CollectionID` carries
+  the collection through row toggles so the link survives a swapped row.
 - A view's collection memberships are edited with the `collections` multi-select
   in its form (`SavedViewStore.SetCollections`, `CollectionIDs`,
   `ListByCollection`, `CollectionsByView`). Removing a view from a collection

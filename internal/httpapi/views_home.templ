@@ -65,7 +65,7 @@ templ homeSectionSortControl(collectionID int64, sort string) {
 // "more" link pinned to the bottom-right.
 templ homeSectionBlock(sec homeSectionData) {
 	{{ id := strconv.FormatInt(sec.Collection.ID, 10) }}
-	<section class="home-section" id={ "home-section-" + id }>
+	<section class="home-section" id={ "home-section-" + id } data-collection-id={ id }>
 		<div class="row home-section-head">
 			<h2><a href={ "/collections/" + id }>{ sec.Collection.Name }</a></h2>
 			<div class="row-actions home-section-controls">
