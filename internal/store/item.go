@@ -291,7 +291,7 @@ func (s *ItemStore) UpsertMany(feedID int64, items []Item) ([]UpsertResult, erro
 		return nil, fmt.Errorf("upsert item feed owner: %w", err)
 	}
 	for i, it := range items {
-		itemID, inserted, err := upsertTx(ctx, q, feedID, userID, it)
+		itemID, inserted, err := upsertTx(ctx, tx, q, feedID, userID, it)
 		if err != nil {
 			return nil, err
 		}
@@ -305,7 +305,7 @@ func (s *ItemStore) UpsertMany(feedID int64, items []Item) ([]UpsertResult, erro
 
 // upsertTx is the per-item upsert, run inside a caller-provided transaction. It
 // reports the stored row id and whether the item is new to feedID.
-func upsertTx(ctx context.Context, q *sqlcgen.Queries, feedID, userID int64, it Item) (itemID int64, inserted bool, err error) {
+func upsertTx(ctx context.Context, tx *sql.Tx, q *sqlcgen.Queries, feedID, userID int64, it Item) (itemID int64, inserted bool, err error) {
 	it.Summary = sanitize.HTML(it.Summary)
 	key := dedupKey(it)
 	crossKey := crossFeedKey(it.SharedKey)
@@ -320,6 +320,26 @@ func upsertTx(ctx context.Context, q *sqlcgen.Queries, feedID, userID int64, it 
 		}
 		if errors.Is(err, sql.ErrNoRows) {
 			itemID = 0
+		}
+	}
+
+	// The row this feed already stored for the same identity. A pre-cross-key
+	// row can coexist with the cross-key row that now owns the post; it must be
+	// folded into the owner rather than having the key assigned to it, which
+	// would violate the per-user cross-key unique index and fail the whole
+	// batch (leaving the feed unable to ingest anything).
+	if itemID != 0 {
+		localID, lookupErr := q.GetItemByDedupKey(ctx, sqlcgen.GetItemByDedupKeyParams{
+			FeedID:   feedID,
+			DedupKey: key,
+		})
+		if lookupErr != nil && !errors.Is(lookupErr, sql.ErrNoRows) {
+			return 0, false, fmt.Errorf("upsert item local lookup: %w", lookupErr)
+		}
+		if lookupErr == nil && localID != 0 && localID != itemID {
+			if err := mergeItemInto(ctx, tx, itemID, localID); err != nil {
+				return 0, false, fmt.Errorf("merge item cross duplicate: %w", err)
+			}
 		}
 	}
 
@@ -362,11 +382,13 @@ func upsertTx(ctx context.Context, q *sqlcgen.Queries, feedID, userID int64, it 
 
 	// A row that predates the cross-key backfill (or was stored by a feed that
 	// did not derive one) adopts it now, so subsequent polls resolve to it.
+	// Scoped to the resolved row: assigning by (feed_id, dedup_key) could also
+	// hit a stray duplicate that is already merged above or that belongs to
+	// another feed.
 	if crossKey != "" && !newRow {
-		if err := q.SetItemCrossKey(ctx, sqlcgen.SetItemCrossKeyParams{
+		if err := q.SetItemCrossKeyByID(ctx, sqlcgen.SetItemCrossKeyByIDParams{
 			CrossKey: crossKey,
-			FeedID:   feedID,
-			DedupKey: key,
+			ID:       itemID,
 		}); err != nil {
 			return 0, false, fmt.Errorf("set item cross key: %w", err)
 		}

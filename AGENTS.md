@@ -987,15 +987,22 @@ state is shared and the combined streams count it once.
 - `ItemStore.Upsert` resolves by `(user_id, cross_key)` first: a post already
   stored through another feed gains a membership (and its snapshot is refreshed)
   instead of a second row. Its `inserted` return means "new to this feed" (new
-  row or new membership), which the poller uses for history exhaustion.
+  row or new membership), which the poller uses for history exhaustion. When the
+  cross-key row lives in another feed and this feed still has a pre-cross-key
+  duplicate (empty `cross_key`) for the same `dedup_key`, the upsert folds that
+  duplicate into the keyed row. Do not adopt the key by
+  `(feed_id, dedup_key)`: that retargets the stale duplicate and violates the
+  unique index, which rolls back the whole page and blocks the feed forever.
 - A partial unique index `idx_items_cross ON items(user_id, cross_key) WHERE
   cross_key <> ''` enforces it. It is created by
   `ItemStore.MergeCrossFeedDuplicates` **after** merging pre-existing duplicate
   rows (the migration cannot backfill `cross_key`, since old duplicates would
-  violate the index). The server runs that merge at startup, next to
-  `CanonicalizeFeedURLs`; `nanoflux item cross-dedup` is the manual/report form.
-  The merge carries read/favorite state, memberships, enclosures, lists and
-  shares, and is idempotent.
+  violate the index). The merge also folds an empty-cross-key row into the keyed
+  row for the same post (`dedup_key`), keeping the keyed row as the survivor.
+  The server runs that merge at startup, next to `CanonicalizeFeedURLs`;
+  `nanoflux item cross-dedup` is the manual/report form. The merge carries
+  read/favorite state, memberships, enclosures, lists and shares, and is
+  idempotent.
 - `FeedStore.Delete` re-homes items the deleted feed owns that are also members
   of another feed, so deleting one feed does not delete a post still reachable
   via another.

@@ -214,26 +214,57 @@ func exec(ctx context.Context, tx *sql.Tx, query string, args ...any) error {
 
 // crossDuplicatesSQL finds rows that share a per-user cross-feed identity but
 // are still stored separately (the same post reached through two subscriptions),
-// plus the surviving row's id: the newest fetched_at, then the highest id. It
-// ignores the owner feed and returns every member row.
+// plus stray rows stored before the cross-key model: an empty-cross_key row
+// whose dedup key matches a row that now carries the key. Each stray is grouped
+// with the keyed row that owns the post. The keyed flag lets the merge keep the
+// keyed row as the survivor. It ignores the owner feed and returns every member
+// row.
 const crossDuplicatesSQL = `
-SELECT i.id, i.user_id, i.feed_id, i.cross_key, i.fetched_at
-FROM items i
-WHERE i.cross_key <> ''
-  AND (i.user_id, i.cross_key) IN (
-    SELECT user_id, cross_key FROM items
-    WHERE cross_key <> ''
-    GROUP BY user_id, cross_key
-    HAVING COUNT(*) > 1
-  )
-ORDER BY i.user_id, i.cross_key, i.fetched_at, i.id`
+WITH strays AS (
+  SELECT i.id AS stray_id,
+         i.user_id,
+         i.dedup_key,
+         MIN(k.cross_key) AS cross_key
+  FROM items i
+  JOIN items k
+    ON k.user_id = i.user_id
+   AND k.dedup_key = i.dedup_key
+   AND k.cross_key <> ''
+  WHERE i.cross_key = ''
+  GROUP BY i.id
+),
+members AS (
+  SELECT i.id, i.user_id, i.feed_id, i.cross_key, i.fetched_at, 1 AS keyed
+  FROM items i
+  WHERE i.cross_key <> ''
+    AND (
+      (i.user_id, i.cross_key) IN (
+        SELECT user_id, cross_key FROM items
+        WHERE cross_key <> ''
+        GROUP BY user_id, cross_key
+        HAVING COUNT(*) > 1
+      )
+      OR EXISTS (
+        SELECT 1 FROM strays s
+        WHERE s.user_id = i.user_id AND s.cross_key = i.cross_key
+      )
+    )
+  UNION ALL
+  SELECT i.id, i.user_id, i.feed_id, s.cross_key, i.fetched_at, 0 AS keyed
+  FROM items i
+  JOIN strays s ON s.stray_id = i.id
+)
+SELECT id, user_id, feed_id, cross_key, fetched_at, keyed
+FROM members
+ORDER BY user_id, cross_key, fetched_at, id`
 
 // MergeCrossFeedDuplicates brings already-stored rows onto the cross-feed model:
 // rows that share a per-user cross-feed identity (set by a plugin's SharedKey at
-// ingest) are merged into one row, carrying read/favorite state, memberships,
-// enclosures, lists and shares, and then the partial unique index that keeps
-// them merged is created. Idempotent and cheap to call on every startup: with
-// nothing to merge it is one scan.
+// ingest) are merged into one row, and a row stored before cross keys that
+// matches a keyed row's dedup key is folded into the keyed row. Read/favorite
+// state, memberships, enclosures, lists and shares carry over, then the partial
+// unique index that keeps them merged is created. Idempotent and cheap to call
+// on every startup: with nothing to merge it is one scan.
 func (s *ItemStore) MergeCrossFeedDuplicates(dryRun bool) (DedupReport, error) {
 	ctx := context.Background()
 	rows, err := s.db.QueryContext(ctx, crossDuplicatesSQL)
@@ -250,20 +281,22 @@ func (s *ItemStore) MergeCrossFeedDuplicates(dryRun bool) (DedupReport, error) {
 		id        int64
 		feedID    int64
 		fetchedAt string
+		keyed     bool
 	}
 	order := []key{}
 	groups := map[key][]entry{}
 	for rows.Next() {
 		var id, userID, feedID int64
 		var crossKey, fetchedAt string
-		if err := rows.Scan(&id, &userID, &feedID, &crossKey, &fetchedAt); err != nil {
+		var keyed bool
+		if err := rows.Scan(&id, &userID, &feedID, &crossKey, &fetchedAt, &keyed); err != nil {
 			return DedupReport{}, err
 		}
 		k := key{userID, crossKey}
 		if _, ok := groups[k]; !ok {
 			order = append(order, k)
 		}
-		groups[k] = append(groups[k], entry{id, feedID, fetchedAt})
+		groups[k] = append(groups[k], entry{id, feedID, fetchedAt, keyed})
 	}
 	if err := rows.Err(); err != nil {
 		return DedupReport{}, err
@@ -275,8 +308,12 @@ func (s *ItemStore) MergeCrossFeedDuplicates(dryRun bool) (DedupReport, error) {
 		if len(es) < 2 {
 			continue
 		}
-		// Survivor: latest fetched_at, then highest id.
+		// Survivor: a keyed row (so the merged row keeps the cross-feed
+		// identity), then latest fetched_at, then highest id.
 		sort.SliceStable(es, func(i, j int) bool {
+			if es[i].keyed != es[j].keyed {
+				return !es[i].keyed
+			}
 			if es[i].fetchedAt != es[j].fetchedAt {
 				return es[i].fetchedAt < es[j].fetchedAt
 			}

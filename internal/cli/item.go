@@ -31,10 +31,11 @@ func itemCrossDedupCmd(st *store.Store, out io.Writer) *cobra.Command {
 		Short: "Merge the same post stored once per subscription",
 		Long: "Find posts stored more than once because the same post was seen through\n" +
 			"two subscriptions and merge them into one item that both feeds are members\n" +
-			"of. Read/favorite state, enclosures, list memberships and shares carry over;\n" +
-			"the row most recently confirmed by a feed is kept. Also creates the per-user\n" +
-			"cross-feed unique index. Runs as a report unless --apply is given. The server\n" +
-			"already runs this at startup.",
+			"of. This includes a row stored before cross keys were derived, which is\n" +
+			"folded into the keyed row for the same post. Read/favorite state, enclosures,\n" +
+			"list memberships and shares carry over; the keyed row confirmed most recently\n" +
+			"by a feed is kept. Also creates the per-user cross-feed unique index. Runs as\n" +
+			"a report unless --apply is given. The server already runs this at startup.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			report, err := st.Items.MergeCrossFeedDuplicates(!apply)

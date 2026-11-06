@@ -33,12 +33,14 @@ SELECT user_id FROM feeds WHERE id = ?;
 SELECT id FROM items
 WHERE user_id = ? AND cross_key = ?;
 
--- name: SetItemCrossKey :exec
--- Adopt a cross-feed identity on an already-stored item (e.g. a row that
--- predates the backfill), within its owning feed.
+-- name: SetItemCrossKeyByID :exec
+-- Adopt a cross-feed identity on one specific already-stored item (e.g. a row
+-- that predates the backfill). Scoped by id, never by (feed_id, dedup_key):
+-- that pair can match a stray duplicate whose key is already owned by the
+-- cross-feed row, and assigning it there violates the per-user unique index.
 UPDATE items
 SET cross_key = ?
-WHERE feed_id = ? AND dedup_key = ?;
+WHERE id = ? AND cross_key = '';
 
 -- name: AddItemFeed :execresult
 -- Add an item to a feed's membership set. Idempotent.
