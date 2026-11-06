@@ -2048,6 +2048,10 @@ func authorTaste(maxRank, favCount int) int {
 
 func (s *Server) authorCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
+	if err := r.ParseForm(); err != nil {
+		writeFormError(w, r, "add-author-error", "could not create author")
+		return
+	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
 		writeFormError(w, r, "add-author-error", "name is required")
@@ -2059,6 +2063,7 @@ func (s *Server) authorCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-author-error", "could not create author")
 		return
 	}
+	s.reconcileAuthorLinks(u.ID, a.ID, r)
 	if a.AvatarURL != "" {
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		s.autoCacheAuthorAvatar(ctx, a)

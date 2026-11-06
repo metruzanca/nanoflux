@@ -53,6 +53,7 @@ templ authorsPage(u store.User, d authorsData) {
 			<label>description
 				<textarea name="description" rows="3"></textarea>
 			</label>
+			@authorLinkFields(authorsData{})
 			<div id="add-author-error" class="error"></div>
 			<button type="submit">add author</button>
 		</form>

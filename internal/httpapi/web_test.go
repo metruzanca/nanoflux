@@ -1492,6 +1492,49 @@ func TestAuthorLinks(t *testing.T) {
 	}
 }
 
+func TestCreateAuthorWithLinks(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// The add-author dialog offers the same link rows as the edit page.
+	page := doGet(h, "/authors", cookie).Body.String()
+	for _, want := range []string{
+		`id="author-link-fields"`,
+		`id="author-link-row-template"`,
+		`data-add-author-link`,
+		`name="links_present"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("add-author dialog missing %q: %s", want, page)
+		}
+	}
+
+	rr := doForm(h, "POST", "/authors", url.Values{
+		"name":          {"Metru"},
+		"links_present": {"1"},
+		"link_id":       {"", ""},
+		"link_label":    {"Twitch", ""},
+		"link_url":      {"https://twitch.tv/example", "https://example.com/page"},
+	}, cookie)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("create author with links: %d %s", rr.Code, rr.Body.String())
+	}
+	loc := rr.Header().Get("HX-Redirect")
+	if !strings.HasPrefix(loc, "/authors/") {
+		t.Fatalf("create author should redirect to the author page, got %q", loc)
+	}
+	authors, _ := s.store.Authors.List(u.ID)
+	if len(authors) != 1 {
+		t.Fatalf("expected one author: %+v", authors)
+	}
+	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, authors[0].ID)
+	if len(links) != 2 || links[0].Label != "Twitch" || links[0].URL != "https://twitch.tv/example" ||
+		links[1].URL != "https://example.com/page" {
+		t.Fatalf("created author links = %+v", links)
+	}
+}
+
 func TestAuthorLinkScopedToOwner(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
