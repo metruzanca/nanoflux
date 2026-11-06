@@ -96,7 +96,7 @@ func (s *Server) listScopedItems(userID, listID int64, view string, sort itemSor
 	unread, _ := s.store.Lists.CountUnread(userID, listID)
 	read, _ := s.store.Lists.CountRead(userID, listID)
 	base := "/lists/" + strconv.FormatInt(listID, 10)
-	itemsBase := base + "/items?view=" + view + "&dir=" + dirParam(asc)
+	itemsBase := base + "/items?tab=" + view + "&dir=" + dirParam(asc)
 	return scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort, NoMagic: true,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
@@ -125,7 +125,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		base := "/lists/" + strconv.FormatInt(id, 10) + "/items?view=" + view + "&dir=" + dirParam(asc)
+		base := "/lists/" + strconv.FormatInt(id, 10) + "/items?tab=" + view + "&dir=" + dirParam(asc)
 		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more, asc), false))
 		return
 	}

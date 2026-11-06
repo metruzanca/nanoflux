@@ -695,6 +695,8 @@ type filterPanelData struct {
 	// ViewName is the title of the selected saved view, shown as a removable
 	// chip alongside the filter chips.
 	ViewName string
+	// NoFilters hides the filter toolbar entirely (a saved view's fixed recipe).
+	NoFilters bool
 }
 
 // effectiveFeedOptions drops the feed kind when the scope has only one feed
@@ -747,6 +749,9 @@ func (d filterPanelData) switchable() bool { return len(d.kinds()) > 1 }
 
 // available reports whether the filter dialog has anything to offer.
 func (d filterPanelData) available() bool {
+	if d.NoFilters {
+		return false
+	}
 	return len(d.kinds()) > 0 || len(d.Filters) > 0
 }
 
@@ -757,7 +762,7 @@ func (d scopedItemsData) filterPanel() filterPanelData {
 		Filters: d.Filters, FilteredCount: d.FilteredCount,
 		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
 		ScopeAuthorID: d.ScopeAuthorID, ScopeCollectionID: d.ScopeCollectionID,
-		ViewID: d.ViewID, ViewName: d.ViewName,
+		ViewID: d.ViewID, ViewName: d.ViewName, NoFilters: d.NoFilters,
 	}
 }
 

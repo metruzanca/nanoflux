@@ -340,7 +340,7 @@ func TestAuthorViewFollowsAssignedAuthorRules(t *testing.T) {
 
 	// An unassigned view has no author rules, so it surfaces the post the
 	// aggregator hides from itself.
-	body = doGet(h, "/views/"+itoa(freeView.ID)+"?view=unread&sort=newest&f="+url.QueryEscape("tag:show:u/captain"), cookie).Body.String()
+	body = doGet(h, "/views/"+itoa(freeView.ID)+"?tab=unread&sort=newest&f="+url.QueryEscape("tag:show:u/captain"), cookie).Body.String()
 	if !strings.Contains(body, "Captain post") {
 		t.Fatalf("unassigned view should be unfiltered: %s", body)
 	}

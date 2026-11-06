@@ -553,10 +553,11 @@ code.
   post into the author, so `savedViewFormFromRequest` rejects one and
   `authorStoreViewFilters` skips any legacy blank view.
 - `?view=<id>` on an author page selects a saved view; `?tab=unread|read|favorites`
-  selects the tab (default unread). A non-numeric `?view=unread|read` keeps its
-  historical tab meaning. The shared tab, sort, filter-chip, filter-dialog and
-  pagination helpers carry both values through `scopedViewQueryFor` and
-  `scopedViewSep`.
+  selects the tab (default unread). `tab` is the canonical tab param on every
+  scoped list (author, collection, list, saved view); a legacy non-numeric
+  `?view=unread|read` is still accepted as a tab fallback. The shared tab, sort,
+  filter-chip, filter-dialog and pagination helpers carry both values through
+  `scopedViewQueryFor` and `scopedViewSep`.
 - The store scope is `store.ViewFilter` + `ItemFilter.Views`. `authorScopeClause`
   builds the OR of author-owned feeds and each view predicate; `viewFilterClause`
   applies the view's tag/feed groups and time windows. `listPageTagged` is forced
@@ -574,9 +575,14 @@ code.
   while the feed owner's rules keep applying to the owner's own feed. The view
   predicate carries `AuthorID` (`store.ViewFilter`); `viewFilterClause` applies
   `authorRulesVisibleSQL` for it.
-- A bare `/views/{id}` redirects to the assigned author's
-  `/authors/{id}?view={viewID}`, or to its canonical query for an unassigned
-  view. The edit page always keeps the delete control.
+- `/views` is the private index, grouped by assigned author with an
+  `unassigned` group last. Its compact cards show only the view name, unread
+  count and assignment; the saved recipe is not repeated as chips.
+- `/views/{id}` is the fixed page for an unassigned view. It renders the view's
+  stored recipe directly, with no transient filter dialog or removable filter
+  chips. Tabs (`?tab=`), sort, display mode and pagination remain. Assigning a
+  view redirects `/views/{id}` to its author page, `/authors/{id}?view={viewID}`.
+  The edit page always keeps the delete control.
 - Feed filter values are validated on save and load against the user's feeds, so
   deleting a feed degrades the view rather than breaking it.
 - Creation happens from the filter dialog's `save as view` submit, which posts

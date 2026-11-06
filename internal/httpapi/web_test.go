@@ -447,7 +447,7 @@ func TestCrossFeedItem(t *testing.T) {
 	if err := s.store.Items.SetRead(u.ID, items[0].ID, true); err != nil {
 		t.Fatal(err)
 	}
-	ubody := doGet(h, "/authors/"+itoa(userA.ID)+"?feed="+itoa(userFeed.ID)+"&view=read", cookie).Body.String()
+	ubody := doGet(h, "/authors/"+itoa(userA.ID)+"?feed="+itoa(userFeed.ID)+"&tab=read", cookie).Body.String()
 	if !strings.Contains(ubody, `href="/authors/`+itoa(subA.ID)+`">r/cats</a>`) ||
 		!strings.Contains(ubody, `href="/authors/`+itoa(userA.ID)+`">u/sam</a>`) {
 		t.Fatalf("user feed read view should render the shared item attributed: %s", ubody)
@@ -509,7 +509,7 @@ func TestCollectionFeedsTab(t *testing.T) {
 
 	// The feeds view lists the feed card with its author and unread count, and
 	// none of the scope's items.
-	body = doGet(h, base+"?view=feeds", cookie).Body.String()
+	body = doGet(h, base+"?tab=feeds", cookie).Body.String()
 	for _, want := range []string{"Blog", "Metru", "1 unread", `id="collection-feeds-list"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("feeds view missing %q: %s", want, body)
@@ -535,14 +535,14 @@ func TestCollectionFeedsTab(t *testing.T) {
 	}
 
 	// The fragment endpoint returns the same card list.
-	rr := doGet(h, base+"/items?view=feeds", cookie)
+	rr := doGet(h, base+"/items?tab=feeds", cookie)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `id="collection-feeds-list"`) {
 		t.Fatalf("feeds fragment: %d %s", rr.Code, rr.Body.String())
 	}
 
 	// An empty collection shows its empty state on the feeds tab.
 	empty, _ := s.store.Collections.Create(u.ID, "empty")
-	body = doGet(h, "/collections/"+itoa(empty.ID)+"?view=feeds", cookie).Body.String()
+	body = doGet(h, "/collections/"+itoa(empty.ID)+"?tab=feeds", cookie).Body.String()
 	if !strings.Contains(body, "no sources in this collection") {
 		t.Fatalf("empty sources view missing empty state: %s", body)
 	}
@@ -1259,7 +1259,7 @@ func TestAuthorFavoritesTab(t *testing.T) {
 	}
 
 	// The tab fragment lists only favorited items.
-	body := doGet(h, "/authors/"+itoa(a.ID)+"/items?view=favorites", cookie).Body.String()
+	body := doGet(h, "/authors/"+itoa(a.ID)+"/items?tab=favorites", cookie).Body.String()
 	if !strings.Contains(body, `data-item-link="https://b.dev/1"`) {
 		t.Fatalf("favorited item missing from author favorites: %s", body)
 	}
@@ -1699,7 +1699,7 @@ func TestScopedReadUnreadTabs(t *testing.T) {
 	for _, scope := range []struct {
 		base string // page URL
 		frag string // fragment URL
-		sep  string // query separator for appending ?view=
+		sep  string // query separator for appending ?tab=
 	}{
 		{"/authors/" + itoa(a.ID) + "?feed=" + itoa(f.ID), "/authors/" + itoa(a.ID) + "/items?feed=" + itoa(f.ID), "&"},
 		{"/authors/" + itoa(a.ID), "/authors/" + itoa(a.ID) + "/items", "?"},
@@ -1719,8 +1719,8 @@ func TestScopedReadUnreadTabs(t *testing.T) {
 			t.Fatalf("%s default view should not show read-at: %s", scope.base, body)
 		}
 
-		// ?view=read shows only the read item, with its read-at timestamp.
-		body = doGet(h, scope.base+scope.sep+"view=read", cookie).Body.String()
+		// ?tab=read shows only the read item, with its read-at timestamp.
+		body = doGet(h, scope.base+scope.sep+"tab=read", cookie).Body.String()
 		if !strings.Contains(body, `data-item-link="https://b.dev/2"`) ||
 			strings.Contains(body, `data-item-link="https://b.dev/1"`) {
 			t.Fatalf("%s read view wrong list: %s", scope.base, body)
@@ -1730,7 +1730,7 @@ func TestScopedReadUnreadTabs(t *testing.T) {
 		}
 
 		// The fragment endpoint returns the tabbed list for the requested view.
-		rr := doGet(h, scope.frag+scope.sep+"view=read", cookie)
+		rr := doGet(h, scope.frag+scope.sep+"tab=read", cookie)
 		if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `data-item-link="https://b.dev/2"`) {
 			t.Fatalf("%s fragment: %d %s", scope.frag, rr.Code, rr.Body.String())
 		}
@@ -2351,7 +2351,7 @@ func TestNoCollection(t *testing.T) {
 
 	// Its feeds tab lists the orphan feed, not the grouped one.
 	nc, _ := s.store.Collections.EnsureNoCollection(u.ID)
-	page := doGet(h, "/collections/"+itoa(nc.ID)+"?view=feeds", cookie).Body.String()
+	page := doGet(h, "/collections/"+itoa(nc.ID)+"?tab=feeds", cookie).Body.String()
 	if !strings.Contains(page, "Orphan") || strings.Contains(page, "Grouped") {
 		t.Fatalf("no-collection feeds tab wrong feeds: %s", page)
 	}

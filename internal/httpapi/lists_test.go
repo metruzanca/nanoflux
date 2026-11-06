@@ -100,22 +100,27 @@ func TestListsFlow(t *testing.T) {
 	}
 
 	// It has unread/read tabs.
-	if !strings.Contains(body, "view=read") || !strings.Contains(body, "unread (0)") ||
+	if !strings.Contains(body, "tab=read") || !strings.Contains(body, "unread (0)") ||
 		!strings.Contains(body, "read (1)") {
 		t.Fatalf("list page should render unread/read tabs: %s", body)
 	}
-	unreadTab := doGet(h, "/lists/"+itoa(listID)+"/items?view=unread", cookie).Body.String()
+	unreadTab := doGet(h, "/lists/"+itoa(listID)+"/items?tab=unread", cookie).Body.String()
 	if strings.Contains(unreadTab, "Listable post") {
 		t.Fatalf("read item should not appear in the unread tab: %s", unreadTab)
 	}
-	readTab := doGet(h, "/lists/"+itoa(listID)+"/items?view=read", cookie).Body.String()
+	readTab := doGet(h, "/lists/"+itoa(listID)+"/items?tab=read", cookie).Body.String()
 	if !strings.Contains(readTab, "Listable post") {
 		t.Fatalf("read item missing from the read tab: %s", readTab)
+	}
+	// The legacy ?view= tab spelling still works.
+	legacyRead := doGet(h, "/lists/"+itoa(listID)+"/items?view=read", cookie).Body.String()
+	if !strings.Contains(legacyRead, "Listable post") {
+		t.Fatalf("legacy read tab should still work: %s", legacyRead)
 	}
 
 	// Marking it unread moves it to the unread tab.
 	doForm(h, "POST", "/items/"+itoa(item.ID)+"/read", url.Values{}, cookie)
-	unreadTab = doGet(h, "/lists/"+itoa(listID)+"/items?view=unread", cookie).Body.String()
+	unreadTab = doGet(h, "/lists/"+itoa(listID)+"/items?tab=unread", cookie).Body.String()
 	if !strings.Contains(unreadTab, "Listable post") {
 		t.Fatalf("unread item missing from the unread tab: %s", unreadTab)
 	}

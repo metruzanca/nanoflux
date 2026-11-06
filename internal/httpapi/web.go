@@ -257,6 +257,9 @@ type scopedItemsData struct {
 	// ViewName is the title of the selected saved view, shown as a removable
 	// chip on the list. Empty when no view is selected.
 	ViewName string
+	// NoFilters hides the generic filter toolbar for a saved view page, whose
+	// recipe is fixed.
+	NoFilters bool
 }
 
 // itemSort is the ordering of an item list: newest first (time desc), oldest
@@ -389,21 +392,20 @@ func scopedFilter(view string, sort itemSort, cursor int64, authorID, collection
 // URL cannot build an unbounded IN (...) predicate.
 const maxTagFilters = 100
 
-// scopedViewQuery builds the "path?view=<view>" prefix shared by a scoped list's
-// tab, sort, filter and pagination links. The sort, filters and the load-more
-// cursor are appended by the caller (see scopedTabURL, sortPicker and
-// moreURLFor).
+// scopedViewQuery builds the tab query prefix shared by a scoped list's tab,
+// sort, filter and pagination links. The sort, filters and the load-more cursor
+// are appended by the caller (see scopedTabURL, sortPicker and moreURLFor).
 func scopedViewQuery(path, view string) string {
 	return scopedViewQueryFor(path, view, 0)
 }
 
-// scopedViewQueryFor builds the view/sort prefix for a scoped list. A numeric
+// scopedViewQueryFor builds the tab/sort prefix for a scoped list. A numeric
 // saved-view selection uses ?view=<id> and keeps the tab in ?tab=.
 func scopedViewQueryFor(path, view string, viewID int64) string {
 	if viewID > 0 {
 		return path + "?view=" + strconv.FormatInt(viewID, 10) + "&tab=" + url.QueryEscape(view)
 	}
-	return path + "?view=" + url.QueryEscape(view)
+	return path + "?tab=" + url.QueryEscape(view)
 }
 
 // scopedViewSep is the separator a sort picker appends before sort=, matching
@@ -412,7 +414,7 @@ func scopedViewSep(view string, viewID int64) string {
 	if viewID > 0 {
 		return "?view=" + strconv.FormatInt(viewID, 10) + "&tab=" + url.QueryEscape(view) + "&"
 	}
-	return "?view=" + url.QueryEscape(view) + "&"
+	return "?tab=" + url.QueryEscape(view) + "&"
 }
 
 // cursorID reads the page cursor from a load-more request: before= (newest),
@@ -3008,7 +3010,7 @@ func (s *Server) collectionScopedItems(userID, collectionID int64, view string, 
 	f.CollectionViews = collectionViews
 	items, more, _ := s.store.Items.ListPage(userID, f)
 	s.annotateCollectionViews(userID, collectionID, tz, items)
-	itemsBase := filters.appendFilters(base + "/items?view=" + view + "&sort=" + sort.param())
+	itemsBase := filters.appendFilters(base + "/items?tab=" + view + "&sort=" + sort.param())
 	if len(collectionViews) > 0 {
 		d.UnreadCount, _ = s.store.Items.CountFiltered(userID, collectionCountFilter(collectionID, collectionViews, "unread", tz))
 		d.ReadCount, _ = s.store.Items.CountFiltered(userID, collectionCountFilter(collectionID, collectionViews, "read", tz))
@@ -3109,7 +3111,7 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
-			base := filters.appendFilters("/collections/" + strconv.FormatInt(id, 10) + "/items?view=" + view + "&sort=" + sort.param())
+			base := filters.appendFilters("/collections/" + strconv.FormatInt(id, 10) + "/items?tab=" + view + "&sort=" + sort.param())
 			web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursorFor(base, items, more, sort, int(cursor)), false))
 			return
 		}
@@ -3205,7 +3207,7 @@ func (s *Server) collectionAddFeed(w http.ResponseWriter, r *http.Request) {
 	if feedID != 0 {
 		s.store.Collections.AddFeed(u.ID, id, feedID)
 	}
-	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeCollectionView(r.FormValue("view")), itemSortOf(r), u.Timezone, filtersFromRequest(r).withoutFeedFilters())))
+	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeCollectionView(formTab(r)), itemSortOf(r), u.Timezone, filtersFromRequest(r).withoutFeedFilters())))
 }
 
 func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
@@ -3262,7 +3264,7 @@ func (s *Server) collectionAddView(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeCollectionView(r.FormValue("view")), itemSortOf(r), u.Timezone, filtersFromRequest(r).withoutFeedFilters())))
+	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeCollectionView(formTab(r)), itemSortOf(r), u.Timezone, filtersFromRequest(r).withoutFeedFilters())))
 }
 
 // collectionRemoveView removes a view from a collection.
@@ -3306,9 +3308,31 @@ func (s *Server) collectionRemoveView(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// itemsView reads the ?view= query param and normalizes it to "unread" or "read".
+// tabParam reads the list tab. ?tab= is canonical; a legacy non-numeric ?view=
+// is still accepted as a fallback. A numeric ?view= is a saved view id and is
+// never a tab.
+func tabParam(q url.Values) string {
+	if tab := strings.TrimSpace(q.Get("tab")); tab != "" {
+		return tab
+	}
+	raw := strings.TrimSpace(q.Get("view"))
+	if _, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		return ""
+	}
+	return raw
+}
+
+// formTab reads a tab from a submitted form, accepting the legacy view field.
+func formTab(r *http.Request) string {
+	if tab := strings.TrimSpace(r.FormValue("tab")); tab != "" {
+		return tab
+	}
+	return r.FormValue("view")
+}
+
+// itemsView reads the list tab and normalizes it to "unread" or "read".
 func itemsView(r *http.Request) string {
-	return normalizeItemsView(r.URL.Query().Get("view"))
+	return normalizeItemsView(tabParam(r.URL.Query()))
 }
 
 func normalizeItemsView(v string) string {
@@ -3318,10 +3342,10 @@ func normalizeItemsView(v string) string {
 	return "unread"
 }
 
-// collectionView reads the collection page's ?view= param. It understands the
-// collection-only "feeds" tab in addition to the shared unread/read views.
+// collectionView reads the collection page's tab. It understands the
+// collection-only "feeds" tab in addition to the shared unread/read tabs.
 func collectionView(r *http.Request) string {
-	return normalizeCollectionView(r.URL.Query().Get("view"))
+	return normalizeCollectionView(tabParam(r.URL.Query()))
 }
 
 func normalizeCollectionView(v string) string {
@@ -3331,11 +3355,9 @@ func normalizeCollectionView(v string) string {
 	return normalizeItemsView(v)
 }
 
-// authorView reads the author page's ?view= param. It understands the
-// author-only "favorites" tab in addition to the shared unread/read views.
 // authorViewState reads the author page's tab and selected saved view. A
 // numeric ?view= is a saved view id, with the tab in ?tab= (default unread). A
-// non-numeric ?view= keeps its historical tab meaning.
+// legacy non-numeric ?view= keeps its historical tab meaning.
 func authorViewState(r *http.Request) (tab string, viewID int64) {
 	return authorViewStateValues(r.URL.Query())
 }
@@ -3349,7 +3371,7 @@ func authorViewStateValues(q url.Values) (tab string, viewID int64) {
 		}
 		return normalizeAuthorView(tab), id
 	}
-	return normalizeAuthorView(raw), 0
+	return normalizeAuthorView(tabParam(q)), 0
 }
 
 func normalizeAuthorView(v string) string {

@@ -432,9 +432,9 @@ templ ScopedItems(d scopedItemsData) {
 templ scopedTab(path, itemsPath, view, label, count string, active bool, sort itemSort, filters listFilters, viewID int64) {
 	if view == "feeds" {
 		if active {
-			<a class="active" href={ path + "?view=feeds" } hx-get={ itemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ path + "?view=feeds" }>{ label } ({ count })</a>
+			<a class="active" href={ path + "?tab=feeds" } hx-get={ itemsPath + "?tab=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ path + "?tab=feeds" }>{ label } ({ count })</a>
 		} else {
-			<a href={ path + "?view=feeds" } hx-get={ itemsPath + "?view=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ path + "?view=feeds" }>{ label } ({ count })</a>
+			<a href={ path + "?tab=feeds" } hx-get={ itemsPath + "?tab=feeds" } hx-target="#scoped-items" hx-swap="outerHTML" hx-push-url={ path + "?tab=feeds" }>{ label } ({ count })</a>
 		}
 	} else {
 		{{ u := scopedTabURL(path, view, sort, filters, viewID) }}
@@ -588,7 +588,7 @@ templ filterDialog(fp filterPanelData) {
 					<input type="hidden" name="view" value={ strconv.FormatInt(fp.ViewID, 10) }/>
 					<input type="hidden" name="tab" value={ fp.View }/>
 				} else {
-					<input type="hidden" name="view" value={ fp.View }/>
+					<input type="hidden" name="tab" value={ fp.View }/>
 				}
 				<input type="hidden" name="sort" value={ fp.Sort.param() }/>
 				if fp.ScopeAuthorID > 0 {

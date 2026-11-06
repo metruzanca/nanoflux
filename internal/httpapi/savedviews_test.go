@@ -85,10 +85,16 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 		t.Fatalf("new view form is missing fields: %s", formPage)
 	}
 
-	// The index lists it under its assigned author.
+	// The index lists it under its assigned author, with compact stats only.
 	body = doGet(h, "/views", cookie).Body.String()
 	if !strings.Contains(body, "Example posts") || !strings.Contains(body, "Example Poster") {
 		t.Fatalf("views index should list the saved view under its author: %s", body)
+	}
+	if !strings.Contains(body, "assigned to") || !strings.Contains(body, "1 unread") {
+		t.Fatalf("views index card should show assignment and unread stats: %s", body)
+	}
+	if strings.Contains(body, "u/example-poster") {
+		t.Fatalf("views index card should not render its filter chips: %s", body)
 	}
 
 	// An assigned view redirects to the author page, which now carries its items.
@@ -115,7 +121,7 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	if !strings.Contains(body, `title="remove view filter"`) || !strings.Contains(body, "Example posts <span") {
 		t.Fatalf("view-scoped author page missing the view chip: %s", body)
 	}
-	if !strings.Contains(body, `href="/authors/`+itoa(author.ID)+`?view=unread&amp;sort=newest"`) {
+	if !strings.Contains(body, `href="/authors/`+itoa(author.ID)+`?tab=unread&amp;sort=newest"`) {
 		t.Fatalf("view chip should link back to the un-scoped author list: %s", body)
 	}
 
@@ -288,9 +294,15 @@ func TestSavedViewTagOptionsAllFeeds(t *testing.T) {
 		}
 	}
 
-	viewPage := doGet(h, "/views/"+id+"?view=unread&sort=newest&f="+url.QueryEscape("tag:show:r/golang"), cookie).Body.String()
-	if !strings.Contains(viewPage, `data-combo-option="filter_value_0:r/rust"`) {
-		t.Fatalf("filter dialog should offer the user's tags for an all-feeds view")
+	viewPage := doGet(h, "/views/"+id+"?tab=unread&sort=newest", cookie).Body.String()
+	if strings.Contains(viewPage, `id="tag-filter-dialog"`) {
+		t.Fatalf("the saved view page should not expose a transient filter dialog: %s", viewPage)
+	}
+	if !strings.Contains(viewPage, "recipe:") || !strings.Contains(viewPage, "show r/golang") {
+		t.Fatalf("the saved view page should show its fixed recipe: %s", viewPage)
+	}
+	if !strings.Contains(viewPage, "?tab=read") || strings.Contains(viewPage, "?view=unread") {
+		t.Fatalf("saved view tab links should use ?tab=: %s", viewPage)
 	}
 }
 
@@ -368,7 +380,7 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 		t.Fatalf("collection sources count should include the view: %s", body)
 	}
 
-	body = doGet(h, base+"?view=feeds", cookie).Body.String()
+	body = doGet(h, base+"?tab=feeds", cookie).Body.String()
 	if !strings.Contains(body, "Rust view") || !strings.Contains(body, `id="collection-view-`+viewID+`"`) {
 		t.Fatalf("sources tab should list the view card: %s", body)
 	}
