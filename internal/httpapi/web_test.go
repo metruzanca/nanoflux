@@ -1413,7 +1413,7 @@ func TestAuthorLinks(t *testing.T) {
 	// hostname fallback for the unlabeled one.
 	page = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
 	if !strings.Contains(page, `href="https://twitch.tv/ThePrimeagen"`) ||
-		!strings.Contains(page, `class="external"`) || !strings.Contains(page, ">Twitch</a>") {
+		!strings.Contains(page, `class="external"`) || !strings.Contains(page, `class="link-label">Twitch</span></a>`) {
 		t.Fatalf("author page should show the labeled link: %s", page)
 	}
 	if !strings.Contains(page, ">example.com</a>") {
@@ -2018,8 +2018,8 @@ func TestAuthorEditDeleteFlow(t *testing.T) {
 	edit := doGet(h, "/authors/"+itoa(a.ID)+"/edit", cookie).Body.String()
 	if !strings.Contains(edit, `class="stack delete-form"`) ||
 		!strings.Contains(edit, `data-post-action="/authors/`+itoa(a.ID)+`/delete"`) ||
-		!strings.Contains(edit, `class="danger"`) || !strings.Contains(edit, ">delete<") {
-		t.Fatalf("edit page missing the delete action: %s", edit)
+		!strings.Contains(edit, `class="danger"`) || !strings.Contains(edit, "delete author Metru") {
+		t.Fatalf("edit page missing the named delete action: %s", edit)
 	}
 
 	// Deleting redirects back to the authors list and removes the author (and
@@ -2440,7 +2440,7 @@ func TestFeedEditRedirectsToCombinedAuthorEdit(t *testing.T) {
 		t.Fatalf("feed editor should not carry an author picker: %s", body)
 	}
 	// Deleting a feed is an explicit type=button action, never a submit button.
-	wantDelete := `<button type="button" class="danger" data-post-action="/feeds/` + itoa(f.ID) + `/delete" data-include="delete_remote_` + itoa(f.ID) + `" data-confirm="delete this feed?">delete</button>`
+	wantDelete := `<button type="button" class="danger" data-post-action="/feeds/` + itoa(f.ID) + `/delete" data-include="delete_remote_` + itoa(f.ID) + `" data-confirm="delete feed Blog?">delete feed Blog</button>`
 	if !strings.Contains(body, wantDelete) {
 		t.Fatalf("feed delete should be an explicit button action %q: %s", wantDelete, body)
 	}

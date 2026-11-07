@@ -94,9 +94,9 @@ templ AuthorRow(r authorRow) {
 }
 
 // authorEditPage is a set of independently auto-saving sections: the author
-// basics, the always-on filter card (manual apply), the auto-read override, and
-// one accordion of sources (feeds and views). Each feed and view panel is its
-// own form, so a change saves just that panel.
+// profile, the always-on filter card (manual apply), the collapsible auto-read
+// override (manual apply), and one accordion of sources (feeds and views). Each
+// feed and view panel is its own form, so a change saves just that panel.
 templ authorEditPage(u store.User, d authorsData) {
 	@authorBasicsCard(d)
 	@authorFilterCard(d)
@@ -118,7 +118,7 @@ templ authorEditPage(u store.User, d authorsData) {
 		}
 	</div>
 	<div class="stack delete-form">
-		<button type="button" class="danger" data-post-action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm="delete this author and their feeds?">delete</button>
+		<button type="button" class="danger" data-post-action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm={ "delete author " + d.Form.Name + " and their feeds?" }>{ "delete author " + d.Form.Name }</button>
 	</div>
 }
 
@@ -130,8 +130,8 @@ templ authorBasicsCard(d authorsData) {
 		<form class="stack" method="post" action={ action } hx-post={ action } hx-trigger="change delay:600ms, submit" hx-sync="closest form:replace" hx-target="#author-basics-card" hx-swap="outerHTML" hx-disinherit="*" data-autosave>
 			@csrfField()
 			<div class="row">
-				<h1>edit author</h1>
-				<a class="button small" href={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) }>back to author</a>
+				<h2>profile</h2>
+				<a class="button small" href={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) }>close</a>
 			</div>
 			if d.FormError != "" {
 				<div class="error" role="alert">{ d.FormError }</div>
@@ -227,20 +227,27 @@ templ authorFilterCard(d authorsData) {
 
 // authorAutoReadCard overrides the account auto-read window for this author's
 // feeds. "inherit" follows the account setting; off keeps the author's items
-// unread. It saves on change.
+// unread. It is collapsible and saves from its explicit apply button.
 templ authorAutoReadCard(d authorsData) {
 	{{ action := "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/auto-read" }}
-	<form id="author-auto-read-card" class="card stack" method="post" action={ action } hx-post={ action } hx-trigger="change" hx-sync="closest form:replace" hx-target="#author-auto-read-card" hx-swap="outerHTML" hx-disinherit="*" data-autosave>
-		@csrfField()
-		<h2>auto-read</h2>
-		<p class="muted small">Overrides the account auto-read window for this author's feeds. Items older than the effective window are marked read automatically, including favorites and bookmarks. Off keeps this author's items unread.</p>
-		<input type="hidden" name="author_auto_read_present" value="1"/>
-		if d.AutoReadError != "" {
-			<div class="error" role="alert">{ d.AutoReadError }</div>
-		}
-		@comboSelect("author_auto_read_after_days", d.AutoReadValue, "mark items read after", "select a window", authorAutoReadItems, nil)
-		<p class="muted small">account default: { d.AutoReadDefault }</p>
-	</form>
+	<details id="author-auto-read-card" class="card author-auto-read-card" open?={ d.AutoReadValue != "inherit" || d.AutoReadError != "" }>
+		<summary>
+			<h2>auto-read</h2>
+		</summary>
+		<form class="stack" method="post" action={ action } hx-post={ action } hx-sync="closest form:replace" hx-target="#author-auto-read-card" hx-swap="outerHTML" hx-disinherit="*">
+			@csrfField()
+			<p class="muted small">Overrides the account auto-read window for this author's feeds. Items older than the effective window are marked read automatically, including favorites and bookmarks. Off keeps this author's items unread.</p>
+			<input type="hidden" name="author_auto_read_present" value="1"/>
+			if d.AutoReadError != "" {
+				<div class="error" role="alert">{ d.AutoReadError }</div>
+			}
+			@comboSelect("author_auto_read_after_days", d.AutoReadValue, "mark items read after", "select a window", authorAutoReadItems, nil)
+			<p class="muted small">account default: { d.AutoReadDefault }</p>
+			<div class="row-actions">
+				<button type="submit">apply</button>
+			</div>
+		</form>
+	</details>
 }
 
 // authorFilterPreviewFragment renders the allowed/blocked sample. It is used for
@@ -348,7 +355,7 @@ templ authorPageLinks(links []store.AuthorLink, icons map[string][]string) {
 						if len(paths) > 0 {
 							@web.LinkIcon(paths, "link-icon")
 						}
-						{ l.Label }
+						<span class="link-label">{ l.Label }</span>
 					</a>
 				} else {
 					<a href={ templ.URL(l.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external" title={ name } aria-label={ name }>

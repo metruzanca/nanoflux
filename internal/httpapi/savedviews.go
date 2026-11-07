@@ -32,16 +32,11 @@ type savedViewRow struct {
 	CreatedAt   string
 }
 
-// savedViewGroup is one assigned-author block on the views index.
-type savedViewGroup struct {
-	AuthorID   int64
-	AuthorName string
-	Rows       []savedViewRow
-}
-
+// savedViewsPageData is the unassigned views index. Assigned views live on their
+// author's page instead.
 type savedViewsPageData struct {
-	Groups []savedViewGroup
-	Total  int
+	Rows  []savedViewRow
+	Total int
 }
 
 // savedViewForm is the create/edit page's data.
@@ -83,8 +78,8 @@ func savedViewAuthorValue(id int64) string {
 	return strconv.FormatInt(id, 10)
 }
 
-// savedViewsIndex groups every saved view by its assigned author, then shows
-// unassigned views last.
+// savedViewsIndex lists only unassigned views: assigning a view moves it onto
+// that author's page, so it is no longer part of the personal backlog here.
 func (s *Server) savedViewsIndex(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	views, err := s.store.SavedViews.List(u.ID)
@@ -93,9 +88,15 @@ func (s *Server) savedViewsIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	rows := s.savedViewRows(u.ID, views, u.Timezone)
+	unassigned := make([]store.SavedView, 0, len(views))
+	for _, v := range views {
+		if v.AuthorID == 0 {
+			unassigned = append(unassigned, v)
+		}
+	}
+	rows := s.savedViewRows(u.ID, unassigned, u.Timezone)
 	web.Render(w, r, basePage("views", u, savedViewsPage(savedViewsPageData{
-		Groups: groupSavedViews(rows), Total: len(rows),
+		Rows: rows, Total: len(rows),
 	})))
 }
 
@@ -110,31 +111,6 @@ func (s *Server) savedViewRows(userID int64, views []store.SavedView, tz string)
 		rows = append(rows, row)
 	}
 	return rows
-}
-
-// savedViewsGroupRows keeps assigned views in author order and unassigned last.
-func groupSavedViews(rows []savedViewRow) []savedViewGroup {
-	var groups []savedViewGroup
-	index := map[int64]int{}
-	for _, row := range rows {
-		i, ok := index[row.AuthorID]
-		if !ok {
-			index[row.AuthorID] = len(groups)
-			groups = append(groups, savedViewGroup{AuthorID: row.AuthorID, AuthorName: row.AuthorName})
-			i = len(groups) - 1
-		}
-		groups[i].Rows = append(groups[i].Rows, row)
-	}
-	// Push the unassigned group to the end.
-	for i, g := range groups {
-		if g.AuthorID != 0 {
-			continue
-		}
-		groups = append(groups[:i], groups[i+1:]...)
-		groups = append(groups, g)
-		break
-	}
-	return groups
 }
 
 // savedViewRow resolves one view's display fields and matching count.

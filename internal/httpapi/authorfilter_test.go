@@ -95,8 +95,8 @@ func TestAuthorAutoReadSettings(t *testing.T) {
 }
 
 // TestAuthorEditAutoSaveLayout covers the per-section forms on the author edit
-// page: basics, auto-read, filters (manual apply), and one sources accordion
-// with no page-level save button.
+// page: profile, auto-read (manual apply, collapsible), filters (manual apply),
+// and one sources accordion with no page-level save button.
 func TestAuthorEditAutoSaveLayout(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
@@ -107,10 +107,14 @@ func TestAuthorEditAutoSaveLayout(t *testing.T) {
 	body := doGet(h, "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID), cookie).Body.String()
 	for _, want := range []string{
 		`id="author-basics-card"`,
+		`<h2>profile</h2>`,
+		`>close</a>`,
 		`hx-post="/authors/` + itoa(a.ID) + `/edit"`,
 		`hx-trigger="change delay:600ms, submit"`,
 		`id="author-auto-read-card"`,
+		`class="card author-auto-read-card"`,
 		`hx-post="/authors/` + itoa(a.ID) + `/auto-read"`,
+		`>apply</button>`,
 		`id="author-filter-card"`,
 		`hx-post="/authors/` + itoa(a.ID) + `/filters"`,
 		`<h2>sources</h2>`,

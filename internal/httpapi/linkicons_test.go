@@ -99,7 +99,7 @@ func TestAuthorLinkIcons(t *testing.T) {
 		t.Fatalf("author page should render inline link icons: %s", page)
 	}
 	// A labeled link keeps its name and gets the icon before it.
-	if !strings.Contains(page, ">Twitch</a>") {
+	if !strings.Contains(page, `class="link-label">Twitch</span></a>`) {
 		t.Fatalf("labeled link should keep its label: %s", page)
 	}
 	// An unlabeled link with an icon is icon-only, named by its domain.
