@@ -183,6 +183,9 @@ type authorData struct {
 	Rows   []feedRow
 	Views  []savedViewRow
 	Links  []store.AuthorLink
+	// LinkIcons maps a link's normalized domain to its cached Simple Icons path
+	// data. A domain absent from the map has no icon.
+	LinkIcons map[string][]string
 	// Collections is every feed collection the author's feeds belong to,
 	// combined and deduped. Shown as chips on the author card.
 	Collections []store.Collection
@@ -2095,6 +2098,7 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, id)
+	icons := s.authorLinkIcons(r.Context(), links)
 	filters := s.authorFilters(u.ID, id, filtersFromRequest(r))
 	tab, viewID := authorViewState(r)
 	scoped, ok := s.authorScopedItems(u.ID, id, tab, itemSortOf(r), u.Timezone, filters, viewID)
@@ -2121,6 +2125,7 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 	views := s.savedViewsForAuthor(u.ID, id, u.Timezone)
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
 		Author: a, Rows: rows, Views: views, Links: links,
+		LinkIcons: icons,
 		Scoped: scoped, Collections: authorCollections(rows, views),
 		Stats: stats, Frequency: frequency, Timezone: u.Timezone,
 		MarkAll: markAll,

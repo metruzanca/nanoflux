@@ -31,6 +31,9 @@ func newTestServer(t *testing.T) (*Server, http.Handler) {
 	}
 	a := auth.New(st)
 	s := New(st, a, config.Config{}, filestore.NewMemory())
+	// Keep tests offline: author-link icon lookups are disabled unless a test
+	// points linkIconBase at a fake Simple Icons server.
+	s.linkIconBase = ""
 	return s, s.Handler()
 }
 
@@ -48,6 +51,7 @@ func newEmptyServer(t *testing.T) (*Server, http.Handler) {
 	}
 	st := store.New(sqldb)
 	s := New(st, auth.New(st), config.Config{}, filestore.NewMemory())
+	s.linkIconBase = ""
 	return s, s.Handler()
 }
 

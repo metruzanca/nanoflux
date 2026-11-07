@@ -356,6 +356,17 @@ CREATE TABLE author_links (
 );
 CREATE INDEX idx_author_links_author ON author_links(author_id);
 
+-- Global Simple Icons cache for author-link domains (schemaV63). A row records
+-- either the found glyph (slug + newline-joined path data) or a confirmed miss,
+-- so a domain is looked up at most once.
+CREATE TABLE link_icons (
+    domain     TEXT PRIMARY KEY,
+    slug       TEXT NOT NULL DEFAULT '',
+    paths      TEXT NOT NULL DEFAULT '',
+    found      INTEGER NOT NULL DEFAULT 0,
+    checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Per-user media playback positions (schemaV56). progress_key is the media
 -- identity, so the same video stored through two items shares one position.
 -- item_id is informational, not a foreign key: deleting the item that carried

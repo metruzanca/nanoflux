@@ -526,6 +526,37 @@ the command-palette feed entity and the provision success link at
 is omitted on the author's own page). Display-mode scopes drop `/feeds/{id}`;
 the author page's scope stays `/authors/{id}`.
 
+## Author link icons
+
+Author links with no label used to fall back to the domain text. They now use a
+Simple Icons glyph when one exists.
+
+- `link_icons` (schemaV63) is a **global** domain -> glyph cache: `domain` is
+  the normalized host (`www.` removed), `slug` the Simple Icons slug, `paths`
+  the newline-joined SVG path data, `found` 0/1. A confirmed 404 is stored as
+  `found = 0`, so a domain is looked up at most once. A transient network error
+  is never cached; the next author-page render retries it after a 5-minute
+  in-memory cooldown. The admin card's recheck is the way to refetch a wrong or
+  stale mapping.
+- `httpapi.linkIconSlugs` derives the slug from the domain (aliases such
+  as `twitter.com -> x`, `youtu.be -> youtube`, `bsky.app -> bluesky` first,
+  then the host labels). Slugs are validated with `linkIconSlugRe`, so neither a
+  derived nor an admin-supplied slug can escape the Simple Icons path.
+- Lookup runs lazily in `authorPage` (`authorLinkIcons`), bounded and concurrent,
+  so the redirect after adding a link resolves it immediately. `web.LinkIcon`
+  inlines the stored path data with `fill="currentColor"`; only `<path d>` is
+  extracted from the fetched SVG (`parseLinkIconSVG` rejects scripts, foreign
+  objects and any non-path drawing element), so the remote document never
+  reaches the page as markup.
+- Rendering: a labeled link shows the glyph before its label; an unlabeled link
+  with a glyph is icon-only (the domain stays its `aria-label`/`title`); an
+  unlabeled link without a glyph keeps the domain text. Do not switch this to an
+  `<img>`: an inline SVG keeps `currentColor` theming and the `↗` external
+  marker.
+- `/admin` has a **link icons** card listing every association with a preview,
+  slug, status and checked time. Admins can set a slug manually (overriding the
+  derivation), recheck a row, or delete it so the next page render re-derives it.
+
 ## Saved views
 
 A saved view is a private, named filter recipe that acts as a **source** on an

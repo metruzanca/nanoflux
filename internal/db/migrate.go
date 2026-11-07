@@ -73,6 +73,7 @@ var migrations = []migration{
 	{60, schemaV60},
 	{61, schemaV61},
 	{62, schemaV62},
+	{63, schemaV63},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -981,6 +982,20 @@ CREATE TABLE collection_views (
     PRIMARY KEY (collection_id, view_id)
 );
 CREATE INDEX idx_collection_views_view ON collection_views(view_id);
+`
+
+// schemaV63 caches the Simple Icons mapping for author-link domains. A row
+// records either the found glyph (slug + path data) or a confirmed miss, so a
+// domain is looked up at most once. The cache is global: a brand icon is the
+// same for every user.
+const schemaV63 = `
+CREATE TABLE link_icons (
+    domain     TEXT PRIMARY KEY,
+    slug       TEXT NOT NULL DEFAULT '',
+    paths      TEXT NOT NULL DEFAULT '',
+    found      INTEGER NOT NULL DEFAULT 0,
+    checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 // Migrate applies any pending migrations in order, recording each in
