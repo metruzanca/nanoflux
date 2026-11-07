@@ -37,6 +37,9 @@ type Server struct {
 	loginLimiter *loginLimiter
 	demo         *demo.Manager
 	demoThrottle *demoThrottle
+	// linkIconBase is the Simple Icons endpoint prefix used to resolve author
+	// link glyphs. Empty disables outbound lookups (tests).
+	linkIconBase string
 }
 
 func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore.Store) *Server {
@@ -51,6 +54,7 @@ func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore
 		oembed:       oembed.New(client, 5*time.Minute, 30*time.Second, 2000),
 		loginLimiter: newLoginLimiter(),
 		demoThrottle: newDemoThrottle(),
+		linkIconBase: defaultLinkIconBase,
 	}
 }
 
@@ -275,6 +279,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/settings/signup-banner-dismiss", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminDismissSignupBanner))))
 	mux.Handle("POST /admin/backup", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminBackupNow))))
 	mux.Handle("POST /admin/plugins/{name}/settings", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminSavePluginSettings))))
+	mux.Handle("POST /admin/link-icons", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminSaveLinkIcon))))
+	mux.Handle("POST /admin/link-icons/recheck", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminRecheckLinkIcon))))
+	mux.Handle("POST /admin/link-icons/delete", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminDeleteLinkIcon))))
 
 	// Settings.
 	mux.Handle("GET /settings", s.auth.Require(http.HandlerFunc(s.settingsPage)))

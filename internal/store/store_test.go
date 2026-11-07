@@ -1581,6 +1581,65 @@ func TestAuthorLinkStore(t *testing.T) {
 	}
 }
 
+func TestLinkIconStore(t *testing.T) {
+	s := newTestStore(t)
+
+	if _, err := s.LinkIcons.Get("reddit.com"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown domain: %v", err)
+	}
+
+	if err := s.LinkIcons.UpsertFound("reddit.com", "reddit", []string{"M12 0L1 1", "M2 2L3 3"}); err != nil {
+		t.Fatalf("upsert found: %v", err)
+	}
+	got, err := s.LinkIcons.Get("reddit.com")
+	if err != nil {
+		t.Fatalf("get found: %v", err)
+	}
+	if !got.Found || got.Slug != "reddit" || len(got.Paths) != 2 || got.CheckedAt == "" {
+		t.Fatalf("found row = %+v", got)
+	}
+
+	if err := s.LinkIcons.UpsertMissing("example.com"); err != nil {
+		t.Fatalf("upsert missing: %v", err)
+	}
+	got, err = s.LinkIcons.Get("example.com")
+	if err != nil {
+		t.Fatalf("get missing: %v", err)
+	}
+	if got.Found || got.Slug != "" || len(got.Paths) != 0 {
+		t.Fatalf("missing row = %+v", got)
+	}
+
+	many, err := s.LinkIcons.GetMany([]string{"reddit.com", "example.com", "absent.test"})
+	if err != nil {
+		t.Fatalf("get many: %v", err)
+	}
+	if len(many) != 2 || !many["reddit.com"].Found || many["example.com"].Found {
+		t.Fatalf("get many = %+v", many)
+	}
+
+	// A recheck can replace a miss with a found glyph.
+	if err := s.LinkIcons.UpsertFound("example.com", "example", []string{"M0 0"}); err != nil {
+		t.Fatalf("replace miss: %v", err)
+	}
+	got, _ = s.LinkIcons.Get("example.com")
+	if !got.Found || got.Slug != "example" {
+		t.Fatalf("replaced row = %+v", got)
+	}
+
+	rows, err := s.LinkIcons.List()
+	if err != nil || len(rows) != 2 || rows[0].Domain != "example.com" || rows[1].Domain != "reddit.com" {
+		t.Fatalf("list = %+v, %v", rows, err)
+	}
+
+	if err := s.LinkIcons.Delete("reddit.com"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := s.LinkIcons.Get("reddit.com"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted row still present: %v", err)
+	}
+}
+
 func TestAuthorLinkCascadesWithAuthor(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

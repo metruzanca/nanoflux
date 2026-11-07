@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/url"
 	"sort"
@@ -32,6 +33,7 @@ type adminData struct {
 	Users       []adminUserRow
 	Backup      adminBackup
 	Plugins     []adminPluginRow
+	LinkIcons   []store.LinkIcon
 }
 
 // adminPoll is the polling health summary shown on /admin. "Behind" means a
@@ -208,11 +210,12 @@ func (s *Server) adminOnly(next http.Handler) http.Handler {
 func (s *Server) adminPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	d := adminData{
-		Stats:   s.adminStats(r.Context()),
-		Storage: s.adminStorageData(r.Context()),
-		Users:   s.adminUserRows(u.ID, u.Timezone),
-		Backup:  s.adminBackupData(u.Timezone),
-		Plugins: s.adminPluginRows(),
+		Stats:     s.adminStats(r.Context()),
+		Storage:   s.adminStorageData(r.Context()),
+		Users:     s.adminUserRows(u.ID, u.Timezone),
+		Backup:    s.adminBackupData(u.Timezone),
+		Plugins:   s.adminPluginRows(),
+		LinkIcons: s.adminLinkIconRows(),
 	}
 	d.Poll, d.Errors = s.adminFeedData()
 	d.AllowSignup = s.allowSignup()
@@ -798,6 +801,87 @@ func (s *Server) adminSavePluginSettings(w http.ResponseWriter, r *http.Request)
 	s.plugins.Configure(name, s.store.Settings.PluginSettings(name, settingNames(schema)))
 	log.Info("admin: saved plugin settings", "plugin", name)
 	web.Render(w, r, AdminPluginsCard(s.adminPluginRows()))
+}
+
+// adminLinkIconRows returns the cached domain -> Simple Icons associations for
+// the admin card.
+func (s *Server) adminLinkIconRows() []store.LinkIcon {
+	rows, err := s.store.LinkIcons.List()
+	if err != nil {
+		log.Error("admin: list link icons", "err", err)
+		return nil
+	}
+	return rows
+}
+
+// adminSaveLinkIcon stores a manual domain -> slug association and fetches it.
+// It overrides an earlier automatic guess and immediately shows the result in the
+// card.
+func (s *Server) adminSaveLinkIcon(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	domain := normalizeLinkIconDomain(r.FormValue("domain"))
+	slug := normalizeLinkIconSlug(r.FormValue("slug"))
+	if domain == "" {
+		writeFormError(w, r, "admin-link-icons-error", "enter a valid domain")
+		return
+	}
+	if slug == "" {
+		writeFormError(w, r, "admin-link-icons-error", "enter a simpleicons slug")
+		return
+	}
+	if _, err := s.resolveLinkIcon(r.Context(), domain, slug); err != nil {
+		if errors.Is(err, errLinkIconNotFound) {
+			writeFormError(w, r, "admin-link-icons-error", "simpleicons has no icon named "+slug)
+			return
+		}
+		log.Error("admin: save link icon", "domain", domain, "slug", slug, "err", err)
+		writeFormError(w, r, "admin-link-icons-error", "could not reach simpleicons")
+		return
+	}
+	web.Render(w, r, AdminLinkIconsCard(s.adminLinkIconRows(), u.Timezone))
+}
+
+// adminRecheckLinkIcon refetches a domain, keeping a manual slug when one is set
+// and re-deriving the slug otherwise. A failure leaves the previous row alone.
+func (s *Server) adminRecheckLinkIcon(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	domain := normalizeLinkIconDomain(r.FormValue("domain"))
+	if domain == "" {
+		writeFormError(w, r, "admin-link-icons-error", "enter a valid domain")
+		return
+	}
+	var slug string
+	if existing, err := s.store.LinkIcons.Get(domain); err == nil {
+		slug = existing.Slug
+	}
+	if _, err := s.resolveLinkIcon(r.Context(), domain, slug); err != nil {
+		if errors.Is(err, errLinkIconNotFound) {
+			writeFormError(w, r, "admin-link-icons-error", "the saved slug no longer exists in simpleicons")
+			return
+		}
+		log.Error("admin: recheck link icon", "domain", domain, "err", err)
+		writeFormError(w, r, "admin-link-icons-error", "could not reach simpleicons")
+		return
+	}
+	web.Render(w, r, AdminLinkIconsCard(s.adminLinkIconRows(), u.Timezone))
+}
+
+// adminDeleteLinkIcon forgets a domain's association so the next page render
+// looks it up again.
+func (s *Server) adminDeleteLinkIcon(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	domain := normalizeLinkIconDomain(r.FormValue("domain"))
+	if domain == "" {
+		writeFormError(w, r, "admin-link-icons-error", "enter a valid domain")
+		return
+	}
+	if err := s.store.LinkIcons.Delete(domain); err != nil {
+		log.Error("admin: delete link icon", "domain", domain, "err", err)
+		writeFormError(w, r, "admin-link-icons-error", "could not delete the association")
+		return
+	}
+	linkIconRetryAfter.Delete(domain)
+	web.Render(w, r, AdminLinkIconsCard(s.adminLinkIconRows(), u.Timezone))
 }
 
 // settingNames extracts the field names from a settings schema.

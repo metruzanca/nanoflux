@@ -330,15 +330,35 @@ templ authorLinkFieldRow(id, label, linkURL string) {
 }
 
 // authorPageLinks renders an author's external bookmarks inline in the author
-// card, under the author's name. Each is an external link (marked ↗).
-templ authorPageLinks(links []store.AuthorLink) {
+// card, under the author's name. A link with a Simple Icons glyph shows it; an
+// unlabeled link with a glyph is icon-only (the domain stays its accessible
+// name). Each link is external (marked ↗).
+templ authorPageLinks(links []store.AuthorLink, icons map[string][]string) {
 	if len(links) > 0 {
 		<p class="author-links">
 			for i, l := range links {
 				if i > 0 {
 					·
 				}
-				<a href={ templ.URL(l.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ web.LinkLabel(l.Label, l.URL) }</a>
+				{{ domain := web.LinkDomain(l.URL) }}
+				{{ name := web.LinkLabel(l.Label, l.URL) }}
+				{{ paths := icons[domain] }}
+				if l.Label != "" {
+					<a href={ templ.URL(l.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">
+						if len(paths) > 0 {
+							@web.LinkIcon(paths, "link-icon")
+						}
+						{ l.Label }
+					</a>
+				} else {
+					<a href={ templ.URL(l.URL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external" title={ name } aria-label={ name }>
+						if len(paths) > 0 {
+							@web.LinkIcon(paths, "link-icon")
+						} else {
+							{ domain }
+						}
+					</a>
+				}
 			}
 		</p>
 	}
@@ -360,7 +380,7 @@ templ authorPage(u store.User, d authorData) {
 				<a class="small" title="edit" href={ "/authors/" + strconv.FormatInt(d.Author.ID, 10) + "/edit" }>@web.EditIcon()</a>
 			</div>
 		</div>
-		@authorPageLinks(d.Links)
+		@authorPageLinks(d.Links, d.LinkIcons)
 		if d.Author.Description != "" {
 			<p>{ d.Author.Description }</p>
 		}

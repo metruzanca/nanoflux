@@ -143,17 +143,23 @@ func PageTitle(title string) string {
 	return "nanoflux"
 }
 
+// LinkDomain returns the display form of a URL's hostname (without "www."),
+// falling back to the raw URL when it has no usable hostname.
+func LinkDomain(rawurl string) string {
+	u, err := url.Parse(rawurl)
+	if err != nil || u.Hostname() == "" {
+		return rawurl
+	}
+	return strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+}
+
 // LinkLabel returns the display text for an author link: its label when set,
 // otherwise the URL's hostname (without "www."), falling back to the raw URL.
 func LinkLabel(label, rawurl string) string {
 	if strings.TrimSpace(label) != "" {
 		return label
 	}
-	u, err := url.Parse(rawurl)
-	if err != nil || u.Hostname() == "" {
-		return rawurl
-	}
-	return strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	return LinkDomain(rawurl)
 }
 
 // Initial returns the uppercased first character of a name, for the default

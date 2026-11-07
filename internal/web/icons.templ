@@ -26,6 +26,18 @@ templ SourceIcon(rawurl string) {
 	}
 }
 
+// LinkIcon inlines a Simple Icons glyph from its cached path data. The caller
+// supplies the CSS class; fill is currentColor so the glyph follows the theme.
+templ LinkIcon(paths []string, class string) {
+	if len(paths) > 0 {
+		<svg class={ class } viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+			for _, d := range paths {
+				<path d={ d }></path>
+			}
+		</svg>
+	}
+}
+
 // lucideShapes holds the inner markup of the Lucide icons the UI inlines:
 // https://lucide.dev (ISC), v0.469.0 (funnel-plus from v0.500.0). Keep each
 // entry a single SVG child set.
