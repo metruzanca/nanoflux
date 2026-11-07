@@ -85,16 +85,34 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 		t.Fatalf("new view form is missing fields: %s", formPage)
 	}
 
-	// The index lists it under its assigned author, with compact stats only.
+	// /views is the unassigned index: an assigned view lives on its author page.
 	body = doGet(h, "/views", cookie).Body.String()
-	if !strings.Contains(body, "Example posts") || !strings.Contains(body, "Example Poster") {
-		t.Fatalf("views index should list the saved view under its author: %s", body)
+	if strings.Contains(body, "Example posts") || strings.Contains(body, "Example Poster") {
+		t.Fatalf("assigned views should not appear on /views: %s", body)
 	}
-	if !strings.Contains(body, "assigned to") || !strings.Contains(body, "1 unread") {
-		t.Fatalf("views index card should show assignment and unread stats: %s", body)
+	if strings.Contains(body, "assigned to") || strings.Contains(body, ">browse lists</a>") {
+		t.Fatalf("unassigned index should not show assignment or the browse button: %s", body)
 	}
-	if strings.Contains(body, "u/example-poster") {
-		t.Fatalf("views index card should not render its filter chips: %s", body)
+	if !strings.Contains(body, "no unassigned views") {
+		t.Fatalf("empty unassigned index should say so: %s", body)
+	}
+
+	// An unassigned view is listed flat, without an author group heading.
+	loose, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+		Title: "Loose view", Filters: []string{"tag:show:u/example-poster"},
+	})
+	if err != nil {
+		t.Fatalf("create unassigned view: %v", err)
+	}
+	body = doGet(h, "/views", cookie).Body.String()
+	if !strings.Contains(body, "Loose view") || !strings.Contains(body, "views (1)") {
+		t.Fatalf("views index should list the unassigned view: %s", body)
+	}
+	if strings.Contains(body, "assigned to") || strings.Contains(body, ">unassigned<") {
+		t.Fatalf("unassigned index card should not repeat the assignment: %s", body)
+	}
+	if err := s.store.SavedViews.Delete(u.ID, loose.ID); err != nil {
+		t.Fatalf("clean up loose view: %v", err)
 	}
 
 	// An assigned view redirects to the author page, which now carries its items.
@@ -381,8 +399,11 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 	}
 
 	body = doGet(h, base+"?tab=feeds", cookie).Body.String()
-	if !strings.Contains(body, "Rust view") || !strings.Contains(body, `id="collection-view-`+viewID+`"`) {
-		t.Fatalf("sources tab should list the view card: %s", body)
+	if !strings.Contains(body, `id="collection-view-`+viewID+`"`) || !strings.Contains(body, `title="Rust view"`) {
+		t.Fatalf("sources tab should list the compact view card: %s", body)
+	}
+	if strings.Contains(body, ">Rust view<") || strings.Contains(body, "/views/"+viewID+"/edit") {
+		t.Fatalf("sources tab view card should not render its title or edit button: %s", body)
 	}
 
 	// The index card's unread count is the union, not just the member feed.

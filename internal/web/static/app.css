@@ -463,8 +463,8 @@ code { background: var(--bg); border: 1px solid var(--border); border-radius: 4p
   flex: none;
 }
 
-.author-links a .link-icon {
-  margin-right: 0.3em;
+.author-links .link-icon + .link-label {
+  margin-left: 0.3em;
 }
 
 .link-icon-lg {
@@ -577,18 +577,24 @@ div.stats strong { font-size: 1.1rem; }
 .author-items { margin-top: 1.5rem; }
 /* The author edit page's combined feed and view panels. */
 .author-sources { margin-top: 1.5rem; }
-/* The always-on filters card collapses like a source panel. */
-.author-filter-card > summary {
+/* The always-on filters card and the auto-read card collapse like a source
+   panel. */
+.author-filter-card > summary,
+.author-auto-read-card > summary {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   cursor: pointer;
   list-style: none;
 }
-.author-filter-card > summary::-webkit-details-marker { display: none; }
-.author-filter-card > summary::after { content: "▸"; margin-left: auto; color: var(--muted); }
-.author-filter-card[open] > summary::after { content: "▾"; }
-.author-filter-card > summary h2 { margin: 0; }
+.author-filter-card > summary::-webkit-details-marker,
+.author-auto-read-card > summary::-webkit-details-marker { display: none; }
+.author-filter-card > summary::after,
+.author-auto-read-card > summary::after { content: "▸"; margin-left: auto; color: var(--muted); }
+.author-filter-card[open] > summary::after,
+.author-auto-read-card[open] > summary::after { content: "▾"; }
+.author-filter-card > summary h2,
+.author-auto-read-card > summary h2 { margin: 0; }
 /* The author card's feed list is a collapsible section. */
 .author-feeds > summary { cursor: pointer; color: var(--fg); font-weight: 600; }
 .author-feeds > summary:hover { color: var(--accent); }

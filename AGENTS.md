@@ -481,22 +481,25 @@ use the same author-scoped predicate (`CountFiltered` with `AuthorID` +
 `FeedID`), so a cross-feed post owned by another author but reachable through
 this author's feed is filtered and counted by this author's rules.
 
-The author edit page auto-saves per section. The author basics form posts to
-`POST /authors/{id}/edit` (name, description, avatar, links), the auto-read card
-posts to `POST /authors/{id}/auto-read`, and the always-on filters card saves
-only from its explicit `apply` button to `POST /authors/{id}/filters`. Feeds and
-views share one `sources` accordion, and each panel is its own auto-saving form
-(`POST /feeds/{id}/edit`, `POST /views/{id}/edit`) that re-renders the whole
-`<details>` so its summary title and badges stay current. There is no page-level
-save button. `feedEditorPanel`/`viewEditorPanel` supply the form, and
+The author edit page is a set of independent sections. The profile card (headed
+`profile`) auto-saves to `POST /authors/{id}/edit` (name, description, avatar,
+links), while the collapsible auto-read card saves from its explicit `apply`
+button to `POST /authors/{id}/auto-read`, and the always-on filters card saves
+only from its explicit `apply` button to `POST /authors/{id}/filters`. The
+delete button names the author it removes. Feeds and views share one `sources`
+accordion, and each panel is its own auto-saving form (`POST /feeds/{id}/edit`,
+`POST /views/{id}/edit`) that re-renders the whole `<details>` so its summary
+title and badges stay current. There is no page-level save button.
+`feedEditorPanel`/`viewEditorPanel` supply the form, and
 `feedEditorBody`/`viewEditorBody` stay form-less; the lazy fragment routes
 (`GET /feeds/{id}/edit-fragment`, `GET /views/{id}/edit-fragment`) return the
 form-wrapped panel. `applyFeedForm` is the per-feed writer. The feed delete
 control is a `type="button"` action (`data-post-action="/feeds/{id}/delete"`,
 `data-confirm`, `data-include="delete_remote_<id>"`) handled by `postAction` in
-`app.js`, never a submit button, so pressing Enter saves instead of deleting.
-The remote opt-in is `delete_remote_<id>`, and the plugin panel's sync is an htmx
-button (`hx-params="action"`, `hx-vals`) rather than a form. Every delete control
+`app.js`, never a submit button, so pressing Enter saves instead of deleting,
+and its label names the feed. The remote opt-in is `delete_remote_<id>`, and the
+plugin panel's sync is an htmx button (`hx-params="action"`, `hx-vals`) rather
+than a form. Every delete control
 (feed, author, list, collection, saved view) follows the same rule: a
 `type="button"` explicit action, never a submit button. htmx-in-panel actions
 (refetch, refresh now, load older) use `hx-params="none"` so clicking them does
@@ -615,9 +618,10 @@ code.
   while the feed owner's rules keep applying to the owner's own feed. The view
   predicate carries `AuthorID` (`store.ViewFilter`); `viewFilterClause` applies
   `authorRulesVisibleSQL` for it.
-- `/views` is the private index, grouped by assigned author with an
-  `unassigned` group last. Its compact cards show only the view name, unread
-  count and assignment; the saved recipe is not repeated as chips.
+- `/views` is the private index of **unassigned** views. Assigned views live on
+  their author's page instead, so the index is one flat card list with no author
+  grouping. Its compact cards show only the view name, unread count and edit
+  action; the saved recipe is not repeated as chips.
 - `/views/{id}` is the fixed page for an unassigned view. It renders the view's
   stored recipe directly, with no transient filter dialog or removable filter
   chips. Tabs (`?tab=`), sort, display mode and pagination remain. Assigning a
@@ -631,15 +635,16 @@ code.
   `scopedItemsData` with its `ViewID` set.
 - An author page has one collapsible `sources (N)` section combining its feeds
   and assigned views; the page itself has no add-feed/add-view controls. The
-  collection page's `sources` tab, the collection edit page and the home
-  dashboard's pinned collection sections include view-sourced items.
+  collection page's `sources` tab renders a view as a compact bookmark glyph plus
+  its unread count (the name is its `title`/`aria-label`), with no edit action;
+  the tab, the collection edit page and the home dashboard's pinned collection
+  sections include view-sourced items.
 - The author edit page inlines assigned views in the same auto-saving `sources`
   accordion as feeds. Each view panel is its own form (`POST /views/{id}/edit`)
   that re-renders the whole `<details>`; the lazy fragment route is
   `GET /views/{id}/edit-fragment`. Inline delete is a `type=button`
   `data-post-action` to `/views/{id}/delete?back=author`.
-- `/views` is the private index, grouped by assigned author, and is linked from
-  the user menu. View cards show their collection chips.
+- `/views` is linked from the user menu.
 - `CloneUser` copies saved views and remaps the assigned author, feed filter ids
   and collection memberships; a view whose assigned author did not survive the
   clone becomes unassigned.
