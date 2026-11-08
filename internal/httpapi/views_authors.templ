@@ -262,7 +262,7 @@ templ authorFilterPreviewFragment(p store.AuthorFilterPreview) {
 				<ul class="filter-preview-list">
 					for _, it := range p.Allowed {
 						<li>
-							<span class="filter-preview-title">{ it.Title }</span>
+							<span class="filter-preview-title">{ it.DisplayTitle() }</span>
 							<span class="muted small">{ it.FeedTitle }
 								if it.PublishedAt != "" {
 									· { web.TimeFmt("", it.PublishedAt) }
@@ -281,7 +281,7 @@ templ authorFilterPreviewFragment(p store.AuthorFilterPreview) {
 				<ul class="filter-preview-list">
 					for _, it := range p.Blocked {
 						<li>
-							<span class="filter-preview-title">{ it.Title }</span>
+							<span class="filter-preview-title">{ it.DisplayTitle() }</span>
 							<span class="muted small">{ it.FeedTitle }
 								if it.PublishedAt != "" {
 									· { web.TimeFmt("", it.PublishedAt) }

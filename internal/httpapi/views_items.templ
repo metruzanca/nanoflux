@@ -241,9 +241,9 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 			<div class="row">
 				<div>
 					if it.Read {
-						<a class="item-title" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>{ it.Title }</a>
+						<a class="item-title" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>{ it.DisplayTitle() }</a>
 					} else {
-						<a class="item-title unread" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>{ it.Title }</a>
+						<a class="item-title unread" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>{ it.DisplayTitle() }</a>
 					}
 					<div class="item-meta">
 						@web.SourceIcon(itemIconURL(it))
@@ -1090,7 +1090,7 @@ templ sharedItemPage(it store.ItemWithFeed, d itemViewData) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
-			@head(it.Title, "")
+			@head(d.Title, "")
 		</head>
 		<body>
 			<main>

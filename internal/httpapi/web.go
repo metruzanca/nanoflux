@@ -800,7 +800,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	data := itemViewData{
 		ID:            it.ID,
 		GUID:          it.GUID,
-		Title:         it.Title,
+		Title:         it.DisplayTitle(),
 		AuthorName:    it.AuthorName,
 		AuthorID:      it.AuthorID,
 		FeedID:        it.FeedID,
@@ -919,7 +919,7 @@ func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
 	data := itemViewData{
 		ID:            it.ID,
 		GUID:          it.GUID,
-		Title:         it.Title,
+		Title:         it.DisplayTitle(),
 		PublishedAt:   it.PublishedAt,
 		Summary:       it.Summary,
 		ImageURL:      it.ImageURL,

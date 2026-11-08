@@ -118,7 +118,7 @@ func (s *Server) apiItems(w http.ResponseWriter, r *http.Request) {
 	out := make([]apiItem, 0, len(items))
 	for _, it := range items {
 		out = append(out, apiItem{
-			ID: it.ID, FeedID: it.FeedID, GUID: it.GUID, Title: it.Title, Link: it.Link,
+			ID: it.ID, FeedID: it.FeedID, GUID: it.GUID, Title: it.DisplayTitle(), Link: it.Link,
 			Summary: it.Summary, ImageURL: it.ImageURL, PublishedAt: it.PublishedAt, Read: it.Read,
 			FeedTitle: it.FeedTitle, FeedURL: it.FeedURL, AuthorID: it.AuthorID, AuthorName: it.AuthorName,
 		})

@@ -104,6 +104,23 @@ func crossFeedKey(sharedKey string) string {
 // without going through Upsert (e.g. enclosure attachment in the poller).
 func CrossFeedKey(sharedKey string) string { return crossFeedKey(sharedKey) }
 
+// DisplayTitle returns the title to render for an item, falling back to its
+// external id when the feed supplied none (image-only posts and some RSS
+// bridges). Every list, modal and API response renders this so a row is never
+// blank. Dedup and content classification keep using the raw Title.
+func (i Item) DisplayTitle() string {
+	if t := strings.TrimSpace(i.Title); t != "" {
+		return t
+	}
+	if id := strings.TrimSpace(i.GUID); id != "" {
+		return id
+	}
+	if id := strings.TrimSpace(i.Identity); id != "" {
+		return id
+	}
+	return "item " + strconv.FormatInt(i.ID, 10)
+}
+
 // ItemWithFeed joins an item with its feed and author for display.
 type ItemWithFeed struct {
 	Item

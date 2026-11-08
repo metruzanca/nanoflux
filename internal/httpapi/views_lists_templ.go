@@ -841,9 +841,9 @@ func sharedItemRow(it store.ItemWithFeed) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var35 string
-		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(it.Title)
+		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(it.DisplayTitle())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_lists.templ`, Line: 212, Col: 153}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_lists.templ`, Line: 212, Col: 162}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 		if templ_7745c5c3_Err != nil {

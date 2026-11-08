@@ -209,7 +209,7 @@ templ sharedItemRow(it store.ItemWithFeed) {
 		<div class="card-body">
 			<div class="row">
 				<div>
-					<a class="item-title" href={ templ.URL(it.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ it.Title }</a>
+					<a class="item-title" href={ templ.URL(it.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external">{ it.DisplayTitle() }</a>
 					<div class="item-meta">
 						{ it.FeedTitle }
 						if it.PublishedAt != "" {
