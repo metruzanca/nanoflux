@@ -3,9 +3,9 @@ package plugin
 import (
 	"context"
 	"net/url"
-	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/feedparse"
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
@@ -139,31 +139,15 @@ func (d *Dispatcher) CategorizePlugin(ctx context.Context, req feedparse.FetchRe
 	return nil
 }
 
-// mergeCategories appends extra to base, trimming each value and dropping
-// empties and case-insensitive duplicates. The first spelling of a category
-// wins, so a plugin never rewrites a label the feed already provided.
+// mergeCategories appends extra to base and canonicalizes the combined set
+// through tagnorm: each value is trimmed, whitespace-collapsed and lowercased,
+// and empties and case-insensitive duplicates are dropped. A plugin therefore
+// never adds a second spelling of a tag the feed already provided.
 func mergeCategories(base, extra []string) []string {
-	out := make([]string, 0, len(base)+len(extra))
-	seen := make(map[string]bool, len(base)+len(extra))
-	add := func(c string) {
-		c = strings.TrimSpace(c)
-		if c == "" {
-			return
-		}
-		key := strings.ToLower(c)
-		if seen[key] {
-			return
-		}
-		seen[key] = true
-		out = append(out, c)
-	}
-	for _, c := range base {
-		add(c)
-	}
-	for _, c := range extra {
-		add(c)
-	}
-	return out
+	all := make([]string, 0, len(base)+len(extra))
+	all = append(all, base...)
+	all = append(all, extra...)
+	return tagnorm.NormalizeAll(all)
 }
 
 // ClassifyFetchFailure asks the matching plugin to interpret a failed feed
@@ -241,7 +225,7 @@ func toFeedparseResult(res pluginapi.Result) feedparse.Result {
 			Title:       it.Title,
 			Link:        it.Link,
 			Summary:     it.Summary,
-			Categories:  it.Categories,
+			Categories:  tagnorm.NormalizeAll(it.Categories),
 			ImageURL:    it.ImageURL,
 			PublishedAt: it.PublishedAt,
 			DurationSec: it.DurationSec,

@@ -516,9 +516,15 @@ One feed therefore gives each item its section as a category and its poster as
 the author; another gives the destination section. Plugins that know a post's
 origin should also use the conventional post-kind labels: `reblog` when the
 item reposts another author's post, and `self-reblog` when it reposts the same
-author's earlier post (never both). Categories are
-stored newline-joined in `items.categories` (schemaV36) and refreshed on re-poll,
-so an item already stored gains them without a re-fetch. They power the scoped
+author's earlier post (never both).
+
+Every category is canonical: Unicode NFC, trimmed, no leading slash, internal
+whitespace collapsed, and lowercase. A tag is an identifier, not display text,
+so `R/Cats`, ` r/cats ` and `/r/cats` are the same tag. The same normalizer
+(`internal/tagnorm`) runs on filter values and saved-view params, which is why a
+user can type `R/Cats` in a filter and still match. Categories are stored
+newline-joined in `items.categories` (schemaV36) and refreshed on re-poll, so an
+item already stored gains them without a re-fetch. They power the scoped
 show/hide tag filter (and are available to plugins via
 `pluginapi.Item.Categories`); the former ingest filter-rule system was removed
 for a clean reimplementation.

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
 )
 
 // SavedView is a private, named filter recipe over the user's item lists. It
@@ -81,7 +83,7 @@ func (s *SavedViewStore) Create(userID int64, v SavedView) (SavedView, error) {
 		INSERT INTO saved_views (
 			user_id, author_id, title, filters
 		) VALUES (?, ?, ?, ?)`,
-		userID, savedViewAuthor(v.AuthorID), v.Title, filters)
+		userID, savedViewAuthor(v.AuthorID), tagnorm.Label(v.Title), filters)
 	if err != nil {
 		return SavedView{}, fmt.Errorf("create saved view: %w", err)
 	}
@@ -103,7 +105,7 @@ func (s *SavedViewStore) Update(userID, id int64, v SavedView) error {
 		UPDATE saved_views SET
 			author_id = ?, title = ?, filters = ?
 		WHERE user_id = ? AND id = ?`,
-		savedViewAuthor(v.AuthorID), v.Title, filters, userID, id)
+		savedViewAuthor(v.AuthorID), tagnorm.Label(v.Title), filters, userID, id)
 	if err != nil {
 		return fmt.Errorf("update saved view: %w", err)
 	}

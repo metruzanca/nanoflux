@@ -607,17 +607,18 @@ func TestNextPageParamFallback(t *testing.T) {
 }
 
 // TestFetchExtractsCategories asserts an item's feed-provided categories are
-// normalized into Item.Categories: atom <category> labels plus the author name
-// (stored without a leading slash). The fixture uses reddit-shaped section and
-// user tokens as an example. This is what makes those labels filterable.
+// normalized into Item.Categories: atom <category> labels plus the author name,
+// stored without a leading slash and lowercased. The fixture uses reddit-shaped
+// section and user tokens as an example. This is what makes those labels
+// filterable with one spelling.
 func TestFetchExtractsCategories(t *testing.T) {
 	const atom = `<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>sub</title>
   <link href="https://reddit.com/r/golang"/>
   <entry>
-    <author><name>/u/poster</name><uri>https://reddit.com/user/poster</uri></author>
-    <category term="golang" label="r/golang"/>
+    <author><name>/u/Poster</name><uri>https://reddit.com/user/poster</uri></author>
+    <category term="golang" label="R/Golang"/>
     <id>t3_1</id>
     <link href="https://reddit.com/r/golang/comments/1/x/"/>
     <title>Post</title>

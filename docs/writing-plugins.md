@@ -212,7 +212,9 @@ func (AppC) FeedToken(feedURL string) string        { /* "r/cats" | "u/sam" | ""
 `CanonicalizeFeedURL` runs on feed create/edit and on a startup pass.
 `FeedToken` is matched against an item's categories/decoration tokens to link an
 item to the user's subscribed feed for it, even before that feed has polled the
-item.
+item. Both sides are canonicalized the same way as categories (trimmed, leading
+slash dropped, lowercase), so return the natural site token and do not rely on
+its case.
 
 ### Ingest cross-feed keys (`SharedKeys`)
 
@@ -548,9 +550,13 @@ site-specific host code.
 
 The generic RSS/Atom parser fills the equivalent from an entry's `<category>`
 values and author names (a section and a username). A plugin that reads a site's
-own API sets the slice directly. Keep values clean
-(no leading slash, no surrounding whitespace) so a tag matches predictably.
-Leave it `nil` when the site offers nothing to surface.
+own API sets the slice directly. The host canonicalizes every value through
+`internal/tagnorm` (Unicode NFC, trimmed, no leading slash, collapsed
+whitespace, lowercase, case-insensitive dedupe), so `R/Cats` and `r/cats` are
+one tag; you do not need to pre-lowercase. A tag derived from a URL should
+still be canonicalized first (lowercase the host and strip tracking), because
+the tag is a label now, not a URL. Leave the slice `nil` when the site offers
+nothing to surface.
 
 #### Recommended conventions
 

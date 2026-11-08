@@ -425,7 +425,8 @@ func TestFetchPluginCarriesCategories(t *testing.T) {
 	reg := NewRegistry()
 	reg.RegisterExternal(fakeFetcher{
 		name: "c", result: pluginapi.Result{Items: []pluginapi.Item{
-			{GUID: "g1", Categories: []string{"reblog"}},
+			// The host canonicalizes plugin-supplied categories.
+			{GUID: "g1", Categories: []string{"Reblog", " U/SomeOne "}},
 			{GUID: "g2"},
 		}},
 	})
@@ -436,8 +437,8 @@ func TestFetchPluginCarriesCategories(t *testing.T) {
 	if len(res.Items) != 2 {
 		t.Fatalf("items = %d, want 2", len(res.Items))
 	}
-	if got := res.Items[0].Categories; len(got) != 1 || got[0] != "reblog" {
-		t.Fatalf("categories = %v, want [reblog]", got)
+	if got := strings.Join(res.Items[0].Categories, ","); got != "reblog,u/someone" {
+		t.Fatalf("categories = %q, want reblog,u/someone", got)
 	}
 	if len(res.Items[1].Categories) != 0 {
 		t.Fatalf("uncategorized item = %v, want none", res.Items[1].Categories)

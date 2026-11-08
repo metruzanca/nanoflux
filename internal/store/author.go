@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
 )
 
 type Author struct {
@@ -42,7 +43,7 @@ type AuthorStore struct{ q *sqlcgen.Queries }
 func (s *AuthorStore) Create(userID int64, name, avatarURL, description string) (Author, error) {
 	a, err := s.q.CreateAuthor(context.Background(), sqlcgen.CreateAuthorParams{
 		UserID:      userID,
-		Name:        name,
+		Name:        tagnorm.Label(name),
 		AvatarUrl:   ns(avatarURL),
 		Description: ns(description),
 	})
@@ -128,7 +129,7 @@ func (s *AuthorStore) Count() (int, error) {
 
 func (s *AuthorStore) Update(userID, id int64, name, avatarURL, description string) error {
 	res, err := s.q.UpdateAuthor(context.Background(), sqlcgen.UpdateAuthorParams{
-		Name:        name,
+		Name:        tagnorm.Label(name),
 		AvatarUrl:   ns(avatarURL),
 		Description: ns(description),
 		ID:          id,

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
 )
 
 type Collection struct {
@@ -35,7 +36,7 @@ type CollectionStore struct {
 func (s *CollectionStore) Create(userID int64, name string) (Collection, error) {
 	c, err := s.q.CreateCollection(context.Background(), sqlcgen.CreateCollectionParams{
 		UserID: userID,
-		Name:   name,
+		Name:   tagnorm.Label(name),
 		IsAuto: 0,
 	})
 	if err != nil {
@@ -210,7 +211,7 @@ func (s *CollectionStore) Delete(userID, id int64) error {
 // caller; this only verifies ownership).
 func (s *CollectionStore) Rename(userID, id int64, name string) error {
 	res, err := s.q.RenameCollection(context.Background(), sqlcgen.RenameCollectionParams{
-		Name: name, ID: id, UserID: userID,
+		Name: tagnorm.Label(name), ID: id, UserID: userID,
 	})
 	if err != nil {
 		return err

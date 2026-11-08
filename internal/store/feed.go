@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
 )
 
 type Feed struct {
@@ -80,7 +81,7 @@ func (s *FeedStore) CreateWithPlugin(userID, authorID int64, title, feedURL, hom
 	f, err := s.q.CreateFeed(context.Background(), sqlcgen.CreateFeedParams{
 		UserID:          userID,
 		AuthorID:        authorID,
-		Title:           title,
+		Title:           tagnorm.Label(title),
 		FeedUrl:         feedURL,
 		HomeUrl:         ns(homeURL),
 		Description:     ns(description),
@@ -236,7 +237,7 @@ func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, hom
 	feedURL = s.policy.CanonicalizeFeedURL(feedURL)
 	res, err := s.q.UpdateFeed(context.Background(), sqlcgen.UpdateFeedParams{
 		AuthorID:         authorID,
-		Title:            title,
+		Title:            tagnorm.Label(title),
 		FeedURL:          feedURL,
 		HomeURL:          ns(homeURL),
 		Description:      ns(description),

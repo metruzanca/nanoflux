@@ -47,6 +47,31 @@ func TestSavedViewFilterParamsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestFilterParamsAreLowercased guards the read/write normalization of stored
+// and transient tag filters: an old saved view spelled with uppercase still
+// matches the lowercase tags stored on items, and its chip renders lowercase.
+func TestFilterParamsAreLowercased(t *testing.T) {
+	out := filtersFromParams([]string{
+		"tag:show:U/Example-Poster",
+		`tag:hide:any:["R/Golang","r/golang"," R/Rust "]`,
+	})
+	if len(out) != 2 {
+		t.Fatalf("filters = %+v, want 2 rows", out)
+	}
+	if got := out[0].Values; len(got) != 1 || got[0] != "u/example-poster" {
+		t.Fatalf("single tag value = %v, want [u/example-poster]", got)
+	}
+	if got := out[1].Values; len(got) != 2 || got[0] != "r/golang" || got[1] != "r/rust" {
+		t.Fatalf("multi tag values = %v, want [r/golang r/rust]", got)
+	}
+
+	// The legacy ?tags= alias is normalized too.
+	legacy := filtersFromValues(url.Values{"tags": {"R/Golang"}, "feed": {"3"}})
+	if len(legacy) != 2 || legacy[0].Values[0] != "r/golang" {
+		t.Fatalf("legacy filters = %+v, want a lowercase tag row", legacy)
+	}
+}
+
 func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

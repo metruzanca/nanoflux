@@ -50,8 +50,10 @@ func TestViewFilterAuthorScope(t *testing.T) {
 	if err != nil || stats.Total != 1 || stats.Unread != 1 {
 		t.Fatalf("view-only stats = %+v, %v", stats, err)
 	}
+	// The stored tag is canonical lowercase even though the fixture supplied
+	// "u/Captain", and the uppercase view rule still matches it.
 	cats, err := s.Items.ListCategoriesFilter(u.ID, onlyView)
-	if err != nil || len(cats) != 1 || cats[0].Category != "u/Captain" {
+	if err != nil || len(cats) != 1 || cats[0].Category != "u/captain" {
 		t.Fatalf("view-only categories = %+v, %v", cats, err)
 	}
 

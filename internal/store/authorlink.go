@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
+	"github.com/metruzanca/nanoflux/internal/urlcanon"
 )
 
 // AuthorLink is a plain external bookmark attached to an author (e.g. a Twitch
@@ -26,8 +28,8 @@ func (s *AuthorLinkStore) Create(userID, authorID int64, label, url string) (Aut
 	l, err := s.q.CreateAuthorLink(context.Background(), sqlcgen.CreateAuthorLinkParams{
 		UserID:   userID,
 		AuthorID: authorID,
-		Label:    ns(label),
-		Url:      url,
+		Label:    ns(tagnorm.Label(label)),
+		Url:      urlcanon.Link(url),
 	})
 	if err != nil {
 		return AuthorLink{}, fmt.Errorf("create author link: %w", err)
@@ -64,8 +66,8 @@ func (s *AuthorLinkStore) ListByAuthor(userID, authorID int64) ([]AuthorLink, er
 // Update changes an existing link's label and url (the author is unchanged).
 func (s *AuthorLinkStore) Update(userID, id int64, label, url string) error {
 	res, err := s.q.UpdateAuthorLink(context.Background(), sqlcgen.UpdateAuthorLinkParams{
-		Label:  ns(label),
-		Url:    url,
+		Label:  ns(tagnorm.Label(label)),
+		Url:    urlcanon.Link(url),
 		ID:     id,
 		UserID: userID,
 	})

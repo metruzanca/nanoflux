@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
 )
 
 type User struct {
@@ -34,7 +35,7 @@ type UserStore struct {
 func (s *UserStore) Create(username, passwordHash string) (User, error) {
 	ctx := context.Background()
 	u, err := s.q.CreateUser(ctx, sqlcgen.CreateUserParams{
-		Username:     username,
+		Username:     tagnorm.Username(username),
 		PasswordHash: passwordHash,
 	})
 	if err != nil {
@@ -62,7 +63,7 @@ func (s *UserStore) CreateFirstAdmin(username, passwordHash string) (User, bool,
 		return User{}, false, fmt.Errorf("count users: %w", err)
 	}
 	u, err := q.CreateUser(ctx, sqlcgen.CreateUserParams{
-		Username:     username,
+		Username:     tagnorm.Username(username),
 		PasswordHash: passwordHash,
 	})
 	if err != nil {
@@ -95,8 +96,10 @@ func (s *UserStore) ByID(id int64) (User, error) {
 	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.CreatedAt), nil
 }
 
+// ByUsername looks an account up case-insensitively: usernames are stored
+// canonicalized (trimmed, NFC, lowercase) through tagnorm.Username.
 func (s *UserStore) ByUsername(username string) (User, error) {
-	u, err := s.q.GetUserByUsername(context.Background(), username)
+	u, err := s.q.GetUserByUsername(context.Background(), tagnorm.Username(username))
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound
 	}

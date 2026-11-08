@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
 )
 
 // CloneUser copies a seed account into a brand-new non-admin user, remapping
@@ -31,6 +33,7 @@ import (
 // session) expires; callers in demo mode read it back on every request.
 func (s *Store) CloneUser(seedID int64, newUsername, passwordHash, expiresAt string) (User, error) {
 	ctx := context.Background()
+	newUsername = tagnorm.Username(newUsername)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return User{}, fmt.Errorf("clone user begin: %w", err)

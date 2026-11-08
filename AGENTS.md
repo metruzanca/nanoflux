@@ -322,11 +322,17 @@ every entry with a section (`<category label="..."/>`) and its author
 gives the destination section as the category.
 
 - `feedparse.normalizeItem` maps an entry's `<category>` values plus its author
-  name(s) into `Item.Categories` (leading `/` stripped, deduped). This is the
-  generic parser path. Plugin-fetched items set `pluginapi.Item.
-  Categories` directly; `plugin/dispatch.go` copies them into `feedparse.Item`,
-  so both paths reach the same store (a plugin can mark a post kind, e.g. a
-  reblog or self-reblog, with a single label).
+  name(s) into `Item.Categories`. This is the generic parser path. Plugin-fetched
+  items set `pluginapi.Item.Categories` directly; `plugin/dispatch.go` copies
+  them into `feedparse.Item`, so both paths reach the same store (a plugin can
+  mark a post kind, e.g. a reblog or self-reblog, with a single label).
+- Every category is canonicalized through `internal/tagnorm`: Unicode NFC,
+  trimmed, leading `/` stripped, internal whitespace collapsed, and lowercased,
+  with case-insensitive dedupe. A tag is an identifier, never display text, so
+  `R/Cats`, ` r/cats ` and `/r/cats` are one value. The normalization runs at
+  ingest (`itemCategories`, `mergeCategories`) and again at the storage
+  chokepoint (`joinCategories`/`splitCategories`), so a plugin cannot store a
+  second spelling.
 - Plugins that know a post's origin use the conventional labels `reblog` (the
   item reposts another author's post) and `self-reblog` (it reposts the same
   author's earlier post). They are mutually exclusive: never apply both, and
@@ -348,6 +354,19 @@ Categories are also normalized for tag browsing and list filtering.
   `mergeDedupGroup` folds a loser's tags into the survivor; `CloneUser` copies
   them; `BackfillItemCategories` (run at startup in `cmd/server/main.go`) fills
   rows for items stored before the migration, and is a no-op once populated.
+- `Store.NormalizeData` (startup, after migrations and before the cross-feed
+  merge) is the one-time pass for older rows: it lowercases and dedupes
+  `items.categories`, rebuilds canonical `item_categories` rows, lowercases
+  tag-kind `author_filter_values`, canonicalizes usernames, display labels and
+  author-link URLs, then writes the `data.normalization_v1` settings marker. A
+  username collision after lowercasing is a fatal startup error, not a silent
+  rename.
+- Filter values use the same normalizer: `store.NormalizeFilterRules` /
+  `FilterGroups`, the HTTP `newFilter`/`normalizeFilters` parser (so saved-view
+  params are canonical on read), and the final SQL bind points all normalize
+  tag values. `visible_items` compares `author_filter_values` to
+  `item_categories` by exact `=`, which is why the stored values must be
+  lowercase too.
 - `ItemStore.ListCategories(userID, ItemFilter{FeedID|AuthorID|CollectionID})`
   returns each distinct tag with its item count, most-used first.
   `ItemStore.ListUserCategories(userID, unreadOnly)` is the global variant for
@@ -534,6 +553,13 @@ the author page's scope stays `/authors/{id}`.
 Author links with no label used to fall back to the domain text. They now use a
 Simple Icons glyph when one exists.
 
+- Stored author-link URLs are canonicalized through `internal/urlcanon.Link`:
+  trimmed, given an `https://` scheme when missing, and with the scheme and host
+  lowercased. A default port (`http:80`, `https:443`) is dropped; any other
+  port, single-label MagicDNS host (for example `http://nixos:8090/`), IPv6
+  literal, and the path/query/fragment are preserved exactly. Both HTTP input
+  and `AuthorLinkStore.Create/Update` apply it, and `Store.NormalizeData`
+  rewrites older rows.
 - `link_icons` (schemaV63) is a **global** domain -> glyph cache: `domain` is
   the normalized host (`www.` removed), `slug` the Simple Icons slug, `paths`
   the newline-joined SVG path data, `found` 0/1. A confirmed 404 is stored as
@@ -1111,6 +1137,11 @@ full guide (regeneration, adding components, gotchas). The invariants that bite:
   transaction and flips `allow_signup='0'`; a concurrent second signup simply
   becomes a normal user. `schemaV17` seeds `allow_signup='0'`. Recovery is the
   CLI (`nanoflux user create --admin`, `user set-admin`).
+- **Usernames are canonical lowercase.** `UserStore.Create`, `CreateFirstAdmin`
+  and `CloneUser` store `tagnorm.Username(name)` (trimmed, NFC, lowercase), and
+  `ByUsername` applies the same transform, so login and the API are
+  case-insensitive. `Store.NormalizeData` lowercases existing accounts and
+  aborts startup when two of them collide instead of renaming one.
 - **Ingest sanitizer.** `internal/sanitize.HTML` (bluemonday, raster-only media,
   no script/style/iframe/svg/event handlers/js URLs) is applied at the store
   write boundary: `ItemStore.Upsert` (covers feed summaries, plugin items and

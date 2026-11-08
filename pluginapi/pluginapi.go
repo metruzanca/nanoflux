@@ -249,6 +249,9 @@ type Item struct {
 	// carries context worth filtering on, e.g. a site's section, an author, or a
 	// reblog marker. The generic RSS/Atom parser fills the equivalent from
 	// <category> values; a plugin that reads a site's own API sets them directly.
+	// The host canonicalizes each value (NFC, trimmed, no leading slash,
+	// collapsed whitespace, lowercase), so case is not meaningful and a plugin
+	// should not compare categories with a case-sensitive equality.
 	Categories []string
 	Enclosures []Enclosure
 }
@@ -474,10 +477,11 @@ type ItemSharedKey struct {
 //
 // Categorize must not reorder or drop items: it returns entries addressed by
 // Index. The host merges the returned categories into the item's existing ones
-// (the generic parser's <category> values and author names), trimming and
-// deduplicating case-insensitively, so a categorizer only adds labels. It may
-// use Host.Do, but a pure function of the parsed items is strongly preferred
-// since it runs on every poll.
+// (the generic parser's <category> values and author names) and canonicalizes
+// the combined set (NFC, trimmed, no leading slash, collapsed whitespace,
+// lowercase, case-insensitive dedupe), so a categorizer only adds labels and
+// never creates a second spelling. It may use Host.Do, but a pure function of
+// the parsed items is strongly preferred since it runs on every poll.
 type Categorizer interface {
 	// Categorize returns the extra categories for the items it can label, each
 	// addressed by its index in the request.
@@ -634,7 +638,8 @@ type RenderRequest struct {
 	ImageURL string
 	// Kind is the item's display classification (see ItemKind).
 	Kind ItemKind
-	// Categories are the item's stored categories.
+	// Categories are the item's stored categories. They are canonical lowercase
+	// (see Item.Categories), so a renderer must not expect the source's casing.
 	Categories []string
 	// Enclosures are the item's stored media attachments, so a renderer can
 	// decide how to render (or replace) media the host already stored.

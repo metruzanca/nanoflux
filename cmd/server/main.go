@@ -92,6 +92,23 @@ func runServer() {
 		log.Fatal("migrate legacy files", "err", err)
 	}
 
+	// Canonicalize data written by older versions: lowercase tags and the
+	// usernames and author-filter values that match them, clean display labels,
+	// and canonicalize author-link URLs. Runs before the cross-feed merge
+	// because that merge copies item_categories rows. Idempotent and guarded by
+	// a settings marker.
+	if rep, err := st.NormalizeData(); err != nil {
+		log.Fatal("normalize stored data", "err", err)
+	} else if rep.Total() > 0 {
+		log.Info("normalized stored data",
+			"usernames", rep.Usernames,
+			"items", rep.Items,
+			"item_categories", rep.ItemCategories,
+			"author_filter_values", rep.AuthorFilterValues,
+			"labels", rep.Labels,
+			"author_links", rep.AuthorLinks)
+	}
+
 	// Merge the same post stored once per subscription into one item with shared
 	// read/favorite state, then create the cross-feed unique index. Idempotent;
 	// a no-op after the first

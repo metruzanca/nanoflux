@@ -12,6 +12,7 @@ import (
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/sanitize"
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
 )
 
 type Item struct {
@@ -59,37 +60,31 @@ type Item struct {
 
 // joinCategories encodes an item's categories for the denormalized
 // items.categories column: newline-joined, so a category containing a comma or
-// space stays intact. Newlines inside a category are stripped so the encoding
-// is unambiguous.
+// space stays intact. Values are canonicalized through tagnorm (NFC, trimmed,
+// no leading slash, collapsed whitespace, lowercase) and deduplicated, which
+// keeps the column and item_categories in one spelling.
 func joinCategories(cats []string) string {
-	if len(cats) == 0 {
-		return ""
-	}
-	clean := make([]string, 0, len(cats))
-	for _, c := range cats {
-		c = strings.ReplaceAll(strings.TrimSpace(c), "\n", " ")
-		if c != "" {
-			clean = append(clean, c)
-		}
-	}
-	return strings.Join(clean, "\n")
+	return strings.Join(tagnorm.NormalizeAll(cats), "\n")
 }
 
-// splitCategories decodes the items.categories column back into a slice.
+// splitCategories decodes the items.categories column back into a slice. It
+// normalizes on read too, so a row stored before canonicalization (or copied
+// from another row) can never surface an uppercase tag.
 func splitCategories(s string) []string {
 	if s == "" {
 		return nil
 	}
-	return strings.Split(s, "\n")
+	return tagnorm.NormalizeAll(strings.Split(s, "\n"))
 }
 
 // dedupKey is the value items are deduplicated on: the item's Identity when
-// set, else its GUID. It keeps the storage layer's identity rule in one place.
+// set, else its GUID. Both are trimmed so a whitespace-only difference cannot
+// split one entry into two rows.
 func dedupKey(it Item) string {
-	if it.Identity != "" {
-		return it.Identity
+	if k := strings.TrimSpace(it.Identity); k != "" {
+		return k
 	}
-	return it.GUID
+	return strings.TrimSpace(it.GUID)
 }
 
 // crossFeedKey normalizes an item's plugin-supplied SharedKey into the stored
@@ -324,6 +319,8 @@ func (s *ItemStore) UpsertMany(feedID int64, items []Item) ([]UpsertResult, erro
 // reports the stored row id and whether the item is new to feedID.
 func upsertTx(ctx context.Context, tx *sql.Tx, q *sqlcgen.Queries, feedID, userID int64, it Item) (itemID int64, inserted bool, err error) {
 	it.Summary = sanitize.HTML(it.Summary)
+	it.GUID = strings.TrimSpace(it.GUID)
+	it.Identity = strings.TrimSpace(it.Identity)
 	key := dedupKey(it)
 	crossKey := crossFeedKey(it.SharedKey)
 
@@ -582,7 +579,7 @@ func (s *ItemStore) ByID(userID, id int64) (Item, error) {
 func (s *ItemStore) ByFeedIdentity(feedID int64, identity string) (int64, error) {
 	id, err := s.q.GetItemByDedupKey(context.Background(), sqlcgen.GetItemByDedupKeyParams{
 		FeedID:   feedID,
-		DedupKey: identity,
+		DedupKey: strings.TrimSpace(identity),
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
@@ -598,7 +595,7 @@ func (s *ItemStore) ByFeedIdentity(feedID int64, identity string) (int64, error)
 func (s *ItemStore) ByUserCrossKey(userID int64, crossKey string) (int64, error) {
 	id, err := s.q.GetItemByUserCrossKey(context.Background(), sqlcgen.GetItemByUserCrossKeyParams{
 		UserID:   userID,
-		CrossKey: crossKey,
+		CrossKey: strings.TrimSpace(crossKey),
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
@@ -813,11 +810,11 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter, r
 	}
 	for _, tag := range f.Tags {
 		b.WriteString(" AND EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = i.id AND ic.category = ?)")
-		*args = append(*args, tag)
+		*args = append(*args, tagnorm.Normalize(tag))
 	}
 	for _, tag := range f.ExcludeTags {
 		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = i.id AND ic.category = ?)")
-		*args = append(*args, tag)
+		*args = append(*args, tagnorm.Normalize(tag))
 	}
 	if f.ExcludeFeedID != 0 {
 		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_feeds mfx WHERE mfx.item_id = i.id AND mfx.feed_id = ?)")
@@ -1720,7 +1717,7 @@ func decorate(q *sqlcgen.Queries, userID int64, policy URLPolicy, decorator Item
 			return err
 		}
 		for _, f := range feeds {
-			tok := policy.FeedToken(f.FeedUrl)
+			tok := tagnorm.Normalize(policy.FeedToken(f.FeedUrl))
 			if tok == "" {
 				continue
 			}
@@ -1761,7 +1758,7 @@ func resolveAttribution(parts []RawAttributionPart, byToken map[string]TokenTarg
 	for _, p := range parts {
 		ap := AttributionPart{Text: p.Text}
 		if p.Token != "" {
-			if t, ok := byToken[strings.ToLower(p.Token)]; ok {
+			if t, ok := byToken[tagnorm.Normalize(p.Token)]; ok {
 				if t.AuthorID != 0 {
 					ap.URL = "/authors/" + strconv.FormatInt(t.AuthorID, 10)
 				} else {
@@ -2018,7 +2015,7 @@ func filterGroupsClause(itemID string, tagGroups []TagGroup, feedGroups []FeedGr
 		terms := make([]string, 0, len(g.Tags))
 		for _, tag := range g.Tags {
 			terms = append(terms, "EXISTS (SELECT 1 FROM item_categories ic WHERE ic.item_id = "+itemID+" AND ic.category = ?)")
-			args = append(args, tag)
+			args = append(args, tagnorm.Normalize(tag))
 		}
 		if clause := groupClause(terms, g.All, g.Exclude); clause != "" {
 			clauses = append(clauses, clause)

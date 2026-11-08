@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/db"
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
 	"github.com/mmcdole/gofeed"
 	"golang.org/x/net/html"
 )
@@ -494,32 +495,21 @@ func normalizeItem(it *gofeed.Item) Item {
 
 // itemCategories collects an entry's feed-provided categories: its RSS/Atom
 // <category> values (gofeed already prefers the atom label) plus its author
-// name(s). A leading slash is dropped ("/u/name" becomes "u/name"); duplicates
-// are removed, order preserved.
+// name(s). Every value goes through tagnorm: a leading slash is dropped
+// ("/u/name" becomes "u/name"), whitespace is collapsed and the tag is
+// lowercased, so filters and saved views match one spelling.
 func itemCategories(it *gofeed.Item) []string {
-	var out []string
-	seen := map[string]bool{}
-	add := func(raw string) {
-		c := strings.TrimSpace(raw)
-		c = strings.TrimPrefix(c, "/")
-		if c == "" || seen[c] {
-			return
-		}
-		seen[c] = true
-		out = append(out, c)
-	}
-	for _, c := range it.Categories {
-		add(c)
-	}
+	raw := make([]string, 0, len(it.Categories)+1+len(it.Authors))
+	raw = append(raw, it.Categories...)
 	if it.Author != nil {
-		add(it.Author.Name)
+		raw = append(raw, it.Author.Name)
 	}
 	for _, a := range it.Authors {
 		if a != nil {
-			add(a.Name)
+			raw = append(raw, a.Name)
 		}
 	}
-	return out
+	return tagnorm.NormalizeAll(raw)
 }
 
 // trackingParams are query-string keys that exist only for marketing and

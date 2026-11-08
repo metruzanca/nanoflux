@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
 )
 
 // List is a user-defined collection of items. Favorites is the special list
@@ -45,7 +46,7 @@ func toList(id, userID int64, name string, shareToken sql.NullString, createdAt 
 func (s *ListStore) Create(userID int64, name string) (List, error) {
 	l, err := s.q.CreateList(context.Background(), sqlcgen.CreateListParams{
 		UserID: userID,
-		Name:   name,
+		Name:   tagnorm.Label(name),
 	})
 	if err != nil {
 		return List{}, fmt.Errorf("create list: %w", err)
@@ -67,7 +68,7 @@ func (s *ListStore) ByID(userID, id int64) (List, error) {
 // ByName returns the user's list matching name (case-insensitive), or
 // ErrNotFound.
 func (s *ListStore) ByName(userID int64, name string) (List, error) {
-	l, err := s.q.GetListByName(context.Background(), sqlcgen.GetListByNameParams{UserID: userID, Name: name})
+	l, err := s.q.GetListByName(context.Background(), sqlcgen.GetListByNameParams{UserID: userID, Name: tagnorm.Label(name)})
 	if errors.Is(err, sql.ErrNoRows) {
 		return List{}, ErrNotFound
 	}
@@ -87,6 +88,7 @@ func (s *ListStore) Ensure(userID int64, name string) (List, error) {
 	}
 	defer tx.Rollback()
 	q := s.q.WithTx(tx)
+	name = tagnorm.Label(name)
 	if l, err := q.GetListByName(ctx, sqlcgen.GetListByNameParams{UserID: userID, Name: name}); err == nil {
 		if err := tx.Commit(); err != nil {
 			return List{}, err
@@ -146,7 +148,7 @@ func (s *ListStore) Delete(userID, id int64) error {
 
 // Rename updates a list's name.
 func (s *ListStore) Rename(userID, id int64, name string) error {
-	res, err := s.q.RenameList(context.Background(), sqlcgen.RenameListParams{Name: name, ID: id, UserID: userID})
+	res, err := s.q.RenameList(context.Background(), sqlcgen.RenameListParams{Name: tagnorm.Label(name), ID: id, UserID: userID})
 	if err != nil {
 		return err
 	}

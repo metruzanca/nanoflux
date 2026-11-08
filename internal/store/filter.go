@@ -1,6 +1,11 @@
 package store
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
+)
 
 // Filter rule constants shared by the transient list filters and the persisted
 // author-level filters. Actions are show/hide internally; the author settings UI
@@ -57,14 +62,21 @@ func (r FilterRule) Valid() bool {
 }
 
 // NormalizeFilterRules drops invalid rows, cleans values and removes duplicate
-// values, preserving order. It mirrors the HTTP layer's normalizeFilters so both
-// systems accept the same input shape.
+// values, preserving order. Tag values go through tagnorm so a rule always
+// matches the lowercase tags stored on items; feed values stay numeric strings.
+// It mirrors the HTTP layer's normalizeFilters so both systems accept the same
+// input shape.
 func NormalizeFilterRules(in []FilterRule) []FilterRule {
 	out := make([]FilterRule, 0, len(in))
 	for _, r := range in {
 		values := make([]string, 0, len(r.Values))
 		seen := make(map[string]bool, len(r.Values))
 		for _, v := range r.Values {
+			if r.IsTag() {
+				v = tagnorm.Normalize(v)
+			} else {
+				v = strings.TrimSpace(v)
+			}
 			if v == "" || seen[v] {
 				continue
 			}
@@ -87,7 +99,7 @@ func FilterGroups(rules []FilterRule) (tagGroups []TagGroup, feedGroups []FeedGr
 	for _, r := range rules {
 		if r.IsTag() {
 			tagGroups = append(tagGroups, TagGroup{
-				Tags: r.Values, All: r.AllValues(), Exclude: r.Hidden(),
+				Tags: tagnorm.NormalizeAll(r.Values), All: r.AllValues(), Exclude: r.Hidden(),
 			})
 			continue
 		}

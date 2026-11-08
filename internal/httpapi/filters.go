@@ -10,6 +10,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/tagnorm"
 )
 
 // Author-level list filters (the funnel-plus modal on author, feed and
@@ -298,6 +299,10 @@ func newFilter(kind, action, combine string, values []string) (listFilter, bool)
 	}
 	switch kind {
 	case filterKindTag:
+		cleaned = tagnorm.NormalizeAll(cleaned)
+		if len(cleaned) == 0 {
+			return listFilter{}, false
+		}
 		return listFilter{Kind: kind, Action: action, Combine: combine, Values: cleaned, Labels: cleaned}, true
 	case filterKindFeed:
 		ids := make([]string, 0, len(cleaned))
@@ -404,10 +409,16 @@ func normalizeFilters(in listFilters) listFilters {
 		}
 		if f.isTag() {
 			values := make([]string, 0, len(f.Values))
+			seen := make(map[string]bool, len(f.Values))
 			for _, value := range f.Values {
 				if tags >= maxTagFilters {
 					break
 				}
+				value = tagnorm.Normalize(value)
+				if value == "" || seen[value] {
+					continue
+				}
+				seen[value] = true
 				values = append(values, value)
 				tags++
 			}
