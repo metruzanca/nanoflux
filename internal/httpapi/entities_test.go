@@ -170,6 +170,9 @@ func TestCommandPaletteRendered(t *testing.T) {
 
 func TestNavUnreadCounts(t *testing.T) {
 	s, h := newTestServer(t)
+	// This test asserts exact counts after a mutation; disable the 5s TTL cache
+	// so each render recomputes.
+	s.navCounts.ttl = 0
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")

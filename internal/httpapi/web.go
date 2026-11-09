@@ -2011,18 +2011,27 @@ func (s *Server) authors(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) authorRows(userID int64, tz string) []authorRow {
 	rows, _ := s.store.Authors.ListWithFeedCount(userID)
+	counts, _ := s.store.Items.UnreadCountsByAuthor(userID)
+	if counts == nil {
+		counts = map[int64]int{}
+	}
 	viewFilters, viewCounts := s.savedViewsByAuthor(userID, tz)
+	if len(viewFilters) > 0 {
+		scopes := make([]store.AuthorScope, 0, len(viewFilters))
+		for authorID, views := range viewFilters {
+			scopes = append(scopes, store.AuthorScope{AuthorID: authorID, Views: views})
+		}
+		if scoped, err := s.store.Items.UnreadCountsByAuthorScope(userID, scopes); err == nil {
+			for authorID, n := range scoped {
+				counts[authorID] = n
+			}
+		}
+	}
 	out := make([]authorRow, 0, len(rows))
 	for _, r := range rows {
-		unread := r.UnreadCount
-		if views := viewFilters[r.ID]; len(views) > 0 {
-			unread, _ = s.store.Items.CountFiltered(userID, store.ItemFilter{
-				AuthorID: r.ID, Views: views, UnreadOnly: true,
-			})
-		}
 		out = append(out, authorRow{
 			Author: r.Author, FeedCount: r.FeedCount, ViewCount: viewCounts[r.ID],
-			Unread: unread, Taste: authorTaste(r.MaxRank, r.FavCount),
+			Unread: counts[r.ID], Taste: authorTaste(r.MaxRank, r.FavCount),
 		})
 	}
 	return out

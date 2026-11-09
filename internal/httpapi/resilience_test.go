@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHealthz(t *testing.T) {
@@ -37,5 +38,17 @@ func TestRecoverPanicsRenders500(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "something went wrong") {
 		t.Fatalf("panic page missing message: %s", rr.Body.String())
+	}
+}
+
+func TestNavCountsCacheExpires(t *testing.T) {
+	c := &navCountsCache{byUser: map[int64]navCountsEntry{}, ttl: 10 * time.Millisecond}
+	c.set(1, navCounts{Unread: 3, AuthorsWithUnread: 2})
+	if got, ok := c.get(1); !ok || got.Unread != 3 {
+		t.Fatalf("cached counts = %+v, ok=%v", got, ok)
+	}
+	time.Sleep(15 * time.Millisecond)
+	if _, ok := c.get(1); ok {
+		t.Fatal("expired entry should miss")
 	}
 }

@@ -43,8 +43,9 @@ func (s *Server) apiEntities(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out := make([]apiEntity, 0, len(authors)+len(collections)+len(feeds))
+	counts, _ := s.store.Items.UnreadCountsByAuthor(u.ID)
 	for _, a := range authors {
-		out = append(out, apiEntity{Kind: "author", ID: a.ID, Name: a.Name, URL: "/authors/" + strconv.FormatInt(a.ID, 10), Avatar: authorAvatarSrc(a.Author), Unread: a.UnreadCount})
+		out = append(out, apiEntity{Kind: "author", ID: a.ID, Name: a.Name, URL: "/authors/" + strconv.FormatInt(a.ID, 10), Avatar: authorAvatarSrc(a.Author), Unread: counts[a.ID]})
 	}
 	for _, c := range collections {
 		out = append(out, apiEntity{Kind: "collection", ID: c.ID, Name: c.Name, URL: "/collections/" + strconv.FormatInt(c.ID, 10), Unread: c.Unread})

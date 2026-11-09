@@ -1068,15 +1068,19 @@ func TestListAuthorsWithFeedCountUnread(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("rows = %d, want 2", len(rows))
 	}
+	counts, err := s.Items.UnreadCountsByAuthor(u.ID)
+	if err != nil {
+		t.Fatalf("UnreadCountsByAuthor: %v", err)
+	}
 	for _, r := range rows {
 		switch r.Name {
 		case "Busy":
-			if r.FeedCount != 1 || r.UnreadCount != 1 {
-				t.Fatalf("busy author: feeds=%d unread=%d, want 1/1", r.FeedCount, r.UnreadCount)
+			if r.FeedCount != 1 || counts[r.ID] != 1 {
+				t.Fatalf("busy author: feeds=%d unread=%d, want 1/1", r.FeedCount, counts[r.ID])
 			}
 		case "Quiet":
-			if r.FeedCount != 0 || r.UnreadCount != 0 {
-				t.Fatalf("quiet author: feeds=%d unread=%d, want 0/0", r.FeedCount, r.UnreadCount)
+			if r.FeedCount != 0 || counts[r.ID] != 0 {
+				t.Fatalf("quiet author: feeds=%d unread=%d, want 0/0", r.FeedCount, counts[r.ID])
 			}
 		}
 	}

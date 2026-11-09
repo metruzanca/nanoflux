@@ -37,6 +37,7 @@ type Server struct {
 	files        filestore.Store
 	oembed       *oembed.Resolver
 	loginLimiter *loginLimiter
+	navCounts    *navCountsCache
 	// linkIconBase is the Simple Icons endpoint prefix used to resolve author
 	// link glyphs. Empty disables outbound lookups (tests).
 	linkIconBase string
@@ -53,6 +54,7 @@ func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore
 		files:        fs,
 		oembed:       oembed.New(client, 5*time.Minute, 30*time.Second, 2000),
 		loginLimiter: newLoginLimiter(),
+		navCounts:    newNavCountsCache(),
 		linkIconBase: defaultLinkIconBase,
 	}
 }

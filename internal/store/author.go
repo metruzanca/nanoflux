@@ -26,16 +26,15 @@ type Author struct {
 	CreatedAt         string
 }
 
-// AuthorWithCount joins an author with its number of feeds and unread items,
-// plus the taste signal the author index's magic sort needs: the highest
-// manual rank across the author's feeds and the total favorites their feeds
-// own.
+// AuthorWithCount joins an author with its number of feeds and the taste
+// signal the author index's magic sort needs: the highest manual rank across
+// the author's feeds and the total favorites their feeds own. Unread counts are
+// fetched separately for the whole page, so this stays one row per author.
 type AuthorWithCount struct {
 	Author
-	FeedCount   int
-	UnreadCount int
-	MaxRank     int
-	FavCount    int
+	FeedCount int
+	MaxRank   int
+	FavCount  int
 }
 
 type AuthorStore struct{ q *sqlcgen.Queries }
@@ -112,10 +111,9 @@ func (s *AuthorStore) ListWithFeedCount(userID int64) ([]AuthorWithCount, error)
 				AutoReadAfterDays: r.AutoReadAfterDays,
 				CreatedAt:         r.CreatedAt,
 			}),
-			FeedCount:   int(r.FeedCount),
-			UnreadCount: int(r.UnreadCount),
-			MaxRank:     intFromSQL(r.MaxRank),
-			FavCount:    int(r.FavCount),
+			FeedCount: int(r.FeedCount),
+			MaxRank:   intFromSQL(r.MaxRank),
+			FavCount:  int(r.FavCount),
 		})
 	}
 	return out, nil
