@@ -25,11 +25,12 @@ export NANOFLUX_VERSION := $(VERSION)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build start stop restart update status logs shell version backup restore plugins
+.PHONY: help build start stop restart update status logs shell version backup restore plugins check
 
 help:
 	@echo "nanoflux - manage your instance"
 	@echo ""
+	@echo "  check     run gofmt, vet and the full test suite locally"
 	@echo "  build     build the image from this checkout (local registry, the default)"
 	@echo "  start     build if needed and start the app (creates .env on first run)"
 	@echo "  stop      shut the app down (containers and data kept)"
@@ -46,6 +47,18 @@ help:
 	@echo "Run with podman: make <cmd> RUNTIME=podman"
 	@echo "Use the published image instead of a local build: make <start|update> REGISTRY=ghcr"
 	@echo "Development tasks (icons, extension, dev, gen) live in mise: mise tasks"
+
+# Local quality gate. CI is deliberately paused during fast iteration; run this
+# before pushing. Pluginapi is a separate module, so it is vetted and tested
+# explicitly.
+check:
+	@files=$$(gofmt -l cmd internal pluginapi); \
+	if [ -n "$$files" ]; then \
+		echo "gofmt needed:"; echo "$$files"; exit 1; \
+	fi
+	go vet ./...
+	go test ./...
+	cd pluginapi && go vet ./... && go test ./...
 
 # Build the image from source (Dockerfile.local), tagged nanoflux:local. Only
 # meaningful for the local registry; REGISTRY=ghcr pulls the published image.
