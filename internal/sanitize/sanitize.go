@@ -3,7 +3,11 @@
 // are sanitized once at ingest rather than on every render.
 package sanitize
 
-import "github.com/microcosm-cc/bluemonday"
+import (
+	"strings"
+
+	"github.com/microcosm-cc/bluemonday"
+)
 
 // policy is the allow-list applied to every stored item body. It keeps the
 // formatting, links, images, tables and media a feed can reasonably contain
@@ -12,10 +16,11 @@ import "github.com/microcosm-cc/bluemonday"
 var policy = buildPolicy()
 
 // HTML returns s with any disallowed markup or attribute stripped. It is safe
-// to call on plain text (it round-trips unchanged) and idempotent.
+// to call on plain text (it round-trips unchanged) and idempotent. Text with no
+// markup is returned untouched, which makes a poll of a text-only feed cheap.
 func HTML(s string) string {
-	if s == "" {
-		return ""
+	if s == "" || !strings.Contains(s, "<") {
+		return s
 	}
 	return policy.Sanitize(s)
 }

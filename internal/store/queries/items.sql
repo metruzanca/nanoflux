@@ -23,6 +23,10 @@ UPDATE items
 SET summary = ?, categories = ?, image_url = ?, duration_sec = ?
 WHERE id = ?;
 
+-- name: GetItemSnapshotByID :one
+-- The stored content snapshot, used to skip rewriting an unchanged row on poll.
+SELECT summary, categories, image_url, duration_sec FROM items WHERE id = ?;
+
 -- name: FeedUserID :one
 -- The owner of a feed, for denormalizing items.user_id on insert.
 SELECT user_id FROM feeds WHERE id = ?;

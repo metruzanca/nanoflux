@@ -536,6 +536,30 @@ func (q *Queries) GetItemContent(ctx context.Context, id int64) (string, error) 
 	return content, err
 }
 
+const getItemSnapshotByID = `-- name: GetItemSnapshotByID :one
+SELECT summary, categories, image_url, duration_sec FROM items WHERE id = ?
+`
+
+type GetItemSnapshotByIDRow struct {
+	Summary     string         `json:"summary"`
+	Categories  string         `json:"categories"`
+	ImageUrl    sql.NullString `json:"image_url"`
+	DurationSec sql.NullInt64  `json:"duration_sec"`
+}
+
+// The stored content snapshot, used to skip rewriting an unchanged row on poll.
+func (q *Queries) GetItemSnapshotByID(ctx context.Context, id int64) (GetItemSnapshotByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getItemSnapshotByID, id)
+	var i GetItemSnapshotByIDRow
+	err := row.Scan(
+		&i.Summary,
+		&i.Categories,
+		&i.ImageUrl,
+		&i.DurationSec,
+	)
+	return i, err
+}
+
 const getItemWithFeed = `-- name: GetItemWithFeed :one
 SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,

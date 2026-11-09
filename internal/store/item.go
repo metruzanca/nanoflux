@@ -409,24 +409,34 @@ func upsertTx(ctx context.Context, tx *sql.Tx, q *sqlcgen.Queries, feedID, userI
 	}
 
 	// Refresh the content snapshot of an already-stored row (including one owned
-	// by another feed), so a cross-feed member tracks the live feed too.
+	// by another feed), so a cross-feed member tracks the live feed too. Read
+	// the stored snapshot first: a poll that changed nothing skips both the
+	// update and the category delete/insert.
+	categories := joinCategories(it.Categories)
 	if !newRow {
-		if err := q.UpdateItemSnapshotByID(ctx, sqlcgen.UpdateItemSnapshotByIDParams{
-			Summary:     it.Summary,
-			Categories:  joinCategories(it.Categories),
-			ImageUrl:    ns(it.ImageURL),
-			DurationSec: ni(int64(it.DurationSec)),
-			ID:          itemID,
-		}); err != nil {
-			return 0, false, fmt.Errorf("refresh item snapshot: %w", err)
+		snap, err := q.GetItemSnapshotByID(ctx, itemID)
+		if err != nil {
+			return 0, false, fmt.Errorf("read item snapshot: %w", err)
 		}
-	}
-
-	// Normalize the item's tags into item_categories so the list can filter by
-	// tag with an exact, indexed match. Replace rather than append, mirroring
-	// the denormalized column refreshed above.
-	if err := syncItemCategories(ctx, q, itemID, it.Categories); err != nil {
-		return 0, false, fmt.Errorf("sync item categories: %w", err)
+		if snap.Summary != it.Summary || snap.Categories != categories ||
+			snap.ImageUrl != ns(it.ImageURL) || snap.DurationSec != ni(int64(it.DurationSec)) {
+			if err := q.UpdateItemSnapshotByID(ctx, sqlcgen.UpdateItemSnapshotByIDParams{
+				Summary:     it.Summary,
+				Categories:  categories,
+				ImageUrl:    ns(it.ImageURL),
+				DurationSec: ni(int64(it.DurationSec)),
+				ID:          itemID,
+			}); err != nil {
+				return 0, false, fmt.Errorf("refresh item snapshot: %w", err)
+			}
+		}
+		if snap.Categories != categories {
+			if err := syncItemCategories(ctx, q, itemID, it.Categories); err != nil {
+				return 0, false, fmt.Errorf("sync item categories: %w", err)
+			}
+		}
+	} else if err := insertItemCategories(ctx, q, itemID, it.Categories); err != nil {
+		return 0, false, fmt.Errorf("insert item categories: %w", err)
 	}
 
 	// Membership makes the item visible in this feed's streams. A new membership
@@ -1502,6 +1512,12 @@ func syncItemCategories(ctx context.Context, q *sqlcgen.Queries, itemID int64, c
 	if err := q.DeleteItemCategories(ctx, itemID); err != nil {
 		return err
 	}
+	return insertItemCategories(ctx, q, itemID, cats)
+}
+
+// insertItemCategories adds an item's normalized tags without clearing existing
+// rows, for a newly inserted item that cannot have any yet.
+func insertItemCategories(ctx context.Context, q *sqlcgen.Queries, itemID int64, cats []string) error {
 	for _, c := range splitCategories(joinCategories(cats)) {
 		if err := q.AddItemCategory(ctx, sqlcgen.AddItemCategoryParams{ItemID: itemID, Category: c}); err != nil {
 			return err
