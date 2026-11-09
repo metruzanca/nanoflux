@@ -1,0 +1,29 @@
+# Third-party notices
+
+nanoflux is MIT licensed (see [LICENSE](LICENSE)). It vendors or embeds the
+following third-party works. Their licenses apply to those files.
+
+## Frontend
+
+| Work | Where | License |
+| --- | --- | --- |
+| htmx | `internal/web/static/htmx.min.js`, `extension/htmx.min.js` | BSD 2-Clause, https://github.com/bigskysoftware/htmx/blob/master/LICENSE |
+| hls.js (light build) | `internal/web/static/hls.light.min.js` | Apache-2.0, https://github.com/video-dev/hls.js/blob/master/LICENSE |
+| Lucide icons | Inline SVG icons under `internal/web/static` and `internal/web/ui/icon` | ISC, https://github.com/lucide-icons/lucide/blob/main/LICENSE |
+| shadcn-templ components | `internal/web/ui/**` | MIT, https://github.com/kiliman/shadcn-templ |
+| Tailwind CSS output | `internal/web/static/shadcn.css` | MIT, https://github.com/tailwindlabs/tailwindcss/blob/main/LICENSE |
+
+The pinned versions and regeneration steps are in
+[`docs/vendored-web-components.md`](docs/vendored-web-components.md).
+
+## Go modules
+
+The server and plugins are built from Go modules listed in `go.mod` and each
+plugin's `go.mod`. Their licenses remain with their respective authors; the
+module sources and license files are available from the Go module cache or the
+upstream repositories. Run `go list -m all` for the exact dependency graph.
+
+## Icons and artwork
+
+The product mark, PWA icons, and marketing illustrations are original works
+licensed with nanoflux under the MIT License.

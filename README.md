@@ -251,7 +251,8 @@ It does not:
   cookies and login throttling use the forwarded scheme and client IP.
 
 If you expose nanoflux beyond your network: keep signups closed, put it behind
-TLS and authentication, and audit every plugin.
+TLS and authentication, and audit every plugin. To report a vulnerability
+privately, see [SECURITY.md](SECURITY.md).
 
 ## Status and contributing
 
@@ -268,7 +269,8 @@ Coffee is welcome too:
 ## License
 
 MIT. See [LICENSE](LICENSE). UI icons are from [Lucide](https://lucide.dev) ↗,
-used under the ISC License.
+used under the ISC License. Third-party notices are in
+[THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).
 
 - Website: https://nanoflux.app ↗
 - Source: https://github.com/metruzanca/nanoflux ↗
