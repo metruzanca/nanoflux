@@ -1,9 +1,10 @@
 # Pre-launch plan
 
-Status: in progress. Phase 1 (docs), phase 2 (demo removal), and phase 3
-(security hardening) have landed; phase 4 (resilience and stability) is next.
-Last updated 2026-11-09. This is the working plan for changes that should land
-before nanoflux is presented publicly. It is not a commitment to a date.
+Status: in progress. Phase 1 (docs), phase 2 (demo removal), phase 3 (security
+hardening), and phase 4 (resilience and stability) have landed; phase 5
+(performance) is next. Last updated 2026-11-09. This is the working plan for
+changes that should land before nanoflux is presented publicly. It is not a
+commitment to a date.
 
 Goal: remove the demo surface, close the highest-value security and resilience
 gaps, and fix the performance issues that would otherwise dominate the first
@@ -70,7 +71,7 @@ maintenance sweeper in the same change.
 | Add `NF_TRUST_PROXY` (default off) governing both client IP and secure-cookie detection. When on, take the last `X-Forwarded-For` entry and trust `X-Forwarded-Proto`/`X-Forwarded-Ssl`. When off, use `RemoteAddr` and `r.TLS` only. Document it in `.env.example` and the README reverse-proxy note. | Behind a reverse proxy the login limiter currently shares one bucket, so one attacker can lock out every user. Today `SecureRequest` trusts `X-Forwarded-Proto` but `clientIP` does not trust `X-Forwarded-For`; one setting should govern both. Gating both is the safe default and removes header spoofing from direct clients. A proxy deployment must set it or cookies lose `Secure`; call that out in the upgrade notes. |
 | Scrub the plugin environment (`os.Environ()` to a small allowlist) | Plugins inherit S3 and backup secrets today. They are trusted, but they do not need the server's credentials. |
 
-### 4. Resilience and stability
+### 4. Resilience and stability (done)
 
 | Change | Why |
 | --- | --- |
@@ -112,10 +113,11 @@ maintenance sweeper in the same change.
 6. `feat(security): add proxy trust and scrub the plugin environment`
 7. `docs(security): add SECURITY.md and third-party notices`
 8. `build: enable SBOMs in release images`
-9. `fix(poller): recover panics and respawn crashed plugins`
-10. `fix(feeds): pace the first poll of a newly created feed`
-11. `perf(authors): batch unread counts and add benchmarks`
-12. `chore: add make check, schema equality test, and dependency refresh`
+9. `fix(http): recover handler panics and check database health`
+10. `fix(poller): recover panics, respawn crashed plugins, and bound caches`
+11. `fix(feeds): pace the first poll through the poller wake`
+12. `perf(authors): batch unread counts and add benchmarks`
+13. `chore: add make check, schema equality test, and dependency refresh`
 
 ## Deferred and considered
 
