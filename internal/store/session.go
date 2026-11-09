@@ -44,10 +44,14 @@ func (s *SessionStore) Delete(token string) error {
 	return s.q.DeleteSession(context.Background(), HashSessionToken(token))
 }
 
-// DeleteByHash removes a session by its stored hash (the identifier the
-// settings page holds), rather than a raw cookie token.
-func (s *SessionStore) DeleteByHash(hash string) error {
-	return s.q.DeleteSession(context.Background(), hash)
+// DeleteByHashForUser removes one of the user's sessions by its stored hash.
+// Scoping the delete to userID means an authenticated user cannot revoke
+// another account's session even if its hash leaks.
+func (s *SessionStore) DeleteByHashForUser(userID int64, hash string) error {
+	return s.q.DeleteSessionForUser(context.Background(), sqlcgen.DeleteSessionForUserParams{
+		Token:  hash,
+		UserID: userID,
+	})
 }
 
 // DeleteUserSessions revokes every session belonging to a user (used when a

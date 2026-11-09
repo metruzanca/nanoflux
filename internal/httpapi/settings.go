@@ -315,7 +315,7 @@ func (s *Server) settingsSessionsRevoke(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.Sessions.DeleteByHash(token); err != nil {
+	if err := s.store.Sessions.DeleteByHashForUser(u.ID, token); err != nil {
 		log.Error("revoke session", "err", err)
 		http.NotFound(w, r)
 		return

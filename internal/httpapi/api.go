@@ -70,7 +70,13 @@ func (s *Server) apiLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u, err := s.store.Users.ByUsername(req.Username)
-	if err != nil || !auth.CheckPassword(u.PasswordHash, req.Password) {
+	if err != nil {
+		auth.CheckDummyPassword(req.Password)
+		s.loginLimiter.fail(ip)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+		return
+	}
+	if !auth.CheckPassword(u.PasswordHash, req.Password) {
 		s.loginLimiter.fail(ip)
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return

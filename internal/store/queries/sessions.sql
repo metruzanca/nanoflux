@@ -12,6 +12,10 @@ WHERE se.token = ? AND se.expires_at > datetime('now');
 DELETE FROM sessions
 WHERE token = ?;
 
+-- name: DeleteSessionForUser :exec
+DELETE FROM sessions
+WHERE token = ? AND user_id = ?;
+
 -- name: DeleteSessionsByUser :exec
 DELETE FROM sessions
 WHERE user_id = ?;

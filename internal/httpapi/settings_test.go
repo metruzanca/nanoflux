@@ -834,3 +834,24 @@ func TestSecureCookieDetection(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingsSessionsRevokeScopedToUser(t *testing.T) {
+	s, h := newTestServer(t)
+	bob, err := s.store.Users.Create("bob", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.Sessions.Create(bob.ID, "bob-token", db.FormatTime(time.Now().Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	cookie := sessionCookie(t, h)
+	bobHash := store.HashSessionToken("bob-token")
+
+	rr := doForm(h, "POST", "/settings/sessions/"+bobHash+"/revoke", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("revoke other user's session: %d %s", rr.Code, rr.Body.String())
+	}
+	if _, err := s.store.Sessions.UserByToken("bob-token"); err != nil {
+		t.Fatalf("bob's session should survive alice's revoke: %v", err)
+	}
+}

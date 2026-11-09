@@ -34,7 +34,16 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 
 	u, err := s.store.Users.ByUsername(username)
-	if err != nil || !auth.CheckPassword(u.PasswordHash, password) {
+	if err != nil {
+		// Spend the same bcrypt time as a real failed login so the response
+		// does not reveal whether the account exists.
+		auth.CheckDummyPassword(password)
+		s.loginLimiter.fail(ip)
+		w.WriteHeader(http.StatusUnauthorized)
+		web.Render(w, r, basePage("log in", store.User{}, loginPage("invalid username or password", s.allowSignup(), next)))
+		return
+	}
+	if !auth.CheckPassword(u.PasswordHash, password) {
 		s.loginLimiter.fail(ip)
 		w.WriteHeader(http.StatusUnauthorized)
 		web.Render(w, r, basePage("log in", store.User{}, loginPage("invalid username or password", s.allowSignup(), next)))

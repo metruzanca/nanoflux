@@ -46,6 +46,21 @@ func (q *Queries) DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
+const deleteSessionForUser = `-- name: DeleteSessionForUser :exec
+DELETE FROM sessions
+WHERE token = ? AND user_id = ?
+`
+
+type DeleteSessionForUserParams struct {
+	Token  string `json:"token"`
+	UserID int64  `json:"user_id"`
+}
+
+func (q *Queries) DeleteSessionForUser(ctx context.Context, arg DeleteSessionForUserParams) error {
+	_, err := q.db.ExecContext(ctx, deleteSessionForUser, arg.Token, arg.UserID)
+	return err
+}
+
 const deleteSessionsByUser = `-- name: DeleteSessionsByUser :exec
 DELETE FROM sessions
 WHERE user_id = ?

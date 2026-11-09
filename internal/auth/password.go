@@ -14,3 +14,17 @@ func HashPassword(password string) (string, error) {
 func CheckPassword(hash, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
+
+// dummyHash is a valid bcrypt hash used to equalize the login path when the
+// username does not exist. It is never matched against a real account.
+var dummyHash = func() string {
+	h, _ := bcrypt.GenerateFromPassword([]byte("nanoflux-dummy-password"), bcrypt.DefaultCost)
+	return string(h)
+}()
+
+// CheckDummyPassword burns the same bcrypt work as a real failed login. The
+// result is intentionally discarded; callers use it only to avoid a timing
+// oracle that reveals whether an account exists.
+func CheckDummyPassword(password string) {
+	_ = bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(password))
+}
