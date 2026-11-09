@@ -1,9 +1,7 @@
 # Pre-launch plan
 
-Status: in progress. Phase 1 (docs), phase 2 (demo removal), phase 3 (security
-hardening), phase 4 (resilience and stability), and phase 5 (performance) have
-landed; phase 6 (maintenance) is next. Last updated 2026-11-09. This is the
-working plan for changes that should land before nanoflux is presented
+Status: all six phases have landed. Last updated 2026-11-09. This is the
+working record for changes that should land before nanoflux is presented
 publicly. It is not a commitment to a date.
 
 Goal: remove the demo surface, close the highest-value security and resilience
@@ -108,7 +106,7 @@ Benchmark results on the 20k-item fixture (Ryzen 5 5600X, `-benchtime=3x`):
 The author-list query count is now constant instead of one count per
 view-bearing author.
 
-### 6. Maintenance and verification
+### 6. Maintenance and verification (done)
 
 | Change | Why |
 | --- | --- |
@@ -133,7 +131,12 @@ view-bearing author.
 12. `perf(authors): batch unread counts and cache nav totals`
 13. `perf(ingest): skip unchanged snapshots and fast-path plain-text sanitizing`
 14. `perf(home): cap pinned sections at twelve`
-15. `chore: add make check, schema equality test, and dependency refresh`
+15. `chore: add make check and a schema equality test`
+16. `chore(deps): update Go and gRPC to clear govulncheck`
+
+`make check` passes, the schema test matches, and `govulncheck ./...` reports no
+reachable vulnerabilities. Two advisories remain in required modules the code
+does not import.
 
 ## Deferred and considered
 
