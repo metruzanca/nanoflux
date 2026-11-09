@@ -6,6 +6,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -17,6 +18,10 @@ import (
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
+
+// maxPluginResponseBytes caps a brokered plugin HTTP response. Plugins are
+// trusted, but a buggy one should not be able to exhaust the host's memory.
+const maxPluginResponseBytes int64 = 64 << 20
 
 // Host implements pluginapi.Host for a plugin's brokered calls: HTTP goes
 // through the shared client and every response is checked for rate limits,
@@ -79,9 +84,12 @@ func (h *Host) Do(ctx context.Context, req pluginapi.HTTPRequest) (pluginapi.HTT
 		return pluginapi.HTTPResponse{}, err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPluginResponseBytes+1))
 	if err != nil {
 		return pluginapi.HTTPResponse{}, err
+	}
+	if int64(len(data)) > maxPluginResponseBytes {
+		return pluginapi.HTTPResponse{}, fmt.Errorf("plugin response exceeds %d bytes", maxPluginResponseBytes)
 	}
 	if feedparse.IsRateLimited(resp) {
 		backoff := feedparse.RateLimitBackoff(resp)

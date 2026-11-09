@@ -26,6 +26,10 @@ import (
 // ErrNotModified is returned when the server answers 304 for a conditional GET.
 var ErrNotModified = errors.New("not modified")
 
+// maxFeedBytes caps how much of a feed response is read. A hostile or broken
+// feed host can otherwise stream until the process runs out of memory.
+const maxFeedBytes int64 = 32 << 20
+
 // StatusError is an HTTP response status >= 400 from a feed or page fetch. It
 // carries the code separately so callers can turn it into a user-facing message
 // (e.g. a 429 is a rate limit, not a missing feed) without parsing the string.
@@ -288,9 +292,12 @@ func FetchFeed(ctx context.Context, req FetchRequest, client *http.Client) (Resu
 		return Result{}, &StatusError{Code: resp.StatusCode, URL: feedURL}
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFeedBytes+1))
 	if err != nil {
 		return Result{}, fmt.Errorf("read %s: %w", feedURL, err)
+	}
+	if int64(len(body)) > maxFeedBytes {
+		return Result{}, fmt.Errorf("read %s: feed body exceeds %d bytes", feedURL, maxFeedBytes)
 	}
 
 	parsed, err := gofeed.NewParser().Parse(bytes.NewReader(body))

@@ -780,3 +780,15 @@ func TestSavedPageHiddenEntities(t *testing.T) {
 		t.Fatalf("system author page should 404, got %d", rr.Code)
 	}
 }
+
+func TestAPILoginRejectsOversizeBody(t *testing.T) {
+	_, h := newTestServer(t)
+	body := `{"username":"` + strings.Repeat("a", maxJSONBody) + `","password":"x"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("oversize login: got %d, want 400", rr.Code)
+	}
+}

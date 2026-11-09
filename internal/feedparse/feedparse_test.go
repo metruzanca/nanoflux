@@ -1,6 +1,7 @@
 package feedparse
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -672,5 +673,18 @@ func TestResolveEnclosureKind(t *testing.T) {
 		if got := ResolveEnclosureKind(c.kind, c.url, c.mime); got != c.want {
 			t.Errorf("ResolveEnclosureKind(%q,%q,%q) = %q, want %q", c.kind, c.url, c.mime, got, c.want)
 		}
+	}
+}
+
+func TestFetchRejectsOversizeBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/rss+xml")
+		_, _ = w.Write(bytes.Repeat([]byte("a"), int(maxFeedBytes)+1))
+	}))
+	defer srv.Close()
+
+	_, err := Fetch(context.Background(), srv.URL, srv.Client(), "", "")
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected oversize error, got %v", err)
 	}
 }

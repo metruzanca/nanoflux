@@ -45,8 +45,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
-func readJSON(r *http.Request, v any) error {
+// maxJSONBody caps a JSON request body. JSON payloads in this API are small,
+// and /api/login is unauthenticated.
+const maxJSONBody = 1 << 20
+
+func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
@@ -60,7 +65,7 @@ func (s *Server) apiLogin(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := readJSON(w, r, &req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
@@ -137,7 +142,7 @@ func (s *Server) apiItemRead(w http.ResponseWriter, r *http.Request) {
 	if body := struct {
 		Read *bool `json:"read"`
 	}{}; r.ContentLength != 0 {
-		_ = readJSON(r, &body)
+		_ = readJSON(w, r, &body)
 		if body.Read != nil {
 			read = *body.Read
 		}
@@ -154,7 +159,7 @@ func (s *Server) apiDiscover(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		URL string `json:"url"`
 	}
-	if err := readJSON(r, &req); err != nil || req.URL == "" {
+	if err := readJSON(w, r, &req); err != nil || req.URL == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "url required"})
 		return
 	}
@@ -206,7 +211,7 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		} `json:"author,omitempty"`
 		CollectionID int64 `json:"collection_id"`
 	}
-	if err := readJSON(r, &req); err != nil || req.FeedURL == "" {
+	if err := readJSON(w, r, &req); err != nil || req.FeedURL == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "feed_url required"})
 		return
 	}

@@ -107,6 +107,21 @@ func (s *Server) clampPollIntervalSec(rawURL string, sec int) int {
 	return sec
 }
 
+// maxRequestBody caps any request body. Avatar and OPML uploads are smaller
+// than this; the JSON API adds a tighter 1 MiB cap of its own.
+const maxRequestBody = 10 << 20
+
+// limitRequestBody rejects a request whose body exceeds maxRequestBody. The
+// handler still sees the read error, so it can return a form-friendly message.
+func limitRequestBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
@@ -312,7 +327,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/ext/page-form", s.auth.Require(http.HandlerFunc(s.apiExtPageForm)))
 	mux.Handle("POST /api/ext/page-save", s.auth.Require(http.HandlerFunc(s.apiExtPageSave)))
 
-	return logRequests(s.securityHeaders(s.csrfMiddleware(cors(s.analyticsMiddleware(s.navCountsMiddleware(s.errorPages(mux)))))))
+	return logRequests(s.securityHeaders(s.csrfMiddleware(cors(s.analyticsMiddleware(s.navCountsMiddleware(s.errorPages(limitRequestBody(mux))))))))
 }
 
 // securityHeaders sets the response headers shared by every route. The CSP is
