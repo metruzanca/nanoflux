@@ -1,9 +1,9 @@
 # Pre-launch plan
 
-Status: in progress. Phase 1 (docs) and phase 2 (demo removal) have landed;
-phase 3 (security hardening) is next. Last updated 2026-11-08. This is the
-working plan for changes that should land before nanoflux is presented
-publicly. It is not a commitment to a date.
+Status: in progress. Phase 1 (docs), phase 2 (demo removal), and phase 3
+(security hardening) have landed; phase 4 (resilience and stability) is next.
+Last updated 2026-11-09. This is the working plan for changes that should land
+before nanoflux is presented publicly. It is not a commitment to a date.
 
 Goal: remove the demo surface, close the highest-value security and resilience
 gaps, and fix the performance issues that would otherwise dominate the first
@@ -21,7 +21,7 @@ Principles:
 
 ## Planned changes
 
-### 1. README and project documents
+### 1. README and project documents (done)
 
 | Change | Why |
 | --- | --- |
@@ -56,7 +56,7 @@ maintenance sweeper in the same change.
 | Add `Sessions.DeleteExpired()` to `maintenance.Sweeper` | Replaces the demo manager's purge. Without it, expired sessions accumulate forever on a normal instance. |
 | Update `AGENTS.md` and `docs/customization.plan.md` | Both describe demo mode as a current feature. Leaving them stale would mislead the next agent or contributor. |
 
-### 3. Security hardening
+### 3. Security hardening (done; CSP tightening deferred)
 
 | Change | Why |
 | --- | --- |
