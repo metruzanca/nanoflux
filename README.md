@@ -247,7 +247,8 @@ It does not:
 
 - Sandbox plugins. See the plugin warning above.
 - Terminate TLS. Put a reverse proxy in front of it for any deployment beyond
-  localhost.
+  localhost. When that proxy terminates TLS, set `NF_TRUST_PROXY=1` so secure
+  cookies and login throttling use the forwarded scheme and client IP.
 
 If you expose nanoflux beyond your network: keep signups closed, put it behind
 TLS and authentication, and audit every plugin.

@@ -23,7 +23,7 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	next := safeNext(r.FormValue("next"))
-	ip := clientIP(r)
+	ip := clientIP(r, s.cfg.TrustProxy)
 	if s.loginLimiter.blocked(ip) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		web.Render(w, r, basePage("log in", store.User{}, loginPage("too many attempts — try again later", s.allowSignup(), next)))

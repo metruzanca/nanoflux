@@ -3,6 +3,7 @@ package httpapi
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -73,10 +74,18 @@ func (l *loginLimiter) success(ip string) {
 	delete(l.byIP, ip)
 }
 
-// clientIP extracts the client's IP from the request. Behind a reverse proxy
-// this is the proxy's address unless X-Forwarded-For is forwarded (not trusted
-// by default).
-func clientIP(r *http.Request) string {
+// clientIP extracts the client's IP from the request. With trustProxy, it takes
+// the last X-Forwarded-For entry (the address appended by the trusted proxy);
+// otherwise it uses RemoteAddr and ignores forwarded headers.
+func clientIP(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+			parts := strings.Split(xff, ",")
+			if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
+				return ip
+			}
+		}
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

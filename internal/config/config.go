@@ -39,6 +39,10 @@ type Config struct {
 	// PluginIdleTimeout is how long an external plugin subprocess may sit
 	// unused before it is killed and respawned on demand. 0 keeps them resident.
 	PluginIdleTimeout time.Duration
+	// TrustProxy makes the app trust X-Forwarded-For and X-Forwarded-Proto from
+	// a reverse proxy. Off by default so a direct client cannot spoof its IP or
+	// the request scheme.
+	TrustProxy bool
 	// ProgressRetention is how long a saved media playback position is kept
 	// after its last update. 0 disables the sweep; a per-user row cap still
 	// applies on every write.
@@ -116,6 +120,7 @@ func Load() Config {
 		SessionTouchInterval: durationEnv("NF_SESSION_TOUCH_INTERVAL", time.Minute),
 		DBMaxConns:           intEnv("NF_DB_MAX_CONNS", 4),
 		PluginIdleTimeout:    durationEnv("NF_PLUGIN_IDLE_TIMEOUT", 5*time.Minute),
+		TrustProxy:           boolEnv("NF_TRUST_PROXY", false),
 		// Saved playback positions are tiny, but stale ones are useless. 90
 		// days covers "I'll get back to this" without hoarding abandoned
 		// videos; the write path also caps a user to 200 rows.

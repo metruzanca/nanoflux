@@ -56,7 +56,7 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) error {
 }
 
 func (s *Server) apiLogin(w http.ResponseWriter, r *http.Request) {
-	ip := clientIP(r)
+	ip := clientIP(r, s.cfg.TrustProxy)
 	if s.loginLimiter.blocked(ip) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts — try again later"})
 		return

@@ -75,6 +75,7 @@ func runServer() {
 
 	st := store.New(sqldb)
 	a := auth.New(st)
+	a.SetTrustProxy(cfg.TrustProxy)
 	a.SetTouchInterval(cfg.SessionTouchInterval)
 
 	files, err := newFileStore(cfg)

@@ -251,15 +251,15 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		Appearance:         settingsAppearanceData{Theme: u.Theme, Accent: u.AccentColor, HideUnreadCounts: u.HideUnreadCounts, HideUnreadNav: u.HideUnreadNav, GridMaxColumns: store.ClampGridColumns(u.GridMaxColumns)},
 		AutoRead:           settingsAutoReadData{Value: autoReadValue(u.AutoReadAfterDays)},
 		Sessions:           s.settingsSessionsData(u, auth.Token(r)),
-		Extension:          settingsExtensionData{ServerURL: requestBaseURL(r)},
+		Extension:          settingsExtensionData{ServerURL: s.requestBaseURL(r)},
 	})))
 }
 
 // requestBaseURL returns the origin (scheme + host) the request was served on,
 // for instructions that reference this server (e.g. the extension setup).
-func requestBaseURL(r *http.Request) string {
+func (s *Server) requestBaseURL(r *http.Request) string {
 	scheme := "http"
-	if auth.SecureRequest(r) {
+	if auth.SecureRequest(r, s.cfg.TrustProxy) {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host

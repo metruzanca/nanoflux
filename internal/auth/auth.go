@@ -28,6 +28,10 @@ const (
 type Authenticator struct {
 	store *store.Store
 
+	// trustProxy makes SecureRequest honor X-Forwarded-Proto/Ssl. Off by
+	// default so a direct client cannot claim HTTPS.
+	trustProxy bool
+
 	// touchInterval bounds how often a session's sliding expiry is written. A
 	// write on every request serializes behind the poller on a single
 	// connection; 0 touches on every resolve (the old behavior).
@@ -43,6 +47,10 @@ func New(st *store.Store) *Authenticator {
 		lastTouch:     map[string]time.Time{},
 	}
 }
+
+// SetTrustProxy makes the authenticator trust reverse-proxy forwarding
+// headers. It should be set once at startup.
+func (a *Authenticator) SetTrustProxy(on bool) { a.trustProxy = on }
 
 // SetTouchInterval sets the minimum spacing between sliding-expiry writes for a
 // session. 0 disables throttling (touch on every resolve).
@@ -106,7 +114,7 @@ func (a *Authenticator) SetCookie(w http.ResponseWriter, r *http.Request, token 
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   SecureRequest(r),
+		Secure:   SecureRequest(r, a.trustProxy),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(SessionTTL.Seconds()),
 		Expires:  time.Now().Add(SessionTTL),
@@ -120,18 +128,22 @@ func (a *Authenticator) ClearCookie(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   SecureRequest(r),
+		Secure:   SecureRequest(r, a.trustProxy),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 		Expires:  time.Unix(1, 0),
 	})
 }
 
-// SecureRequest reports whether the client connection is (or was, via a
-// reverse proxy) HTTPS.
-func SecureRequest(r *http.Request) bool {
+// SecureRequest reports whether the client connection is (or was, via a trusted
+// reverse proxy) HTTPS. When trustProxy is false, only r.TLS counts and
+// forwarded headers are ignored.
+func SecureRequest(r *http.Request, trustProxy bool) bool {
 	if r.TLS != nil {
 		return true
+	}
+	if !trustProxy {
+		return false
 	}
 	if strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
 		return true

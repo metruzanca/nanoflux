@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"crypto/tls"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -75,5 +77,20 @@ func TestTouchThrottle(t *testing.T) {
 	}
 	if got := sessionExpiry(t, st, u.ID); got == frozen {
 		t.Fatal("unthrottled resolve did not update expiry")
+	}
+}
+
+func TestSecureRequestTrustProxy(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("X-Forwarded-Proto", "https")
+	if SecureRequest(r, false) {
+		t.Fatal("X-Forwarded-Proto must be ignored when trust is off")
+	}
+	if !SecureRequest(r, true) {
+		t.Fatal("X-Forwarded-Proto should be honored when trust is on")
+	}
+	r.TLS = &tls.ConnectionState{}
+	if !SecureRequest(r, false) {
+		t.Fatal("direct TLS should always count")
 	}
 }

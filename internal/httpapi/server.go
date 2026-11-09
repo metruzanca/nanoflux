@@ -342,7 +342,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", s.contentSecurityPolicy())
 		// Only send HSTS when the request actually arrived over HTTPS, so a
 		// plain-HTTP LAN install is not locked to a scheme it does not serve.
-		if auth.SecureRequest(r) {
+		if auth.SecureRequest(r, s.cfg.TrustProxy) {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 		next.ServeHTTP(w, r)

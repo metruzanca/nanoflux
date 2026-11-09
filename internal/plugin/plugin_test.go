@@ -1072,3 +1072,24 @@ func TestRegistryMinPollInterval(t *testing.T) {
 		t.Fatalf("unparsable floor = %v, want 0", got)
 	}
 }
+
+func TestPluginEnvScrubsSecrets(t *testing.T) {
+	t.Setenv("NF_S3_SECRET_KEY", "secret")
+	t.Setenv("PATH", "/bin")
+
+	var hasPath, hasSecret bool
+	for _, e := range pluginEnv() {
+		if e == "PATH=/bin" {
+			hasPath = true
+		}
+		if strings.Contains(e, "NF_S3_SECRET_KEY") {
+			hasSecret = true
+		}
+	}
+	if !hasPath {
+		t.Fatal("PATH should be passed to plugins")
+	}
+	if hasSecret {
+		t.Fatal("server secrets must not be passed to plugins")
+	}
+}

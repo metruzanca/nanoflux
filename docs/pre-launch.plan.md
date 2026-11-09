@@ -69,7 +69,6 @@ maintenance sweeper in the same change.
 | Compare a dummy bcrypt hash on login when the username does not exist | Removes the timing oracle that reveals valid usernames. |
 | Add `NF_TRUST_PROXY` (default off) governing both client IP and secure-cookie detection. When on, take the last `X-Forwarded-For` entry and trust `X-Forwarded-Proto`/`X-Forwarded-Ssl`. When off, use `RemoteAddr` and `r.TLS` only. Document it in `.env.example` and the README reverse-proxy note. | Behind a reverse proxy the login limiter currently shares one bucket, so one attacker can lock out every user. Today `SecureRequest` trusts `X-Forwarded-Proto` but `clientIP` does not trust `X-Forwarded-For`; one setting should govern both. Gating both is the safe default and removes header spoofing from direct clients. A proxy deployment must set it or cookies lose `Secure`; call that out in the upgrade notes. |
 | Scrub the plugin environment (`os.Environ()` to a small allowlist) | Plugins inherit S3 and backup secrets today. They are trusted, but they do not need the server's credentials. |
-| Tighten CSP `connect-src` to `'self'` plus analytics origins | The app only fetches same-origin; a broad `connect-src` weakens the CSP for no benefit. |
 
 ### 4. Resilience and stability
 
@@ -110,11 +109,13 @@ maintenance sweeper in the same change.
 3. `fix(security): cap request bodies and set server timeouts`
 4. `fix(security): scope session revoke and close the login timing gap`
 5. `fix(security): require CSRF for cookie-authenticated API requests`
-6. `feat(security): add proxy trust, plugin env scrub, and tighter CSP`
-7. `fix(poller): recover panics and respawn crashed plugins`
-8. `fix(feeds): pace the first poll of a newly created feed`
-9. `perf(authors): batch unread counts and add benchmarks`
-10. `chore: add make check, schema equality test, and dependency refresh`
+6. `feat(security): add proxy trust and scrub the plugin environment`
+7. `docs(security): add SECURITY.md and third-party notices`
+8. `build: enable SBOMs in release images`
+9. `fix(poller): recover panics and respawn crashed plugins`
+10. `fix(feeds): pace the first poll of a newly created feed`
+11. `perf(authors): batch unread counts and add benchmarks`
+12. `chore: add make check, schema equality test, and dependency refresh`
 
 ## Deferred and considered
 
@@ -143,6 +144,7 @@ matters and why it is deferred.
 | Denormalized unread counters | Avoids counting unread items on every page. | A schema and write-path change with invalidation risk. Measure the TTL cache first. |
 | Rewriting the `CAST(sqlc.arg(...) AS INTEGER) = 0` query pattern | It may prevent index use on some queries. | Needs `EXPLAIN QUERY PLAN` evidence before changing generated query shapes. Measure first. |
 | Batching home-section queries | Home runs one query per pinned section. | `LIMIT 9` should stop early on the time index. Capping sections is the cheap fix; batching waits for measurements. |
+| Tightening CSP `connect-src` | A narrower `connect-src` reduces exfiltration paths if script injection ever occurs. | hls.js fetches remote manifests and segments over XHR, and the media hosts are not known ahead of time. Tightening it would break plugin HLS video. A page-specific policy or a player that loads through `media-src` is needed first. |
 | `ListItems` / `CountUnread` materialized counters | Same as denormalized counters above. | Deferred until the measured benefit justifies the invalidation complexity. |
 
 ## Verification

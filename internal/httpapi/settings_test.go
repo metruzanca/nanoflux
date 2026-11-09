@@ -811,7 +811,7 @@ func TestLoginRateLimitClearsOnSuccess(t *testing.T) {
 }
 
 func TestSecureCookieDetection(t *testing.T) {
-	_, h := newTestServer(t)
+	s, h := newTestServer(t)
 
 	// Plain HTTP -> not Secure.
 	rr := login(t, h)
@@ -821,16 +821,29 @@ func TestSecureCookieDetection(t *testing.T) {
 		}
 	}
 
-	// X-Forwarded-Proto: https -> Secure.
-	form := url.Values{"username": {"alice"}, "password": {"secret"}}
-	req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("X-Forwarded-Proto", "https")
-	rr2 := httptest.NewRecorder()
-	h.ServeHTTP(rr2, req)
-	for _, c := range rr2.Result().Cookies() {
+	loginWithProto := func() *httptest.ResponseRecorder {
+		form := url.Values{"username": {"alice"}, "password": {"secret"}}
+		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("X-Forwarded-Proto", "https")
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		return rr
+	}
+
+	// Forwarded headers are ignored unless proxy trust is on.
+	for _, c := range loginWithProto().Result().Cookies() {
+		if c.Name == auth.SessionCookieName && c.Secure {
+			t.Fatal("untrusted X-Forwarded-Proto must not mark the cookie Secure")
+		}
+	}
+
+	// With trust on, X-Forwarded-Proto: https -> Secure.
+	s.auth.SetTrustProxy(true)
+	s.cfg.TrustProxy = true
+	for _, c := range loginWithProto().Result().Cookies() {
 		if c.Name == auth.SessionCookieName && !c.Secure {
-			t.Fatal("cookie behind https proxy should be Secure")
+			t.Fatal("cookie behind a trusted https proxy should be Secure")
 		}
 	}
 }

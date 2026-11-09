@@ -69,12 +69,33 @@ func LoadExternal(dir string, reg *Registry) func() {
 	}
 }
 
+// pluginEnv returns the environment a plugin subprocess may see. The server's
+// secrets (S3 keys, backup credentials) are deliberately excluded: plugin
+// configuration belongs in that plugin's settings, pushed through Configure.
+// Network and TLS variables are kept so a plugin follows the host's proxy and
+// certificate configuration.
+func pluginEnv() []string {
+	allow := []string{
+		"PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TZ",
+		"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+		"http_proxy", "https_proxy", "no_proxy", "all_proxy",
+		"SSL_CERT_FILE", "SSL_CERT_DIR",
+	}
+	out := make([]string, 0, len(allow))
+	for _, k := range allow {
+		if v, ok := os.LookupEnv(k); ok {
+			out = append(out, k+"="+v)
+		}
+	}
+	return out
+}
+
 // loadOne starts one plugin subprocess and dispenses its Fetcher.
 func loadOne(path string) (pluginapi.Fetcher, *goplugin.Client, error) {
 	// go-plugin's handshake cookie proves this process was launched by the host
 	// and keeps a plugin from doing work if run by hand.
 	cmd := exec.Command(path)
-	cmd.Env = os.Environ()
+	cmd.Env = pluginEnv()
 	client := goplugin.NewClient(&goplugin.ClientConfig{
 		HandshakeConfig:  pluginapi.Handshake,
 		Plugins:          pluginapi.PluginSet(nil),

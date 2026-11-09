@@ -454,8 +454,11 @@ its `Match` may safely ignore `CapFeedAdmin`.
 
 A plugin that needs admin-editable configuration — a service base URL, an API
 token, a session cookie — implements `Configurable` instead of reading env vars
-or a sidecar file. The host renders a form in the admin panel and pushes the
-stored values back:
+or a sidecar file. The host passes only a minimal environment to the plugin
+(`PATH`, `HOME`, `TMPDIR`, `LANG`/`LC_*`, `TZ`, proxy variables, and
+`SSL_CERT_FILE`/`SSL_CERT_DIR`); server secrets such as `NF_S3_*` and
+`NF_BACKUP_*` are not visible. The host renders a form in the admin panel and
+pushes the stored values back:
 
 ```go
 func (AppC) Settings() []pluginapi.SettingField {

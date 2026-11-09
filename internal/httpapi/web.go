@@ -832,7 +832,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	if data.EmbedSrc == "" {
 		data.EmbedSrc = s.resolveMediaEmbed(ctx, data)
 	}
-	s.loadProgress(u.ID, &it, &data, requestBaseURL(r))
+	s.loadProgress(u.ID, &it, &data, s.requestBaseURL(r))
 	if sh, err := s.store.Shares.ByItem(u.ID, it.ID); err == nil {
 		data.ShareToken = sh.Token
 	}
