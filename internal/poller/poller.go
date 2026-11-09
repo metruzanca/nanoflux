@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -104,6 +105,10 @@ type Poller struct {
 	// only touched by one cycle at a time.
 	queues  map[string]*hostQueue
 	cycleMu sync.Mutex
+
+	// wake nudges Run to start a cycle before the next timer. A newly added feed
+	// uses it so the poller, not the request goroutine, owns host pacing.
+	wake chan struct{}
 }
 
 // hostQueue is one registrable host's FIFO of due feed IDs. IDs are immutable
@@ -168,6 +173,19 @@ func New(st *store.Store, interval time.Duration, workers int) *Poller {
 		hostWindow:  map[string]time.Duration{},
 		hostNextHit: map[string]time.Time{},
 		queues:      map[string]*hostQueue{},
+		wake:        make(chan struct{}, 1),
+	}
+}
+
+// Wake asks Run to start a poll cycle now. It is safe from any goroutine and
+// coalesces concurrent requests into one wake.
+func (p *Poller) Wake() {
+	if p.wake == nil {
+		return
+	}
+	select {
+	case p.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -292,7 +310,7 @@ func nextWakeDelay(wake, now time.Time, interval time.Duration) time.Duration {
 func (p *Poller) Run(ctx context.Context) {
 	log.Info("poller starting", "interval", p.interval)
 	for {
-		_, wake, err := p.pollDue(ctx)
+		_, wake, err := p.safePollDue(ctx)
 		if err != nil {
 			log.Error("poll due", "err", err)
 		}
@@ -313,9 +331,23 @@ func (p *Poller) Run(ctx context.Context) {
 			t.Stop()
 			log.Info("poller stopped")
 			return
+		case <-p.wake:
+			t.Stop()
 		case <-t.C:
 		}
 	}
+}
+
+// safePollDue runs one cycle and converts a panic into an error, so a bug in
+// queue bookkeeping cannot kill the process.
+func (p *Poller) safePollDue(ctx context.Context) (n int, wake time.Time, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("poll cycle panic", "panic", r, "stack", string(debug.Stack()))
+			n, wake, err = 0, time.Time{}, fmt.Errorf("poll cycle panic: %v", r)
+		}
+	}()
+	return p.pollDue(ctx)
 }
 
 // PollDue fetches every enabled feed that is due and returns the number of new
@@ -392,6 +424,11 @@ func (p *Poller) pollDue(ctx context.Context) (int, time.Time, error) {
 		go func(plan hostPlan) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			defer func() {
+				if r := recover(); r != nil {
+					log.Error("poll host panic", "host", plan.host, "panic", r, "stack", string(debug.Stack()))
+				}
+			}()
 			res := p.pollHost(ctx, plan)
 			mu.Lock()
 			sum.merge(res)
@@ -766,9 +803,20 @@ func (p *Poller) learnWindow(host string, retryAfter time.Duration) {
 	p.hostMu.Unlock()
 }
 
-// PollOne fetches a single feed, stores new items, and records poll metadata.
-// It returns the number of new items.
-func (p *Poller) PollOne(ctx context.Context, f store.Feed) (int, error) {
+// PollOne fetches one feed immediately. It is the manual-refresh path, so it is
+// exempt from the poll floor and host spacing. A panic is recovered and
+// returned as an error rather than killing the process.
+func (p *Poller) PollOne(ctx context.Context, f store.Feed) (n int, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("poll feed panic", "feed_id", f.ID, "url", f.FeedURL, "panic", r, "stack", string(debug.Stack()))
+			n, err = 0, fmt.Errorf("poll feed panic: %v", r)
+		}
+	}()
+	return p.pollOne(ctx, f)
+}
+
+func (p *Poller) pollOne(ctx context.Context, f store.Feed) (int, error) {
 	res, err := feedparse.Fetch(ctx, f.FeedURL, p.client, f.ETag, f.LastModified)
 	if errors.Is(err, feedparse.ErrNotModified) {
 		fetched := db.Now()

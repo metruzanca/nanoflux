@@ -7,6 +7,10 @@ import (
 	"time"
 
 	goplugin "github.com/hashicorp/go-plugin"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
@@ -115,13 +119,34 @@ func (m *managedExternal) call(touch bool, fn func(f pluginapi.Fetcher) error) e
 
 	err := fn(f)
 
+	var dead *goplugin.Client
+	var name string
 	m.mu.Lock()
 	m.users--
 	if touch {
 		m.lastUsed = time.Now()
 	}
+	// A transport error means the subprocess died. Clear it so the next call
+	// spawns a fresh one instead of failing until a restart. Only do this when
+	// no other call is using the process.
+	if err != nil && m.users == 0 && m.client != nil && pluginTransportError(err) {
+		dead = m.client
+		m.client = nil
+		m.inner = nil
+		name = m.meta.Name
+	}
 	m.mu.Unlock()
+	if dead != nil {
+		dead.Kill()
+		log.Warn("plugin process unavailable; it will respawn on the next call", "plugin", name, "err", err)
+	}
 	return err
+}
+
+// pluginTransportError reports whether err means the plugin process is gone, as
+// opposed to an application-level error from a healthy plugin.
+func pluginTransportError(err error) bool {
+	return status.Code(err) == codes.Unavailable
 }
 
 func (m *managedExternal) reapLoop() {

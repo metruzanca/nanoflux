@@ -18,6 +18,8 @@ import (
 	"github.com/metruzanca/nanoflux/internal/feedparse"
 	"github.com/metruzanca/nanoflux/internal/store"
 	"github.com/metruzanca/nanoflux/pluginapi"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // fakeFetcher is a plugin stub for registry tests.
@@ -1091,5 +1093,14 @@ func TestPluginEnvScrubsSecrets(t *testing.T) {
 	}
 	if hasSecret {
 		t.Fatal("server secrets must not be passed to plugins")
+	}
+}
+
+func TestPluginTransportError(t *testing.T) {
+	if !pluginTransportError(status.Error(codes.Unavailable, "process exited")) {
+		t.Fatal("Unavailable should be treated as a dead plugin")
+	}
+	if pluginTransportError(errors.New("application error")) {
+		t.Fatal("ordinary errors should not respawn the plugin")
 	}
 }

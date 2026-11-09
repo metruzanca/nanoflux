@@ -13,6 +13,13 @@ import (
 	"github.com/metruzanca/nanoflux/pluginapi"
 )
 
+// Cache limits keep per-URL memoization bounded on a long-running instance.
+// On overflow the map is cleared, matching the plugin match cache.
+const (
+	minPollCacheLimit  = 8192
+	playbackCacheLimit = 8192
+)
+
 // Registry holds the loaded plugins and routes discovery/fetch to the first
 // matching one, in registration order.
 type Registry struct {
@@ -466,7 +473,7 @@ func (r *Registry) MinPollInterval(rawURL string) time.Duration {
 			floor = d
 		}
 	}
-	if r.minCache == nil {
+	if r.minCache == nil || len(r.minCache) >= minPollCacheLimit {
 		r.minCache = map[string]time.Duration{}
 	}
 	r.minCache[rawURL] = floor
@@ -510,7 +517,7 @@ func (r *Registry) PlaybackFor(rawURL string) (key, player string) {
 			break
 		}
 	}
-	if r.playCache == nil {
+	if r.playCache == nil || len(r.playCache) >= playbackCacheLimit {
 		r.playCache = map[string]playbackTarget{}
 	}
 	r.playCache[rawURL] = target
