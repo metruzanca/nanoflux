@@ -1,10 +1,10 @@
 # Pre-launch plan
 
 Status: in progress. Phase 1 (docs), phase 2 (demo removal), phase 3 (security
-hardening), and phase 4 (resilience and stability) have landed; phase 5
-(performance) is next. Last updated 2026-11-09. This is the working plan for
-changes that should land before nanoflux is presented publicly. It is not a
-commitment to a date.
+hardening), phase 4 (resilience and stability), and phase 5 (performance) have
+landed; phase 6 (maintenance) is next. Last updated 2026-11-09. This is the
+working plan for changes that should land before nanoflux is presented
+publicly. It is not a commitment to a date.
 
 Goal: remove the demo surface, close the highest-value security and resilience
 gaps, and fix the performance issues that would otherwise dominate the first
@@ -83,16 +83,30 @@ maintenance sweeper in the same change.
 | Bound `Registry.playCache` (and cap `minCache`) | `playCache` is keyed by item link and never evicted, so it grows for the life of the process. |
 | Add `PRAGMA optimize` to the sweeper | Keeps planner statistics fresh without a manual step. |
 
-### 5. Performance
+### 5. Performance (done)
 
 | Change | Why |
 | --- | --- |
 | Batch the `/authors` unread counts | `authorRows` calls `CountFiltered` once per author that owns a saved view, and `ListAuthorsWithFeedCount` uses `COUNT(DISTINCT)` over a joined `visible_items`. This is the reported slowdown. Replace it with one grouped count plus one `UNION ALL` for view-bearing authors. |
-| Skip re-sanitizing an unchanged item summary on poll | `UpsertMany` runs `sanitize.HTML` on every item on every poll, even when the summary did not change. |
-| Batch category sync in `UpsertMany` | The current per-item delete-and-insert multiplies statements on a page of items. |
+| Fast-path plain-text summaries and skip the snapshot/category rewrite when nothing changed | `UpsertMany` ran the sanitizer and rewrote the row on every poll. Plain text with no markup now bypasses bluemonday, and an unchanged row skips its UPDATE and category delete/insert. |
+| Skip the category delete/insert when categories are unchanged | The per-item delete-and-insert was the largest write cost of a re-poll. |
 | Add a short TTL cache for nav counts (5 seconds, measure first) | `CountUnread` and `ListAuthorsWithFeedCount` run on every GET page. A 5 second per-user cache removes the fixed cost. TTL only, with no explicit invalidation: a badge may lag a few seconds, which is acceptable and much simpler to reason about. |
 | Cap pinned home sections (for example, 12) | `home` runs one `ListPage` per pinned collection; an unbounded config is an unbounded page cost. |
 | Add benchmarks for the author list, unread page, home, and ingest | There are no benchmarks today, and the stated target is a Raspberry Pi. A 50k-item fixture gives a regression signal without CI. |
+
+Benchmark results on the 20k-item fixture (Ryzen 5 5600X, `-benchtime=3x`):
+
+| Benchmark | Time |
+| --- | --- |
+| `ListAuthorsWithFeedCount` (legacy, join plus unread) | 25.9 ms |
+| `ListAuthorsWithFeedCount` plus `UnreadCountsByAuthor` (new) | 3.0 ms plus 10.0 ms |
+| `UnreadCountsByAuthorScope` (3 view-bearing authors) | 15.7 ms |
+| `UpsertMany` of 100 unchanged items | 5.3 ms |
+| `sanitize.HTML` plain text | 47 ns |
+| `sanitize.HTML` markup | 121 us |
+
+The author-list query count is now constant instead of one count per
+view-bearing author.
 
 ### 6. Maintenance and verification
 
@@ -116,8 +130,10 @@ maintenance sweeper in the same change.
 9. `fix(http): recover handler panics and check database health`
 10. `fix(poller): recover panics, respawn crashed plugins, and bound caches`
 11. `fix(feeds): pace the first poll through the poller wake`
-12. `perf(authors): batch unread counts and add benchmarks`
-13. `chore: add make check, schema equality test, and dependency refresh`
+12. `perf(authors): batch unread counts and cache nav totals`
+13. `perf(ingest): skip unchanged snapshots and fast-path plain-text sanitizing`
+14. `perf(home): cap pinned sections at twelve`
+15. `chore: add make check, schema equality test, and dependency refresh`
 
 ## Deferred and considered
 
