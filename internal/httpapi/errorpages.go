@@ -2,6 +2,9 @@ package httpapi
 
 import (
 	"net/http"
+	"runtime/debug"
+
+	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 )
@@ -46,10 +49,38 @@ func (s *Server) errorPages(next http.Handler) http.Handler {
 
 // errorTitle is the <title> text for a captured error status.
 func errorTitle(status int) string {
-	if status == http.StatusMethodNotAllowed {
+	switch status {
+	case http.StatusMethodNotAllowed:
 		return "method not allowed"
+	case http.StatusInternalServerError:
+		return "something went wrong"
+	default:
+		return "page not found"
 	}
-	return "page not found"
+}
+
+// recoverPanics turns a handler panic into a logged 500 page. It sits inside
+// navCountsMiddleware so the page still carries the navbar when the session is
+// known. htmx requests get a plain error so the fragment consumer is not handed
+// a full document.
+func (s *Server) recoverPanics(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Error("handler panic", "method", r.Method, "path", r.URL.Path, "panic", rec, "stack", string(debug.Stack()))
+				if r.Header.Get("HX-Request") != "" {
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
+				u, _ := auth.UserFrom(r)
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = basePage(errorTitle(http.StatusInternalServerError), u, errorPage(http.StatusInternalServerError, r.URL.Path, "")).
+					Render(r.Context(), w)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 // errorCapture records the response status and, once it is a 404 or 405, drops

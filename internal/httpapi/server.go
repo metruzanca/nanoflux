@@ -1,10 +1,13 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/charmbracelet/log"
 
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/backup"
@@ -122,12 +125,22 @@ func limitRequestBody(next http.Handler) http.Handler {
 	})
 }
 
+// healthz is the liveness and database-readiness check used by the container.
+func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := s.store.DB().PingContext(ctx); err != nil {
+		log.Error("healthz: database", "err", err)
+		http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Write([]byte("ok"))
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
-	})
+	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.Handle("GET /static/", web.Static())
 
 	// PWA: the manifest and service worker are served at the root so the
@@ -327,7 +340,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/ext/page-form", s.auth.Require(http.HandlerFunc(s.apiExtPageForm)))
 	mux.Handle("POST /api/ext/page-save", s.auth.Require(http.HandlerFunc(s.apiExtPageSave)))
 
-	return logRequests(s.securityHeaders(s.csrfMiddleware(cors(s.analyticsMiddleware(s.navCountsMiddleware(s.errorPages(limitRequestBody(mux))))))))
+	return logRequests(s.securityHeaders(s.csrfMiddleware(cors(s.analyticsMiddleware(s.navCountsMiddleware(s.errorPages(s.recoverPanics(limitRequestBody(mux)))))))))
 }
 
 // securityHeaders sets the response headers shared by every route. The CSP is

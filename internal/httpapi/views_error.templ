@@ -9,12 +9,15 @@ templ errorPage(status int, path, allow string) {
 		if status == 404 {
 			<h1>page not found</h1>
 			<p class="muted">The page you were looking for does not exist or may have been removed.</p>
-		} else {
+		} else if status == 405 {
 			<h1>method not allowed</h1>
 			<p class="muted">This URL does not accept that request method.</p>
 			if allow != "" {
 				<p class="small muted">allowed: <code>{ allow }</code></p>
 			}
+		} else {
+			<h1>something went wrong</h1>
+			<p class="muted">The server hit an unexpected error. Try again, or go home.</p>
 		}
 		if path != "" {
 			<p class="small muted"><code>{ path }</code></p>
