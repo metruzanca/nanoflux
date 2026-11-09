@@ -58,7 +58,7 @@ build:
 start:
 	@if [ ! -f .env ]; then \
 		printf '# nanoflux environment (see .env.example for the full list)\n' > .env; \
-		echo "created .env - the first account you sign up at http://localhost:8080 becomes the admin"; \
+		echo "created .env - the first account you sign up at http://localhost:20310 becomes the admin"; \
 	fi
 	@mkdir -p backups
 	@if [ "$(REGISTRY)" = ghcr ]; then \
