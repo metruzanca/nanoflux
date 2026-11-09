@@ -41,8 +41,7 @@ ahead; on interoperability and ingestion plumbing Miniflux is ahead.
   attachment links.
 - Browser extension, PWA share target, merged command palette, per-user accent
   and grid preferences.
-- SQLite single-file deployment, admin poll health, CLI, demo mode, Umami
-  analytics.
+- SQLite single-file deployment, admin poll health, CLI, Umami analytics.
 
 ### At parity
 
@@ -149,7 +148,7 @@ loaded feeds); `GET /feeds/{id}/edit` redirects there.
 Global signup toggle (`settings` key `allow_signup`), user management, automatic
 and manual backups, poller health stats, plugins with owned domains/URLs, plugin
 settings forms and plugin docs (`internal/httpapi/admin.go`). Optional Umami
-analytics and public demo mode are env-driven.
+analytics is env-driven.
 
 ### Environment (`internal/config/config.go`, `.env.example`)
 
@@ -301,7 +300,7 @@ the code. Do not re-plan them.
 - Polling: adaptive intervals, time-of-day scheduling, per-host fairness,
   learned rate-limit windows and the shared cooldown.
 - Magic sort, lists, saved pages, native bookmarks, list/favorites/bookmarks
-  share pages, auto-read, demo mode and Umami analytics.
+  share pages, auto-read and Umami analytics.
 - Command palette merged with entity search; row and modal swipe gestures;
   add-to-list now uses the shared multi-select combobox.
 

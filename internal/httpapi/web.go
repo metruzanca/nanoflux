@@ -1228,10 +1228,6 @@ func (s *Server) itemDeleteSaved(w http.ResponseWriter, r *http.Request) {
 func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 
-	if s.demoFeedLimitReached(u.ID) {
-		writeFormError(w, r, "add-feed-error", demoAddFeedMessage())
-		return
-	}
 	if errMsg := validateFeedFields(r); errMsg != "" {
 		writeFormError(w, r, "add-feed-error", errMsg)
 		return
@@ -1282,10 +1278,6 @@ func (s *Server) authorFeedCreate(w http.ResponseWriter, r *http.Request) {
 	author, err := s.store.Authors.ByID(u.ID, authorID)
 	if err != nil {
 		http.NotFound(w, r)
-		return
-	}
-	if s.demoFeedLimitReached(u.ID) {
-		writeFormError(w, r, "add-feed-error", demoAddFeedMessage())
 		return
 	}
 	if errMsg := validateFeedFields(r); errMsg != "" {
@@ -2126,7 +2118,7 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
 		Author: a, Rows: rows, Views: views, Links: links,
 		LinkIcons: icons,
-		Scoped: scoped, Collections: authorCollections(rows, views),
+		Scoped:    scoped, Collections: authorCollections(rows, views),
 		Stats: stats, Frequency: frequency, Timezone: u.Timezone,
 		MarkAll: markAll,
 	})))

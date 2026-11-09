@@ -1,7 +1,9 @@
 # Pre-launch plan
 
-Status: proposed, 2026-11-06. This is the working plan for changes that should
-land before nanoflux is presented publicly. It is not a commitment to a date.
+Status: in progress. Phase 1 (docs) and phase 2 (demo removal) have landed;
+phase 3 (security hardening) is next. Last updated 2026-11-08. This is the
+working plan for changes that should land before nanoflux is presented
+publicly. It is not a commitment to a date.
 
 Goal: remove the demo surface, close the highest-value security and resilience
 gaps, and fix the performance issues that would otherwise dominate the first
@@ -30,7 +32,7 @@ Principles:
 | Add `THIRD_PARTY_NOTICES` and set `sbom: true` in `.goreleaser.yaml` | `htmx` and `hls.js` are vendored without license notices, and release images currently ship no SBOM. This is cheap compliance and supply-chain hygiene. |
 | Remove the external plugin link from the README | It conflicts with the repository rule about not naming external plugins in docs. The generic plugin section stays. |
 
-### 2. Remove demo mode
+### 2. Remove demo mode (done)
 
 The demo feature is roughly 2,000 lines: `internal/demo/`, `store.CloneUser`,
 `httpapi` demo handlers, config, env vars, and tests. Removing it also removes

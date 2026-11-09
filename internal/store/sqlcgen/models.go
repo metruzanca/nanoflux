@@ -147,6 +147,14 @@ type ItemProgress struct {
 	UpdatedAt   string `json:"updated_at"`
 }
 
+type LinkIcon struct {
+	Domain    string `json:"domain"`
+	Slug      string `json:"slug"`
+	Paths     string `json:"paths"`
+	Found     int64  `json:"found"`
+	CheckedAt string `json:"checked_at"`
+}
+
 type List struct {
 	ID         int64          `json:"id"`
 	UserID     int64          `json:"user_id"`
@@ -220,8 +228,6 @@ type User struct {
 	HideUnreadCounts      bool           `json:"hide_unread_counts"`
 	HideUnreadNav         bool           `json:"hide_unread_nav"`
 	GridMaxColumns        int64          `json:"grid_max_columns"`
-	IsEphemeral           int64          `json:"is_ephemeral"`
-	ExpiresAt             sql.NullString `json:"expires_at"`
 	FavoritesShareToken   sql.NullString `json:"favorites_share_token"`
 	BookmarksShareToken   sql.NullString `json:"bookmarks_share_token"`
 	CreatedAt             string         `json:"created_at"`

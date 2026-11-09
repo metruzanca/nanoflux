@@ -351,8 +351,8 @@ Categories are also normalized for tag browsing and list filtering.
 - `item_categories(item_id, category)` (schemaV48, PK + index on `category`,
   FK `ON DELETE CASCADE`) is one row per tag. `ItemStore.Upsert` replaces an
   item's rows via `syncItemCategories` (same newline codec as the column);
-  `mergeDedupGroup` folds a loser's tags into the survivor; `CloneUser` copies
-  them; `BackfillItemCategories` (run at startup in `cmd/server/main.go`) fills
+  `mergeDedupGroup` folds a loser's tags into the survivor;
+  `BackfillItemCategories` (run at startup in `cmd/server/main.go`) fills
   rows for items stored before the migration, and is a no-op once populated.
 - `Store.NormalizeData` (startup, after migrations and before the cross-feed
   merge) is the one-time pass for older rows: it lowercases and dedupes
@@ -449,7 +449,7 @@ parallel implementation.
   by `AuthorFilterStore` (`store.AuthorFilters`). `POST /authors/{id}/edit`
   replaces them when the form carries `author_filters_present`; a partial save
   without the card leaves them alone. Feed delete removes its id from rules and
-  drops any rule left empty; `CloneUser` remaps author ids and feed values.
+  drops any rule left empty.
 - **One read path.** The `visible_items` view (schemaV55, mirrored in
   `schema.sql`) applies the rules in SQL. Item lists, counts, badges, read
   history, list items, and public shared lists select from `visible_items`
@@ -671,9 +671,6 @@ code.
   `GET /views/{id}/edit-fragment`. Inline delete is a `type=button`
   `data-post-action` to `/views/{id}/delete?back=author`.
 - `/views` is linked from the user menu.
-- `CloneUser` copies saved views and remaps the assigned author, feed filter ids
-  and collection memberships; a view whose assigned author did not survive the
-  clone becomes unassigned.
 
 ## Appearance
 
@@ -789,56 +786,6 @@ unchanged.
   (`saveTargetBookmarks`), creating no user list; the picker can pick a real list
   or type a new name. Routes: `POST /api/ext/page-form` and
   `POST /api/ext/page-save`.
-
-## Demo mode (public marketing deployment)
-
-`NF_DEMO_MODE=1` turns the app into its own marketing site while keeping one
-codebase. Logged-out `/` always renders a landing page (demo or not); only the
-CTA differs. The demo is a real temporary account, not a shared sandbox.
-
-- The landing page (`views_marketing.templ`, `Server.landing`) is a bespoke
-  document (its own nav/footer, no app topbar). It is served by `Server.root`
-  for anonymous `/`; a signed-in visitor still gets `Server.home`.
-- `POST /demo` (`Server.demoStart`) provisions an ephemeral account and signs
-  the visitor in. A visitor holding any valid session is redirected to `/`
-  instead of given a second account. Creation (not use) is limited to **one demo
-  per client IP** by `demoThrottle` (in-memory, keyed on `clientIP`, which is
-  `RemoteAddr` only — behind a proxy that collapses to one demo site-wide; this
-  is a deliberate anti-bot measure, not an identity check). A throttled request
-  redirects to `/?demo=busy`, which renders a notice.
-- Provisioning clones the admin seed named by `NF_DEMO_USER`
-  (`store.CloneUser`). The clone gets a random adjective-animal username
-  (`<adjective>-<animal>`), `is_admin=0`, a random unusable password, fresh NULL
-  share tokens, and `is_ephemeral=1`/`expires_at` (schemaV44). `NF_DEMO_TTL`
-  (default 2h) is both the account expiry and the session lifetime.
-- **Every cloned feed is created `enabled = 0`** so a new visitor never
-  triggers outbound fetches; poll bookkeeping (etag/last-polled/next-page/
-  next-poll-at) is reset. The seed's own feeds stay enabled so the showcase
-  refreshes normally. Do not "helpfully" copy `enabled`; pausing is the point.
-- `home_config` pinned collection sections are remapped to the cloned collection
-  ids; items keep read/favorite/bookmark state and feed memberships; collections,
-  lists, author links, source icons (URLs only) and view prefs are copied. Blobs (`avatar_key`, `icon_key`) are **not** shared, so deleting one
-  account's objects can never reach the other's.
-- `auth.Authenticator.SetDemoMode(true)` makes session resolution enforce the
-  account's absolute expiry and **skip the sliding `Touch`**, so activity cannot
-  extend a demo past its deadline. `CreateSessionTTL`/`SetCookieTTL` mint the
-  shorter-lived session.
-- `demo.Manager.Run` purges expired ephemeral users every 10m (object keys first,
-  best-effort), deletes the row, and drops lapsed sessions. `ExpiredEphemeral`
-  treats a NULL/empty `expires_at` as expired.
-- The add-feed cap applies only to ephemeral users:
-  `Server.demoFeedLimitReached` is checked before every feed-create path
-  (`feedCreate`, `authorFeedCreate`, `apiSave`, extension `saveFeed`, OPML
-  import). The allowance is `seedFeedCount + NF_DEMO_MAX_FEEDS` (default 5), read
-  live so editing the seed changes it without a restart.
-- `users.List`/`CountPersistent` exclude ephemeral accounts, so the admin user
-  list and the "first account" bootstrap ignore demo users. `Server.allowSignup`
-  is false in demo mode; it is also false once any real account exists unless
-  the admin re-enables it (see "First account and signup" below). The seed admin
-  logs in normally.
-- `views_layout.templ`'s topbar renders a `#demo-countdown` badge when the
-  request carries a demo status (`demoFrom` context); `app.js` ticks it and
-  sends the visitor to `/` at zero. Do not put it on the landing page.
 
 ## Plugins
 
@@ -983,8 +930,7 @@ the saved position from any login or device. Nothing uses localStorage.
   20s or the last 5%) deletes it, so a completed video starts over. Every write
   trims the user to `MaxProgressPerUser` (200) rows.
 - `maintenance.Sweeper` also deletes rows older than `NF_PROGRESS_RETENTION`
-  (default 90 days; 0 disables the sweep). `CloneUser` copies progress, remapping
-  item-scoped keys, so a demo account inherits the seed's positions.
+  (default 90 days; 0 disables the sweep).
 
 ### Item media duration
 
@@ -1137,8 +1083,8 @@ full guide (regeneration, adding components, gotchas). The invariants that bite:
   transaction and flips `allow_signup='0'`; a concurrent second signup simply
   becomes a normal user. `schemaV17` seeds `allow_signup='0'`. Recovery is the
   CLI (`nanoflux user create --admin`, `user set-admin`).
-- **Usernames are canonical lowercase.** `UserStore.Create`, `CreateFirstAdmin`
-  and `CloneUser` store `tagnorm.Username(name)` (trimmed, NFC, lowercase), and
+- **Usernames are canonical lowercase.** `UserStore.Create` and
+  `CreateFirstAdmin` store `tagnorm.Username(name)` (trimmed, NFC, lowercase), and
   `ByUsername` applies the same transform, so login and the API are
   case-insensitive. `Store.NormalizeData` lowercases existing accounts and
   aborts startup when two of them collide instead of renaming one.
@@ -1158,7 +1104,7 @@ full guide (regeneration, adding components, gotchas). The invariants that bite:
 - **CSRF.** `csrfMiddleware` requires `hex(sha256("nanoflux-csrf:"+session))` on
   unsafe methods, from `X-CSRF-Token` (htmx/fetch, set in `app.js` from the
   `<meta name="csrf-token">`) or a `csrf_token` hidden field (`@csrfField()`).
-  Exempt: `/login`, `/signup`, `/demo` and `/api/` (Bearer). Every new
+  Exempt: `/login`, `/signup` and `/api/` (Bearer). Every new
   authenticated plain `<form method="post">` needs `@csrfField()`; htmx forms
   are covered by the header.
 - **CSP / no inline JS.** `securityHeaders` sets a strict CSP plus

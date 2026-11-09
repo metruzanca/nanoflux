@@ -61,6 +61,16 @@ func (s *Sweeper) Run(ctx context.Context) {
 // Sweep applies every opted-in user's auto-read window. A single user's
 // failure is logged and does not stop the rest.
 func (s *Sweeper) Sweep() {
+	// Expired sessions are inert (lookups filter on expires_at) but would grow
+	// the table forever without a periodic purge.
+	if err := s.store.Sessions.DeleteExpired(); err != nil {
+		log.Error("sweep: delete expired sessions", "err", err)
+	}
+	// Keep planner statistics fresh on a long-lived SQLite database.
+	if _, err := s.store.DB().Exec("PRAGMA optimize"); err != nil {
+		log.Error("sweep: pragma optimize", "err", err)
+	}
+
 	users, err := s.store.Users.List()
 	if err != nil {
 		log.Error("auto-read sweep: list users", "err", err)

@@ -196,11 +196,6 @@ func (s *Server) apiDiscover(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 
-	if s.demoFeedLimitReached(u.ID) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": demoAddFeedMessage()})
-		return
-	}
-
 	var req struct {
 		FeedURL  string `json:"feed_url"`
 		Title    string `json:"title,omitempty"`

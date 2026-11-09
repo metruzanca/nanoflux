@@ -1,6 +1,8 @@
 package db
 
 import (
+	"database/sql"
+	"strings"
 	"testing"
 )
 
@@ -117,6 +119,124 @@ func TestMigrate(t *testing.T) {
 	}
 	if count != len(migrations) {
 		t.Errorf("expected %d migrations, got %d", len(migrations), count)
+	}
+}
+
+// applyMigrationsUpTo applies the recorded migrations through max, outside the
+// normal Migrate runner, so a test can seed pre-migration data.
+func applyMigrationsUpTo(t *testing.T, sqldb *sql.DB, max int) {
+	t.Helper()
+	if _, err := sqldb.Exec(`CREATE TABLE schema_migrations (
+		version    INTEGER PRIMARY KEY,
+		applied_at TEXT NOT NULL
+	)`); err != nil {
+		t.Fatalf("create schema_migrations: %v", err)
+	}
+	if _, err := sqldb.Exec("PRAGMA foreign_keys=OFF"); err != nil {
+		t.Fatalf("disable foreign keys: %v", err)
+	}
+	for _, m := range migrations {
+		if m.version > max {
+			break
+		}
+		if _, err := sqldb.Exec(m.sql); err != nil {
+			t.Fatalf("apply v%d: %v", m.version, err)
+		}
+		if _, err := sqldb.Exec(
+			`INSERT INTO schema_migrations(version, applied_at) VALUES(?, datetime('now'))`, m.version,
+		); err != nil {
+			t.Fatalf("record v%d: %v", m.version, err)
+		}
+	}
+	if _, err := sqldb.Exec("PRAGMA foreign_keys=ON"); err != nil {
+		t.Fatalf("enable foreign keys: %v", err)
+	}
+}
+
+// TestMigrateV64KeepsLiveUsers proves the demo-account cleanup removes only
+// rows marked ephemeral, and drops the columns afterwards.
+func TestMigrateV64KeepsLiveUsers(t *testing.T) {
+	sqldb, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sqldb.Close()
+	applyMigrationsUpTo(t, sqldb, 63)
+
+	if _, err := sqldb.Exec(
+		`INSERT INTO users (username, password_hash, is_admin) VALUES ('live-user', 'hash', 1)`); err != nil {
+		t.Fatalf("insert live user: %v", err)
+	}
+	if _, err := sqldb.Exec(
+		`INSERT INTO users (username, password_hash, is_admin, is_ephemeral, expires_at)
+		 VALUES ('swift-otter', 'hash', 0, 1, '2026-01-01 00:00:00')`); err != nil {
+		t.Fatalf("insert demo user: %v", err)
+	}
+
+	if err := Migrate(sqldb); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var live int
+	if err := sqldb.QueryRow(`SELECT COUNT(*) FROM users WHERE username = 'live-user'`).Scan(&live); err != nil {
+		t.Fatal(err)
+	}
+	if live != 1 {
+		t.Fatalf("live user was deleted")
+	}
+	var demo int
+	if err := sqldb.QueryRow(`SELECT COUNT(*) FROM users WHERE username = 'swift-otter'`).Scan(&demo); err != nil {
+		t.Fatal(err)
+	}
+	if demo != 0 {
+		t.Fatalf("demo user was not deleted")
+	}
+	for _, col := range []string{"is_ephemeral", "expires_at"} {
+		var n int
+		if err := sqldb.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = ?`, col,
+		).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("users.%s should be dropped", col)
+		}
+	}
+}
+
+// TestMigrateV64RefusesEphemeralAdmin proves the pre-flight check stops the
+// migration instead of deleting an admin account that is marked ephemeral.
+func TestMigrateV64RefusesEphemeralAdmin(t *testing.T) {
+	sqldb, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sqldb.Close()
+	applyMigrationsUpTo(t, sqldb, 63)
+
+	if _, err := sqldb.Exec(
+		`INSERT INTO users (username, password_hash, is_admin, is_ephemeral, expires_at)
+		 VALUES ('admin-otter', 'hash', 1, 1, '2026-01-01 00:00:00')`); err != nil {
+		t.Fatalf("insert ephemeral admin: %v", err)
+	}
+
+	err = Migrate(sqldb)
+	if err == nil || !strings.Contains(err.Error(), "refused") {
+		t.Fatalf("expected refused migration, got %v", err)
+	}
+	var kept int
+	if err := sqldb.QueryRow(`SELECT COUNT(*) FROM users WHERE username = 'admin-otter'`).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	if kept != 1 {
+		t.Fatalf("ephemeral admin was deleted")
+	}
+	var applied int
+	if err := sqldb.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = 64`).Scan(&applied); err != nil {
+		t.Fatal(err)
+	}
+	if applied != 0 {
+		t.Fatalf("migration 64 should not be recorded")
 	}
 }
 

@@ -44,11 +44,11 @@ func (s *UserStore) Create(username, passwordHash string) (User, error) {
 	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.CreatedAt), nil
 }
 
-// CreateFirstAdmin creates a user and, when they are the first real
-// (non-ephemeral) account on the instance, grants them admin and closes
-// signups. It runs in one transaction so two concurrent first signups cannot
-// both become admin: the first transaction to commit wins, the second is a
-// normal user. The returned bool reports whether this account was promoted.
+// CreateFirstAdmin creates a user and, when they are the first account on the
+// instance, grants them admin and closes signups. It runs in one transaction so
+// two concurrent first signups cannot both become admin: the first transaction
+// to commit wins, the second is a normal user. The returned bool reports whether
+// this account was promoted.
 func (s *UserStore) CreateFirstAdmin(username, passwordHash string) (User, bool, error) {
 	ctx := context.Background()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -58,7 +58,7 @@ func (s *UserStore) CreateFirstAdmin(username, passwordHash string) (User, bool,
 	defer tx.Rollback()
 	q := s.q.WithTx(tx)
 
-	n, err := q.CountPersistentUsers(ctx)
+	n, err := q.CountUsers(ctx)
 	if err != nil {
 		return User{}, false, fmt.Errorf("count users: %w", err)
 	}
@@ -124,32 +124,6 @@ func (s *UserStore) List() ([]User, error) {
 func (s *UserStore) Count() (int, error) {
 	n, err := s.q.CountUsers(context.Background())
 	return int(n), err
-}
-
-// CountPersistent returns the number of real (non-ephemeral) users. Bootstrap
-// uses it so throwaway demo accounts cannot satisfy the "first account" check.
-func (s *UserStore) CountPersistent() (int, error) {
-	n, err := s.q.CountPersistentUsers(context.Background())
-	return int(n), err
-}
-
-// EphemeralStatus reports whether the user is an ephemeral demo account and its
-// absolute expiry as a db-formatted UTC timestamp ("" when it never expires).
-func (s *UserStore) EphemeralStatus(userID int64) (bool, string, error) {
-	row, err := s.q.GetUserEphemeralStatus(context.Background(), userID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, "", ErrNotFound
-	}
-	if err != nil {
-		return false, "", err
-	}
-	return row.IsEphemeral == 1, row.ExpiresAt.String, nil
-}
-
-// ExpiredEphemeral returns the ids of ephemeral users whose expiry has passed.
-// now is a db-formatted UTC timestamp.
-func (s *UserStore) ExpiredEphemeral(now string) ([]int64, error) {
-	return s.q.ListExpiredEphemeralUsers(context.Background(), now)
 }
 
 // CountAdmins returns how many users have the admin flag set.

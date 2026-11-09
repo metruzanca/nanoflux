@@ -74,6 +74,7 @@ var migrations = []migration{
 	{61, schemaV61},
 	{62, schemaV62},
 	{63, schemaV63},
+	{64, schemaV64},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -998,6 +999,18 @@ CREATE TABLE link_icons (
 );
 `
 
+// schemaV64 removes the ephemeral demo account columns. Demo accounts were
+// throwaway clones of a seed user, so deleting them is safe. The DELETE is
+// restricted to non-admin rows, and Migrate refuses to run if any admin is
+// marked ephemeral (see the pre-flight check there), so a live account can
+// never be removed by this migration.
+const schemaV64 = `
+DELETE FROM users WHERE is_ephemeral = 1 AND is_admin = 0;
+DROP INDEX IF EXISTS idx_users_ephemeral;
+ALTER TABLE users DROP COLUMN expires_at;
+ALTER TABLE users DROP COLUMN is_ephemeral;
+`
+
 // Migrate applies any pending migrations in order, recording each in
 // schema_migrations. Each migration runs in its own transaction.
 //
@@ -1023,6 +1036,20 @@ func Migrate(sqldb *sql.DB) error {
 		}
 		if applied > 0 {
 			continue
+		}
+		// schemaV64 deletes former demo accounts. Demo clones are never admins,
+		// so an admin marked ephemeral means something is wrong: refuse to run
+		// rather than risk deleting a live account.
+		if m.version == 64 {
+			var ephemeralAdmins int
+			if err := sqldb.QueryRow(
+				`SELECT COUNT(*) FROM users WHERE is_ephemeral = 1 AND is_admin = 1`,
+			).Scan(&ephemeralAdmins); err != nil {
+				return fmt.Errorf("migration 64 preflight: %w", err)
+			}
+			if ephemeralAdmins > 0 {
+				return fmt.Errorf("migration 64 refused: %d admin account(s) are marked ephemeral; refusing to delete them", ephemeralAdmins)
+			}
 		}
 		tx, err := sqldb.Begin()
 		if err != nil {

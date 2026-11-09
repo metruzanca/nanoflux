@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -17,10 +16,6 @@ import (
 	"github.com/metruzanca/nanoflux/internal/web"
 )
 
-// errDemoFeedLimit is returned by saveFeed when a demo user has hit the add-feed
-// cap. The HTTP callers translate it into a form error.
-var errDemoFeedLimit = errors.New(demoAddFeedMessage())
-
 // saveFeed validates and stores a feed for the extension's add flow: the feed
 // is fetched to confirm it exists, the title falls back to the feed's own
 // title, and the author is the selected author_id when given (verified against
@@ -32,9 +27,6 @@ var errDemoFeedLimit = errors.New(demoAddFeedMessage())
 // home, for example a site's handle page rather than its canonical feed URL.
 // When empty it falls back to res.Feed.HomeURL.
 func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, title string, authorID int64) (apiFeed, error) {
-	if s.demoFeedLimitReached(u.ID) {
-		return apiFeed{}, errDemoFeedLimit
-	}
 	// A derived feed needs no validation fetch: its feed sits behind a tight
 	// anonymous rate limit, so the candidate supplies the title and home and the
 	// host's budget is saved for the first poll.
@@ -148,10 +140,6 @@ func (s *Server) apiExtSave(w http.ResponseWriter, r *http.Request) {
 	authorID, _ := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
 	f, err := s.saveFeed(r.Context(), u, feedURL, normalizeURL(r.FormValue("home_url")), strings.TrimSpace(r.FormValue("title")), authorID)
 	if err != nil {
-		if errors.Is(err, errDemoFeedLimit) {
-			web.Render(w, r, extError(demoAddFeedMessage()))
-			return
-		}
 		log.Error("extension save feed", "url", feedURL, "err", err)
 		web.Render(w, r, extError("could not add that feed"))
 		return

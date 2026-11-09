@@ -21,11 +21,11 @@ func csrfToken(sessionToken string) string {
 }
 
 // csrfExempt reports the unsafe-method paths that do not need a CSRF token:
-// anonymous login/signup/demo (there is no session to protect) and the
-// extension JSON API, which authenticates with a Bearer token, not a cookie.
+// anonymous login and signup (there is no session to protect) and the extension
+// JSON API, which authenticates with a Bearer token, not a cookie.
 func csrfExempt(path string) bool {
 	switch path {
-	case "/login", "/signup", "/demo":
+	case "/login", "/signup":
 		return true
 	}
 	return strings.HasPrefix(path, "/api/")

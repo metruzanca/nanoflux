@@ -9,7 +9,6 @@ import (
 	"github.com/metruzanca/nanoflux/internal/auth"
 	"github.com/metruzanca/nanoflux/internal/backup"
 	"github.com/metruzanca/nanoflux/internal/config"
-	"github.com/metruzanca/nanoflux/internal/demo"
 	"github.com/metruzanca/nanoflux/internal/discover"
 	"github.com/metruzanca/nanoflux/internal/filestore"
 	"github.com/metruzanca/nanoflux/internal/oembed"
@@ -35,8 +34,6 @@ type Server struct {
 	files        filestore.Store
 	oembed       *oembed.Resolver
 	loginLimiter *loginLimiter
-	demo         *demo.Manager
-	demoThrottle *demoThrottle
 	// linkIconBase is the Simple Icons endpoint prefix used to resolve author
 	// link glyphs. Empty disables outbound lookups (tests).
 	linkIconBase string
@@ -53,7 +50,6 @@ func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore
 		files:        fs,
 		oembed:       oembed.New(client, 5*time.Minute, 30*time.Second, 2000),
 		loginLimiter: newLoginLimiter(),
-		demoThrottle: newDemoThrottle(),
 		linkIconBase: defaultLinkIconBase,
 	}
 }
@@ -134,10 +130,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /signup", s.signupPage)
 	mux.HandleFunc("POST /signup", s.signup)
 	mux.Handle("POST /logout", s.auth.Require(http.HandlerFunc(s.logout)))
-
-	// Public landing page for anonymous visitors; demo mode adds the CTA that
-	// provisions an ephemeral account.
-	mux.HandleFunc("POST /demo", s.demoStart)
 
 	// Items.
 	mux.HandleFunc("GET /{$}", s.root)

@@ -72,15 +72,11 @@ func redirectTarget(next string) string {
 // allowSignup reports whether the signup page is open. A fresh install (zero
 // real accounts) always allows the first signup so the person deploying the app
 // can create the initial admin; that signup closes the door behind them. After
-// that the global setting decides, and demo mode forces it off because a public
-// marketing deployment should not mint durable accounts, only ephemeral demos.
+// that the global setting decides.
 func (s *Server) allowSignup() bool {
-	if s.demoEnabled() {
-		return false
-	}
 	// Bootstrap window: no users yet. Checked before the setting so a settings
 	// read failure cannot lock a fresh install out of creating its first account.
-	if n, err := s.store.Users.CountPersistent(); err == nil && n == 0 {
+	if n, err := s.store.Users.Count(); err == nil && n == 0 {
 		return true
 	}
 	allow, err := s.store.Settings.AllowSignup()

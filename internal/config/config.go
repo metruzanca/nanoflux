@@ -44,7 +44,6 @@ type Config struct {
 	// applies on every write.
 	ProgressRetention time.Duration
 	Backup            BackupConfig
-	Demo              DemoConfig
 	Analytics         AnalyticsConfig
 }
 
@@ -64,19 +63,6 @@ type AnalyticsConfig struct {
 func (a AnalyticsConfig) Enabled() bool {
 	return a.On && a.ScriptURL != "" && a.WebsiteID != ""
 }
-
-// DemoConfig turns on ephemeral demo sessions for public "marketing" deployments.
-// NF_DEMO_MODE shows the landing page CTA and enables POST /demo; the other
-// fields tune how a demo account is provisioned.
-type DemoConfig struct {
-	Mode     bool          // NF_DEMO_MODE: enable ephemeral demo sessions
-	User     string        // NF_DEMO_USER: username of the admin seed user to clone
-	TTL      time.Duration // NF_DEMO_TTL: lifetime of an ephemeral session
-	MaxFeeds int           // NF_DEMO_MAX_FEEDS: extra feeds a demo user may add
-}
-
-// Enabled reports whether demo mode is on and a seed user is configured.
-func (d DemoConfig) Enabled() bool { return d.Mode && d.User != "" }
 
 // BackupConfig configures automatic instance backups. It is disabled unless a
 // destination (Dir or S3) and an interval are set.
@@ -146,12 +132,6 @@ func Load() Config {
 				Region:    getenv("NF_BACKUP_S3_REGION", "us-east-1"),
 				Prefix:    os.Getenv("NF_BACKUP_S3_PREFIX"),
 			},
-		},
-		Demo: DemoConfig{
-			Mode:     boolEnv("NF_DEMO_MODE", false),
-			User:     os.Getenv("NF_DEMO_USER"),
-			TTL:      durationEnv("NF_DEMO_TTL", 2*time.Hour),
-			MaxFeeds: intEnv("NF_DEMO_MAX_FEEDS", 5),
 		},
 		Analytics: AnalyticsConfig{
 			On:        boolEnv("NF_ANALYTICS_ENABLED", false),

@@ -83,10 +83,6 @@ func (s *Server) feedProvision(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "provision-error", "a title is required")
 		return
 	}
-	if s.demoFeedLimitReached(u.ID) {
-		writeFormError(w, r, "provision-error", demoAddFeedMessage())
-		return
-	}
 	got, err := p.Provision(r.Context(), pluginapi.ProvisionRequest{Title: title}, s.pluginHosts.For(f))
 	if err != nil {
 		log.Error("plugin provision", "plugin", name, "err", err)
