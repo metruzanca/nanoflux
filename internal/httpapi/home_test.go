@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -343,5 +344,19 @@ func TestHomePinnedCollectionIncludesViews(t *testing.T) {
 	body := doGet(h, "/", cookie).Body.String()
 	if !strings.Contains(body, "View cat") {
 		t.Fatalf("pinned collection should include its view's items: %s", body)
+	}
+}
+
+func TestParseHomeConfigCapsSections(t *testing.T) {
+	var sections []homeSection
+	for i := 0; i < maxHomeSections+3; i++ {
+		sections = append(sections, homeSection{Kind: "collection", RefID: int64(i + 1)})
+	}
+	raw, err := json.Marshal(sections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(parseHomeConfig(string(raw))); got != maxHomeSections {
+		t.Fatalf("parseHomeConfig kept %d sections, want %d", got, maxHomeSections)
 	}
 }

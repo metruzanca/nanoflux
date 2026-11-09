@@ -17,6 +17,10 @@ import (
 // the "more" link.
 const homeSectionLimit = 8
 
+// maxHomeSections bounds how many pinned sections home renders, so a large
+// config cannot turn one page load into an arbitrary number of item queries.
+const maxHomeSections = 12
+
 // homeSection is one pinned section of the home dashboard, stored as JSON in
 // users.home_config. The first cut only renders collections, but the Kind field
 // leaves room for more source kinds (unread, favorites, list, author, feed).
@@ -100,6 +104,9 @@ func parseHomeConfig(raw string) []homeSection {
 			s.Sort = normalizeHomeSort(s.Sort)
 			out = append(out, s)
 		}
+	}
+	if len(out) > maxHomeSections {
+		out = out[:maxHomeSections]
 	}
 	return out
 }
@@ -361,7 +368,7 @@ func (s *Server) settingsHome(w http.ResponseWriter, r *http.Request) {
 	switch action {
 	case "add":
 		addID, _ := strconv.ParseInt(r.FormValue("add_collection"), 10, 64)
-		if owned(addID) && !homeHasSection(sections, addID) {
+		if owned(addID) && !homeHasSection(sections, addID) && len(sections) < maxHomeSections {
 			sections = append(sections, homeSection{Kind: "collection", RefID: addID})
 		}
 	case "reorder":
