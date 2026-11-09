@@ -1358,7 +1358,7 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 	// Kick off the first poll right away so the feed's items show up without
 	// waiting for the next poller tick. Fire-and-forget: the poller's http
 	// client bounds the fetch, and a slow feed can't stall the add response.
-	s.pollFeedNow(f)
+	s.pollFeedNow()
 	return f, ""
 }
 
@@ -1390,14 +1390,13 @@ func (s *Server) imageCacheForced(feedURL string) bool {
 	return s.plugins.CachesImages(feedURL)
 }
 
-// pollFeedNow triggers an immediate first poll of a newly added feed. It is
-// best-effort and detached from the request: when no poller is attached (e.g.
-// in tests) or the feed is disabled, it does nothing.
-func (s *Server) pollFeedNow(f store.Feed) {
-	if s.poller == nil || !f.Enabled {
-		return
+// pollFeedNow wakes the poller so a newly added feed is picked up on the next
+// cycle. The poller owns host pacing, so adding several feeds to one host
+// cannot burst it.
+func (s *Server) pollFeedNow() {
+	if s.poller != nil {
+		s.poller.Wake()
 	}
-	go s.poller.PollOne(context.Background(), f)
 }
 
 // resolveAuthor maps the feed form's author selection to an author id, creating

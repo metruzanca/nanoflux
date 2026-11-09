@@ -120,7 +120,7 @@ func (s *Server) feedProvision(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.Collections.AssignAuto(u.ID, feed.ID, got.HomeURL, feedURL); err != nil {
 		log.Error("assign auto collection", "feed_id", feed.ID, "err", err)
 	}
-	s.pollFeedNow(feed)
+	s.pollFeedNow()
 
 	web.Render(w, r, provisionCreated(feed.ID, author.ID, feedTitle, got.Fields))
 }

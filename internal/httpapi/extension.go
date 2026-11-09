@@ -88,7 +88,7 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 	if err := s.store.Collections.AssignAuto(u.ID, f.ID, homeURL, feedURL); err != nil {
 		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
 	}
-	s.pollFeedNow(f)
+	s.pollFeedNow()
 	return apiFeed{
 		ID: f.ID, Title: f.Title, FeedURL: f.FeedURL, HomeURL: f.HomeURL,
 		AuthorID: f.AuthorID, AuthorName: authorName,

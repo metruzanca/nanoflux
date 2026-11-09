@@ -244,7 +244,11 @@ func TestFeedOlderFetchError(t *testing.T) {
 
 func TestFeedCreatePollsImmediately(t *testing.T) {
 	s, h := newTestServer(t)
-	s.SetPoller(poller.New(s.store, time.Minute, 1))
+	p := poller.New(s.store, time.Minute, 1)
+	s.SetPoller(p)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go p.Run(ctx)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Author", "", "")
