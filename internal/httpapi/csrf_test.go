@@ -72,3 +72,44 @@ func TestCSRFExemptAnonymousLogin(t *testing.T) {
 		t.Fatal("login should be exempt from CSRF")
 	}
 }
+
+func TestAPICookieRequiresCSRF(t *testing.T) {
+	_, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/items/1/read", nil)
+	req.AddCookie(cookie)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("cookie-authenticated API POST without a token: got %d, want 403", rr.Code)
+	}
+}
+
+func TestAPIBearerSkipsCSRF(t *testing.T) {
+	s, h := newTestServer(t)
+	u, err := s.store.Users.ByUsername("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := s.auth.CreateSession(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/items/1/read", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code == http.StatusForbidden {
+		t.Fatalf("Bearer-authenticated API POST was rejected by CSRF")
+	}
+}
+
+func TestAPILoginExemptFromCSRF(t *testing.T) {
+	_, h := newTestServer(t)
+	rr := doForm(h, "POST", "/api/login", url.Values{"username": {"alice"}, "password": {"wrong"}}, nil)
+	if rr.Code == http.StatusForbidden {
+		t.Fatal("/api/login should be exempt from CSRF")
+	}
+}

@@ -405,9 +405,9 @@ func urlOrigin(raw string) string {
 }
 
 // cors answers the browser extension's cross-origin preflights, and only for
-// the /api/ routes it uses. Auth there relies on a Bearer token (never a
-// cross-site cookie), so allowing any origin is safe. The HTML app is
-// same-origin and gets no CORS headers.
+// the /api/ routes it uses. Cross-origin auth uses a Bearer token; the session
+// cookie is not sent because the response never allows credentials. The HTML
+// app is same-origin and gets no CORS headers.
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {

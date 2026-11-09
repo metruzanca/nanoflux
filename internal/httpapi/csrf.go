@@ -20,15 +20,23 @@ func csrfToken(sessionToken string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// csrfExempt reports the unsafe-method paths that do not need a CSRF token:
-// anonymous login and signup (there is no session to protect) and the extension
-// JSON API, which authenticates with a Bearer token, not a cookie.
-func csrfExempt(path string) bool {
-	switch path {
-	case "/login", "/signup":
+// csrfExempt reports unsafe-method requests that do not need a CSRF token:
+// anonymous login and signup, and API requests authenticated with a Bearer
+// token. A Bearer-authenticated request is not CSRF-able because it carries no
+// ambient cookie, but a request that also carries the session cookie is not
+// exempt, so cookie-authenticated /api/ calls still need the token.
+func csrfExempt(r *http.Request) bool {
+	switch r.URL.Path {
+	case "/login", "/signup", "/api/login":
 		return true
 	}
-	return strings.HasPrefix(path, "/api/")
+	if strings.HasPrefix(r.URL.Path, "/api/") &&
+		strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		if _, err := r.Cookie(auth.SessionCookieName); err != nil {
+			return true
+		}
+	}
+	return false
 }
 
 type csrfCtxKey struct{}
@@ -57,7 +65,7 @@ func (s *Server) csrfMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if csrfExempt(r.URL.Path) {
+		if csrfExempt(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
