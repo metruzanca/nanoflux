@@ -390,10 +390,8 @@ that already exists and lowers the cost. Effort is a rough S/M/L. Items marked
 - **Web page change monitoring (L).** Watch non-RSS pages for textual or price
   changes. `internal/discover` and the plugin framework already probe arbitrary
   pages; this adds a snapshot/diff store.
-- **More social sources as plugins (M per network).** The framework is proven:
-  Bluesky, YouTube, Reddit, Reddit search, Patreon, Instagram, Example, ExampleMedia,
-  ExampleGallery, Imaglr, ExampleCommunity, ExampleFiction, ExampleTraining and Kill the Newsletter are
-  bundled; X lives in a separate repository.
+- **More social sources as plugins (M per network).** The plugin framework is
+  proven; bundled and third-party plugins share the same capability boundary.
 - **Bookmarklet plus the extension (S).** A zero-install fallback for Firefox,
   Safari and mobile.
 
