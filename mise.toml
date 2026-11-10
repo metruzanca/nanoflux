@@ -1,3 +1,6 @@
+[tools]
+go = "1.27.3"
+
 [tasks.gen]
 description = "Regenerate templ components and sqlc queries"
 run = "templ generate && sqlc generate"
