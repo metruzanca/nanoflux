@@ -234,16 +234,30 @@ templ CollectionFeedCard(r feedRow) {
 	</li>
 }
 
-// CollectionViewCard is a compact source entry: the glyph links to the view and
-// the name is its accessible label, so the sources tab stays visually quiet.
+// CollectionViewCard is a view as a source card, matching CollectionFeedCard:
+// the bookmark glyph and a linked title, its author, and its unread count.
 templ CollectionViewCard(r savedViewRow) {
 	{{ id := strconv.FormatInt(r.ID, 10) }}
 	{{ href := savedViewAuthorURL(r.AuthorID, r.ID) }}
 	<li id={ "collection-view-" + id } data-title={ r.Title } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Count) }>
 		<div class="card">
 			<div class="row">
-				<a href={ templ.URL(href) } title={ r.Title } aria-label={ r.Title }>@web.Lucide("bookmark-plus")</a>
-				<span class="unread-count">{ r.Count } unread</span>
+				<div>
+					<a href={ templ.URL(href) }>
+						<strong>
+							@web.Lucide("bookmark-plus")
+							{ r.Title }
+						</strong>
+					</a>
+				</div>
+			</div>
+			<div class="item-meta">
+				if r.AuthorName != "" {
+					<a href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.AuthorName }</a>
+				} else {
+					no author
+				}
+				· <span class="unread-count">{ r.Count } unread</span>
 			</div>
 		</div>
 	</li>

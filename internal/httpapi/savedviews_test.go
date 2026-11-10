@@ -461,11 +461,14 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 	}
 
 	body = doGet(h, base+"?tab=feeds", cookie).Body.String()
-	if !strings.Contains(body, `id="collection-view-`+viewID+`"`) || !strings.Contains(body, `title="Rust view"`) {
-		t.Fatalf("sources tab should list the compact view card: %s", body)
+	if !strings.Contains(body, `id="collection-view-`+viewID+`"`) ||
+		!strings.Contains(body, ">Rust view<") ||
+		!strings.Contains(body, ">Aggregate</a>") ||
+		!strings.Contains(body, "1 unread") {
+		t.Fatalf("sources tab should list the view as a source card: %s", body)
 	}
-	if strings.Contains(body, ">Rust view<") || strings.Contains(body, "/views/"+viewID+"/edit") {
-		t.Fatalf("sources tab view card should not render its title or edit button: %s", body)
+	if strings.Contains(body, "/views/"+viewID+"/edit") {
+		t.Fatalf("sources tab view card should not render its edit button: %s", body)
 	}
 
 	// The index card's unread count is the union, not just the member feed.

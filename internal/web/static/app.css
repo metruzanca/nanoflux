@@ -785,7 +785,6 @@ li.text-card .card-body { flex: 1; min-width: 0; }
 .item-title { font-weight: 600; }
 .item-title.unread::before { content: "•"; color: var(--accent); margin-right: 0.4rem; }
 .item-meta { color: var(--muted); font-size: 0.8rem; margin-top: 0.15rem; }
-.item-meta .unread-count { color: var(--accent); font-weight: 700; }
 
 /* Collection tags on a feed row (author page): "#name" pills linking to the
    collection. */

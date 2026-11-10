@@ -677,10 +677,10 @@ code.
   its `ViewID` set.
 - An author page has one collapsible `sources (N)` section combining its feeds
   and views; the page itself has no add-feed/add-view controls. The collection
-  page's `sources` tab renders a view as a compact bookmark glyph plus its
-  unread count (the name is its `title`/`aria-label`), with no edit action; the
-  tab, the collection edit page and the home dashboard's pinned collection
-  sections include view-sourced items.
+  page's `sources` tab renders a view as a source card matching its feed cards:
+  the bookmark glyph plus its linked name, the author, and its unread count, with
+  no edit action; the tab, the collection edit page and the home dashboard's
+  pinned collection sections include view-sourced items.
 - The author edit page inlines views in the same auto-saving `sources` accordion
   as feeds. Each view panel is its own form (`POST /views/{id}/edit`) that
   re-renders the whole `<details>`; the lazy fragment route is
