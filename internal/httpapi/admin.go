@@ -814,33 +814,6 @@ func (s *Server) adminLinkIconRows() []store.LinkIcon {
 	return rows
 }
 
-// adminSaveLinkIcon stores a manual domain -> slug association and fetches it.
-// It overrides an earlier automatic guess and immediately shows the result in the
-// card.
-func (s *Server) adminSaveLinkIcon(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	domain := normalizeLinkIconDomain(r.FormValue("domain"))
-	slug := normalizeLinkIconSlug(r.FormValue("slug"))
-	if domain == "" {
-		writeFormError(w, r, "admin-link-icons-error", "enter a valid domain")
-		return
-	}
-	if slug == "" {
-		writeFormError(w, r, "admin-link-icons-error", "enter a simpleicons slug")
-		return
-	}
-	if _, err := s.resolveLinkIcon(r.Context(), domain, slug); err != nil {
-		if errors.Is(err, errLinkIconNotFound) {
-			writeFormError(w, r, "admin-link-icons-error", "simpleicons has no icon named "+slug)
-			return
-		}
-		log.Error("admin: save link icon", "domain", domain, "slug", slug, "err", err)
-		writeFormError(w, r, "admin-link-icons-error", "could not reach simpleicons")
-		return
-	}
-	web.Render(w, r, AdminLinkIconsCard(s.adminLinkIconRows(), u.Timezone))
-}
-
 // adminRecheckLinkIcon refetches a domain, keeping a manual slug when one is set
 // and re-deriving the slug otherwise. A failure leaves the previous row alone.
 func (s *Server) adminRecheckLinkIcon(w http.ResponseWriter, r *http.Request) {

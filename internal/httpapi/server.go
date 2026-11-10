@@ -301,7 +301,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /admin/settings/signup-banner-dismiss", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminDismissSignupBanner))))
 	mux.Handle("POST /admin/backup", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminBackupNow))))
 	mux.Handle("POST /admin/plugins/{name}/settings", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminSavePluginSettings))))
-	mux.Handle("POST /admin/link-icons", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminSaveLinkIcon))))
 	mux.Handle("POST /admin/link-icons/recheck", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminRecheckLinkIcon))))
 	mux.Handle("POST /admin/link-icons/delete", s.auth.Require(s.adminOnly(http.HandlerFunc(s.adminDeleteLinkIcon))))
 

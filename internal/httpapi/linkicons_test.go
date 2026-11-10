@@ -149,40 +149,23 @@ func TestAdminLinkIcons(t *testing.T) {
 	s.client = fake.Client()
 	s.linkIconBase = fake.URL + "/icons/"
 
-	rr := doForm(h, "POST", "/admin/link-icons", url.Values{
-		"domain": {"www.reddit.com"},
-		"slug":   {"reddit"},
-	}, cookie)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("save mapping: %d %s", rr.Code, rr.Body.String())
-	}
-	body := rr.Body.String()
-	if !strings.Contains(body, "reddit.com") || !strings.Contains(body, `class="link-icon-lg"`) {
-		t.Fatalf("admin card should show the saved association: %s", body)
+	if err := s.store.LinkIcons.UpsertFound("reddit.com", "reddit", []string{"M12 0L1 1"}); err != nil {
+		t.Fatal(err)
 	}
 
-	// The main page renders the card too.
+	// The main page renders the card with the stored association.
 	page := doGet(h, "/admin", cookie).Body.String()
 	if !strings.Contains(page, `id="admin-link-icons-card"`) || !strings.Contains(page, "reddit.com") {
 		t.Fatalf("admin page missing link icons card: %s", page)
 	}
+	if !strings.Contains(page, `class="link-icon-lg"`) {
+		t.Fatalf("admin card should show the icon: %s", page)
+	}
 
 	// Recheck keeps the manual slug.
-	rr = doForm(h, "POST", "/admin/link-icons/recheck", url.Values{"domain": {"reddit.com"}}, cookie)
+	rr := doForm(h, "POST", "/admin/link-icons/recheck", url.Values{"domain": {"reddit.com"}}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("recheck: %d %s", rr.Code, rr.Body.String())
-	}
-
-	// A wrong manual slug is reported without replacing the saved row.
-	rr = doForm(h, "POST", "/admin/link-icons", url.Values{
-		"domain": {"reddit.com"},
-		"slug":   {"not-a-real-icon"},
-	}, cookie)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "no icon named") {
-		t.Fatalf("bad manual slug: %d %s", rr.Code, rr.Body.String())
-	}
-	if ic, _ := s.store.LinkIcons.Get("reddit.com"); !ic.Found || ic.Slug != "reddit" {
-		t.Fatalf("bad override should not clobber the row: %+v", ic)
 	}
 
 	// Delete forgets the association.
@@ -196,10 +179,7 @@ func TestAdminLinkIcons(t *testing.T) {
 
 	// Non-admins are rejected (admin POSTs answer with a 400 error fragment).
 	alice := sessionCookie(t, h)
-	rr = doForm(h, "POST", "/admin/link-icons", url.Values{
-		"domain": {"github.com"},
-		"slug":   {"github"},
-	}, alice)
+	rr = doForm(h, "POST", "/admin/link-icons/recheck", url.Values{"domain": {"github.com"}}, alice)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("non-admin should be rejected: %d", rr.Code)
 	}

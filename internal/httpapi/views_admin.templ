@@ -403,23 +403,17 @@ templ AdminStorageCard(d adminStorage) {
 }
 
 // AdminLinkIconsCard shows the global domain -> Simple Icons cache used by
-// author links. Admins can set a slug manually when the automatic guess is wrong
-// (for example a site whose Simple Icons slug differs from its domain), recheck a
-// row, or forget it so the next page render derives it again.
+// author links. Admins can recheck a row or forget it so the next page render
+// derives it again.
 templ AdminLinkIconsCard(rows []store.LinkIcon, tz string) {
 	<section class="card" id="admin-link-icons-card">
 		<h2>link icons</h2>
-		<p class="muted small">Author links without a label use a Simple Icons glyph looked up by domain. A domain is looked up once and the result (including "no icon") is cached. Set a slug to override a wrong or missing association.</p>
+		<p class="muted small">Author links without a label use a Simple Icons glyph looked up by domain. A domain is looked up once and the result (including "no icon") is cached.</p>
 		<div id="admin-link-icons-error" class="error"></div>
-		<form class="row link-icon-add" hx-post="/admin/link-icons" hx-target="#admin-link-icons-card" hx-swap="outerHTML">
-			<input name="domain" type="text" placeholder="example.com" aria-label="domain"/>
-			<input name="slug" type="text" placeholder="simpleicons slug, e.g. reddit" aria-label="simpleicons slug"/>
-			<button type="submit">save mapping</button>
-		</form>
 		if len(rows) == 0 {
 			<p class="muted small">no link domains seen yet.</p>
 		} else {
-			<table class="admin-link-icons">
+			<table class="admin-users">
 				<thead>
 					<tr>
 						<th>domain</th>
@@ -458,8 +452,8 @@ templ AdminLinkIconsCard(rows []store.LinkIcon, tz string) {
 							</td>
 							<td class="muted">{ web.TimeFmt(tz, r.CheckedAt) }</td>
 							<td class="col-actions">
-								<button type="button" class="link" hx-post="/admin/link-icons/recheck" hx-vals={ vals } hx-target="#admin-link-icons-card" hx-swap="outerHTML">recheck</button>
-								<button type="button" class="link danger" hx-post="/admin/link-icons/delete" hx-vals={ vals } hx-target="#admin-link-icons-card" hx-swap="outerHTML" hx-confirm={ "forget the icon mapping for " + r.Domain + "?" }>@web.Lucide("x")</button>
+								<button type="button" class="link" title="recheck" aria-label="recheck" hx-post="/admin/link-icons/recheck" hx-vals={ vals } hx-target="#admin-link-icons-card" hx-swap="outerHTML">@web.Lucide("refresh-cw")</button>
+								<button type="button" class="link danger" title="forget" aria-label="forget" hx-post="/admin/link-icons/delete" hx-vals={ vals } hx-target="#admin-link-icons-card" hx-swap="outerHTML" hx-confirm={ "forget the icon mapping for " + r.Domain + "?" }>@web.Lucide("trash-2")</button>
 							</td>
 						</tr>
 					}

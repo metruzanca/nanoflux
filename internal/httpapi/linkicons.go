@@ -53,7 +53,7 @@ var linkIconAliases = map[string]string{
 	"news.ycombinator.com": "ycombinator",
 }
 
-// linkIconSlugRe keeps derived and admin-supplied slugs path-safe.
+// linkIconSlugRe keeps a derived slug path-safe.
 var linkIconSlugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._+-]*$`)
 
 // linkIconSlugs returns the Simple Icons slugs to try for a domain, most
@@ -90,15 +90,6 @@ func linkIconSlugs(domain string) []string {
 		add(labels[len(labels)-2])
 	}
 	return out
-}
-
-// normalizeLinkIconSlug validates an admin-supplied slug.
-func normalizeLinkIconSlug(slug string) string {
-	slug = strings.ToLower(strings.TrimSpace(slug))
-	if !linkIconSlugRe.MatchString(slug) {
-		return ""
-	}
-	return slug
 }
 
 // normalizeLinkIconDomain normalizes a link URL (or bare domain) to the key used

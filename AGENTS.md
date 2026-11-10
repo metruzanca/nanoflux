@@ -583,8 +583,8 @@ Simple Icons glyph when one exists.
   `<img>`: an inline SVG keeps `currentColor` theming and the `↗` external
   marker.
 - `/admin` has a **link icons** card listing every association with a preview,
-  slug, status and checked time. Admins can set a slug manually (overriding the
-  derivation), recheck a row, or delete it so the next page render re-derives it.
+  slug, status and checked time. Admins can recheck a row or delete it so the
+  next page render derives it again.
 
 ## Saved views
 
