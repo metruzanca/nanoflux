@@ -1424,6 +1424,28 @@ dialog.modal.wide[open] {
    count shares the muted color of the feed count (no accent override). */
 #authors-list li { padding: 0.9rem 0; }
 
+/* Divider between authors that have unread items and those that do not. It is
+   a hairline on both sides of a small muted label; app.js shows it only in the
+   unread sort, so [hidden] must beat the flex display. */
+#authors-list .authors-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+#authors-list .authors-divider::before,
+#authors-list .authors-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+#authors-list .authors-divider[hidden] { display: none; }
+
 /* Editable author link rows on the edit form: label/url side by side with a
    trash button. The placeholders name the fields, so no per-row labels. */
 .author-link-row {

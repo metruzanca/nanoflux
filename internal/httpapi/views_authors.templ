@@ -62,10 +62,25 @@ templ authorsPage(u store.User, d authorsData) {
 
 templ AuthorsList(rows []authorRow) {
 	<ul class="plain" id="authors-list">
-		for _, r := range rows {
+		for i, r := range rows {
+			// The list defaults to most-unread-first, so a divider marks where
+			// the authors with unread items end. app.js repositions it when the
+			// client-side sort changes.
+			if i > 0 && r.Unread == 0 && rows[i-1].Unread > 0 {
+				@authorsDivider()
+			}
 			@AuthorRow(r)
 		}
 	</ul>
+}
+
+// authorsDivider separates authors with unread items from those without. It is
+// a non-sortable row: app.js moves it in the unread sort and hides it in the
+// other modes, where unread authors are not contiguous.
+templ authorsDivider() {
+	<li class="authors-divider" data-authors-divider role="separator">
+		<span>no unread</span>
+	</li>
 }
 
 templ AuthorRow(r authorRow) {

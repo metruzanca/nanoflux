@@ -246,11 +246,26 @@ function authorSort() {
   if (s === 'abc' || s === 'newest' || s === 'magic') return s;
   return 'unread';
 }
+function authorDivider(list) {
+  var d = list.querySelector(':scope > [data-authors-divider]');
+  if (!d) {
+    d = document.createElement('li');
+    d.className = 'authors-divider';
+    d.setAttribute('data-authors-divider', '');
+    d.setAttribute('role', 'separator');
+    var label = document.createElement('span');
+    label.textContent = 'no unread';
+    d.appendChild(label);
+  }
+  return d;
+}
 function applyAuthorSort() {
   var sort = authorSort();
   var list = document.getElementById('authors-list');
   if (list) {
-    var rows = Array.prototype.slice.call(list.children);
+    var rows = Array.prototype.slice.call(list.children).filter(function (r) {
+      return !r.hasAttribute('data-authors-divider');
+    });
     rows.sort(function (a, b) {
       if (sort === 'newest') {
         return (b.dataset.created || '').localeCompare(a.dataset.created || '');
@@ -266,6 +281,22 @@ function applyAuthorSort() {
       return (a.dataset.name || '').localeCompare(b.dataset.name || '');
     });
     rows.forEach(function (r) { list.appendChild(r); });
+    // The divider only groups the unread sort, where authors with unread items
+    // form a contiguous top block. abc/newest/magic interleave them, so hide it.
+    var divider = authorDivider(list);
+    var boundary = -1;
+    if (sort === 'unread') {
+      for (var i = 0; i < rows.length; i++) {
+        if ((parseInt(rows[i].dataset.unread, 10) || 0) === 0) { boundary = i; break; }
+      }
+    }
+    if (boundary > 0) {
+      list.insertBefore(divider, rows[boundary]);
+      divider.hidden = false;
+    } else {
+      divider.hidden = true;
+      list.appendChild(divider);
+    }
   }
   setPickerState('authors', sort);
 }
@@ -1280,6 +1311,11 @@ document.addEventListener('DOMContentLoaded', function () {
   var d = document.getElementById(pending);
   if (d) d.showModal();
 });
+
+// Apply the saved author sort on first load too: the server renders the
+// unread order (and its divider), which is wrong for a user who saved abc,
+// newest or magic.
+document.addEventListener('DOMContentLoaded', applyAuthorSort);
 
 // Keep the client-side pickers applied after any htmx swap that recreates a
 // list (tab switch, mark all read, load-more, author add).

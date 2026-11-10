@@ -2003,6 +2003,42 @@ func TestAuthorsRowIsCondensed(t *testing.T) {
 	}
 }
 
+func TestAuthorsListUnreadDivider(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	unread, _ := s.store.Authors.Create(u.ID, "Unread", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, unread.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "One", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	caughtUp, _ := s.store.Authors.Create(u.ID, "Caughtup", "", "")
+	if _, err := s.store.Feeds.Create(u.ID, caughtUp.ID, "News", "https://n.dev/rss.xml", "", "", 900); err != nil {
+		t.Fatalf("create caught-up feed: %v", err)
+	}
+
+	body := doGet(h, "/authors", cookie).Body.String()
+	unreadIdx := strings.Index(body, `id="author-`+itoa(unread.ID)+`"`)
+	dividerIdx := strings.Index(body, "data-authors-divider")
+	zeroIdx := strings.Index(body, `id="author-`+itoa(caughtUp.ID)+`"`)
+	if unreadIdx < 0 || dividerIdx < 0 || zeroIdx < 0 {
+		t.Fatalf("authors list missing row or divider: %s", body)
+	}
+	if !(unreadIdx < dividerIdx && dividerIdx < zeroIdx) {
+		t.Fatalf("divider should sit between unread and caught-up authors: %s", body)
+	}
+	if !strings.Contains(body, `<span>no unread</span>`) {
+		t.Fatalf("divider should be labelled: %s", body)
+	}
+
+	// With nothing unread there is no boundary, so no divider is rendered.
+	if err := s.store.Items.MarkAllRead(u.ID, 0); err != nil {
+		t.Fatalf("mark all read: %v", err)
+	}
+	body = doGet(h, "/authors", cookie).Body.String()
+	if strings.Contains(body, "data-authors-divider") {
+		t.Fatalf("no divider expected without unread authors: %s", body)
+	}
+}
+
 func TestAuthorEditDeleteFlow(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
