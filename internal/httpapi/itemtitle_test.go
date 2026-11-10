@@ -19,18 +19,18 @@ func TestItemsWithoutTitleShowExternalID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := s.store.Authors.Create(u.ID, "Example", "", "")
+	a, err := s.store.Authors.Create(u.ID, "Example Blog", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := s.store.Feeds.Create(u.ID, a.ID, "Example", "https://bridge.example/Example/x", "", "", 900)
+	f, err := s.store.Feeds.Create(u.ID, a.ID, "Example Blog", "https://bridge.example/feed/x", "", "", 900)
 	if err != nil {
 		t.Fatal(err)
 	}
 	const externalID = "832737045877309440"
 	if _, err := s.store.Items.Upsert(f.ID, store.Item{
 		GUID:      externalID,
-		Link:      "https://Example.co/Z0w8-skEUUvYqq00",
+		Link:      "https://links.example/p/1",
 		FetchedAt: db.Now(),
 	}); err != nil {
 		t.Fatal(err)
