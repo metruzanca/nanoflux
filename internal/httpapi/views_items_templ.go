@@ -3258,7 +3258,7 @@ func filterDialog(fp filterPanelData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 255, "add filter</button><div class=\"row-actions\"><button type=\"submit\" class=\"link\" title=\"save this list as a view\" formaction=\"/views/new\" formmethod=\"get\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 255, "add filter</button><div class=\"row-actions\"><button type=\"submit\" class=\"link\" title=\"save this list as a view\" aria-label=\"save this list as a view\" formaction=\"/views/new\" formmethod=\"get\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -3266,7 +3266,7 @@ func filterDialog(fp filterPanelData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 256, "save as view</button> <button type=\"button\" class=\"link\" data-close-dialog>cancel</button> <button type=\"submit\">apply</button></div></form></dialog>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 256, "</button> <button type=\"button\" class=\"link\" data-close-dialog>cancel</button> <button type=\"submit\">apply</button></div></form></dialog>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

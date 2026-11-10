@@ -101,8 +101,12 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	// The filter dialog saves the draft rows as a view, and the add menu links to
 	// the empty create form.
 	body := doGet(h, "/unread?"+url.Values{"f": {"tag:show:u/example-poster"}}.Encode(), cookie).Body.String()
-	if !strings.Contains(body, `formaction="/views/new"`) || !strings.Contains(body, `href="/views/new"`) {
+	if !strings.Contains(body, `formaction="/views/new"`) || !strings.Contains(body, `href="/views/new"`) ||
+		!strings.Contains(body, `aria-label="save this list as a view"`) {
 		t.Fatalf("unread should offer save-as-view from the filter dialog and add menu: %s", body)
+	}
+	if strings.Contains(body, "save as view</button>") {
+		t.Fatalf("save-as-view should be icon-only: %s", body)
 	}
 
 	// The create page carries the filter rows and the feed-style author picker,
