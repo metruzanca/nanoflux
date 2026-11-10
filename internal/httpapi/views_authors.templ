@@ -414,6 +414,25 @@ templ authorPage(u store.User, d authorData) {
 				}
 			</div>
 		}
+		{{ cloudTags := tagCloudTags(d.Scoped.TagCounts) }}
+		if u.ShowTagCloud && len(cloudTags) > 0 {
+			{{ maxCount := maxTagCount(cloudTags) }}
+			<details class="tag-cloud">
+				<summary>
+					<span>tag cloud ({ strconv.Itoa(len(cloudTags)) })</span>
+					<span class="tag-cloud-preview">
+						for _, tc := range topTags(cloudTags, 6) {
+							<a class="chip tag-cloud-preview-tag" href={ templ.URL(tagCloudHref(d.Scoped.Path, d.Scoped.View, d.Scoped.Sort, d.Scoped.Filters, d.Scoped.ViewID, tc.Category)) } title={ "show items tagged " + tc.Category }>{ tc.Category } <span class="tag-cloud-count">({ strconv.Itoa(tc.Count) })</span></a>
+						}
+					</span>
+				</summary>
+				<div class="chips tag-cloud-full">
+					for _, tc := range cloudTags {
+						<a class="chip tag-cloud-tag" style={ "font-size: " + tagCloudSize(tc.Count, maxCount) } href={ templ.URL(tagCloudHref(d.Scoped.Path, d.Scoped.View, d.Scoped.Sort, d.Scoped.Filters, d.Scoped.ViewID, tc.Category)) } title={ "show items tagged " + tc.Category }>{ tc.Category } <span class="tag-cloud-count">({ strconv.Itoa(tc.Count) })</span></a>
+					}
+				</div>
+			</details>
+		}
 		{{ sources := len(d.Rows) + len(d.Views) }}
 		if sources > 0 {
 			<details class="author-feeds">

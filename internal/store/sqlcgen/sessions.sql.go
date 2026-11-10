@@ -87,7 +87,7 @@ func (q *Queries) DeleteSessionsByUserExcept(ctx context.Context, arg DeleteSess
 }
 
 const getUserByToken = `-- name: GetUserByToken :one
-SELECT u.id, u.username, u.password_hash, u.is_admin, u.avatar_key, u.timezone, u.theme, u.accent_color, u.home_config, u.auto_read_after_days, u.hide_unread_counts, u.hide_unread_nav, u.grid_max_columns, u.created_at
+SELECT u.id, u.username, u.password_hash, u.is_admin, u.avatar_key, u.timezone, u.theme, u.accent_color, u.home_config, u.auto_read_after_days, u.hide_unread_counts, u.hide_unread_nav, u.grid_max_columns, u.show_tag_cloud, u.created_at
 FROM sessions se
 JOIN users u ON u.id = se.user_id
 WHERE se.token = ? AND se.expires_at > datetime('now')
@@ -107,6 +107,7 @@ type GetUserByTokenRow struct {
 	HideUnreadCounts  bool           `json:"hide_unread_counts"`
 	HideUnreadNav     bool           `json:"hide_unread_nav"`
 	GridMaxColumns    int64          `json:"grid_max_columns"`
+	ShowTagCloud      bool           `json:"show_tag_cloud"`
 	CreatedAt         string         `json:"created_at"`
 }
 
@@ -127,6 +128,7 @@ func (q *Queries) GetUserByToken(ctx context.Context, token string) (GetUserByTo
 		&i.HideUnreadCounts,
 		&i.HideUnreadNav,
 		&i.GridMaxColumns,
+		&i.ShowTagCloud,
 		&i.CreatedAt,
 	)
 	return i, err

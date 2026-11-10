@@ -51,7 +51,7 @@ func intFromSQL(v interface{}) int {
 	}
 }
 
-func toUser(id int64, username, passwordHash string, isAdmin bool, avatarKey, timezone sql.NullString, theme, accentColor, homeConfig string, autoReadAfterDays int64, hideUnreadCounts, hideUnreadNav bool, gridMaxColumns int64, createdAt string) User {
+func toUser(id int64, username, passwordHash string, isAdmin bool, avatarKey, timezone sql.NullString, theme, accentColor, homeConfig string, autoReadAfterDays int64, hideUnreadCounts, hideUnreadNav bool, gridMaxColumns int64, showTagCloud bool, createdAt string) User {
 	return User{
 		ID:                id,
 		Username:          username,
@@ -66,6 +66,7 @@ func toUser(id int64, username, passwordHash string, isAdmin bool, avatarKey, ti
 		HideUnreadCounts:  hideUnreadCounts,
 		HideUnreadNav:     hideUnreadNav,
 		GridMaxColumns:    int(gridMaxColumns),
+		ShowTagCloud:      showTagCloud,
 		CreatedAt:         createdAt,
 	}
 }

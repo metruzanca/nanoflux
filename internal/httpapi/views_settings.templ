@@ -129,6 +129,7 @@ templ settingsAppearance(d settingsAppearanceData) {
 			@appearanceAccent(settingsAccentData{Accent: d.Accent, Error: d.AccentError})
 			@appearanceUnreadCounts(settingsAppearanceData{HideUnreadCounts: d.HideUnreadCounts})
 			@appearanceUnreadNav(settingsAppearanceData{HideUnreadNav: d.HideUnreadNav, HideUnreadCounts: d.HideUnreadCounts})
+			@appearanceTagCloud(settingsAppearanceData{ShowTagCloud: d.ShowTagCloud})
 		</div>
 	</section>
 }
@@ -173,6 +174,14 @@ templ appearanceUnreadNav(d settingsAppearanceData) {
 	<div id="settings-unread-nav-section">
 		<form class="stack" hx-post="/settings/appearance/unread-nav" hx-trigger="change" hx-target="#settings-unread-nav-section" hx-swap="outerHTML">
 			@switchField("hide_unread_nav", "hide unread from nav", d.HideUnreadNav, "Move the \"unread\" link out of the navbar and into the user menu.", nil)
+		</form>
+	</div>
+}
+
+templ appearanceTagCloud(d settingsAppearanceData) {
+	<div id="settings-tag-cloud-section">
+		<form class="stack" hx-post="/settings/appearance/tag-cloud" hx-trigger="change" hx-target="#settings-tag-cloud-section" hx-swap="outerHTML">
+			@switchField("show_tag_cloud", "author tag cloud", d.ShowTagCloud, "Show a collapsible tag cloud on author pages, built from the tags carried by their feeds and views. Off by default.", nil)
 		</form>
 	</div>
 }

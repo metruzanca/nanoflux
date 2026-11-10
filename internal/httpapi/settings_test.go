@@ -32,6 +32,7 @@ func TestSettingsPage(t *testing.T) {
 		`hx-post="/settings/appearance/unread-counts"`,
 		`hx-post="/settings/appearance/unread-nav"`,
 		`hx-post="/settings/appearance/grid-columns"`,
+		`hx-post="/settings/appearance/tag-cloud"`,
 		"appearance",
 		`data-slot="slider"`,
 		`hide global unread counts`,
@@ -160,6 +161,7 @@ func TestSettingsInstantControls(t *testing.T) {
 		`hx-post="/settings/appearance/unread-counts" hx-trigger="change"`,
 		`hx-post="/settings/appearance/unread-nav" hx-trigger="change"`,
 		`hx-post="/settings/appearance/grid-columns" hx-trigger="change"`,
+		`hx-post="/settings/appearance/tag-cloud" hx-trigger="change"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("settings page missing %q", want)
@@ -494,6 +496,38 @@ func TestSettingsAppearanceUnreadNav(t *testing.T) {
 	unreadIdx = strings.Index(body, `id="nav-unread"`)
 	if !(navIdx < menuIdx && menuIdx < unreadIdx) {
 		t.Fatalf("unread link should be inside the user menu: %s", body)
+	}
+}
+
+func TestSettingsAppearanceTagCloud(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+
+	// The tag cloud is off by default.
+	if after, _ := s.store.Users.ByID(u.ID); after.ShowTagCloud {
+		t.Fatal("show_tag_cloud should default to false")
+	}
+
+	rr := doForm(h, "POST", "/settings/appearance/tag-cloud", url.Values{"show_tag_cloud": {"1"}}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("enable tag cloud: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `name="show_tag_cloud"`) {
+		t.Fatalf("tag cloud control should render its field: %s", rr.Body.String())
+	}
+	after, _ := s.store.Users.ByID(u.ID)
+	if !after.ShowTagCloud {
+		t.Fatal("show_tag_cloud not persisted")
+	}
+
+	rr = doForm(h, "POST", "/settings/appearance/tag-cloud", url.Values{}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("disable tag cloud: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.ShowTagCloud {
+		t.Fatal("show_tag_cloud should clear")
 	}
 }
 

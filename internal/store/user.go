@@ -24,6 +24,7 @@ type User struct {
 	HideUnreadCounts  bool   // hide the unread/authors badges in the top navigation
 	HideUnreadNav     bool   // move the "unread" nav item into the user menu
 	GridMaxColumns    int    // max columns for grid-mode item lists (2..6)
+	ShowTagCloud      bool   // show the collapsible author tag cloud
 	CreatedAt         string
 }
 
@@ -41,7 +42,7 @@ func (s *UserStore) Create(username, passwordHash string) (User, error) {
 	if err != nil {
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
 }
 
 // CreateFirstAdmin creates a user and, when they are the first account on the
@@ -82,7 +83,7 @@ func (s *UserStore) CreateFirstAdmin(username, passwordHash string) (User, bool,
 	if err := tx.Commit(); err != nil {
 		return User{}, false, fmt.Errorf("commit create user: %w", err)
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.CreatedAt), first, nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), first, nil
 }
 
 func (s *UserStore) ByID(id int64) (User, error) {
@@ -93,7 +94,7 @@ func (s *UserStore) ByID(id int64) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
 }
 
 // ByUsername looks an account up case-insensitively: usernames are stored
@@ -106,7 +107,7 @@ func (s *UserStore) ByUsername(username string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
 }
 
 func (s *UserStore) List() ([]User, error) {
@@ -116,7 +117,7 @@ func (s *UserStore) List() ([]User, error) {
 	}
 	out := make([]User, 0, len(rows))
 	for _, u := range rows {
-		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.CreatedAt))
+		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt))
 	}
 	return out, nil
 }
@@ -295,6 +296,14 @@ func (s *UserStore) SetGridMaxColumns(userID int64, n int) error {
 	})
 }
 
+// SetShowTagCloud stores whether author pages show the collapsible tag cloud.
+func (s *UserStore) SetShowTagCloud(userID int64, show bool) error {
+	return s.q.SetUserShowTagCloud(context.Background(), sqlcgen.SetUserShowTagCloudParams{
+		ShowTagCloud: show,
+		ID:           userID,
+	})
+}
+
 // ClampGridColumns maps an arbitrary grid column count onto the supported 2..6
 // range, defaulting to 2.
 func ClampGridColumns(n int) int {
@@ -368,7 +377,7 @@ func (s *UserStore) ByFavoritesShareToken(token string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
 }
 
 // BookmarksShareToken returns the user's public bookmarks share token, or ""
@@ -432,5 +441,5 @@ func (s *UserStore) ByBookmarksShareToken(token string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
 }

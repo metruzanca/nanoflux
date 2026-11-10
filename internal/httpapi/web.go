@@ -248,6 +248,9 @@ type scopedItemsData struct {
 	// non-empty.
 	FilteredCount int
 	TagOptions    []comboItem // distinct tags in scope, for the filter modal
+	// TagCounts are the same tags with their item counts, for the author tag
+	// cloud. Nil when the scope has no tags.
+	TagCounts []store.CategoryCount
 	// FeedOptions are the author's feeds for the filter modal.
 	FeedOptions []comboItem
 	// ScopeAuthorID/ScopeCollectionID identify the list the save-view action was
@@ -2366,7 +2369,7 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
 		More: pageCursorFor(itemsBase, items, more, sort, 0), HideAuthor: true,
 		Mode: s.store.ViewPrefs.Mode(userID, base), FavTab: favs > 0 || view == "favorites", FavCount: favs,
-		Filters: filters, FilteredCount: filtered, TagOptions: tagItems(cats), FeedOptions: feedOpts,
+		Filters: filters, FilteredCount: filtered, TagOptions: tagItems(cats), TagCounts: cats, FeedOptions: feedOpts,
 		ScopeAuthorID: authorID, ViewID: viewID, ViewName: viewName,
 	}, true
 }

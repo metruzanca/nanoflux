@@ -32,3 +32,5 @@ sql:
             go_type: "bool"
           - column: "users.hide_unread_nav"
             go_type: "bool"
+          - column: "users.show_tag_cloud"
+            go_type: "bool"

@@ -76,6 +76,7 @@ var migrations = []migration{
 	{63, schemaV63},
 	{64, schemaV64},
 	{65, schemaV65},
+	{66, schemaV66},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -1044,6 +1045,12 @@ DROP TABLE saved_views;
 ALTER TABLE saved_views_v65 RENAME TO saved_views;
 CREATE INDEX idx_saved_views_user ON saved_views(user_id);
 CREATE INDEX idx_saved_views_author ON saved_views(author_id);
+`
+
+// schemaV66 adds the opt-in author tag cloud display preference. It defaults
+// off so author pages render as before until a user turns it on.
+const schemaV66 = `
+ALTER TABLE users ADD COLUMN show_tag_cloud INTEGER NOT NULL DEFAULT 0;
 `
 
 // Migrate applies any pending migrations in order, recording each in

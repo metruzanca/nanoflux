@@ -313,6 +313,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /settings/appearance/unread-counts", s.auth.Require(http.HandlerFunc(s.settingsAppearanceUnreadCounts)))
 	mux.Handle("POST /settings/appearance/unread-nav", s.auth.Require(http.HandlerFunc(s.settingsAppearanceUnreadNav)))
 	mux.Handle("POST /settings/appearance/grid-columns", s.auth.Require(http.HandlerFunc(s.settingsAppearanceGridColumns)))
+	mux.Handle("POST /settings/appearance/tag-cloud", s.auth.Require(http.HandlerFunc(s.settingsAppearanceTagCloud)))
 	mux.Handle("POST /settings/password", s.auth.Require(http.HandlerFunc(s.settingsPassword)))
 	mux.Handle("POST /settings/sessions/{token}/revoke", s.auth.Require(http.HandlerFunc(s.settingsSessionsRevoke)))
 	mux.Handle("GET /settings/export.opml", s.auth.Require(http.HandlerFunc(s.opmlExport)))

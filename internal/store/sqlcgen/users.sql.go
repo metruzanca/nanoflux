@@ -35,7 +35,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
-RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
+RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
 `
 
 type CreateUserParams struct {
@@ -57,6 +57,7 @@ type CreateUserRow struct {
 	HideUnreadCounts  bool           `json:"hide_unread_counts"`
 	HideUnreadNav     bool           `json:"hide_unread_nav"`
 	GridMaxColumns    int64          `json:"grid_max_columns"`
+	ShowTagCloud      bool           `json:"show_tag_cloud"`
 	CreatedAt         string         `json:"created_at"`
 }
 
@@ -77,6 +78,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.HideUnreadCounts,
 		&i.HideUnreadNav,
 		&i.GridMaxColumns,
+		&i.ShowTagCloud,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -104,7 +106,7 @@ func (q *Queries) GetUserAvatarKey(ctx context.Context, id int64) (sql.NullStrin
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
 FROM users
 WHERE id = ?
 `
@@ -123,6 +125,7 @@ type GetUserByIDRow struct {
 	HideUnreadCounts  bool           `json:"hide_unread_counts"`
 	HideUnreadNav     bool           `json:"hide_unread_nav"`
 	GridMaxColumns    int64          `json:"grid_max_columns"`
+	ShowTagCloud      bool           `json:"show_tag_cloud"`
 	CreatedAt         string         `json:"created_at"`
 }
 
@@ -143,13 +146,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, er
 		&i.HideUnreadCounts,
 		&i.HideUnreadNav,
 		&i.GridMaxColumns,
+		&i.ShowTagCloud,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
 FROM users
 WHERE username = ?
 `
@@ -168,6 +172,7 @@ type GetUserByUsernameRow struct {
 	HideUnreadCounts  bool           `json:"hide_unread_counts"`
 	HideUnreadNav     bool           `json:"hide_unread_nav"`
 	GridMaxColumns    int64          `json:"grid_max_columns"`
+	ShowTagCloud      bool           `json:"show_tag_cloud"`
 	CreatedAt         string         `json:"created_at"`
 }
 
@@ -188,6 +193,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 		&i.HideUnreadCounts,
 		&i.HideUnreadNav,
 		&i.GridMaxColumns,
+		&i.ShowTagCloud,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -232,7 +238,7 @@ func (q *Queries) ListUserIconKeys(ctx context.Context, userID int64) ([]sql.Nul
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
 FROM users
 ORDER BY username
 `
@@ -251,6 +257,7 @@ type ListUsersRow struct {
 	HideUnreadCounts  bool           `json:"hide_unread_counts"`
 	HideUnreadNav     bool           `json:"hide_unread_nav"`
 	GridMaxColumns    int64          `json:"grid_max_columns"`
+	ShowTagCloud      bool           `json:"show_tag_cloud"`
 	CreatedAt         string         `json:"created_at"`
 }
 
@@ -277,6 +284,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.HideUnreadCounts,
 			&i.HideUnreadNav,
 			&i.GridMaxColumns,
+			&i.ShowTagCloud,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -424,6 +432,21 @@ type SetUserPasswordParams struct {
 
 func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
 	_, err := q.db.ExecContext(ctx, setUserPassword, arg.PasswordHash, arg.ID)
+	return err
+}
+
+const setUserShowTagCloud = `-- name: SetUserShowTagCloud :exec
+UPDATE users SET show_tag_cloud = ?
+WHERE id = ?
+`
+
+type SetUserShowTagCloudParams struct {
+	ShowTagCloud bool  `json:"show_tag_cloud"`
+	ID           int64 `json:"id"`
+}
+
+func (q *Queries) SetUserShowTagCloud(ctx context.Context, arg SetUserShowTagCloudParams) error {
+	_, err := q.db.ExecContext(ctx, setUserShowTagCloud, arg.ShowTagCloud, arg.ID)
 	return err
 }
 

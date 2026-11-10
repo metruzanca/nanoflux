@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -609,6 +610,80 @@ func filterPageURL(path, view string, sort itemSort, filters listFilters) string
 func filterPageURLFor(path, view string, sort itemSort, filters listFilters, viewID int64) string {
 	u := scopedViewQueryFor(path, view, viewID) + "&sort=" + sort.param()
 	return filters.appendFilters(u)
+}
+
+// tagCloudHref builds the author-page URL that applies tag as a show/all filter
+// row on top of the current tab, sort, selected view and filters. A tag that is
+// already an active show/all filter leaves the URL unchanged.
+func tagCloudHref(path, view string, sort itemSort, filters listFilters, viewID int64, tag string) string {
+	for _, f := range filters {
+		if f.isTag() && f.shown() && f.allValues() {
+			for _, v := range f.Values {
+				if v == tag {
+					return filterPageURLFor(path, view, sort, filters, viewID)
+				}
+			}
+		}
+	}
+	next := make(listFilters, 0, len(filters)+1)
+	next = append(next, filters...)
+	next = append(next, listFilter{
+		Kind: filterKindTag, Action: filterShow, Combine: filterAll,
+		Values: []string{tag}, Labels: []string{tag},
+	})
+	return filterPageURLFor(path, view, sort, next, viewID)
+}
+
+// tagCloudTags drops the reserved media-type labels from a tag cloud. They are
+// real stored categories, but type:image and friends would dominate a cloud and
+// are not useful browsing tags. The filter modal still offers them.
+func tagCloudTags(cats []store.CategoryCount) []store.CategoryCount {
+	out := make([]store.CategoryCount, 0, len(cats))
+	for _, c := range cats {
+		if strings.HasPrefix(c.Category, "type:") {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// topTags returns at most n of the most-used tags. cats is already ordered
+// most-used first.
+func topTags(cats []store.CategoryCount, n int) []store.CategoryCount {
+	if n <= 0 || len(cats) == 0 {
+		return nil
+	}
+	if len(cats) > n {
+		return cats[:n]
+	}
+	return cats
+}
+
+// maxTagCount returns the largest count in cats, or 0 when empty.
+func maxTagCount(cats []store.CategoryCount) int {
+	max := 0
+	for _, c := range cats {
+		if c.Count > max {
+			max = c.Count
+		}
+	}
+	return max
+}
+
+// tagCloudSize maps a tag count onto a font size for the cloud. The square root
+// keeps a single huge tag from flattening everything else.
+func tagCloudSize(count, max int) string {
+	const minRem, maxRem = 0.85, 1.5
+	if max <= 0 || count <= 0 {
+		return strconv.FormatFloat(minRem, 'f', 2, 64) + "rem"
+	}
+	ratio := float64(count) / float64(max)
+	if ratio > 1 {
+		ratio = 1
+	}
+	size := minRem + (maxRem-minRem)*math.Sqrt(ratio)
+	return strconv.FormatFloat(size, 'f', 2, 64) + "rem"
 }
 
 // filterActionURL encodes filters for a POST action (mark-all-read), whose

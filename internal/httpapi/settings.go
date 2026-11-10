@@ -238,6 +238,7 @@ type settingsAppearanceData struct {
 	HideUnreadCounts bool
 	HideUnreadNav    bool
 	GridMaxColumns   int
+	ShowTagCloud     bool
 	GridError        string
 }
 
@@ -248,7 +249,7 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		Home:               s.settingsHomeData(u.ID, ""),
 		Algorithm:          s.settingsAlgorithmData(u.ID),
 		Timezone:           settingsTimezoneData{Timezone: u.Timezone, Items: timezoneItems()},
-		Appearance:         settingsAppearanceData{Theme: u.Theme, Accent: u.AccentColor, HideUnreadCounts: u.HideUnreadCounts, HideUnreadNav: u.HideUnreadNav, GridMaxColumns: store.ClampGridColumns(u.GridMaxColumns)},
+		Appearance:         settingsAppearanceData{Theme: u.Theme, Accent: u.AccentColor, HideUnreadCounts: u.HideUnreadCounts, HideUnreadNav: u.HideUnreadNav, GridMaxColumns: store.ClampGridColumns(u.GridMaxColumns), ShowTagCloud: u.ShowTagCloud},
 		AutoRead:           settingsAutoReadData{Value: autoReadValue(u.AutoReadAfterDays)},
 		Sessions:           s.settingsSessionsData(u, auth.Token(r)),
 		Extension:          settingsExtensionData{ServerURL: s.requestBaseURL(r)},
@@ -449,6 +450,19 @@ func (s *Server) settingsAppearanceUnreadNav(w http.ResponseWriter, r *http.Requ
 	}
 	w.Header().Set("HX-Refresh", "true")
 	web.Render(w, r, appearanceUnreadNav(settingsAppearanceData{HideUnreadNav: hide}))
+}
+
+// settingsAppearanceTagCloud toggles the collapsible author tag cloud.
+func (s *Server) settingsAppearanceTagCloud(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	show := r.FormValue("show_tag_cloud") == "1"
+	if err := s.store.Users.SetShowTagCloud(u.ID, show); err != nil {
+		log.Error("set show tag cloud", "err", err)
+		w.WriteHeader(http.StatusBadRequest)
+		web.Render(w, r, appearanceTagCloud(settingsAppearanceData{ShowTagCloud: u.ShowTagCloud}))
+		return
+	}
+	web.Render(w, r, appearanceTagCloud(settingsAppearanceData{ShowTagCloud: show}))
 }
 
 // settingsAppearanceGridColumns stores the maximum column count for grid-mode

@@ -746,6 +746,11 @@ stored on `users` (schemaV43), rendered server-side into the topbar and
   `repeat(var(--grid-columns, 2), ...)`. `store.ClampGridColumns` is the
   canonical clamp. `settingsAppearanceGridColumns`
   (`POST /settings/appearance/grid-columns`) rejects out-of-range values.
+- `users.show_tag_cloud` (schemaV66, default off) enables the collapsible tag
+  cloud on author pages. `settingsAppearanceTagCloud`
+  (`POST /settings/appearance/tag-cloud`) toggles it. The cloud reuses the
+  author's existing tag-count query, drops reserved `type:*` media labels, and
+  links each tag to the current author list with a `show`/`all` tag row.
 - Theme and accent color (`users.theme`, `users.accent_color`) were re-homed
   into the same appearance card but keep their existing routes
   (`POST /settings/theme`, `POST /settings/accent`); their handlers render the

@@ -886,11 +886,25 @@ a.item-tag:hover { color: var(--accent); }
 .filter-preview-list li { display: flex; flex-direction: column; gap: 0.1rem; }
 .filter-preview-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Collapsible "all tags seen in this feed" list in the feed filter card. */
+/* Collapsible author tag cloud. The summary keeps the top tags visible while
+   the details is closed; the opened body shows every content tag. */
 .tag-cloud { margin: 0.75rem 0 0; }
-.tag-cloud > summary { cursor: pointer; color: var(--muted); font-size: 0.8rem; }
+.tag-cloud > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
 .tag-cloud > summary:hover { color: var(--fg); }
+.tag-cloud-preview { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.tag-cloud-preview-tag { padding: 0.12rem 0.45rem; font-size: 0.7rem; }
 .tag-cloud .chips { margin-top: 0.5rem; }
+.tag-cloud-full { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem; }
+.tag-cloud-tag { line-height: 1.2; }
+.tag-cloud-count { color: var(--muted); font-size: 0.8em; }
 
 
 .tabs { display: flex; gap: 0.5rem; margin: 0 0 0.75rem; }
