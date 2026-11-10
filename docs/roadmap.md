@@ -158,9 +158,10 @@ Decisions already made:
 Work:
 
 1. **Repo layout.** Move `docker-compose.yml`, `Dockerfile`, `Dockerfile.local`
-   and the Docker `Makefile` under `deployments/docker/`. Update goreleaser,
-   `scripts/build-armv6.sh`, `.dockerignore` and `.gitmodules` paths. Keep
-   `mise.toml` as the dev entrypoint.
+   and the Docker deployment targets under `deployments/docker/`. Keep a root
+   `Makefile` for the dev gates (`check`, `plugins`), or move those targets to
+   `mise` if the Docker file leaves the root. Update goreleaser,
+   `scripts/build-armv6.sh` and `.dockerignore`.
 2. **Config loading.** Add a dotenv loader before `config.Load()`. Resolution
    order: `--config`, `NF_CONFIG`, `./.env`, the XDG config path, then
    `/etc/nanoflux/`. Never override a value already in the environment. Add
