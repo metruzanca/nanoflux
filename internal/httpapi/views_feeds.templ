@@ -137,21 +137,32 @@ templ feedPreviewFields(d feedPreviewForm) {
 			<input type="hidden" name="author_id" value={ strconv.FormatInt(d.FixedAuthor.ID, 10) }/>
 			<p class="muted small">author · { d.FixedAuthor.Name }</p>
 		} else {
-			@comboSelect("author_id", authorValue(d.SelectedAuthorID), "author", "search authors", authorItems(d.Authors), templ.Attributes{
-				"hx-get":     "/fragments/author-form",
-				"hx-target":  "#new-author",
-				"hx-swap":    "innerHTML",
-				"hx-include": "#feed-home-url",
-			})
-			<div id="new-author">
-				if d.SelectedAuthorID == 0 {
-					@authorCreateFields(d.newAuthor())
-				}
-			</div>
+			@authorPicker(d.SelectedAuthorID, authorItems(d.Authors), "new-author", "#feed-home-url", d.newAuthor())
 		}
 		<div id="add-feed-error" class="error"></div>
 		<button type="submit">add</button>
 	</form>
+}
+
+// authorPicker is the shared author selection plus inline "create new author"
+// fields used by the feed and view forms. Selecting "new" lazily swaps the
+// create-author fields into targetID; include carries any extra form fields the
+// fragment derives the new author's name/avatar from.
+templ authorPicker(selectedID int64, authors []comboItem, targetID, include string, fresh authorPreviewForm) {
+	{{ attrs := templ.Attributes{
+		"hx-get":    "/fragments/author-form",
+		"hx-target": "#" + targetID,
+		"hx-swap":   "innerHTML",
+	} }}
+	if include != "" {
+		{{ attrs["hx-include"] = include }}
+	}
+	@comboSelect("author_id", authorValue(selectedID), "author", "search authors", authors, attrs)
+	<div id={ targetID }>
+		if selectedID == 0 {
+			@authorCreateFields(fresh)
+		}
+	</div>
 }
 
 // manualFeedButton is the "add manually" action shown next to "find feed". It

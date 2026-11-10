@@ -170,12 +170,12 @@ type ListItem struct {
 }
 
 type SavedView struct {
-	ID        int64         `json:"id"`
-	UserID    int64         `json:"user_id"`
-	AuthorID  sql.NullInt64 `json:"author_id"`
-	Title     string        `json:"title"`
-	Filters   string        `json:"filters"`
-	CreatedAt string        `json:"created_at"`
+	ID        int64  `json:"id"`
+	UserID    int64  `json:"user_id"`
+	AuthorID  int64  `json:"author_id"`
+	Title     string `json:"title"`
+	Filters   string `json:"filters"`
+	CreatedAt string `json:"created_at"`
 }
 
 type Session struct {

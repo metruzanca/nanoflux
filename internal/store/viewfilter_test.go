@@ -117,7 +117,7 @@ func TestViewFilterCollectionScope(t *testing.T) {
 		t.Fatalf("add feed: %v", err)
 	}
 	view, err := s.SavedViews.Create(u.ID, SavedView{
-		Title: "Go", Filters: []string{"tag:show:r/golang"},
+		AuthorID: author.ID, Title: "Go", Filters: []string{"tag:show:r/golang"},
 	})
 	if err != nil {
 		t.Fatalf("saved view: %v", err)

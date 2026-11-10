@@ -314,7 +314,8 @@ func TestAuthorViewFollowsAssignedAuthorRules(t *testing.T) {
 	}
 	capView := createView(captain.ID, "Cap view", "tag:show:u/captain")
 	aggView := createView(captain.ID, "Agg view", "tag:show:u/aggregate")
-	freeView := createView(0, "Free view", "tag:show:u/captain")
+	freeAuthor, _ := s.store.Authors.Create(u.ID, "Unfiltered", "", "")
+	freeView := createView(freeAuthor.ID, "Free view", "tag:show:u/captain")
 
 	captainURL := "/authors/" + itoa(captain.ID)
 	aggregateURL := "/authors/" + itoa(aggregate.ID)
@@ -342,11 +343,11 @@ func TestAuthorViewFollowsAssignedAuthorRules(t *testing.T) {
 		t.Fatalf("global unread should hide the aggregator-blocked post: %s", body)
 	}
 
-	// An unassigned view has no author rules, so it surfaces the post the
+	// A view assigned to an author with no rules surfaces the post the
 	// aggregator hides from itself.
-	body = doGet(h, "/views/"+itoa(freeView.ID)+"?tab=unread&sort=newest&f="+url.QueryEscape("tag:show:u/captain"), cookie).Body.String()
+	body = doGet(h, "/authors/"+itoa(freeAuthor.ID)+"?view="+itoa(freeView.ID), cookie).Body.String()
 	if !strings.Contains(body, "Captain post") {
-		t.Fatalf("unassigned view should be unfiltered: %s", body)
+		t.Fatalf("view on a rule-free author should be unfiltered: %s", body)
 	}
 
 	// A collection's member view carries the same rule source.

@@ -13,10 +13,11 @@ import (
 // SavedView is a private, named filter recipe over the user's item lists. It
 // stores only the title, the assigned author and the canonical list filter
 // params. The view always matches all feeds; tabs and sort are page state.
+// AuthorID is required: a view is a source on its author's page, like a feed.
 type SavedView struct {
 	ID        int64
 	UserID    int64
-	AuthorID  int64 // 0 = unassigned
+	AuthorID  int64
 	Title     string
 	Filters   []string // canonical ?f= params
 	CreatedAt string
@@ -83,7 +84,7 @@ func (s *SavedViewStore) Create(userID int64, v SavedView) (SavedView, error) {
 		INSERT INTO saved_views (
 			user_id, author_id, title, filters
 		) VALUES (?, ?, ?, ?)`,
-		userID, savedViewAuthor(v.AuthorID), tagnorm.Label(v.Title), filters)
+		userID, v.AuthorID, tagnorm.Label(v.Title), filters)
 	if err != nil {
 		return SavedView{}, fmt.Errorf("create saved view: %w", err)
 	}
@@ -105,7 +106,7 @@ func (s *SavedViewStore) Update(userID, id int64, v SavedView) error {
 		UPDATE saved_views SET
 			author_id = ?, title = ?, filters = ?
 		WHERE user_id = ? AND id = ?`,
-		savedViewAuthor(v.AuthorID), tagnorm.Label(v.Title), filters, userID, id)
+		v.AuthorID, tagnorm.Label(v.Title), filters, userID, id)
 	if err != nil {
 		return fmt.Errorf("update saved view: %w", err)
 	}
@@ -172,7 +173,7 @@ func (s *SavedViewStore) CollectionIDs(userID, viewID int64) ([]int64, error) {
 }
 
 // SetCollections replaces a view's collection memberships. Only the user's
-// non-auto collections are accepted; a view may be unassigned.
+// non-auto collections are accepted.
 func (s *SavedViewStore) SetCollections(userID, viewID int64, ids []int64) error {
 	ctx := context.Background()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -273,16 +274,14 @@ type savedViewScanner interface {
 
 func scanSavedView(row savedViewScanner) (SavedView, error) {
 	var (
-		v        SavedView
-		authorID sql.NullInt64
-		filters  string
+		v       SavedView
+		filters string
 	)
 	if err := row.Scan(
-		&v.ID, &v.UserID, &authorID, &v.Title, &filters, &v.CreatedAt,
+		&v.ID, &v.UserID, &v.AuthorID, &v.Title, &filters, &v.CreatedAt,
 	); err != nil {
 		return SavedView{}, err
 	}
-	v.AuthorID = authorID.Int64
 	v.Filters = unmarshalSavedViewFilters(filters)
 	return v, nil
 }
@@ -307,11 +306,4 @@ func unmarshalSavedViewFilters(raw string) []string {
 		return nil
 	}
 	return out
-}
-
-func savedViewAuthor(id int64) any {
-	if id <= 0 {
-		return nil
-	}
-	return id
 }

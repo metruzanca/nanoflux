@@ -7,66 +7,11 @@ import (
 	"github.com/metruzanca/nanoflux/internal/web"
 )
 
-// savedViewsPage is the private index of unassigned saved views. Assigned views
-// live on their author's page.
-templ savedViewsPage(d savedViewsPageData) {
-	<div class="row">
-		<h1>views ({ d.Total })</h1>
-	</div>
-	<p class="muted small">Unassigned views. A view is a saved filter recipe; assign one to an author to keep it beside their feeds.</p>
-	if d.Total == 0 {
-		<p class="muted">no unassigned views. open a list, set your filters, and use “save this list as a view”.</p>
-	} else {
-		<ul class="feed-cards">
-			for _, r := range d.Rows {
-				@savedViewIndexCard(r)
-			}
-		</ul>
-	}
-}
-
-// savedViewIndexCard is the compact card used on the /views index: the view
-// name, its unread count and edit action. The saved recipe is not repeated here.
-templ savedViewIndexCard(r savedViewRow) {
-	{{ id := strconv.FormatInt(r.ID, 10) }}
-	{{ href := "/views/" + id }}
-	if len(r.Filters) == 0 {
-		// A view from before filters became mandatory: send it to the editor.
-		{{ href = "/views/" + id + "/edit" }}
-	}
-	<li id={ "view-" + id } class="feed-card-item">
-		<div class="card feed-card">
-			<div class="feed-card-main">
-				<div class="feed-card-title">
-					<a href={ templ.URL(href) }>
-						<strong>{ r.Title }</strong>
-					</a>
-				</div>
-				<div class="item-meta">
-					{ r.Count } unread
-				</div>
-			</div>
-			<div class="feed-card-side">
-				<div class="row-actions">
-					<a class="small" title="edit" href={ templ.URL("/views/" + id + "/edit") }>@web.EditIcon()</a>
-				</div>
-			</div>
-		</div>
-	</li>
-}
-
 // savedViewCard is one view as a feed-style card on an author page: title,
 // unread count, filter chips and collection links, with open/edit actions.
 templ savedViewCard(r savedViewRow) {
 	{{ id := strconv.FormatInt(r.ID, 10) }}
-	{{ href := "/views/" + id }}
-	if r.AuthorID > 0 {
-		{{ href = "/authors/" + strconv.FormatInt(r.AuthorID, 10) + "?view=" + id }}
-	}
-	if len(r.Filters) == 0 {
-		// A view from before filters became mandatory: send it to the editor.
-		{{ href = "/views/" + id + "/edit" }}
-	}
+	{{ href := savedViewAuthorURL(r.AuthorID, r.ID) }}
 	<li id={ "view-" + id } class="feed-card-item">
 		<div class="card feed-card">
 			<div class="feed-card-main">
@@ -77,9 +22,6 @@ templ savedViewCard(r savedViewRow) {
 				</div>
 				<div class="item-meta">
 					{ r.Count } unread
-					if r.AuthorID > 0 && r.AuthorName != "" {
-						· assigned to <a href={ templ.URL("/authors/" + strconv.FormatInt(r.AuthorID, 10)) }>{ r.AuthorName }</a>
-					}
 				</div>
 				if len(r.Filters) > 0 {
 					<div class="chips active-tags">
@@ -98,55 +40,13 @@ templ savedViewCard(r savedViewRow) {
 			</div>
 			<div class="feed-card-side">
 				<div class="row-actions">
-					<a class="small" title="edit" href={ templ.URL("/views/" + id + "/edit") }>@web.EditIcon()</a>
+					<a class="small" title="edit" href={ templ.URL("/authors/" + strconv.FormatInt(r.AuthorID, 10) + "/edit?view=" + id) }>@web.EditIcon()</a>
 				</div>
 			</div>
 		</div>
 	</li>
 }
 
-// savedViewPage is the view itself: its header, mark-all control and the shared
-// scoped item list (tabs, sorter, filters, pagination).
-templ savedViewPage(u store.User, d savedViewPageData) {
-	{{ id := strconv.FormatInt(d.Row.ID, 10) }}
-	<section class="card">
-		<div class="row">
-			<h1>{ d.Row.Title }</h1>
-			<div class="row-actions">
-				@markAllReadControl(d.MarkAll)
-				<a class="small" title="edit" href={ templ.URL("/views/" + id + "/edit") }>@web.EditIcon()</a>
-			</div>
-		</div>
-		if d.Row.AuthorID > 0 && d.Row.AuthorName != "" {
-			<p class="muted small">
-				assigned to <a href={ templ.URL("/authors/" + strconv.FormatInt(d.Row.AuthorID, 10)) }>{ d.Row.AuthorName }</a>
-			</p>
-		} else {
-			<p class="muted small">unassigned</p>
-		}
-		if len(d.Row.Filters) > 0 {
-			<p class="muted small">
-				recipe:
-				for i, f := range d.Row.Filters {
-					if i > 0 {
-						·
-					}
-					{ savedViewRecipeLabel(f) }
-				}
-				· <a href={ templ.URL("/views/" + id + "/edit") }>edit</a>
-			</p>
-		}
-	</section>
-	<div class="author-items">
-		@ScopedItems(d.Scoped)
-	</div>
-	<div class="stack delete-form">
-		<button type="button" class="danger" data-post-action={ templ.URL("/views/" + id + "/delete") } data-confirm="delete this view?">delete view</button>
-	</div>
-}
-
-// savedViewFormPage is the create/edit page. The title, assigned author,
-// collections and filter rows are editable; the view always matches all feeds.
 // viewAccordionItem is one saved-view panel in the author edit page's sources
 // accordion. A selected panel renders its form inline; the rest lazy-load it.
 templ viewAccordionItem(u store.User, r savedViewRow, editor *savedViewForm) {
@@ -194,28 +94,18 @@ templ viewEditorPanel(u store.User, f savedViewForm) {
 	</form>
 }
 
-// savedViewFormPage is the standalone create/edit page. It keeps its explicit
-// save button; only the author edit page auto-saves.
+// savedViewFormPage is the standalone create page. Views are edited inline on
+// the author edit page; this page only creates one.
 templ savedViewFormPage(u store.User, f savedViewForm) {
-	{{ action := "/views" }}
-	if f.ID > 0 {
-		{{ action = "/views/" + strconv.FormatInt(f.ID, 10) + "/edit" }}
-	}
 	<div class="row">
-		<h1>
-			if f.ID > 0 {
-				edit view
-			} else {
-				new view
-			}
-		</h1>
-		<a class="button small" href="/views">back to views</a>
+		<h1>new view</h1>
+		<a class="button small" href="/unread">back to items</a>
 	</div>
-	<form class="stack card" method="post" action={ templ.URL(action) }>
+	<form class="stack card" method="post" action="/views">
 		@csrfField()
 		@viewEditorBody(u, f)
 		<div class="row-actions">
-			<a class="link" href="/views">cancel</a>
+			<a class="link" href="/unread">cancel</a>
 			<button type="submit">save view</button>
 		</div>
 	</form>
@@ -223,7 +113,7 @@ templ savedViewFormPage(u store.User, f savedViewForm) {
 
 // viewEditorBody is one view's editable settings without a <form>: title,
 // assigned author, collection memberships and filter rows. It is shared by the
-// standalone edit page and the auto-saving author edit panel.
+// standalone create page and the auto-saving author edit panel.
 templ viewEditorBody(u store.User, f savedViewForm) {
 	{{ id := strconv.FormatInt(f.ID, 10) }}
 	if f.Error != "" {
@@ -232,9 +122,11 @@ templ viewEditorBody(u store.User, f savedViewForm) {
 	<label>title
 		<input name="title" value={ f.Title } maxlength="120" required autofocus?={ f.ID == 0 }/>
 	</label>
-	@comboSelect("author_id", savedViewAuthorValue(f.AuthorID), "assign to author", "search authors", f.AuthorOptions, nil)
+	@authorPicker(f.AuthorID, f.AuthorOptions, "new-view-author", "", authorPreviewForm{
+		Name: f.NewAuthorName, AvatarURL: f.NewAuthorAvatar,
+	})
 	@comboMulti("collections", "collections", savedViewCollectionValues(f.CollectionIDs), f.CollectionOptions)
-	<p class="muted small">The view matches every feed; use its filters to limit the posts. Assignment decides its author page, and collections add it as a source.</p>
+	<p class="muted small">The view matches every feed; use its filters to limit the posts. It is a source on its author's page, and collections add it as a source.</p>
 	<div class="field-group" data-filter-scope>
 		<h3>filters</h3>
 		{{ kinds := []string{filterKindTag} }}
@@ -257,7 +149,7 @@ templ viewEditorBody(u store.User, f savedViewForm) {
 	</div>
 	if f.ID > 0 {
 		<div class="stack delete-form">
-			<button type="button" class="danger" data-post-action={ templ.URL("/views/" + id + "/delete?back=author") } data-confirm="delete this view?">delete view</button>
+			<button type="button" class="danger" data-post-action={ templ.URL("/views/" + id + "/delete") } data-confirm="delete this view?">delete view</button>
 		</div>
 	}
 }

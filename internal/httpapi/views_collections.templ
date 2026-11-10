@@ -238,10 +238,7 @@ templ CollectionFeedCard(r feedRow) {
 // the name is its accessible label, so the sources tab stays visually quiet.
 templ CollectionViewCard(r savedViewRow) {
 	{{ id := strconv.FormatInt(r.ID, 10) }}
-	{{ href := "/views/" + id }}
-	if r.AuthorID > 0 {
-		{{ href = "/authors/" + strconv.FormatInt(r.AuthorID, 10) + "?view=" + id }}
-	}
+	{{ href := savedViewAuthorURL(r.AuthorID, r.ID) }}
 	<li id={ "collection-view-" + id } data-title={ r.Title } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Count) }>
 		<div class="card">
 			<div class="row">

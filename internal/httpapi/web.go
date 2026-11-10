@@ -594,7 +594,7 @@ func validViewScope(scope string) bool {
 	case "/unread", "/read", "/favorites", "/bookmarks":
 		return true
 	}
-	for _, prefix := range []string{"/authors/", "/collections/", "/lists/", "/views/"} {
+	for _, prefix := range []string{"/authors/", "/collections/", "/lists/"} {
 		if id, ok := strings.CutPrefix(scope, prefix); ok {
 			if id == "" || strings.ContainsAny(id, "/?#") {
 				return false
@@ -1236,7 +1236,7 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 		s.writeDuplicateFeedError(w, r, "add-feed-error", u.ID, feedURL)
 		return
 	}
-	authorID, isNew, errMsg := s.resolveAuthor(r, u.ID)
+	authorID, isNew, errMsg := s.resolveAuthor(r, u.ID, "feed")
 	if errMsg != "" {
 		writeFormError(w, r, "add-feed-error", errMsg)
 		return
@@ -1399,11 +1399,11 @@ func (s *Server) pollFeedNow() {
 	}
 }
 
-// resolveAuthor maps the feed form's author selection to an author id, creating
-// a new author when the selection is "new". An author is required on every feed,
-// so an empty selection is an error. It returns a non-empty error message when
-// the selection is invalid.
-func (s *Server) resolveAuthor(r *http.Request, userID int64) (int64, bool, string) {
+// resolveAuthor maps an author selection to an author id, creating a new author
+// when the selection is "new". An author is required on every feed and saved
+// view, so noun names the thing the user is creating in the error message. It
+// returns a non-empty error message when the selection is invalid.
+func (s *Server) resolveAuthor(r *http.Request, userID int64, noun string) (int64, bool, string) {
 	switch r.FormValue("author_id") {
 	case "new":
 		name := strings.TrimSpace(r.FormValue("author_name"))
@@ -1426,7 +1426,7 @@ func (s *Server) resolveAuthor(r *http.Request, userID int64) (int64, bool, stri
 	default:
 		id, err := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
 		if err != nil || id == 0 {
-			return 0, false, "a feed needs an author — create one or pick an existing author"
+			return 0, false, "a " + noun + " needs an author — create one or pick an existing author"
 		}
 		if _, err := s.store.Authors.ByID(userID, id); err != nil {
 			return 0, false, "author not found"

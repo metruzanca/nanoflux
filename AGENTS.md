@@ -621,17 +621,20 @@ code.
 - A collection item reached only through a member view (its owner feed and
   cross-feed memberships are outside the collection's feeds) carries
   `ItemWithFeed.ViewSources` and renders "from view <title>" linking
-  `/views/<id>` in its row and modal. `annotateCollectionViews` computes this
-  with `ItemStore.MatchingViews`, which reuses `viewFilterClause`; `dedupItems`
-  unions the view sources of merged rows. `ItemWithFeed.CollectionID` carries
-  the collection through row toggles so the link survives a swapped row.
+  `/authors/<authorID>?view=<id>` in its row and modal.
+  `annotateCollectionViews` computes this with `ItemStore.MatchingViews`, which
+  reuses `viewFilterClause`; `ItemViewSource` carries the view's `AuthorID`.
+  `dedupItems` unions the view sources of merged rows. `ItemWithFeed.CollectionID`
+  carries the collection through row toggles so the link survives a swapped row.
 - A view's collection memberships are edited with the `collections` multi-select
   in its form (`SavedViewStore.SetCollections`, `CollectionIDs`,
   `ListByCollection`, `CollectionsByView`). Removing a view from a collection
   leaves the view itself intact.
-- `author_id` is the author the view feeds. An author page's scope is
-  `author's own feeds OR every assigned view`, so a subreddit feed plus a view
-  such as `tag=u/example-poster` can replace a per-user profile feed.
+- `author_id` is required (schemaV65) and is the author the view feeds, exactly
+  like a feed. An author page's scope is `author's own feeds OR every assigned
+  view`, so a subreddit feed plus a view such as `tag=u/example-poster` can
+  replace a per-user profile feed. There are no unassigned views: the migration
+  assigns each legacy unassigned view to an author named after the view.
 - A view must have at least one filter row. An unfiltered view would pull every
   post into the author, so `savedViewFormFromRequest` rejects one and
   `authorStoreViewFilters` skips any legacy blank view.
@@ -652,39 +655,39 @@ code.
   Collection index counts and tag options use it too when the collection has
   views (`applyCollectionViewCounts`, `ListCategoriesFilter`).
 - A saved view follows the always-on rules of the author it is assigned to, not
-  the rules of the author who owns the feed its items come from. An unassigned
-  view has no author rules. This is what lets one aggregator feed serve several
-  authors: each author's views are sliced by that author's allow/block rules
-  while the feed owner's rules keep applying to the owner's own feed. The view
-  predicate carries `AuthorID` (`store.ViewFilter`); `viewFilterClause` applies
-  `authorRulesVisibleSQL` for it.
-- `/views` is the private index of **unassigned** views. Assigned views live on
-  their author's page instead, so the index is one flat card list with no author
-  grouping. Its compact cards show only the view name, unread count and edit
-  action; the saved recipe is not repeated as chips.
-- `/views/{id}` is the fixed page for an unassigned view. It renders the view's
-  stored recipe directly, with no transient filter dialog or removable filter
-  chips. Tabs (`?tab=`), sort, display mode and pagination remain. Assigning a
-  view redirects `/views/{id}` to its author page, `/authors/{id}?view={viewID}`.
-  The edit page always keeps the delete control.
+  the rules of the author who owns the feed its items come from. This is what
+  lets one aggregator feed serve several authors: each author's views are sliced
+  by that author's allow/block rules while the feed owner's rules keep applying
+  to the owner's own feed. The view predicate carries `AuthorID`
+  (`store.ViewFilter`); `viewFilterClause` applies `authorRulesVisibleSQL` for
+  it.
+- There is no `/views` index and no standalone view or edit page. A view is
+  opened as `/authors/{id}?view={viewID}` and edited like a feed, in the author
+  edit page's `sources` accordion. The routes that remain are `GET /views/new`,
+  `POST /views`, `GET /views/{id}/edit-fragment`, `POST /views/{id}/edit` and
+  `POST /views/{id}/delete`. Deletion returns to the view's author edit page.
 - Feed filter values are validated on save and load against the user's feeds, so
   deleting a feed degrades the view rather than breaking it.
 - Creation happens from the filter dialog's `save as view` submit, which posts
   the draft filter rows to `/views/new`; the topbar add-caret menu also links
-  there. The create/edit page reuses `filterRow`; a view-scoped author page reuses
-  `scopedItemsData` with its `ViewID` set.
+  there. The create form uses the same author picker as the feed form
+  (`authorPicker`/`authorCreateFields`): `author_id=new` shows the embedded
+  create-author fields, so a view cannot be saved without an author. The form
+  reuses `filterRow`; a view-scoped author page reuses `scopedItemsData` with
+  its `ViewID` set.
 - An author page has one collapsible `sources (N)` section combining its feeds
-  and assigned views; the page itself has no add-feed/add-view controls. The
-  collection page's `sources` tab renders a view as a compact bookmark glyph plus
-  its unread count (the name is its `title`/`aria-label`), with no edit action;
-  the tab, the collection edit page and the home dashboard's pinned collection
+  and views; the page itself has no add-feed/add-view controls. The collection
+  page's `sources` tab renders a view as a compact bookmark glyph plus its
+  unread count (the name is its `title`/`aria-label`), with no edit action; the
+  tab, the collection edit page and the home dashboard's pinned collection
   sections include view-sourced items.
-- The author edit page inlines assigned views in the same auto-saving `sources`
-  accordion as feeds. Each view panel is its own form (`POST /views/{id}/edit`)
-  that re-renders the whole `<details>`; the lazy fragment route is
-  `GET /views/{id}/edit-fragment`. Inline delete is a `type=button`
-  `data-post-action` to `/views/{id}/delete?back=author`.
-- `/views` is linked from the user menu.
+- The author edit page inlines views in the same auto-saving `sources` accordion
+  as feeds. Each view panel is its own form (`POST /views/{id}/edit`) that
+  re-renders the whole `<details>`; the lazy fragment route is
+  `GET /views/{id}/edit-fragment`. Changing the panel's author moves the view:
+  the handler replies with `HX-Redirect` (or a normal redirect) to the new
+  author's edit page instead of leaving a stale panel behind. Inline delete is a
+  `type=button` `data-post-action` to `/views/{id}/delete`.
 
 ## Stats page
 

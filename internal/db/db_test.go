@@ -240,6 +240,76 @@ func TestMigrateV64RefusesEphemeralAdmin(t *testing.T) {
 	}
 }
 
+// TestMigrateV65AssignsUnassignedViews proves an old unassigned view keeps its
+// data and collection membership: it gets an author named after the view, and
+// saved_views.author_id becomes required.
+func TestMigrateV65AssignsUnassignedViews(t *testing.T) {
+	sqldb, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer sqldb.Close()
+	applyMigrationsUpTo(t, sqldb, 64)
+
+	if _, err := sqldb.Exec(
+		`INSERT INTO users (username, password_hash) VALUES ('alice', 'hash')`); err != nil {
+		t.Fatalf("insert user: %v", err)
+	}
+	var userID int64
+	if err := sqldb.QueryRow(`SELECT id FROM users WHERE username = 'alice'`).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqldb.Exec(
+		`INSERT INTO saved_views (user_id, title, filters) VALUES (?, 'Example posts', '["tag:show:r/golang"]')`, userID); err != nil {
+		t.Fatalf("insert unassigned view: %v", err)
+	}
+	var viewID int64
+	if err := sqldb.QueryRow(`SELECT id FROM saved_views WHERE user_id = ?`, userID).Scan(&viewID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqldb.Exec(
+		`INSERT INTO collections (user_id, name) VALUES (?, 'Dev')`, userID); err != nil {
+		t.Fatalf("insert collection: %v", err)
+	}
+	var collectionID int64
+	if err := sqldb.QueryRow(`SELECT id FROM collections WHERE user_id = ?`, userID).Scan(&collectionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqldb.Exec(
+		`INSERT INTO collection_views (collection_id, view_id) VALUES (?, ?)`, collectionID, viewID); err != nil {
+		t.Fatalf("insert collection membership: %v", err)
+	}
+
+	if err := Migrate(sqldb); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var authorID int64
+	if err := sqldb.QueryRow(`SELECT author_id FROM saved_views WHERE id = ?`, viewID).Scan(&authorID); err != nil {
+		t.Fatalf("read assigned view: %v", err)
+	}
+	var authorName string
+	if err := sqldb.QueryRow(`SELECT name FROM authors WHERE id = ?`, authorID).Scan(&authorName); err != nil {
+		t.Fatalf("read imported author: %v", err)
+	}
+	if authorName != "Example posts" {
+		t.Fatalf("imported author = %q, want the view title", authorName)
+	}
+	var members int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM collection_views WHERE collection_id = ? AND view_id = ?`, collectionID, viewID,
+	).Scan(&members); err != nil {
+		t.Fatal(err)
+	}
+	if members != 1 {
+		t.Fatalf("collection membership was lost")
+	}
+	if _, err := sqldb.Exec(
+		`INSERT INTO saved_views (user_id, author_id, title) VALUES (?, NULL, 'Loose')`, userID); err == nil {
+		t.Fatalf("an unassigned view should be rejected after schemaV65")
+	}
+}
+
 // TestMigrateUpgrade simulates a v1 database with data and verifies the
 // rebuilds (v2, v20) preserve rows.
 func TestMigrateUpgrade(t *testing.T) {

@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -19,8 +18,8 @@ import (
 
 const maxSavedViewTitle = 120
 
-// savedViewRow is one view in the index or on an author card, with its resolved
-// display fields and matching-item count.
+// savedViewRow is one view on an author card, with its resolved display fields
+// and matching-item count.
 type savedViewRow struct {
 	ID          int64
 	Title       string
@@ -32,72 +31,20 @@ type savedViewRow struct {
 	CreatedAt   string
 }
 
-// savedViewsPageData is the unassigned views index. Assigned views live on their
-// author's page instead.
-type savedViewsPageData struct {
-	Rows  []savedViewRow
-	Total int
-}
-
-// savedViewForm is the create/edit page's data.
+// savedViewForm is the create page's data and the inline editor's data.
 type savedViewForm struct {
 	ID                int64
 	Title             string
 	Filters           listFilters
 	AuthorID          int64
+	NewAuthorName     string
+	NewAuthorAvatar   string
 	CollectionIDs     []int64
 	AuthorOptions     []comboItem
 	CollectionOptions []comboItem
 	TagOptions        []comboItem
 	FeedOptions       []comboItem
 	Error             string
-}
-
-type savedViewPageData struct {
-	Row     savedViewRow
-	Scoped  scopedItemsData
-	MarkAll markAllReadData
-}
-
-// savedViewAuthorItems is the assignment picker: an explicit "unassigned"
-// option plus every author.
-func savedViewAuthorItems(authors []store.Author) []comboItem {
-	items := make([]comboItem, 0, len(authors)+1)
-	items = append(items, comboItem{Value: "0", Label: "unassigned"})
-	for _, a := range authors {
-		items = append(items, comboItem{Value: strconv.FormatInt(a.ID, 10), Label: a.Name})
-	}
-	return items
-}
-
-// savedViewAuthorValue renders the picker's current value ("0" for none).
-func savedViewAuthorValue(id int64) string {
-	if id <= 0 {
-		return "0"
-	}
-	return strconv.FormatInt(id, 10)
-}
-
-// savedViewsIndex lists only unassigned views: assigning a view moves it onto
-// that author's page, so it is no longer part of the personal backlog here.
-func (s *Server) savedViewsIndex(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	views, err := s.store.SavedViews.List(u.ID)
-	if err != nil {
-		log.Error("list saved views", "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	unassigned := make([]store.SavedView, 0, len(views))
-	for _, v := range views {
-		if v.AuthorID == 0 {
-			unassigned = append(unassigned, v)
-		}
-	}
-	rows := s.savedViewRows(u.ID, unassigned, u.Timezone)
-	web.Render(w, r, basePage("views", u, savedViewsPage(savedViewsPageData{
-		Rows: rows, Total: len(rows),
-	})))
 }
 
 // savedViewRows resolves a batch of views, attaching their collection
@@ -121,26 +68,24 @@ func (s *Server) savedViewRow(userID int64, v store.SavedView, tz string) savedV
 		ID: v.ID, Title: v.Title, AuthorID: v.AuthorID,
 		Filters: filters, Count: count, CreatedAt: v.CreatedAt,
 	}
-	if v.AuthorID > 0 {
-		if a, err := s.store.Authors.ByID(userID, v.AuthorID); err == nil {
-			row.AuthorName = a.Name
-		}
+	if a, err := s.store.Authors.ByID(userID, v.AuthorID); err == nil {
+		row.AuthorName = a.Name
 	}
 	return row
 }
 
 // savedViewCount counts the matching items for a view's base tab and filters.
 // authorID is the author the view is assigned to; the view follows that
-// author's rules (0 means unassigned and unfiltered).
+// author's rules.
 func (s *Server) savedViewCount(userID, authorID int64, view string, filters listFilters, tz string) (int, error) {
 	f := savedViewItemFilter(view, sortNewest, 0, authorID, filters, tz)
 	f.Limit = 0
 	return s.store.Items.CountFiltered(userID, f)
 }
 
-// savedViewItemFilter builds the item scope of a saved view's own page: the
-// view's current filter rows as its view predicate, so the page is unfiltered by
-// the feed owners but still follows the view's assigned author.
+// savedViewItemFilter builds the item scope of a saved view: its filter rows as
+// the view predicate, so it is unfiltered by feed owners but still follows the
+// view's assigned author's rules.
 func savedViewItemFilter(view string, sort itemSort, cursor, authorID int64, filters listFilters, tz string) store.ItemFilter {
 	f := scopedFilter(view, sort, cursor, 0, 0, nil, tz)
 	tagGroups, feedGroups, _ := filters.storeGroups()
@@ -194,11 +139,17 @@ func (s *Server) savedViewFeedTitles(userID int64) map[int64]string {
 	return titles
 }
 
-// savedViewAssignedAuthor validates the assignment picker.
-func (s *Server) savedViewAssignedAuthor(userID int64, raw string) (int64, bool) {
-	id, _ := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
-	if id <= 0 {
+// savedViewPrefillAuthor validates the optional ?author_id= prefill on the
+// create page. 0 means "no author selected yet", which the form shows as the
+// create-new-author fields.
+func (s *Server) savedViewPrefillAuthor(userID int64, raw string) (int64, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
 		return 0, true
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, false
 	}
 	if _, err := s.store.Authors.ByID(userID, id); err != nil {
 		return 0, false
@@ -219,7 +170,7 @@ func savedViewCollectionValues(ids []int64) []string {
 // spans all of the user's feeds.
 func (s *Server) savedViewFormData(userID int64, v savedViewForm) savedViewForm {
 	authors, _ := s.store.Authors.List(userID)
-	v.AuthorOptions = savedViewAuthorItems(authors)
+	v.AuthorOptions = authorItems(authors)
 	collections, _ := s.store.Collections.List(userID)
 	v.CollectionOptions = nonAutoCollections(collections)
 	cats, _ := s.store.Items.ListCategoriesFilter(userID, store.ItemFilter{
@@ -252,7 +203,7 @@ func (s *Server) viewEditorData(u store.User, v store.SavedView) savedViewForm {
 // from (?author_id= and the filter fields).
 func (s *Server) savedViewNew(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	authorID, ok := s.savedViewAssignedAuthor(u.ID, r.URL.Query().Get("author_id"))
+	authorID, ok := s.savedViewPrefillAuthor(u.ID, r.URL.Query().Get("author_id"))
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -272,11 +223,7 @@ func (s *Server) savedViewCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	form, ok := s.savedViewFormFromRequest(u.ID, r)
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
+	form := s.savedViewFormFromRequest(u.ID, r)
 	if n, err := s.store.SavedViews.Count(u.ID); err != nil {
 		log.Error("count saved views", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -302,24 +249,13 @@ func (s *Server) savedViewCreate(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SavedViews.SetCollections(u.ID, created.ID, form.CollectionIDs); err != nil {
 		log.Error("set view collections", "view_id", created.ID, "err", err)
 	}
-	http.Redirect(w, r, "/views/"+strconv.FormatInt(created.ID, 10), http.StatusSeeOther)
+	http.Redirect(w, r, savedViewAuthorURL(created.AuthorID, created.ID), http.StatusSeeOther)
 }
 
-// savedViewEdit renders the edit form.
-func (s *Server) savedViewEdit(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	v, err := s.store.SavedViews.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	form := s.viewEditorData(u, v)
-	web.Render(w, r, basePage("edit view", u, savedViewFormPage(u, form)))
+// savedViewAuthorURL is the canonical view location: the view as the selected
+// source on its author's page.
+func savedViewAuthorURL(authorID, viewID int64) string {
+	return "/authors/" + strconv.FormatInt(authorID, 10) + "?view=" + strconv.FormatInt(viewID, 10)
 }
 
 // savedViewEditFragment returns one view's inline editor body for the author
@@ -349,7 +285,8 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if _, err := s.store.SavedViews.ByID(u.ID, id); err != nil {
+	old, err := s.store.SavedViews.ByID(u.ID, id)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -357,13 +294,8 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	form, ok := s.savedViewFormFromRequest(u.ID, r)
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
+	form := s.savedViewFormFromRequest(u.ID, r)
 	form.ID = id
-	form.Filters = s.savedViewFilters(u.ID, form.Filters)
 	htmx := r.Header.Get("HX-Request") != ""
 	if form.Error != "" {
 		if htmx {
@@ -378,21 +310,26 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		log.Error("update saved view", "err", err)
 		form.Error = "could not save this view"
-		if htmx {
-			s.renderViewPanel(w, r, u, id, form, http.StatusBadRequest)
-			return
-		}
-		s.renderSavedViewForm(w, r, u, form, http.StatusInternalServerError)
+		s.renderViewPanel(w, r, u, id, form, http.StatusBadRequest)
 		return
 	}
 	if err := s.store.SavedViews.SetCollections(u.ID, id, form.CollectionIDs); err != nil {
 		log.Error("set view collections", "view_id", id, "err", err)
 		form.Error = "could not save this view's collections"
+		s.renderViewPanel(w, r, u, id, form, http.StatusBadRequest)
+		return
+	}
+	// Changing the assigned author moves the view to that author's page. Send
+	// the browser there instead of re-rendering a panel that no longer belongs
+	// to the page it was opened on.
+	if form.AuthorID != old.AuthorID {
+		target := "/authors/" + strconv.FormatInt(form.AuthorID, 10) + "/edit?view=" + strconv.FormatInt(id, 10)
 		if htmx {
-			s.renderViewPanel(w, r, u, id, form, http.StatusBadRequest)
+			w.Header().Set("HX-Redirect", target)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		s.renderSavedViewForm(w, r, u, form, http.StatusInternalServerError)
+		http.Redirect(w, r, target, http.StatusSeeOther)
 		return
 	}
 	if htmx {
@@ -410,7 +347,7 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 		web.Render(w, r, viewAccordionBody(u, rows[0], &editor))
 		return
 	}
-	http.Redirect(w, r, "/views/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+	http.Redirect(w, r, savedViewAuthorURL(form.AuthorID, id), http.StatusSeeOther)
 }
 
 // renderViewPanel re-renders one auto-saving view panel with a validation or
@@ -431,20 +368,42 @@ func (s *Server) renderViewPanel(w http.ResponseWriter, r *http.Request, u store
 	web.Render(w, r, viewAccordionBody(u, rows[0], &form))
 }
 
-// renderSavedViewForm re-renders the create/edit page with a validation or
+// renderSavedViewForm re-renders the create page with a validation or
 // persistence error.
 func (s *Server) renderSavedViewForm(w http.ResponseWriter, r *http.Request, u store.User, form savedViewForm, status int) {
-	title := "new view"
-	if form.ID > 0 {
-		title = "edit view"
-	}
 	w.WriteHeader(status)
-	web.Render(w, r, basePage(title, u, savedViewFormPage(u, s.savedViewFormData(u.ID, form))))
+	web.Render(w, r, basePage("new view", u, savedViewFormPage(u, s.savedViewFormData(u.ID, form))))
 }
 
-// savedViewFormFromRequest reads and validates the create/edit fields.
-func (s *Server) savedViewFormFromRequest(userID int64, r *http.Request) (savedViewForm, bool) {
-	return s.savedViewFormFromRequestValues(userID, r.Form)
+// savedViewFormFromRequest reads and validates the create/edit fields. The
+// author is required; "new" creates one from the embedded author fields, so a
+// view is always assigned.
+func (s *Server) savedViewFormFromRequest(userID int64, r *http.Request) savedViewForm {
+	parsed := savedViewForm{
+		Title:           strings.TrimSpace(r.FormValue("title")),
+		NewAuthorName:   strings.TrimSpace(r.FormValue("author_name")),
+		NewAuthorAvatar: strings.TrimSpace(r.FormValue("avatar_url")),
+		CollectionIDs:   s.savedViewCollectionIDs(userID, r.Form["collections"]),
+		Filters:         s.savedViewFilters(userID, filtersFromValues(r.Form)),
+	}
+	switch {
+	case parsed.Title == "":
+		parsed.Error = "title is required"
+	case len(parsed.Title) > maxSavedViewTitle:
+		parsed.Error = "title is too long"
+	case len(parsed.Filters) == 0:
+		parsed.Error = "add at least one filter"
+	}
+	if parsed.Error != "" {
+		return parsed
+	}
+	authorID, _, msg := s.resolveAuthor(r, userID, "view")
+	if msg != "" {
+		parsed.Error = msg
+		return parsed
+	}
+	parsed.AuthorID = authorID
+	return parsed
 }
 
 // savedViewCollectionIDs validates a view form's collection selections against
@@ -470,31 +429,7 @@ func (s *Server) savedViewCollectionIDs(userID int64, raw []string) []int64 {
 	return out
 }
 
-// savedViewFormFromRequestValues is savedViewFormFromRequest for an already
-// parsed form.
-func (s *Server) savedViewFormFromRequestValues(userID int64, form url.Values) (savedViewForm, bool) {
-	parsed := savedViewForm{
-		Title:         strings.TrimSpace(form.Get("title")),
-		CollectionIDs: s.savedViewCollectionIDs(userID, form["collections"]),
-		Filters:       filtersFromValues(form),
-	}
-	var ok bool
-	parsed.Filters = s.savedViewFilters(userID, parsed.Filters)
-	parsed.AuthorID, ok = s.savedViewAssignedAuthor(userID, form.Get("author_id"))
-	if !ok {
-		return parsed, false
-	}
-	if parsed.Title == "" {
-		parsed.Error = "title is required"
-	} else if len(parsed.Title) > maxSavedViewTitle {
-		parsed.Error = "title is too long"
-	} else if len(parsed.Filters) == 0 {
-		parsed.Error = "add at least one filter"
-	}
-	return parsed, true
-}
-
-// savedViewDelete removes a view and returns to the index.
+// savedViewDelete removes a view and returns to its author's edit page.
 func (s *Server) savedViewDelete(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -512,181 +447,7 @@ func (s *Server) savedViewDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		return
 	}
-	if r.URL.Query().Get("back") == "author" && v.AuthorID > 0 {
-		http.Redirect(w, r, "/authors/"+strconv.FormatInt(v.AuthorID, 10)+"/edit", http.StatusSeeOther)
-		return
-	}
-	http.Redirect(w, r, "/views", http.StatusSeeOther)
-}
-
-// savedView shows one view. A bare /views/{id} redirects to the canonical
-// query, so the normal list links, filter dialog and "clear all" all operate on
-// explicit params rather than falling back to the stored recipe.
-func (s *Server) savedView(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	v, err := s.store.SavedViews.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	// A legacy unfiltered view would otherwise render every feed under the
-	// view's title. Send it to the editor to give it a recipe.
-	if len(s.storedViewFilters(u.ID, v)) == 0 {
-		http.Redirect(w, r, "/views/"+strconv.FormatInt(v.ID, 10)+"/edit", http.StatusSeeOther)
-		return
-	}
-	// An assigned view is part of its author's page now; the standalone page is
-	// only for unassigned views.
-	if v.AuthorID > 0 {
-		http.Redirect(w, r, "/authors/"+strconv.FormatInt(v.AuthorID, 10)+"?view="+strconv.FormatInt(v.ID, 10), http.StatusSeeOther)
-		return
-	}
-	web.Render(w, r, basePage(v.Title, u, savedViewPage(u, s.savedViewPageData(u, v, r))))
-}
-
-// savedViewItems serves the view's load-more fragment.
-func (s *Server) savedViewItems(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	v, err := s.store.SavedViews.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	view := savedViewTab(r)
-	sort := savedViewSort(r)
-	filters := s.storedViewFilters(u.ID, v)
-	if cursor := cursorID(r, sort); cursor > 0 {
-		items, more, err := s.store.Items.ListPage(u.ID,
-			savedViewItemFilter(view, sort, cursor, v.AuthorID, filters, u.Timezone))
-		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		base := s.savedViewItemsBase(v, view, sort)
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)),
-			pageCursorFor(base, items, more, sort, int(cursor)), false))
-		return
-	}
-	web.Render(w, r, ScopedItems(s.savedViewScopedData(u, v, view, sort, filters)))
-}
-
-// savedViewReadAll marks the view's matching unread items read.
-func (s *Server) savedViewReadAll(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	v, err := s.store.SavedViews.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	filters := s.storedViewFilters(u.ID, v)
-	tagGroups, feedGroups, _ := filters.storeGroups()
-	if _, err := s.store.Items.MarkAllReadFiltered(u.ID, store.ItemFilter{
-		Views: []store.ViewFilter{{
-			AuthorID:   v.AuthorID,
-			TagGroups:  tagGroups,
-			FeedGroups: feedGroups,
-			TimeGroups: filters.timeGroups(u.Timezone),
-		}},
-	}); err != nil {
-		log.Error("mark saved view read", "view_id", id, "err", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// savedViewRecipeLabel renders one stored recipe row for the view page.
-func savedViewRecipeLabel(f listFilter) string {
-	action := "show "
-	if f.hidden() {
-		action = "hide "
-	}
-	return action + f.label()
-}
-
-// storedViewFilters returns a view's own recipe, validated against the user's
-// feeds. The saved view page always uses this recipe; it has no transient
-// filter layer of its own.
-func (s *Server) storedViewFilters(userID int64, v store.SavedView) listFilters {
-	return s.savedViewFilters(userID, filtersFromParams(v.Filters))
-}
-
-// savedViewPageData assembles the view page header and its scoped item list.
-func (s *Server) savedViewPageData(u store.User, v store.SavedView, r *http.Request) savedViewPageData {
-	view := savedViewTab(r)
-	sort := savedViewSort(r)
-	filters := s.storedViewFilters(u.ID, v)
-	unread, _ := s.savedViewCount(u.ID, v.AuthorID, "unread", filters, u.Timezone)
-	markAll := markAllReadData{
-		Action: "/views/" + strconv.FormatInt(v.ID, 10) + "/read-all",
-		Unread: unread,
-	}
-	return savedViewPageData{
-		Row:     s.savedViewRow(u.ID, v, u.Timezone),
-		Scoped:  s.savedViewScopedData(u, v, view, sort, filters),
-		MarkAll: markAll,
-	}
-}
-
-// savedViewTab reads the page tab, defaulting to unread. A legacy non-numeric
-// ?view= is accepted as a tab fallback.
-func savedViewTab(r *http.Request) string {
-	tab := tabParam(r.URL.Query())
-	switch tab {
-	case "read", "favorites", "bookmarks", "unread":
-		return tab
-	}
-	return "unread"
-}
-
-// savedViewSort reads ?sort=, defaulting to newest.
-func savedViewSort(r *http.Request) itemSort {
-	if raw := r.URL.Query().Get("sort"); raw != "" {
-		return itemSortFromParam(raw)
-	}
-	return sortNewest
-}
-
-// savedViewItemsBase builds the load-more URL for the active view state.
-func (s *Server) savedViewItemsBase(v store.SavedView, view string, sort itemSort) string {
-	base := scopedViewQuery("/views/"+strconv.FormatInt(v.ID, 10)+"/items", view) + "&sort=" + sort.param()
-	return base
-}
-
-// savedViewScopedData renders the view's scoped item list. The view's stored
-// recipe is fixed, so the generic filter toolbar is intentionally absent.
-func (s *Server) savedViewScopedData(u store.User, v store.SavedView, view string, sort itemSort, filters listFilters) scopedItemsData {
-	id := v.ID
-	base := "/views/" + strconv.FormatInt(id, 10)
-	items, more, _ := s.store.Items.ListPage(u.ID,
-		savedViewItemFilter(view, sort, 0, v.AuthorID, filters, u.Timezone))
-	unread, _ := s.savedViewCount(u.ID, v.AuthorID, "unread", filters, u.Timezone)
-	read, _ := s.savedViewCount(u.ID, v.AuthorID, "read", filters, u.Timezone)
-	favs, _ := s.savedViewCount(u.ID, v.AuthorID, "favorites", filters, u.Timezone)
-	itemsBase := s.savedViewItemsBase(v, view, sort)
-	return scopedItemsData{
-		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
-		UnreadCount: unread, ReadCount: read, Items: withTZ(u.Timezone, dedupItems(items)),
-		More:   pageCursorFor(itemsBase, items, more, sort, 0),
-		Mode:   s.store.ViewPrefs.Mode(u.ID, base),
-		FavTab: favs > 0 || view == "favorites", FavCount: favs,
-		NoFilters: true,
-	}
+	http.Redirect(w, r, "/authors/"+strconv.FormatInt(v.AuthorID, 10)+"/edit", http.StatusSeeOther)
 }
 
 // savedViewsForAuthor returns the views assigned to an author, for its page.
@@ -720,6 +481,7 @@ func (s *Server) viewFiltersFromViews(userID int64, views []store.SavedView, tz 
 type collectionViewMatch struct {
 	ID        int64
 	Title     string
+	AuthorID  int64
 	Predicate store.ViewFilter
 }
 
@@ -747,7 +509,7 @@ func (s *Server) collectionViewMatches(userID, collectionID int64, tz string) []
 		}
 		tagGroups, feedGroups, _ := filters.storeGroups()
 		out = append(out, collectionViewMatch{
-			ID: v.ID, Title: v.Title,
+			ID: v.ID, Title: v.Title, AuthorID: v.AuthorID,
 			Predicate: store.ViewFilter{
 				AuthorID:  v.AuthorID,
 				TagGroups: tagGroups, FeedGroups: feedGroups,
@@ -808,7 +570,7 @@ func (s *Server) annotateCollectionViews(userID, collectionID int64, tz string, 
 				continue
 			}
 			items[i].ViewSources = append(items[i].ViewSources, store.ItemViewSource{
-				ID: matches[vi].ID, Title: matches[vi].Title,
+				ID: matches[vi].ID, Title: matches[vi].Title, AuthorID: matches[vi].AuthorID,
 			})
 		}
 	}

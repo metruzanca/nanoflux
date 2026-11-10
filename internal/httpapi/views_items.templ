@@ -168,14 +168,14 @@ templ sourcesList(sources []store.ItemSource) {
 // through when that item's own feeds are not collection members.
 templ viewSourcesList(sources []store.ItemViewSource) {
 	if len(sources) == 1 {
-		· from view <a href={ templ.URL("/views/" + strconv.FormatInt(sources[0].ID, 10)) } title={ "open the view that matches this post" }>{ sources[0].Title }</a>
+		· from view <a href={ templ.URL(savedViewAuthorURL(sources[0].AuthorID, sources[0].ID)) } title={ "open the view that matches this post" }>{ sources[0].Title }</a>
 	} else if len(sources) > 1 {
 		· from views
 		for i, v := range sources {
 			if i > 0 {
 				{ ", " }
 			}
-			<a href={ templ.URL("/views/" + strconv.FormatInt(v.ID, 10)) } title={ "open the view that matches this post" }>{ v.Title }</a>
+			<a href={ templ.URL(savedViewAuthorURL(v.AuthorID, v.ID)) } title={ "open the view that matches this post" }>{ v.Title }</a>
 		}
 	}
 }

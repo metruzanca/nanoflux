@@ -330,7 +330,7 @@ func TestHomePinnedCollectionIncludesViews(t *testing.T) {
 		t.Fatal(err)
 	}
 	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{
-		Title: "Go view", Filters: []string{"tag:show:r/golang"},
+		AuthorID: author.ID, Title: "Go view", Filters: []string{"tag:show:r/golang"},
 	})
 	if err != nil {
 		t.Fatal(err)

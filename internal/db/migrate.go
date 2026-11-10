@@ -75,6 +75,7 @@ var migrations = []migration{
 	{62, schemaV62},
 	{63, schemaV63},
 	{64, schemaV64},
+	{65, schemaV65},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -1009,6 +1010,40 @@ DELETE FROM users WHERE is_ephemeral = 1 AND is_admin = 0;
 DROP INDEX IF EXISTS idx_users_ephemeral;
 ALTER TABLE users DROP COLUMN expires_at;
 ALTER TABLE users DROP COLUMN is_ephemeral;
+`
+
+// schemaV65 makes a saved view's author required. A view is a source on an
+// author page like a feed, so it can no longer be unassigned. Existing
+// unassigned views keep their data: each distinct (user, title) gets an author
+// named after the view, and the view is assigned to it.
+const schemaV65 = `
+INSERT INTO authors (user_id, name, description)
+SELECT DISTINCT user_id, title, 'imported saved view'
+FROM saved_views WHERE author_id IS NULL;
+
+UPDATE saved_views SET author_id = (
+    SELECT a.id FROM authors a
+    WHERE a.user_id = saved_views.user_id
+      AND a.name = saved_views.title
+      AND a.description = 'imported saved view'
+    ORDER BY a.id DESC LIMIT 1
+)
+WHERE author_id IS NULL;
+
+CREATE TABLE saved_views_v65 (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id  INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    title      TEXT NOT NULL,
+    filters    TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT INTO saved_views_v65 (id, user_id, author_id, title, filters, created_at)
+SELECT id, user_id, author_id, title, filters, created_at FROM saved_views;
+DROP TABLE saved_views;
+ALTER TABLE saved_views_v65 RENAME TO saved_views;
+CREATE INDEX idx_saved_views_user ON saved_views(user_id);
+CREATE INDEX idx_saved_views_author ON saved_views(author_id);
 `
 
 // Migrate applies any pending migrations in order, recording each in

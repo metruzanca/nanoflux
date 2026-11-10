@@ -219,16 +219,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /authors/{id}/filters/preview", s.auth.Require(http.HandlerFunc(s.authorFilterPreview)))
 
 	// Saved views: private named filter recipes over the item lists.
-	mux.Handle("GET /views", s.auth.Require(http.HandlerFunc(s.savedViewsIndex)))
 	mux.Handle("GET /views/new", s.auth.Require(http.HandlerFunc(s.savedViewNew)))
 	mux.Handle("POST /views", s.auth.Require(http.HandlerFunc(s.savedViewCreate)))
-	mux.Handle("GET /views/{id}", s.auth.Require(http.HandlerFunc(s.savedView)))
-	mux.Handle("GET /views/{id}/items", s.auth.Require(http.HandlerFunc(s.savedViewItems)))
-	mux.Handle("GET /views/{id}/edit", s.auth.Require(http.HandlerFunc(s.savedViewEdit)))
 	mux.Handle("GET /views/{id}/edit-fragment", s.auth.Require(http.HandlerFunc(s.savedViewEditFragment)))
 	mux.Handle("POST /views/{id}/edit", s.auth.Require(http.HandlerFunc(s.savedViewUpdate)))
 	mux.Handle("POST /views/{id}/delete", s.auth.Require(http.HandlerFunc(s.savedViewDelete)))
-	mux.Handle("POST /views/{id}/read-all", s.auth.Require(http.HandlerFunc(s.savedViewReadAll)))
 
 	// Collections.
 	mux.Handle("GET /collections", s.auth.Require(http.HandlerFunc(s.collections)))

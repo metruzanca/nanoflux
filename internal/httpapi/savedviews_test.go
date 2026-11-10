@@ -92,10 +92,11 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 		t.Fatalf("create view: %d %s", rr.Code, rr.Body.String())
 	}
 	loc := rr.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/views/") {
-		t.Fatalf("create should redirect to the view, got %q", loc)
+	wantPrefix := "/authors/" + itoa(author.ID) + "?view="
+	if !strings.HasPrefix(loc, wantPrefix) {
+		t.Fatalf("create should redirect to the view on its author page, got %q", loc)
 	}
-	id := strings.TrimPrefix(loc, "/views/")
+	id := strings.TrimPrefix(loc, wantPrefix)
 
 	// The filter dialog saves the draft rows as a view, and the add menu links to
 	// the empty create form.
@@ -104,52 +105,31 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 		t.Fatalf("unread should offer save-as-view from the filter dialog and add menu: %s", body)
 	}
 
-	// The create page carries the filter rows and the author picker.
+	// The create page carries the filter rows and the feed-style author picker,
+	// including the embedded create-author fields.
 	formPage := doGet(h, "/views/new?f="+url.QueryEscape("tag:show:u/example-poster"), cookie).Body.String()
-	if !strings.Contains(formPage, `name="title"`) || !strings.Contains(formPage, `name="author_id"`) || !strings.Contains(formPage, `name="filter_value_empty"`) && !strings.Contains(formPage, `name="filter_value_0"`) {
-		t.Fatalf("new view form is missing fields: %s", formPage)
+	for _, want := range []string{
+		`name="title"`, `name="author_id"`, `name="author_name"`, `+ create new author`,
+		`name="filter_value_empty"`,
+	} {
+		if !strings.Contains(formPage, want) && !(want == `name="filter_value_empty"` && strings.Contains(formPage, `name="filter_value_0"`)) {
+			t.Fatalf("new view form is missing %q: %s", want, formPage)
+		}
 	}
 
-	// /views is the unassigned index: an assigned view lives on its author page.
-	body = doGet(h, "/views", cookie).Body.String()
-	if strings.Contains(body, "Example posts") || strings.Contains(body, "Example Poster") {
-		t.Fatalf("assigned views should not appear on /views: %s", body)
+	// The old index and standalone view/edit pages are gone: a view lives on
+	// its author page.
+	if rr := doGet(h, "/views", cookie); rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("the /views index should be gone, got %d", rr.Code)
 	}
-	if strings.Contains(body, "assigned to") || strings.Contains(body, ">browse lists</a>") {
-		t.Fatalf("unassigned index should not show assignment or the browse button: %s", body)
+	if rr := doGet(h, "/views/"+id, cookie); rr.Code != http.StatusNotFound {
+		t.Fatalf("the standalone view page should be gone, got %d", rr.Code)
 	}
-	if !strings.Contains(body, "no unassigned views") {
-		t.Fatalf("empty unassigned index should say so: %s", body)
-	}
-
-	// An unassigned view is listed flat, without an author group heading.
-	loose, err := s.store.SavedViews.Create(u.ID, store.SavedView{
-		Title: "Loose view", Filters: []string{"tag:show:u/example-poster"},
-	})
-	if err != nil {
-		t.Fatalf("create unassigned view: %v", err)
-	}
-	body = doGet(h, "/views", cookie).Body.String()
-	if !strings.Contains(body, "Loose view") || !strings.Contains(body, "views (1)") {
-		t.Fatalf("views index should list the unassigned view: %s", body)
-	}
-	if strings.Contains(body, "assigned to") || strings.Contains(body, ">unassigned<") {
-		t.Fatalf("unassigned index card should not repeat the assignment: %s", body)
-	}
-	if err := s.store.SavedViews.Delete(u.ID, loose.ID); err != nil {
-		t.Fatalf("clean up loose view: %v", err)
+	if rr := doGet(h, "/views/"+id+"/edit", cookie); rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("the standalone edit page should be gone, got %d", rr.Code)
 	}
 
-	// An assigned view redirects to the author page, which now carries its items.
-	bare := doGet(h, "/views/"+id, cookie)
-	if bare.Code != http.StatusSeeOther {
-		t.Fatalf("assigned view should redirect to its author: %d", bare.Code)
-	}
-	authorLoc := bare.Header().Get("Location")
-	if authorLoc != "/authors/"+itoa(author.ID)+"?view="+id {
-		t.Fatalf("assigned view redirect = %q", authorLoc)
-	}
-	body = doGet(h, authorLoc, cookie).Body.String()
+	body = doGet(h, loc, cookie).Body.String()
 	if !strings.Contains(body, "Go post") || strings.Contains(body, "Other post") {
 		t.Fatalf("view-scoped author page should show only the filtered post: %s", body)
 	}
@@ -198,35 +178,102 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 		t.Fatalf("author page should list the assigned view under sources: %s", body)
 	}
 
-	// Edit renames and unassigns the view.
+	// Editing the author moves the view: the reply sends the browser to the new
+	// author's edit page.
+	moved, _ := s.store.Authors.Create(u.ID, "New Home", "", "")
 	edit := url.Values{
 		"title":          {"Renamed view"},
-		"author_id":      {"0"},
+		"author_id":      {itoa(moved.ID)},
 		"filter_row":     {"0"},
 		"filter_action":  {"show"},
 		"filter_kind":    {"tag"},
 		"filter_combine": {"all"},
 		"filter_value_0": {"u/example-poster"},
 	}
-	if rr := doForm(h, http.MethodPost, "/views/"+id+"/edit", edit, cookie); rr.Code != http.StatusSeeOther {
+	rr = doForm(h, http.MethodPost, "/views/"+id+"/edit", edit, cookie)
+	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("edit view: %d %s", rr.Code, rr.Body.String())
 	}
-	u, _ = s.store.Users.ByUsername("alice")
+	if loc := rr.Header().Get("Location"); loc != "/authors/"+itoa(moved.ID)+"/edit?view="+id {
+		t.Fatalf("moving a view should land on its new author: %q", loc)
+	}
 	views, _ := s.store.SavedViews.List(u.ID)
 	if len(views) != 1 {
 		t.Fatalf("expected one saved view, got %d", len(views))
 	}
-	if views[0].Title != "Renamed view" || views[0].AuthorID != 0 {
-		t.Fatalf("view not updated: %+v", views[0])
+	if views[0].Title != "Renamed view" || views[0].AuthorID != moved.ID {
+		t.Fatalf("view not moved: %+v", views[0])
 	}
 
-	// Delete returns to the index and removes the row.
-	if rr := doForm(h, http.MethodPost, "/views/"+id+"/delete", nil, cookie); rr.Code != http.StatusSeeOther {
+	// Delete returns to the view's author edit page and removes the row.
+	rr = doForm(h, http.MethodPost, "/views/"+id+"/delete", nil, cookie)
+	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("delete view: %d %s", rr.Code, rr.Body.String())
+	}
+	if loc := rr.Header().Get("Location"); loc != "/authors/"+itoa(moved.ID)+"/edit" {
+		t.Fatalf("delete should return to the author edit page, got %q", loc)
 	}
 	views, _ = s.store.SavedViews.List(u.ID)
 	if len(views) != 0 {
 		t.Fatalf("view should be deleted, got %+v", views)
+	}
+}
+
+// TestSavedViewCreateAuthor covers the create form's embedded author form: a
+// view is always assigned, so "new" creates an author and a missing author is
+// rejected instead of saving an unassigned view.
+func TestSavedViewCreateAuthor(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _, _ := savedViewFixture(t, s)
+
+	form := url.Values{
+		"title":          {"Fresh view"},
+		"author_id":      {"new"},
+		"author_name":    {"Fresh Author"},
+		"filter_row":     {"0"},
+		"filter_action":  {"show"},
+		"filter_kind":    {"tag"},
+		"filter_combine": {"all"},
+		"filter_value_0": {"u/example-poster"},
+	}
+	rr := doForm(h, http.MethodPost, "/views", form, cookie)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("create view with a new author: %d %s", rr.Code, rr.Body.String())
+	}
+	authors, _ := s.store.Authors.List(u.ID)
+	var fresh store.Author
+	for _, a := range authors {
+		if a.Name == "Fresh Author" {
+			fresh = a
+		}
+	}
+	if fresh.ID == 0 {
+		t.Fatalf("new author was not created: %+v", authors)
+	}
+	views, _ := s.store.SavedViews.List(u.ID)
+	if len(views) != 1 || views[0].AuthorID != fresh.ID {
+		t.Fatalf("view should be assigned to the new author: %+v", views)
+	}
+	if loc := rr.Header().Get("Location"); loc != "/authors/"+itoa(fresh.ID)+"?view="+itoa(views[0].ID) {
+		t.Fatalf("create redirect = %q", loc)
+	}
+
+	missing := url.Values{
+		"title":          {"No author"},
+		"filter_row":     {"0"},
+		"filter_action":  {"show"},
+		"filter_kind":    {"tag"},
+		"filter_combine": {"all"},
+		"filter_value_0": {"u/example-poster"},
+	}
+	rr = doForm(h, http.MethodPost, "/views", missing, cookie)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "needs an author") {
+		t.Fatalf("a view without an author should be rejected: %d %s", rr.Code, rr.Body.String())
+	}
+	views, _ = s.store.SavedViews.List(u.ID)
+	if len(views) != 1 {
+		t.Fatalf("rejected form must not create a view, got %+v", views)
 	}
 }
 
@@ -276,7 +323,7 @@ func TestSavedViewReadAllHonorsFilters(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("create view: %d %s", rr.Code, rr.Body.String())
 	}
-	id := strings.TrimPrefix(rr.Header().Get("Location"), "/views/")
+	id := strings.TrimPrefix(rr.Header().Get("Location"), "/authors/"+itoa(author.ID)+"?view=")
 
 	// Mark-all on the view-scoped author page carries the selected view, so only
 	// the matching post is read even though the author also owns the feed.
@@ -316,7 +363,7 @@ func TestSavedViewTagOptionsAllFeeds(t *testing.T) {
 
 	form := url.Values{
 		"title":          {"All feeds"},
-		"author_id":      {"0"},
+		"author_id":      {itoa(a.ID)},
 		"filter_row":     {"0"},
 		"filter_action":  {"show"},
 		"filter_kind":    {"tag"},
@@ -327,25 +374,14 @@ func TestSavedViewTagOptionsAllFeeds(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("create view: %d %s", rr.Code, rr.Body.String())
 	}
-	id := strings.TrimPrefix(rr.Header().Get("Location"), "/views/")
+	id := strings.TrimPrefix(rr.Header().Get("Location"), "/authors/"+itoa(a.ID)+"?view=")
 
-	editPage := doGet(h, "/views/"+id+"/edit", cookie).Body.String()
+	editPage := doGet(h, "/views/"+id+"/edit-fragment", cookie).Body.String()
 	for _, tag := range []string{"r/golang", "r/rust"} {
 		option := `data-combo-option="filter_value_0:` + tag + `"`
 		if !strings.Contains(editPage, option) {
 			t.Fatalf("edit form should offer tag %q for an all-feeds view", tag)
 		}
-	}
-
-	viewPage := doGet(h, "/views/"+id+"?tab=unread&sort=newest", cookie).Body.String()
-	if strings.Contains(viewPage, `id="tag-filter-dialog"`) {
-		t.Fatalf("the saved view page should not expose a transient filter dialog: %s", viewPage)
-	}
-	if !strings.Contains(viewPage, "recipe:") || !strings.Contains(viewPage, "show r/golang") {
-		t.Fatalf("the saved view page should show its fixed recipe: %s", viewPage)
-	}
-	if !strings.Contains(viewPage, "?tab=read") || strings.Contains(viewPage, "?view=unread") {
-		t.Fatalf("saved view tab links should use ?tab=: %s", viewPage)
 	}
 }
 
@@ -384,7 +420,7 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 
 	form := url.Values{
 		"title":          {"Rust view"},
-		"author_id":      {"0"},
+		"author_id":      {itoa(author.ID)},
 		"collections":    {itoa(c.ID)},
 		"filter_row":     {"0"},
 		"filter_action":  {"show"},
@@ -396,7 +432,7 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("create view: %d %s", rr.Code, rr.Body.String())
 	}
-	viewID := strings.TrimPrefix(rr.Header().Get("Location"), "/views/")
+	viewID := strings.TrimPrefix(rr.Header().Get("Location"), "/authors/"+itoa(author.ID)+"?view=")
 	viewIDNum, err := strconv.ParseInt(viewID, 10, 64)
 	if err != nil {
 		t.Fatalf("view id %q: %v", viewID, err)
@@ -416,7 +452,8 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 		t.Fatalf("non-matching view item leaked into the collection: %s", body)
 	}
 	// The post that only the view brings in names that view and links to it.
-	if !strings.Contains(body, "from view") || !strings.Contains(body, `href="/views/`+viewID+`"`) {
+	viewHref := "/authors/" + itoa(author.ID) + "?view=" + viewID
+	if !strings.Contains(body, "from view") || !strings.Contains(body, `href="`+viewHref+`"`) {
 		t.Fatalf("view-sourced item should link its view: %s", body)
 	}
 	if !strings.Contains(body, "sources (2)") {
@@ -474,7 +511,7 @@ func TestCollectionViewSourceOnlyWhenViewSoleSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{
-		Title: "Rust", Filters: []string{"tag:show:r/rust"},
+		AuthorID: author.ID, Title: "Rust", Filters: []string{"tag:show:r/rust"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -490,7 +527,8 @@ func TestCollectionViewSourceOnlyWhenViewSoleSource(t *testing.T) {
 	if got := strings.Count(body, "from view"); got != 1 {
 		t.Fatalf("only the view-only item should claim the view, got %d: %s", got, body)
 	}
-	if !strings.Contains(body, `href="/views/`+itoa(view.ID)+`"`) ||
+	viewHref := "/authors/" + itoa(author.ID) + "?view=" + itoa(view.ID)
+	if !strings.Contains(body, `href="`+viewHref+`"`) ||
 		!strings.Contains(body, "from view") {
 		t.Fatalf("view-only item should link its view: %s", body)
 	}
@@ -499,7 +537,7 @@ func TestCollectionViewSourceOnlyWhenViewSoleSource(t *testing.T) {
 	}
 
 	modal := doGet(h, "/items/"+itoa(outsideID)+"/view?collection="+itoa(c.ID), cookie).Body.String()
-	if !strings.Contains(modal, "from view") || !strings.Contains(modal, `href="/views/`+itoa(view.ID)+`"`) {
+	if !strings.Contains(modal, "from view") || !strings.Contains(modal, `href="`+viewHref+`"`) {
 		t.Fatalf("item modal should link the view when opened from the collection: %s", modal)
 	}
 	plainModal := doGet(h, "/items/"+itoa(outsideID)+"/view", cookie).Body.String()
