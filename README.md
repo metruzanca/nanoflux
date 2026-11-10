@@ -257,7 +257,8 @@ privately, see [SECURITY.md](SECURITY.md).
 ## Status and contributing
 
 nanoflux is pre-1.0 and moving fast. Issues are very welcome. Pull requests will
-open when the project is presented publicly.
+open when the project is presented publicly. See [`docs/roadmap.md`](docs/roadmap.md)
+for release readiness, near-term work, and deferred ideas.
 
 It is built with heavy AI assistance. The design decisions, reviews, and the
 opinions in this README are human.
