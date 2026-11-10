@@ -672,6 +672,43 @@ code.
   `data-post-action` to `/views/{id}/delete?back=author`.
 - `/views` is linked from the user menu.
 
+## Stats page
+
+`GET /stats` is the private viewing-statistics page (linked from the user menu).
+It is computed per request and deliberately not precached: a personal reader's
+dataset is small, and the page may be a little slow.
+
+- **Signals.** There is no per-item view/open event. The only engagement signals
+  are `items.read`/`read_at`, `favorite`, `bookmark`, `item_progress`, and
+  `shared_items`. Popularity therefore means "most read / highest read rate /
+  most favorited", not "most clicked". `read_at` is the only timestamped state;
+  `favorite` and `bookmark` are booleans with no timestamp, so those charts are
+  current totals, never trends. Legacy `read = 1 AND read_at IS NULL` rows are
+  excluded from the time-series charts (they have no place on a timeline) but
+  still count in the totals.
+- **Scoping.** `internal/store/stats.go` reads from `visible_items` for every
+  item aggregate (`StatsOverview`, `StatsReadSeries`, `StatsTopSources`,
+  `StatsTags`, `StatsUnreadAging`, `StatsReadLag`, `StatsMedia`), so the
+  always-on author allow/block rules apply exactly as in the lists. Counts are
+  grouped by the owner feed, so a cross-feed post is attributed once, to the feed
+  that published it. The hidden system feed (saved pages) is excluded.
+- **Period.** `?period=30d|90d|1y|all` (default `90d`, via `statsPeriodOf`).
+  Activity series filter on `read_at`; source/tag aggregates filter on item time
+  (`COALESCE(published_at, fetched_at)`), so "top sources in the last 30 days"
+  means posts that appeared in that window. Unread aging is present-tense and
+  ignores the period.
+- **Timezone.** Per-day bucketing, the weekday/hour heatmap and streaks happen in
+  Go via `web.Location(u.Timezone)`, not SQLite date math, because SQLite does
+  not honour the user's IANA timezone across DST boundaries. Streak adjacency is
+  compared by calendar day (`AddDate`), not elapsed 24h.
+- **Chart granularity.** Daily bars for 30/90 days, weekly for a year, monthly
+  for all time (`buildActivityBars`), so a long range never collapses into
+  unreadable slivers.
+- **Rendering.** `views_stats.templ` renders plain server markup (CSS bars, a CSS
+  heatmap grid, tables and list bars). There is no JS chart library and no inline
+  JS, so everything works under the CSP. Styles live under the "Stats page"
+  section of `app.css`.
+
 ## Appearance
 
 Per-user display preferences live in the settings "appearance" card and are

@@ -166,6 +166,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /unread", s.auth.Require(http.HandlerFunc(s.unread)))
 	mux.Handle("GET /items", s.auth.Require(http.HandlerFunc(s.itemsFragment)))
 	mux.Handle("GET /read", s.auth.Require(http.HandlerFunc(s.readPage)))
+	mux.Handle("GET /stats", s.auth.Require(http.HandlerFunc(s.statsPage)))
 	mux.Handle("GET /favorites", s.auth.Require(http.HandlerFunc(s.favoritesPage)))
 	mux.Handle("GET /settings/algorithm", s.auth.Require(http.HandlerFunc(s.favoritesAlgorithmPage)))
 	mux.Handle("GET /bookmarks", s.auth.Require(http.HandlerFunc(s.bookmarksPage)))

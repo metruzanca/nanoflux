@@ -581,6 +581,10 @@ func serverLoc(tz string) *time.Location {
 	return time.Local
 }
 
+// Location is the exported form of serverLoc, for callers that bucket timestamps
+// by the user's calendar (the stats page).
+func Location(tz string) *time.Location { return serverLoc(tz) }
+
 // formatRel renders t relative to now in loc, using calendar days.
 func formatRel(t time.Time, loc *time.Location, now time.Time) string {
 	tl := t.In(loc)

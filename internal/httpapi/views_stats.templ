@@ -1,0 +1,300 @@
+package httpapi
+
+import (
+	"strconv"
+	"time"
+)
+
+// statsPage is the viewing-statistics dashboard. Every number is derived from
+// the user's own items on request; nothing here is precached. Charts are plain
+// server-rendered markup (no JS chart library) so they work under the app's CSP.
+templ statsPage(d statsData) {
+	<div class="row">
+		<h1>stats</h1>
+		<nav class="stats-periods" aria-label="stats period">
+			@statsPeriodLink(d.Period, "30d", "30 days")
+			@statsPeriodLink(d.Period, "90d", "90 days")
+			@statsPeriodLink(d.Period, "1y", "1 year")
+			@statsPeriodLink(d.Period, "all", "all time")
+		</nav>
+	</div>
+	<p class="muted small">{ d.PeriodLabel }</p>
+
+	<section class="card" id="stats-overview">
+		<div class="row stats" aria-label="reading summary">
+			<span><strong>{ strconv.Itoa(d.Overview.Read) }</strong> read</span>
+			<span><strong>{ strconv.Itoa(d.Overview.Unread) }</strong> unread</span>
+			<span><strong>{ strconv.Itoa(d.ReadRate) }%</strong> read rate</span>
+			<span><strong>{ strconv.Itoa(d.Overview.Favorites) }</strong> favorites</span>
+			<span><strong>{ strconv.Itoa(d.Overview.Bookmarks) }</strong> bookmarks</span>
+			<span><strong>{ strconv.Itoa(d.Streak.Current) }</strong> day streak</span>
+		</div>
+		<p class="muted small">
+			Reading is the only timestamped signal (history). Favorites and bookmarks have
+			no timestamp, so those are current totals, not trends.
+		</p>
+	</section>
+
+	<section class="card" id="stats-activity">
+		<h2>reading activity</h2>
+		if len(d.Activity) == 0 {
+			<p class="muted">no reads in this period yet.</p>
+		} else {
+			<div class="stats-chart" aria-label={ "reads per " + activityUnit(d.Period) }>
+				for _, b := range d.Activity {
+					<div class="stats-chart-bar" title={ statsBarTitle(b) } style={ "height: " + strconv.Itoa(b.Height) + "%" }></div>
+				}
+			</div>
+			<div class="stats-chart-axis">
+				<span>{ d.Activity[0].Label }</span>
+				<span>{ d.Activity[len(d.Activity)-1].Label }</span>
+			</div>
+		}
+	</section>
+
+	<section class="card" id="stats-heatmap">
+		<h2>when you read</h2>
+		<p class="muted small">reads by weekday and hour, in your timezone. Current streak: { daysText(d.Streak.Current) }, longest: { daysText(d.Streak.Longest) }.</p>
+		<div class="stats-heatmap" aria-label="reads by weekday and hour">
+			for weekday, row := range d.Heatmap {
+				<div class="stats-heat-row">
+					<span class="stats-heat-label">{ statsWeekdays[weekday] }</span>
+					for hour, cell := range row {
+						<span
+							class={ "stats-heat-cell level-" + strconv.Itoa(cell.Level) }
+							title={ statsWeekdays[weekday] + " " + strconv.Itoa(hour) + ":00 · " + strconv.Itoa(cell.Count) + " read" }
+						></span>
+					}
+				</div>
+			}
+		</div>
+	</section>
+
+	<section class="card" id="stats-sources">
+		<h2>top sources</h2>
+		if len(d.Sources) == 0 {
+			<p class="muted">no items in this period.</p>
+		} else {
+			<table class="stats-table">
+				<thead>
+					<tr>
+						<th>author</th>
+						<th class="num">read</th>
+						<th class="num">read rate</th>
+						<th class="num">favorites</th>
+						<th class="num">posts</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, r := range d.Sources {
+						<tr>
+							<td><a href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.Name }</a></td>
+							<td class="num">{ strconv.Itoa(r.Read) }</td>
+							<td class="num">
+								<span class="stats-rate" title={ strconv.Itoa(r.Rate) + "% read" }>
+									<span class="stats-rate-fill" style={ "width: " + strconv.Itoa(r.Rate) + "%" }></span>
+								</span>
+								{ strconv.Itoa(r.Rate) }%
+							</td>
+							<td class="num">{ strconv.Itoa(r.Favorites) }</td>
+							<td class="num">{ strconv.Itoa(r.Total) }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+		if len(d.BestSources) > 0 {
+			<h3 class="stats-subhead">highest read rate <span class="muted small">(at least 20 posts)</span></h3>
+			@statsRankList(sourceRankRows(d.BestSources))
+		}
+	</section>
+
+	<section class="card" id="stats-tags">
+		<h2>topics you read</h2>
+		if len(d.Tags) == 0 {
+			<p class="muted">no tagged items in this period.</p>
+		} else {
+			<ul class="stats-rank">
+				for _, t := range d.Tags {
+					<li class="stats-rank-row">
+						<span class="stats-rank-label">{ t.Tag }</span>
+						<span class="stats-rank-track"><span class="stats-rank-fill" style={ "width: " + strconv.Itoa(t.Width) + "%" }></span></span>
+						<span class="stats-rank-value">{ strconv.Itoa(t.Read) }/{ strconv.Itoa(t.Total) } · { strconv.Itoa(t.Rate) }%</span>
+					</li>
+				}
+			</ul>
+		}
+	</section>
+
+	<section class="card" id="stats-backlog">
+		<h2>backlog</h2>
+		if d.Overview.Unread == 0 {
+			<p class="muted">inbox zero: nothing unread.</p>
+		} else {
+			<ul class="stats-rank">
+				for _, b := range d.Aging {
+					<li class="stats-rank-row">
+						<span class="stats-rank-label">{ b.Label }</span>
+						<span class="stats-rank-track"><span class="stats-rank-fill" style={ "width: " + strconv.Itoa(b.Height) + "%" }></span></span>
+						<span class="stats-rank-value">{ strconv.Itoa(b.Value) }</span>
+					</li>
+				}
+			</ul>
+		}
+		if d.LagTotal > 0 {
+			<h3 class="stats-subhead">time from arrival to read</h3>
+			<p class="muted small">
+				average { formatLag(d.Lag.Avg) } · median { formatLag(d.Lag.Median) }
+			</p>
+			<ul class="stats-rank">
+				for _, b := range d.Lag.Buckets {
+					<li class="stats-rank-row">
+						<span class="stats-rank-label">{ b.Label }</span>
+						<span class="stats-rank-track"><span class="stats-rank-fill" style={ "width: " + strconv.Itoa(ratio(b.Count, d.LagTotal)) + "%" }></span></span>
+						<span class="stats-rank-value">{ strconv.Itoa(b.Count) }</span>
+					</li>
+				}
+			</ul>
+		}
+	</section>
+
+	<section class="card" id="stats-media">
+		<h2>media watched</h2>
+		if d.MediaItems == 0 {
+			<p class="muted">no saved playback positions in this period.</p>
+		} else {
+			<p class="muted small">
+				{ d.MediaTotal } watched across { strconv.Itoa(d.MediaItems) } media item(s).
+			</p>
+			<table class="stats-table">
+				<thead>
+					<tr>
+						<th>author</th>
+						<th class="num">watched</th>
+						<th class="num">completion</th>
+						<th class="num">items</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, r := range d.Media {
+						<tr>
+							<td>{ r.Name }</td>
+							<td class="num">{ r.Watched }</td>
+							<td class="num">{ strconv.Itoa(r.Completion) }%</td>
+							<td class="num">{ strconv.Itoa(r.Samples) }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</section>
+}
+
+templ statsPeriodLink(current, period, label string) {
+	<a
+		href={ templ.URL(statsPeriodHref(period)) }
+		class={ templ.KV("active", current == period) }
+		if current == period {
+			aria-current="page"
+		}
+	>{ label }</a>
+}
+
+// statsRankList renders a labelled, proportional bar list. It is shared by the
+// read-rate ranking inside the sources card.
+templ statsRankList(rows []statsRankRow) {
+	<ul class="stats-rank">
+		for _, r := range rows {
+			<li class="stats-rank-row">
+				<span class="stats-rank-label">
+					if r.AuthorID != 0 {
+						<a href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.Label }</a>
+					} else {
+						{ r.Label }
+					}
+				</span>
+				<span class="stats-rank-track"><span class="stats-rank-fill" style={ "width: " + strconv.Itoa(r.Width) + "%" }></span></span>
+				<span class="stats-rank-value">{ r.Value }</span>
+			</li>
+		}
+	</ul>
+}
+
+// statsRankRow is one row of a proportional bar list.
+type statsRankRow struct {
+	AuthorID int64
+	Label    string
+	Width    int
+	Value    string
+}
+
+// sourceRankRows adapts the source table to the shared rank list, showing the
+// read rate while keeping the author link.
+func sourceRankRows(rows []statsSourceRow) []statsRankRow {
+	out := make([]statsRankRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, statsRankRow{
+			AuthorID: r.AuthorID,
+			Label:    r.Name,
+			Width:    r.Rate,
+			Value:    strconv.Itoa(r.Rate) + "% · " + strconv.Itoa(r.Read) + "/" + strconv.Itoa(r.Total),
+		})
+	}
+	return out
+}
+
+// activityUnit names the bar granularity for the chart's accessible label.
+func activityUnit(period string) string {
+	switch period {
+	case "1y":
+		return "week"
+	case "all":
+		return "month"
+	default:
+		return "day"
+	}
+}
+
+// formatLag renders a read-lag duration compactly: "3h", "2d 4h", "18m".
+func formatLag(d time.Duration) string {
+	if d <= 0 {
+		return "0m"
+	}
+	days := int(d / (24 * time.Hour))
+	if days > 0 {
+		hours := int((d % (24 * time.Hour)) / time.Hour)
+		if hours > 0 {
+			return strconv.Itoa(days) + "d " + strconv.Itoa(hours) + "h"
+		}
+		return strconv.Itoa(days) + "d"
+	}
+	hours := int(d / time.Hour)
+	if hours > 0 {
+		return strconv.Itoa(hours) + "h"
+	}
+	return strconv.Itoa(int(d/time.Minute)) + "m"
+}
+
+// ratio is value/total as a 0..100 percent.
+func ratio(value, total int) int {
+	if total <= 0 {
+		return 0
+	}
+	return value * 100 / total
+}
+
+// daysText renders a day count with the right singular/plural.
+func daysText(n int) string {
+	if n == 1 {
+		return "1 day"
+	}
+	return strconv.Itoa(n) + " days"
+}
+
+// readsText renders a read count with the right singular/plural.
+func readsText(n int) string {
+	if n == 1 {
+		return "1 read"
+	}
+	return strconv.Itoa(n) + " reads"
+}

@@ -2012,3 +2012,112 @@ body.marketing .site-foot { margin-top: 0; }
   .mkt-hero { padding: 2rem 0 2.5rem; }
   .mkt-hero-art { order: -1; }
 }
+
+/* ---------------------------------------------------------------------------
+   Stats page. Every chart is server-rendered markup (no JS chart library), so
+   the page works under the app's CSP and degrades to bars/lists without JS.
+   --------------------------------------------------------------------------- */
+.stats-periods { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.stats-periods a {
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.stats-periods a:hover { color: var(--fg); }
+.stats-periods a.active {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Activity bars: one flex child per day/week/month, height set inline. */
+.stats-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 140px;
+  margin-top: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.stats-chart-bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+  opacity: 0.8;
+}
+.stats-chart-bar:hover { opacity: 1; }
+.stats-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.3rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+/* Weekday x hour heatmap. */
+.stats-heatmap { display: flex; flex-direction: column; gap: 2px; margin-top: 0.75rem; overflow-x: auto; }
+.stats-heat-row { display: flex; align-items: center; gap: 2px; }
+.stats-heat-label { flex: none; width: 2.2rem; color: var(--muted); font-size: 0.72rem; }
+.stats-heat-cell {
+  flex: 1 1 0;
+  min-width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--border);
+  opacity: 0.35;
+}
+.stats-heat-cell.level-1 { background: var(--accent); opacity: 0.3; }
+.stats-heat-cell.level-2 { background: var(--accent); opacity: 0.5; }
+.stats-heat-cell.level-3 { background: var(--accent); opacity: 0.75; }
+.stats-heat-cell.level-4 { background: var(--accent); opacity: 1; }
+
+/* Source / media tables. */
+.stats-table { width: 100%; border-collapse: collapse; margin-top: 0.75rem; }
+.stats-table th,
+.stats-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 0.9rem;
+}
+.stats-table th {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.stats-table tbody tr:last-child td { border-bottom: none; }
+.stats-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Inline read-rate meter in the sources table. */
+.stats-rate {
+  display: inline-block;
+  width: 4rem;
+  height: 6px;
+  margin-right: 0.35rem;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+  vertical-align: middle;
+}
+.stats-rate-fill { display: block; height: 100%; background: var(--accent); }
+
+/* Proportional label/bar/value lists (topics, backlog, read-lag, best sources). */
+.stats-rank { display: flex; flex-direction: column; gap: 0.35rem; list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.stats-rank-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.9rem; }
+.stats-rank-label { flex: 0 0 10rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-rank-track { flex: 1 1 auto; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.stats-rank-fill { display: block; height: 100%; border-radius: 4px; background: var(--accent); }
+.stats-rank-value { flex: none; color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.stats-subhead { margin: 1.1rem 0 0; font-size: 0.95rem; }
+
+@media (max-width: 600px) {
+  .stats-rank-label { flex-basis: 6rem; }
+  .stats-table th,
+  .stats-table td { padding: 0.35rem 0.3rem; }
+}
