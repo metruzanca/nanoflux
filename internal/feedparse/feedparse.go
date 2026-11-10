@@ -329,11 +329,13 @@ func FetchFeed(ctx context.Context, req FetchRequest, client *http.Client) (Resu
 	return runIngestPasses(ctx, req, res)
 }
 
-// runIngestPasses runs the installed plugin's ingest hooks over a parsed result:
-// SharedKeys first (identity), then Categorize (labels). A plugin error is
-// returned so the caller records it as a poll failure rather than storing
-// partially-processed items; a no-op when no plugin matches.
+// runIngestPasses finishes a parsed result before it is stored: the generic
+// media-type category pass (type:image / type:video / type:audio / type:text)
+// always runs, then the installed plugin's ingest hooks, SharedKeys first
+// (identity), then Categorize (labels). A plugin error is returned so the caller
+// records it as a poll failure rather than storing partially-processed items.
 func runIngestPasses(ctx context.Context, req FetchRequest, res Result) (Result, error) {
+	applyMediaTypeCategories(&res)
 	if installedPlugin == nil {
 		return res, nil
 	}

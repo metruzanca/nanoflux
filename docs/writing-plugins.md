@@ -577,6 +577,13 @@ cases:
   carry at most one of them, so hiding `reblog` does not also hide a site's
   self-reposts. Derive the answer from the site's origin author, preferring an
   id over a display name, not merely from a "this is a repost" flag.
+- **Media types.** The host already adds `type:image`, `type:video`,
+  `type:audio` and `type:text` at ingest from enclosures, media elements in the
+  item's content, a direct media link and the visible text length. Add the same
+  labels (`pluginapi.CategoryType*`) when you know media the host cannot see:
+  an embed you only resolve at view time through `Render`, or a gallery whose
+  cover is the only image the host stores. A post may carry more than one, so a
+  video with a long description can be both `type:video` and `type:text`.
 
 ```go
 // postCategories returns the site's tags plus a reblog marker.

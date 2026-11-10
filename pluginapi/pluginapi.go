@@ -201,6 +201,27 @@ const (
 	EnclosureKindLink = "link"
 )
 
+// Reserved media-type category labels. They are a convention, like the
+// reblog/self-reblog labels: an item carries type:image, type:video, type:audio
+// and/or type:text so a user can filter on what kind of post it is. The core
+// adds them at ingest from enclosures, embedded media and text length, and a
+// plugin should use the same labels for media the host cannot see (an embed it
+// only resolves at view time, a gallery whose cover is the sole stored image).
+// More than one may apply to a post. The values mirror internal/feedparse's
+// constants; keep them in sync.
+const (
+	// CategoryTypeImage marks a post carrying an image or gallery.
+	CategoryTypeImage = "type:image"
+	// CategoryTypeVideo marks a post carrying a video (a file, an HLS stream,
+	// or an embedded player).
+	CategoryTypeVideo = "type:video"
+	// CategoryTypeAudio marks a post carrying audio.
+	CategoryTypeAudio = "type:audio"
+	// CategoryTypeText marks a post with enough prose to be an article, blog
+	// post or short story.
+	CategoryTypeText = "type:text"
+)
+
 // Enclosure is one media attachment on an item.
 type Enclosure struct {
 	URL      string

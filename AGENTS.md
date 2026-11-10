@@ -337,6 +337,20 @@ gives the destination section as the category.
   item reposts another author's post) and `self-reblog` (it reposts the same
   author's earlier post). They are mutually exclusive: never apply both, and
   prefer the site's origin author id over a display name when deciding.
+- Core applies a reserved **media-type** convention at ingest: `type:image`,
+  `type:video`, `type:audio` and `type:text`. `feedparse.applyMediaTypeCategories`
+  runs in `runIngestPasses` for both the generic and plugin fetch paths, before
+  the plugin Categorize pass, and merges through tagnorm (so a plugin-supplied
+  label dedupes). It derives the labels from enclosure kinds
+  (`ResolveEnclosureKind`), summary `<img>`/`<picture>`/`<video>`/`<audio>`/
+  `<iframe>` (an iframe counts as video: stored iframes are stripped at ingest,
+  so a raw feed iframe is an embedded-player hint), a direct media item link,
+  and visible summary text length (`mediaTextMinRunes`, 1200) for `type:text`.
+  `ImageURL` alone never produces `type:image` (it is often a video poster or a
+  link-preview thumbnail). A post may carry several labels. A plugin that knows
+  media the host cannot see (an embed only it resolves at view time, a gallery
+  whose cover is the sole stored image) should add the same labels through
+  `Categories`/`CapCategorize`; `pluginapi.CategoryType*` mirrors the values.
 - `items.categories` (schemaV36) stores them newline-joined (denormalized);
   `Upsert`/`UpdateItemSnapshot` write them, so an already-stored item gains
   categories on re-poll without a re-fetch. `poller.ingest` copies them through.

@@ -518,6 +518,18 @@ origin should also use the conventional post-kind labels: `reblog` when the
 item reposts another author's post, and `self-reblog` when it reposts the same
 author's earlier post (never both).
 
+The host adds a reserved media-type convention at ingest, without any
+site-specific code: `type:image`, `type:video`, `type:audio` and `type:text`.
+A post may carry more than one (a video with a long write-up is `type:video`
+and `type:text`). The labels come from the item's enclosures, media elements in
+its content (`<img>`, `<picture>`, `<video>`, `<audio>`, and an embedded-player
+`<iframe>`), a direct media link, and the amount of visible prose (`type:text`
+at roughly 1200 characters). A thumbnail alone does not make something an image
+post. Plugins that resolve media the host cannot see, such as an embed a plugin
+only renders at view time, add the same labels themselves. Because the labels
+are ordinary categories, they work with the tag filter, saved views and author
+allow/block rules: hiding `type:video` keeps video posts out of a list.
+
 Every category is canonical: Unicode NFC, trimmed, no leading slash, internal
 whitespace collapsed, and lowercase. A tag is an identifier, not display text,
 so `R/Cats`, ` r/cats ` and `/r/cats` are the same tag. The same normalizer
