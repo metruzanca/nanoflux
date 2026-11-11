@@ -7,9 +7,6 @@
 [submodule "plugins/patreon"]
 	path = plugins/patreon
 	url = https://github.com/metruzanca/nanoflux-plugin-patreon.git
-[submodule "plugins/reddit"]
-	path = plugins/reddit
-	url = https://github.com/metruzanca/nanoflux-plugin-reddit.git
 [submodule "plugins/killthenewsletter"]
 	path = plugins/killthenewsletter
 	url = https://github.com/metruzanca/nanoflux-plugin-killthenewsletter.git
