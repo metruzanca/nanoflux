@@ -21,6 +21,10 @@ func TestErrorRoundTrip(t *testing.T) {
 			var rl *RateLimit
 			return errors.As(e, &rl) && rl.Status == 429 && rl.RetryAfter == 5*time.Minute
 		}},
+		{"permanent", &PermanentError{Code: 404, Reason: "reddit community was banned"}, func(e error) bool {
+			var pe *PermanentError
+			return errors.As(e, &pe) && pe.Code == 404 && pe.Reason == "reddit community was banned"
+		}},
 		{"status", &StatusError{Code: 404, URL: "https://x"}, func(e error) bool {
 			var se *StatusError
 			return errors.As(e, &se) && se.Code == 404

@@ -21,6 +21,28 @@ func (e *StatusError) Error() string {
 	return "status " + itoa(e.Code) + " for " + e.URL
 }
 
+// PermanentError reports a fetch failure that retrying cannot fix, such as a
+// banned community or a deleted profile. The host maps it to its own permanent
+// error and pauses the feed, recording Reason as the user-facing explanation.
+// An older host that does not know the permanent flag treats it as a normal
+// status error and keeps retrying, so this is safe to add without a version
+// bump.
+type PermanentError struct {
+	Code   int
+	Reason string
+}
+
+func (e *PermanentError) Error() string {
+	reason := e.Reason
+	if reason == "" {
+		reason = "feed is no longer available"
+	}
+	if e.Code == 0 {
+		return reason
+	}
+	return reason + " (status " + itoa(e.Code) + ")"
+}
+
 // RateLimit reports that a fetch hit a rate limit it could not avoid. The host
 // parks the feed for RetryAfter and cools the host. A plugin that recovers from
 // its own cache should not return this.

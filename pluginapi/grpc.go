@@ -714,6 +714,10 @@ func toPBError(err error) *pb.PluginError {
 	if errors.As(err, &rl) {
 		return &pb.PluginError{RateLimited: true, StatusCode: int32(rl.Status), RetryAfterMillis: rl.RetryAfter.Milliseconds(), Message: err.Error()}
 	}
+	var pe *PermanentError
+	if errors.As(err, &pe) {
+		return &pb.PluginError{Permanent: true, StatusCode: int32(pe.Code), Reason: pe.Reason, Message: err.Error()}
+	}
 	var se *StatusError
 	if errors.As(err, &se) {
 		return &pb.PluginError{StatusCode: int32(se.Code), Message: err.Error()}
@@ -727,6 +731,8 @@ func fromPBError(e *pb.PluginError) error {
 		return ErrUnsupportedCapability
 	case e.RateLimited:
 		return &RateLimit{Status: int(e.StatusCode), RetryAfter: time.Duration(e.RetryAfterMillis) * time.Millisecond}
+	case e.Permanent:
+		return &PermanentError{Code: int(e.StatusCode), Reason: e.Reason}
 	case e.StatusCode != 0:
 		return &StatusError{Code: int(e.StatusCode)}
 	default:

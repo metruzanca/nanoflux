@@ -329,6 +329,10 @@ message PluginError {
   bool rate_limited = 3;
   bool unsupported = 4;
   string message = 5;
+  // permanent means retrying cannot succeed; the host pauses the feed and
+  // records reason as the user-facing explanation.
+  bool permanent = 6;
+  string reason = 7;
 }
 
 // Provision creates a feed on the remote service on the user's behalf.

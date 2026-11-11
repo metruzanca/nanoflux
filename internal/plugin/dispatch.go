@@ -247,6 +247,8 @@ func convertError(err error) error {
 	switch e := err.(type) {
 	case *pluginapi.RateLimit:
 		return &feedparse.RateLimitError{URL: e.URL, Status: e.Status, RetryAfter: e.RetryAfter}
+	case *pluginapi.PermanentError:
+		return &feedparse.PermanentError{Code: e.Code, Reason: e.Reason}
 	case *pluginapi.StatusError:
 		return &feedparse.StatusError{Code: e.Code, URL: e.URL}
 	default:

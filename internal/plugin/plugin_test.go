@@ -952,6 +952,20 @@ func TestManagedExternalConfigSurvivesRespawn(t *testing.T) {
 	}
 }
 
+// TestConvertPermanentError proves a plugin's permanent failure reaches the
+// poller as feedparse's PermanentError, which pauses the feed instead of
+// retrying it.
+func TestConvertPermanentError(t *testing.T) {
+	got := convertError(&pluginapi.PermanentError{Code: 404, Reason: "reddit community was banned"})
+	var pe *feedparse.PermanentError
+	if !errors.As(got, &pe) {
+		t.Fatalf("convertError = %T %v, want *feedparse.PermanentError", got, got)
+	}
+	if pe.Code != 404 || pe.Reason != "reddit community was banned" {
+		t.Fatalf("permanent error = %+v", pe)
+	}
+}
+
 // TestExternalRateLimitParity proves a plugin sees a rate limit inline (not as
 // a gRPC error), so it can turn it into a RateLimit that the poller understands.
 func TestExternalRateLimitParity(t *testing.T) {
