@@ -80,39 +80,60 @@ templ homePage(d homeData) {
 	@filterDialog(fp)
 }
 
+// searchPage is the global all-feeds item browser. ScopedItems supplies its
+// tabs, sort picker, display mode and filter toolbar.
+templ searchPage(d scopedItemsData) {
+	<div class="row">
+		<h1>search</h1>
+	</div>
+	@ScopedItems(d)
+}
+
 templ readPage(d readData) {
+	{{ fp := d.filterPanel() }}
 	<div class="row">
 		<h1>history ({ d.ReadCount })</h1>
 		<div class="row-actions">
+			@filterButton(fp)
 			@DisplayModeControl("/read", d.Mode)
 			if d.ReadCount > 0 {
 				<button hx-post="/items/unread-all" hx-target="#items-section" hx-swap="outerHTML">mark all unread</button>
 			}
 		</div>
 	</div>
+	@filterChips(fp)
 	@ItemsSection(d.Read, d.More, false, d.Mode)
+	@filterDialog(fp)
 }
 
 templ favoritesPage(d favoritesData) {
+	{{ fp := d.filterPanel() }}
 	<div class="row">
 		<h1>favorites ({ d.FavCount })</h1>
 		<div class="row-actions">
-			@SimpleSortControl("/favorites", d.Sort, nil)
+			@filterButton(fp)
+			@SimpleSortControl("/favorites", d.Sort, d.Filters)
 			@DisplayModeControl("/favorites", d.Mode)
 			@favoritesShareControl(d.ShareToken)
 		</div>
 	</div>
+	@filterChips(fp)
 	@ItemsListPage(d.Favorites, d.More, false, d.Mode)
+	@filterDialog(fp)
 }
 
 templ bookmarksPage(d bookmarksData) {
+	{{ fp := d.filterPanel() }}
 	<div class="row">
 		<h1>bookmarks ({ d.BookCount })</h1>
 		<div class="row-actions">
-			@SimpleSortControl("/bookmarks", d.Sort, nil)
+			@filterButton(fp)
+			@SimpleSortControl("/bookmarks", d.Sort, d.Filters)
 			@DisplayModeControl("/bookmarks", d.Mode)
 			@bookmarksShareControl(d.ShareToken)
 		</div>
 	</div>
+	@filterChips(fp)
 	@ItemsListPage(d.Bookmarks, d.More, false, d.Mode)
+	@filterDialog(fp)
 }

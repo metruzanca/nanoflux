@@ -608,7 +608,9 @@ templ filterDialog(fp filterPanelData) {
 				</template>
 				<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 				<div class="row-actions">
-					<button type="submit" class="link" title="save this list as a view" aria-label="save this list as a view" formaction="/views/new" formmethod="get">@web.Lucide("bookmark-plus")</button>
+					if fp.SaveView {
+						<button type="submit" class="link" title="save this list as a view" aria-label="save this list as a view" formaction="/views/new" formmethod="get">@web.Lucide("bookmark-plus")</button>
+					}
 					<button type="button" class="link" data-close-dialog>cancel</button>
 					<button type="submit">apply</button>
 				</div>

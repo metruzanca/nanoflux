@@ -662,6 +662,42 @@ func (s *ItemStore) ListReadHistory(userID int64, offset, limit int) ([]ItemWith
 	return out, hasMore, nil
 }
 
+// ListReadHistoryFiltered is ListReadHistory with tag/feed/time predicates
+// applied. It keeps the history order (most recently read first) and offset
+// paging. With no predicates it delegates to the generated query.
+func (s *ItemStore) ListReadHistoryFiltered(userID int64, offset, limit int, f ItemFilter) ([]ItemWithFeed, bool, error) {
+	if len(f.TagGroups) == 0 && len(f.FeedGroups) == 0 && len(f.TimeGroups) == 0 {
+		return s.ListReadHistory(userID, offset, limit)
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	f.ReadOnly = true
+	f.UnreadOnly = false
+	f.FavoritesOnly = false
+	f.BookmarksOnly = false
+	f.BeforeID, f.AfterID, f.Offset = 0, 0, 0
+	var b strings.Builder
+	b.WriteString(itemListColumns("visible_items"))
+	b.WriteString(" WHERE i.user_id = ?")
+	args := []any{userID}
+	appendItemFilterPredicates(&b, &args, f, false)
+	b.WriteString(" ORDER BY i.read_at DESC, i.id DESC LIMIT ? OFFSET ?")
+	args = append(args, limit+1, offset)
+	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
+	if err != nil {
+		return nil, false, err
+	}
+	out, hasMore, err := scanItemList(rows, limit)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := s.attachSources(userID, out); err != nil {
+		return nil, false, err
+	}
+	return out, hasMore, nil
+}
+
 // itemListColumns is the shared SELECT list for the item list queries (the
 // generated ListItems* and the hand-written tagged variant), so both scan the
 // same sqlcgen.ListItemsRow shape. from is "visible_items" for normal reads and

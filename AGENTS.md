@@ -424,12 +424,17 @@ Categories are also normalized for tag browsing and list filtering.
 - Time rows are resolved at query time in the user's timezone and converted to
   the canonical UTC storage format: a date-only lower bound means start of day,
   a date-only upper bound means the last second of that day, and a supplied
-  time makes the bound exact. The transient `/unread` list is the place to
-  filter across every feed; its pickers are tag (all unread tags), feed (all
-  the user's feeds) and time. Author settings never persist time rules:
-  `listFilters.rules()` skips time rows and `validateAuthorRules` drops them.
+  time makes the bound exact. `/search` is the global all-feeds item browser
+  (unread/read/favorites tabs plus sort and filters), and `/unread` remains the
+  global unread-only page; both span every feed. Favorites, bookmarks, history
+  and custom lists also accept the same filters: history keeps its
+  `read_at` order through `ListReadHistoryFiltered`, and a custom list keeps
+  its membership order through `ListStore.ItemList`'s filtered path. Author
+  settings never persist time rules: `listFilters.rules()` skips time rows and
+  `validateAuthorRules` drops them.
 - UI: the item modal shows its tags as clickable chips (linking to
-  `/authors/{id}?tags=`); a scoped feed/author/collection list and `/unread`
+  `/authors/{id}?tags=`); a scoped feed/author/collection list, `/unread`,
+  `/search`, favorites, bookmarks, history and a custom list
   get a filter dialog with one editable row per applied filter (`show`/`hide`
   action, `tag`/`feed`/`time` kind, `any`/`all` combine, multi-select values)
   plus x (remove) and + (insert another row) controls; a persistent "add
@@ -441,8 +446,11 @@ Categories are also normalized for tag browsing and list filtering.
   options client-side (`data-filter-row-template`, `data-filter-rows`,
   `data-add-filter-row`, `data-filter-kind`, `data-filter-time-mode` in
   `app.js`). Active-filter chips drop one row; a hidden filter's chip uses the
-  `chip-hide` style. Author-page feed rows are validated against the author
-  before use (`authorFilters`).
+  `chip-hide` style. The dialog's "save as view" action is shown only where a
+  saved view can express the page's scope (author, collection, `/unread`,
+  `/search`), not on favorites, bookmarks, history or a custom list.
+  Author-page feed rows are validated against the author before use
+  (`authorFilters`).
 
 ## Author filters (always-on allow/block)
 

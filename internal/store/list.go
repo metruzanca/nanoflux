@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 	"github.com/metruzanca/nanoflux/internal/tagnorm"
@@ -215,11 +216,35 @@ func (s *ListStore) ItemListIDs(userID, itemID int64) ([]int64, error) {
 	})
 }
 
-// ListItemFilter narrows a list's items to a read/unread view. The zero value
-// matches every item in the list.
+// ListItemFilter narrows a list's items to a read/unread view and optional
+// tag/feed/time predicates. The zero value matches every item in the list.
 type ListItemFilter struct {
 	ReadOnly   bool
 	UnreadOnly bool
+	TagGroups  []TagGroup
+	FeedGroups []FeedGroup
+	TimeGroups []TimeGroup
+}
+
+// hasFilters reports whether the filter needs the hand-written membership
+// query (the generated list queries have fixed placeholders).
+func (f ListItemFilter) hasFilters() bool {
+	return len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.TimeGroups) > 0
+}
+
+// appendListPredicates adds the list member filter's read state and tag/feed/
+// time predicates. The query must use i for items. Unlike the generic item
+// filters it does not exclude system-feed items: lists may already contain
+// saved pages.
+func appendListPredicates(b *strings.Builder, args *[]any, f ListItemFilter) {
+	if f.UnreadOnly {
+		b.WriteString(" AND i.read = 0")
+	}
+	if f.ReadOnly {
+		b.WriteString(" AND i.read = 1")
+	}
+	appendFilterGroups(b, args, "i.id", f.TagGroups, f.FeedGroups)
+	appendTimeGroups(b, args, "COALESCE(i.published_at, i.fetched_at)", f.TimeGroups)
 }
 
 // ItemList returns one page of a list's items, newest-added first (oldest-added
@@ -227,6 +252,9 @@ type ListItemFilter struct {
 func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending bool, f ListItemFilter) ([]ItemWithFeed, bool, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
+	}
+	if f.hasFilters() {
+		return s.itemListFiltered(userID, listID, cursor, limit, ascending, f)
 	}
 	if ascending {
 		rows, err := s.q.ListItemsInListAsc(context.Background(), sqlcgen.ListItemsInListAscParams{
@@ -282,22 +310,105 @@ func (s *ListStore) ItemList(userID, listID, cursor int64, limit int, ascending 
 	return out, hasMore, nil
 }
 
+// itemListFiltered reads one membership-ordered page with tag/feed/time
+// predicates. Ordering and the cursor stay on list_items.created_at, so
+// filtering never reorders a list by item time.
+func (s *ListStore) itemListFiltered(userID, listID, cursor int64, limit int, ascending bool, f ListItemFilter) ([]ItemWithFeed, bool, error) {
+	var b strings.Builder
+	b.WriteString(itemListColumns("visible_items"))
+	b.WriteString(" JOIN list_items li ON li.item_id = i.id WHERE li.list_id = ? AND i.user_id = ?")
+	args := []any{listID, userID}
+	if ascending {
+		if cursor != 0 {
+			b.WriteString(` AND (li.created_at, i.id) > (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = ? AND li2.item_id = ?)`)
+			args = append(args, listID, cursor)
+		}
+	} else if cursor != 0 {
+		b.WriteString(` AND (li.created_at, i.id) < (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = ? AND li2.item_id = ?)`)
+		args = append(args, listID, cursor)
+	}
+	appendListPredicates(&b, &args, f)
+	if ascending {
+		b.WriteString(" ORDER BY li.created_at ASC, i.id ASC LIMIT ?")
+	} else {
+		b.WriteString(" ORDER BY li.created_at DESC, i.id DESC LIMIT ?")
+	}
+	args = append(args, limit+1)
+	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
+	if err != nil {
+		return nil, false, err
+	}
+	out, hasMore, err := scanItemList(rows, limit)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := attachSources(s.q, userID, s.policy, s.decorator, out); err != nil {
+		return nil, false, err
+	}
+	return out, hasMore, nil
+}
+
+// countItems counts a list's items for one read/unread tab with the same
+// predicates the list query applies.
+func (s *ListStore) countItems(userID, listID int64, f ListItemFilter) (int, error) {
+	var b strings.Builder
+	b.WriteString(`SELECT COUNT(*) FROM list_items li JOIN visible_items i ON i.id = li.item_id WHERE li.list_id = ? AND i.user_id = ?`)
+	args := []any{listID, userID}
+	appendListPredicates(&b, &args, f)
+	var n int
+	if err := s.db.QueryRowContext(context.Background(), b.String(), args...).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // CountUnread returns the number of unread items in a list.
 func (s *ListStore) CountUnread(userID, listID int64) (int, error) {
-	n, err := s.q.CountUnreadItemsInList(context.Background(), sqlcgen.CountUnreadItemsInListParams{
-		ListID: listID,
-		UserID: userID,
-	})
-	return int(n), err
+	return s.CountUnreadFiltered(userID, listID, ListItemFilter{})
+}
+
+// CountUnreadFiltered counts unread items matching f's tag/feed/time rows.
+func (s *ListStore) CountUnreadFiltered(userID, listID int64, f ListItemFilter) (int, error) {
+	f.UnreadOnly, f.ReadOnly = true, false
+	return s.countItems(userID, listID, f)
 }
 
 // CountRead returns the number of read items in a list.
 func (s *ListStore) CountRead(userID, listID int64) (int, error) {
-	n, err := s.q.CountReadItemsInList(context.Background(), sqlcgen.CountReadItemsInListParams{
-		ListID: listID,
-		UserID: userID,
-	})
-	return int(n), err
+	return s.CountReadFiltered(userID, listID, ListItemFilter{})
+}
+
+// CountReadFiltered counts read items matching f's tag/feed/time rows.
+func (s *ListStore) CountReadFiltered(userID, listID int64, f ListItemFilter) (int, error) {
+	f.ReadOnly, f.UnreadOnly = true, false
+	return s.countItems(userID, listID, f)
+}
+
+// Categories returns the distinct tags of a list's items, most-used first, for
+// its filter modal.
+func (s *ListStore) Categories(userID, listID int64) ([]CategoryCount, error) {
+	rows, err := s.db.QueryContext(context.Background(), `
+		SELECT ic.category, COUNT(DISTINCT ic.item_id)
+		FROM item_categories ic
+		WHERE ic.item_id IN (
+			SELECT i.id FROM list_items li JOIN visible_items i ON i.id = li.item_id
+			WHERE li.list_id = ? AND i.user_id = ?
+		)
+		GROUP BY ic.category
+		ORDER BY COUNT(DISTINCT ic.item_id) DESC, ic.category`, listID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CategoryCount
+	for rows.Next() {
+		var c CategoryCount
+		if err := rows.Scan(&c.Category, &c.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 // ItemListPublic returns one page of a shared list's items, for the public

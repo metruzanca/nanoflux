@@ -164,6 +164,8 @@ func (s *Server) Handler() http.Handler {
 	// Items.
 	mux.HandleFunc("GET /{$}", s.root)
 	mux.Handle("GET /unread", s.auth.Require(http.HandlerFunc(s.unread)))
+	mux.Handle("GET /search", s.auth.Require(http.HandlerFunc(s.searchPage)))
+	mux.Handle("GET /search/items", s.auth.Require(http.HandlerFunc(s.searchItems)))
 	mux.Handle("GET /items", s.auth.Require(http.HandlerFunc(s.itemsFragment)))
 	mux.Handle("GET /read", s.auth.Require(http.HandlerFunc(s.readPage)))
 	mux.Handle("GET /stats", s.auth.Require(http.HandlerFunc(s.statsPage)))

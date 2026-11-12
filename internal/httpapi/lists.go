@@ -81,27 +81,52 @@ func (s *Server) listPage(w http.ResponseWriter, r *http.Request) {
 	}
 	web.Render(w, r, basePage(l.Name, u, listPage(u, listPageData{
 		List:   l,
-		Scoped: s.listScopedItems(u.ID, id, itemsView(r), itemSortOf(r), u.Timezone),
+		Scoped: s.listScopedItems(u.ID, id, itemsView(r), itemSortOf(r), u.Timezone, filtersFromRequest(r)),
 	})))
 }
 
 // listScopedItems loads one read/unread item list for a list plus the counts
 // that drive the tabs. Unlike feeds, a list's items keep their added order, so
 // only the oldest/newest (added-time) direction applies; a magic request falls
-// back to newest.
-func (s *Server) listScopedItems(userID, listID int64, view string, sort itemSort, tz string) scopedItemsData {
+// back to newest. Active tag/feed/time filters narrow the items without
+// changing that order.
+func (s *Server) listScopedItems(userID, listID int64, view string, sort itemSort, tz string, filters listFilters) scopedItemsData {
 	asc := sort.asc()
-	f := store.ListItemFilter{UnreadOnly: view != "read"}
-	items, more, _ := s.store.Lists.ItemList(userID, listID, 0, pageSize, asc, f)
-	unread, _ := s.store.Lists.CountUnread(userID, listID)
-	read, _ := s.store.Lists.CountRead(userID, listID)
+	unreadF := listItemFilter(view, filters, tz)
+	items, more, _ := s.store.Lists.ItemList(userID, listID, 0, pageSize, asc, unreadF)
+	unread, _ := s.store.Lists.CountUnreadFiltered(userID, listID, listItemFilter("unread", filters, tz))
+	read, _ := s.store.Lists.CountReadFiltered(userID, listID, listItemFilter("read", filters, tz))
 	base := "/lists/" + strconv.FormatInt(listID, 10)
-	itemsBase := base + "/items?tab=" + view + "&dir=" + dirParam(asc)
+	itemsBase := filters.appendFilters(scopedViewQueryFor(base+"/items", view, 0) + "&sort=" + sort.param())
+	// The active tab's filtered count doubles as the "N matching" badge, since
+	// list requests do not run a separate count.
+	filtered := 0
+	if len(filters) > 0 {
+		if view == "read" {
+			filtered = read
+		} else {
+			filtered = unread
+		}
+	}
+	cats, _ := s.store.Lists.Categories(userID, listID)
+	feeds, _ := s.store.Feeds.ListWithUnread(userID)
 	return scopedItemsData{
-		Path: base, ItemsPath: base + "/items", View: view, Sort: sort, NoMagic: true,
+		Path: base, ItemsPath: base + "/items", View: view, Sort: sort, NoMagic: true, NoSaveView: true,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
-		More: pageCursor(itemsBase, items, more, asc),
-		Mode: s.store.ViewPrefs.Mode(userID, base),
+		More:    pageCursorFor(itemsBase, items, more, sort, 0),
+		Mode:    s.store.ViewPrefs.Mode(userID, base),
+		Filters: filters, FilteredCount: filtered,
+		TagOptions: tagItems(cats), FeedOptions: groupedFeedItems(groupFeedsByAuthor(feeds)),
+	}
+}
+
+// listItemFilter builds the store filter for one list tab plus the active
+// filter rows.
+func listItemFilter(view string, filters listFilters, tz string) store.ListItemFilter {
+	tagGroups, feedGroups, _ := filters.storeGroups()
+	return store.ListItemFilter{
+		UnreadOnly: view != "read", ReadOnly: view == "read",
+		TagGroups: tagGroups, FeedGroups: feedGroups, TimeGroups: filters.timeGroups(tz),
 	}
 }
 
@@ -116,20 +141,20 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 	}
 	view := itemsView(r)
 	sort := itemSortOf(r)
+	filters := filtersFromRequest(r)
 	asc := sort.asc()
 	if cursor := cursorID(r, sort); cursor > 0 {
-		f := store.ListItemFilter{UnreadOnly: view != "read"}
-		items, more, err := s.store.Lists.ItemList(u.ID, id, cursor, pageSize, asc, f)
+		items, more, err := s.store.Lists.ItemList(u.ID, id, cursor, pageSize, asc, listItemFilter(view, filters, u.Timezone))
 		if err != nil {
 			log.Error("list items", "list_id", id, "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		base := "/lists/" + strconv.FormatInt(id, 10) + "/items?tab=" + view + "&dir=" + dirParam(asc)
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursor(base, items, more, asc), false))
+		base := filters.appendFilters(scopedViewQueryFor("/lists/"+strconv.FormatInt(id, 10)+"/items", view, 0) + "&sort=" + sort.param())
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursorFor(base, items, more, sort, int(cursor)), false))
 		return
 	}
-	web.Render(w, r, ScopedItems(s.listScopedItems(u.ID, id, view, sort, u.Timezone)))
+	web.Render(w, r, ScopedItems(s.listScopedItems(u.ID, id, view, sort, u.Timezone, filters)))
 }
 
 // listEdit renders a list's edit form (rename + delete).

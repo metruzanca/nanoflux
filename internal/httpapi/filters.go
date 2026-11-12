@@ -759,6 +759,35 @@ func filterPlaceholder(kind string) string {
 	return "tag"
 }
 
+// filterOptions builds the tag and feed option lists for a global list page's
+// filter modal. scope bounds the tag options to the page's item set (favorites,
+// bookmarks, history, or all items); feeds always span the user's subscriptions
+// because any feed can contribute an item to these pages.
+func (s *Server) filterOptions(userID int64, scope store.ItemFilter) ([]comboItem, []comboItem) {
+	cats, _ := s.store.Items.ListCategoriesFilter(userID, scope)
+	feeds, _ := s.store.Feeds.ListWithUnread(userID)
+	return tagItems(cats), groupedFeedItems(groupFeedsByAuthor(feeds))
+}
+
+// filteredCount returns how many items of the page's current tab would match
+// the active filters, or 0 when no filter is active.
+func (s *Server) filteredCount(userID int64, scope store.ItemFilter, filters listFilters) int {
+	if len(filters) == 0 {
+		return 0
+	}
+	n, _ := s.store.Items.CountFiltered(userID, scope)
+	return n
+}
+
+// filterScope adds the active tag/feed/time predicates to a tab scope.
+func filterScope(scope store.ItemFilter, filters listFilters, tz string) store.ItemFilter {
+	tagGroups, feedGroups, _ := filters.storeGroups()
+	scope.TagGroups = tagGroups
+	scope.FeedGroups = feedGroups
+	scope.TimeGroups = filters.timeGroups(tz)
+	return scope
+}
+
 // filterPanelData is the shared state of a list's filter toolbar: the modal,
 // its option lists and the active chips. scopedItemsData and homeData both
 // expose one so the same templates render on scoped pages and /unread.
@@ -783,6 +812,10 @@ type filterPanelData struct {
 	ViewName string
 	// NoFilters hides the filter toolbar entirely (a saved view's fixed recipe).
 	NoFilters bool
+	// SaveView shows the "save this list as a view" action. It is off for
+	// pages whose own scope (favorites, bookmarks, history, a custom list) a
+	// saved view cannot preserve.
+	SaveView bool
 }
 
 // effectiveFeedOptions drops the feed kind when the scope has only one feed
@@ -849,6 +882,7 @@ func (d scopedItemsData) filterPanel() filterPanelData {
 		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
 		ScopeAuthorID: d.ScopeAuthorID, ScopeCollectionID: d.ScopeCollectionID,
 		ViewID: d.ViewID, ViewName: d.ViewName, NoFilters: d.NoFilters,
+		SaveView: !d.NoSaveView,
 	}
 }
 
@@ -856,6 +890,35 @@ func (d scopedItemsData) filterPanel() filterPanelData {
 func (d homeData) filterPanel() filterPanelData {
 	return filterPanelData{
 		Path: "/unread", View: "unread", Sort: d.Sort,
+		Filters: d.Filters, FilteredCount: d.FilteredCount,
+		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
+		SaveView: true,
+	}
+}
+
+// filterPanel projects the history page onto the shared filter toolbar. Its
+// order is fixed to read_at, so the sort field is only carried for URLs.
+func (d readData) filterPanel() filterPanelData {
+	return filterPanelData{
+		Path: "/read", View: "read", Sort: sortNewest,
+		Filters: d.Filters, FilteredCount: d.FilteredCount,
+		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
+	}
+}
+
+// filterPanel projects the favorites page onto the shared filter toolbar.
+func (d favoritesData) filterPanel() filterPanelData {
+	return filterPanelData{
+		Path: "/favorites", View: "favorites", Sort: d.Sort,
+		Filters: d.Filters, FilteredCount: d.FilteredCount,
+		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
+	}
+}
+
+// filterPanel projects the bookmarks page onto the shared filter toolbar.
+func (d bookmarksData) filterPanel() filterPanelData {
+	return filterPanelData{
+		Path: "/bookmarks", View: "bookmarks", Sort: d.Sort,
 		Filters: d.Filters, FilteredCount: d.FilteredCount,
 		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
 	}
