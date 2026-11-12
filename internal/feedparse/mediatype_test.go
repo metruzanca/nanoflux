@@ -144,6 +144,25 @@ func TestApplyMediaTypeCategoriesPreservesAndDedupes(t *testing.T) {
 	}
 }
 
+func TestApplyMediaTypeCategoriesFoldsBareMediaLabels(t *testing.T) {
+	res := Result{Items: []Item{{
+		// A feed that publishes its post type as a category, with no media the
+		// parser can see. The bare word becomes the reserved identifier.
+		Categories: []string{"Image", "NSFW", "r/cats", "u/sam"},
+	}}}
+	applyMediaTypeCategories(&res)
+	got := res.Items[0].Categories
+	want := []string{CategoryTypeImage, "nsfw", "r/cats", "u/sam"}
+	if len(got) != len(want) {
+		t.Fatalf("categories = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("categories = %v, want %v", got, want)
+		}
+	}
+}
+
 // mediaPlugin is a Plugin that fetches a fixed result, so the test can assert
 // the core media-type pass also runs on the plugin path.
 type mediaPlugin struct{}

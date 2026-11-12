@@ -13,8 +13,10 @@ import (
 )
 
 // normalizationMarker records that the one-time canonicalization pass has run.
-// The pass is idempotent, so a partial failure simply reruns it.
-const normalizationMarker = "data.normalization_v1"
+// The pass is idempotent, so a partial failure simply reruns it. v2 folds feed
+// post-type words (image, video, audio, text) onto their reserved type:*
+// identifier; bumping the marker runs the pass once more on existing rows.
+const normalizationMarker = "data.normalization_v2"
 
 // NormalizationReport counts the rows a canonicalization pass changed.
 type NormalizationReport struct {
@@ -70,7 +72,8 @@ var normalizableLabels = []labelTarget{
 //
 //   - usernames are trimmed and lowercased, so login is case-insensitive;
 //   - item tags are lowercased, NFC-normalized, whitespace-collapsed and
-//     deduplicated in both items.categories and item_categories;
+//     deduplicated in both items.categories and item_categories, and a bare
+//     media word (a feed's post-type category) is folded onto type:*;
 //   - author-filter tag values are canonicalized to match them;
 //   - display labels gain canonical whitespace and Unicode composition;
 //   - author-link URLs are canonicalized (host case and default ports only).
@@ -151,7 +154,7 @@ func (s *Store) NormalizeData() (NormalizationReport, error) {
 
 	itemChanges := make([]idText, 0, len(items))
 	for _, row := range items {
-		joined := strings.Join(tagnorm.NormalizeAll(strings.Split(row.value, "\n")), "\n")
+		joined := strings.Join(normalizeCategories(strings.Split(row.value, "\n")), "\n")
 		if joined != row.value {
 			itemChanges = append(itemChanges, idText{id: row.id, value: joined})
 		}
@@ -279,12 +282,18 @@ func normalizedCategoryRows(rows []idText) []categoryChange {
 	}
 	var changes []categoryChange
 	for _, id := range order {
-		normalized := tagnorm.NormalizeAll(grouped[id])
+		normalized := normalizeCategories(grouped[id])
 		if !sameCategorySet(grouped[id], normalized) {
 			changes = append(changes, categoryChange{id: id, cats: normalized})
 		}
 	}
 	return changes
+}
+
+// normalizeCategories canonicalizes one tag set, folding a feed's bare media
+// word onto the reserved type:* identifier before dedupe.
+func normalizeCategories(values []string) []string {
+	return tagnorm.NormalizeAll(tagnorm.FoldMediaTypeAliases(values))
 }
 
 // normalizedFilterRows is normalizedCategoryRows for author_filter_values,

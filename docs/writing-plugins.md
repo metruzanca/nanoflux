@@ -582,8 +582,12 @@ cases:
   item's content, a direct media link and the visible text length. Add the same
   labels (`pluginapi.CategoryType*`) when you know media the host cannot see:
   an embed you only resolve at view time through `Render`, or a gallery whose
-  cover is the only image the host stores. A post may carry more than one, so a
-  video with a long description can be both `type:video` and `type:text`.
+  cover is the only image the host stores, or a single-image post whose image is
+  the item thumbnail and therefore invisible to the ingest pass. A post may
+  carry more than one, so a video with a long description can be both
+  `type:video` and `type:text`. A site's own `<category>image</category>` post
+  type is folded onto `type:image` by the host, so use the reserved
+  `pluginapi.CategoryType*` values rather than bare words.
 
 ```go
 // postCategories returns the site's tags plus a reblog marker.

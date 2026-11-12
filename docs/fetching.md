@@ -526,7 +526,10 @@ its content (`<img>`, `<picture>`, `<video>`, `<audio>`, and an embedded-player
 `<iframe>`), a direct media link, and the amount of visible prose (`type:text`
 at roughly 1200 characters). A thumbnail alone does not make something an image
 post. Plugins that resolve media the host cannot see, such as an embed a plugin
-only renders at view time, add the same labels themselves. Because the labels
+only renders at view time, add the same labels themselves. A feed that publishes
+its post type as a category (imaglr and BDSMLR RSS both emit
+`<category>image</category>`) has that bare word folded onto `type:image` rather
+than stored as a second tag. Because the labels
 are ordinary categories, they work with the tag filter, saved views and author
 allow/block rules: hiding `type:video` keeps video posts out of a list.
 

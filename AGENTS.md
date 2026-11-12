@@ -349,8 +349,12 @@ gives the destination section as the category.
   `ImageURL` alone never produces `type:image` (it is often a video poster or a
   link-preview thumbnail). A post may carry several labels. A plugin that knows
   media the host cannot see (an embed only it resolves at view time, a gallery
-  whose cover is the sole stored image) should add the same labels through
+  whose cover is the sole stored image, an image post whose only image is the
+  item thumbnail) should add the same labels through
   `Categories`/`CapCategorize`; `pluginapi.CategoryType*` mirrors the values.
+  A feed that publishes its post type as a category (`<category>image</category>`
+  on imaglr and BDSMLR RSS) is folded by `tagnorm.FoldMediaTypeAliases` onto the
+  matching `type:*` label, so the bare word is never stored alongside it.
 - `items.categories` (schemaV36) stores them newline-joined (denormalized);
   `Upsert`/`UpdateItemSnapshot` write them, so an already-stored item gains
   categories on re-poll without a re-fetch. `poller.ingest` copies them through.
@@ -371,10 +375,10 @@ Categories are also normalized for tag browsing and list filtering.
 - `Store.NormalizeData` (startup, after migrations and before the cross-feed
   merge) is the one-time pass for older rows: it lowercases and dedupes
   `items.categories`, rebuilds canonical `item_categories` rows, lowercases
-  tag-kind `author_filter_values`, canonicalizes usernames, display labels and
-  author-link URLs, then writes the `data.normalization_v1` settings marker. A
-  username collision after lowercasing is a fatal startup error, not a silent
-  rename.
+  tag-kind `author_filter_values`, folds bare media words onto `type:*`,
+  canonicalizes usernames, display labels and author-link URLs, then writes the
+  `data.normalization_v2` settings marker. A username collision after
+  lowercasing is a fatal startup error, not a silent rename.
 - Filter values use the same normalizer: `store.NormalizeFilterRules` /
   `FilterGroups`, the HTTP `newFilter`/`normalizeFilters` parser (so saved-view
   params are canonical on read), and the final SQL bind points all normalize

@@ -19,12 +19,12 @@ func TestNormalizeData(t *testing.T) {
 	res, err := s.db.Exec(`
 		INSERT INTO items (feed_id, user_id, guid, dedup_key, title, link, categories, fetched_at)
 		VALUES (?, ?, 'g1', 'g1', 'Post', 'https://example.test/1', ?, ?)`,
-		f.ID, u.ID, "R/Cats\nu/Sam\nr/cats", db.Now())
+		f.ID, u.ID, "R/Cats\nu/Sam\nr/cats\nImage", db.Now())
 	if err != nil {
 		t.Fatalf("insert item: %v", err)
 	}
 	itemID, _ := res.LastInsertId()
-	for _, c := range []string{"R/Cats", "u/Sam", "r/cats"} {
+	for _, c := range []string{"R/Cats", "u/Sam", "r/cats", "Image"} {
 		if _, err := s.db.Exec(`INSERT INTO item_categories (item_id, category) VALUES (?, ?)`, itemID, c); err != nil {
 			t.Fatalf("insert item category: %v", err)
 		}
@@ -40,6 +40,9 @@ func TestNormalizeData(t *testing.T) {
 	ruleID, _ := res.LastInsertId()
 	if _, err := s.db.Exec(`INSERT INTO author_filter_values (rule_id, value) VALUES (?, 'U/SAM')`, ruleID); err != nil {
 		t.Fatalf("insert author filter value: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO author_filter_values (rule_id, value) VALUES (?, 'Image')`, ruleID); err != nil {
+		t.Fatalf("insert media filter value: %v", err)
 	}
 
 	// Display labels and an author link written with stray whitespace and an
@@ -79,32 +82,41 @@ func TestNormalizeData(t *testing.T) {
 	if err := s.db.QueryRow(`SELECT categories FROM items WHERE id = ?`, itemID).Scan(&cats); err != nil {
 		t.Fatal(err)
 	}
-	if cats != "r/cats\nu/sam" {
-		t.Fatalf("items.categories = %q, want canonical lowercase and deduped", cats)
+	if cats != "r/cats\nu/sam\ntype:image" {
+		t.Fatalf("items.categories = %q, want canonical lowercase, deduped and folded media label", cats)
 	}
 
 	var tagRows int
 	if err := s.db.QueryRow(`
-		SELECT COUNT(*) FROM item_categories WHERE item_id = ? AND category IN ('r/cats', 'u/sam')`,
+		SELECT COUNT(*) FROM item_categories WHERE item_id = ? AND category IN ('r/cats', 'u/sam', 'type:image')`,
 		itemID).Scan(&tagRows); err != nil {
 		t.Fatal(err)
 	}
-	if tagRows != 2 {
-		t.Fatalf("item_categories has %d canonical rows, want 2", tagRows)
+	if tagRows != 3 {
+		t.Fatalf("item_categories has %d canonical rows, want 3", tagRows)
 	}
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM item_categories WHERE item_id = ?`, itemID).Scan(&tagRows); err != nil {
 		t.Fatal(err)
 	}
-	if tagRows != 2 {
-		t.Fatalf("item_categories has %d rows, want 2 after dedupe", tagRows)
+	if tagRows != 3 {
+		t.Fatalf("item_categories has %d rows, want 3 after dedupe", tagRows)
 	}
 
-	var filterValue string
-	if err := s.db.QueryRow(`SELECT value FROM author_filter_values WHERE rule_id = ?`, ruleID).Scan(&filterValue); err != nil {
+	values, err := s.db.Query(`SELECT value FROM author_filter_values WHERE rule_id = ? ORDER BY value`, ruleID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if filterValue != "u/sam" {
-		t.Fatalf("author filter value = %q, want u/sam", filterValue)
+	defer values.Close()
+	var filterValues []string
+	for values.Next() {
+		var v string
+		if err := values.Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		filterValues = append(filterValues, v)
+	}
+	if len(filterValues) != 2 || filterValues[0] != "type:image" || filterValues[1] != "u/sam" {
+		t.Fatalf("author filter values = %v, want [type:image u/sam]", filterValues)
 	}
 
 	// The lowercased account resolves through the normal case-insensitive path.

@@ -50,6 +50,17 @@ func TestNormalizeAll(t *testing.T) {
 	}
 }
 
+func TestFoldMediaTypeAliases(t *testing.T) {
+	got := FoldMediaTypeAliases([]string{"Image", " IMAGE ", "video", "Audio", "text", "r/cats", "u/sam"})
+	want := []string{"type:image", "type:image", "type:video", "type:audio", "type:text", "r/cats", "u/sam"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("FoldMediaTypeAliases = %v, want %v", got, want)
+	}
+	if got := FoldMediaTypeAliases(nil); got != nil {
+		t.Fatalf("FoldMediaTypeAliases(nil) = %v, want nil", got)
+	}
+}
+
 func TestLabelKeepsCase(t *testing.T) {
 	if got := Label("  Metru   Dev "); got != "Metru Dev" {
 		t.Fatalf("Label = %q, want %q", got, "Metru Dev")

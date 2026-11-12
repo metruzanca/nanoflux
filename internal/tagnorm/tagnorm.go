@@ -48,6 +48,35 @@ func NormalizeAll(values []string) []string {
 	return out
 }
 
+// mediaTypeAliases maps a bare media word that feeds commonly publish as a
+// category (their post type) onto the reserved type:* identifier. The core
+// derives the same labels from an item's media, so folding the feed's own word
+// avoids storing both "image" and "type:image" for one post.
+var mediaTypeAliases = map[string]string{
+	"image": "type:image",
+	"video": "type:video",
+	"audio": "type:audio",
+	"text":  "type:text",
+}
+
+// FoldMediaTypeAliases rewrites each value that normalizes to a bare media
+// word onto its reserved type:* identifier. Other values are returned
+// unchanged; NormalizeAll still canonicalizes and dedupes the result.
+func FoldMediaTypeAliases(values []string) []string {
+	if len(values) == 0 {
+		return values
+	}
+	out := make([]string, len(values))
+	for i, value := range values {
+		if alias, ok := mediaTypeAliases[Normalize(value)]; ok {
+			out[i] = alias
+			continue
+		}
+		out[i] = value
+	}
+	return out
+}
+
 // Label returns canonical display text: Unicode NFC with surrounding and
 // repeated internal whitespace collapsed. It deliberately does not change the
 // case, which is meaningful for titles and names.

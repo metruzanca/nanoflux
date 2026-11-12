@@ -29,15 +29,15 @@ const mediaTextMinRunes = 1200
 // applyMediaTypeCategories adds the reserved type:* category convention to every
 // parsed item. It runs for both the generic parser and plugin-fetched feeds, so
 // the labels exist without any site-specific code. Plugin categories are merged
-// afterwards, which dedupes a type:* label the plugin also supplied.
+// afterwards, which dedupes a type:* label the plugin also supplied. A feed's
+// own bare media word (its <category>image</category> post type) is folded onto
+// the matching type:* label rather than stored twice.
 func applyMediaTypeCategories(res *Result) {
 	for i := range res.Items {
 		it := &res.Items[i]
-		extra := mediaTypeCategories(it)
-		if len(extra) == 0 {
-			continue
-		}
-		it.Categories = tagnorm.NormalizeAll(append(it.Categories, extra...))
+		cats := tagnorm.FoldMediaTypeAliases(it.Categories)
+		cats = append(cats, mediaTypeCategories(it)...)
+		it.Categories = tagnorm.NormalizeAll(cats)
 	}
 }
 
