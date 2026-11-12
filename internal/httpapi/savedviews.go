@@ -468,10 +468,11 @@ func (s *Server) savedViewsForAuthor(userID, authorID int64, tz string) []savedV
 func (s *Server) viewFiltersFromViews(userID int64, views []store.SavedView, tz string) []store.ViewFilter {
 	out := make([]store.ViewFilter, 0, len(views))
 	for _, v := range views {
-		if len(s.savedViewFilters(userID, filtersFromParams(v.Filters))) == 0 {
+		filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
+		if len(filters) == 0 {
 			continue
 		}
-		out = append(out, s.storeViewFilter(userID, v, tz))
+		out = append(out, s.storeViewFilterFor(v, filters, tz))
 	}
 	return out
 }
@@ -590,11 +591,12 @@ func collectionHasFeed(it store.ItemWithFeed, member map[int64]bool) bool {
 	return false
 }
 
-// storeViewFilter converts a saved view into the store's query predicate. An
-// unfiltered view is skipped by callers: without a filter it would match every
-// post, which is not a useful author source.
-func (s *Server) storeViewFilter(userID int64, v store.SavedView, tz string) store.ViewFilter {
-	filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
+// storeViewFilterFor converts a view's already-parsed, validated filter rows
+// into the store's query predicate. An unfiltered view is skipped by callers:
+// without a filter it would match every post, which is not a useful author
+// source. Taking the rows as an argument avoids validating the view (and
+// reloading the feed titles) twice.
+func (s *Server) storeViewFilterFor(v store.SavedView, filters listFilters, tz string) store.ViewFilter {
 	tagGroups, feedGroups, _ := filters.storeGroups()
 	return store.ViewFilter{
 		AuthorID:  v.AuthorID,
@@ -612,11 +614,12 @@ func (s *Server) savedViewsByAuthor(userID int64, tz string) (map[int64][]store.
 		if v.AuthorID <= 0 {
 			continue
 		}
-		if len(s.savedViewFilters(userID, filtersFromParams(v.Filters))) == 0 {
+		rows := s.savedViewFilters(userID, filtersFromParams(v.Filters))
+		if len(rows) == 0 {
 			continue
 		}
 		counts[v.AuthorID]++
-		filters[v.AuthorID] = append(filters[v.AuthorID], s.storeViewFilter(userID, v, tz))
+		filters[v.AuthorID] = append(filters[v.AuthorID], s.storeViewFilterFor(v, rows, tz))
 	}
 	return filters, counts
 }
@@ -639,5 +642,5 @@ func (s *Server) authorStoreViewFilter(userID, authorID, viewID int64, tz string
 	if len(filters) == 0 {
 		return store.ViewFilter{}, false
 	}
-	return s.storeViewFilter(userID, v, tz), true
+	return s.storeViewFilterFor(v, filters, tz), true
 }

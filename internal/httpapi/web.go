@@ -266,6 +266,10 @@ type scopedItemsData struct {
 	// NoFilters hides the generic filter toolbar for a saved view page, whose
 	// recipe is fixed.
 	NoFilters bool
+	// Stats is the author scope's all-time aggregate. It is populated only when
+	// the list is the author's unfiltered, view-less scope, so the author page
+	// can render its stats card without running the same aggregate twice.
+	Stats store.AuthorItemStats
 }
 
 // itemSort is the ordering of an item list: newest first (time desc), oldest
@@ -2110,7 +2114,12 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	statsFilter := store.ItemFilter{AuthorID: id, Views: s.authorStoreViewFilters(u.ID, id, u.Timezone)}
-	stats, _ := s.store.Items.StatsFilter(u.ID, statsFilter)
+	// The unfiltered, view-less page already computed this aggregate for its tab
+	// counts; only the other scopes need a separate author-level stats read.
+	stats := scoped.Stats
+	if viewID != 0 || len(filters) > 0 {
+		stats, _ = s.store.Items.StatsFilter(u.ID, statsFilter)
+	}
 	stats.Storage, _ = s.store.Items.StorageByAuthor(u.ID, id)
 	frequency := ""
 	if times, err := s.store.Items.RecentTimesFilter(u.ID, statsFilter, 30); err == nil {
@@ -2342,21 +2351,43 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 	pageFilter := scopedFilter(view, sort, 0, scopeAuthor, 0, filters, tz)
 	pageFilter.Views = scopeViews
 	items, more, _ := s.store.Items.ListPage(userID, pageFilter)
-	count := func(v string) int {
-		f := scopedFilter(v, sortNewest, 0, scopeAuthor, 0, filters, tz)
-		f.Views = scopeViews
-		n, _ := s.store.Items.CountFiltered(userID, f)
-		return n
+	tagScope := store.ItemFilter{AuthorID: scopeAuthor, Views: scopeViews}
+	// The common page (no transient filters, no selected view) can take its tab
+	// counts from the same aggregate the stats card needs. Everything else runs
+	// one combined tab count instead of three separate ones.
+	var (
+		stats              store.AuthorItemStats
+		unread, read, favs int
+		filtered           int
+	)
+	if viewID == 0 && len(filters) == 0 {
+		stats, _ = s.store.Items.StatsFilter(userID, tagScope)
+		unread, read, favs = stats.Unread, stats.Read, stats.Favorites
+	} else {
+		tabsFilter := pageFilter
+		tabsFilter.UnreadOnly, tabsFilter.ReadOnly = false, false
+		tabsFilter.FavoritesOnly, tabsFilter.BookmarksOnly = false, false
+		tabsFilter.BeforeID, tabsFilter.AfterID = 0, 0
+		tabsFilter.Ascending, tabsFilter.Magic = false, false
+		tabsFilter.Limit, tabsFilter.Offset = 0, 0
+		tabs, _ := s.store.Items.CountTabsFilter(userID, tabsFilter)
+		unread, read, favs = tabs.Unread, tabs.Read, tabs.Favorites
 	}
-	unread, read, favs := count("unread"), count("read"), count("favorites")
 	base := "/authors/" + strconv.FormatInt(authorID, 10)
 	itemsBase := filters.appendFilters(scopedViewQueryFor(base+"/items", view, viewID) + "&sort=" + sort.param())
-	tagScope := store.ItemFilter{AuthorID: scopeAuthor, Views: scopeViews}
 	cats, _ := s.store.Items.ListCategoriesFilter(userID, tagScope)
 	feedOpts := s.authorFeedOptions(userID, authorID, len(scopeViews) > 0)
-	filtered := 0
 	if len(filters) > 0 {
-		filtered, _ = s.store.Items.CountFiltered(userID, pageFilter)
+		// The active tab's count is already the filtered count; do not re-count
+		// the same predicate.
+		switch view {
+		case "read":
+			filtered = read
+		case "favorites":
+			filtered = favs
+		default:
+			filtered = unread
+		}
 	}
 	viewName := ""
 	if viewID > 0 {
@@ -2370,7 +2401,7 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 		More: pageCursorFor(itemsBase, items, more, sort, 0), HideAuthor: true,
 		Mode: s.store.ViewPrefs.Mode(userID, base), FavTab: favs > 0 || view == "favorites", FavCount: favs,
 		Filters: filters, FilteredCount: filtered, TagOptions: tagItems(cats), TagCounts: cats, FeedOptions: feedOpts,
-		ScopeAuthorID: authorID, ViewID: viewID, ViewName: viewName,
+		ScopeAuthorID: authorID, ViewID: viewID, ViewName: viewName, Stats: stats,
 	}, true
 }
 
@@ -2496,17 +2527,16 @@ func (s *Server) feedRowsForAuthor(userID, authorID int64, tz string) ([]feedRow
 	}
 	// Count with the same predicate the feed-scoped list uses: the author's
 	// rules apply to items reached through the feed's membership, and a
-	// cross-feed post owned by another author must not leak into the badge.
+	// cross-feed post owned by another author must not leak into the badge. One
+	// grouped query covers every feed, instead of a count per card.
 	views := s.authorStoreViewFilters(userID, authorID, tz)
+	unreadByFeed, _ := s.store.Items.UnreadCountsByFeedScope(userID, authorID, views)
 	byFeed, _ := s.store.Collections.CollectionsByAuthorFeed(userID, authorID)
 	out := make([]feedRow, 0, len(rows))
 	for _, r := range rows {
-		unread, _ := s.store.Items.CountFiltered(userID, store.ItemFilter{
-			AuthorID: authorID, Views: views, FeedID: r.Feed.ID, UnreadOnly: true,
-		})
 		storage, _ := s.store.Items.StorageByFeed(r.Feed.ID)
 		out = append(out, feedRow{
-			Feed: r.Feed, AuthorName: r.AuthorName, Unread: unread, Timezone: tz,
+			Feed: r.Feed, AuthorName: r.AuthorName, Unread: unreadByFeed[r.Feed.ID], Timezone: tz,
 			Storage: storage, Collections: byFeed[r.Feed.ID],
 		})
 	}

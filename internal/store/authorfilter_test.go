@@ -292,3 +292,108 @@ func TestAuthorScopeAppliesRulesToMembership(t *testing.T) {
 		t.Fatalf("blocked cross-feed post should stay unread")
 	}
 }
+
+// TestUnreadCountsByFeedScope covers the grouped per-feed badge query behind an
+// author page. It must match CountFiltered for each feed: the author's rules
+// apply to items reached through the author's feeds, and a view adds items from
+// feeds the author does not own.
+func TestUnreadCountsByFeedScope(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Author", "", "")
+	f1, _ := s.Feeds.Create(u.ID, a.ID, "One", "https://one.dev/feed", "", "", 900)
+	f2, _ := s.Feeds.Create(u.ID, a.ID, "Two", "https://two.dev/feed", "", "", 900)
+	other, _ := s.Authors.Create(u.ID, "Other", "", "")
+	fo, _ := s.Feeds.Create(u.ID, other.ID, "Other", "https://other.dev/feed", "", "", 900)
+
+	upsert := func(feedID int64, guid string, cats ...string) {
+		t.Helper()
+		if _, err := s.Items.Upsert(feedID, Item{
+			GUID: guid, Title: guid, Link: "https://x/" + guid,
+			Categories: cats, FetchedAt: db.Now(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upsert(f1.ID, "keep", "r/golang")
+	upsert(f1.ID, "blocked", "r/rust")
+	upsert(f2.ID, "blocked-two", "r/rust")
+	upsert(fo.ID, "cross", "r/other")
+
+	if err := s.AuthorFilters.Replace(u.ID, a.ID, []FilterRule{{
+		Kind: FilterKindTag, Action: FilterActionHide, Combine: FilterCombineAny, Values: []string{"r/rust"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	views := []ViewFilter{{TagGroups: []TagGroup{{Tags: []string{"r/other"}}}}}
+	counts, err := s.Items.UnreadCountsByFeedScope(u.ID, a.ID, views)
+	if err != nil {
+		t.Fatalf("UnreadCountsByFeedScope: %v", err)
+	}
+	for _, f := range []Feed{f1, f2, fo} {
+		want, err := s.Items.CountFiltered(u.ID, ItemFilter{
+			AuthorID: a.ID, Views: views, FeedID: f.ID, UnreadOnly: true,
+		})
+		if err != nil {
+			t.Fatalf("CountFiltered feed %d: %v", f.ID, err)
+		}
+		if counts[f.ID] != want {
+			t.Fatalf("feed %d unread = %d, want %d (grouped must match CountFiltered)", f.ID, counts[f.ID], want)
+		}
+	}
+	if counts[f1.ID] != 1 || counts[f2.ID] != 0 || counts[fo.ID] != 1 {
+		t.Fatalf("feed counts = %v, want one on f1 and one on the view-only feed", counts)
+	}
+}
+
+// TestCountTabsFilter checks that the combined unread/read/favorite aggregate
+// matches the three separate counts it replaces, including author rules.
+func TestCountTabsFilter(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	a, _ := s.Authors.Create(u.ID, "Author", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "One", "https://one.dev/feed", "", "", 900)
+
+	items := make([]int64, 0, 3)
+	for _, guid := range []string{"one", "two", "three"} {
+		if _, err := s.Items.Upsert(f.ID, Item{
+			GUID: guid, Title: guid, Link: "https://x/" + guid, FetchedAt: db.Now(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		id, err := s.Items.ByFeedIdentity(f.ID, guid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		items = append(items, id)
+	}
+	if err := s.Items.SetRead(u.ID, items[0], true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Items.SetFavorite(u.ID, items[0], true); err != nil {
+		t.Fatal(err)
+	}
+
+	check := func() {
+		t.Helper()
+		scope := ItemFilter{AuthorID: a.ID}
+		got, err := s.Items.CountTabsFilter(u.ID, scope)
+		if err != nil {
+			t.Fatalf("CountTabsFilter: %v", err)
+		}
+		unread, _ := s.Items.CountFiltered(u.ID, ItemFilter{AuthorID: a.ID, UnreadOnly: true})
+		read, _ := s.Items.CountFiltered(u.ID, ItemFilter{AuthorID: a.ID, ReadOnly: true})
+		favs, _ := s.Items.CountFiltered(u.ID, ItemFilter{AuthorID: a.ID, FavoritesOnly: true})
+		if got.Unread != unread || got.Read != read || got.Favorites != favs {
+			t.Fatalf("tabs = %+v, want unread=%d read=%d favorites=%d", got, unread, read, favs)
+		}
+	}
+	check()
+	if err := s.AuthorFilters.Replace(u.ID, a.ID, []FilterRule{{
+		Kind: FilterKindTag, Action: FilterActionHide, Combine: FilterCombineAny, Values: []string{"missing"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	check()
+}

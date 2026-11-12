@@ -976,6 +976,31 @@ func authorRuleMatchSQL(itemID string) string {
 	END`
 }
 
+// TabCounts is the unread/read/favorite split of one item scope.
+type TabCounts struct {
+	Unread    int
+	Read      int
+	Favorites int
+}
+
+// CountTabsFilter counts the unread, read and favorited items of one scope in a
+// single scan. f must not carry a tab restriction (UnreadOnly and friends), or
+// the other counts collapse to zero. It backs a scoped list's tab badges, which
+// would otherwise run three separate counts over the same predicate.
+func (s *ItemStore) CountTabsFilter(userID int64, f ItemFilter) (TabCounts, error) {
+	source := f.itemSource()
+	var b strings.Builder
+	b.WriteString(`SELECT COUNT(CASE WHEN i.read = 0 THEN 1 END),
+		COUNT(CASE WHEN i.read = 1 THEN 1 END),
+		COUNT(CASE WHEN i.favorite = 1 THEN 1 END)
+		FROM ` + source + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
+	args := []any{userID}
+	appendItemFilterPredicates(&b, &args, f, source == "items")
+	var t TabCounts
+	err := s.db.QueryRowContext(context.Background(), b.String(), args...).Scan(&t.Unread, &t.Read, &t.Favorites)
+	return t, err
+}
+
 // CountFiltered counts the items ListPage would return for f, ignoring its
 // cursor and limit. It backs the "N matching" badge on a filtered item list.
 func (s *ItemStore) CountFiltered(userID int64, f ItemFilter) (int, error) {
