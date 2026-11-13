@@ -10,23 +10,27 @@ import (
 templ collectionsPage(u store.User, rows []store.CollectionWithCounts) {
 	<div class="row">
 		<h1>collections</h1>
-		<button type="button" data-open="add-collection-dialog">+ add collection</button>
+		<button type="button" data-action="addCollection">+ add collection</button>
 	</div>
 	@CollectionsList(rows)
+}
 
-	<dialog id="add-collection-dialog" class="modal">
-		<form class="stack" hx-post="/collections" hx-target="#collections-list" hx-swap="beforeend" data-form-close-reset>
-			<div class="row">
-				<h2>add collection</h2>
-				<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
-			</div>
-			<label>name
-				<input name="name" autofocus required/>
-			</label>
-			<div id="add-collection-error" class="error"></div>
-			<button type="submit">add collection</button>
-		</form>
-	</dialog>
+// addCollectionDialog is fetched into the shared #add-collection-dialog. A
+// successful save redirects to the new collection's page; the result container
+// is what htmx resolves before the redirect.
+templ addCollectionDialog() {
+	<form class="stack" hx-post="/collections" hx-target="#add-collection-result" hx-swap="innerHTML" data-form-close-reset>
+		<div class="row">
+			<h2>add collection</h2>
+			<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
+		</div>
+		<label>name
+			<input name="name" autofocus required/>
+		</label>
+		<div id="add-collection-error" class="error"></div>
+		<button type="submit">add collection</button>
+	</form>
+	<div id="add-collection-result"></div>
 }
 
 // CollectionsList renders the collections index grouped into two sections:
@@ -64,9 +68,10 @@ templ collectionsGroup(rows []store.CollectionWithCounts, auto bool) {
 	}
 }
 
-// collectionCreated is the response to creating a collection: the new row,
-// appended to #collections-list, plus an out-of-band delete of the empty-state
-// note (present only when the user had no collections yet).
+// collectionCreated is the response to creating a collection: the new row plus
+// an out-of-band delete of the empty-state note (present only when the user had
+// no collections yet). The shared add dialog redirects to the new collection, so
+// this body only reaches non-htmx callers.
 templ collectionCreated(c store.CollectionWithCounts) {
 	@CollectionRow(c)
 	<p id="collections-empty" hx-swap-oob="delete" hidden></p>

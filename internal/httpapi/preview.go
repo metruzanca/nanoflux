@@ -27,7 +27,7 @@ type feedPreviewForm struct {
 	FeedURL          string
 	HomeURL          string
 	Action           string // form submit endpoint ("/feeds" or "/authors/{id}/feeds")
-	Target           string // htmx target ("#authors-list" or "#feeds-list")
+	Target           string // htmx target ("#add-feed-result", "#feeds-list" or "#share-add-result")
 	Swap             string // htmx swap for the response row
 	Authors          []store.Author
 	SelectedAuthorID int64
@@ -404,11 +404,12 @@ func (s *Server) renderFeedPreviewForm(r *http.Request, w http.ResponseWriter, c
 		form.Swap = "beforeend"
 	} else {
 		form.Action = "/feeds"
-		form.Target = "#authors-list"
+		// The global add flow always redirects to the new author's page after a
+		// save. htmx still resolves the save target first, so it must name a
+		// container that exists on the page the dialog was opened from: both the
+		// shared add-feed dialog and the PWA share page provide their own.
+		form.Target = "#add-feed-result"
 		if previewTarget == previewTargetShare {
-			// The share page has no authors list. The request redirects on
-			// success, but htmx still resolves the save target first, so it must
-			// name a container that exists on that page.
 			form.Target = "#share-add-result"
 		}
 		form.Swap = "beforeend"
@@ -493,11 +494,12 @@ func (s *Server) manualFeedForm(w http.ResponseWriter, r *http.Request) {
 		form.Swap = "beforeend"
 	} else {
 		form.Action = "/feeds"
-		form.Target = "#authors-list"
+		// The global add flow always redirects to the new author's page after a
+		// save. htmx still resolves the save target first, so it must name a
+		// container that exists on the page the dialog was opened from: both the
+		// shared add-feed dialog and the PWA share page provide their own.
+		form.Target = "#add-feed-result"
 		if previewTarget == previewTargetShare {
-			// The share page has no authors list. The request redirects on
-			// success, but htmx still resolves the save target first, so it must
-			// name a container that exists on that page.
 			form.Target = "#share-add-result"
 		}
 		form.Swap = "beforeend"

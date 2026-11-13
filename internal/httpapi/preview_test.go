@@ -282,13 +282,13 @@ func TestAddFeedOffersManualButton(t *testing.T) {
 	_, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 
-	// The authors index dialog.
-	body := doGet(h, "/authors", cookie).Body.String()
+	// The shared add-feed dialog, opened from the add menu on any page.
+	body := doGet(h, "/fragments/add-feed", cookie).Body.String()
 	if !strings.Contains(body, "find feed") || !strings.Contains(body, `hx-post="/fragments/manual-feed"`) {
-		t.Fatalf("authors dialog should offer both find and manual: %s", body)
+		t.Fatalf("add-feed dialog should offer both find and manual: %s", body)
 	}
 	if !strings.Contains(body, `hx-target="#author-preview"`) {
-		t.Fatalf("authors manual button should target the author preview: %s", body)
+		t.Fatalf("add-feed manual button should target the author preview: %s", body)
 	}
 
 	// The PWA share landing page (it searches on load, so it only needs the

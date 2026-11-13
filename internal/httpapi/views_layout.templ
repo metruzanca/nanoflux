@@ -151,6 +151,14 @@ templ topbar(u store.User) {
 	     into this dialog before showing it. -->
 	<dialog id="save-page-dialog" class="modal"></dialog>
 
+	<!-- Add dialogs; the nav "add" menu and the command palette fetch their
+	     content from the /fragments/add-* routes, so they open in place on any
+	     page instead of navigating to the index that owns the form. -->
+	<dialog id="add-feed-dialog" class="modal"></dialog>
+	<dialog id="create-author-dialog" class="modal"></dialog>
+	<dialog id="add-collection-dialog" class="modal"></dialog>
+	<dialog id="add-list-dialog" class="modal"></dialog>
+
 	<!-- Provision dialog; the nav "add" menu's "Add a …" entry fetches a
 	     provisioning plugin's create form into this dialog. -->
 	<dialog id="provision-dialog" class="modal">

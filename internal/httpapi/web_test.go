@@ -1497,8 +1497,9 @@ func TestCreateAuthorWithLinks(t *testing.T) {
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 
-	// The add-author dialog offers the same link rows as the edit page.
-	page := doGet(h, "/authors", cookie).Body.String()
+	// The add-author dialog offers the same link rows as the edit page. The form
+	// is fetched into the shared dialog from its fragment route.
+	page := doGet(h, "/fragments/add-author", cookie).Body.String()
 	for _, want := range []string{
 		`id="author-link-fields"`,
 		`id="author-link-row-template"`,

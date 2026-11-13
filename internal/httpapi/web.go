@@ -3005,6 +3005,10 @@ func (s *Server) collectionCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-collection-error", "could not create collection")
 		return
 	}
+	// Creating from the shared add dialog lands on the new collection's page so
+	// the user can add feeds and views to it. The row body still renders for
+	// non-htmx callers.
+	w.Header().Set("HX-Redirect", "/collections/"+strconv.FormatInt(c.ID, 10))
 	web.Render(w, r, collectionCreated(store.CollectionWithCounts{Collection: c}))
 }
 

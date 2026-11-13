@@ -64,6 +64,9 @@ func (s *Server) listCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-list-error", "could not create list")
 		return
 	}
+	// Creating from the shared add dialog lands on the new list's page so the
+	// user can add items to it. The row body still renders for non-htmx callers.
+	w.Header().Set("HX-Redirect", "/lists/"+strconv.FormatInt(l.ID, 10))
 	web.Render(w, r, ListRow(store.ListWithCount{List: l}))
 }
 

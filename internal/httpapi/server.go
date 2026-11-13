@@ -265,6 +265,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /fragments/feed-preview", s.auth.Require(http.HandlerFunc(s.feedPreview)))
 	mux.Handle("POST /fragments/manual-feed", s.auth.Require(http.HandlerFunc(s.manualFeedForm)))
 	mux.Handle("GET /fragments/save-page", s.auth.Require(http.HandlerFunc(s.savePageFormFragment)))
+	// Shared add dialogs; the add menu and command palette fetch these forms
+	// into the shells in views_layout.templ so they work on any page.
+	mux.Handle("GET /fragments/add-feed", s.auth.Require(http.HandlerFunc(s.addFeedDialogFragment)))
+	mux.Handle("GET /fragments/add-author", s.auth.Require(http.HandlerFunc(s.createAuthorDialogFragment)))
+	mux.Handle("GET /fragments/add-collection", s.auth.Require(http.HandlerFunc(s.addCollectionDialogFragment)))
+	mux.Handle("GET /fragments/add-list", s.auth.Require(http.HandlerFunc(s.addListDialogFragment)))
 	// Provisioning: create a feed on a remote service (a newsletter inbox) from
 	// the nav add menu, without leaving nanoflux.
 	mux.Handle("GET /fragments/provision-form", s.auth.Require(http.HandlerFunc(s.provisionFormFragment)))

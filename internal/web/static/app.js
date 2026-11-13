@@ -971,11 +971,24 @@ function wirePalette(dialogId, inputId, listId, items, onEnter) {
   return { open: open, close: close, refresh: render };
 }
 
-// openDialog navigates to a page and opens one of its server-rendered dialogs
-// once it loads, via a sessionStorage marker read on DOMContentLoaded.
-function openDialog(path, dialogId) {
-  try { sessionStorage.setItem('nanoflux.pendingDialog', dialogId); } catch (err) {}
-  window.location.href = path;
+// openFetchedDialog loads a server-rendered form into one of the shared dialog
+// shells and shows it. The add menu and the command palette use it so every add
+// action opens in place on any page instead of navigating to the page that owns
+// the form.
+function openFetchedDialog(dialogId, path) {
+  var d = document.getElementById(dialogId);
+  if (!d) return;
+  d.innerHTML = '<p class="muted">loading…</p>';
+  d.showModal();
+  fetch(path, { credentials: 'same-origin' })
+    .then(function (r) { return r.text(); })
+    .then(function (html) {
+      d.innerHTML = html;
+      htmx.process(d);
+      var focus = d.querySelector('[autofocus]');
+      if (focus && focus.focus) focus.focus();
+    })
+    .catch(function () { d.innerHTML = '<p class="error">could not load the form</p>'; });
 }
 
 // openSavePage fetches the shared save-page form into #save-page-dialog and
@@ -1052,11 +1065,11 @@ function openChangeAuthor(feedID) {
 // them through data-action (see the delegated click handler below); palette
 // rows reference the same objects.
 var ACTIONS = {
-  addFeed:       { label: 'add feed',           hint: 'action', run: function () { openDialog('/authors', 'add-author-dialog'); } },
-  addAuthor:     { label: 'add author',         hint: 'action', run: function () { openDialog('/authors', 'create-author-dialog'); } },
+  addFeed:       { label: 'add feed',           hint: 'action', run: function () { openFetchedDialog('add-feed-dialog', '/fragments/add-feed'); } },
+  addAuthor:     { label: 'add author',         hint: 'action', run: function () { openFetchedDialog('create-author-dialog', '/fragments/add-author'); } },
   savePage:      { label: 'save url for later', hint: 'action', run: openSavePage },
-  addCollection: { label: 'add collection',     hint: 'action', run: function () { openDialog('/collections', 'add-collection-dialog'); } },
-  addList:       { label: 'add list',           hint: 'action', run: function () { openDialog('/lists', 'add-list-dialog'); } },
+  addCollection: { label: 'add collection',     hint: 'action', run: function () { openFetchedDialog('add-collection-dialog', '/fragments/add-collection'); } },
+  addList:       { label: 'add list',           hint: 'action', run: function () { openFetchedDialog('add-list-dialog', '/fragments/add-list'); } },
 };
 
 // Command palette rows: navigation plus a few common actions. Admin-only rows
@@ -1300,17 +1313,6 @@ document.addEventListener('keydown', function (e) {
   });
   header.addEventListener('touchcancel', reset);
 })();
-
-// A command that opens a page dialog ("add feed", ...) sets a pendingDialog
-// marker before navigating; open it here once the destination loads.
-document.addEventListener('DOMContentLoaded', function () {
-  var pending;
-  try { pending = sessionStorage.getItem('nanoflux.pendingDialog'); } catch (err) { return; }
-  if (!pending) return;
-  try { sessionStorage.removeItem('nanoflux.pendingDialog'); } catch (err) {}
-  var d = document.getElementById(pending);
-  if (d) d.showModal();
-});
 
 // Apply the saved author sort on first load too: the server renders the
 // unread order (and its divider), which is wrong for a user who saved abc,

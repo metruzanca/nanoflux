@@ -13,51 +13,57 @@ templ authorsPage(u store.User, d authorsData) {
 		<h1>authors</h1>
 		<div class="row-actions">
 			@AuthorSortControl()
-			<button type="button" data-open="add-author-dialog">+ add feed</button>
+			<button type="button" data-action="addFeed">+ add feed</button>
 		</div>
 	</div>
 	@AuthorsList(d.Rows)
 	if len(d.Rows) == 0 {
 		<p class="muted">paste a site or feed url and nanoflux will find the feed, creating an author for it when needed.</p>
 	}
+}
 
-	<dialog id="add-author-dialog" class="modal">
+// addFeedDialog is fetched into the shared #add-feed-dialog. The preview
+// fragments target #author-preview, and a successful save redirects to the new
+// author's page (its htmx save target is #add-feed-result, which exists here so
+// the swap resolves on any page).
+templ addFeedDialog() {
+	<div class="row">
+		<h2>add feed</h2>
+		<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
+	</div>
+	<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-preview" hx-swap="innerHTML">
+		<label>url
+			<input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required/>
+		</label>
 		<div class="row">
-			<h2>add feed</h2>
+			<button type="submit">find feed</button>
+			@manualFeedButton("#author-preview")
+		</div>
+	</form>
+	<div id="author-preview"></div>
+	<div id="add-feed-result"></div>
+}
+
+// createAuthorDialog is fetched into the shared #create-author-dialog.
+templ createAuthorDialog() {
+	<form class="stack" hx-post="/authors">
+		<div class="row">
+			<h2>add author</h2>
 			<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
 		</div>
-		<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-preview" hx-swap="innerHTML">
-			<label>url
-				<input id="feed-url-input" name="url" type="text" placeholder="https://site.com or /feed.xml" autofocus required/>
-			</label>
-			<div class="row">
-				<button type="submit">find feed</button>
-				@manualFeedButton("#author-preview")
-			</div>
-		</form>
-		<div id="author-preview"></div>
-	</dialog>
-
-	<dialog id="create-author-dialog" class="modal">
-		<form class="stack" hx-post="/authors">
-			<div class="row">
-				<h2>add author</h2>
-				<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
-			</div>
-			<label>name
-				<input name="name" autofocus required/>
-			</label>
-			<label>avatar url
-				<input name="avatar_url" type="url"/>
-			</label>
-			<label>description
-				<textarea name="description" rows="3"></textarea>
-			</label>
-			@authorLinkFields(authorsData{})
-			<div id="add-author-error" class="error"></div>
-			<button type="submit">add author</button>
-		</form>
-	</dialog>
+		<label>name
+			<input name="name" autofocus required/>
+		</label>
+		<label>avatar url
+			<input name="avatar_url" type="url"/>
+		</label>
+		<label>description
+			<textarea name="description" rows="3"></textarea>
+		</label>
+		@authorLinkFields(authorsData{})
+		<div id="add-author-error" class="error"></div>
+		<button type="submit">add author</button>
+	</form>
 }
 
 templ AuthorsList(rows []authorRow) {

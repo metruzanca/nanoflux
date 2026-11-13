@@ -10,29 +10,32 @@ import (
 templ listsPage(u store.User, d listsPageData) {
 	<div class="row">
 		<h1>lists</h1>
-		<button type="button" data-open="add-list-dialog">+ add list</button>
+		<button type="button" data-action="addList">+ add list</button>
 	</div>
 	@ListsList(d)
+}
 
-	<dialog id="add-list-dialog" class="modal">
-		<form class="stack" hx-post="/lists" hx-target="#lists-list" hx-swap="beforeend" data-form-close-reset>
-			<div class="row">
-				<h2>add list</h2>
-				<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
-			</div>
-			<label>name
-				<input name="name" autofocus required/>
-			</label>
-			<div id="add-list-error" class="error"></div>
-			<button type="submit">add list</button>
-		</form>
-	</dialog>
+// addListDialog is fetched into the shared #add-list-dialog. A successful save
+// redirects to the new list's page; the result container is what htmx resolves
+// before the redirect.
+templ addListDialog() {
+	<form class="stack" hx-post="/lists" hx-target="#add-list-result" hx-swap="innerHTML" data-form-close-reset>
+		<div class="row">
+			<h2>add list</h2>
+			<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
+		</div>
+		<label>name
+			<input name="name" autofocus required/>
+		</label>
+		<div id="add-list-error" class="error"></div>
+		<button type="submit">add list</button>
+	</form>
+	<div id="add-list-result"></div>
 }
 
 // ListsList is the index: the special favorites and bookmarks lists pinned
 // first as their own cards (they are not rows in the lists table), then every
-// user-created list. User lists live in their own <ul id="lists-list">, which
-// is also the target the add-list form appends to.
+// user-created list.
 templ ListsList(d listsPageData) {
 	<ul class="plain" id="special-lists">
 		@FavoritesListRow(d)
