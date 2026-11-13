@@ -352,13 +352,14 @@ func TestCollectionPageDedups(t *testing.T) {
 	s.store.Items.Upsert(f1.ID, store.Item{GUID: "a", Title: "Funny cat video", Link: "https://v.dev/1", FetchedAt: db.Now()})
 	s.store.Items.Upsert(f2.ID, store.Item{GUID: "b", Title: "Funny cat video", Link: "https://m.dev/1", FetchedAt: db.Now()})
 
-	// The collection page shows the post once, with the other feed as a source.
+	// The collection page shows the post once. The card carries a single source
+	// line, so the alternate feed is not listed there.
 	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
 	if got := strings.Count(body, "Funny cat video"); got != 1 {
 		t.Fatalf("dedup should collapse to one row, saw %d: %s", got, body)
 	}
-	if !strings.Contains(body, "also in") || !strings.Contains(body, "r/videos") {
-		t.Fatalf("row should list the alternate feed as a source: %s", body)
+	if strings.Contains(body, "also in") {
+		t.Fatalf("card should show one source line, not the alternate feeds: %s", body)
 	}
 
 	// The single-feed author view still lists the item (dedup is
@@ -403,8 +404,8 @@ func TestCollectionDedupsCrosspostsByLink(t *testing.T) {
 	if got := strings.Count(body, "First title") + strings.Count(body, "Another title"); got != 1 {
 		t.Fatalf("crossposts should collapse to one row, saw %d titles: %s", got, body)
 	}
-	if !strings.Contains(body, "also in") {
-		t.Fatalf("survivor should list the other subreddit as a source: %s", body)
+	if strings.Contains(body, "also in") {
+		t.Fatalf("card should show one source line, not the alternate feeds: %s", body)
 	}
 }
 
@@ -454,6 +455,12 @@ func TestCrossFeedItem(t *testing.T) {
 	}
 	if strings.Contains(ubody, `class="item-title unread"`) {
 		t.Fatalf("the item should read as read on the user feed page: %s", ubody)
+	}
+
+	// The card names one source; the item details list the other feed too.
+	modal := doGet(h, "/items/"+itoa(items[0].ID)+"/view", cookie).Body.String()
+	if !strings.Contains(modal, "also in") || !strings.Contains(modal, "u/sam") {
+		t.Fatalf("item details should list the other feed as a source: %s", modal)
 	}
 }
 

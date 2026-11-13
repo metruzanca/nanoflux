@@ -633,7 +633,8 @@ code.
 - A collection item reached only through a member view (its owner feed and
   cross-feed memberships are outside the collection's feeds) carries
   `ItemWithFeed.ViewSources` and renders "from view <title>" linking
-  `/authors/<authorID>?view=<id>` in its row and modal.
+  `/authors/<authorID>?view=<id>`. On a card that view link **replaces** the
+  feed/author attribution, which stays in the item details.
   `annotateCollectionViews` computes this with `ItemStore.MatchingViews`, which
   reuses `viewFilterClause`; `ItemViewSource` carries the view's `AuthorID`.
   `dedupItems` unions the view sources of merged rows. `ItemWithFeed.CollectionID`
@@ -1100,6 +1101,12 @@ state is shared and the combined streams count it once.
   the decoration's tokens). `ItemWithFeed.Sources` is populated from
   `item_feeds`; the title-based `httpapi.dedupItems` remains only for near-
   duplicate titles and skips items with a `CrossKey`.
+- A card (list, grid, cards, home section) shows **one source line**:
+  `from view <title>` when `ViewSources` is set, else the decoration
+  attribution, else the author, else the feed. It never renders the alternate
+  feeds. `sourcesList` ("also in <feed>") is the item details' form, rendered
+  from `itemViewData.Sources` in the modal; keep the card to one source so a
+  long meta line does not crowd the row.
 - A poster (or sub) link must not depend on the item's `item_feeds` membership:
   a cross-feed post seen through one feed only gains a membership in the poster's
   feed once *that* feed has polled the post, so resolving the poster from

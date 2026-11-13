@@ -559,6 +559,70 @@ func TestCollectionViewSourceOnlyWhenViewSoleSource(t *testing.T) {
 	}
 }
 
+// TestViewSourcedCardShowsOnlyTheView checks the card/detail split for a
+// collection item a saved view brings in: the card shows one source line (the
+// view link) rather than its feed and author, and the item details still name
+// them.
+func TestViewSourcedCardShowsOnlyTheView(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, author, _ := savedViewFixture(t, s)
+
+	outsideAuthor, err := s.store.Authors.Create(u.ID, "Outside author", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside, _ := s.store.Feeds.Create(u.ID, outsideAuthor.ID, "Outside feed", "https://outside.example/feed.xml", "", "", 900)
+	if _, err := s.store.Items.Upsert(outside.ID, store.Item{
+		GUID: "outside-rust", Title: "Outside Rust post", Link: "https://outside.example/rust",
+		Categories: []string{"r/rust"}, FetchedAt: db.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	outsideID, _ := s.store.Items.ByFeedIdentity(outside.ID, "outside-rust")
+
+	c, _ := s.store.Collections.Create(u.ID, "Dev")
+	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+		AuthorID: author.ID, Title: "Rust", Filters: []string{"tag:show:r/rust"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.SavedViews.SetCollections(u.ID, view.ID, []int64{c.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
+	start := strings.Index(body, `id="item-`+itoa(outsideID)+`"`)
+	if start < 0 {
+		t.Fatalf("collection should render the view-sourced row: %s", body)
+	}
+	row := body[start:]
+	if end := strings.Index(row, "</li>"); end >= 0 {
+		row = row[:end]
+	}
+	viewHref := "/authors/" + itoa(author.ID) + "?view=" + itoa(view.ID)
+	meta := row
+	if i := strings.Index(meta, `class="item-meta"`); i >= 0 {
+		meta = meta[i:]
+		if end := strings.Index(meta, "</div>"); end >= 0 {
+			meta = meta[:end]
+		}
+	}
+	if !strings.Contains(meta, "from view") || !strings.Contains(meta, `href="`+viewHref+`"`) {
+		t.Fatalf("view-sourced card should link only its view: %s", meta)
+	}
+	if strings.Contains(meta, "Outside author") || strings.Contains(meta, "Outside feed") ||
+		strings.Contains(meta, `href="/authors/`+itoa(outsideAuthor.ID)+`"`) {
+		t.Fatalf("view-sourced card should not name its feed or author: %s", meta)
+	}
+
+	modal := doGet(h, "/items/"+itoa(outsideID)+"/view?collection="+itoa(c.ID), cookie).Body.String()
+	if !strings.Contains(modal, "Outside author") || !strings.Contains(modal, `href="/authors/`+itoa(outsideAuthor.ID)+`"`) {
+		t.Fatalf("item details should still name the feed author: %s", modal)
+	}
+}
+
 // TestAuthorEditViewPanel covers the inline, auto-saving view editor on the
 // author edit page: unprefixed fields, a form in the lazy fragment, and a
 // save that re-renders the panel with its new title.

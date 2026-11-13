@@ -711,6 +711,9 @@ type itemViewData struct {
 	Gallery       []string                // full-res images of a gallery post
 	FeedIsSystem  bool                    // true for a saved page (hidden feed/author, no internal links)
 	Attribution   []store.AttributionPart // source line from the item's decoration; author/feed when empty
+	// Sources are the item's alternate feeds ("also in ..."). Cards show one
+	// source line only, so they render in the item details instead.
+	Sources []store.ItemSource
 	// ViewSources link the saved views that bring this item into the collection
 	// it was opened from, when its feeds are not collection members.
 	ViewSources []store.ItemViewSource
@@ -839,6 +842,7 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 		Read:          it.Read,
 		FeedIsSystem:  it.FeedIsSystem,
 		Attribution:   it.Attribution,
+		Sources:       it.Sources,
 		ViewSources:   it.ViewSources,
 		CollectionID:  it.CollectionID,
 		ProxyImages:   true,

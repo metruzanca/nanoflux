@@ -147,9 +147,10 @@ templ ItemRow(it store.ItemWithFeed, hideAuthor bool) {
 }
 
 // sourcesList renders an item's alternate feeds as "· also in <feed>" links.
-// A source with a known author links to that author's page (the feed page is
-// gone); otherwise the name is plain text. A source that carries a Link (the
-// legacy title-based view-time collapse) also gets an external-link marker.
+// Cards show a single source line, so this is the item details' form. A source
+// with a known author links to that author's page (the feed page is gone);
+// otherwise the name is plain text. A source that carries a Link (the legacy
+// title-based view-time collapse) also gets an external-link marker.
 templ sourcesList(sources []store.ItemSource) {
 	for _, src := range sources {
 		·
@@ -251,20 +252,20 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 							// Saved page: its feed/author are hidden, so the
 							// source is plain text, not a navigation link.
 							<span>saved</span><a href={ templ.URL(it.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external"></a>
+						} else if len(it.ViewSources) > 0 {
+							// A card carries one source line. A view-sourced row
+							// names the view instead of its feed/author, which
+							// stay available in the item details.
+							@viewSourcesList(it.ViewSources)
 						} else if len(it.Attribution) > 0 {
 							@attrParts(it.Attribution)
-							@sourcesList(it.Sources)
 						} else if it.AuthorName != "" && !hideAuthor {
 							<a href={ "/authors/" + strconv.FormatInt(it.AuthorID, 10) }>{ it.AuthorName }</a>
-							@sourcesList(it.Sources)
 						} else if u := authorFeedURL(it.AuthorID, it.FeedID); u != "" {
 							<a href={ templ.URL(u) }>{ it.FeedTitle }</a>
-							@sourcesList(it.Sources)
 						} else {
 							<span>{ it.FeedTitle }</span>
-							@sourcesList(it.Sources)
 						}
-						@viewSourcesList(it.ViewSources)
 						if it.PublishedAt != "" {
 							· { web.TimeFmt(it.Timezone, it.PublishedAt) }
 						}
@@ -878,6 +879,7 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 					<a href={ templ.URL(u) }>feed</a>
 				}
 			}
+			@sourcesList(d.Sources)
 			@viewSourcesList(d.ViewSources)
 			if d.PublishedAt != "" {
 				· { web.TimeFmt(d.Timezone, d.PublishedAt) }
