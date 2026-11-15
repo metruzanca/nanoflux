@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -983,6 +985,14 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	if !strings.Contains(body, pxImg("https://i.ytimg.com/vi/H0KAi8AWsnM/hq720.jpg")) {
 		t.Fatalf("video card missing thumbnail: %s", body)
 	}
+	// The play glyph sits behind the thumbnail, so a poster that fails to load
+	// degrades to the placeholder instead of a broken-image icon.
+	if !strings.Contains(body, `class="thumb-ph"`) {
+		t.Fatalf("video card missing the play placeholder: %s", body)
+	}
+	if !strings.Contains(body, `data-hide-on-error`) {
+		t.Fatalf("thumbnails should hide themselves when the image fails: %s", body)
+	}
 	if !strings.Contains(body, `class="thumb-duration"`) || !strings.Contains(body, `>5:41</span>`) {
 		t.Fatalf("video card missing the duration badge: %s", body)
 	}
@@ -1033,6 +1043,24 @@ func TestItemCardsRenderThumbnails(t *testing.T) {
 	}
 	if strings.Contains(body, `href="https://www.youtube.com/feeds/videos.xml`) {
 		t.Fatalf("item meta must not link to the external feed url: %s", body)
+	}
+}
+
+func TestVideoRowWithoutThumbShowsPlayPlaceholder(t *testing.T) {
+	var buf bytes.Buffer
+	it := store.ItemWithFeed{
+		ID: 9, Title: "clip", Link: "https://bdsmlr.com/post/9",
+		Kind: store.KindVideo, FeedTitle: "GeneralPublic",
+	}
+	if err := ItemRow(it, false).Render(context.Background(), &buf); err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	body := buf.String()
+	if !strings.Contains(body, `class="video-card"`) || !strings.Contains(body, `class="thumb-ph"`) {
+		t.Fatalf("video row should fall back to the play placeholder: %s", body)
+	}
+	if strings.Contains(body, "<img") {
+		t.Fatalf("video row without a thumbnail should not emit an img: %s", body)
 	}
 }
 

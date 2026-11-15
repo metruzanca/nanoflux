@@ -29,6 +29,20 @@ handler below relies on it.
 handlers that close dialogs on success (`if (event.detail.successful) ...`)
 leave the dialog open on error — which is what lets the user read the message.
 
+## Row thumbnails fall back cleanly
+
+A stored `ImageURL` is not guaranteed to load: a site can delete the object
+behind a URL it still advertises, or the signed URL can outlive its object. Rows
+do not assume the image works:
+
+- Every row thumbnail `<img>` carries `data-hide-on-error`, and `app.js`'s
+  document-level `error` listener adds `thumb-broken` to the enclosing `.thumb`.
+  `app.css` hides the image (revealing the video `▶` placeholder, which is
+  always rendered for a video card) and drops the empty frame on any other card.
+- Do not remove that fallback or replace it with assumptions about
+  `ImageURL`, `ThumbURL`, or a cache key. Plugins may verify a thumbnail before
+  storing it, but the renderer must stay safe when one dies later between polls.
+
 ## Rate limiting
 
 Some hosts (their anonymous feed endpoints allow only ~1 request/IP/minute)

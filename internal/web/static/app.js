@@ -1639,9 +1639,14 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
   }, true);
 
   // Broken images marked data-hide-on-error hide themselves (was onerror=).
+  // A thumbnail also marks its frame broken: a video keeps its play glyph, any
+  // other card drops the empty frame instead of a broken-image icon.
   document.addEventListener('error', function (e) {
     var t = e.target;
-    if (t && t.tagName === 'IMG' && t.hasAttribute('data-hide-on-error')) t.style.display = 'none';
+    if (!t || t.tagName !== 'IMG') return;
+    if (t.hasAttribute('data-hide-on-error')) t.style.display = 'none';
+    var thumb = t.closest ? t.closest('.thumb') : null;
+    if (thumb) thumb.classList.add('thumb-broken');
   }, true);
 
   document.body.addEventListener('htmx:afterRequest', function (e) {

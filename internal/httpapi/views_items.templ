@@ -215,10 +215,9 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 	>
 		if v.Video {
 			<a class="thumb" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>
+				<span class="thumb-ph">▶</span>
 				if thumb := rowThumb(it); thumb != "" {
-					<img src={ templ.URL(web.ProxiedImageURL(thumb)) } alt="" loading="lazy"/>
-				} else {
-					<span class="thumb-ph">▶</span>
+					<img src={ templ.URL(web.ProxiedImageURL(thumb)) } data-hide-on-error alt="" loading="lazy"/>
 				}
 				if dur := web.FormatDuration(it.DurationSec); dur != "" {
 					<span class="thumb-duration">{ dur }</span>
@@ -226,7 +225,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 			</a>
 		} else if v.Image || v.Link || v.Gallery {
 			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>
-				<img src={ templ.URL(web.ProxiedImageURL(rowThumb(it))) } alt="" loading="lazy"/>
+				<img src={ templ.URL(web.ProxiedImageURL(rowThumb(it))) } data-hide-on-error alt="" loading="lazy"/>
 				if v.Link {
 					<span class="thumb-badge" title="content lives on an external site">external</span>
 				}
@@ -235,7 +234,7 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 			// A text post that still carries a thumbnail (e.g. one that arrived
 			// only as an image enclosure) gets a thumb beside its text.
 			<a class="thumb thumb--img" href={ "#item-" + strconv.FormatInt(it.ID, 10) } data-item-id={ strconv.FormatInt(it.ID, 10) } data-item-link={ it.Link } data-open-item>
-				<img src={ templ.URL(web.ProxiedImageURL(rowThumb(it))) } alt="" loading="lazy"/>
+				<img src={ templ.URL(web.ProxiedImageURL(rowThumb(it))) } data-hide-on-error alt="" loading="lazy"/>
 			</a>
 		}
 		<div class="card-body">
