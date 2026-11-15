@@ -3241,6 +3241,60 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, view, sort, u.Timezone, filters)))
 }
 
+// collectionRefresh queues every eligible feed in a collection for an immediate
+// poll. It marks the feeds due (next_poll_at = now, marked scheduled) and wakes
+// the poller instead of fetching in the request, so the poller keeps owning
+// per-host spacing and the shared rate-limit cooldown. Paused feeds and feeds
+// still inside a rate-limit window are skipped and reported.
+func (s *Server) collectionRefresh(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	c, err := s.store.Collections.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// The no-collection is computed, so rebuild its membership before reading.
+	if c.IsNoCollection() {
+		if _, err := s.store.Collections.SyncNoCollection(u.ID); err != nil {
+			log.Error("sync no-collection", "err", err)
+		}
+	}
+	feeds, _ := s.store.Collections.Feeds(u.ID, id)
+	now := db.Now()
+	var queued, paused, limited int
+	for _, f := range feeds {
+		if !f.Enabled {
+			paused++
+			continue
+		}
+		// Respect a rate-limit backoff. A scheduled deadline is not a backoff,
+		// so a manual collection refresh may override it.
+		if cooling(f.NextPollAt) && !f.NextPollScheduled {
+			limited++
+			continue
+		}
+		// Mark the deadline as scheduled before making it due: a poller cycle
+		// racing this write must not see a past "rate limit" deadline. An
+		// explicit next_poll_at also bypasses the per-feed poll floor.
+		if err := s.store.Feeds.SetNextPollScheduled(f.ID, true); err != nil {
+			log.Error("queue collection refresh", "feed_id", f.ID, "err", err)
+			continue
+		}
+		if err := s.store.Feeds.SetNextPollAt(f.ID, now); err != nil {
+			log.Error("queue collection refresh", "feed_id", f.ID, "err", err)
+			continue
+		}
+		queued++
+	}
+	s.pollFeedNow()
+	web.Render(w, r, collectionRefreshNote(queued, paused, limited))
+}
+
 func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)

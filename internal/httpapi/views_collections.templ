@@ -102,10 +102,40 @@ templ CollectionRow(c store.CollectionWithCounts) {
 	</li>
 }
 
+// collectionRefreshNote is the response to "refresh all". The poller owns the
+// fetches (it keeps per-host spacing and rate-limit cooldowns), so the request
+// only reports what it queued and what it skipped.
+templ collectionRefreshNote(queued, paused, limited int) {
+	<span id="collection-refresh-status" class="muted small">
+		if queued == 1 {
+			queued 1 feed for a refresh
+		} else if queued > 1 {
+			queued { queued } feeds for a refresh
+		} else {
+			nothing to refresh
+		}
+		if paused > 0 {
+			· { queuedLabel(paused, "paused") }
+		}
+		if limited > 0 {
+			· { queuedLabel(limited, "rate limited") }
+		}
+	</span>
+}
+
+// queuedLabel renders a skip count with its reason, e.g. "2 paused".
+func queuedLabel(n int, label string) string {
+	return strconv.Itoa(n) + " " + label
+}
+
 templ collectionPage(u store.User, d collectionData) {
 	<div class="row">
 		<h1>{ d.Collection.Name }</h1>
 		<div class="row-actions">
+			if len(d.Feeds) > 0 {
+				<button type="button" title="fetch every feed in this collection now" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/refresh" } hx-target="#collection-refresh-status" hx-swap="outerHTML">@web.Lucide("refresh-cw") refresh all</button>
+				<span id="collection-refresh-status" class="muted small"></span>
+			}
 			if d.Collection.IsAuto {
 				<span class="badge">auto</span>
 			}

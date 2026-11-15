@@ -235,6 +235,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /collections/{id}/edit", s.auth.Require(http.HandlerFunc(s.collectionUpdate)))
 	mux.Handle("GET /collections/{id}/items", s.auth.Require(http.HandlerFunc(s.collectionItems)))
 	mux.Handle("POST /collections/{id}/delete", s.auth.Require(http.HandlerFunc(s.collectionDelete)))
+	mux.Handle("POST /collections/{id}/refresh", s.auth.Require(http.HandlerFunc(s.collectionRefresh)))
 	mux.Handle("POST /collections/{id}/add-feed", s.auth.Require(http.HandlerFunc(s.collectionAddFeed)))
 	mux.Handle("POST /collections/{id}/remove-feed/{feed_id}", s.auth.Require(http.HandlerFunc(s.collectionRemoveFeed)))
 	mux.Handle("POST /collections/{id}/add-view", s.auth.Require(http.HandlerFunc(s.collectionAddView)))

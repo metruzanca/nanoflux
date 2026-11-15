@@ -63,6 +63,13 @@ reject polling with 429. The app treats this as pacing, not failure:
 - The manual refresh button and `feedRefresh` respect `next_poll_at`: a cooling
   feed shows a "rate limited · retry in …" badge with the button disabled, and a
   click during the window is a no-op.
+- A collection's **refresh all** (`POST /collections/{id}/refresh`) is a queue,
+  not a fetch: it marks each eligible member feed due (`next_poll_at = now` with
+  `next_poll_scheduled = 1`, so no false "rate limited" badge), skips paused
+  feeds and feeds inside a rate-limit window, and calls `poller.Wake()`. The
+  poller then owns per-host spacing and the shared cooldown. Do not turn it into
+  a synchronous `PollOne` loop in the request: an auto collection can hold many
+  feeds from one site, which is exactly the burst the queue exists to prevent.
 - `discover` surfaces the host's fetch error when a rule's probe fails, so
   adding a feed at limit says "rate-limiting requests (HTTP 429)" rather than a
   bare "no feed found".

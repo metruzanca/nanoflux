@@ -344,6 +344,15 @@ button is disabled; a click during the window is a no-op rather than another
 request. A *scheduled* deadline (`next_poll_scheduled`) is not a backoff, so the
 button stays enabled and a manual refresh overrides the plan.
 
+A collection's **refresh all** button is a bulk queue rather than a bulk fetch.
+It marks every eligible member feed due (`next_poll_at = now`, marked as
+scheduled so it does not look like a rate-limit backoff) and wakes the poller;
+the poller then fetches them with its normal per-host spacing and shared
+rate-limit cooldown. Paused feeds and feeds already inside a rate-limit window
+are left alone, and the button's status line reports how many were queued and
+skipped. Nothing is fetched inside the request, so a large auto collection cannot
+burst one site in a single click.
+
 ### Errors are explained
 
 If a discovery probe hits a limit, that reason is surfaced
