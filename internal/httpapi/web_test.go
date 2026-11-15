@@ -2155,10 +2155,9 @@ func TestAuthorEditDeleteFlow(t *testing.T) {
 		t.Fatalf("edit page missing the named delete action: %s", edit)
 	}
 
-	// Deleting redirects back to the authors list and removes the author (and
-	// cascades its feed).
+	// Deleting redirects home and removes the author (and cascades its feed).
 	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/delete", url.Values{}, cookie)
-	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/authors" {
+	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/" {
 		t.Fatalf("delete: %d %q", rr.Code, rr.Header().Get("Location"))
 	}
 	if _, err := s.store.Authors.ByID(u.ID, a.ID); err == nil {

@@ -2959,7 +2959,7 @@ func (s *Server) authorDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/authors", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (s *Server) authorFormFragment(w http.ResponseWriter, r *http.Request) {
