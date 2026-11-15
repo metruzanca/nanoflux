@@ -110,36 +110,43 @@ templ ItemsList(items []store.ItemWithFeed, hideAuthor bool, mode string) {
 	}
 }
 
-// ItemsListPage renders the item list plus a "load more" button when more
-// pages exist. The button appends the next page into the list via htmx.
-templ ItemsListPage(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool, mode string) {
+// ItemsListPage renders the item list plus the bottom controls: a "load more"
+// button when another page exists and, on an unread list, "mark page as read".
+templ ItemsListPage(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool, mode string, markPage bool) {
 	@ItemsList(items, hideAuthor, mode)
-	if more != nil {
-		<button id="load-more" hx-get={ templ.URL(more.URL) } hx-target="#items-list" hx-swap="beforeend">load more</button>
-	}
+	@listPageActions(more, markPage && len(items) > 0, false)
 }
 
-// ItemsSection wraps the list and its load-more button so list-wide actions
+// listPageActions is the control row under an item list. Keeping both controls
+// in one container lets a load-more response swap the whole row out of band, so
+// "mark page as read" survives paging and both controls stay in step.
+templ listPageActions(more *loadMoreData, markPage, oob bool) {
+	<div id="list-actions" class="list-actions" if oob { hx-swap-oob="outerHTML" }>
+		if more != nil {
+			<button id="load-more" hx-get={ templ.URL(more.URL) } hx-target="#items-list" hx-swap="beforeend">load more</button>
+		}
+		if markPage {
+			<button type="button" data-mark-page-read title="mark the loaded items as read and refresh">mark page as read</button>
+		}
+	</div>
+}
+
+// ItemsSection wraps the list and its bottom controls so list-wide actions
 // (e.g. "mark all read") can swap the whole section atomically instead of
 // orphaning a stale load-more button.
-templ ItemsSection(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool, mode string) {
+templ ItemsSection(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool, mode string, markPage bool) {
 	<div id="items-section">
-		@ItemsListPage(items, more, hideAuthor, mode)
+		@ItemsListPage(items, more, hideAuthor, mode, markPage)
 	</div>
 }
 
 // ItemsPage is the fragment response for a load-more request: the appended
-// item rows plus an out-of-band swap that replaces (or removes) the load-more
-// button.
-templ ItemsPage(items []store.ItemWithFeed, more *loadMoreData, hideAuthor bool) {
+// item rows plus an out-of-band swap that replaces the bottom control row.
+templ ItemsPage(items []store.ItemWithFeed, more *loadMoreData, hideAuthor, markPage bool) {
 	for _, it := range items {
 		@ItemRow(it, hideAuthor)
 	}
-	if more != nil {
-		<button id="load-more" hx-swap-oob="outerHTML" hx-get={ templ.URL(more.URL) } hx-target="#items-list" hx-swap="beforeend">load more</button>
-	} else {
-		<button id="load-more" hx-swap-oob="delete" hidden></button>
-	}
+	@listPageActions(more, markPage, true)
 }
 
 templ ItemRow(it store.ItemWithFeed, hideAuthor bool) {
@@ -648,7 +655,7 @@ templ scopedItemsInner(d scopedItemsData) {
 		@CollectionSourceCards(mergeCollectionSources(d.Feeds, d.Views))
 	} else {
 		@filterChips(fp)
-		@ItemsListPage(d.Items, d.More, d.HideAuthor, d.Mode)
+		@ItemsListPage(d.Items, d.More, d.HideAuthor, d.Mode, d.View == "unread")
 		@filterDialog(fp)
 	}
 }

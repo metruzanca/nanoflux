@@ -154,7 +154,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		base := filters.appendFilters(scopedViewQueryFor("/lists/"+strconv.FormatInt(id, 10)+"/items", view, 0) + "&sort=" + sort.param())
-		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursorFor(base, items, more, sort, int(cursor)), false))
+		web.Render(w, r, ItemsPage(withTZ(u.Timezone, items), pageCursorFor(base, items, more, sort, int(cursor)), false, view == "unread"))
 		return
 	}
 	web.Render(w, r, ScopedItems(s.listScopedItems(u.ID, id, view, sort, u.Timezone, filters)))

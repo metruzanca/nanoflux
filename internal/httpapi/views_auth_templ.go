@@ -280,7 +280,7 @@ func homePage(d homeData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ItemsSection(d.Unread, d.More, false, d.Mode).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ItemsSection(d.Unread, d.More, false, d.Mode, true).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -388,7 +388,7 @@ func readPage(d readData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ItemsSection(d.Read, d.More, false, d.Mode).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ItemsSection(d.Read, d.More, false, d.Mode, false).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -463,7 +463,7 @@ func favoritesPage(d favoritesData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ItemsListPage(d.Favorites, d.More, false, d.Mode).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ItemsListPage(d.Favorites, d.More, false, d.Mode, false).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -538,7 +538,7 @@ func bookmarksPage(d bookmarksData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = ItemsListPage(d.Bookmarks, d.More, false, d.Mode).Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ItemsListPage(d.Bookmarks, d.More, false, d.Mode, false).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

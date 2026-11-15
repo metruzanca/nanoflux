@@ -76,7 +76,7 @@ templ homePage(d homeData) {
 		</div>
 	</div>
 	@filterChips(fp)
-	@ItemsSection(d.Unread, d.More, false, d.Mode)
+	@ItemsSection(d.Unread, d.More, false, d.Mode, true)
 	@filterDialog(fp)
 }
 
@@ -102,7 +102,7 @@ templ readPage(d readData) {
 		</div>
 	</div>
 	@filterChips(fp)
-	@ItemsSection(d.Read, d.More, false, d.Mode)
+	@ItemsSection(d.Read, d.More, false, d.Mode, false)
 	@filterDialog(fp)
 }
 
@@ -118,7 +118,7 @@ templ favoritesPage(d favoritesData) {
 		</div>
 	</div>
 	@filterChips(fp)
-	@ItemsListPage(d.Favorites, d.More, false, d.Mode)
+	@ItemsListPage(d.Favorites, d.More, false, d.Mode, false)
 	@filterDialog(fp)
 }
 
@@ -134,6 +134,6 @@ templ bookmarksPage(d bookmarksData) {
 		</div>
 	</div>
 	@filterChips(fp)
-	@ItemsListPage(d.Bookmarks, d.More, false, d.Mode)
+	@ItemsListPage(d.Bookmarks, d.More, false, d.Mode, false)
 	@filterDialog(fp)
 }

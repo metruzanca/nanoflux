@@ -253,6 +253,70 @@ func TestItemsFlow(t *testing.T) {
 	}
 }
 
+func TestMarkReadIDs(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	other := mustUser(t, s, "bob")
+	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
+	oa, _ := s.Authors.Create(other.ID, "Other", "", "")
+	of, _ := s.Feeds.Create(other.ID, oa.ID, "Other", "https://other.dev/rss.xml", "", "", 900)
+
+	ids := make([]int64, 0, 3)
+	for i := 1; i <= 3; i++ {
+		guid := "g" + strconv.Itoa(i)
+		if _, err := s.Items.Upsert(f.ID, Item{GUID: guid, Title: guid, Link: "https://metru.dev/" + guid, FetchedAt: db.Now()}); err != nil {
+			t.Fatalf("upsert %d: %v", i, err)
+		}
+	}
+	items, err := s.Items.List(u.ID, ItemFilter{})
+	if err != nil || len(items) != 3 {
+		t.Fatalf("List: %v %d", err, len(items))
+	}
+	for _, it := range items {
+		ids = append(ids, it.ID)
+	}
+
+	// Mark the first two loaded rows read; the third stays unread.
+	if err := s.Items.MarkReadIDs(u.ID, ids[:2]); err != nil {
+		t.Fatalf("MarkReadIDs: %v", err)
+	}
+	n, _ := s.Items.CountUnread(u.ID, 0)
+	if n != 1 {
+		t.Fatalf("expected 1 unread after MarkReadIDs, got %d", n)
+	}
+	unread, _ := s.Items.List(u.ID, ItemFilter{UnreadOnly: true})
+	if len(unread) != 1 || unread[0].ID != ids[2] {
+		t.Fatalf("wrong item left unread: %+v", unread)
+	}
+
+	// An already-read row is not re-stamped: read_at stays what it was.
+	before, _ := s.Items.ByID(u.ID, ids[0])
+	if err := s.Items.MarkReadIDs(u.ID, ids[:1]); err != nil {
+		t.Fatalf("MarkReadIDs again: %v", err)
+	}
+	after, _ := s.Items.ByID(u.ID, ids[0])
+	if before.ReadAt != after.ReadAt || !after.Read {
+		t.Fatalf("read_at changed on a second mark: %q -> %q", before.ReadAt, after.ReadAt)
+	}
+
+	// Another account's id is ignored, even though it is a real item.
+	if _, err := s.Items.Upsert(of.ID, Item{GUID: "b1", Title: "b1", Link: "https://other.dev/b1", FetchedAt: db.Now()}); err != nil {
+		t.Fatalf("upsert bob item: %v", err)
+	}
+	bobItems, _ := s.Items.List(other.ID, ItemFilter{})
+	if len(bobItems) != 1 {
+		t.Fatalf("bob items: %d", len(bobItems))
+	}
+	if err := s.Items.MarkReadIDs(u.ID, []int64{bobItems[0].ID}); err != nil {
+		t.Fatalf("MarkReadIDs foreign id: %v", err)
+	}
+	bn, _ := s.Items.CountUnread(other.ID, 0)
+	if bn != 1 {
+		t.Fatalf("another user's item was marked read: unread=%d", bn)
+	}
+}
+
 func TestItemsListPagePagination(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")

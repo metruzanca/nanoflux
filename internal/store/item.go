@@ -1993,6 +1993,33 @@ func (s *ItemStore) MarkAllRead(userID, feedID int64) error {
 	})
 }
 
+// MarkReadIDs marks the given items read for a user, ignoring ids that are not
+// the user's. Only unread rows are touched, so an already-read item's read_at
+// (which orders the history list) is never re-stamped. It backs the list's
+// "mark page as read" action, where the client sends the rows it has loaded.
+func (s *ItemStore) MarkReadIDs(userID int64, ids []int64) error {
+	if userID == 0 || len(ids) == 0 {
+		return nil
+	}
+	// A loaded list can hold several appended pages, so chunk the IN list to
+	// stay well inside SQLite's bound-variable limit.
+	const chunk = 400
+	for start := 0; start < len(ids); start += chunk {
+		end := min(start+chunk, len(ids))
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", end-start), ",")
+		q := `UPDATE items SET read = 1, read_at = ? WHERE user_id = ? AND read = 0 AND id IN (` + placeholders + `)`
+		args := make([]any, 0, end-start+2)
+		args = append(args, ns(db.Now()), userID)
+		for _, id := range ids[start:end] {
+			args = append(args, id)
+		}
+		if _, err := s.db.ExecContext(context.Background(), q, args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // MarkAllReadFiltered marks every unread item matching f read: the feed/author/
 // collection scope is matched by item membership, and each tag is an extra AND
 // predicate over item_categories. Only unread rows are touched, so an already-

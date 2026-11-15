@@ -1078,14 +1078,23 @@ ul.items.cards .item-summary { -webkit-line-clamp: 4; line-clamp: 4; }
    the equal-specificity battle against the cards panel background. */
 ul.items li.read { background: var(--item-read-bg); }
 
-#load-more {
-  display: block;
-  margin: 1rem auto 0;
+/* Bottom control row of an item list: "load more" and "mark page as read".
+   Flex keeps them side by side and centers the pair. */
+.list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.list-actions:empty { display: none; }
+.list-actions button {
   background: var(--panel);
   color: var(--fg);
   border-color: var(--border);
 }
-#load-more:hover { border-color: var(--accent); }
+.list-actions button:hover { border-color: var(--accent); }
+.list-actions button:disabled { opacity: 0.6; }
 
 .star {
   width: 16px;

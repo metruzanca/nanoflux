@@ -173,6 +173,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /settings/algorithm", s.auth.Require(http.HandlerFunc(s.favoritesAlgorithmPage)))
 	mux.Handle("GET /bookmarks", s.auth.Require(http.HandlerFunc(s.bookmarksPage)))
 	mux.Handle("POST /items/read-all", s.auth.Require(http.HandlerFunc(s.itemsReadAll)))
+	mux.Handle("POST /items/read-ids", s.auth.Require(http.HandlerFunc(s.itemsReadIDs)))
 	mux.Handle("POST /items/unread-all", s.auth.Require(http.HandlerFunc(s.itemsMarkAllUnread)))
 	mux.Handle("POST /prefs/display", s.auth.Require(http.HandlerFunc(s.displayPrefSet)))
 	mux.Handle("POST /items/{id}/read", s.auth.Require(http.HandlerFunc(s.itemRead)))

@@ -278,6 +278,67 @@ func TestLoadMoreFlow(t *testing.T) {
 	}
 }
 
+func TestMarkPageAsRead(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	for i := 1; i <= 30; i++ {
+		guid := "g" + strconv.Itoa(i)
+		if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: guid, Title: "Post " + strconv.Itoa(i), Link: "https://b.dev/" + guid, FetchedAt: db.Now()}); err != nil {
+			t.Fatalf("upsert: %v", err)
+		}
+	}
+
+	// An unread list renders the control row with both actions.
+	home := doGet(h, "/", cookie).Body.String()
+	if !strings.Contains(home, `id="list-actions"`) {
+		t.Fatalf("unread list should render the bottom action row: %s", home)
+	}
+	if !strings.Contains(home, `data-mark-page-read`) {
+		t.Fatalf("unread list should render mark page as read: %s", home)
+	}
+
+	// A loaded next page swaps the control row out of band and keeps the mark
+	// action available. (The last page has no further "load more", so only the
+	// mark action remains.)
+	first, _, _ := s.store.Items.ListPage(u.ID, store.ItemFilter{UnreadOnly: true, Limit: pageSize})
+	cursor := first[len(first)-1].ID
+	body := doGet(h, "/items?before="+itoa(cursor), cookie).Body.String()
+	if !strings.Contains(body, `hx-swap-oob`) || !strings.Contains(body, `data-mark-page-read`) || !strings.Contains(body, `id="list-actions"`) {
+		t.Fatalf("load more should keep the bottom controls: %s", body)
+	}
+
+	// Marking the loaded page read updates exactly those items.
+	ids := make([]string, 0, len(first))
+	for _, it := range first {
+		ids = append(ids, strconv.FormatInt(it.ID, 10))
+	}
+	rr := doForm(h, "POST", "/items/read-ids", url.Values{"ids": {strings.Join(ids, ",")}}, cookie)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("mark page read: %d %s", rr.Code, rr.Body.String())
+	}
+	n, _ := s.store.Items.CountUnread(u.ID, 0)
+	if n != 30-pageSize {
+		t.Fatalf("expected %d unread after marking the page, got %d", 30-pageSize, n)
+	}
+
+	// Read-only lists do not offer the action.
+	for _, path := range []string{"/read", "/favorites", "/bookmarks"} {
+		body := doGet(h, path, cookie).Body.String()
+		if strings.Contains(body, `data-mark-page-read`) {
+			t.Fatalf("%s should not render mark page as read", path)
+		}
+	}
+
+	// Malformed ids are rejected instead of marking anything.
+	rr = doForm(h, "POST", "/items/read-ids", url.Values{"ids": {"nope"}}, cookie)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid ids: %d %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestTopbar(t *testing.T) {
 	_, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

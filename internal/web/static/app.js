@@ -588,6 +588,30 @@ function markRowRead(id) {
   }
 }
 
+// markPageRead marks every item row currently loaded in #items-list read, then
+// reloads so an unread list refills with the next unread items. The ids are the
+// rows the user has actually seen, including pages added by "load more".
+function markPageRead(btn) {
+  var rows = document.querySelectorAll('#items-list > li[id^="item-"]');
+  var ids = [];
+  for (var i = 0; i < rows.length; i++) {
+    var id = rows[i].id.slice('item-'.length);
+    if (/^\d+$/.test(id)) ids.push(id);
+  }
+  if (!ids.length) return;
+  btn.disabled = true;
+  fetch('/items/read-ids', {
+    method: 'POST',
+    credentials: 'same-origin',
+    body: new URLSearchParams({ ids: ids.join(',') }),
+  }).then(function (r) {
+    if (r.ok) window.location.reload();
+    else btn.disabled = false;
+  }).catch(function () {
+    btn.disabled = false;
+  });
+}
+
 // Item "⋯" menu on cards (list/grid) and in the item modal. Each menu is
 // scoped per item via data-item-id, so many cards can each have one; the
 // "add to list" entry fetches the shared #item-lists-dialog picker.
@@ -1596,6 +1620,11 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
     if ((el = t.closest('[data-open-item]'))) { e.preventDefault(); openItem(el); return; }
     if ((el = t.closest('[data-toggle-picker]'))) { togglePicker(e); return; }
     if ((el = t.closest('[data-toggle-item-menu]'))) { toggleItemMenu(e); return; }
+    if ((el = t.closest('[data-mark-page-read]'))) {
+      e.preventDefault();
+      markPageRead(el);
+      return;
+    }
     if ((el = t.closest('[data-item-menu]'))) { itemMenuAction(e, el.getAttribute('data-item-menu')); return; }
     if ((el = t.closest('[data-toggle-add-menu]'))) { toggleAddMenu(e); return; }
     if ((el = t.closest('[data-toggle-user-menu]'))) { toggleUserMenu(e); return; }
