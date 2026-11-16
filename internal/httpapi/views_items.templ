@@ -1130,8 +1130,18 @@ templ sharedItemPage(it store.ItemWithFeed, d itemViewData) {
 	</html>
 }
 
+// markAllReadButtonClass keeps the author page's control borderless and icon-only
+// while a labelled control (the collection page) gets normal button chrome to
+// match the icon+text buttons beside it.
+func markAllReadButtonClass(label string) string {
+	if label == "" {
+		return "link"
+	}
+	return ""
+}
+
 // markAllReadControl is the check-check button plus its confirmation dialog,
-// shown in the author page header. Its action already carries the active
+// shown in the author and collection page headers. Its action already carries the active
 // feed/tag filter, so it marks every unread item the list shows read; the dialog
 // gates it because the action is not one-click reversible. Only one control
 // renders per page, so the dialog is reached relative to the button rather than
@@ -1141,14 +1151,17 @@ templ markAllReadControl(d markAllReadData) {
 		<div class="mark-all-read">
 			<button
 				type="button"
-				class="link"
+				class={ markAllReadButtonClass(d.Label) }
 				title={ "mark all " + strconv.Itoa(d.Unread) + " items as read" }
 				if d.Unread == 0 {
 					disabled
 				}
 				data-open-next
 			>@web.Lucide("check-check")
-</button>
+				if d.Label != "" {
+					{ d.Label }
+				}
+			</button>
 			if d.Unread > 0 {
 				<dialog class="modal">
 					<div class="row">

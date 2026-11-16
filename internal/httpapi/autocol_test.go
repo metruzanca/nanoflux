@@ -149,7 +149,7 @@ func TestAutoCollectionDelete(t *testing.T) {
 	autoCollection(t, s, u.ID, "youtube.com")
 }
 
-func TestAutoCollectionAddRemoveFeedBlocked(t *testing.T) {
+func TestAutoCollectionRemoveFeedBlocked(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
@@ -164,16 +164,6 @@ func TestAutoCollectionAddRemoveFeedBlocked(t *testing.T) {
 	}
 	c := autoCollection(t, s, u.ID, "youtube.com")
 	feeds, _ := s.store.Feeds.List(u.ID)
-
-	rr = doForm(h, "POST", "/collections/"+itoa(c.ID)+"/add-feed", url.Values{
-		"feed_id": {itoa(feeds[0].ID)},
-	}, cookie)
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("add-feed to auto collection should be 400, got %d %s", rr.Code, rr.Body.String())
-	}
-	if !strings.Contains(rr.Body.String(), "managed automatically") {
-		t.Fatalf("add-feed error should explain: %s", rr.Body.String())
-	}
 
 	rr = doForm(h, "POST", "/collections/"+itoa(c.ID)+"/remove-feed/"+itoa(feeds[0].ID), url.Values{}, cookie)
 	if rr.Code != http.StatusBadRequest {
@@ -268,9 +258,9 @@ func TestCollectionsPageHidesDeleteForAuto(t *testing.T) {
 		t.Fatalf("collection page should not offer delete: %s", cbody)
 	}
 
-	// The auto collection page hides the manual add-feed/remove controls. The
-	// nav's global "+ add feed" button is unrelated, so match the collection's
-	// own add-feed dialog instead.
+	// Collection pages never offer the manual add-feed dialog (feeds are
+	// attached from the feed editor). The nav's global "+ add feed" button is
+	// unrelated, so match the collection's own dialog instead.
 	if strings.Contains(cbody, "collection-add-feed-dialog") {
 		t.Fatalf("auto collection page should not offer add feed: %s", cbody)
 	}

@@ -792,7 +792,8 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 		}
 	}
 
-	// Create a collection and attach the feed.
+	// Create a collection and attach the feed through the feed's collection
+	// membership (the collection page no longer has an add-feed control).
 	rr = doForm(h, "POST", "/collections", url.Values{
 		"name": {"Dev"},
 	}, cookie)
@@ -801,14 +802,8 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 	}
 	cols, _ := s.store.Collections.List(u.ID)
 	feeds, _ = s.store.Feeds.List(u.ID)
-	rr = doForm(h, "POST", "/collections/"+itoa(cols[0].ID)+"/add-feed", url.Values{
-		"feed_id": {itoa(feeds[0].ID)},
-	}, cookie)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("add feed to collection: %d", rr.Code)
-	}
-	if !strings.Contains(rr.Body.String(), `id="scoped-items"`) {
-		t.Fatalf("add-feed response should render the items list: %s", rr.Body.String())
+	if err := s.store.Collections.AddFeed(u.ID, cols[0].ID, feeds[0].ID); err != nil {
+		t.Fatalf("add feed to collection: %v", err)
 	}
 	body = doGet(h, "/collections/"+itoa(cols[0].ID)+"/edit", cookie).Body.String()
 	if !strings.Contains(body, "Blog") {
@@ -2755,19 +2750,71 @@ func TestErrorPagesStyled(t *testing.T) {
 	}
 }
 
-func TestCollectionAddFeedGroupedByAuthor(t *testing.T) {
+func TestCollectionPageHasNoAddFeedControl(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
-	s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
+	s.store.Collections.AddFeed(u.ID, c.ID, f.ID)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Post", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
 	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
-	// The picker is a flat list, so the author is prefixed onto each feed label
-	// ("Metru · Blog") to keep the grouping visible and searchable.
-	if !strings.Contains(body, `data-templ-label="Metru · Blog"`) {
-		t.Fatalf("collection add-feed combo should label feeds by author: %s", body)
+	for _, dead := range []string{"collection-add-feed-dialog", `hx-post="/collections/` + itoa(c.ID) + `/add-feed"`} {
+		if strings.Contains(body, dead) {
+			t.Fatalf("collection page should not offer add feed (%q): %s", dead, body)
+		}
+	}
+	if !strings.Contains(body, `hx-post="/collections/`+itoa(c.ID)+`/read-all"`) ||
+		!strings.Contains(body, "mark all as read") {
+		t.Fatalf("collection page should offer mark all as read: %s", body)
+	}
+	if !strings.Contains(body, `class="button" title="edit"`) || !strings.Contains(body, "edit</a>") {
+		t.Fatalf("collection edit should be an icon+text button: %s", body)
+	}
+}
+
+// TestCollectionMarkAllRead scopes the bulk action to the collection's feeds
+// plus its member views, leaving another feed's items alone.
+func TestCollectionMarkAllRead(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	in, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	out, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
+	c, _ := s.store.Collections.Create(u.ID, "Dev")
+	s.store.Collections.AddFeed(u.ID, c.ID, in.ID)
+	s.store.Items.Upsert(in.ID, store.Item{GUID: "g", Title: "Inside", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	s.store.Items.Upsert(out.ID, store.Item{GUID: "g", Title: "Outside", Link: "https://o.dev/1", FetchedAt: db.Now()})
+
+	// The page counts the collection's unread items, including on the sources
+	// tab where no item list is loaded.
+	body := doGet(h, "/collections/"+itoa(c.ID)+"?tab=feeds", cookie).Body.String()
+	if !strings.Contains(body, "mark all 1 items as read") {
+		t.Fatalf("sources tab should count the collection's unread items: %s", body)
+	}
+
+	if rr := doForm(h, "POST", "/collections/"+itoa(c.ID)+"/read-all", url.Values{}, cookie); rr.Code != http.StatusNoContent {
+		t.Fatalf("collection read-all: %d %s", rr.Code, rr.Body.String())
+	}
+	read := func(link string) bool {
+		items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+		for _, it := range items {
+			if it.Link == link {
+				got, _ := s.store.Items.ByID(u.ID, it.ID)
+				return got.Read
+			}
+		}
+		t.Fatalf("missing item %q", link)
+		return false
+	}
+	if !read("https://b.dev/1") {
+		t.Fatal("collection member feed item should be read")
+	}
+	if read("https://o.dev/1") {
+		t.Fatal("a non-member feed item must stay unread")
 	}
 }
 

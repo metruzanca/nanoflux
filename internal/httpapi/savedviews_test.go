@@ -481,6 +481,36 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 		t.Fatalf("collection index should count feed and view unread items: %s", body)
 	}
 
+	// Mark-all matches the collection list: member feeds plus view-sourced
+	// items, while an item outside the collection stays unread.
+	if rr := doForm(h, http.MethodPost, base+"/read-all", nil, cookie); rr.Code != http.StatusNoContent {
+		t.Fatalf("collection read-all: %d %s", rr.Code, rr.Body.String())
+	}
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	for _, c := range []struct {
+		link string
+		want bool
+	}{
+		{"https://x/go", true},
+		{"https://other.example/rust", true},
+		{"https://other.example/misc", false},
+	} {
+		found := false
+		for _, it := range items {
+			if it.Link != c.link {
+				continue
+			}
+			found = true
+			got, _ := s.store.Items.ByID(u.ID, it.ID)
+			if got.Read != c.want {
+				t.Fatalf("collection read-all: %s read=%v want %v", c.link, got.Read, c.want)
+			}
+		}
+		if !found {
+			t.Fatalf("missing item %q", c.link)
+		}
+	}
+
 	if rr := doForm(h, http.MethodPost, base+"/remove-view/"+viewID, nil, cookie); rr.Code != http.StatusNoContent {
 		t.Fatalf("remove view: %d %s", rr.Code, rr.Body.String())
 	}

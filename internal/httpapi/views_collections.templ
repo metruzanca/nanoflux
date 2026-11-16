@@ -136,15 +136,13 @@ templ collectionPage(u store.User, d collectionData) {
 				<button type="button" title="fetch every feed in this collection now" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/refresh" } hx-target="#collection-refresh-status" hx-swap="outerHTML">@web.Lucide("refresh-cw") refresh all</button>
 				<span id="collection-refresh-status" class="muted small"></span>
 			}
+			@markAllReadControl(d.MarkAll)
 			if d.Collection.IsAuto {
 				<span class="badge">auto</span>
 			}
-			<a class="small" title="edit" href={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>@web.EditIcon()</a>
+			<a class="button" title="edit" href={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>@web.EditIcon() edit</a>
 			if !d.Collection.IsAuto && len(d.AllViews) > 0 {
 				<button type="button" data-open="collection-add-view-dialog">+ add view</button>
-			}
-			if !d.Collection.IsAuto {
-				<button type="button" data-open="collection-add-feed-dialog">+ add feed</button>
 			}
 		</div>
 	</div>
@@ -155,31 +153,18 @@ templ collectionPage(u store.User, d collectionData) {
 	}
 	@ScopedItems(d.Scoped)
 
-	if !d.Collection.IsAuto {
-		<dialog id="collection-add-feed-dialog" class="modal">
+	if !d.Collection.IsAuto && len(d.AllViews) > 0 {
+		<dialog id="collection-add-view-dialog" class="modal">
 			<div class="row">
-				<h2>add feed</h2>
+				<h2>add view</h2>
 				<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
 			</div>
-			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-feed" } hx-target="#scoped-items" hx-swap="outerHTML" data-form-close-reset>
+			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-view" } hx-target="#scoped-items" hx-swap="outerHTML" data-form-close-reset>
 				<input type="hidden" name="view" value={ d.Scoped.View }/>
-				@comboSelect("feed_id", firstGroupedFeedValue(d.AllFeeds), "feed", "search feeds", groupedFeedItems(d.AllFeeds), nil)
+				@comboSelect("view_id", firstSavedViewValue(d.AllViews), "view", "search views", d.AllViews, nil)
 				<button type="submit">add</button>
 			</form>
 		</dialog>
-		if len(d.AllViews) > 0 {
-			<dialog id="collection-add-view-dialog" class="modal">
-				<div class="row">
-					<h2>add view</h2>
-					<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
-				</div>
-				<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-view" } hx-target="#scoped-items" hx-swap="outerHTML" data-form-close-reset>
-					<input type="hidden" name="view" value={ d.Scoped.View }/>
-					@comboSelect("view_id", firstSavedViewValue(d.AllViews), "view", "search views", d.AllViews, nil)
-					<button type="submit">add</button>
-				</form>
-			</dialog>
-		}
 	}
 }
 

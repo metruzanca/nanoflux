@@ -73,17 +73,6 @@ func groupedFeedItems(groups []collectionFeedGroup) []comboItem {
 	return out
 }
 
-// firstGroupedFeedValue is the default selection for the grouped feed picker:
-// the first feed's id, or "" when there are none.
-func firstGroupedFeedValue(groups []collectionFeedGroup) string {
-	for _, g := range groups {
-		if len(g.Feeds) > 0 {
-			return strconv.FormatInt(g.Feeds[0].ID, 10)
-		}
-	}
-	return ""
-}
-
 // extAuthorItems maps authors to combo items with a leading "auto — new author"
 // option (empty value), which the extension save handler treats as "create one".
 func extAuthorItems(authors []store.Author) []comboItem {

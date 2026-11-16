@@ -213,20 +213,21 @@ type authorData struct {
 type markAllReadData struct {
 	Action string // POST endpoint that marks the scope read
 	Unread int    // items the confirmation names and the button counts
+	Label  string // optional visible text; empty renders the icon-only control
 }
 
 type collectionData struct {
 	Collection store.Collection
 	Feeds      []store.Feed
 	Views      []savedViewRow
-	AllFeeds   []collectionFeedGroup
 	AllViews   []comboItem
+	MarkAll    markAllReadData
 	Scoped     scopedItemsData
 }
 
-// collectionFeedGroup is one author's feeds for the collection add-feed
-// dropdown. Collections hold feeds (not authors), but the picker presents them
-// grouped by author so feeds are seen from the perspective of authors.
+// collectionFeedGroup is one author's feeds for an author-grouped feed picker.
+// Collections hold feeds (not authors), but a picker presents them grouped by
+// author so feeds are seen from the perspective of authors.
 type collectionFeedGroup struct {
 	AuthorName string
 	Feeds      []store.FeedWithUnread
@@ -3053,8 +3054,8 @@ func (s *Server) collectionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Creating from the shared add dialog lands on the new collection's page so
-	// the user can add feeds and views to it. The row body still renders for
-	// non-htmx callers.
+	// the user can add views to it; feeds are attached from a feed's editor. The
+	// row body still renders for non-htmx callers.
 	w.Header().Set("HX-Redirect", "/collections/"+strconv.FormatInt(c.ID, 10))
 	web.Render(w, r, collectionCreated(store.CollectionWithCounts{Collection: c}))
 }
@@ -3086,7 +3087,6 @@ func (s *Server) collectionDataFor(userID, id int64, view string, sort itemSort,
 	}
 	feeds, _ := s.store.Collections.Feeds(userID, id)
 	views := s.collectionViewRows(userID, id, tz)
-	allFeeds, _ := s.store.Feeds.ListWithUnread(userID)
 	allViews, _ := s.store.SavedViews.List(userID)
 	member := make(map[int64]bool, len(views))
 	for _, v := range views {
@@ -3099,11 +3099,25 @@ func (s *Server) collectionDataFor(userID, id int64, view string, sort itemSort,
 		}
 	}
 	scoped := s.collectionScopedItems(userID, id, view, sort, tz, filters)
+	// The mark-all count is computed from the collection scope rather than the
+	// active tab, so it stays correct on the sources tab (which loads no items).
+	collectionViews := s.collectionViewFilters(userID, id, tz)
+	tagGroups, feedGroups, _ := filters.storeGroups()
+	unread, _ := s.store.Items.CountUnreadFiltered(userID, store.ItemFilter{
+		CollectionID: id, CollectionViews: collectionViews,
+		TagGroups: tagGroups, FeedGroups: feedGroups,
+		TimeGroups: filters.timeGroups(tz),
+	})
+	base := "/collections/" + strconv.FormatInt(id, 10)
 	return collectionData{
 		Collection: c, Feeds: feeds, Views: views,
-		AllFeeds: groupFeedsByAuthor(allFeeds),
 		AllViews: savedViewComboItems(addable),
-		Scoped:   scoped,
+		MarkAll: markAllReadData{
+			Action: filterActionURL(base+"/read-all", filters),
+			Unread: unread,
+			Label:  "mark all as read",
+		},
+		Scoped: scoped,
 	}, nil
 }
 
@@ -3408,25 +3422,34 @@ func (s *Server) collectionUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/collections/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
-func (s *Server) collectionAddFeed(w http.ResponseWriter, r *http.Request) {
+// collectionReadAll marks every unread item in a collection's scope read:
+// member feeds plus member views, honoring the page's active tag/time filters.
+// The client reloads the page on success.
+func (s *Server) collectionReadAll(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	if c, err := s.store.Collections.ByID(u.ID, id); err != nil {
+	if _, err := s.store.Collections.ByID(u.ID, id); err != nil {
 		http.NotFound(w, r)
 		return
-	} else if c.IsAuto {
-		renderError(w, r, "auto collections are managed automatically")
+	}
+	filters := filtersFromRequest(r).withoutFeedFilters()
+	tagGroups, feedGroups, _ := filters.storeGroups()
+	if _, err := s.store.Items.MarkAllReadFiltered(u.ID, store.ItemFilter{
+		CollectionID:    id,
+		CollectionViews: s.collectionViewFilters(u.ID, id, u.Timezone),
+		TagGroups:       tagGroups,
+		FeedGroups:      feedGroups,
+		TimeGroups:      filters.timeGroups(u.Timezone),
+	}); err != nil {
+		log.Error("mark collection read", "collection_id", id, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	feedID, _ := strconv.ParseInt(r.FormValue("feed_id"), 10, 64)
-	if feedID != 0 {
-		s.store.Collections.AddFeed(u.ID, id, feedID)
-	}
-	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeCollectionView(formTab(r)), itemSortOf(r), u.Timezone, filtersFromRequest(r).withoutFeedFilters())))
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
