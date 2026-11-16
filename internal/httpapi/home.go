@@ -43,9 +43,10 @@ const (
 
 // normalization of a pinned section's sort.
 const (
-	homeSortNewest = "newest"
-	homeSortOldest = "oldest"
-	homeSortMagic  = "magic"
+	homeSortNewest   = "newest"
+	homeSortOldest   = "oldest"
+	homeSortMagic    = "magic"
+	homeSortMomentum = "momentum"
 )
 
 // normalizeHomeMode maps any stored/submitted value onto a known render method,
@@ -69,6 +70,8 @@ func normalizeHomeSort(sort string) string {
 		return homeSortNewest
 	case homeSortOldest:
 		return homeSortOldest
+	case homeSortMomentum:
+		return homeSortMomentum
 	default:
 		return homeSortMagic
 	}
@@ -81,6 +84,8 @@ func homeSort(sort string) itemSort {
 		return sortNewest
 	case homeSortOldest:
 		return sortOldest
+	case homeSortMomentum:
+		return sortMomentum
 	default:
 		return sortMagic
 	}
@@ -196,6 +201,8 @@ func (s *Server) homeSectionData(u store.User, sec homeSection) (homeSectionData
 		filter.Ascending = true
 	case sortMagic:
 		filter.Magic = true
+	case sortMomentum:
+		filter.Momentum = true
 	}
 	items, _, err := s.store.Items.ListPage(u.ID, filter)
 	if err != nil {
@@ -275,7 +282,7 @@ func (s *Server) unread(w http.ResponseWriter, r *http.Request) {
 // "/unread".
 func (s *Server) renderUnread(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	sort := itemSortOf(r)
+	sort := sortsUnread.coerce(itemSortOf(r))
 	filters := filtersFromRequest(r)
 	items, more, _ := s.store.Items.ListPage(u.ID, scopedFilter("unread", sort, cursorID(r, sort), 0, 0, filters, u.Timezone))
 	unread, _ := s.store.Items.CountUnread(u.ID, 0)

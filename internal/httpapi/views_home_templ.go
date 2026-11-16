@@ -133,6 +133,7 @@ func homeSectionSortControl(collectionID int64, sort string) templ.Component {
 		target := "#home-section-" + id
 		templ_7745c5c3_Err = PickerControl("sort-"+id, "how this section is sorted", normalizeHomeSort(sort), "", []pickerOption{
 			{Value: "magic", Label: "magic", Icon: "magic", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"sort","sort":"magic"}`},
+			{Value: "momentum", Label: "momentum", Icon: "momentum", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"sort","sort":"momentum"}`},
 			{Value: "newest", Label: "newest", Icon: "desc", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"sort","sort":"newest"}`},
 			{Value: "oldest", Label: "oldest", Icon: "asc", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"sort","sort":"oldest"}`},
 		}).Render(ctx, templ_7745c5c3_Buffer)
@@ -175,7 +176,7 @@ func homeSectionBlock(sec homeSectionData) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue("home-section-" + id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 68, Col: 56}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 69, Col: 56}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
@@ -188,7 +189,7 @@ func homeSectionBlock(sec homeSectionData) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 68, Col: 82}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 69, Col: 82}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 		if templ_7745c5c3_Err != nil {
@@ -201,7 +202,7 @@ func homeSectionBlock(sec homeSectionData) templ.Component {
 		var templ_7745c5c3_Var7 templ.SafeURL
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinURLErrs("/collections/" + id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 70, Col: 37}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 71, Col: 37}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -214,7 +215,7 @@ func homeSectionBlock(sec homeSectionData) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(sec.Collection.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 70, Col: 61}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 71, Col: 61}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -271,7 +272,7 @@ func homeSectionBlock(sec homeSectionData) templ.Component {
 		var templ_7745c5c3_Var11 templ.SafeURL
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinURLErrs("/collections/" + id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 82, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 83, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -315,6 +316,12 @@ func homeSortControl(collectionID int64, sort string) templ.Component {
 				HxPost:   "/settings/home",
 				HxTarget: "#settings-home-card",
 				HxVals:   `{"action":"sort","collection_id":"` + strconv.FormatInt(collectionID, 10) + `","sort":"magic"}`,
+			},
+			{
+				Value: "momentum", Label: "momentum", Icon: "momentum",
+				HxPost:   "/settings/home",
+				HxTarget: "#settings-home-card",
+				HxVals:   `{"action":"sort","collection_id":"` + strconv.FormatInt(collectionID, 10) + `","sort":"momentum"}`,
 			},
 			{
 				Value: "newest", Label: "newest", Icon: "desc",
@@ -373,7 +380,7 @@ func settingsHomeCard(d settingsHomeData) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(d.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 122, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 129, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 			if templ_7745c5c3_Err != nil {
@@ -472,7 +479,7 @@ func homeGridRow(r settingsHomeRow) templ.Component {
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(strconv.FormatInt(r.Collection.ID, 10))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 159, Col: 123}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 166, Col: 123}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 		if templ_7745c5c3_Err != nil {
@@ -485,7 +492,7 @@ func homeGridRow(r settingsHomeRow) templ.Component {
 		var templ_7745c5c3_Var17 templ.SafeURL
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinURLErrs("/collections/" + strconv.FormatInt(r.Collection.ID, 10))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 160, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 167, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
@@ -498,7 +505,7 @@ func homeGridRow(r settingsHomeRow) templ.Component {
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(r.Collection.Name)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 160, Col: 90}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 167, Col: 90}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -523,7 +530,7 @@ func homeGridRow(r settingsHomeRow) templ.Component {
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(`{"action":"remove","collection_id":"` + strconv.FormatInt(r.Collection.ID, 10) + `"}`)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 164, Col: 219}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_home.templ`, Line: 171, Col: 219}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 		if templ_7745c5c3_Err != nil {

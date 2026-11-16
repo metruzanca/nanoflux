@@ -219,8 +219,14 @@ type ItemFilter struct {
 	// Magic sorts by feed taste instead of time: raised feeds first, then
 	// neutral, then lowered; within a tier, feeds with more favorites first,
 	// then by item time. It uses Offset rather than the keyset cursors.
-	Magic  bool
-	Offset int // magic-sort page offset (ignored when Magic is false)
+	Magic bool
+	// Momentum groups items into author blocks, fewest items first: authors are
+	// ordered by how many items they have in the filtered set, then by name and
+	// id (unassigned last), and inside a block newest first. Intended for the
+	// unread tab so a reader can clear the small authors and work up. Like
+	// Magic it pages by Offset.
+	Momentum bool
+	Offset   int // Magic/Momentum page offset (ignored by the time sorts)
 	// Tags filters the list to items carrying every listed category (AND). An
 	// item matches when its tag set is a superset of Tags. Empty means no tag
 	// filter. Matching is exact and case-sensitive (tags are stored verbatim).
@@ -463,7 +469,8 @@ func (s *ItemStore) List(userID int64, f ItemFilter) ([]ItemWithFeed, error) {
 // (oldest first when f.Ascending); pass the last returned id as f.BeforeID (desc)
 // or f.AfterID (asc) to page further. One extra row is fetched to detect the
 // next page. When f.Magic is set, items instead sort by feed taste (see
-// ListItemsMagic) and page by f.Offset.
+// ListItemsMagic), and when f.Momentum is set they group by author backlog; both
+// page by f.Offset.
 func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, error) {
 	limit := f.Limit
 	if limit <= 0 || limit > 500 {
@@ -474,8 +481,10 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	// filter or negative filter uses the hand-written dynamic query. An author
 	// scope also uses it: the author's own rules must apply to items reached
 	// through feed membership, which visible_items (keyed on the owner feed's
-	// author) cannot express. sqlc owns the rest of the list paths.
-	if f.AuthorID != 0 || len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 ||
+	// author) cannot express. The momentum sort needs a window count over that
+	// same filtered set, so it always uses the dynamic query too. sqlc owns the
+	// rest of the list paths.
+	if f.AuthorID != 0 || f.Momentum || len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 ||
 		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.TimeGroups) > 0 ||
 		len(f.Views) > 0 || len(f.CollectionViews) > 0 {
 		return s.listPageTagged(userID, f, limit)
@@ -704,15 +713,29 @@ func (s *ItemStore) ListReadHistoryFiltered(userID int64, offset, limit int, f I
 // "items" only for the author-filter preview, which must evaluate draft rules
 // without the saved ones.
 func itemListColumns(from string) string {
+	return itemListColumnsExtra(from, "")
+}
+
+// itemListColumnsExtra is itemListColumns with an extra trailing SELECT column,
+// used by the momentum sort to carry the per-author count out of the inner
+// query.
+func itemListColumnsExtra(from, extra string) string {
 	return `SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.image_url, i.image_cache_key, i.duration_sec,
        i.published_at, i.fetched_at, i.read, i.favorite, i.bookmark, i.read_at,
        f.title AS feed_title, f.feed_url AS feed_url, f.home_url AS feed_home_url,
        f.is_system AS feed_is_system,
-       a.id AS author_id, a.name AS author_name
+       a.id AS author_id, a.name AS author_name` + extra + `
 FROM ` + from + ` i
 JOIN feeds f ON f.id = i.feed_id
 LEFT JOIN authors a ON a.id = f.author_id`
 }
+
+// itemListColumnNames is the bare column list matching itemListColumns, used by
+// the momentum sort to re-project a wrapped query back to the row shape
+// scanItemList expects.
+const itemListColumnNames = `id, feed_id, guid, title, link, summary, categories, image_url, image_cache_key, duration_sec,
+       published_at, fetched_at, read, favorite, bookmark, read_at,
+       feed_title, feed_url, feed_home_url, feed_is_system, author_id, author_name`
 
 // scanItemList reads rows selected with itemListColumns into ItemWithFeed values.
 func scanItemList(rows *sql.Rows, limit int) ([]ItemWithFeed, bool, error) {
@@ -762,8 +785,16 @@ func (f ItemFilter) itemSource() string {
 
 func (s *ItemStore) listPageTaggedFrom(userID int64, f ItemFilter, limit int, from string) ([]ItemWithFeed, bool, error) {
 	var b strings.Builder
-	b.WriteString(itemListColumns(from))
 	var args []any
+	// Momentum wraps the filtered list in a subselect that carries each author's
+	// item count, then orders by it. The count is over the rows the same
+	// predicates selected, so active filters, views and author rules all shape
+	// the backlog exactly as they shape the list.
+	if f.Momentum {
+		b.WriteString("SELECT ")
+		b.WriteString(itemListColumnNames)
+		b.WriteString(" FROM (")
+	}
 	if f.Magic {
 		b.WriteString(` LEFT JOIN (
 			SELECT feed_id, COUNT(*) AS fav_count FROM items
@@ -771,10 +802,19 @@ func (s *ItemStore) listPageTaggedFrom(userID int64, f ItemFilter, limit int, fr
 		) fc ON fc.feed_id = i.feed_id`)
 		args = append(args, userID)
 	}
+	extra := ""
+	if f.Momentum {
+		extra = `,
+       COUNT(*) OVER (PARTITION BY f.author_id) AS author_backlog`
+	}
+	b.WriteString(itemListColumnsExtra(from, extra))
 	b.WriteString(" WHERE i.user_id = ?")
 	args = append(args, userID)
 	appendItemFilterPredicates(&b, &args, f, from == "items")
 	switch {
+	case f.Momentum:
+		b.WriteString(") ORDER BY author_backlog ASC, CASE WHEN author_name IS NULL THEN 1 ELSE 0 END ASC, COALESCE(author_name, '') ASC, COALESCE(author_id, 0) ASC, COALESCE(published_at, fetched_at) DESC, id DESC LIMIT ? OFFSET ?")
+		args = append(args, limit+1, f.Offset)
 	case f.Magic:
 		b.WriteString(" ORDER BY CASE WHEN f.rank > 0 THEN 0 WHEN f.rank < 0 THEN 2 ELSE 1 END ASC, COALESCE(fc.fav_count, 0) DESC, COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ? OFFSET ?")
 		args = append(args, limit+1, f.Offset)

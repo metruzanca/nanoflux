@@ -55,6 +55,7 @@ templ homeSectionSortControl(collectionID int64, sort string) {
 	{{ target := "#home-section-" + id }}
 	@PickerControl("sort-"+id, "how this section is sorted", normalizeHomeSort(sort), "", []pickerOption{
 		{Value: "magic", Label: "magic", Icon: "magic", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"sort","sort":"magic"}`},
+		{Value: "momentum", Label: "momentum", Icon: "momentum", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"sort","sort":"momentum"}`},
 		{Value: "newest", Label: "newest", Icon: "desc", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"sort","sort":"newest"}`},
 		{Value: "oldest", Label: "oldest", Icon: "asc", HxPost: endpoint, HxTarget: target, HxVals: `{"action":"sort","sort":"oldest"}`},
 	})
@@ -94,6 +95,12 @@ templ homeSortControl(collectionID int64, sort string) {
 			HxPost:   "/settings/home",
 			HxTarget: "#settings-home-card",
 			HxVals:   `{"action":"sort","collection_id":"` + strconv.FormatInt(collectionID, 10) + `","sort":"magic"}`,
+		},
+		{
+			Value: "momentum", Label: "momentum", Icon: "momentum",
+			HxPost:   "/settings/home",
+			HxTarget: "#settings-home-card",
+			HxVals:   `{"action":"sort","collection_id":"` + strconv.FormatInt(collectionID, 10) + `","sort":"momentum"}`,
 		},
 		{
 			Value: "newest", Label: "newest", Icon: "desc",

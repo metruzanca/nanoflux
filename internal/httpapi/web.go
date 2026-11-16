@@ -240,7 +240,7 @@ type scopedItemsData struct {
 	ItemsPath   string // fragment URL base, e.g. "/authors/1/items"
 	View        string // "unread", "read", "favorites", "bookmarks" or "feeds"
 	Sort        itemSort
-	NoMagic     bool // lists order by membership time, so the magic sort is not offered
+	Sorts       sortSet // item sorts this list offers (its scope decides)
 	UnreadCount int
 	ReadCount   int
 	Items       []store.ItemWithFeed
@@ -289,14 +289,69 @@ type scopedItemsData struct {
 }
 
 // itemSort is the ordering of an item list: newest first (time desc), oldest
-// first (time asc), or magic (feed taste; see store.ItemFilter.Magic).
+// first (time asc), magic (feed taste; see store.ItemFilter.Magic) or momentum
+// (author blocks with the smallest backlog first; see store.ItemFilter.Momentum).
 type itemSort string
 
 const (
-	sortNewest itemSort = "newest"
-	sortOldest itemSort = "oldest"
-	sortMagic  itemSort = "magic"
+	sortNewest   itemSort = "newest"
+	sortOldest   itemSort = "oldest"
+	sortMagic    itemSort = "magic"
+	sortMomentum itemSort = "momentum"
 )
+
+// sortSet is the set of item sorts a list offers. Page scopes differ: only the
+// global unread/search scope and collections offer the taste and momentum
+// sorts, and momentum needs an unread backlog so it is offered on the unread
+// tab only.
+type sortSet uint8
+
+const (
+	offerNewest sortSet = 1 << iota
+	offerOldest
+	offerMagic
+	offerMomentum
+)
+
+const (
+	sortsTime   = offerNewest | offerOldest
+	sortsTaste  = sortsTime | offerMagic
+	sortsUnread = sortsTaste | offerMomentum
+)
+
+// unreadSorts drops momentum for a tab that is not the unread list. Magic stays
+// available on the read and favorites tabs of a scope that offers it.
+func unreadSorts(view string) sortSet {
+	if view == "unread" {
+		return sortsUnread
+	}
+	return sortsTaste
+}
+
+// offers reports whether the set includes sort.
+func (s sortSet) offers(sort itemSort) bool {
+	switch sort {
+	case sortNewest:
+		return s&offerNewest != 0
+	case sortOldest:
+		return s&offerOldest != 0
+	case sortMagic:
+		return s&offerMagic != 0
+	case sortMomentum:
+		return s&offerMomentum != 0
+	}
+	return false
+}
+
+// coerce maps a requested sort onto one the set offers. A momentum or magic
+// request that arrives on a scope or tab that does not offer it falls back to
+// newest, so the picker and the rendered order never disagree.
+func (s sortSet) coerce(sort itemSort) itemSort {
+	if s.offers(sort) {
+		return sort
+	}
+	return sortNewest
+}
 
 // itemSortFromParam maps a ?sort= value onto a sort. Anything unknown is the
 // default newest.
@@ -304,6 +359,8 @@ func itemSortFromParam(v string) itemSort {
 	switch v {
 	case "magic":
 		return sortMagic
+	case "momentum":
+		return sortMomentum
 	case "oldest":
 		return sortOldest
 	case "newest":
@@ -325,14 +382,17 @@ func itemSortOf(r *http.Request) itemSort {
 // param is the canonical ?sort= value.
 func (s itemSort) param() string { return string(s) }
 
-func (s itemSort) asc() bool   { return s == sortOldest }
-func (s itemSort) magic() bool { return s == sortMagic }
+func (s itemSort) asc() bool         { return s == sortOldest }
+func (s itemSort) magic() bool       { return s == sortMagic }
+func (s itemSort) momentum() bool    { return s == sortMomentum }
+func (s itemSort) offsetPaged() bool { return s.magic() || s.momentum() }
 
 // itemsAsc reports whether the list is ordered oldest-first.
 func itemsAsc(r *http.Request) bool { return itemSortOf(r).asc() }
 
 // moreURLFor builds a load-more URL for a cursor value under a sort. For newest
-// and oldest the cursor is the last item's id; for magic it is the next offset.
+// and oldest the cursor is the last item's id; for magic and momentum it is the
+// next offset.
 func moreURLFor(base string, sort itemSort, cursor int64) string {
 	sep := "?"
 	if strings.Contains(base, "?") {
@@ -342,20 +402,20 @@ func moreURLFor(base string, sort itemSort, cursor int64) string {
 	switch sort {
 	case sortOldest:
 		key = "after"
-	case sortMagic:
+	case sortMagic, sortMomentum:
 		key = "offset"
 	}
 	return base + sep + key + "=" + strconv.FormatInt(cursor, 10)
 }
 
 // pageCursorFor returns the load-more cursor for a fetched page, or nil when
-// the list is empty or there is no next page. Magic pages advance by offset
-// rather than a keyset id.
+// the list is empty or there is no next page. Magic and momentum pages advance
+// by offset rather than a keyset id.
 func pageCursorFor(base string, items []store.ItemWithFeed, hasMore bool, sort itemSort, offset int) *loadMoreData {
 	if !hasMore || len(items) == 0 {
 		return nil
 	}
-	if sort.magic() {
+	if sort.offsetPaged() {
 		return &loadMoreData{URL: moreURLFor(base, sort, int64(offset+pageSize))}
 	}
 	return &loadMoreData{URL: moreURLFor(base, sort, items[len(items)-1].ID)}
@@ -363,8 +423,8 @@ func pageCursorFor(base string, items []store.ItemWithFeed, hasMore bool, sort i
 
 // scopedFilter builds the item filter for a feed/author/collection list or the
 // global unread list, honoring the sort, a page cursor (a keyset id for the
-// time sorts, an offset for magic), the active show/hide tag and feed filters,
-// and time windows resolved in the user's timezone.
+// time sorts, an offset for magic and momentum), the active show/hide tag and
+// feed filters, and time windows resolved in the user's timezone.
 func scopedFilter(view string, sort itemSort, cursor int64, authorID, collectionID int64, filters listFilters, tz string) store.ItemFilter {
 	tagGroups, feedGroups, _ := filters.storeGroups()
 	f := store.ItemFilter{
@@ -377,6 +437,9 @@ func scopedFilter(view string, sort itemSort, cursor int64, authorID, collection
 		f.AfterID = cursor
 	case sortMagic:
 		f.Magic = true
+		f.Offset = int(cursor)
+	case sortMomentum:
+		f.Momentum = true
 		f.Offset = int(cursor)
 	default:
 		f.BeforeID = cursor
@@ -424,13 +487,13 @@ func scopedViewSep(view string, viewID int64) string {
 }
 
 // cursorID reads the page cursor from a load-more request: before= (newest),
-// after= (oldest), offset= (magic).
+// after= (oldest), offset= (magic or momentum).
 func cursorID(r *http.Request, sort itemSort) int64 {
 	key := "before"
 	switch sort {
 	case sortOldest:
 		key = "after"
-	case sortMagic:
+	case sortMagic, sortMomentum:
 		key = "offset"
 	}
 	n, _ := strconv.ParseInt(r.URL.Query().Get(key), 10, 64)
@@ -578,7 +641,7 @@ func historyMore(base string, hasMore bool, offset int) *loadMoreData {
 
 func (s *Server) favoritesPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	sort := itemSortOf(r)
+	sort := sortsTime.coerce(itemSortOf(r))
 	filters := filtersFromRequest(r)
 	scope := store.ItemFilter{FavoritesOnly: true}
 	items, more, _ := s.store.Items.ListPage(u.ID, scopedFilter("favorites", sort, cursorID(r, sort), 0, 0, filters, u.Timezone))
@@ -599,7 +662,7 @@ func (s *Server) favoritesPage(w http.ResponseWriter, r *http.Request) {
 // favorites.
 func (s *Server) bookmarksPage(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	sort := itemSortOf(r)
+	sort := sortsTime.coerce(itemSortOf(r))
 	filters := filtersFromRequest(r)
 	scope := store.ItemFilter{BookmarksOnly: true}
 	items, more, _ := s.store.Items.ListPage(u.ID, scopedFilter("bookmarks", sort, cursorID(r, sort), 0, 0, filters, u.Timezone))
@@ -675,7 +738,7 @@ func (s *Server) renderReadItemsList(w http.ResponseWriter, r *http.Request, use
 }
 
 func (s *Server) renderItemsList(w http.ResponseWriter, r *http.Request, userID int64, tz string) {
-	sort := itemSortOf(r)
+	sort := sortsUnread.coerce(itemSortOf(r))
 	filters := filtersFromRequest(r)
 	items, more, _ := s.store.Items.ListPage(userID, scopedFilter("unread", sort, cursorID(r, sort), 0, 0, filters, tz))
 	base := filters.appendFilters("/items?sort=" + sort.param())
@@ -703,12 +766,23 @@ func (s *Server) itemsFragment(w http.ResponseWriter, r *http.Request) {
 	sort := itemSortOf(r)
 	filters := filtersFromRequest(r)
 	view := "unread"
+	// The unread list offers momentum; favorites and bookmarks are time-ordered.
+	if r.URL.Query().Get("fav") == "1" {
+		view = "favorites"
+	} else if r.URL.Query().Get("bookmark") == "1" {
+		view = "bookmarks"
+	}
+	sorts := sortsTime
+	if view == "unread" {
+		sorts = sortsUnread
+	}
+	sort = sorts.coerce(sort)
 	base := "/items?sort=" + sort.param()
-	switch {
-	case r.URL.Query().Get("fav") == "1":
-		view, base = "favorites", "/items?fav=1&sort="+sort.param()
-	case r.URL.Query().Get("bookmark") == "1":
-		view, base = "bookmarks", "/items?bookmark=1&sort="+sort.param()
+	switch view {
+	case "favorites":
+		base = "/items?fav=1&sort=" + sort.param()
+	case "bookmarks":
+		base = "/items?bookmark=1&sort=" + sort.param()
 	}
 	filter := scopedFilter(view, sort, cursorID(r, sort), 0, 0, filters, u.Timezone)
 	base = filters.appendFilters(base)
@@ -2405,6 +2479,11 @@ func (s *Server) authorHasViews(userID, authorID int64) bool {
 // views assigned to them; a selected view narrows the list to just that view.
 // The bool is false when viewID is not an assigned view of this author.
 func (s *Server) authorScopedItems(userID, authorID int64, view string, sort itemSort, tz string, filters listFilters, viewID int64) (scopedItemsData, bool) {
+	// An author page is a time-ordered list: the taste and momentum sorts only
+	// make sense across authors (and are offered on the global list and
+	// collections), so a momentum/magic request here falls back to newest.
+	sorts := sortsTime
+	sort = sorts.coerce(sort)
 	scopeAuthor, scopeViews, ok := s.authorScope(userID, authorID, viewID, tz)
 	if !ok {
 		return scopedItemsData{}, false
@@ -2430,6 +2509,7 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 		tabsFilter.FavoritesOnly, tabsFilter.BookmarksOnly = false, false
 		tabsFilter.BeforeID, tabsFilter.AfterID = 0, 0
 		tabsFilter.Ascending, tabsFilter.Magic = false, false
+		tabsFilter.Momentum = false
 		tabsFilter.Limit, tabsFilter.Offset = 0, 0
 		tabs, _ := s.store.Items.CountTabsFilter(userID, tabsFilter)
 		unread, read, favs = tabs.Unread, tabs.Read, tabs.Favorites
@@ -2457,7 +2537,7 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 		}
 	}
 	return scopedItemsData{
-		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
+		Path: base, ItemsPath: base + "/items", View: view, Sort: sort, Sorts: sorts,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, dedupItems(items)),
 		More: pageCursorFor(itemsBase, items, more, sort, 0), HideAuthor: true,
 		Mode: s.store.ViewPrefs.Mode(userID, base), FavTab: favs > 0 || view == "favorites", FavCount: favs,
@@ -2470,6 +2550,8 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 // the same unread/read/favorites tabs, sort, filters and display mode as an
 // author's item list, but no author or collection scope.
 func (s *Server) globalScopedItems(userID int64, view string, sort itemSort, tz string, filters listFilters) scopedItemsData {
+	sorts := unreadSorts(view)
+	sort = sorts.coerce(sort)
 	items, more, _ := s.store.Items.ListPage(userID, scopedFilter(view, sort, 0, 0, 0, filters, tz))
 	tabs, _ := s.store.Items.CountTabsFilter(userID, filterScope(store.ItemFilter{}, filters, tz))
 	cats, _ := s.store.Items.ListUserCategories(userID, false)
@@ -2488,7 +2570,7 @@ func (s *Server) globalScopedItems(userID int64, view string, sort itemSort, tz 
 		}
 	}
 	return scopedItemsData{
-		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
+		Path: base, ItemsPath: base + "/items", View: view, Sort: sort, Sorts: sorts,
 		UnreadCount: tabs.Unread, ReadCount: tabs.Read,
 		Items:  withTZ(tz, dedupItems(items)),
 		More:   pageCursorFor(itemsBase, items, more, sort, 0),
@@ -2514,7 +2596,7 @@ func (s *Server) searchPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) searchItems(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	view := itemsView(r)
-	sort := itemSortOf(r)
+	sort := unreadSorts(view).coerce(itemSortOf(r))
 	filters := filtersFromRequest(r)
 	if cursor := cursorID(r, sort); cursor > 0 {
 		items, more, err := s.store.Items.ListPage(u.ID, scopedFilter(view, sort, cursor, 0, 0, filters, u.Timezone))
@@ -2569,7 +2651,7 @@ func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view, viewID := authorViewState(r)
-	sort := itemSortOf(r)
+	sort := sortsTime.coerce(itemSortOf(r))
 	filters := s.authorFilters(u.ID, id, filtersFromRequest(r))
 	scopeAuthor, scopeViews, ok := s.authorScope(u.ID, id, viewID, u.Timezone)
 	if !ok {
@@ -3170,12 +3252,14 @@ func groupFeedsByAuthor(rows []store.FeedWithUnread) []collectionFeedGroup {
 // listing the collection's feeds as cards; when that view is active no items
 // are loaded.
 func (s *Server) collectionScopedItems(userID, collectionID int64, view string, sort itemSort, tz string, filters listFilters) scopedItemsData {
+	sorts := unreadSorts(view)
+	sort = sorts.coerce(sort)
 	memberFeeds, _ := s.store.Collections.Feeds(userID, collectionID)
 	collectionViews := s.collectionViewFilters(userID, collectionID, tz)
 	viewRows := s.collectionViewRows(userID, collectionID, tz)
 	base := "/collections/" + strconv.FormatInt(collectionID, 10)
 	d := scopedItemsData{
-		Path: base, ItemsPath: base + "/items", View: view, Sort: sort,
+		Path: base, ItemsPath: base + "/items", View: view, Sort: sort, Sorts: sorts,
 		FeedsTab: true, FeedCount: len(memberFeeds), ViewCount: len(viewRows),
 		Mode: s.store.ViewPrefs.Mode(userID, base), Filters: filters,
 		ScopeCollectionID: collectionID,
@@ -3279,7 +3363,7 @@ func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := collectionView(r)
-	sort := itemSortOf(r)
+	sort := unreadSorts(view).coerce(itemSortOf(r))
 	filters := filtersFromRequest(r).withoutFeedFilters()
 	if view != "feeds" {
 		if cursor := cursorID(r, sort); cursor > 0 {

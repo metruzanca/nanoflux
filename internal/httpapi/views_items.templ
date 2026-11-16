@@ -642,7 +642,7 @@ templ scopedItemsInner(d scopedItemsData) {
 		if d.View != "feeds" {
 			<div class="row-actions">
 				@filterButton(fp)
-				@sortPicker(d.Path, d.View, d.Sort, d.NoMagic, d.Filters, d.ViewID)
+				@sortPicker(d.Path, d.View, d.Sort, d.Sorts, d.Filters, d.ViewID)
 				@DisplayModeControl(d.Path, d.Mode)
 			</div>
 		} else {
@@ -651,6 +651,7 @@ templ scopedItemsInner(d scopedItemsData) {
 			</div>
 		}
 	</div>
+	@momentumHint(d.Sort)
 	if d.View == "feeds" {
 		@CollectionSourceCards(mergeCollectionSources(d.Feeds, d.Views))
 	} else {
@@ -798,43 +799,51 @@ templ FeedSortControl() {
 	})
 }
 
-// SortControl is the item sort picker: newest/oldest by time, or magic (feed
-// taste). Server-side: each option is a link that reloads the page with
-// ?sort=. basePath and view build the target URL; the list fragment is reloaded
-// in place by app.js on navigation.
+// SortControl is the item sort picker: newest/oldest by time, plus the taste
+// sorts when the scope offers them (see sortSet). Server-side: each option is a
+// link that reloads the page with ?sort=. basePath and view build the target
+// URL; the list fragment is reloaded in place by app.js on navigation.
 templ SortControl(basePath, view string, current itemSort) {
-	@sortPicker(basePath, view, current, false, nil, 0)
+	@sortPicker(basePath, view, current, sortsTaste, nil, 0)
 }
 
-// sortPicker renders the sort options, omitting magic when noMagic is set (a
-// list orders by membership time, so feed taste does not apply). filters are
-// carried into each option so changing the sort keeps the active filters. A
-// view-scoped author page passes viewID so the links keep ?view=<id>&tab=.
-templ sortPicker(basePath, view string, current itemSort, noMagic bool, filters listFilters, viewID int64) {
+// sortPicker renders the sorts the scope offers (time only on an author page or
+// a native list; taste and momentum on the global list and collections).
+// filters are carried into each option so changing the sort keeps the active
+// filters. A view-scoped author page passes viewID so the links keep
+// ?view=<id>&tab=.
+templ sortPicker(basePath, view string, current itemSort, sorts sortSet, filters listFilters, viewID int64) {
 	{{ sep := scopedViewSep(view, viewID) }}
-	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, sep, current, noMagic, filters))
+	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, sep, current, sorts, filters))
 }
 
 // SimpleSortControl is SortControl for a page whose list is not scoped (a plain
 // query-string base such as "/unread" or "/favorites"). filters are preserved in
 // each option's link.
-templ SimpleSortControl(basePath string, current itemSort, filters listFilters) {
+templ SimpleSortControl(basePath string, current itemSort, filters listFilters, sorts sortSet) {
 	{{ sep := "?" }}
 	if strings.Contains(basePath, "?") {
 		{{ sep = "&" }}
 	}
-	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, sep, current, false, filters))
+	@PickerControl("sort", "sort", current.param(), "", sortOptions(basePath, sep, current, sorts, filters))
 }
 
-// sortOptions builds the newest/oldest/magic picker options for a base URL. The
-// magic option is dropped when noMagic is set.
-func sortOptions(basePath, sep string, current itemSort, noMagic bool, filters listFilters) []pickerOption {
-	opts := []pickerOption{
-		{Value: string(sortNewest), Label: "newest", Icon: "desc", Href: filters.appendFilters(basePath+sep+"sort=newest")},
-		{Value: string(sortOldest), Label: "oldest", Icon: "asc", Href: filters.appendFilters(basePath+sep+"sort=oldest")},
+// sortOptions builds the item sort picker options for a base URL from the set
+// the scope offers. Momentum is unread-only, so a read/favorites list omits it
+// even when its scope would allow it.
+func sortOptions(basePath, sep string, current itemSort, sorts sortSet, filters listFilters) []pickerOption {
+	var opts []pickerOption
+	if sorts.offers(sortNewest) {
+		opts = append(opts, pickerOption{Value: string(sortNewest), Label: "newest", Icon: "desc", Href: filters.appendFilters(basePath + sep + "sort=newest")})
 	}
-	if !noMagic {
-		opts = append(opts, pickerOption{Value: string(sortMagic), Label: "magic", Icon: "magic", Href: filters.appendFilters(basePath+sep+"sort=magic")})
+	if sorts.offers(sortOldest) {
+		opts = append(opts, pickerOption{Value: string(sortOldest), Label: "oldest", Icon: "asc", Href: filters.appendFilters(basePath + sep + "sort=oldest")})
+	}
+	if sorts.offers(sortMagic) {
+		opts = append(opts, pickerOption{Value: string(sortMagic), Label: "magic", Icon: "magic", Href: filters.appendFilters(basePath + sep + "sort=magic")})
+	}
+	if sorts.offers(sortMomentum) {
+		opts = append(opts, pickerOption{Value: string(sortMomentum), Label: "momentum", Icon: "momentum", Href: filters.appendFilters(basePath + sep + "sort=momentum")})
 	}
 	return opts
 }
@@ -854,6 +863,14 @@ templ ModeIcon(name string) {
 			@web.Lucide("arrow-up")
 		case "magic":
 			@web.Lucide("sparkles")
+		case "momentum":
+			@web.Lucide("trending-up")
+	}
+}
+
+templ momentumHint(current itemSort) {
+	if current.momentum() {
+		<p class="muted small">authors with the fewest unread first</p>
 	}
 }
 

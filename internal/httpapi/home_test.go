@@ -218,15 +218,15 @@ func TestSettingsHomeRenderMode(t *testing.T) {
 }
 
 // TestSettingsHomeSort covers the per-section sort picker: the settings card
-// offers newest/oldest/magic (magic default), and a chosen sort is stored and
-// used when the home page loads that section.
+// offers newest/oldest/magic/momentum (magic default), and a chosen sort is
+// stored and used when the home page loads that section.
 func TestSettingsHomeSort(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, cats, _ := homeFixture(t, s)
 	s.store.Users.SetHomeConfig(u.ID, `[{"kind":"collection","ref_id":`+itoa(cats.ID)+`}]`)
 
-	// The picker defaults to magic and offers all three options.
+	// The picker defaults to magic and offers every option.
 	body := doGet(h, "/settings", cookie).Body.String()
 	if !strings.Contains(body, `data-picker="sort-`+itoa(cats.ID)+`"`) {
 		t.Fatalf("settings home card should offer a sort picker: %s", body)
@@ -246,6 +246,19 @@ func TestSettingsHomeSort(t *testing.T) {
 	after, _ := s.store.Users.ByID(u.ID)
 	if !strings.Contains(after.HomeConfig, `"sort":"oldest"`) {
 		t.Fatalf("home config should record the oldest sort: %q", after.HomeConfig)
+	}
+
+	// Momentum is also offered (the section is a collection unread list) and
+	// persists like the time sorts.
+	rr = doForm(h, "POST", "/settings/home", url.Values{
+		"action": {"sort"}, "collection_id": {itoa(cats.ID)}, "sort": {"momentum"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set momentum sort: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if !strings.Contains(after.HomeConfig, `"sort":"momentum"`) {
+		t.Fatalf("home config should record the momentum sort: %q", after.HomeConfig)
 	}
 
 	// An unknown sort falls back to magic.

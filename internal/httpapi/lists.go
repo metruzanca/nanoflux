@@ -94,6 +94,8 @@ func (s *Server) listPage(w http.ResponseWriter, r *http.Request) {
 // back to newest. Active tag/feed/time filters narrow the items without
 // changing that order.
 func (s *Server) listScopedItems(userID, listID int64, view string, sort itemSort, tz string, filters listFilters) scopedItemsData {
+	sorts := sortsTime
+	sort = sorts.coerce(sort)
 	asc := sort.asc()
 	unreadF := listItemFilter(view, filters, tz)
 	items, more, _ := s.store.Lists.ItemList(userID, listID, 0, pageSize, asc, unreadF)
@@ -114,7 +116,7 @@ func (s *Server) listScopedItems(userID, listID int64, view string, sort itemSor
 	cats, _ := s.store.Lists.Categories(userID, listID)
 	feeds, _ := s.store.Feeds.ListWithUnread(userID)
 	return scopedItemsData{
-		Path: base, ItemsPath: base + "/items", View: view, Sort: sort, NoMagic: true, NoSaveView: true,
+		Path: base, ItemsPath: base + "/items", View: view, Sort: sort, Sorts: sorts, NoSaveView: true,
 		UnreadCount: unread, ReadCount: read, Items: withTZ(tz, items),
 		More:    pageCursorFor(itemsBase, items, more, sort, 0),
 		Mode:    s.store.ViewPrefs.Mode(userID, base),
@@ -143,7 +145,7 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := itemsView(r)
-	sort := itemSortOf(r)
+	sort := sortsTime.coerce(itemSortOf(r))
 	filters := filtersFromRequest(r)
 	asc := sort.asc()
 	if cursor := cursorID(r, sort); cursor > 0 {

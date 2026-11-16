@@ -835,7 +835,14 @@ add-to-list picker (`listsCombo` pseudo-values `favorites`/`bookmarks`).
 ## Magic sort
 
 Item lists can sort by feed taste instead of time. `ItemFilter.Magic` dispatches
-to `ListItemsMagic` (offset-paged, no keyset cursor; `?sort=magic`).
+to `ListItemsMagic` (offset-paged, no keyset cursor; `?sort=magic`). The taste
+sorts are offered only where a list spans authors: the global unread page,
+`/search`, a collection's item list, and a pinned home section (a collection
+unread list). An author page, favorites, bookmarks and a custom list offer
+newest/oldest only. `scopedItemsData.Sorts` (a `sortSet`) is what the picker
+renders, and `sortSet.coerce` maps a sort the scope or tab does not offer onto
+`newest` in both the page and the load-more handler, so the picker and the
+actual order cannot disagree.
 
 - Ranking is hard-tiered and transparent: the manual rank dominates, then the
   feed's owner-feed favorite count, then item time. `CASE WHEN f.rank > 0 THEN 0
@@ -851,6 +858,34 @@ to `ListItemsMagic` (offset-paged, no keyset cursor; `?sort=magic`).
 - The sort picker (`SortControl`/`SimpleSortControl`) replaces the old two-way
   `?dir=` control on every item list. `itemSortOf` still reads legacy `?dir=asc`
   as `oldest`.
+
+## Momentum sort
+
+`?sort=momentum` (`ItemFilter.Momentum`) is a second sort for the unread list:
+it groups items into contiguous author blocks, ordered by the author's unread
+count in the same filtered set ascending, then by author name and id (unassigned
+last), and orders inside a block newest first. The point is the clearing flow: authors
+with one or two unread items come first, so a reader clears a small author and
+works up to the heavy ones.
+
+- It is unread-only and offset-paged like magic. It is offered on the global
+  unread page, `/search`'s unread tab, a collection's unread tab, and a pinned
+  home section; a read/favorites tab, an author page and a native list do not
+  offer it, and a request that arrives with `?sort=momentum` there coerces to
+  newest (see `sortSet.coerce` and `unreadSorts`).
+- It always uses the hand-written `listPageTaggedFrom` path (never a generated
+  query), because the backlog is a `COUNT(*) OVER (PARTITION BY f.author_id)`
+  window over the filtered rows. The window is projected away in an outer select
+  so `scanItemList` still sees the fixed row shape. Filters, collection views
+  and the always-on author rules therefore shape the backlog exactly as they
+  shape the list.
+- Attribution is the owner-feed author (`items.feed_id -> feeds.author_id`), the
+  same identity auto-read, stats and author filters use, so a cross-feed post
+  counts once, under its owner.
+- Because the backlog is live, marking items read shifts later offsets; the same
+  caveat magic has. Mark-page-read reloads the list, so the common flow is
+  unaffected. The active sort shows an "authors with the fewest unread first"
+  hint.
 
 ## Saved pages
 

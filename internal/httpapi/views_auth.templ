@@ -71,10 +71,11 @@ templ homePage(d homeData) {
 		<h1>unread ({ d.UnreadCount })</h1>
 		<div class="row-actions">
 			@filterButton(fp)
-			@SimpleSortControl("/unread", d.Sort, d.Filters)
+			@SimpleSortControl("/unread", d.Sort, d.Filters, sortsUnread)
 			@DisplayModeControl("/unread", d.Mode)
 		</div>
 	</div>
+	@momentumHint(d.Sort)
 	@filterChips(fp)
 	@ItemsSection(d.Unread, d.More, false, d.Mode, true)
 	@filterDialog(fp)
@@ -112,7 +113,7 @@ templ favoritesPage(d favoritesData) {
 		<h1>favorites ({ d.FavCount })</h1>
 		<div class="row-actions">
 			@filterButton(fp)
-			@SimpleSortControl("/favorites", d.Sort, d.Filters)
+			@SimpleSortControl("/favorites", d.Sort, d.Filters, sortsTime)
 			@DisplayModeControl("/favorites", d.Mode)
 			@favoritesShareControl(d.ShareToken)
 		</div>
@@ -128,7 +129,7 @@ templ bookmarksPage(d bookmarksData) {
 		<h1>bookmarks ({ d.BookCount })</h1>
 		<div class="row-actions">
 			@filterButton(fp)
-			@SimpleSortControl("/bookmarks", d.Sort, d.Filters)
+			@SimpleSortControl("/bookmarks", d.Sort, d.Filters, sortsTime)
 			@DisplayModeControl("/bookmarks", d.Mode)
 			@bookmarksShareControl(d.ShareToken)
 		</div>

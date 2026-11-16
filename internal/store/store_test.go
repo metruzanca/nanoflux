@@ -843,6 +843,73 @@ func TestMagicSort(t *testing.T) {
 	}
 }
 
+// The momentum sort groups items into author blocks, fewest items first, and
+// orders inside a block newest first (see ItemFilter.Momentum).
+func TestMomentumSort(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	mk := func(name string) Feed {
+		a, _ := s.Authors.Create(u.ID, name, "", "")
+		f, _ := s.Feeds.Create(u.ID, a.ID, name, "https://"+name+".dev/rss.xml", "", "", 900)
+		return f
+	}
+	alpha := mk("alpha")
+	beta := mk("beta")
+	gamma := mk("gamma")
+
+	old := "2026-01-01 00:00:00"
+	// alpha has one item, beta two, gamma four. The time order deliberately
+	// does not follow the backlog order, so only momentum produces this list.
+	s.Items.Upsert(alpha.ID, Item{GUID: "a1", Title: "alpha 1", PublishedAt: old, FetchedAt: db.Now()})
+	s.Items.Upsert(beta.ID, Item{GUID: "b1", Title: "beta 1", PublishedAt: "2026-03-01 00:00:00", FetchedAt: db.Now()})
+	s.Items.Upsert(beta.ID, Item{GUID: "b2", Title: "beta 2", PublishedAt: "2026-02-01 00:00:00", FetchedAt: db.Now()})
+	for i, at := range []string{"2026-06-01 00:00:00", "2026-05-01 00:00:00", "2026-04-01 00:00:00", "2026-03-15 00:00:00"} {
+		s.Items.Upsert(gamma.ID, Item{GUID: "g" + strconv.Itoa(i), Title: "gamma " + strconv.Itoa(i), PublishedAt: at, FetchedAt: db.Now()})
+	}
+
+	items, more, err := s.Items.ListPage(u.ID, ItemFilter{Momentum: true, Limit: 10})
+	if err != nil {
+		t.Fatalf("momentum ListPage: %v", err)
+	}
+	if more {
+		t.Fatalf("momentum should not report more for 7 items")
+	}
+	got := make([]string, 0, len(items))
+	for _, it := range items {
+		got = append(got, it.Title)
+	}
+	want := []string{"alpha 1", "beta 1", "beta 2", "gamma 0", "gamma 1", "gamma 2", "gamma 3"}
+	if len(got) != len(want) {
+		t.Fatalf("momentum returned %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("momentum order = %v, want %v", got, want)
+		}
+	}
+
+	// Offset paging walks the same order.
+	page2, _, err := s.Items.ListPage(u.ID, ItemFilter{Momentum: true, Limit: 2, Offset: 2})
+	if err != nil {
+		t.Fatalf("momentum page 2: %v", err)
+	}
+	if len(page2) != 2 || page2[0].Title != "beta 2" || page2[1].Title != "gamma 0" {
+		t.Fatalf("momentum page 2: %+v", page2)
+	}
+
+	// A tag filter narrows the backlog: only beta's two items carry the tag, so
+	// beta is the only block and the order inside it is still newest first.
+	s.Items.Upsert(beta.ID, Item{GUID: "b1", Title: "beta 1", PublishedAt: "2026-03-01 00:00:00", FetchedAt: db.Now(), Categories: []string{"only"}})
+	s.Items.Upsert(beta.ID, Item{GUID: "b2", Title: "beta 2", PublishedAt: "2026-02-01 00:00:00", FetchedAt: db.Now(), Categories: []string{"only"}})
+	filtered, _, err := s.Items.ListPage(u.ID, ItemFilter{Momentum: true, Limit: 10, Tags: []string{"only"}})
+	if err != nil {
+		t.Fatalf("momentum filtered: %v", err)
+	}
+	if len(filtered) != 2 || filtered[0].Title != "beta 1" || filtered[1].Title != "beta 2" {
+		t.Fatalf("momentum filtered (tag narrows backlog): %+v", filtered)
+	}
+}
+
 // SetRank clamps to {-1, 0, 1} and is user-scoped.
 func TestFeedRank(t *testing.T) {
 	s := newTestStore(t)
