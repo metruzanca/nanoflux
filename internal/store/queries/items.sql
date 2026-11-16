@@ -294,10 +294,11 @@ WHERE items.user_id = sqlc.arg('userID')
       AND (CAST(sqlc.arg('feedID') AS INTEGER) = 0 OR mf.feed_id = CAST(sqlc.arg('feedID') AS INTEGER)))
   AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = sqlc.arg('userID'));
 
--- name: MarkItemsBeforeRead :exec
--- Mark unread items newer than itemID (listed above it, newest first) in the
--- same feed page as read. feedID is the page's feed; 0 falls back to the item's
--- owner feed.
+-- name: MarkItemsNewerRead :exec
+-- Mark unread items newer than itemID by item time (published, else fetched) in
+-- the same feed page as read. The id tiebreak only orders equal timestamps; it
+-- never follows the page's sort order. feedID is the page's feed; 0 falls back
+-- to the item's owner feed.
 UPDATE items
 SET read = 1, read_at = sqlc.arg('readAt')
 WHERE read = 0
@@ -313,10 +314,11 @@ WHERE read = 0
   AND (COALESCE(items.published_at, items.fetched_at), items.id) >
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = sqlc.arg('itemID'));
 
--- name: MarkItemsAfterRead :exec
--- Mark unread items older than itemID (listed below it, newest first) in the
--- same feed page as read. feedID is the page's feed; 0 falls back to the item's
--- owner feed.
+-- name: MarkItemsOlderRead :exec
+-- Mark unread items older than itemID by item time (published, else fetched) in
+-- the same feed page as read. The id tiebreak only orders equal timestamps; it
+-- never follows the page's sort order. feedID is the page's feed; 0 falls back
+-- to the item's owner feed.
 UPDATE items
 SET read = 1, read_at = sqlc.arg('readAt')
 WHERE read = 0
@@ -332,10 +334,10 @@ WHERE read = 0
   AND (COALESCE(items.published_at, items.fetched_at), items.id) <
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = sqlc.arg('itemID'));
 
--- name: MarkAuthorItemsBeforeRead :exec
--- Mark unread items newer than itemID (listed above it, newest first) across
--- every feed owned by the item's author as read. Used on an author page, where
--- the bulk action spans all of the author's feeds.
+-- name: MarkAuthorItemsNewerRead :exec
+-- Mark unread items newer than itemID by item time (published, else fetched)
+-- across every feed owned by the item's author as read. Used on an author page,
+-- where the bulk action spans all of the author's feeds.
 UPDATE items
 SET read = 1, read_at = sqlc.arg('readAt')
 WHERE read = 0
@@ -352,9 +354,9 @@ WHERE read = 0
   AND (COALESCE(items.published_at, items.fetched_at), items.id) >
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = sqlc.arg('itemID'));
 
--- name: MarkAuthorItemsAfterRead :exec
--- Mark unread items older than itemID (listed below it, newest first) across
--- every feed owned by the item's author as read.
+-- name: MarkAuthorItemsOlderRead :exec
+-- Mark unread items older than itemID by item time (published, else fetched)
+-- across every feed owned by the item's author as read.
 UPDATE items
 SET read = 1, read_at = sqlc.arg('readAt')
 WHERE read = 0

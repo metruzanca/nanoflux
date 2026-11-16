@@ -1048,7 +1048,7 @@ templ shareControl(itemID int64, token string) {
 
 // itemMenuFullSys is the "⋯" action menu on an item card (list/grid) and in the
 // item modal (inModal): "add to list", "go to author" (omitted for a saved page,
-// whose author is hidden), the bulk "mark all before/after as read" actions, and
+// whose author is hidden), the bulk "mark newer/older as read" actions, and
 // in the modal the source link and the share control. The dropdown is scoped per
 // item via data-item-id so many cards can each have one.
 templ itemMenuFullSys(itemID, authorID int64, sourceURL, shareToken string, inModal, isSystem bool) {
@@ -1063,8 +1063,8 @@ templ itemMenuFullSys(itemID, authorID int64, sourceURL, shareToken string, inMo
 			if inModal && sourceURL != "" {
 				<a class="menu-item external" role="menuitem" href={ templ.URL(sourceURL) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">source</a>
 			}
-			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-before" } hx-swap="none" data-reload-on-success>mark all before as read</button>
-			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-after" } hx-swap="none" data-reload-on-success>mark all after as read</button>
+			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-newer" } hx-swap="none" data-reload-on-success>mark newer as read</button>
+			<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/read-older" } hx-swap="none" data-reload-on-success>mark older as read</button>
 			if inModal {
 				<button type="button" class="link menu-item" role="menuitem" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/unread" } hx-swap="none" data-unread-reload>mark as not read</button>
 				@shareControl(itemID, shareToken)

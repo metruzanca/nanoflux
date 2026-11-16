@@ -2179,10 +2179,10 @@ func TestItemMenuOnCards(t *testing.T) {
 	// Each card in the list/grid carries the ⋯ menu with all three options.
 	body := doGet(h, "/", cookie).Body.String()
 	if !strings.Contains(body, `class="item-menu"`) ||
-		!strings.Contains(body, "mark all before as read") ||
-		!strings.Contains(body, "mark all after as read") ||
-		!strings.Contains(body, `hx-post="/items/1/read-before"`) ||
-		!strings.Contains(body, `hx-post="/items/1/read-after"`) {
+		!strings.Contains(body, "mark newer as read") ||
+		!strings.Contains(body, "mark older as read") ||
+		!strings.Contains(body, `hx-post="/items/1/read-newer"`) ||
+		!strings.Contains(body, `hx-post="/items/1/read-older"`) {
 		t.Fatalf("item cards should carry the ⋯ menu: %s", body)
 	}
 }
@@ -2217,9 +2217,9 @@ func TestMarkRangeReadHTTP(t *testing.T) {
 		return false
 	}
 
-	rr := doForm(h, "POST", "/items/"+itoa(middle)+"/read-before", url.Values{}, cookie)
+	rr := doForm(h, "POST", "/items/"+itoa(middle)+"/read-newer", url.Values{}, cookie)
 	if rr.Code != http.StatusNoContent {
-		t.Fatalf("read-before: %d", rr.Code)
+		t.Fatalf("read-newer: %d", rr.Code)
 	}
 	for _, c := range []struct {
 		title string
@@ -2228,16 +2228,61 @@ func TestMarkRangeReadHTTP(t *testing.T) {
 		{"newest", true}, {"middle", false}, {"oldest", false}, {"other", false},
 	} {
 		if got := readState(c.title); got != c.want {
-			t.Fatalf("after read-before: %s read=%v want %v", c.title, got, c.want)
+			t.Fatalf("after read-newer: %s read=%v want %v", c.title, got, c.want)
 		}
 	}
 
-	rr = doForm(h, "POST", "/items/"+itoa(middle)+"/read-after", url.Values{}, cookie)
+	rr = doForm(h, "POST", "/items/"+itoa(middle)+"/read-older", url.Values{}, cookie)
 	if rr.Code != http.StatusNoContent {
-		t.Fatalf("read-after: %d", rr.Code)
+		t.Fatalf("read-older: %d", rr.Code)
 	}
 	if got := readState("oldest"); !got {
-		t.Fatalf("after read-after: oldest should be read")
+		t.Fatalf("after read-older: oldest should be read")
+	}
+}
+
+// TestMarkRangeReadIgnoresSortOrder asserts that "mark newer/older as read" is
+// decided by item time, not by the page's current sort order.
+func TestMarkRangeReadIgnoresSortOrder(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "a1", Title: "newest", Link: "https://b.dev/1", PublishedAt: "2026-01-03 00:00:00", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "a2", Title: "middle", Link: "https://b.dev/2", PublishedAt: "2026-01-02 00:00:00", FetchedAt: db.Now()})
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "a3", Title: "oldest", Link: "https://b.dev/3", PublishedAt: "2026-01-01 00:00:00", FetchedAt: db.Now()})
+
+	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
+	var middle int64
+	for _, it := range items {
+		if it.Title == "middle" {
+			middle = it.ID
+		}
+	}
+	readState := func(title string) bool {
+		for _, it := range items {
+			if it.Title == title {
+				got, _ := s.store.Items.ByID(u.ID, it.ID)
+				return got.Read
+			}
+		}
+		t.Fatalf("missing item %q", title)
+		return false
+	}
+
+	// The page is sorted oldest first; "newer" must still mean newer in time.
+	req := httptest.NewRequest(http.MethodPost, "/items/"+itoa(middle)+"/read-newer", nil)
+	req.Header.Set("HX-Current-URL", "http://example.com/?sort=oldest")
+	req.AddCookie(cookie)
+	req.Header.Set("X-CSRF-Token", csrfToken(cookie.Value))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("read-newer under sort=oldest: %d %s", rr.Code, rr.Body.String())
+	}
+	if !readState("newest") || readState("middle") || readState("oldest") {
+		t.Fatalf("read-newer must follow item time, not sort order")
 	}
 }
 
@@ -2276,16 +2321,16 @@ func TestMarkRangeReadAuthorScoped(t *testing.T) {
 		return false
 	}
 
-	// From an author page: "before" reaches the author's other feed, not another
+	// From an author page: "newer" reaches the author's other feed, not another
 	// author's feed.
-	req := httptest.NewRequest(http.MethodPost, "/items/"+itoa(middle)+"/read-before", nil)
+	req := httptest.NewRequest(http.MethodPost, "/items/"+itoa(middle)+"/read-newer", nil)
 	req.Header.Set("HX-Current-URL", "http://example.com/authors/"+itoa(a.ID))
 	req.AddCookie(cookie)
 	req.Header.Set("X-CSRF-Token", csrfToken(cookie.Value))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNoContent {
-		t.Fatalf("author read-before: %d %s", rr.Code, rr.Body.String())
+		t.Fatalf("author read-newer: %d %s", rr.Code, rr.Body.String())
 	}
 	for _, c := range []struct {
 		title string
@@ -2294,7 +2339,7 @@ func TestMarkRangeReadAuthorScoped(t *testing.T) {
 		{"newest", true}, {"middle", false}, {"sibling-newer", true}, {"foreign", false},
 	} {
 		if got := readState(c.title); got != c.want {
-			t.Fatalf("author-scoped read-before: %s read=%v want %v", c.title, got, c.want)
+			t.Fatalf("author-scoped read-newer: %s read=%v want %v", c.title, got, c.want)
 		}
 	}
 
@@ -2312,22 +2357,22 @@ func TestMarkRangeReadAuthorScoped(t *testing.T) {
 			soloMiddle = it.ID
 		}
 	}
-	req = httptest.NewRequest(http.MethodPost, "/items/"+itoa(soloMiddle)+"/read-before", nil)
+	req = httptest.NewRequest(http.MethodPost, "/items/"+itoa(soloMiddle)+"/read-newer", nil)
 	req.Header.Set("HX-Current-URL", "http://example.com/feeds/"+itoa(g.ID))
 	req.AddCookie(cookie)
 	req.Header.Set("X-CSRF-Token", csrfToken(cookie.Value))
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNoContent {
-		t.Fatalf("feed read-before: %d", rr.Code)
+		t.Fatalf("feed read-newer: %d", rr.Code)
 	}
 	all, _ := s.store.Items.List(u.ID, store.ItemFilter{AuthorID: other2.ID})
 	for _, it := range all {
 		if it.Title == "solo-sibling" && it.Read {
-			t.Fatalf("feed-scoped read-before must not touch the author's other feed")
+			t.Fatalf("feed-scoped read-newer must not touch the author's other feed")
 		}
 		if it.Title == "solo-newest" && !it.Read {
-			t.Fatalf("feed-scoped read-before should read the newer item in the feed")
+			t.Fatalf("feed-scoped read-newer should read the newer item in the feed")
 		}
 	}
 }

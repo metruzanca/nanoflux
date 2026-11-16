@@ -1906,11 +1906,11 @@ func (s *ItemStore) SetRead(userID, itemID int64, read bool) error {
 	return nil
 }
 
-// MarkBeforeRead marks every unread item in the same feed page as itemID that is
-// newer than it (listed above it, newest first) as read. feedID is the page's
+// MarkNewerRead marks every unread item in the same feed page as itemID that is
+// newer by item time (published, else fetched) as read. feedID is the page's
 // feed; 0 falls back to the item's owner feed.
-func (s *ItemStore) MarkBeforeRead(userID, feedID, itemID int64) error {
-	return s.q.MarkItemsBeforeRead(context.Background(), sqlcgen.MarkItemsBeforeReadParams{
+func (s *ItemStore) MarkNewerRead(userID, feedID, itemID int64) error {
+	return s.q.MarkItemsNewerRead(context.Background(), sqlcgen.MarkItemsNewerReadParams{
 		ReadAt: ns(db.Now()),
 		FeedID: feedID,
 		ItemID: itemID,
@@ -1918,11 +1918,11 @@ func (s *ItemStore) MarkBeforeRead(userID, feedID, itemID int64) error {
 	})
 }
 
-// MarkAfterRead marks every unread item in the same feed page as itemID that is
-// older than it (listed below it, newest first) as read. feedID is the page's
+// MarkOlderRead marks every unread item in the same feed page as itemID that is
+// older by item time (published, else fetched) as read. feedID is the page's
 // feed; 0 falls back to the item's owner feed.
-func (s *ItemStore) MarkAfterRead(userID, feedID, itemID int64) error {
-	return s.q.MarkItemsAfterRead(context.Background(), sqlcgen.MarkItemsAfterReadParams{
+func (s *ItemStore) MarkOlderRead(userID, feedID, itemID int64) error {
+	return s.q.MarkItemsOlderRead(context.Background(), sqlcgen.MarkItemsOlderReadParams{
 		ReadAt: ns(db.Now()),
 		FeedID: feedID,
 		ItemID: itemID,
@@ -1930,21 +1930,21 @@ func (s *ItemStore) MarkAfterRead(userID, feedID, itemID int64) error {
 	})
 }
 
-// MarkAuthorBeforeRead marks every unread item newer than itemID across all
+// MarkAuthorNewerRead marks every unread item newer than itemID across all
 // feeds owned by the item's author as read. Used on an author page, where the
 // bulk action spans the author's whole feed set.
-func (s *ItemStore) MarkAuthorBeforeRead(userID, itemID int64) error {
-	return s.q.MarkAuthorItemsBeforeRead(context.Background(), sqlcgen.MarkAuthorItemsBeforeReadParams{
+func (s *ItemStore) MarkAuthorNewerRead(userID, itemID int64) error {
+	return s.q.MarkAuthorItemsNewerRead(context.Background(), sqlcgen.MarkAuthorItemsNewerReadParams{
 		ReadAt: ns(db.Now()),
 		ItemID: itemID,
 		UserID: userID,
 	})
 }
 
-// MarkAuthorAfterRead marks every unread item older than itemID across all
+// MarkAuthorOlderRead marks every unread item older than itemID across all
 // feeds owned by the item's author as read.
-func (s *ItemStore) MarkAuthorAfterRead(userID, itemID int64) error {
-	return s.q.MarkAuthorItemsAfterRead(context.Background(), sqlcgen.MarkAuthorItemsAfterReadParams{
+func (s *ItemStore) MarkAuthorOlderRead(userID, itemID int64) error {
+	return s.q.MarkAuthorItemsOlderRead(context.Background(), sqlcgen.MarkAuthorItemsOlderReadParams{
 		ReadAt: ns(db.Now()),
 		ItemID: itemID,
 		UserID: userID,

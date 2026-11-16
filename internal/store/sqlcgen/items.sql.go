@@ -1818,38 +1818,7 @@ func (q *Queries) MarkAllItemsUnread(ctx context.Context, arg MarkAllItemsUnread
 	return err
 }
 
-const markAuthorItemsAfterRead = `-- name: MarkAuthorItemsAfterRead :exec
-UPDATE items
-SET read = 1, read_at = ?1
-WHERE read = 0
-  AND items.id IN (
-    SELECT mf.item_id FROM item_feeds mf
-    JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?2
-      AND f.author_id = (
-        SELECT fa.author_id FROM feeds fa
-        JOIN item_feeds mfx ON mfx.feed_id = fa.id
-        WHERE mfx.item_id = ?3 AND fa.user_id = ?2
-      ))
-  AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?2)
-  AND (COALESCE(items.published_at, items.fetched_at), items.id) <
-      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
-`
-
-type MarkAuthorItemsAfterReadParams struct {
-	ReadAt sql.NullString `json:"readAt"`
-	UserID int64          `json:"userID"`
-	ItemID int64          `json:"itemID"`
-}
-
-// Mark unread items older than itemID (listed below it, newest first) across
-// every feed owned by the item's author as read.
-func (q *Queries) MarkAuthorItemsAfterRead(ctx context.Context, arg MarkAuthorItemsAfterReadParams) error {
-	_, err := q.db.ExecContext(ctx, markAuthorItemsAfterRead, arg.ReadAt, arg.UserID, arg.ItemID)
-	return err
-}
-
-const markAuthorItemsBeforeRead = `-- name: MarkAuthorItemsBeforeRead :exec
+const markAuthorItemsNewerRead = `-- name: MarkAuthorItemsNewerRead :exec
 UPDATE items
 SET read = 1, read_at = ?1
 WHERE read = 0
@@ -1867,17 +1836,48 @@ WHERE read = 0
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
 `
 
-type MarkAuthorItemsBeforeReadParams struct {
+type MarkAuthorItemsNewerReadParams struct {
 	ReadAt sql.NullString `json:"readAt"`
 	UserID int64          `json:"userID"`
 	ItemID int64          `json:"itemID"`
 }
 
-// Mark unread items newer than itemID (listed above it, newest first) across
-// every feed owned by the item's author as read. Used on an author page, where
-// the bulk action spans all of the author's feeds.
-func (q *Queries) MarkAuthorItemsBeforeRead(ctx context.Context, arg MarkAuthorItemsBeforeReadParams) error {
-	_, err := q.db.ExecContext(ctx, markAuthorItemsBeforeRead, arg.ReadAt, arg.UserID, arg.ItemID)
+// Mark unread items newer than itemID by item time (published, else fetched)
+// across every feed owned by the item's author as read. Used on an author page,
+// where the bulk action spans all of the author's feeds.
+func (q *Queries) MarkAuthorItemsNewerRead(ctx context.Context, arg MarkAuthorItemsNewerReadParams) error {
+	_, err := q.db.ExecContext(ctx, markAuthorItemsNewerRead, arg.ReadAt, arg.UserID, arg.ItemID)
+	return err
+}
+
+const markAuthorItemsOlderRead = `-- name: MarkAuthorItemsOlderRead :exec
+UPDATE items
+SET read = 1, read_at = ?1
+WHERE read = 0
+  AND items.id IN (
+    SELECT mf.item_id FROM item_feeds mf
+    JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?2
+      AND f.author_id = (
+        SELECT fa.author_id FROM feeds fa
+        JOIN item_feeds mfx ON mfx.feed_id = fa.id
+        WHERE mfx.item_id = ?3 AND fa.user_id = ?2
+      ))
+  AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?2)
+  AND (COALESCE(items.published_at, items.fetched_at), items.id) <
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
+`
+
+type MarkAuthorItemsOlderReadParams struct {
+	ReadAt sql.NullString `json:"readAt"`
+	UserID int64          `json:"userID"`
+	ItemID int64          `json:"itemID"`
+}
+
+// Mark unread items older than itemID by item time (published, else fetched)
+// across every feed owned by the item's author as read.
+func (q *Queries) MarkAuthorItemsOlderRead(ctx context.Context, arg MarkAuthorItemsOlderReadParams) error {
+	_, err := q.db.ExecContext(ctx, markAuthorItemsOlderRead, arg.ReadAt, arg.UserID, arg.ItemID)
 	return err
 }
 
@@ -1902,43 +1902,6 @@ type MarkAuthorItemsReadParams struct {
 // Mark every item read across all of an author's feeds (by membership).
 func (q *Queries) MarkAuthorItemsRead(ctx context.Context, arg MarkAuthorItemsReadParams) error {
 	_, err := q.db.ExecContext(ctx, markAuthorItemsRead, arg.ReadAt, arg.UserID, arg.AuthorID)
-	return err
-}
-
-const markItemsAfterRead = `-- name: MarkItemsAfterRead :exec
-UPDATE items
-SET read = 1, read_at = ?1
-WHERE read = 0
-  AND items.id IN (
-    SELECT mf.item_id FROM item_feeds mf
-    WHERE mf.feed_id = (CASE WHEN CAST(?2 AS INTEGER) = 0
-                             THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
-                             ELSE CAST(?2 AS INTEGER) END))
-  AND EXISTS (SELECT 1 FROM feeds f WHERE f.id = (CASE WHEN CAST(?2 AS INTEGER) = 0
-                             THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
-                             ELSE CAST(?2 AS INTEGER) END) AND f.user_id = ?4)
-  AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?4)
-  AND (COALESCE(items.published_at, items.fetched_at), items.id) <
-      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
-`
-
-type MarkItemsAfterReadParams struct {
-	ReadAt sql.NullString `json:"readAt"`
-	FeedID int64          `json:"feedID"`
-	ItemID int64          `json:"itemID"`
-	UserID int64          `json:"userID"`
-}
-
-// Mark unread items older than itemID (listed below it, newest first) in the
-// same feed page as read. feedID is the page's feed; 0 falls back to the item's
-// owner feed.
-func (q *Queries) MarkItemsAfterRead(ctx context.Context, arg MarkItemsAfterReadParams) error {
-	_, err := q.db.ExecContext(ctx, markItemsAfterRead,
-		arg.ReadAt,
-		arg.FeedID,
-		arg.ItemID,
-		arg.UserID,
-	)
 	return err
 }
 
@@ -1982,7 +1945,7 @@ func (q *Queries) MarkItemsAutoRead(ctx context.Context, arg MarkItemsAutoReadPa
 	)
 }
 
-const markItemsBeforeRead = `-- name: MarkItemsBeforeRead :exec
+const markItemsNewerRead = `-- name: MarkItemsNewerRead :exec
 UPDATE items
 SET read = 1, read_at = ?1
 WHERE read = 0
@@ -1999,18 +1962,57 @@ WHERE read = 0
       (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
 `
 
-type MarkItemsBeforeReadParams struct {
+type MarkItemsNewerReadParams struct {
 	ReadAt sql.NullString `json:"readAt"`
 	FeedID int64          `json:"feedID"`
 	ItemID int64          `json:"itemID"`
 	UserID int64          `json:"userID"`
 }
 
-// Mark unread items newer than itemID (listed above it, newest first) in the
-// same feed page as read. feedID is the page's feed; 0 falls back to the item's
-// owner feed.
-func (q *Queries) MarkItemsBeforeRead(ctx context.Context, arg MarkItemsBeforeReadParams) error {
-	_, err := q.db.ExecContext(ctx, markItemsBeforeRead,
+// Mark unread items newer than itemID by item time (published, else fetched) in
+// the same feed page as read. The id tiebreak only orders equal timestamps; it
+// never follows the page's sort order. feedID is the page's feed; 0 falls back
+// to the item's owner feed.
+func (q *Queries) MarkItemsNewerRead(ctx context.Context, arg MarkItemsNewerReadParams) error {
+	_, err := q.db.ExecContext(ctx, markItemsNewerRead,
+		arg.ReadAt,
+		arg.FeedID,
+		arg.ItemID,
+		arg.UserID,
+	)
+	return err
+}
+
+const markItemsOlderRead = `-- name: MarkItemsOlderRead :exec
+UPDATE items
+SET read = 1, read_at = ?1
+WHERE read = 0
+  AND items.id IN (
+    SELECT mf.item_id FROM item_feeds mf
+    WHERE mf.feed_id = (CASE WHEN CAST(?2 AS INTEGER) = 0
+                             THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
+                             ELSE CAST(?2 AS INTEGER) END))
+  AND EXISTS (SELECT 1 FROM feeds f WHERE f.id = (CASE WHEN CAST(?2 AS INTEGER) = 0
+                             THEN (SELECT i.feed_id FROM items i WHERE i.id = ?3)
+                             ELSE CAST(?2 AS INTEGER) END) AND f.user_id = ?4)
+  AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?4)
+  AND (COALESCE(items.published_at, items.fetched_at), items.id) <
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
+`
+
+type MarkItemsOlderReadParams struct {
+	ReadAt sql.NullString `json:"readAt"`
+	FeedID int64          `json:"feedID"`
+	ItemID int64          `json:"itemID"`
+	UserID int64          `json:"userID"`
+}
+
+// Mark unread items older than itemID by item time (published, else fetched) in
+// the same feed page as read. The id tiebreak only orders equal timestamps; it
+// never follows the page's sort order. feedID is the page's feed; 0 falls back
+// to the item's owner feed.
+func (q *Queries) MarkItemsOlderRead(ctx context.Context, arg MarkItemsOlderReadParams) error {
+	_, err := q.db.ExecContext(ctx, markItemsOlderRead,
 		arg.ReadAt,
 		arg.FeedID,
 		arg.ItemID,

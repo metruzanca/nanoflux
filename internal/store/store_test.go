@@ -1011,8 +1011,8 @@ func TestMarkRangeRead(t *testing.T) {
 		}
 	}
 
-	// "before" = newer items in the same feed.
-	if err := s.Items.MarkBeforeRead(u.ID, 0, middle); err != nil {
+	// newer = items after the target in time, in the same feed.
+	if err := s.Items.MarkNewerRead(u.ID, 0, middle); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
@@ -1022,12 +1022,12 @@ func TestMarkRangeRead(t *testing.T) {
 		{"newest", true}, {"middle", false}, {"oldest", false}, {"other", false},
 	} {
 		if got := readState(c.title); got != c.want {
-			t.Fatalf("after MarkBeforeRead: %s read=%v want %v", c.title, got, c.want)
+			t.Fatalf("after MarkNewerRead: %s read=%v want %v", c.title, got, c.want)
 		}
 	}
 
-	// "after" = older items in the same feed.
-	if err := s.Items.MarkAfterRead(u.ID, 0, middle); err != nil {
+	// older = items before the target in time, in the same feed.
+	if err := s.Items.MarkOlderRead(u.ID, 0, middle); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
@@ -1037,7 +1037,7 @@ func TestMarkRangeRead(t *testing.T) {
 		{"newest", true}, {"middle", false}, {"oldest", true}, {"other", false},
 	} {
 		if got := readState(c.title); got != c.want {
-			t.Fatalf("after MarkAfterRead: %s read=%v want %v", c.title, got, c.want)
+			t.Fatalf("after MarkOlderRead: %s read=%v want %v", c.title, got, c.want)
 		}
 	}
 }
@@ -1055,8 +1055,8 @@ func TestMarkAuthorRangeRead(t *testing.T) {
 	s.Items.Upsert(f.ID, Item{GUID: "a1", Title: "newest", Link: "https://metru.dev/1", PublishedAt: "2026-01-03 00:00:00", FetchedAt: db.Now()})
 	s.Items.Upsert(f.ID, Item{GUID: "a2", Title: "middle", Link: "https://metru.dev/2", PublishedAt: "2026-01-02 00:00:00", FetchedAt: db.Now()})
 	s.Items.Upsert(f.ID, Item{GUID: "a3", Title: "oldest", Link: "https://metru.dev/3", PublishedAt: "2026-01-01 00:00:00", FetchedAt: db.Now()})
-	// A newer item in the author's *second* feed: an author-scoped "before"
-	// must reach it.
+	// A newer item in the author's *second* feed: an author-scoped "newer"
+	// action must reach it.
 	s.Items.Upsert(f2.ID, Item{GUID: "b1", Title: "sibling-newer", Link: "https://other.dev/1", PublishedAt: "2026-01-04 00:00:00", FetchedAt: db.Now()})
 	s.Items.Upsert(f3.ID, Item{GUID: "c1", Title: "foreign", Link: "https://elsewhere.dev/1", PublishedAt: "2026-01-05 00:00:00", FetchedAt: db.Now()})
 
@@ -1078,9 +1078,9 @@ func TestMarkAuthorRangeRead(t *testing.T) {
 		}
 	}
 
-	// Author "before": newer items across the author's feeds, including the
-	// sibling feed; a different author's feed is untouched.
-	if err := s.Items.MarkAuthorBeforeRead(u.ID, middle); err != nil {
+	// Author newer: items across the author's feeds, including the sibling
+	// feed; a different author's feed is untouched.
+	if err := s.Items.MarkAuthorNewerRead(u.ID, middle); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
@@ -1091,12 +1091,12 @@ func TestMarkAuthorRangeRead(t *testing.T) {
 		{"sibling-newer", true}, {"foreign", false},
 	} {
 		if got := readState(c.title); got != c.want {
-			t.Fatalf("after MarkAuthorBeforeRead: %s read=%v want %v", c.title, got, c.want)
+			t.Fatalf("after MarkAuthorNewerRead: %s read=%v want %v", c.title, got, c.want)
 		}
 	}
 
-	// Author "after": older items across the author's feeds.
-	if err := s.Items.MarkAuthorAfterRead(u.ID, middle); err != nil {
+	// Author older: older items across the author's feeds.
+	if err := s.Items.MarkAuthorOlderRead(u.ID, middle); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
@@ -1106,7 +1106,7 @@ func TestMarkAuthorRangeRead(t *testing.T) {
 		{"newest", true}, {"middle", false}, {"oldest", true}, {"foreign", false},
 	} {
 		if got := readState(c.title); got != c.want {
-			t.Fatalf("after MarkAuthorAfterRead: %s read=%v want %v", c.title, got, c.want)
+			t.Fatalf("after MarkAuthorOlderRead: %s read=%v want %v", c.title, got, c.want)
 		}
 	}
 }

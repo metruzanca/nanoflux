@@ -1070,15 +1070,15 @@ func (s *Server) itemRead(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, ItemRow(row, r.FormValue("hideAuthor") == "1"))
 }
 
-// itemReadBefore marks every unread item newer than this one (in the same feed)
+// itemReadNewer marks every unread item newer than this one (in the same feed)
 // as read, then lets the client reload the list.
-func (s *Server) itemReadBefore(w http.ResponseWriter, r *http.Request) {
+func (s *Server) itemReadNewer(w http.ResponseWriter, r *http.Request) {
 	s.markRangeRead(w, r, true)
 }
 
-// itemReadAfter marks every unread item older than this one (in the same feed)
+// itemReadOlder marks every unread item older than this one (in the same feed)
 // as read, then lets the client reload the list.
-func (s *Server) itemReadAfter(w http.ResponseWriter, r *http.Request) {
+func (s *Server) itemReadOlder(w http.ResponseWriter, r *http.Request) {
 	s.markRangeRead(w, r, false)
 }
 
@@ -1111,13 +1111,14 @@ func (s *Server) itemUnread(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, ItemRow(row, hideAuthor))
 }
 
-// markRangeRead marks items newer (before) or older (after) than the target
-// item as read. The target item itself is left alone. On an author page with no
-// feed filter the range spans every feed owned by the item's author; on an
-// author page filtered to one feed (?feed=) it is limited to that feed, and
-// elsewhere to the item's own feed. The page is read from htmx's
+// markRangeRead marks items newer or older than the target item as read,
+// comparing item time (published, else fetched) so the result never depends on
+// the page's sort order. The target item itself is left alone. On an author
+// page with no feed filter the range spans every feed owned by the item's
+// author; on an author page filtered to one feed (?feed=) it is limited to that
+// feed, and elsewhere to the item's own feed. The page is read from htmx's
 // HX-Current-URL so no extra state is threaded through the menu.
-func (s *Server) markRangeRead(w http.ResponseWriter, r *http.Request, before bool) {
+func (s *Server) markRangeRead(w http.ResponseWriter, r *http.Request, newer bool) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
 	if err != nil {
@@ -1136,17 +1137,17 @@ func (s *Server) markRangeRead(w http.ResponseWriter, r *http.Request, before bo
 	}
 	var derr error
 	switch {
-	case authorScoped && feedID == 0 && before:
-		derr = s.store.Items.MarkAuthorBeforeRead(u.ID, id)
+	case authorScoped && feedID == 0 && newer:
+		derr = s.store.Items.MarkAuthorNewerRead(u.ID, id)
 	case authorScoped && feedID == 0:
-		derr = s.store.Items.MarkAuthorAfterRead(u.ID, id)
-	case before:
-		derr = s.store.Items.MarkBeforeRead(u.ID, feedID, id)
+		derr = s.store.Items.MarkAuthorOlderRead(u.ID, id)
+	case newer:
+		derr = s.store.Items.MarkNewerRead(u.ID, feedID, id)
 	default:
-		derr = s.store.Items.MarkAfterRead(u.ID, feedID, id)
+		derr = s.store.Items.MarkOlderRead(u.ID, feedID, id)
 	}
 	if derr != nil {
-		log.Error("mark range read", "item_id", id, "before", before, "author_scoped", authorScoped, "err", derr)
+		log.Error("mark range read", "item_id", id, "newer", newer, "author_scoped", authorScoped, "err", derr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -1154,8 +1155,8 @@ func (s *Server) markRangeRead(w http.ResponseWriter, r *http.Request, before bo
 }
 
 // isAuthorPageURL reports whether a page URL (htmx's HX-Current-URL) is an
-// author page, e.g. "/authors/65". Used to broaden the bulk "mark all
-// before/after as read" action from one feed to every feed of that author.
+// author page, e.g. "/authors/65". Used to broaden the bulk "mark newer/older
+// as read" action from one feed to every feed of that author.
 func isAuthorPageURL(rawurl string) bool {
 	if rawurl == "" {
 		return false
