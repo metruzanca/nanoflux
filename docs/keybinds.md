@@ -33,9 +33,9 @@ update both when a binding changes.
 - Inside the palette, `↑` / `↓` move through the results, `Enter` runs the
   selected command or opens the selected entity, and `Esc` closes the palette.
 - The palette lists navigation targets and common actions, then the user's
-  authors, collections, and feeds with an unread count for each row.
+  authors, collections, feeds, and saved views with an unread count for each row.
 - Prefix the query with `@`, `#`, or `!` to search only authors, collections,
-  or feeds. Without a prefix it searches all three (and the actions).
+  or feeds and views. Without a prefix it searches everything (and the actions).
 
 ## Removed bindings
 

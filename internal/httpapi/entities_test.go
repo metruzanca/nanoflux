@@ -19,9 +19,15 @@ func TestAPIEntities(t *testing.T) {
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	coll, _ := s.store.Collections.Create(u.ID, "Dev")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
-	// One unread item so the author, collection, and feed all report unread=1.
-	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Post", Link: "https://b.dev/1", FetchedAt: db.Now()})
+	// One unread item so the author, collection, feed, and view all report unread=1.
+	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Post", Link: "https://b.dev/1", Categories: []string{"r/golang"}, FetchedAt: db.Now()})
 	if err := s.store.Collections.AddFeed(u.ID, coll.ID, f.ID); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+		AuthorID: a.ID, Title: "Golang", Filters: []string{"tag:show:r/golang"},
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -52,6 +58,7 @@ func TestAPIEntities(t *testing.T) {
 		"author:Metru":   "/authors/" + itoa(a.ID),
 		"collection:Dev": "/collections/" + itoa(coll.ID),
 		"feed:Blog":      "/authors/" + itoa(a.ID) + "?feed=" + itoa(f.ID),
+		"view:Golang":    "/authors/" + itoa(a.ID) + "?view=" + itoa(view.ID),
 	} {
 		if byKey[want] != url {
 			t.Errorf("entity %q url = %q, want %q (all: %+v)", want, byKey[want], url, body.Entities)
@@ -129,12 +136,17 @@ func TestAPIEntitiesScopedToUser(t *testing.T) {
 	oa, _ := s.store.Authors.Create(other.ID, "BobAuthor", "", "")
 	s.store.Collections.Create(other.ID, "BobCollection")
 	s.store.Feeds.Create(other.ID, oa.ID, "BobFeed", "https://bob.dev/rss.xml", "", "", 900)
+	if _, err := s.store.SavedViews.Create(other.ID, store.SavedView{
+		AuthorID: oa.ID, Title: "BobView", Filters: []string{"tag:show:r/golang"},
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	rr := doGet(h, "/api/entities", cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("entities: %d", rr.Code)
 	}
-	for _, name := range []string{"BobAuthor", "BobCollection", "BobFeed"} {
+	for _, name := range []string{"BobAuthor", "BobCollection", "BobFeed", "BobView"} {
 		if strings.Contains(rr.Body.String(), name) {
 			t.Fatalf("another user's %q leaked into entities: %s", name, rr.Body.String())
 		}

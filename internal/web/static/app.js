@@ -878,10 +878,14 @@ document.addEventListener('keydown', function (e) {
 
 // Command palette (ctrl/cmd+p or ctrl/cmd+shift+p, or a downward swipe on the
 // topbar on touch devices). The palette renders commands plus the user's
-// authors, collections, and feeds into a keyboard-navigable list inside a
-// <dialog class="palette">; Enter activates the highlighted row, Escape and
-// backdrop-click close it (Escape natively, backdrop via the handler below).
-var SIGILS = { author: '@', collection: '#', feed: '!' };
+// authors, collections, feeds, and saved views into a keyboard-navigable list
+// inside a <dialog class="palette">; Enter activates the highlighted row,
+// Escape and backdrop-click close it (Escape natively, backdrop via the
+// handler below).
+var SIGILS = { author: '@', collection: '#', feed: '!', view: '!' };
+// SIGIL_KINDS is the inverse of SIGILS: a bare sigil narrows to every kind that
+// shares it (feeds and views share "!").
+var SIGIL_KINDS = { '@': ['author'], '#': ['collection'], '!': ['feed', 'view'] };
 
 function paletteItemEl(row) {
   var li = document.createElement('li');
@@ -1187,9 +1191,9 @@ function addFormValue(form, name, value) {
 }
 
 // Unified search: commands first, then matching entities. A leading @/#/!
-// narrows to one entity kind without the sigil counting as part of the query.
-// Entities are fetched on every open; a cached list renders immediately so
-// the palette never waits on the network to show commands.
+// narrows to the kinds that sigil carries without the sigil counting as part of
+// the query. Entities are fetched on every open; a cached list renders
+// immediately so the palette never waits on the network to show commands.
 var ENTITY_CACHE = null;
 function fetchEntities() {
   return fetch('/api/entities', { credentials: 'same-origin' })
@@ -1200,14 +1204,12 @@ function fetchEntities() {
 function filterEntities(q) {
   var entities = ENTITY_CACHE || [];
   q = q.trim();
-  var kind = null;
+  var kinds = null;
   var first = q.charAt(0);
-  if (first === '@') { kind = 'author'; q = q.slice(1).trim(); }
-  else if (first === '#') { kind = 'collection'; q = q.slice(1).trim(); }
-  else if (first === '!') { kind = 'feed'; q = q.slice(1).trim(); }
+  if (SIGIL_KINDS[first]) { kinds = SIGIL_KINDS[first]; q = q.slice(1).trim(); }
   var needle = q.toLowerCase();
   return entities.filter(function (e) {
-    if (kind && e.kind !== kind) return false;
+    if (kinds && kinds.indexOf(e.kind) === -1) return false;
     return !needle || e.name.toLowerCase().indexOf(needle) !== -1;
   }).map(function (e) {
     return {
@@ -1218,7 +1220,7 @@ function filterEntities(q) {
 }
 function paletteItems(q) {
   var first = q.trim().charAt(0);
-  if (first === '@' || first === '#' || first === '!') return filterEntities(q);
+  if (SIGIL_KINDS[first]) return filterEntities(q);
   return filterCommands(q).concat(filterEntities(q));
 }
 
