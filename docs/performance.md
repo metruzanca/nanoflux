@@ -72,6 +72,31 @@ by up to a minute by design; feed counts, view counts, avatars and the taste
 signal stay live. The view path also loads the feed list once per request
 instead of once per view.
 
+## Collections index counts
+
+`GET /collections` used to rewrite the synthetic "no-collection" membership
+(delete + insert, plus a transaction just to look up the auto collection) on
+every render, run two `visible_items` subqueries per collection for its unread
+and read counts, and then run one `ListByCollection` query per view-bearing
+collection plus two scoped `CountFiltered` calls, with a full feed list per view.
+
+A warm render now costs three small reads (`GetAutoCollection`, the
+no-collection drift check, `ListForIndex`) and a cache hit. Order of magnitude on
+the 20 authors x 1000 items fixture with 10 collections, 3 of them view-bearing:
+
+| Query | Time |
+|---|---|
+| `ListForIndex` (feed/view counts only) | 0.07 ms |
+| `CountsByFeed` (one grouped visible_items scan) | 12.8 ms |
+| `CountsByScope` (3 view scopes, one UNION ALL) | 32.3 ms |
+| previous `ListWithCounts` alone | 15.5 ms |
+
+The per-collection count queries are cached per user for 60 seconds
+(`httpapi.collectionCountsCache`), so the cold ~45 ms (and its 20-50x Pi penalty)
+is paid once a minute, not per page view. Batching the view scopes removes query
+round trips rather than scan work; both paths still scan `visible_items`/`items`
+per scope. Structural fields (name, feed count, view count) stay live.
+
 ## Tuning knobs for constrained hosts
 
 - `NF_POLL_WORKERS=1` — one fetch at a time on one core.

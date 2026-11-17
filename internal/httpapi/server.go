@@ -25,20 +25,21 @@ import (
 // Server wires the HTTP layer over the store. JSON API routes for the
 // extension live here too (see api.go).
 type Server struct {
-	store        *store.Store
-	auth         *auth.Authenticator
-	cfg          config.Config
-	poller       *poller.Poller
-	backups      *backup.Runner
-	plugins      *plugin.Registry
-	pluginHosts  *plugin.Hosts
-	discoverer   *discover.Discoverer
-	client       *http.Client
-	files        filestore.Store
-	oembed       *oembed.Resolver
-	loginLimiter *loginLimiter
-	navCounts    *navCountsCache
-	authorUnread *authorUnreadCache
+	store            *store.Store
+	auth             *auth.Authenticator
+	cfg              config.Config
+	poller           *poller.Poller
+	backups          *backup.Runner
+	plugins          *plugin.Registry
+	pluginHosts      *plugin.Hosts
+	discoverer       *discover.Discoverer
+	client           *http.Client
+	files            filestore.Store
+	oembed           *oembed.Resolver
+	loginLimiter     *loginLimiter
+	navCounts        *navCountsCache
+	authorUnread     *authorUnreadCache
+	collectionCounts *collectionCountsCache
 	// linkIconBase is the Simple Icons endpoint prefix used to resolve author
 	// link glyphs. Empty disables outbound lookups (tests).
 	linkIconBase string
@@ -47,17 +48,18 @@ type Server struct {
 func New(st *store.Store, a *auth.Authenticator, cfg config.Config, fs filestore.Store) *Server {
 	client := safedial.Client(20 * time.Second)
 	return &Server{
-		store:        st,
-		auth:         a,
-		cfg:          cfg,
-		discoverer:   discover.New(client),
-		client:       client,
-		files:        fs,
-		oembed:       oembed.New(client, 5*time.Minute, 30*time.Second, 2000),
-		loginLimiter: newLoginLimiter(),
-		navCounts:    newNavCountsCache(),
-		authorUnread: newAuthorUnreadCache(),
-		linkIconBase: defaultLinkIconBase,
+		store:            st,
+		auth:             a,
+		cfg:              cfg,
+		discoverer:       discover.New(client),
+		client:           client,
+		files:            fs,
+		oembed:           oembed.New(client, 5*time.Minute, 30*time.Second, 2000),
+		loginLimiter:     newLoginLimiter(),
+		navCounts:        newNavCountsCache(),
+		authorUnread:     newAuthorUnreadCache(),
+		collectionCounts: newCollectionCountsCache(),
+		linkIconBase:     defaultLinkIconBase,
 	}
 }
 

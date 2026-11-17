@@ -3096,22 +3096,23 @@ func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.store.Collections.SyncNoCollection(u.ID); err != nil {
 		log.Error("sync no-collection", "err", err)
 	}
-	rows, _ := s.store.Collections.ListWithCounts(u.ID)
-	s.applyCollectionViewCounts(u.ID, u.Timezone, rows)
+	rows := s.collectionRows(u.ID, u.Timezone)
 	web.Render(w, r, basePage("collections", u, collectionsPage(u, rows)))
 }
 
-// applyCollectionViewCounts replaces the feed-only unread/read counts of
-// collections that contain views, so the index cards match the collection page.
-// It also restores the most-unread-first order the index expects.
-func (s *Server) applyCollectionViewCounts(userID int64, tz string, rows []store.CollectionWithCounts) {
+// collectionRows returns the collections index's rows: member feed and view
+// counts are read live, unread/read come from the per-user counts cache (and may
+// lag by up to collectionCountsTTL), then the rows sort most-unread-first.
+func (s *Server) collectionRows(userID int64, tz string) []store.CollectionWithCounts {
+	rows, _ := s.store.Collections.ListForIndex(userID)
+	counts, ok := s.collectionCounts.get(userID, tz)
+	if !ok {
+		counts = s.computeCollectionCounts(userID, tz)
+		s.collectionCounts.set(userID, tz, counts)
+	}
 	for i := range rows {
-		if rows[i].ViewCount == 0 {
-			continue
-		}
-		views := s.collectionViewFilters(userID, rows[i].ID, tz)
-		rows[i].Unread, _ = s.store.Items.CountFiltered(userID, collectionCountFilter(rows[i].ID, views, "unread", tz))
-		rows[i].Read, _ = s.store.Items.CountFiltered(userID, collectionCountFilter(rows[i].ID, views, "read", tz))
+		c := counts[rows[i].ID]
+		rows[i].Unread, rows[i].Read = c.Unread, c.Read
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].Unread != rows[j].Unread {
@@ -3119,6 +3120,47 @@ func (s *Server) applyCollectionViewCounts(userID int64, tz string, rows []store
 		}
 		return rows[i].Name < rows[j].Name
 	})
+	return rows
+}
+
+// computeCollectionCounts is the slow path behind collectionRows: member-feed
+// counts for every collection in one grouped scan, then one UNION ALL for the
+// collections that also carry saved views. Both read the same user's items, so
+// the numbers agree with the collection pages.
+func (s *Server) computeCollectionCounts(userID int64, tz string) map[int64]store.CollectionCounts {
+	counts, err := s.store.Collections.CountsByFeed(userID)
+	if err != nil || counts == nil {
+		counts = map[int64]store.CollectionCounts{}
+	}
+	byCollection, _ := s.store.SavedViews.ListByCollectionAll(userID)
+	if len(byCollection) == 0 {
+		return counts
+	}
+	titles := s.savedViewFeedTitles(userID)
+	scopes := make([]store.CollectionScope, 0, len(byCollection))
+	for collectionID, views := range byCollection {
+		predicates := make([]store.ViewFilter, 0, len(views))
+		for _, v := range views {
+			filters := savedViewFiltersWithTitles(filtersFromParams(v.Filters), titles)
+			if len(filters) == 0 {
+				continue
+			}
+			predicates = append(predicates, s.storeViewFilterFor(v, filters, tz))
+		}
+		if len(predicates) == 0 {
+			continue
+		}
+		scopes = append(scopes, store.CollectionScope{CollectionID: collectionID, Views: predicates})
+	}
+	if len(scopes) == 0 {
+		return counts
+	}
+	if scoped, err := s.store.Collections.CountsByScope(userID, scopes); err == nil {
+		for id, c := range scoped {
+			counts[id] = c
+		}
+	}
+	return counts
 }
 
 // userCollections returns the non-auto collections, preserving the query's

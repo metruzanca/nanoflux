@@ -63,10 +63,21 @@ func (s *CollectionStore) EnsureNoCollection(userID int64) (Collection, error) {
 // feed the user has that is not in any user-created collection. Idempotent, and
 // run when the collections index/page is rendered so it reflects recent feed or
 // collection changes. It returns the collection's id.
+//
+// Rendering a page must not write when nothing changed, so the delete+insert
+// rewrite only runs when the current membership actually differs from the
+// derived set (see noCollectionStale).
 func (s *CollectionStore) SyncNoCollection(userID int64) (int64, error) {
 	c, err := s.EnsureNoCollection(userID)
 	if err != nil {
 		return 0, err
+	}
+	stale, err := s.noCollectionStale(userID, c.ID)
+	if err != nil {
+		return c.ID, err
+	}
+	if !stale {
+		return c.ID, nil
 	}
 	if err := s.q.DeleteCollectionFeeds(context.Background(), c.ID); err != nil {
 		return 0, err
@@ -80,17 +91,54 @@ func (s *CollectionStore) SyncNoCollection(userID int64) (int64, error) {
 	return c.ID, nil
 }
 
+// noCollectionStale reports whether the no-collection's membership differs from
+// the set SyncNoCollection would write: non-system feeds not in any user-created
+// collection. It counts both directions (missing members and members that should
+// not be there) in one read, mirroring AddFeedsWithoutUserCollection's predicate
+// exactly.
+func (s *CollectionStore) noCollectionStale(userID, collectionID int64) (bool, error) {
+	var missing, extra int
+	err := s.db.QueryRowContext(context.Background(), `
+		SELECT
+		  (SELECT COUNT(*) FROM feeds f
+		     WHERE f.user_id = ? AND f.is_system = 0
+		       AND NOT EXISTS (
+		         SELECT 1 FROM collection_feeds cf JOIN collections c ON c.id = cf.collection_id
+		         WHERE cf.feed_id = f.id AND c.user_id = ? AND c.is_auto = 0)
+		       AND NOT EXISTS (
+		         SELECT 1 FROM collection_feeds m
+		         WHERE m.collection_id = ? AND m.feed_id = f.id)),
+		  (SELECT COUNT(*) FROM collection_feeds m JOIN feeds f ON f.id = m.feed_id
+		     WHERE m.collection_id = ?
+		       AND (f.user_id <> ? OR f.is_system = 1 OR EXISTS (
+		         SELECT 1 FROM collection_feeds cf JOIN collections c ON c.id = cf.collection_id
+		         WHERE cf.feed_id = f.id AND c.user_id = ? AND c.is_auto = 0)))`,
+		userID, userID, collectionID, collectionID, userID, userID).Scan(&missing, &extra)
+	if err != nil {
+		return false, err
+	}
+	return missing > 0 || extra > 0, nil
+}
+
 // EnsureAuto returns the auto collection for a hostname, creating it if it
 // does not exist. A user-created collection with the same name is left alone;
 // auto collections are always separate rows.
 func (s *CollectionStore) EnsureAuto(userID int64, host string) (Collection, error) {
 	ctx := context.Background()
+	// The common case is an existing auto collection, so read it without opening
+	// a transaction (the collections index calls this on every render).
+	if c, err := s.q.GetAutoCollection(ctx, sqlcgen.GetAutoCollectionParams{UserID: userID, Name: host}); err == nil {
+		return toCollection(c), nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Collection{}, err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Collection{}, err
 	}
 	defer tx.Rollback()
 	q := s.q.WithTx(tx)
+	// Re-check inside the transaction: a concurrent request may have created it.
 	if c, err := q.GetAutoCollection(ctx, sqlcgen.GetAutoCollectionParams{UserID: userID, Name: host}); err == nil {
 		if err := tx.Commit(); err != nil {
 			return Collection{}, err
@@ -194,6 +242,38 @@ func (s *CollectionStore) ListWithCounts(userID int64) ([]CollectionWithCounts, 
 		})
 	}
 	return out, nil
+}
+
+// ListForIndex returns the user's collections with only the counts that are
+// cheap to derive: member feeds and member views. Item counts come from the
+// collections index's per-user cache, so this avoids the two visible_items
+// subqueries per collection that ListWithCounts runs.
+func (s *CollectionStore) ListForIndex(userID int64) ([]CollectionWithCounts, error) {
+	rows, err := s.db.QueryContext(context.Background(), `
+		SELECT c.id, c.user_id, c.name, c.is_auto, c.created_at,
+		       COUNT(DISTINCT cf.feed_id) AS feed_count,
+		       COUNT(DISTINCT cv.view_id) AS view_count
+		FROM collections c
+		LEFT JOIN collection_feeds cf ON cf.collection_id = c.id
+		LEFT JOIN collection_views cv ON cv.collection_id = c.id
+		WHERE c.user_id = ?
+		GROUP BY c.id
+		ORDER BY c.name, c.id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CollectionWithCounts
+	for rows.Next() {
+		var c CollectionWithCounts
+		var isAuto int
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &isAuto, &c.CreatedAt, &c.FeedCount, &c.ViewCount); err != nil {
+			return nil, err
+		}
+		c.IsAuto = isAuto != 0
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 func (s *CollectionStore) Delete(userID, id int64) error {

@@ -148,6 +148,35 @@ func (s *SavedViewStore) ListByCollection(userID, collectionID int64) ([]SavedVi
 		ORDER BY v.title, v.id`, userID, collectionID, userID)
 }
 
+// ListByCollectionAll maps every collection id to its member views, in one read,
+// for callers that need several collections' scopes at once (the collections
+// index) instead of one ListByCollection query per collection.
+func (s *SavedViewStore) ListByCollectionAll(userID int64) (map[int64][]SavedView, error) {
+	rows, err := s.db.QueryContext(context.Background(), `
+		SELECT cv.collection_id, v.id, v.user_id, v.author_id, v.title, v.filters, v.created_at
+		FROM collection_views cv
+		JOIN saved_views v ON v.id = cv.view_id
+		JOIN collections c ON c.id = cv.collection_id
+		WHERE v.user_id = ? AND c.user_id = ?
+		ORDER BY cv.collection_id, v.title, v.id`, userID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list view collections: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[int64][]SavedView)
+	for rows.Next() {
+		var collectionID int64
+		var v SavedView
+		var filters string
+		if err := rows.Scan(&collectionID, &v.ID, &v.UserID, &v.AuthorID, &v.Title, &filters, &v.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan view collection: %w", err)
+		}
+		v.Filters = unmarshalSavedViewFilters(filters)
+		out[collectionID] = append(out[collectionID], v)
+	}
+	return out, rows.Err()
+}
+
 // CollectionIDs returns the collections a view belongs to.
 func (s *SavedViewStore) CollectionIDs(userID, viewID int64) ([]int64, error) {
 	rows, err := s.db.QueryContext(context.Background(), `

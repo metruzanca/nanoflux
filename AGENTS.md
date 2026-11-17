@@ -627,6 +627,32 @@ pass over the user's items plus a scoped query per view-bearing author.
 - Tests that mutate items and re-render `/authors` must expire both caches
   (`s.authorUnread.ttl = 0; s.navCounts.ttl = 0`).
 
+## Collections index counts are cached
+
+`/collections` is allowed to show approximate unread/read numbers: computing them
+costs a scan per collection scope, plus a scoped query per view-bearing
+collection.
+
+- `httpapi.collectionCountsCache` (`internal/httpapi/collectioncounts.go`)
+  memoizes `map[collectionID]store.CollectionCounts` per user for
+  `collectionCountsTTL` (60s), with member views' scopes already merged. It is
+  TTL-only like the other index caches; do not add invalidation hooks.
+- The entry stores the timezone it was computed under, because a member view may
+  carry a time filter.
+- `collectionRows` keeps the structural fields live (`ListForIndex`: name, feed
+  count, view count), so only `Unread`/`Read` lag.
+- `computeCollectionCounts` is the slow path: `CountsByFeed` (one grouped
+  `visible_items` scan for every collection), then `ListByCollectionAll` +
+  `CountsByScope` (one `UNION ALL`, one branch per view-bearing collection)
+  merged on top. It replaced two `CountFiltered` calls and one `ListByCollection`
+  query per collection.
+- Rendering must not write: `SyncNoCollection` only runs its delete+insert when
+  `noCollectionStale` reports drift, and `EnsureAuto` reads without opening a
+  transaction unless it has to create the row. Keep both paths write-free on the
+  common case.
+- Tests that mutate items or membership and re-render `/collections` must expire
+  the cache (`s.collectionCounts.ttl = 0`).
+
 ## Author link icons
 
 Author links with no label used to fall back to the domain text. They now use a

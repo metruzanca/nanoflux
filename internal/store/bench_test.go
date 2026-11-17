@@ -140,3 +140,99 @@ func BenchmarkUnreadCountsByAuthorScope(b *testing.B) {
 		}
 	}
 }
+
+// benchmarkCollections adds collections that each take every Nth feed, so the
+// scopes overlap less than one collection holding every feed would.
+func benchmarkCollections(b *testing.B, authors, itemsPerFeed, collections int) (*Store, int64, []int64) {
+	b.Helper()
+	s, userID, _ := benchmarkStore(b, authors, itemsPerFeed)
+	feeds, err := s.Feeds.List(userID)
+	if err != nil {
+		b.Fatalf("list feeds: %v", err)
+	}
+	ids := make([]int64, 0, collections)
+	for i := 0; i < collections; i++ {
+		c, err := s.Collections.Create(userID, fmt.Sprintf("collection-%02d", i))
+		if err != nil {
+			b.Fatalf("create collection: %v", err)
+		}
+		for j := i; j < len(feeds); j += collections {
+			if err := s.Collections.AddFeed(userID, c.ID, feeds[j].ID); err != nil {
+				b.Fatalf("add feed: %v", err)
+			}
+		}
+		ids = append(ids, c.ID)
+	}
+	return s, userID, ids
+}
+
+func BenchmarkCountsByFeed(b *testing.B) {
+	s, userID, _ := benchmarkCollections(b, 20, 1000, 10)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := s.Collections.CountsByFeed(userID); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkListForIndex(b *testing.B) {
+	s, userID, _ := benchmarkCollections(b, 20, 1000, 10)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := s.Collections.ListForIndex(userID); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkCountsByScope(b *testing.B) {
+	s, userID, ids := benchmarkCollections(b, 20, 1000, 10)
+	scopes := make([]CollectionScope, 0, 3)
+	for i := 0; i < 3; i++ {
+		scopes = append(scopes, CollectionScope{
+			CollectionID: ids[i],
+			Views:        []ViewFilter{{TagGroups: []TagGroup{{Tags: []string{"bench"}}}}},
+		})
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := s.Collections.CountsByScope(userID, scopes); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkCountsByScopeLegacy measures the pre-change path: two CountFiltered
+// calls per view-bearing collection.
+func BenchmarkCountsByScopeLegacy(b *testing.B) {
+	s, userID, ids := benchmarkCollections(b, 20, 1000, 10)
+	scopes := make([]CollectionScope, 0, 3)
+	for i := 0; i < 3; i++ {
+		scopes = append(scopes, CollectionScope{
+			CollectionID: ids[i],
+			Views:        []ViewFilter{{TagGroups: []TagGroup{{Tags: []string{"bench"}}}}},
+		})
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, sc := range scopes {
+			if _, err := s.Items.CountFiltered(userID, ItemFilter{CollectionID: sc.CollectionID, CollectionViews: sc.Views, UnreadOnly: true}); err != nil {
+				b.Fatal(err)
+			}
+			if _, err := s.Items.CountFiltered(userID, ItemFilter{CollectionID: sc.CollectionID, CollectionViews: sc.Views, ReadOnly: true}); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+}
+
+func BenchmarkListWithCounts(b *testing.B) {
+	s, userID, _ := benchmarkCollections(b, 20, 1000, 10)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := s.Collections.ListWithCounts(userID); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
