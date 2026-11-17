@@ -279,8 +279,8 @@ type scopedItemsData struct {
 	// NoFilters hides the generic filter toolbar for a saved view page, whose
 	// recipe is fixed.
 	NoFilters bool
-	// NoSaveView hides the filter dialog's "save as view" action. It is set for
-	// a custom list, whose membership a saved view cannot preserve.
+	// NoSaveView hides the inline "save as view" chip. It is set for a custom
+	// list, whose membership a saved view cannot preserve.
 	NoSaveView bool
 	// Stats is the author scope's all-time aggregate. It is populated only when
 	// the list is the author's unfiltered, view-less scope, so the author page

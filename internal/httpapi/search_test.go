@@ -145,7 +145,7 @@ func TestCustomListFilters(t *testing.T) {
 		t.Fatalf("list filter should show its matching count: %s", body)
 	}
 	// A list cannot become a saved view: its membership is part of the scope.
-	if strings.Contains(body, `formaction="/views/new"`) || strings.Contains(body, "save as view</a>") {
-		t.Fatalf("list filter dialog should not offer save as view: %s", body)
+	if strings.Contains(body, "save as view</a>") {
+		t.Fatalf("list filter should not offer save as view: %s", body)
 	}
 }

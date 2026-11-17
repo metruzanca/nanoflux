@@ -137,17 +137,16 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	}
 	id := strings.TrimPrefix(loc, wantPrefix)
 
-	// The filter dialog saves the draft rows as a view, and the add menu links to
-	// the empty create form.
+	// The filter dialog is filter-only; a view is saved from the chip after the
+	// user has previewed the results. The add menu still links to a blank form.
 	body := doGet(h, "/unread?"+url.Values{"f": {"tag:show:u/example-poster"}}.Encode(), cookie).Body.String()
-	if !strings.Contains(body, `formaction="/views/new"`) || !strings.Contains(body, `href="/views/new"`) ||
-		!strings.Contains(body, `aria-label="save this list as a view"`) {
-		t.Fatalf("unread should offer save-as-view from the filter dialog and add menu: %s", body)
+	if strings.Contains(body, `formaction="/views/new"`) || strings.Contains(body, `aria-label="save this list as a view"`) {
+		t.Fatalf("filter dialog should not offer save as view: %s", body)
 	}
-	if strings.Contains(body, "save as view</button>") {
-		t.Fatalf("save-as-view should be icon-only: %s", body)
+	if !strings.Contains(body, `href="/views/new">new view</a>`) {
+		t.Fatalf("add menu should link to the blank create form: %s", body)
 	}
-	// The active-filter chip row carries the same prefill outside the modal.
+	// The active-filter chip row carries the prefill outside the modal.
 	if !strings.Contains(body, `href="/views/new?f=tag%3Ashow%3Au%2Fexample-poster"`) {
 		t.Fatalf("unread should offer an inline save-as-view link: %s", body)
 	}

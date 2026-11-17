@@ -582,7 +582,9 @@ templ filterChips(fp filterPanelData) {
 }
 
 // filterDialog is the shared filter modal. One form submits a row token per
-// filter plus that row's values; blank rows are dropped server-side.
+// filter plus that row's values; blank rows are dropped server-side. It only
+// builds a filter: saving a view happens from the chip on the applied list, so
+// the user sees the results before naming and keeping the recipe.
 templ filterDialog(fp filterPanelData) {
 	if fp.available() {
 		{{ defaultKind := fp.defaultKind() }}
@@ -618,9 +620,6 @@ templ filterDialog(fp filterPanelData) {
 				</template>
 				<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 				<div class="row-actions">
-					if fp.SaveView {
-						<button type="submit" class="link" title="save this list as a view" aria-label="save this list as a view" formaction="/views/new" formmethod="get">@web.Lucide("bookmark-plus")</button>
-					}
 					<button type="button" class="link" data-close-dialog>cancel</button>
 					<button type="submit">apply</button>
 				</div>

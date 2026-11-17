@@ -812,9 +812,10 @@ type filterPanelData struct {
 	ViewName string
 	// NoFilters hides the filter toolbar entirely (a saved view's fixed recipe).
 	NoFilters bool
-	// SaveView shows the "save this list as a view" action. It is off for
-	// pages whose own scope (favorites, bookmarks, history, a custom list) a
-	// saved view cannot preserve.
+	// SaveView shows the inline "save as view" chip once filters are applied, so
+	// a view is only created after the user has previewed the filtered list. It
+	// is off for pages whose own scope (favorites, bookmarks, history, a custom
+	// list) a saved view cannot preserve.
 	SaveView bool
 }
 

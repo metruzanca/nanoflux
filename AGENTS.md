@@ -467,13 +467,15 @@ Categories are also normalized for tag browsing and list filtering.
   options client-side (`data-filter-row-template`, `data-filter-rows`,
   `data-add-filter-row`, `data-filter-kind`, `data-filter-time-mode` in
   `app.js`). Active-filter chips drop one row; a hidden filter's chip uses the
-  `chip-hide` style. The dialog's "save as view" action is shown only where a
-  saved view can express the page's scope (author, collection, `/unread`,
-  `/search`), not on favorites, bookmarks, history or a custom list. The same
-  prefill is offered inline as a `save as view` chip beside `clear all`
-  (`filterPanelData.saveViewURL`, canonical `?f=` rows plus `author_id`); it is
-  hidden when a saved view is already selected, because the page's filters are
-  then only the transient overlay on that view's own recipe.
+  `chip-hide` style. The dialog is filter-only. Once the filtered list is shown,
+  a `save as view` chip beside `clear all` opens the prefilled create form
+  (`filterPanelData.saveViewURL`, canonical `?f=` rows plus `author_id`), so a
+  view is only created after the user has previewed the results. The chip is
+  shown only where a saved view can express the page's scope (author,
+  collection, `/unread`, `/search`), not on favorites, bookmarks, history or a
+  custom list, and it is hidden when a saved view is already selected, because
+  the page's filters are then only the transient overlay on that view's own
+  recipe.
   Author-page feed rows are validated against the author before use
   (`authorFilters`).
 
@@ -732,9 +734,9 @@ code.
   `POST /views/{id}/delete`. Deletion returns to the view's author edit page.
 - Feed filter values are validated on save and load against the user's feeds, so
   deleting a feed degrades the view rather than breaking it.
-- Creation happens from the filter dialog's `save as view` submit, or the
-  inline `save as view` chip beside `clear all`, both of which send the draft
-  filter rows to `/views/new`; the topbar add-caret menu also links there. The
+- Creation happens from the inline `save as view` chip beside `clear all`,
+  after the results are previewed; it sends the draft filter rows to
+  `/views/new`. The topbar add-caret menu also links to a blank form. The
   create page seeds its title from those filters (`savedViewTitleFromFilters`):
   one value is used as-is, and a larger recipe joins each row's label with `, `,
   parenthesizes multi-value rows and prefixes hide rows with `not `. The title
