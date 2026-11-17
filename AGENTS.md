@@ -595,6 +595,32 @@ the command-palette feed entity and the provision success link at
 is omitted on the author's own page). Display-mode scopes drop `/feeds/{id}`;
 the author page's scope stays `/authors/{id}`.
 
+## Author index unread counts are cached
+
+`/authors` is allowed to show approximate unread numbers: computing them costs a
+pass over the user's items plus a scoped query per view-bearing author.
+
+- `httpapi.authorUnreadCache` (`internal/httpapi/authorcounts.go`) memoizes the
+  per-author unread map per user for `authorUnreadTTL` (60s), with the merged
+  view-scope overrides already applied. Like `navCountsCache` it is **TTL-only**:
+  there are no invalidation hooks on read toggles, mark-all, feed deletes or view
+  edits. The accepted staleness is the point; do not add them.
+- The entry stores the timezone it was computed under, because a saved view may
+  carry a time filter.
+- `authorRows` keeps the structural fields live (`ListAuthorsWithFeedCount`,
+  `savedViewsByAuthor`), so feed counts, view counts, avatars and the taste
+  signal never lag. Only `Unread` comes from the cache.
+- `computeAuthorUnread` reuses the per-author map the nav-count middleware just
+  computed (`navCountsCache.byAuthor`) instead of running
+  `UnreadCountsByAuthor` twice in one request. It **clones** that map before
+  merging view scopes; writing into it would corrupt the nav badge, which uses
+  `len(map)`.
+- `savedViewsByAuthor` / `viewFiltersFromViews` load the feed title map once and
+  pass it to `savedViewFiltersWithTitles`, so validating several views costs one
+  feed query instead of one per view.
+- Tests that mutate items and re-render `/authors` must expire both caches
+  (`s.authorUnread.ttl = 0; s.navCounts.ttl = 0`).
+
 ## Author link icons
 
 Author links with no label used to fall back to the domain text. They now use a

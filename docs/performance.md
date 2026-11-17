@@ -56,6 +56,22 @@ nav-count middleware runs `CountUnreadItems` on *every* request, which is what
 turned an empty page into seconds of work. `schemaV51` adds owner-scoped
 indexes; `GET /` dropped from ~2-4 s to ~0.1 s.
 
+## Author index counts
+
+`GET /authors` used to run the per-author unread aggregate twice (once in the
+nav-count middleware, once in the handler), plus a scoped `UNION ALL` count for
+view-bearing authors, plus one feed-list query per saved view. On the 20 authors
+x 1000 items fixture that is roughly 3 ms for the author list, 10 ms for the
+grouped unread count and 17 ms for the view scope, before a Pi Zero's 20-50x
+penalty.
+
+The index now caches the per-author unread map per user for 60 seconds
+(`httpapi.authorUnreadCache`), so a warm page costs one
+`ListAuthorsWithFeedCount` and two small queries. Counts may lag a read toggle
+by up to a minute by design; feed counts, view counts, avatars and the taste
+signal stay live. The view path also loads the feed list once per request
+instead of once per view.
+
 ## Tuning knobs for constrained hosts
 
 - `NF_POLL_WORKERS=1` — one fetch at a time on one core.

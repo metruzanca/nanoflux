@@ -105,7 +105,16 @@ func (s *Server) savedViewFilters(userID int64, filters listFilters) listFilters
 	if len(filters) == 0 {
 		return nil
 	}
-	titles := s.savedViewFeedTitles(userID)
+	return savedViewFiltersWithTitles(filters, s.savedViewFeedTitles(userID))
+}
+
+// savedViewFiltersWithTitles is savedViewFilters over an already-loaded feed
+// title map, so a caller validating several views fetches the feed list once
+// instead of once per view.
+func savedViewFiltersWithTitles(filters listFilters, titles map[int64]string) listFilters {
+	if len(filters) == 0 {
+		return nil
+	}
 	out := make(listFilters, 0, len(filters))
 	for _, f := range filters {
 		if f.isFeed() {
@@ -467,8 +476,12 @@ func (s *Server) savedViewsForAuthor(userID, authorID int64, tz string) []savedV
 // skipping unfiltered legacy rows (they would match every post).
 func (s *Server) viewFiltersFromViews(userID int64, views []store.SavedView, tz string) []store.ViewFilter {
 	out := make([]store.ViewFilter, 0, len(views))
+	if len(views) == 0 {
+		return out
+	}
+	titles := s.savedViewFeedTitles(userID)
 	for _, v := range views {
-		filters := s.savedViewFilters(userID, filtersFromParams(v.Filters))
+		filters := savedViewFiltersWithTitles(filtersFromParams(v.Filters), titles)
 		if len(filters) == 0 {
 			continue
 		}
@@ -610,11 +623,17 @@ func (s *Server) savedViewsByAuthor(userID int64, tz string) (map[int64][]store.
 	views, _ := s.store.SavedViews.List(userID)
 	filters := make(map[int64][]store.ViewFilter)
 	counts := make(map[int64]int)
+	if len(views) == 0 {
+		return filters, counts
+	}
+	// One feed list for every view, not one per view: validation only needs it
+	// to drop stale feed ids and label the surviving rows.
+	titles := s.savedViewFeedTitles(userID)
 	for _, v := range views {
 		if v.AuthorID <= 0 {
 			continue
 		}
-		rows := s.savedViewFilters(userID, filtersFromParams(v.Filters))
+		rows := savedViewFiltersWithTitles(filtersFromParams(v.Filters), titles)
 		if len(rows) == 0 {
 			continue
 		}

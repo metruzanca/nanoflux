@@ -2125,6 +2125,11 @@ func TestAuthorsListUnreadDivider(t *testing.T) {
 	if err := s.store.Items.MarkAllRead(u.ID, 0); err != nil {
 		t.Fatalf("mark all read: %v", err)
 	}
+	// The index's unread counts are cached per user (authorUnreadTTL) on purpose:
+	// the page may lag a read toggle. Expire both caches so this test sees the
+	// new state (the author counts reuse the nav cache's per-author map).
+	s.authorUnread.ttl = 0
+	s.navCounts.ttl = 0
 	body = doGet(h, "/authors", cookie).Body.String()
 	if strings.Contains(body, "data-authors-divider") {
 		t.Fatalf("no divider expected without unread authors: %s", body)

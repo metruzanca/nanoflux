@@ -2151,23 +2151,16 @@ func (s *Server) authors(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, basePage("authors", u, authorsPage(u, authorsData{Rows: rows})))
 }
 
+// authorRows returns the author index's rows. Feed and view counts and the
+// taste signal are read live; unread counts come from the per-user
+// authorUnreadCache and may lag by up to authorUnreadTTL.
 func (s *Server) authorRows(userID int64, tz string) []authorRow {
 	rows, _ := s.store.Authors.ListWithFeedCount(userID)
-	counts, _ := s.store.Items.UnreadCountsByAuthor(userID)
-	if counts == nil {
-		counts = map[int64]int{}
-	}
 	viewFilters, viewCounts := s.savedViewsByAuthor(userID, tz)
-	if len(viewFilters) > 0 {
-		scopes := make([]store.AuthorScope, 0, len(viewFilters))
-		for authorID, views := range viewFilters {
-			scopes = append(scopes, store.AuthorScope{AuthorID: authorID, Views: views})
-		}
-		if scoped, err := s.store.Items.UnreadCountsByAuthorScope(userID, scopes); err == nil {
-			for authorID, n := range scoped {
-				counts[authorID] = n
-			}
-		}
+	counts, ok := s.authorUnread.get(userID, tz)
+	if !ok {
+		counts = s.computeAuthorUnread(userID, viewFilters)
+		s.authorUnread.set(userID, tz, counts)
 	}
 	out := make([]authorRow, 0, len(rows))
 	for _, r := range rows {
@@ -2177,6 +2170,36 @@ func (s *Server) authorRows(userID int64, tz string) []authorRow {
 		})
 	}
 	return out
+}
+
+// computeAuthorUnread is the slow path behind authorRows: the owner-feed unread
+// counts with each view-bearing author's scoped count merged on top. It reuses
+// the per-author map the nav-count middleware just computed for this request
+// instead of running UnreadCountsByAuthor a second time.
+func (s *Server) computeAuthorUnread(userID int64, viewFilters map[int64][]store.ViewFilter) map[int64]int {
+	counts := map[int64]int{}
+	if cached, ok := s.navCounts.byAuthor(userID); ok {
+		// Clone: the view scopes below must not write into the nav cache's map.
+		counts = make(map[int64]int, len(cached)+len(viewFilters))
+		for id, n := range cached {
+			counts[id] = n
+		}
+	} else if live, err := s.store.Items.UnreadCountsByAuthor(userID); err == nil {
+		counts = live
+	}
+	if len(viewFilters) == 0 {
+		return counts
+	}
+	scopes := make([]store.AuthorScope, 0, len(viewFilters))
+	for authorID, views := range viewFilters {
+		scopes = append(scopes, store.AuthorScope{AuthorID: authorID, Views: views})
+	}
+	if scoped, err := s.store.Items.UnreadCountsByAuthorScope(userID, scopes); err == nil {
+		for authorID, n := range scoped {
+			counts[authorID] = n
+		}
+	}
+	return counts
 }
 
 // authorTaste builds the author index's magic-sort key: raised authors rank

@@ -25,7 +25,12 @@ type navCountsCache struct {
 
 type navCountsEntry struct {
 	counts navCounts
-	at     time.Time
+	// byAuthor is the per-author unread map the counts were derived from. The
+	// author index reuses it so a cold /authors does not run the same grouped
+	// query a second time in the same request. Read-only; callers must not
+	// mutate it (computeAuthorUnread clones it before merging view scopes).
+	byAuthor map[int64]int
+	at       time.Time
 }
 
 func newNavCountsCache() *navCountsCache {
@@ -46,7 +51,7 @@ func (c *navCountsCache) get(userID int64) (navCounts, bool) {
 	return e.counts, true
 }
 
-func (c *navCountsCache) set(userID int64, n navCounts) {
+func (c *navCountsCache) set(userID int64, n navCounts, byAuthor map[int64]int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.byUser) >= 4096 {
@@ -57,7 +62,20 @@ func (c *navCountsCache) set(userID int64, n navCounts) {
 			}
 		}
 	}
-	c.byUser[userID] = navCountsEntry{counts: n, at: time.Now()}
+	c.byUser[userID] = navCountsEntry{counts: n, byAuthor: byAuthor, at: time.Now()}
+}
+
+// byAuthor returns the per-author unread map the cached nav counts came from,
+// when the entry is still fresh. It is the owner-feed grouped count, before any
+// saved-view scope is merged in.
+func (c *navCountsCache) byAuthor(userID int64) (map[int64]int, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.byUser[userID]
+	if !ok || time.Since(e.at) >= c.ttl || e.byAuthor == nil {
+		return nil, false
+	}
+	return e.byAuthor, true
 }
 
 // navCounts are the unread totals shown in the top navigation: the total unread
@@ -87,24 +105,27 @@ func navCountsFrom(ctx context.Context) navCounts {
 
 // computeNavCounts queries the two nav totals for a user. UnreadCountsByAuthor
 // returns one entry per author with unread items, so its length is the author
-// badge without fetching the author rows themselves.
-func (s *Server) computeNavCounts(userID int64) navCounts {
+// badge without fetching the author rows themselves. The map is returned too so
+// the author index can reuse it (see navCountsEntry.byAuthor).
+func (s *Server) computeNavCounts(userID int64) (navCounts, map[int64]int) {
 	var c navCounts
 	if n, err := s.store.Items.CountUnread(userID, 0); err == nil {
 		c.Unread = n
 	}
-	if counts, err := s.store.Items.UnreadCountsByAuthor(userID); err == nil {
-		c.AuthorsWithUnread = len(counts)
+	counts, err := s.store.Items.UnreadCountsByAuthor(userID)
+	if err != nil {
+		return c, nil
 	}
-	return c
+	c.AuthorsWithUnread = len(counts)
+	return c, counts
 }
 
 func (s *Server) cachedNavCounts(userID int64) navCounts {
 	if c, ok := s.navCounts.get(userID); ok {
 		return c
 	}
-	c := s.computeNavCounts(userID)
-	s.navCounts.set(userID, c)
+	c, byAuthor := s.computeNavCounts(userID)
+	s.navCounts.set(userID, c, byAuthor)
 	return c
 }
 

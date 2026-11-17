@@ -43,7 +43,7 @@ func TestRecoverPanicsRenders500(t *testing.T) {
 
 func TestNavCountsCacheExpires(t *testing.T) {
 	c := &navCountsCache{byUser: map[int64]navCountsEntry{}, ttl: 10 * time.Millisecond}
-	c.set(1, navCounts{Unread: 3, AuthorsWithUnread: 2})
+	c.set(1, navCounts{Unread: 3, AuthorsWithUnread: 2}, nil)
 	if got, ok := c.get(1); !ok || got.Unread != 3 {
 		t.Fatalf("cached counts = %+v, ok=%v", got, ok)
 	}
