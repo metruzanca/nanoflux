@@ -115,7 +115,7 @@ func TestAuthorFilterRules(t *testing.T) {
 
 	// Preview evaluates draft groups without persisting them.
 	allow := []TagGroup{{Tags: []string{"r/rust"}, All: true}}
-	preview, err := s.Items.PreviewAuthorFilters(u.ID, a.ID, allow, nil, 5)
+	preview, err := s.Items.PreviewAuthorFilters(u.ID, a.ID, allow, nil, nil, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestAuthorFilterViewMatchesGroups(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tg, fg, _ := FilterGroups(rules)
+		tg, fg, _, _ := FilterGroups(rules)
 		dynamic, _, err := s.Items.listPageTaggedFrom(u.ID, ItemFilter{
 			AuthorID: a.ID, TagGroups: tg, FeedGroups: fg,
 		}, 50, "items")
@@ -290,6 +290,100 @@ func TestAuthorScopeAppliesRulesToMembership(t *testing.T) {
 	it, _ := s.Items.ByID(u.ID, id)
 	if it.Read {
 		t.Fatalf("blocked cross-feed post should stay unread")
+	}
+}
+
+// TestAuthorFilterAuthorKind covers the author rule kind: it matches an item
+// seen through any feed owned by a selected author (membership), like the feed
+// kind, and always combines its values with OR (there is no combine control).
+func TestAuthorFilterAuthorKind(t *testing.T) {
+	s := newTestStore(t)
+	u := mustUser(t, s, "alice")
+	page, _ := s.Authors.Create(u.ID, "Page", "", "")
+	pageFeed, _ := s.Feeds.Create(u.ID, page.ID, "Page feed", "https://page.example/feed", "", "", 900)
+	other, _ := s.Authors.Create(u.ID, "Other", "", "")
+	otherFeed, _ := s.Feeds.Create(u.ID, other.ID, "Other feed", "https://other.example/feed", "", "", 900)
+	third, _ := s.Authors.Create(u.ID, "Third", "", "")
+	s.Feeds.Create(u.ID, third.ID, "Third feed", "https://third.example/feed", "", "", 900)
+
+	own := Item{GUID: "own", Title: "Page only", Link: "https://x/own", FetchedAt: db.Now()}
+	if _, err := s.Items.Upsert(pageFeed.ID, own); err != nil {
+		t.Fatal(err)
+	}
+	cross := Item{
+		GUID: "cross", SharedKey: "site:cross", Title: "Shared with other",
+		Link: "https://x/cross", FetchedAt: db.Now(),
+	}
+	if _, err := s.Items.Upsert(pageFeed.ID, cross); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Items.Upsert(otherFeed.ID, cross); err != nil {
+		t.Fatal(err)
+	}
+
+	list := func() []string {
+		t.Helper()
+		items, err := s.Items.List(u.ID, ItemFilter{AuthorID: page.ID, Limit: 20})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, 0, len(items))
+		for _, it := range items {
+			out = append(out, it.Title)
+		}
+		return out
+	}
+	apply := func(rules ...FilterRule) {
+		t.Helper()
+		if err := s.AuthorFilters.Replace(u.ID, page.ID, rules); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Block the other author: the cross-feed post goes, the page's own stays.
+	apply(FilterRule{Kind: FilterKindAuthor, Action: FilterActionHide, Combine: FilterCombineAny, Values: []string{itoa(other.ID)}})
+	if got := list(); len(got) != 1 || got[0] != "Page only" {
+		t.Fatalf("blocked author list = %v, want [Page only]", got)
+	}
+	if n, _ := s.Items.CountUnreadAuthor(u.ID, page.ID); n != 1 {
+		t.Fatalf("blocked author unread = %d, want 1", n)
+	}
+
+	// Allow only the other author: just the cross-feed post remains.
+	apply(FilterRule{Kind: FilterKindAuthor, Action: FilterActionShow, Combine: FilterCombineAny, Values: []string{itoa(other.ID)}})
+	if got := list(); len(got) != 1 || got[0] != "Shared with other" {
+		t.Fatalf("allowed author list = %v, want [Shared with other]", got)
+	}
+
+	// Selecting several authors ORs them, regardless of a stale combine value.
+	apply(FilterRule{Kind: FilterKindAuthor, Action: FilterActionShow, Combine: FilterCombineAll, Values: []string{itoa(other.ID), itoa(third.ID)}})
+	if got := list(); len(got) != 1 || got[0] != "Shared with other" {
+		t.Fatalf("multi-author list = %v, want [Shared with other]", got)
+	}
+
+	// The live preview applies the same membership predicate.
+	preview, err := s.Items.PreviewAuthorFilters(u.ID, page.ID, nil, nil, []AuthorGroup{{AuthorIDs: []int64{other.ID}}}, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Total != 2 || preview.AllowedCount != 1 || preview.BlockedCount != 1 {
+		t.Fatalf("author preview = %+v, want total 2 allowed 1 blocked 1", preview)
+	}
+	if len(preview.Allowed) != 1 || preview.Allowed[0].Title != "Shared with other" {
+		t.Fatalf("author preview allowed = %+v", preview.Allowed)
+	}
+
+	// Deleting the referenced author drops it from the rule, keeping the rule
+	// while it still names another author.
+	if err := s.Authors.Delete(u.ID, other.ID); err != nil {
+		t.Fatal(err)
+	}
+	rules, err := s.AuthorFilters.List(u.ID, page.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules) != 1 || len(rules[0].Values) != 1 || rules[0].Values[0] != itoa(third.ID) {
+		t.Fatalf("author delete should drop only the deleted id, got %+v", rules)
 	}
 }
 

@@ -33,6 +33,7 @@ func TestSavedViewFilterParamsRoundTrip(t *testing.T) {
 	in := listFilters{
 		{Kind: filterKindTag, Action: filterShow, Combine: filterAll, Values: []string{"r/golang", "r/rust"}},
 		{Kind: filterKindFeed, Action: filterHide, Combine: filterAny, Values: []string{"12", "13"}},
+		{Kind: filterKindAuthor, Action: filterShow, Combine: filterAny, Values: []string{"7", "8"}},
 		{Kind: filterKindTime, Action: filterShow, Combine: filterAll, Values: []string{filterTimeBetween, "2026-01-01", "2026-01-31"}},
 	}
 	params := in.params()
@@ -44,6 +45,29 @@ func TestSavedViewFilterParamsRoundTrip(t *testing.T) {
 		if in[i].param() != out[i].param() {
 			t.Fatalf("row %d changed: %q -> %q", i, in[i].param(), out[i].param())
 		}
+	}
+}
+
+// TestAuthorFilterParamShape guards the canonical author row: it carries no
+// combine segment, always ORs, and tolerates the legacy single-value spelling.
+func TestAuthorFilterParamShape(t *testing.T) {
+	row := listFilter{Kind: filterKindAuthor, Action: filterShow, Combine: filterAll, Values: []string{"7", "8"}}
+	if got := row.param(); got != `author:show:["7","8"]` {
+		t.Fatalf("author param = %q", got)
+	}
+	parsed, ok := parseFilterParam(row.param())
+	if !ok {
+		t.Fatal("author param did not parse")
+	}
+	if parsed.Combine != filterAny || len(parsed.Values) != 2 {
+		t.Fatalf("parsed author row = %+v, want combine any with 2 values", parsed)
+	}
+	single, ok := parseFilterParam("author:hide:9")
+	if !ok || len(single.Values) != 1 || single.Values[0] != "9" || single.Action != filterHide {
+		t.Fatalf("single author param = %+v, ok=%v", single, ok)
+	}
+	if _, ok := newFilter(filterKindAuthor, filterShow, filterAll, []string{"nope", "0"}); ok {
+		t.Fatal("author row with no valid ids should be dropped")
 	}
 }
 

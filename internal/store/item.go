@@ -183,6 +183,15 @@ type FeedGroup struct {
 	Exclude bool
 }
 
+// AuthorGroup is one author predicate from a filter row. It matches an item seen
+// through any feed owned by one of AuthorIDs (membership, like FeedGroup). It has
+// no all mode: its values always combine with OR, because an item is never a
+// member of an author in more than one way.
+type AuthorGroup struct {
+	AuthorIDs []int64
+	Exclude   bool
+}
+
 // TimeGroup is one time-window predicate from a filter row. After and Before
 // are inclusive bounds in the canonical UTC TimeFormat ("" = open); Exclude
 // negates the whole window, so a hide row removes items inside it.
@@ -192,16 +201,17 @@ type TimeGroup struct {
 	Exclude bool
 }
 
-// ViewFilter is one saved view as an item predicate. It carries the view's tag
-// and feed groups and time windows; a view always matches all feeds.
+// ViewFilter is one saved view as an item predicate. It carries the view's tag,
+// feed and author groups and time windows; a view always matches all feeds.
 type ViewFilter struct {
 	// AuthorID is the author the view is assigned to. A view follows that
 	// author's always-on rules, not the rules of the author who owns the feed
 	// its items come from. 0 means the view is unassigned and unfiltered.
-	AuthorID   int64
-	TagGroups  []TagGroup
-	FeedGroups []FeedGroup
-	TimeGroups []TimeGroup
+	AuthorID     int64
+	TagGroups    []TagGroup
+	FeedGroups   []FeedGroup
+	AuthorGroups []AuthorGroup
+	TimeGroups   []TimeGroup
 }
 
 type ItemFilter struct {
@@ -235,11 +245,12 @@ type ItemFilter struct {
 	ExcludeTags []string
 	// ExcludeFeedID hides items seen through that feed. 0 means no exclusion.
 	ExcludeFeedID int64
-	// TagGroups/FeedGroups are per-row predicates with their own any/all and
-	// include/exclude semantics. The flat Tags/ExcludeTags fields remain for
-	// callers that only need the simple forms.
-	TagGroups  []TagGroup
-	FeedGroups []FeedGroup
+	// TagGroups/FeedGroups/AuthorGroups are per-row predicates with their own
+	// any/all and include/exclude semantics. The flat Tags/ExcludeTags fields
+	// remain for callers that only need the simple forms.
+	TagGroups    []TagGroup
+	FeedGroups   []FeedGroup
+	AuthorGroups []AuthorGroup
 	// TimeGroups are per-row time-window predicates over
 	// COALESCE(published_at, fetched_at), in UTC TimeFormat strings.
 	TimeGroups []TimeGroup
@@ -485,7 +496,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	// same filtered set, so it always uses the dynamic query too. sqlc owns the
 	// rest of the list paths.
 	if f.AuthorID != 0 || f.Momentum || len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 ||
-		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.TimeGroups) > 0 ||
+		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.AuthorGroups) > 0 || len(f.TimeGroups) > 0 ||
 		len(f.Views) > 0 || len(f.CollectionViews) > 0 {
 		return s.listPageTagged(userID, f, limit)
 	}
@@ -675,7 +686,7 @@ func (s *ItemStore) ListReadHistory(userID int64, offset, limit int) ([]ItemWith
 // applied. It keeps the history order (most recently read first) and offset
 // paging. With no predicates it delegates to the generated query.
 func (s *ItemStore) ListReadHistoryFiltered(userID int64, offset, limit int, f ItemFilter) ([]ItemWithFeed, bool, error) {
-	if len(f.TagGroups) == 0 && len(f.FeedGroups) == 0 && len(f.TimeGroups) == 0 {
+	if len(f.TagGroups) == 0 && len(f.FeedGroups) == 0 && len(f.AuthorGroups) == 0 && len(f.TimeGroups) == 0 {
 		return s.ListReadHistory(userID, offset, limit)
 	}
 	if limit <= 0 || limit > 500 {
@@ -907,7 +918,7 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter, r
 		b.WriteString(" AND NOT EXISTS (SELECT 1 FROM item_feeds mfx WHERE mfx.item_id = i.id AND mfx.feed_id = ?)")
 		*args = append(*args, f.ExcludeFeedID)
 	}
-	appendFilterGroups(b, args, "i.id", f.TagGroups, f.FeedGroups)
+	appendFilterGroups(b, args, "i.id", f.TagGroups, f.FeedGroups, f.AuthorGroups)
 	appendTimeGroups(b, args, "COALESCE(i.published_at, i.fetched_at)", f.TimeGroups)
 }
 
@@ -980,7 +991,7 @@ func viewFilterClause(itemID, timeExpr string, v ViewFilter) (string, []any) {
 		itemID + " NOT IN (SELECT si.id FROM items si JOIN feeds sisf ON sisf.id = si.feed_id WHERE sisf.is_system = 1)",
 	}
 	var args []any
-	if clause, groupArgs := filterGroupsClause(itemID, v.TagGroups, v.FeedGroups); clause != "" {
+	if clause, groupArgs := filterGroupsClause(itemID, v.TagGroups, v.FeedGroups, v.AuthorGroups); clause != "" {
 		parts = append(parts, "("+clause+")")
 		args = append(args, groupArgs...)
 	}
@@ -1048,6 +1059,10 @@ func authorRuleMatchSQL(itemID string) string {
 				   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
 				  WHERE mf.item_id = ` + itemID + `)
 		END
+		WHEN 'author' THEN EXISTS (SELECT 1 FROM item_feeds mfa
+			   JOIN feeds mfa2 ON mfa2.id = mfa.feed_id
+			   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mfa2.author_id AS TEXT)
+			  WHERE mfa.item_id = ` + itemID + `)
 		ELSE 0
 	END`
 }
@@ -1154,7 +1169,7 @@ type AuthorFilterPreview struct {
 // items. It reads raw items, not visible_items, so saved rules are not
 // double-applied. The blocked sample is the complement of the same group
 // predicate the normal list uses.
-func (s *ItemStore) PreviewAuthorFilters(userID, authorID int64, tagGroups []TagGroup, feedGroups []FeedGroup, limit int) (AuthorFilterPreview, error) {
+func (s *ItemStore) PreviewAuthorFilters(userID, authorID int64, tagGroups []TagGroup, feedGroups []FeedGroup, authorGroups []AuthorGroup, limit int) (AuthorFilterPreview, error) {
 	if limit <= 0 || limit > 20 {
 		limit = 5
 	}
@@ -1166,6 +1181,7 @@ func (s *ItemStore) PreviewAuthorFilters(userID, authorID int64, tagGroups []Tag
 		OwnerAuthorID: authorID,
 		TagGroups:     tagGroups,
 		FeedGroups:    feedGroups,
+		AuthorGroups:  authorGroups,
 	}
 	allowedCount, err := s.countFilteredFrom(userID, f, "items")
 	if err != nil {
@@ -1184,7 +1200,7 @@ func (s *ItemStore) PreviewAuthorFilters(userID, authorID int64, tagGroups []Tag
 	if p.BlockedCount <= 0 {
 		return p, nil
 	}
-	clause, groupArgs := filterGroupsClause("i.id", tagGroups, feedGroups)
+	clause, groupArgs := filterGroupsClause("i.id", tagGroups, feedGroups, authorGroups)
 	if clause == "" {
 		return p, nil
 	}
@@ -2148,10 +2164,10 @@ func appendTimeGroups(b *strings.Builder, args *[]any, expr string, groups []Tim
 	*args = append(*args, timeArgs...)
 }
 
-// filterGroupsClause builds the combined predicate for tag/feed groups, with no
-// leading AND. It is shared by the normal list path and the author-filter
+// filterGroupsClause builds the combined predicate for tag/feed/author groups,
+// with no leading AND. It is shared by the normal list path and the author-filter
 // preview, so both evaluate groups identically.
-func filterGroupsClause(itemID string, tagGroups []TagGroup, feedGroups []FeedGroup) (string, []any) {
+func filterGroupsClause(itemID string, tagGroups []TagGroup, feedGroups []FeedGroup, authorGroups []AuthorGroup) (string, []any) {
 	var (
 		clauses []string
 		args    []any
@@ -2176,6 +2192,16 @@ func filterGroupsClause(itemID string, tagGroups []TagGroup, feedGroups []FeedGr
 			clauses = append(clauses, clause)
 		}
 	}
+	for _, g := range authorGroups {
+		terms := make([]string, 0, len(g.AuthorIDs))
+		for _, authorID := range g.AuthorIDs {
+			terms = append(terms, "EXISTS (SELECT 1 FROM item_feeds mfa JOIN feeds mfa2 ON mfa2.id = mfa.feed_id WHERE mfa.item_id = "+itemID+" AND mfa2.author_id = ?)")
+			args = append(args, authorID)
+		}
+		if clause := groupClause(terms, false, g.Exclude); clause != "" {
+			clauses = append(clauses, clause)
+		}
+	}
 	return strings.Join(clauses, " AND "), args
 }
 
@@ -2196,9 +2222,9 @@ func groupClause(terms []string, all, exclude bool) string {
 	return "(" + inner + ")"
 }
 
-// appendFilterGroups adds the combined tag/feed group predicate to b.
-func appendFilterGroups(b *strings.Builder, args *[]any, itemID string, tagGroups []TagGroup, feedGroups []FeedGroup) {
-	clause, groupArgs := filterGroupsClause(itemID, tagGroups, feedGroups)
+// appendFilterGroups adds the combined tag/feed/author group predicate to b.
+func appendFilterGroups(b *strings.Builder, args *[]any, itemID string, tagGroups []TagGroup, feedGroups []FeedGroup, authorGroups []AuthorGroup) {
+	clause, groupArgs := filterGroupsClause(itemID, tagGroups, feedGroups, authorGroups)
 	if clause == "" {
 		return
 	}

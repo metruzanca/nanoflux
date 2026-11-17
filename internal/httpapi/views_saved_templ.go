@@ -650,19 +650,22 @@ func viewEditorBody(u store.User, f savedViewForm) templ.Component {
 		if len(f.FeedOptions) > 0 {
 			kinds = append(kinds, filterKindFeed)
 		}
+		if len(f.FilterAuthorOptions) > 1 {
+			kinds = append(kinds, filterKindAuthor)
+		}
 		kinds = append(kinds, filterKindTime)
 		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "<div class=\"filter-rows\" id=\"saved-view-filter-rows\" data-filter-rows>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		for i, flt := range f.Filters {
-			templ_7745c5c3_Err = filterRow("saved-view-filter-"+strconv.Itoa(i), strconv.Itoa(i), flt.Kind, flt.Action, flt.Combine, flt.Values, f.TagOptions, f.FeedOptions, kinds, false, "").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = filterRow("saved-view-filter-"+strconv.Itoa(i), strconv.Itoa(i), flt.Kind, flt.Action, flt.Combine, flt.Values, f.TagOptions, f.FeedOptions, f.FilterAuthorOptions, kinds, false, "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
 		if len(f.Filters) == 0 {
-			templ_7745c5c3_Err = filterRow("saved-view-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, kinds, false, "").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = filterRow("saved-view-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, f.FilterAuthorOptions, kinds, false, "").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -671,7 +674,7 @@ func viewEditorBody(u store.User, f savedViewForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = filterRow("saved-view-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, kinds, false, "").Render(ctx, templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = filterRow("saved-view-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, f.FilterAuthorOptions, kinds, false, "").Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -695,7 +698,7 @@ func viewEditorBody(u store.User, f savedViewForm) templ.Component {
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.URL("/views/" + id + "/delete"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_saved.templ`, Line: 152, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_saved.templ`, Line: 155, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 			if templ_7745c5c3_Err != nil {

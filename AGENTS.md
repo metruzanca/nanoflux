@@ -427,12 +427,13 @@ Categories are also normalized for tag browsing and list filtering.
   `unreadFilteredQuery` (mark-all/count) applies the same predicates, so a
   filtered mark-all marks exactly the shown items.
 - HTTP filters are transient query state (`internal/httpapi/filters.go`): each
-  applied row has a kind (`tag`/`feed`/`time`), action (`show`/`hide`), combine
-  (`any`/`all`) and one or more values. A single value uses the legacy URL
-  shape `?f=tag:show:r/golang`; multi-value rows use
+  applied row has a kind (`tag`/`feed`/`author`/`time`), action (`show`/`hide`),
+  combine (`any`/`all`) and one or more values. A single value uses the legacy
+  URL shape `?f=tag:show:r/golang`; multi-value rows use
   `?f=tag:show:any:["r/golang","r/rust"]`; a time row uses
   `?f=time:show:["between","2026-01-01","2026-01-31"]` with values
-  `[mode, start, end]` (`before`/`after`/`between`). Legacy `?tags=`/`?feed=`
+  `[mode, start, end]` (`before`/`after`/`between`). An author row has no
+  combine segment: `?f=author:show:["7","8"]` always ORs. Legacy `?tags=`/`?feed=`
   still parse as show/all filters. Rows are ANDed together for `show` and ORed
   for `hide` (any matching hide row excludes). The modal form submits one
   `filter_row` token per row plus repeated `filter_value_<token>` values (and
@@ -488,8 +489,16 @@ parallel implementation.
 - **Same rule shape.** `store.FilterRule` (`kind`, `action`, `combine`, `values`)
   is the canonical row. The HTTP layer's `listFilter` adds labels and URL
   serialization; `store.FilterGroups` is the one conversion to `TagGroup` /
-  `FeedGroup`, used by transient filters, author rules, and the preview. Actions
-  are `show`/`hide` internally; the author card labels them **allow**/**block**.
+  `FeedGroup` / `AuthorGroup`, used by transient filters, author rules, and the
+  preview. Actions are `show`/`hide` internally; the author card labels them
+  **allow**/**block**.
+- **Author rows.** `kind: author` selects authors; it has no combine control and
+  always ORs, like the feed kind but one level up. It matches an item seen
+  through any feed owned by a selected author (`item_feeds` membership, not the
+  owner author), which is what makes it useful on an author page for cross-feed
+  posts. Values are validated against every author the user owns. Author rows
+  are offered when the user has more than one author, on the author card, the
+  transient dialog and the saved-view editor.
 - **Semantics.** Every allow row must match (like show rows); any matching block
   row excludes (like hide rows). An author with no allow rows allows everything
   not blocked. Matching keys on the author the rule set belongs to: the item's
@@ -498,14 +507,17 @@ parallel implementation.
   author but still belong to this author's feed), and the assigned author for a
   saved view (see "Saved views"). Feed rules match through `item_feeds`
   membership restricted to that author's feeds.
-- **Storage (schemaV55).** `author_filter_rules` + `author_filter_values`, owned
-  by `AuthorFilterStore` (`store.AuthorFilters`). `POST /authors/{id}/edit`
-  replaces them when the form carries `author_filters_present`; a partial save
-  without the card leaves them alone. Feed delete removes its id from rules and
-  drops any rule left empty.
-- **One read path.** The `visible_items` view (schemaV55, mirrored in
-  `schema.sql`) applies the rules in SQL. Item lists, counts, badges, read
-  history, list items, and public shared lists select from `visible_items`
+- **Storage (schemaV55, view recreated by schemaV67).** `author_filter_rules` +
+  `author_filter_values`, owned by `AuthorFilterStore` (`store.AuthorFilters`).
+  `POST /authors/{id}/edit` replaces them when the form carries
+  `author_filters_present`; a partial save without the card leaves them alone.
+  Feed delete removes its id from `kind='feed'` rows only (a numeric feed id must
+  not collide with an author id) and drops any rule left empty; author delete
+  removes that id from other authors' `kind='author'` rows the same way.
+- **One read path.** The `visible_items` view (schemaV55, recreated by
+  schemaV67, mirrored in `schema.sql`) applies the rules in SQL. Item lists,
+  counts, badges, read history, list items, and public shared lists select from
+  `visible_items`
   instead of `items`. Item detail (`GetItem*`) and shared-item fetch stay on raw
   `items`, so a blocked item is still reachable by direct link. Auto-read
   retention (`ItemStore.MarkAutoRead`) deliberately stays on raw `items`. Any new

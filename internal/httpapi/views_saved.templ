@@ -133,17 +133,20 @@ templ viewEditorBody(u store.User, f savedViewForm) {
 		if len(f.FeedOptions) > 0 {
 			{{ kinds = append(kinds, filterKindFeed) }}
 		}
+		if len(f.FilterAuthorOptions) > 1 {
+			{{ kinds = append(kinds, filterKindAuthor) }}
+		}
 		{{ kinds = append(kinds, filterKindTime) }}
 		<div class="filter-rows" id="saved-view-filter-rows" data-filter-rows>
 			for i, flt := range f.Filters {
-				@filterRow("saved-view-filter-"+strconv.Itoa(i), strconv.Itoa(i), flt.Kind, flt.Action, flt.Combine, flt.Values, f.TagOptions, f.FeedOptions, kinds, false, "")
+				@filterRow("saved-view-filter-"+strconv.Itoa(i), strconv.Itoa(i), flt.Kind, flt.Action, flt.Combine, flt.Values, f.TagOptions, f.FeedOptions, f.FilterAuthorOptions, kinds, false, "")
 			}
 			if len(f.Filters) == 0 {
-				@filterRow("saved-view-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, kinds, false, "")
+				@filterRow("saved-view-filter-empty", "empty", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, f.FilterAuthorOptions, kinds, false, "")
 			}
 		</div>
 		<template id="saved-view-filter-row-template" data-filter-row-template>
-			@filterRow("saved-view-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, kinds, false, "")
+			@filterRow("saved-view-filter-__token__", "__token__", filterKindTag, filterShow, filterAll, nil, f.TagOptions, f.FeedOptions, f.FilterAuthorOptions, kinds, false, "")
 		</template>
 		<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 	</div>

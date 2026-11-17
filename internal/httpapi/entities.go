@@ -63,11 +63,12 @@ func (s *Server) apiEntities(w http.ResponseWriter, r *http.Request) {
 	// an unfiltered or legacy blank view is skipped, exactly as the author page
 	// skips it.
 	titles := s.savedViewFeedTitles(u.ID)
+	names := s.savedViewAuthorNames(u.ID)
 	for _, v := range views {
 		if v.AuthorID <= 0 {
 			continue
 		}
-		filters := savedViewFiltersWithTitles(filtersFromParams(v.Filters), titles)
+		filters := savedViewFiltersWithTitles(filtersFromParams(v.Filters), titles, names)
 		if len(filters) == 0 {
 			continue
 		}

@@ -33,6 +33,7 @@ type homeData struct {
 	FilteredCount int
 	TagOptions    []comboItem
 	FeedOptions   []comboItem
+	AuthorOptions []comboItem
 	// Scope fields are carried into the save-view toolbar; /unread is global.
 	ScopeAuthorID     int64
 	ScopeCollectionID int64
@@ -50,6 +51,7 @@ type readData struct {
 	FilteredCount int
 	TagOptions    []comboItem
 	FeedOptions   []comboItem
+	AuthorOptions []comboItem
 }
 
 type favoritesData struct {
@@ -63,6 +65,7 @@ type favoritesData struct {
 	FilteredCount int
 	TagOptions    []comboItem
 	FeedOptions   []comboItem
+	AuthorOptions []comboItem
 }
 
 // bookmarksData drives the native bookmarks list page.
@@ -77,6 +80,7 @@ type bookmarksData struct {
 	FilteredCount int
 	TagOptions    []comboItem
 	FeedOptions   []comboItem
+	AuthorOptions []comboItem
 }
 
 type feedRow struct {
@@ -174,9 +178,11 @@ type authorsData struct {
 	ViewEditor *savedViewForm
 	// Rules are the author's always-on filters, rendered as allow/block rows.
 	Rules listFilters
-	// FilterTagOptions/FilterFeedOptions back the rule row value pickers.
-	FilterTagOptions  []comboItem
-	FilterFeedOptions []comboItem
+	// FilterTagOptions/FilterFeedOptions/FilterAuthorOptions back the rule row
+	// value pickers.
+	FilterTagOptions    []comboItem
+	FilterFeedOptions   []comboItem
+	FilterAuthorOptions []comboItem
 	// FilterPreview is the draft/saved rule preview rendered under the rows.
 	FilterPreview store.AuthorFilterPreview
 	// AutoReadValue is the author's auto-read override ("inherit", "off", or a
@@ -266,6 +272,8 @@ type scopedItemsData struct {
 	TagCounts []store.CategoryCount
 	// FeedOptions are the author's feeds for the filter modal.
 	FeedOptions []comboItem
+	// AuthorOptions are the user's authors for the filter modal's author kind.
+	AuthorOptions []comboItem
 	// ScopeAuthorID/ScopeCollectionID identify the list the save-view action was
 	// opened from. Only the author id is used, as the create form's default
 	// assignment; the view itself always spans all feeds.
@@ -426,10 +434,10 @@ func pageCursorFor(base string, items []store.ItemWithFeed, hasMore bool, sort i
 // time sorts, an offset for magic and momentum), the active show/hide tag and
 // feed filters, and time windows resolved in the user's timezone.
 func scopedFilter(view string, sort itemSort, cursor int64, authorID, collectionID int64, filters listFilters, tz string) store.ItemFilter {
-	tagGroups, feedGroups, _ := filters.storeGroups()
+	tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 	f := store.ItemFilter{
 		AuthorID: authorID, CollectionID: collectionID, Limit: pageSize,
-		TagGroups: tagGroups, FeedGroups: feedGroups, TimeGroups: filters.timeGroups(tz),
+		TagGroups: tagGroups, FeedGroups: feedGroups, AuthorGroups: authorGroups, TimeGroups: filters.timeGroups(tz),
 	}
 	switch sort {
 	case sortOldest:
@@ -574,10 +582,10 @@ func (s *Server) authorReadAll(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	tagGroups, feedGroups, _ := filters.storeGroups()
+	tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 	if _, err := s.store.Items.MarkAllReadFiltered(u.ID, store.ItemFilter{
 		AuthorID: scopeAuthor, Views: scopeViews,
-		TagGroups: tagGroups, FeedGroups: feedGroups,
+		TagGroups: tagGroups, FeedGroups: feedGroups, AuthorGroups: authorGroups,
 		TimeGroups: filters.timeGroups(u.Timezone),
 	}); err != nil {
 		log.Error("mark author read", "author_id", id, "err", err)
@@ -612,13 +620,13 @@ func (s *Server) readPage(w http.ResponseWriter, r *http.Request) {
 	scope := store.ItemFilter{ReadOnly: true}
 	items, more, _ := s.store.Items.ListReadHistoryFiltered(u.ID, offset, pageSize, filterScope(scope, filters, u.Timezone))
 	count, _ := s.store.Items.CountRead(u.ID, 0)
-	tags, feeds := s.filterOptions(u.ID, scope)
+	tags, feeds, authors := s.filterOptions(u.ID, scope)
 	web.Render(w, r, basePage("history", u, readPage(readData{
 		Read: withTZ(u.Timezone, items), ReadCount: count,
 		More:    historyMore(filters.appendFilters("/items?read=1"), more, offset),
 		Mode:    s.store.ViewPrefs.Mode(u.ID, "/read"),
 		Filters: filters, FilteredCount: s.filteredCount(u.ID, filterScope(scope, filters, u.Timezone), filters),
-		TagOptions: tags, FeedOptions: feeds,
+		TagOptions: tags, FeedOptions: feeds, AuthorOptions: authors,
 	})))
 }
 
@@ -649,12 +657,12 @@ func (s *Server) favoritesPage(w http.ResponseWriter, r *http.Request) {
 	tok, _ := s.store.Users.FavoritesShareToken(u.ID)
 	mode := s.store.ViewPrefs.Mode(u.ID, "/favorites")
 	base := filters.appendFilters("/items?fav=1&sort=" + sort.param())
-	tags, feeds := s.filterOptions(u.ID, scope)
+	tags, feeds, authors := s.filterOptions(u.ID, scope)
 	web.Render(w, r, basePage("favorites", u, favoritesPage(favoritesData{
 		Favorites: withTZ(u.Timezone, items), FavCount: count, ShareToken: tok, Sort: sort,
 		More: pageCursorFor(base, items, more, sort, int(cursorID(r, sort))), Mode: mode,
 		Filters: filters, FilteredCount: s.filteredCount(u.ID, filterScope(scope, filters, u.Timezone), filters),
-		TagOptions: tags, FeedOptions: feeds,
+		TagOptions: tags, FeedOptions: feeds, AuthorOptions: authors,
 	})))
 }
 
@@ -670,12 +678,12 @@ func (s *Server) bookmarksPage(w http.ResponseWriter, r *http.Request) {
 	tok, _ := s.store.Users.BookmarksShareToken(u.ID)
 	mode := s.store.ViewPrefs.Mode(u.ID, "/bookmarks")
 	base := filters.appendFilters("/items?bookmark=1&sort=" + sort.param())
-	tags, feeds := s.filterOptions(u.ID, scope)
+	tags, feeds, authors := s.filterOptions(u.ID, scope)
 	web.Render(w, r, basePage("bookmarks", u, bookmarksPage(bookmarksData{
 		Bookmarks: withTZ(u.Timezone, items), BookCount: count, ShareToken: tok, Sort: sort,
 		More: pageCursorFor(base, items, more, sort, int(cursorID(r, sort))), Mode: mode,
 		Filters: filters, FilteredCount: s.filteredCount(u.ID, filterScope(scope, filters, u.Timezone), filters),
-		TagOptions: tags, FeedOptions: feeds,
+		TagOptions: tags, FeedOptions: feeds, AuthorOptions: authors,
 	})))
 }
 
@@ -2377,9 +2385,11 @@ func (s *Server) authorRulesToFilters(userID, authorID int64, rules []store.Filt
 	return s.validateAuthorRules(userID, authorID, fs)
 }
 
-// validateAuthorRules drops stale/foreign feed values and labels feed rows.
-// Unlike authorFilters it keeps feed rows for a single-feed author: a persistent
-// rule may intentionally target that feed.
+// validateAuthorRules drops stale/foreign feed and author values and labels
+// those rows. Unlike authorFilters it keeps feed rows for a single-feed author:
+// a persistent rule may intentionally target that feed. Author rows are
+// validated against every author the user owns, since the kind matches an item
+// seen through a selected author's feeds.
 func (s *Server) validateAuthorRules(userID, authorID int64, fs listFilters) listFilters {
 	if len(fs) == 0 {
 		return nil
@@ -2388,6 +2398,11 @@ func (s *Server) validateAuthorRules(userID, authorID int64, fs listFilters) lis
 	titles := make(map[int64]string, len(feeds))
 	for _, feed := range feeds {
 		titles[feed.ID] = feed.Title
+	}
+	authors, _ := s.store.Authors.List(userID)
+	names := make(map[int64]string, len(authors))
+	for _, a := range authors {
+		names[a.ID] = a.Name
 	}
 	out := make(listFilters, 0, len(fs))
 	for _, f := range fs {
@@ -2409,9 +2424,22 @@ func (s *Server) validateAuthorRules(userID, authorID int64, fs listFilters) lis
 			}
 			f.Values = values
 		}
+		if f.isAuthor() {
+			values := make([]string, 0, len(f.Values))
+			for _, value := range f.Values {
+				id, _ := strconv.ParseInt(value, 10, 64)
+				if _, ok := names[id]; ok {
+					values = append(values, value)
+				}
+			}
+			if len(values) == 0 {
+				continue
+			}
+			f.Values = values
+		}
 		out = append(out, f)
 	}
-	return filterFeedTitles(normalizeFilters(out), titles)
+	return filterAuthorNames(filterFeedTitles(normalizeFilters(out), titles), names)
 }
 
 // authorFilterPreview renders the draft allow/block result for the author
@@ -2432,8 +2460,8 @@ func (s *Server) authorFilterPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filters := s.validateAuthorRules(u.ID, id, filtersFromValues(r.Form))
-	tagGroups, feedGroups, _ := filters.storeGroups()
-	preview, err := s.store.Items.PreviewAuthorFilters(u.ID, id, tagGroups, feedGroups, 5)
+	tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
+	preview, err := s.store.Items.PreviewAuthorFilters(u.ID, id, tagGroups, feedGroups, authorGroups, 5)
 	if err != nil {
 		log.Error("author filter preview", "author_id", id, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -2463,6 +2491,11 @@ func (s *Server) authorFilters(userID, authorID int64, filters listFilters) list
 			titles[feed.ID] = feed.Title
 		}
 	}
+	authors, _ := s.store.Authors.List(userID)
+	names := make(map[int64]string, len(authors))
+	for _, a := range authors {
+		names[a.ID] = a.Name
+	}
 	out := make(listFilters, 0, len(filters))
 	for _, f := range filters {
 		if f.isFeed() {
@@ -2481,9 +2514,22 @@ func (s *Server) authorFilters(userID, authorID int64, filters listFilters) list
 			}
 			f.Values = values
 		}
+		if f.isAuthor() {
+			values := make([]string, 0, len(f.Values))
+			for _, value := range f.Values {
+				id, _ := strconv.ParseInt(value, 10, 64)
+				if _, ok := names[id]; ok {
+					values = append(values, value)
+				}
+			}
+			if len(values) == 0 {
+				continue
+			}
+			f.Values = values
+		}
 		out = append(out, f)
 	}
-	return filterFeedTitles(normalizeFilters(out), titles)
+	return filterAuthorNames(filterFeedTitles(normalizeFilters(out), titles), names)
 }
 
 // authorHasViews reports whether an author has at least one usable view.
@@ -2565,6 +2611,7 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 		More: pageCursorFor(itemsBase, items, more, sort, 0), HideAuthor: true,
 		Mode: s.store.ViewPrefs.Mode(userID, base), FavTab: favs > 0 || view == "favorites", FavCount: favs,
 		Filters: filters, FilteredCount: filtered, TagOptions: tagItems(cats), TagCounts: cats, FeedOptions: feedOpts,
+		AuthorOptions: s.authorOptions(userID),
 		ScopeAuthorID: authorID, ViewID: viewID, ViewName: viewName, Stats: stats,
 	}, true
 }
@@ -2601,6 +2648,7 @@ func (s *Server) globalScopedItems(userID int64, view string, sort itemSort, tz 
 		FavTab: true, FavCount: tabs.Favorites,
 		Filters: filters, FilteredCount: filtered,
 		TagOptions: tagItems(cats), FeedOptions: groupedFeedItems(groupFeedsByAuthor(feeds)),
+		AuthorOptions: s.authorOptions(userID),
 	}
 }
 
@@ -2825,27 +2873,28 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	rules, _ := s.store.AuthorFilters.List(u.ID, a.ID)
 	ruleFilters := s.authorRulesToFilters(u.ID, a.ID, rules)
-	tagGroups, feedGroups, _ := ruleFilters.storeGroups()
-	preview, _ := s.store.Items.PreviewAuthorFilters(u.ID, a.ID, tagGroups, feedGroups, 5)
+	tagGroups, feedGroups, authorGroups, _ := ruleFilters.storeGroups()
+	preview, _ := s.store.Items.PreviewAuthorFilters(u.ID, a.ID, tagGroups, feedGroups, authorGroups, 5)
 	cats, _ := s.store.Items.ListCategories(u.ID, store.ItemFilter{AuthorID: a.ID})
 	feedOpts := make([]comboItem, 0, len(feeds))
 	for _, f := range feeds {
 		feedOpts = append(feedOpts, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
 	}
 	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
-		Form:              authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
-		Links:             links,
-		Feeds:             feeds,
-		AvatarCard:        s.authorAvatarCardData(a, u.Timezone, ""),
-		Editor:            editor,
-		Views:             views,
-		ViewEditor:        viewEditor,
-		Rules:             ruleFilters,
-		FilterTagOptions:  tagItems(cats),
-		FilterFeedOptions: feedOpts,
-		FilterPreview:     preview,
-		AutoReadValue:     authorAutoReadValue(a.AutoReadAfterDays),
-		AutoReadDefault:   autoReadLabel(u.AutoReadAfterDays),
+		Form:                authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
+		Links:               links,
+		Feeds:               feeds,
+		AvatarCard:          s.authorAvatarCardData(a, u.Timezone, ""),
+		Editor:              editor,
+		Views:               views,
+		ViewEditor:          viewEditor,
+		Rules:               ruleFilters,
+		FilterTagOptions:    tagItems(cats),
+		FilterFeedOptions:   feedOpts,
+		FilterAuthorOptions: s.authorOptions(u.ID),
+		FilterPreview:       preview,
+		AutoReadValue:       authorAutoReadValue(a.AutoReadAfterDays),
+		AutoReadDefault:     autoReadLabel(u.AutoReadAfterDays),
 	})))
 }
 
@@ -2939,8 +2988,8 @@ func (s *Server) authorAutoReadData(u store.User, a store.Author, errMsg string)
 func (s *Server) authorFilterData(u store.User, a store.Author, errMsg string) authorsData {
 	rules, _ := s.store.AuthorFilters.List(u.ID, a.ID)
 	ruleFilters := s.authorRulesToFilters(u.ID, a.ID, rules)
-	tagGroups, feedGroups, _ := ruleFilters.storeGroups()
-	preview, _ := s.store.Items.PreviewAuthorFilters(u.ID, a.ID, tagGroups, feedGroups, 5)
+	tagGroups, feedGroups, authorGroups, _ := ruleFilters.storeGroups()
+	preview, _ := s.store.Items.PreviewAuthorFilters(u.ID, a.ID, tagGroups, feedGroups, authorGroups, 5)
 	cats, _ := s.store.Items.ListCategories(u.ID, store.ItemFilter{AuthorID: a.ID})
 	feeds, _ := s.store.Feeds.ListByAuthor(u.ID, a.ID)
 	feedOpts := make([]comboItem, 0, len(feeds))
@@ -2948,12 +2997,13 @@ func (s *Server) authorFilterData(u store.User, a store.Author, errMsg string) a
 		feedOpts = append(feedOpts, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
 	}
 	return authorsData{
-		Form:              authorForm{ID: a.ID},
-		Rules:             ruleFilters,
-		FilterTagOptions:  tagItems(cats),
-		FilterFeedOptions: feedOpts,
-		FilterPreview:     preview,
-		FilterError:       errMsg,
+		Form:                authorForm{ID: a.ID},
+		Rules:               ruleFilters,
+		FilterTagOptions:    tagItems(cats),
+		FilterFeedOptions:   feedOpts,
+		FilterAuthorOptions: s.authorOptions(u.ID),
+		FilterPreview:       preview,
+		FilterError:         errMsg,
 	}
 }
 
@@ -3137,11 +3187,12 @@ func (s *Server) computeCollectionCounts(userID int64, tz string) map[int64]stor
 		return counts
 	}
 	titles := s.savedViewFeedTitles(userID)
+	names := s.savedViewAuthorNames(userID)
 	scopes := make([]store.CollectionScope, 0, len(byCollection))
 	for collectionID, views := range byCollection {
 		predicates := make([]store.ViewFilter, 0, len(views))
 		for _, v := range views {
-			filters := savedViewFiltersWithTitles(filtersFromParams(v.Filters), titles)
+			filters := savedViewFiltersWithTitles(filtersFromParams(v.Filters), titles, names)
 			if len(filters) == 0 {
 				continue
 			}
@@ -3249,10 +3300,10 @@ func (s *Server) collectionDataFor(userID, id int64, view string, sort itemSort,
 	// The mark-all count is computed from the collection scope rather than the
 	// active tab, so it stays correct on the sources tab (which loads no items).
 	collectionViews := s.collectionViewFilters(userID, id, tz)
-	tagGroups, feedGroups, _ := filters.storeGroups()
+	tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 	unread, _ := s.store.Items.CountUnreadFiltered(userID, store.ItemFilter{
 		CollectionID: id, CollectionViews: collectionViews,
-		TagGroups: tagGroups, FeedGroups: feedGroups,
+		TagGroups: tagGroups, FeedGroups: feedGroups, AuthorGroups: authorGroups,
 		TimeGroups: filters.timeGroups(tz),
 	})
 	base := "/collections/" + strconv.FormatInt(id, 10)
@@ -3329,6 +3380,7 @@ func (s *Server) collectionScopedItems(userID, collectionID int64, view string, 
 		Mode: s.store.ViewPrefs.Mode(userID, base), Filters: filters,
 		ScopeCollectionID: collectionID,
 	}
+	d.AuthorOptions = s.authorOptions(userID)
 	if view == "feeds" {
 		d.Feeds = s.collectionFeedRows(userID, memberFeeds, tz)
 		d.Views = viewRows
@@ -3586,12 +3638,13 @@ func (s *Server) collectionReadAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filters := filtersFromRequest(r).withoutFeedFilters()
-	tagGroups, feedGroups, _ := filters.storeGroups()
+	tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 	if _, err := s.store.Items.MarkAllReadFiltered(u.ID, store.ItemFilter{
 		CollectionID:    id,
 		CollectionViews: s.collectionViewFilters(u.ID, id, u.Timezone),
 		TagGroups:       tagGroups,
 		FeedGroups:      feedGroups,
+		AuthorGroups:    authorGroups,
 		TimeGroups:      filters.timeGroups(u.Timezone),
 	}); err != nil {
 		log.Error("mark collection read", "collection_id", id, "err", err)

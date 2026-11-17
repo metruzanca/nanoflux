@@ -37,7 +37,10 @@ type AuthorWithCount struct {
 	FavCount  int
 }
 
-type AuthorStore struct{ q *sqlcgen.Queries }
+type AuthorStore struct {
+	q  *sqlcgen.Queries
+	db *sql.DB // raw handle for transactional rule cleanup
+}
 
 func (s *AuthorStore) Create(userID int64, name, avatarURL, description string) (Author, error) {
 	a, err := s.q.CreateAuthor(context.Background(), sqlcgen.CreateAuthorParams{
@@ -191,14 +194,39 @@ func (s *AuthorStore) SetAutoReadAfterDays(userID, id int64, days *int) error {
 
 // Delete removes an author and cascades to their feeds (and those feeds'
 // items and collection links). The cached avatar object is not touched here —
-// callers purge it via AvatarKey.
+// callers purge it via AvatarKey. Author-filter rules owned by the deleted
+// author cascade away; any other author's author-kind rule that named it drops
+// that value, and a rule left empty is removed.
 func (s *AuthorStore) Delete(userID, id int64) error {
-	res, err := s.q.DeleteAuthor(context.Background(), sqlcgen.DeleteAuthorParams{ID: id, UserID: userID})
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin author delete: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM author_filter_values
+		WHERE value = CAST(? AS TEXT)
+		  AND rule_id IN (SELECT r.id FROM author_filter_rules r
+		                    JOIN authors a ON a.id = r.author_id
+		                   WHERE a.user_id = ? AND r.kind = 'author')`,
+		id, userID); err != nil {
+		return fmt.Errorf("remove author from author filters: %w", err)
+	}
+	res, err := s.q.WithTx(tx).DeleteAuthor(ctx, sqlcgen.DeleteAuthorParams{ID: id, UserID: userID})
 	if err != nil {
 		return fmt.Errorf("delete author: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM author_filter_rules
+		WHERE id NOT IN (SELECT rule_id FROM author_filter_values)`); err != nil {
+		return fmt.Errorf("delete empty author filters: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit author delete: %w", err)
 	}
 	return nil
 }

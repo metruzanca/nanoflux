@@ -179,7 +179,8 @@ CREATE TABLE author_filter_values (
 -- that author does not match. Item read paths select from this view so the
 -- rules apply everywhere (lists, counts, badges) without per-caller
 -- predicates. Keep the expression in sync with the migration in
--- internal/db/migrate.go (schemaV55).
+-- internal/db/migrate.go (schemaV55, recreated by schemaV67) and with
+-- authorRuleMatchSQL.
 CREATE VIEW visible_items AS
 SELECT i.*
 FROM items i
@@ -211,6 +212,10 @@ WHERE NOT EXISTS (
                  JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
                 WHERE mf.item_id = i.id)
           END
+          WHEN 'author' THEN EXISTS (SELECT 1 FROM item_feeds mfa
+               JOIN feeds mfa2 ON mfa2.id = mfa.feed_id
+               JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mfa2.author_id AS TEXT)
+              WHERE mfa.item_id = i.id)
           ELSE 0
         END
       )
@@ -242,6 +247,10 @@ AND NOT EXISTS (
                  JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
                 WHERE mf.item_id = i.id)
           END
+          WHEN 'author' THEN EXISTS (SELECT 1 FROM item_feeds mfa
+               JOIN feeds mfa2 ON mfa2.id = mfa.feed_id
+               JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mfa2.author_id AS TEXT)
+              WHERE mfa.item_id = i.id)
           ELSE 0
         END
       )

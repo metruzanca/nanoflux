@@ -265,6 +265,77 @@ func TestAuthorFilterSettings(t *testing.T) {
 // TestAuthorViewFollowsAssignedAuthorRules verifies the saved-view rule source
 // end to end: a view is filtered by the author it is assigned to, not by the
 // author who owns the feed it draws from, and an unassigned view has no rules.
+// TestAuthorFilterAuthorRule saves an author-kind rule through the card and
+// checks it hides a cross-feed item seen through the selected author's feed.
+func TestAuthorFilterAuthorRule(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	page, _ := s.store.Authors.Create(u.ID, "Page", "", "")
+	pageFeed, _ := s.store.Feeds.Create(u.ID, page.ID, "Page feed", "https://page.dev/feed.xml", "", "", 900)
+	other, _ := s.store.Authors.Create(u.ID, "Other", "", "")
+	otherFeed, _ := s.store.Feeds.Create(u.ID, other.ID, "Other feed", "https://other.dev/feed.xml", "", "", 900)
+
+	upsert := func(feedID int64, it store.Item) {
+		t.Helper()
+		if _, err := s.store.Items.Upsert(feedID, it); err != nil {
+			t.Fatal(err)
+		}
+	}
+	upsert(pageFeed.ID, store.Item{GUID: "own", Title: "Page only", Link: "https://x/own", FetchedAt: db.Now()})
+	cross := store.Item{GUID: "cross", SharedKey: "site:cross", Title: "Shared post", Link: "https://x/cross", FetchedAt: db.Now()}
+	upsert(pageFeed.ID, cross)
+	upsert(otherFeed.ID, cross)
+
+	form := url.Values{
+		"author_filters_present": {"1"},
+		"filter_row":             {"0"},
+		"filter_action":          {"hide"},
+		"filter_kind":            {"author"},
+		"filter_value_0":         {itoa(other.ID)},
+	}
+	if rr := doHtmxForm(h, http.MethodPost, "/authors/"+itoa(page.ID)+"/filters", form, cookie); rr.Code != http.StatusOK {
+		t.Fatalf("save author rule: %d %s", rr.Code, rr.Body.String())
+	}
+	rules, err := s.store.AuthorFilters.List(u.ID, page.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules) != 1 || rules[0].Kind != store.FilterKindAuthor || rules[0].Values[0] != itoa(other.ID) {
+		t.Fatalf("saved author rule = %+v", rules)
+	}
+
+	body := doGet(h, "/authors/"+itoa(page.ID), cookie).Body.String()
+	if !strings.Contains(body, "Page only") || strings.Contains(body, "Shared post") {
+		t.Fatalf("author page should hide the cross-feed post: %s", body)
+	}
+
+	body = doGet(h, "/authors/"+itoa(page.ID)+"/edit", cookie).Body.String()
+	if !strings.Contains(body, `<option value="author" selected`) {
+		t.Fatalf("edit page should render the author kind selected: %s", body)
+	}
+	if !strings.Contains(body, `data-filter-value-kind="author"`) {
+		t.Fatalf("edit page should render the author value picker: %s", body)
+	}
+
+	// A foreign author id is dropped, not saved.
+	foreign, _ := s.store.Authors.Create(u.ID, "Foreign", "", "")
+	bad := url.Values{
+		"author_filters_present": {"1"},
+		"filter_row":             {"0"},
+		"filter_action":          {"hide"},
+		"filter_kind":            {"author"},
+		"filter_value_0":         {itoa(foreign.ID + 9999)},
+	}
+	if rr := doHtmxForm(h, http.MethodPost, "/authors/"+itoa(page.ID)+"/filters", bad, cookie); rr.Code != http.StatusOK {
+		t.Fatalf("save invalid author rule: %d %s", rr.Code, rr.Body.String())
+	}
+	rules, _ = s.store.AuthorFilters.List(u.ID, page.ID)
+	if len(rules) != 0 {
+		t.Fatalf("foreign author id should be dropped, got %+v", rules)
+	}
+}
+
 func TestAuthorViewFollowsAssignedAuthorRules(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)

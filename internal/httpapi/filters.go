@@ -29,9 +29,10 @@ import (
 // filter_value_<token> values (and filter_time_*_<token> for a time row), so a
 // multi-select cannot desynchronize the parallel row fields.
 const (
-	filterKindTag  = "tag"
-	filterKindFeed = "feed"
-	filterKindTime = "time"
+	filterKindTag    = "tag"
+	filterKindFeed   = "feed"
+	filterKindAuthor = "author"
+	filterKindTime   = "time"
 
 	filterShow = "show"
 	filterHide = "hide"
@@ -48,19 +49,20 @@ const (
 // secondary]: primary is the single bound for before/after, secondary is the
 // end of a between window and empty otherwise.
 type listFilter struct {
-	Kind    string   // filterKindTag, filterKindFeed or filterKindTime
+	Kind    string   // filterKindTag, filterKindFeed, filterKindAuthor or filterKindTime
 	Action  string   // filterShow or filterHide
-	Combine string   // filterAny or filterAll
-	Values  []string // tag texts, feed ids as strings, or [mode, start, end]
-	Labels  []string // display labels parallel to Values (feed titles)
+	Combine string   // filterAny or filterAll (unused by time and author rows)
+	Values  []string // tag texts, feed or author ids as strings, or [mode, start, end]
+	Labels  []string // display labels parallel to Values (feed titles, author names)
 }
 
 // listFilters is an ordered set of filter rows.
 type listFilters []listFilter
 
-func (f listFilter) isTag() bool  { return f.Kind == filterKindTag }
-func (f listFilter) isFeed() bool { return f.Kind == filterKindFeed }
-func (f listFilter) isTime() bool { return f.Kind == filterKindTime }
+func (f listFilter) isTag() bool    { return f.Kind == filterKindTag }
+func (f listFilter) isFeed() bool   { return f.Kind == filterKindFeed }
+func (f listFilter) isAuthor() bool { return f.Kind == filterKindAuthor }
+func (f listFilter) isTime() bool   { return f.Kind == filterKindTime }
 
 func (f listFilter) shown() bool  { return f.Action == filterShow }
 func (f listFilter) hidden() bool { return f.Action == filterHide }
@@ -69,11 +71,12 @@ func (f listFilter) allValues() bool { return f.Combine == filterAll }
 
 // param is the canonical ?f= value. A single value keeps the legacy shape; a
 // multi-value row embeds its values as a JSON array after the combine. A time
-// row embeds [mode, start, end] as JSON without a combine mode.
+// row embeds [mode, start, end] as JSON without a combine mode, and an author
+// row embeds its ids as JSON without a combine mode because it always ORs.
 func (f listFilter) param() string {
-	if f.isTime() {
+	if f.isTime() || f.isAuthor() {
 		b, _ := json.Marshal(f.Values)
-		return filterKindTime + ":" + f.Action + ":" + string(b)
+		return f.Kind + ":" + f.Action + ":" + string(b)
 	}
 	if len(f.Values) == 1 {
 		return f.Kind + ":" + f.Action + ":" + f.Values[0]
@@ -93,7 +96,7 @@ func (f listFilter) label() string {
 		values = f.Values
 	}
 	joiner := " or "
-	if f.allValues() {
+	if f.allValues() && !f.isAuthor() {
 		joiner = " and "
 	}
 	return strings.Join(values, joiner)
@@ -261,6 +264,19 @@ func parseFilterParam(raw string) (listFilter, bool) {
 		}
 		return newTimeFilter(parts[1], values)
 	}
+	if strings.HasPrefix(raw, filterKindAuthor+":") {
+		parts := strings.SplitN(raw, ":", 3)
+		if len(parts) != 3 {
+			return listFilter{}, false
+		}
+		if strings.HasPrefix(strings.TrimSpace(parts[2]), "[") {
+			var values []string
+			if err := json.Unmarshal([]byte(parts[2]), &values); err == nil {
+				return newFilter(filterKindAuthor, parts[1], filterAny, values)
+			}
+		}
+		return newFilter(filterKindAuthor, parts[1], filterAny, []string{parts[2]})
+	}
 	parts := strings.SplitN(raw, ":", 4)
 	if len(parts) == 4 && validCombine(parts[2]) && strings.HasPrefix(strings.TrimSpace(parts[3]), "[") {
 		var values []string
@@ -318,6 +334,20 @@ func newFilter(kind, action, combine string, values []string) (listFilter, bool)
 			return listFilter{}, false
 		}
 		return listFilter{Kind: kind, Action: action, Combine: combine, Values: ids}, true
+	case filterKindAuthor:
+		ids := make([]string, 0, len(cleaned))
+		for _, value := range cleaned {
+			id, err := strconv.ParseInt(value, 10, 64)
+			if err != nil || id <= 0 {
+				continue
+			}
+			ids = append(ids, strconv.FormatInt(id, 10))
+		}
+		if len(ids) == 0 {
+			return listFilter{}, false
+		}
+		// Author rows have no combine control: selected authors always OR.
+		return listFilter{Kind: kind, Action: action, Combine: filterAny, Values: ids}, true
 	default:
 		return listFilter{}, false
 	}
@@ -475,10 +505,10 @@ func (fs listFilters) rules() []store.FilterRule {
 	return out
 }
 
-// storeGroups converts the rows to the store's per-row tag/feed predicates and
-// returns the selected show-feed ids (for tab counts/tag options). Time rows
-// are applied separately through timeGroups.
-func (fs listFilters) storeGroups() (tagGroups []store.TagGroup, feedGroups []store.FeedGroup, showFeedIDs []int64) {
+// storeGroups converts the rows to the store's per-row tag/feed/author
+// predicates and returns the selected show-feed ids (for tab counts/tag
+// options). Time rows are applied separately through timeGroups.
+func (fs listFilters) storeGroups() (tagGroups []store.TagGroup, feedGroups []store.FeedGroup, authorGroups []store.AuthorGroup, showFeedIDs []int64) {
 	return store.FilterGroups(fs.rules())
 }
 
@@ -752,21 +782,76 @@ func mergeActiveTags(opts []comboItem, fs listFilters) []comboItem {
 	return opts
 }
 
+// filterAuthorNames fills author labels from the user's authors.
+func filterAuthorNames(fs listFilters, names map[int64]string) listFilters {
+	out := make(listFilters, len(fs))
+	copy(out, fs)
+	for i := range out {
+		if !out[i].isAuthor() {
+			continue
+		}
+		labels := make([]string, len(out[i].Values))
+		for j, value := range out[i].Values {
+			id, _ := strconv.ParseInt(value, 10, 64)
+			labels[j] = names[id]
+			if labels[j] == "" {
+				labels[j] = value
+			}
+		}
+		out[i].Labels = labels
+	}
+	return out
+}
+
+// filterPlaceholder names the value picker's kind for its empty state.
 func filterPlaceholder(kind string) string {
-	if kind == filterKindFeed {
+	switch kind {
+	case filterKindFeed:
 		return "feed"
+	case filterKindAuthor:
+		return "author"
 	}
 	return "tag"
 }
 
-// filterOptions builds the tag and feed option lists for a global list page's
-// filter modal. scope bounds the tag options to the page's item set (favorites,
-// bookmarks, history, or all items); feeds always span the user's subscriptions
-// because any feed can contribute an item to these pages.
-func (s *Server) filterOptions(userID int64, scope store.ItemFilter) ([]comboItem, []comboItem) {
+// filterOptions builds the tag, feed and author option lists for a global list
+// page's filter modal. scope bounds the tag options to the page's item set
+// (favorites, bookmarks, history, or all items); feeds and authors always span
+// the user's subscriptions because any feed can contribute an item to these
+// pages.
+func (s *Server) filterOptions(userID int64, scope store.ItemFilter) ([]comboItem, []comboItem, []comboItem) {
 	cats, _ := s.store.Items.ListCategoriesFilter(userID, scope)
 	feeds, _ := s.store.Feeds.ListWithUnread(userID)
-	return tagItems(cats), groupedFeedItems(groupFeedsByAuthor(feeds))
+	return tagItems(cats), groupedFeedItems(groupFeedsByAuthor(feeds)), s.authorOptions(userID)
+}
+
+// authorOptions maps the user's authors to filter-picker items. Author values
+// are author ids; the author kind matches items seen through any feed the
+// selected author owns.
+func (s *Server) authorOptions(userID int64) []comboItem {
+	authors, _ := s.store.Authors.List(userID)
+	return filterAuthorItems(authors)
+}
+
+// filterAuthorItems is authorOptions for an already-loaded author list. It does
+// not add the author picker's "+ create new author" entry.
+func filterAuthorItems(authors []store.Author) []comboItem {
+	out := make([]comboItem, 0, len(authors))
+	for _, a := range authors {
+		out = append(out, comboItem{Value: strconv.FormatInt(a.ID, 10), Label: a.Name})
+	}
+	return out
+}
+
+// authorFilterKinds is the kind set offered by the author filter card. The
+// author kind is offered only when there is more than one author, because with
+// a single author it would always match every item of the scope.
+func authorFilterKinds(authors []comboItem) []string {
+	kinds := []string{filterKindTag, filterKindFeed}
+	if len(authors) > 1 {
+		kinds = append(kinds, filterKindAuthor)
+	}
+	return kinds
 }
 
 // filteredCount returns how many items of the page's current tab would match
@@ -779,11 +864,12 @@ func (s *Server) filteredCount(userID int64, scope store.ItemFilter, filters lis
 	return n
 }
 
-// filterScope adds the active tag/feed/time predicates to a tab scope.
+// filterScope adds the active tag/feed/author/time predicates to a tab scope.
 func filterScope(scope store.ItemFilter, filters listFilters, tz string) store.ItemFilter {
-	tagGroups, feedGroups, _ := filters.storeGroups()
+	tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 	scope.TagGroups = tagGroups
 	scope.FeedGroups = feedGroups
+	scope.AuthorGroups = authorGroups
 	scope.TimeGroups = filters.timeGroups(tz)
 	return scope
 }
@@ -799,6 +885,7 @@ type filterPanelData struct {
 	FilteredCount int
 	TagOptions    []comboItem
 	FeedOptions   []comboItem
+	AuthorOptions []comboItem
 	AllowTime     bool
 	// ScopeAuthorID/ScopeCollectionID are the list's own scope. The author id
 	// pre-fills the save-view assignment; collection scope has no view effect.
@@ -848,6 +935,9 @@ func (d filterPanelData) kinds() []string {
 	if len(d.effectiveFeedOptions()) > 0 {
 		kinds = append(kinds, filterKindFeed)
 	}
+	if len(d.AuthorOptions) > 1 {
+		kinds = append(kinds, filterKindAuthor)
+	}
 	if d.AllowTime {
 		kinds = append(kinds, filterKindTime)
 	}
@@ -855,7 +945,7 @@ func (d filterPanelData) kinds() []string {
 }
 
 // defaultKind is the kind a fresh row starts with: tag when available,
-// otherwise feed, otherwise time.
+// otherwise feed, author, then time.
 func (d filterPanelData) defaultKind() string {
 	kinds := d.kinds()
 	if len(kinds) == 0 {
@@ -894,7 +984,7 @@ func (d scopedItemsData) filterPanel() filterPanelData {
 	return filterPanelData{
 		Path: d.Path, View: d.View, Sort: d.Sort,
 		Filters: d.Filters, FilteredCount: d.FilteredCount,
-		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
+		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AuthorOptions: d.AuthorOptions, AllowTime: true,
 		ScopeAuthorID: d.ScopeAuthorID, ScopeCollectionID: d.ScopeCollectionID,
 		ViewID: d.ViewID, ViewName: d.ViewName, NoFilters: d.NoFilters,
 		SaveView: !d.NoSaveView,
@@ -906,7 +996,7 @@ func (d homeData) filterPanel() filterPanelData {
 	return filterPanelData{
 		Path: "/unread", View: "unread", Sort: d.Sort,
 		Filters: d.Filters, FilteredCount: d.FilteredCount,
-		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
+		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AuthorOptions: d.AuthorOptions, AllowTime: true,
 		SaveView: true,
 	}
 }
@@ -917,7 +1007,7 @@ func (d readData) filterPanel() filterPanelData {
 	return filterPanelData{
 		Path: "/read", View: "read", Sort: sortNewest,
 		Filters: d.Filters, FilteredCount: d.FilteredCount,
-		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
+		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AuthorOptions: d.AuthorOptions, AllowTime: true,
 	}
 }
 
@@ -926,7 +1016,7 @@ func (d favoritesData) filterPanel() filterPanelData {
 	return filterPanelData{
 		Path: "/favorites", View: "favorites", Sort: d.Sort,
 		Filters: d.Filters, FilteredCount: d.FilteredCount,
-		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
+		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AuthorOptions: d.AuthorOptions, AllowTime: true,
 	}
 }
 
@@ -935,6 +1025,6 @@ func (d bookmarksData) filterPanel() filterPanelData {
 	return filterPanelData{
 		Path: "/bookmarks", View: "bookmarks", Sort: d.Sort,
 		Filters: d.Filters, FilteredCount: d.FilteredCount,
-		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AllowTime: true,
+		TagOptions: d.TagOptions, FeedOptions: d.FeedOptions, AuthorOptions: d.AuthorOptions, AllowTime: true,
 	}
 }

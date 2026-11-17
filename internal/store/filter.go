@@ -11,8 +11,9 @@ import (
 // author-level filters. Actions are show/hide internally; the author settings UI
 // labels them allow/block.
 const (
-	FilterKindTag  = "tag"
-	FilterKindFeed = "feed"
+	FilterKindTag    = "tag"
+	FilterKindFeed   = "feed"
+	FilterKindAuthor = "author"
 
 	FilterActionShow = "show"
 	FilterActionHide = "hide"
@@ -31,11 +32,14 @@ type FilterRule struct {
 	Values  []string
 }
 
-func (r FilterRule) IsTag() bool     { return r.Kind == FilterKindTag }
-func (r FilterRule) IsFeed() bool    { return r.Kind == FilterKindFeed }
-func (r FilterRule) Shown() bool     { return r.Action == FilterActionShow }
-func (r FilterRule) Hidden() bool    { return r.Action == FilterActionHide }
-func (r FilterRule) AllValues() bool { return r.Combine == FilterCombineAll }
+func (r FilterRule) IsTag() bool    { return r.Kind == FilterKindTag }
+func (r FilterRule) IsFeed() bool   { return r.Kind == FilterKindFeed }
+func (r FilterRule) IsAuthor() bool { return r.Kind == FilterKindAuthor }
+func (r FilterRule) Shown() bool    { return r.Action == FilterActionShow }
+func (r FilterRule) Hidden() bool   { return r.Action == FilterActionHide }
+func (r FilterRule) AllValues() bool {
+	return r.Combine == FilterCombineAll
+}
 
 // Valid reports whether the rule has a known kind, action, combine mode and at
 // least one value.
@@ -44,7 +48,7 @@ func (r FilterRule) Valid() bool {
 		return false
 	}
 	switch r.Kind {
-	case FilterKindTag, FilterKindFeed:
+	case FilterKindTag, FilterKindFeed, FilterKindAuthor:
 	default:
 		return false
 	}
@@ -63,9 +67,9 @@ func (r FilterRule) Valid() bool {
 
 // NormalizeFilterRules drops invalid rows, cleans values and removes duplicate
 // values, preserving order. Tag values go through tagnorm so a rule always
-// matches the lowercase tags stored on items; feed values stay numeric strings.
-// It mirrors the HTTP layer's normalizeFilters so both systems accept the same
-// input shape.
+// matches the lowercase tags stored on items; feed and author values stay
+// numeric id strings. It mirrors the HTTP layer's normalizeFilters so both
+// systems accept the same input shape.
 func NormalizeFilterRules(in []FilterRule) []FilterRule {
 	out := make([]FilterRule, 0, len(in))
 	for _, r := range in {
@@ -94,8 +98,10 @@ func NormalizeFilterRules(in []FilterRule) []FilterRule {
 // FilterGroups converts rules into the store's per-row predicates and returns
 // the selected show-feed ids (used by scoped tab counts). Both the transient
 // list filters and author rules go through this one conversion, so a semantics
-// change benefits both.
-func FilterGroups(rules []FilterRule) (tagGroups []TagGroup, feedGroups []FeedGroup, showFeedIDs []int64) {
+// change benefits both. An author row matches items seen through any feed owned
+// by the selected authors; it has no all mode, so its values always combine with
+// OR.
+func FilterGroups(rules []FilterRule) (tagGroups []TagGroup, feedGroups []FeedGroup, authorGroups []AuthorGroup, showFeedIDs []int64) {
 	for _, r := range rules {
 		if r.IsTag() {
 			tagGroups = append(tagGroups, TagGroup{
@@ -113,6 +119,12 @@ func FilterGroups(rules []FilterRule) (tagGroups []TagGroup, feedGroups []FeedGr
 		if len(ids) == 0 {
 			continue
 		}
+		if r.IsAuthor() {
+			authorGroups = append(authorGroups, AuthorGroup{
+				AuthorIDs: ids, Exclude: r.Hidden(),
+			})
+			continue
+		}
 		feedGroups = append(feedGroups, FeedGroup{
 			FeedIDs: ids, All: r.AllValues(), Exclude: r.Hidden(),
 		})
@@ -120,5 +132,5 @@ func FilterGroups(rules []FilterRule) (tagGroups []TagGroup, feedGroups []FeedGr
 			showFeedIDs = append(showFeedIDs, ids...)
 		}
 	}
-	return tagGroups, feedGroups, showFeedIDs
+	return tagGroups, feedGroups, authorGroups, showFeedIDs
 }

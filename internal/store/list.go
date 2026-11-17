@@ -217,19 +217,21 @@ func (s *ListStore) ItemListIDs(userID, itemID int64) ([]int64, error) {
 }
 
 // ListItemFilter narrows a list's items to a read/unread view and optional
-// tag/feed/time predicates. The zero value matches every item in the list.
+// tag/feed/author/time predicates. The zero value matches every item in the
+// list.
 type ListItemFilter struct {
-	ReadOnly   bool
-	UnreadOnly bool
-	TagGroups  []TagGroup
-	FeedGroups []FeedGroup
-	TimeGroups []TimeGroup
+	ReadOnly     bool
+	UnreadOnly   bool
+	TagGroups    []TagGroup
+	FeedGroups   []FeedGroup
+	AuthorGroups []AuthorGroup
+	TimeGroups   []TimeGroup
 }
 
 // hasFilters reports whether the filter needs the hand-written membership
 // query (the generated list queries have fixed placeholders).
 func (f ListItemFilter) hasFilters() bool {
-	return len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.TimeGroups) > 0
+	return len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.AuthorGroups) > 0 || len(f.TimeGroups) > 0
 }
 
 // appendListPredicates adds the list member filter's read state and tag/feed/
@@ -243,7 +245,7 @@ func appendListPredicates(b *strings.Builder, args *[]any, f ListItemFilter) {
 	if f.ReadOnly {
 		b.WriteString(" AND i.read = 1")
 	}
-	appendFilterGroups(b, args, "i.id", f.TagGroups, f.FeedGroups)
+	appendFilterGroups(b, args, "i.id", f.TagGroups, f.FeedGroups, f.AuthorGroups)
 	appendTimeGroups(b, args, "COALESCE(i.published_at, i.fetched_at)", f.TimeGroups)
 }
 

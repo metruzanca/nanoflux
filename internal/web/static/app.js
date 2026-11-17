@@ -393,7 +393,7 @@ function syncFilterRowKind(row) {
   var kind = row.querySelector('[data-filter-kind]');
   if (!kind) return;
   var combine = row.querySelector('[data-filter-combine]');
-  if (combine) combine.hidden = kind.value === 'time';
+  if (combine) combine.hidden = kind.value === 'time' || kind.value === 'author';
   var cell = row.querySelector('[data-filter-value]');
   if (!cell || cell.dataset.filterValueKind === kind.value) return;
   var tpl = row.querySelector('[data-filter-value-template="' + kind.value + '"]');

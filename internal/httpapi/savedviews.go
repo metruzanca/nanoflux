@@ -34,18 +34,19 @@ type savedViewRow struct {
 
 // savedViewForm is the create page's data and the inline editor's data.
 type savedViewForm struct {
-	ID                int64
-	Title             string
-	Filters           listFilters
-	AuthorID          int64
-	NewAuthorName     string
-	NewAuthorAvatar   string
-	CollectionIDs     []int64
-	AuthorOptions     []comboItem
-	CollectionOptions []comboItem
-	TagOptions        []comboItem
-	FeedOptions       []comboItem
-	Error             string
+	ID                  int64
+	Title               string
+	Filters             listFilters
+	AuthorID            int64
+	NewAuthorName       string
+	NewAuthorAvatar     string
+	CollectionIDs       []int64
+	AuthorOptions       []comboItem
+	CollectionOptions   []comboItem
+	TagOptions          []comboItem
+	FeedOptions         []comboItem
+	FilterAuthorOptions []comboItem
+	Error               string
 }
 
 // savedViewRows resolves a batch of views, attaching their collection
@@ -89,30 +90,32 @@ func (s *Server) savedViewCount(userID, authorID int64, view string, filters lis
 // view's assigned author's rules.
 func savedViewItemFilter(view string, sort itemSort, cursor, authorID int64, filters listFilters, tz string) store.ItemFilter {
 	f := scopedFilter(view, sort, cursor, 0, 0, nil, tz)
-	tagGroups, feedGroups, _ := filters.storeGroups()
+	tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 	f.Views = []store.ViewFilter{{
-		AuthorID:   authorID,
-		TagGroups:  tagGroups,
-		FeedGroups: feedGroups,
-		TimeGroups: filters.timeGroups(tz),
+		AuthorID:     authorID,
+		TagGroups:    tagGroups,
+		FeedGroups:   feedGroups,
+		AuthorGroups: authorGroups,
+		TimeGroups:   filters.timeGroups(tz),
 	}}
 	return f
 }
 
-// savedViewFilters validates a view's filter rows against the user's feeds:
-// feed ids must belong to the user and labels are resolved from their titles.
-// Stale rows are dropped rather than failing the whole view.
+// savedViewFilters validates a view's filter rows against the user's feeds and
+// authors: feed and author ids must belong to the user, and labels are resolved
+// from their titles/names. Stale rows are dropped rather than failing the whole
+// view.
 func (s *Server) savedViewFilters(userID int64, filters listFilters) listFilters {
 	if len(filters) == 0 {
 		return nil
 	}
-	return savedViewFiltersWithTitles(filters, s.savedViewFeedTitles(userID))
+	return savedViewFiltersWithTitles(filters, s.savedViewFeedTitles(userID), s.savedViewAuthorNames(userID))
 }
 
-// savedViewFiltersWithTitles is savedViewFilters over an already-loaded feed
-// title map, so a caller validating several views fetches the feed list once
-// instead of once per view.
-func savedViewFiltersWithTitles(filters listFilters, titles map[int64]string) listFilters {
+// savedViewFiltersWithTitles is savedViewFilters over already-loaded feed title
+// and author name maps, so a caller validating several views fetches those lists
+// once instead of once per view.
+func savedViewFiltersWithTitles(filters listFilters, titles, names map[int64]string) listFilters {
 	if len(filters) == 0 {
 		return nil
 	}
@@ -134,9 +137,35 @@ func savedViewFiltersWithTitles(filters listFilters, titles map[int64]string) li
 			}
 			f.Values = values
 		}
+		if f.isAuthor() {
+			values := make([]string, 0, len(f.Values))
+			for _, value := range f.Values {
+				id, err := strconv.ParseInt(value, 10, 64)
+				if err != nil {
+					continue
+				}
+				if _, ok := names[id]; ok {
+					values = append(values, value)
+				}
+			}
+			if len(values) == 0 {
+				continue
+			}
+			f.Values = values
+		}
 		out = append(out, f)
 	}
-	return filterFeedTitles(normalizeFilters(out), titles)
+	return filterAuthorNames(filterFeedTitles(normalizeFilters(out), titles), names)
+}
+
+// savedViewAuthorNames maps the authors a view may filter on.
+func (s *Server) savedViewAuthorNames(userID int64) map[int64]string {
+	authors, _ := s.store.Authors.List(userID)
+	names := make(map[int64]string, len(authors))
+	for _, a := range authors {
+		names[a.ID] = a.Name
+	}
+	return names
 }
 
 // savedViewFeedTitles maps the feeds a view may filter on.
@@ -213,6 +242,7 @@ func clampSavedViewTitle(title string) string {
 func (s *Server) savedViewFormData(userID int64, v savedViewForm) savedViewForm {
 	authors, _ := s.store.Authors.List(userID)
 	v.AuthorOptions = authorItems(authors)
+	v.FilterAuthorOptions = filterAuthorItems(authors)
 	collections, _ := s.store.Collections.List(userID)
 	v.CollectionOptions = nonAutoCollections(collections)
 	cats, _ := s.store.Items.ListCategoriesFilter(userID, store.ItemFilter{
@@ -515,8 +545,9 @@ func (s *Server) viewFiltersFromViews(userID int64, views []store.SavedView, tz 
 		return out
 	}
 	titles := s.savedViewFeedTitles(userID)
+	names := s.savedViewAuthorNames(userID)
 	for _, v := range views {
-		filters := savedViewFiltersWithTitles(filtersFromParams(v.Filters), titles)
+		filters := savedViewFiltersWithTitles(filtersFromParams(v.Filters), titles, names)
 		if len(filters) == 0 {
 			continue
 		}
@@ -556,12 +587,12 @@ func (s *Server) collectionViewMatches(userID, collectionID int64, tz string) []
 		if len(filters) == 0 {
 			continue
 		}
-		tagGroups, feedGroups, _ := filters.storeGroups()
+		tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 		out = append(out, collectionViewMatch{
 			ID: v.ID, Title: v.Title, AuthorID: v.AuthorID,
 			Predicate: store.ViewFilter{
 				AuthorID:  v.AuthorID,
-				TagGroups: tagGroups, FeedGroups: feedGroups,
+				TagGroups: tagGroups, FeedGroups: feedGroups, AuthorGroups: authorGroups,
 				TimeGroups: filters.timeGroups(tz),
 			},
 		})
@@ -645,10 +676,10 @@ func collectionHasFeed(it store.ItemWithFeed, member map[int64]bool) bool {
 // source. Taking the rows as an argument avoids validating the view (and
 // reloading the feed titles) twice.
 func (s *Server) storeViewFilterFor(v store.SavedView, filters listFilters, tz string) store.ViewFilter {
-	tagGroups, feedGroups, _ := filters.storeGroups()
+	tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 	return store.ViewFilter{
 		AuthorID:  v.AuthorID,
-		TagGroups: tagGroups, FeedGroups: feedGroups, TimeGroups: filters.timeGroups(tz),
+		TagGroups: tagGroups, FeedGroups: feedGroups, AuthorGroups: authorGroups, TimeGroups: filters.timeGroups(tz),
 	}
 }
 
@@ -664,11 +695,12 @@ func (s *Server) savedViewsByAuthor(userID int64, tz string) (map[int64][]store.
 	// One feed list for every view, not one per view: validation only needs it
 	// to drop stale feed ids and label the surviving rows.
 	titles := s.savedViewFeedTitles(userID)
+	names := s.savedViewAuthorNames(userID)
 	for _, v := range views {
 		if v.AuthorID <= 0 {
 			continue
 		}
-		rows := savedViewFiltersWithTitles(filtersFromParams(v.Filters), titles)
+		rows := savedViewFiltersWithTitles(filtersFromParams(v.Filters), titles, names)
 		if len(rows) == 0 {
 			continue
 		}

@@ -314,13 +314,14 @@ func (s *FeedStore) Delete(userID, id int64) ([]string, error) {
 		return nil, fmt.Errorf("re-home feed items: %w", err)
 	}
 
-	// Drop this feed from the author's stored filter rules, and any rule left
-	// with no values. Rules live outside the feed cascade, so a stale id would
-	// otherwise keep showing in the author's settings.
+	// Drop this feed from the author's stored feed-filter rules, and any rule
+	// left with no values. Rules live outside the feed cascade, so a stale id
+	// would otherwise keep showing in the author's settings. The kind guard
+	// keeps a numeric feed id from colliding with an author id in an author row.
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM author_filter_values
 		WHERE value = CAST(? AS TEXT)
-		  AND rule_id IN (SELECT id FROM author_filter_rules WHERE author_id = ?)`,
+		  AND rule_id IN (SELECT id FROM author_filter_rules WHERE author_id = ? AND kind = 'feed')`,
 		f.ID, f.AuthorID); err != nil {
 		return nil, fmt.Errorf("remove feed from author filters: %w", err)
 	}

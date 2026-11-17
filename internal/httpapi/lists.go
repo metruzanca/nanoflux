@@ -122,16 +122,17 @@ func (s *Server) listScopedItems(userID, listID int64, view string, sort itemSor
 		Mode:    s.store.ViewPrefs.Mode(userID, base),
 		Filters: filters, FilteredCount: filtered,
 		TagOptions: tagItems(cats), FeedOptions: groupedFeedItems(groupFeedsByAuthor(feeds)),
+		AuthorOptions: s.authorOptions(userID),
 	}
 }
 
 // listItemFilter builds the store filter for one list tab plus the active
 // filter rows.
 func listItemFilter(view string, filters listFilters, tz string) store.ListItemFilter {
-	tagGroups, feedGroups, _ := filters.storeGroups()
+	tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 	return store.ListItemFilter{
 		UnreadOnly: view != "read", ReadOnly: view == "read",
-		TagGroups: tagGroups, FeedGroups: feedGroups, TimeGroups: filters.timeGroups(tz),
+		TagGroups: tagGroups, FeedGroups: feedGroups, AuthorGroups: authorGroups, TimeGroups: filters.timeGroups(tz),
 	}
 }
 

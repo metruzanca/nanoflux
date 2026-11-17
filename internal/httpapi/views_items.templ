@@ -456,13 +456,14 @@ templ scopedTab(path, itemsPath, view, label, count string, active bool, sort it
 
 // filterRow is one editable row in the filter modal: action, kind, any/all,
 // values, then remove/add controls. kinds is the set of kinds the caller
-// offers (tag/feed/time); the kind select is hidden when only one is possible
-// and its value still submits through a hidden input.
+// offers (tag/feed/author/time); the kind select is hidden when only one is
+// possible and its value still submits through a hidden input. Author rows have
+// no combine control: their values always OR.
 //
 // Each possible kind's value editor is rendered as a <template>. app.js swaps
 // the value cell when the kind changes, so no client-side option hydration is
 // needed.
-templ filterRow(id, token, kind, action, combine string, values []string, tagItems, feedItems []comboItem, kinds []string, allowBlock bool, namePrefix string) {
+templ filterRow(id, token, kind, action, combine string, values []string, tagItems, feedItems, authorItems []comboItem, kinds []string, allowBlock bool, namePrefix string) {
 	<div class="filter-row" data-filter-row>
 		<input type="hidden" name={ namePrefix + "filter_row" } value={ token } data-filter-row-token/>
 		<select name={ namePrefix + "filter_action" } class="filter-select filter-action" aria-label="filter action">
@@ -483,7 +484,7 @@ templ filterRow(id, token, kind, action, combine string, values []string, tagIte
 		} else {
 			<input type="hidden" name={ namePrefix + "filter_kind" } value={ kind }/>
 		}
-		<span data-filter-combine hidden?={ kind == filterKindTime }>
+		<span data-filter-combine hidden?={ kind == filterKindTime || kind == filterKindAuthor }>
 			<select name={ namePrefix + "filter_combine" } class="filter-select filter-combine" aria-label="how values combine">
 				<option value={ filterAny } selected?={ combine == filterAny }>any</option>
 				<option value={ filterAll } selected?={ combine == filterAll }>all</option>
@@ -494,6 +495,8 @@ templ filterRow(id, token, kind, action, combine string, values []string, tagIte
 				@filterTimeRow(id+"-value", token, values, namePrefix)
 			} else if kind == filterKindFeed {
 				@comboMultiID(id+"-value", namePrefix+"filter_value_"+token, "", values, feedItems)
+			} else if kind == filterKindAuthor {
+				@comboMultiID(id+"-value", namePrefix+"filter_value_"+token, "", values, authorItems)
 			} else {
 				@comboMultiID(id+"-value", namePrefix+"filter_value_"+token, "", values, tagItems)
 			}
@@ -506,6 +509,10 @@ templ filterRow(id, token, kind, action, combine string, values []string, tagIte
 			} else if k == filterKindFeed {
 				<template data-filter-value-template="feed">
 					@comboMultiID(id+"-value-feed", namePrefix+"filter_value_"+token, "", nil, feedItems)
+				</template>
+			} else if k == filterKindAuthor {
+				<template data-filter-value-template="author">
+					@comboMultiID(id+"-value-author", namePrefix+"filter_value_"+token, "", nil, authorItems)
 				</template>
 			} else {
 				<template data-filter-value-template="tag">
@@ -606,17 +613,17 @@ templ filterDialog(fp filterPanelData) {
 				if fp.ScopeAuthorID > 0 {
 					<input type="hidden" name="author_id" value={ strconv.FormatInt(fp.ScopeAuthorID, 10) }/>
 				}
-				<p class="muted small">show matching posts, or hide them. tag and feed rows combine their values with any (or) or all (and); time rows match a window on the post time, in your timezone. show rows must all match, and any hide row excludes.</p>
+				<p class="muted small">show matching posts, or hide them. tag and feed rows combine their values with any (or) or all (and); author rows always match any selected author; time rows match a window on the post time, in your timezone. show rows must all match, and any hide row excludes.</p>
 				<div class="filter-rows" id="filter-rows" data-filter-rows>
 					for i, f := range fp.Filters {
-						@filterRow("filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, fp.TagOptions, feedItems, kinds, false, "")
+						@filterRow("filter-"+strconv.Itoa(i), strconv.Itoa(i), f.Kind, f.Action, f.Combine, f.Values, fp.TagOptions, feedItems, fp.AuthorOptions, kinds, false, "")
 					}
 					if len(fp.Filters) == 0 {
-						@filterRow("filter-empty", "empty", defaultKind, filterShow, filterAll, nil, fp.TagOptions, feedItems, kinds, false, "")
+						@filterRow("filter-empty", "empty", defaultKind, filterShow, filterAll, nil, fp.TagOptions, feedItems, fp.AuthorOptions, kinds, false, "")
 					}
 				</div>
 				<template id="filter-row-template" data-filter-row-template>
-					@filterRow("filter-__token__", "__token__", defaultKind, filterShow, filterAll, nil, fp.TagOptions, feedItems, kinds, false, "")
+					@filterRow("filter-__token__", "__token__", defaultKind, filterShow, filterAll, nil, fp.TagOptions, feedItems, fp.AuthorOptions, kinds, false, "")
 				</template>
 				<button type="button" class="link" data-add-filter-row>@web.Lucide("plus") add filter</button>
 				<div class="row-actions">
