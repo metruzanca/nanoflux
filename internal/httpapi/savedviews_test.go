@@ -72,6 +72,45 @@ func TestFilterParamsAreLowercased(t *testing.T) {
 	}
 }
 
+func TestSavedViewTitleFromFilters(t *testing.T) {
+	cases := []struct {
+		name    string
+		filters listFilters
+		want    string
+	}{
+		{
+			name:    "single value",
+			filters: listFilters{{Kind: filterKindTag, Action: filterShow, Combine: filterAll, Values: []string{"u/plushymia"}}},
+			want:    "u/plushymia",
+		},
+		{
+			name: "multi-value and hide rows",
+			filters: listFilters{
+				{Kind: filterKindTag, Action: filterShow, Combine: filterAny, Values: []string{"r/golang", "r/rust"}},
+				{Kind: filterKindFeed, Action: filterHide, Combine: filterAll, Values: []string{"12"}, Labels: []string{"Blog"}},
+			},
+			want: "(r/golang or r/rust), not Blog",
+		},
+		{
+			name:    "time row uses its window label",
+			filters: listFilters{{Kind: filterKindTime, Action: filterShow, Combine: filterAll, Values: []string{filterTimeAfter, "2026-01-01"}}},
+			want:    "after Jan 1, 2026",
+		},
+		{
+			name:    "long title is clamped",
+			filters: listFilters{{Kind: filterKindTag, Action: filterShow, Combine: filterAll, Values: []string{strings.Repeat("a", 200)}}},
+			want:    strings.Repeat("a", maxSavedViewTitle-len("…")) + "…",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := savedViewTitleFromFilters(tc.filters); got != tc.want {
+				t.Fatalf("title = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
@@ -108,12 +147,17 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	if strings.Contains(body, "save as view</button>") {
 		t.Fatalf("save-as-view should be icon-only: %s", body)
 	}
+	// The active-filter chip row carries the same prefill outside the modal.
+	if !strings.Contains(body, `href="/views/new?f=tag%3Ashow%3Au%2Fexample-poster"`) {
+		t.Fatalf("unread should offer an inline save-as-view link: %s", body)
+	}
 
 	// The create page carries the filter rows and the feed-style author picker,
-	// including the embedded create-author fields.
+	// including the embedded create-author fields, and defaults its title from
+	// the filter values.
 	formPage := doGet(h, "/views/new?f="+url.QueryEscape("tag:show:u/example-poster"), cookie).Body.String()
 	for _, want := range []string{
-		`name="title"`, `name="author_id"`, `name="author_name"`, `+ create new author`,
+		`name="title" value="u/example-poster"`, `name="author_id"`, `name="author_name"`, `+ create new author`,
 		`name="filter_value_empty"`,
 	} {
 		if !strings.Contains(formPage, want) && !(want == `name="filter_value_empty"` && strings.Contains(formPage, `name="filter_value_0"`)) {
@@ -150,6 +194,13 @@ func TestSavedViewCreateRenderAndEdit(t *testing.T) {
 	}
 	if !strings.Contains(body, `href="/authors/`+itoa(author.ID)+`?tab=unread&amp;sort=newest"`) {
 		t.Fatalf("view chip should link back to the un-scoped author list: %s", body)
+	}
+
+	// On an author page the inline action also prefills the view's author.
+	scoped := doGet(h, "/authors/"+itoa(author.ID)+"?f="+url.QueryEscape("tag:show:u/example-poster"), cookie).Body.String()
+	wantHref := `href="/views/new?author_id=` + itoa(author.ID) + `&amp;f=tag%3Ashow%3Au%2Fexample-poster"`
+	if !strings.Contains(scoped, wantHref) {
+		t.Fatalf("author list should offer an author-prefilled save-as-view link: %s", scoped)
 	}
 
 	// The default author page aggregates assigned views, so it shows the post.

@@ -469,7 +469,11 @@ Categories are also normalized for tag browsing and list filtering.
   `app.js`). Active-filter chips drop one row; a hidden filter's chip uses the
   `chip-hide` style. The dialog's "save as view" action is shown only where a
   saved view can express the page's scope (author, collection, `/unread`,
-  `/search`), not on favorites, bookmarks, history or a custom list.
+  `/search`), not on favorites, bookmarks, history or a custom list. The same
+  prefill is offered inline as a `save as view` chip beside `clear all`
+  (`filterPanelData.saveViewURL`, canonical `?f=` rows plus `author_id`); it is
+  hidden when a saved view is already selected, because the page's filters are
+  then only the transient overlay on that view's own recipe.
   Author-page feed rows are validated against the author before use
   (`authorFilters`).
 
@@ -728,9 +732,14 @@ code.
   `POST /views/{id}/delete`. Deletion returns to the view's author edit page.
 - Feed filter values are validated on save and load against the user's feeds, so
   deleting a feed degrades the view rather than breaking it.
-- Creation happens from the filter dialog's `save as view` submit, which posts
-  the draft filter rows to `/views/new`; the topbar add-caret menu also links
-  there. The create form uses the same author picker as the feed form
+- Creation happens from the filter dialog's `save as view` submit, or the
+  inline `save as view` chip beside `clear all`, both of which send the draft
+  filter rows to `/views/new`; the topbar add-caret menu also links there. The
+  create page seeds its title from those filters (`savedViewTitleFromFilters`):
+  one value is used as-is, and a larger recipe joins each row's label with `, `,
+  parenthesizes multi-value rows and prefixes hide rows with `not `. The title
+  is clamped to `maxSavedViewTitle` bytes and stays editable. The create form
+  uses the same author picker as the feed form
   (`authorPicker`/`authorCreateFields`): `author_id=new` shows the embedded
   create-author fields, so a view cannot be saved without an author. The form
   reuses `filterRow`; a view-scoped author page reuses `scopedItemsData` with

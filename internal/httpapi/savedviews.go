@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/log"
 
@@ -175,6 +176,38 @@ func savedViewCollectionValues(ids []int64) []string {
 	return out
 }
 
+// savedViewTitleFromFilters builds the create form's starting title from the
+// filters it was opened with. A single value names a small view perfectly; a
+// larger recipe falls back to its labels, in row order, with hide rows marked
+// "not" and multi-value rows parenthesized so the title is not ambiguous.
+func savedViewTitleFromFilters(filters listFilters) string {
+	parts := make([]string, 0, len(filters))
+	for _, f := range filters {
+		label := f.label()
+		if !f.isTime() && len(f.Values) > 1 {
+			label = "(" + label + ")"
+		}
+		if f.hidden() {
+			label = "not " + label
+		}
+		parts = append(parts, label)
+	}
+	return clampSavedViewTitle(strings.Join(parts, ", "))
+}
+
+// clampSavedViewTitle caps a generated title at maxSavedViewTitle bytes on a
+// rune boundary, since the form and the validator both reject a longer value.
+func clampSavedViewTitle(title string) string {
+	if len(title) <= maxSavedViewTitle {
+		return title
+	}
+	cut := maxSavedViewTitle - len("…")
+	for cut > 0 && !utf8.RuneStart(title[cut]) {
+		cut--
+	}
+	return title[:cut] + "…"
+}
+
 // savedViewFormData builds the create/edit form's option lists. A view always
 // spans all of the user's feeds.
 func (s *Server) savedViewFormData(userID int64, v savedViewForm) savedViewForm {
@@ -209,7 +242,8 @@ func (s *Server) viewEditorData(u store.User, v store.SavedView) savedViewForm {
 }
 
 // savedViewNew renders the create form prefilled from the list the user saved
-// from (?author_id= and the filter fields).
+// from (?author_id= and the filter fields). Its title starts as the filters
+// themselves: a single value is an ideal name for a small view.
 func (s *Server) savedViewNew(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	authorID, ok := s.savedViewPrefillAuthor(u.ID, r.URL.Query().Get("author_id"))
@@ -217,9 +251,10 @@ func (s *Server) savedViewNew(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	filters := s.savedViewFilters(u.ID, filtersFromRequest(r))
 	form := savedViewForm{
-		Title:    "",
-		Filters:  s.savedViewFilters(u.ID, filtersFromRequest(r)),
+		Title:    savedViewTitleFromFilters(filters),
+		Filters:  filters,
 		AuthorID: authorID,
 	}
 	web.Render(w, r, basePage("new view", u, savedViewFormPage(u, s.savedViewFormData(u.ID, form))))

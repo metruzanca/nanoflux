@@ -572,6 +572,9 @@ templ filterChips(fp filterPanelData) {
 			}
 			if len(fp.Filters) > 0 {
 				<span class="chip chip-count" title="posts matching the active filters">{ strconv.Itoa(fp.FilteredCount) } matching</span>
+				if fp.SaveView && fp.ViewID == 0 {
+					<a class="chip chip-save" href={ templ.URL(fp.saveViewURL()) } title="save these filters as a view">save as view</a>
+				}
 				<a class="chip chip-clear" href={ templ.URL(filterPageURLFor(fp.Path, fp.View, fp.Sort, nil, fp.ViewID)) }>clear all</a>
 			}
 		</div>

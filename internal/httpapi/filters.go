@@ -874,6 +874,20 @@ func (d filterPanelData) available() bool {
 	return len(d.kinds()) > 0 || len(d.Filters) > 0
 }
 
+// saveViewURL is the inline "save as view" target for the active filters: the
+// create form, prefilled with the list's author scope and the canonical ?f=
+// rows. It matches what the filter dialog submits, without needing its form.
+func (d filterPanelData) saveViewURL() string {
+	v := url.Values{}
+	if d.ScopeAuthorID > 0 {
+		v.Set("author_id", strconv.FormatInt(d.ScopeAuthorID, 10))
+	}
+	for _, f := range d.Filters {
+		v.Add("f", f.param())
+	}
+	return "/views/new?" + v.Encode()
+}
+
 // filterPanel projects a scoped list's data onto the shared filter toolbar.
 func (d scopedItemsData) filterPanel() filterPanelData {
 	return filterPanelData{
