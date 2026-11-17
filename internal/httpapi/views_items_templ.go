@@ -4196,7 +4196,7 @@ func ModeIcon(name string) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		case "momentum":
-			templ_7745c5c3_Err = web.Lucide("trending-up").Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = web.Lucide("train-front").Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
