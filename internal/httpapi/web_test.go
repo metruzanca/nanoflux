@@ -2526,19 +2526,18 @@ func TestAuthorEditListsFeedsWithEditLinks(t *testing.T) {
 	}
 }
 
-func TestFeedEditRedirectsToCombinedAuthorEdit(t *testing.T) {
+func TestFeedEditLibraryPage(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 
-	// The old feed edit URL redirects to the combined author edit page with the
-	// feed selected.
+	// The feed library's edit page renders the same auto-saving editor, and
+	// stays reachable for an unassigned feed.
 	rr := doGet(h, "/feeds/"+itoa(f.ID)+"/edit", cookie)
-	if rr.Code != http.StatusFound ||
-		rr.Header().Get("Location") != "/authors/"+itoa(a.ID)+"/edit?feed="+itoa(f.ID) {
-		t.Fatalf("feed edit should redirect to the combined page: %d %q", rr.Code, rr.Header().Get("Location"))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `id="feed-acc-`+itoa(f.ID)+`"`) {
+		t.Fatalf("feed edit page: %d %s", rr.Code, rr.Body.String())
 	}
 
 	// The edit page renders the author form and, for the selected feed, its

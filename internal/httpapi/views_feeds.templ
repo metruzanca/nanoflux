@@ -25,7 +25,10 @@ templ FeedsList(rows []feedRow) {
 templ FeedRow(r feedRow) {
 	{{ id := strconv.FormatInt(r.ID, 10) }}
 	{{ authorID := strconv.FormatInt(r.AuthorID, 10) }}
-	{{ feedURL := "/authors/" + authorID + "?feed=" + id }}
+	{{ feedURL := "/feeds/" + id }}
+	if r.AuthorID != 0 {
+		{{ feedURL = "/authors/" + authorID + "?feed=" + id }}
+	}
 	<li id={ "feed-" + id } class="feed-card-item">
 		<div class="card feed-card">
 			<div class="feed-card-main">
@@ -36,6 +39,9 @@ templ FeedRow(r feedRow) {
 							{ r.Title }
 						</strong>
 					</a>
+					if r.AuthorID == 0 {
+						<span class="badge" title="not on any author page or collection">unassigned</span>
+					}
 					if !r.Enabled {
 						if r.DisabledReason != "" {
 							<span class="badge danger" title={ r.DisabledReason }>disabled · { r.DisabledReason }</span>
@@ -83,6 +89,7 @@ templ FeedRow(r feedRow) {
 							disabled
 						}
 					>@web.Lucide("refresh-cw")</button>
+					<a class="small" title="edit" href={ templ.URL("/feeds/" + id + "/edit") }>@web.EditIcon()</a>
 				</div>
 				if len(r.Collections) > 0 {
 					<div class="feed-collections">
@@ -137,7 +144,9 @@ templ feedPreviewFields(d feedPreviewForm) {
 			<input type="hidden" name="author_id" value={ strconv.FormatInt(d.FixedAuthor.ID, 10) }/>
 			<p class="muted small">author · { d.FixedAuthor.Name }</p>
 		} else {
-			@authorPicker(d.SelectedAuthorID, authorItems(d.Authors), "new-author", "#feed-home-url", d.newAuthor())
+			{{ pickerItems := authorItems(d.Authors) }}
+			{{ pickerItems = append(pickerItems, comboItem{Value: "none", Label: "unassigned (add to the library only)"}) }}
+			@authorPicker(d.SelectedAuthorID, pickerItems, "new-author", "#feed-home-url", d.newAuthor())
 		}
 		<div id="add-feed-error" class="error"></div>
 		<button type="submit">add</button>

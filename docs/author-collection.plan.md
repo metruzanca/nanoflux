@@ -7,7 +7,12 @@
   pages (owned feeds plus their views). Auto collections and the synthetic
   no-collection are gone. A `/domains` page groups the feed library by
   registrable domain instead. No collection-level filters yet.
-- [ ] **Step 2: unassigned feeds and the `/feeds` library page (schemaV69).**
+- [x] **Step 2: unassigned feeds and the `/feeds` library page (schemaV69).**
+  `feeds.author_id` is still an owner pointer but `0` means unassigned, and the
+  author foreign key is gone. `/feeds` lists every feed, `/feeds/{id}` shows its
+  items, and `/feeds/{id}/edit` is a standalone editor. Deleting an author
+  unassigns its feeds instead of deleting them. Add-feed offers an
+  "unassigned (library only)" choice.
 - [ ] Step 3: `author_feeds` many-to-many and membership-based author scope.
 - [ ] Step 4: flatten saved views into authors.
 - [ ] Step 5: drop `feeds.author_id`, move auto-read to feeds, momentum by feed.

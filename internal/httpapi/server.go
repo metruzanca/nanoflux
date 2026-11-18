@@ -197,6 +197,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /add", s.auth.Require(http.HandlerFunc(s.shareAdd)))
 
 	// Feeds. A single feed's items live on the author page's ?feed= filter;
+	mux.Handle("GET /feeds", s.auth.Require(http.HandlerFunc(s.feeds)))
+	mux.Handle("GET /feeds/{id}", s.auth.Require(http.HandlerFunc(s.feedPage)))
+	mux.Handle("GET /feeds/{id}/items", s.auth.Require(http.HandlerFunc(s.feedItems)))
+	mux.Handle("POST /feeds/{id}/read-all", s.auth.Require(http.HandlerFunc(s.feedReadAll)))
 	mux.Handle("POST /feeds", s.auth.Require(http.HandlerFunc(s.feedCreate)))
 	mux.Handle("GET /feeds/{id}/edit", s.auth.Require(http.HandlerFunc(s.feedEdit)))
 	mux.Handle("GET /feeds/{id}/edit-fragment", s.auth.Require(http.HandlerFunc(s.feedEditFragment)))

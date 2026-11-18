@@ -1390,13 +1390,28 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 		s.writeDuplicateFeedError(w, r, "add-feed-error", u.ID, feedURL)
 		return
 	}
-	authorID, isNew, errMsg := s.resolveAuthor(r, u.ID, "feed")
+	var authorID int64
+	var isNew bool
+	var errMsg string
+	if r.FormValue("author_id") == "none" || r.FormValue("author_id") == "0" {
+		// An unassigned feed is a library row: it polls and appears in the
+		// global lists and /feeds, but on no author page or collection.
+	} else {
+		authorID, isNew, errMsg = s.resolveAuthor(r, u.ID, "feed")
+		if errMsg != "" {
+			writeFormError(w, r, "add-feed-error", errMsg)
+			return
+		}
+	}
+	f, errMsg := s.createFeed(r, u.ID, authorID)
 	if errMsg != "" {
 		writeFormError(w, r, "add-feed-error", errMsg)
 		return
 	}
-	if _, errMsg = s.createFeed(r, u.ID, authorID); errMsg != "" {
-		writeFormError(w, r, "add-feed-error", errMsg)
+	if authorID == 0 {
+		// The add dialog has no author row to swap, so land on the new feed.
+		w.Header().Set("HX-Redirect", "/feeds/"+strconv.FormatInt(f.ID, 10))
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	// The share-target flow asks to land on the new author's page.
@@ -1585,8 +1600,8 @@ func (s *Server) resolveAuthor(r *http.Request, userID int64, noun string) (int6
 	}
 }
 
-// feedEdit is the legacy feed edit URL. Editing now lives on the combined
-// author edit page, so this redirects there with the feed selected.
+// feedEdit is the feed library's edit page, shared by assigned and unassigned
+// feeds. Author edit still embeds the same editor for its own feeds.
 func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -1599,7 +1614,15 @@ func (s *Server) feedEdit(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	http.Redirect(w, r, "/authors/"+strconv.FormatInt(f.AuthorID, 10)+"/edit?feed="+strconv.FormatInt(f.ID, 10), http.StatusFound)
+	authorName := ""
+	if f.AuthorID != 0 {
+		if a, err := s.store.Authors.ByID(u.ID, f.AuthorID); err == nil {
+			authorName = a.Name
+		}
+	}
+	unread, _ := s.store.Items.CountUnread(u.ID, f.ID)
+	row := s.feedRowFor(u.ID, f, authorName, u.Timezone, unread)
+	web.Render(w, r, basePage("edit "+f.Title, u, feedEditPage(u, *s.feedEditorData(u, f), row)))
 }
 
 // feedEditFragment returns one feed's editor body for the author edit page's
@@ -1663,7 +1686,10 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	back := "/authors/" + strconv.FormatInt(old.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(id, 10)
+	back := "/feeds/" + strconv.FormatInt(id, 10) + "/edit"
+	if old.AuthorID != 0 {
+		back = "/authors/" + strconv.FormatInt(old.AuthorID, 10) + "/edit?feed=" + strconv.FormatInt(id, 10)
+	}
 	ok, applyErr := s.applyFeedForm(u, old, r.Form)
 	if applyErr != nil {
 		log.Error("update feed", "feed_id", id, "err", applyErr)
@@ -1681,14 +1707,25 @@ func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
 		case !ok:
 			editor.FormError = "title and feed url are required"
 		}
-		author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
+		authorName := ""
+		if f.AuthorID != 0 {
+			if author, err := s.store.Authors.ByID(u.ID, f.AuthorID); err == nil {
+				authorName = author.Name
+			}
+		}
 		unread, _ := s.store.Items.CountUnread(u.ID, f.ID)
 		status := http.StatusOK
 		if editor.FormError != "" {
 			status = http.StatusBadRequest
 		}
 		w.WriteHeader(status)
-		web.Render(w, r, feedAccordionBody(s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread), editor))
+		row := s.feedRowFor(u.ID, f, authorName, u.Timezone, unread)
+		// The library edit page has no accordion summary: swap just the form.
+		if strings.Contains(r.Header.Get("HX-Current-URL"), "/feeds/") {
+			web.Render(w, r, feedEditorPanel(*editor))
+			return
+		}
+		web.Render(w, r, feedAccordionBody(row, editor))
 		return
 	}
 	if applyErr != nil {
@@ -1837,7 +1874,11 @@ func (s *Server) feedDelete(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	http.Redirect(w, r, "/authors/"+strconv.FormatInt(f.AuthorID, 10), http.StatusSeeOther)
+	back := "/feeds"
+	if f.AuthorID != 0 {
+		back = "/authors/" + strconv.FormatInt(f.AuthorID, 10)
+	}
+	http.Redirect(w, r, back, http.StatusSeeOther)
 }
 
 func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
@@ -1871,8 +1912,13 @@ func (s *Server) feedRefresh(w http.ResponseWriter, r *http.Request) {
 		f, _ = s.store.Feeds.ByID(u.ID, id)
 	}
 	unread, _ := s.store.Items.CountUnread(u.ID, id)
-	author, _ := s.store.Authors.ByID(u.ID, f.AuthorID)
-	row := s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread)
+	authorName := ""
+	if f.AuthorID != 0 {
+		if author, err := s.store.Authors.ByID(u.ID, f.AuthorID); err == nil {
+			authorName = author.Name
+		}
+	}
+	row := s.feedRowFor(u.ID, f, authorName, u.Timezone, unread)
 	// A refresh that stored new posts also updates the author page's item list
 	// (the feed "on the author"), so the new posts appear without a reload. Only
 	// when the visitor is on this feed's author page: the list is rebuilt from

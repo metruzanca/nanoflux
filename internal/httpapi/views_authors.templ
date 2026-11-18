@@ -140,7 +140,7 @@ templ authorEditPage(u store.User, d authorsData) {
 		}
 	</div>
 	<div class="stack delete-form">
-		<button type="button" class="danger" data-post-action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm={ "delete author " + d.Form.Name + " and their feeds?" }>{ "delete author " + d.Form.Name }</button>
+		<button type="button" class="danger" data-post-action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm={ "delete author " + d.Form.Name + "? their feeds stay in the library, unassigned." }>{ "delete author " + d.Form.Name }</button>
 	</div>
 }
 

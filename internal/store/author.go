@@ -213,6 +213,12 @@ func (s *AuthorStore) Delete(userID, id int64) error {
 		id, userID); err != nil {
 		return fmt.Errorf("remove author from author filters: %w", err)
 	}
+	// Feeds are library rows now: deleting an author unassigns its feeds
+	// instead of deleting them. They keep polling and stay on /feeds.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE feeds SET author_id = 0 WHERE author_id = ? AND user_id = ?`, id, userID); err != nil {
+		return fmt.Errorf("unassign author feeds: %w", err)
+	}
 	res, err := s.q.WithTx(tx).DeleteAuthor(ctx, sqlcgen.DeleteAuthorParams{ID: id, UserID: userID})
 	if err != nil {
 		return fmt.Errorf("delete author: %w", err)

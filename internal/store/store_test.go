@@ -110,23 +110,30 @@ func TestAuthorFeedFlow(t *testing.T) {
 		t.Fatalf("ListByAuthor: %v %d", err, len(byAuthor))
 	}
 
-	// Deleting an author cascades to their feeds and items.
+	// Deleting an author leaves its feeds in the library, unassigned, with
+	// their items intact.
 	s.Items.Upsert(f.ID, Item{GUID: "g", Title: "t", Link: "https://metru.dev/1", FetchedAt: db.Now()})
 	if err := s.Authors.Delete(u.ID, a.ID); err != nil {
-		t.Fatalf("author delete should cascade: %v", err)
+		t.Fatalf("author delete: %v", err)
 	}
 	feeds, _ = s.Feeds.List(u.ID)
-	if len(feeds) != 0 {
-		t.Fatalf("author delete should cascade feeds, got %d", len(feeds))
+	if len(feeds) != 1 || feeds[0].AuthorID != 0 {
+		t.Fatalf("author delete should unassign feeds, got %+v", feeds)
 	}
-	n, _ := s.Items.CountUnread(u.ID, 0)
-	if n != 0 {
-		t.Fatalf("author delete should cascade items, got %d unread", n)
+	if n, _ := s.Items.CountUnread(u.ID, f.ID); n != 1 {
+		t.Fatalf("author delete should keep feed items, got %d unread", n)
 	}
 
-	// A feed must belong to an author; the store enforces it.
-	if _, err := s.Feeds.Create(u.ID, 0, "orphan", "https://x.dev/rss.xml", "", "", 900); err == nil {
-		t.Fatal("create without author should fail")
+	// A feed can be created without an author: it lives in the library only.
+	orphan, err := s.Feeds.Create(u.ID, 0, "orphan", "https://x.dev/rss.xml", "", "", 900)
+	if err != nil {
+		t.Fatalf("create unassigned feed: %v", err)
+	}
+	if orphan.AuthorID != 0 {
+		t.Fatalf("unassigned feed AuthorID = %d", orphan.AuthorID)
+	}
+	if byAuthor, _ := s.Feeds.ListByAuthor(u.ID, 0); len(byAuthor) != 0 {
+		t.Fatalf("unassigned feed should not appear under an author: %+v", byAuthor)
 	}
 }
 

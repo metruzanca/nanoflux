@@ -550,15 +550,16 @@ parallel implementation.
   to the nearest `[data-tag-items]` container, so the dialog and the author card
   share the same component.
 
-## Feeds live on the author page
+## Feeds are a library; author pages show assigned feeds
 
-There is no `/feeds/{id}` page. An author's feeds render as cards inside the
-`details.author-feeds` section of `/authors/{id}` (`FeedRow`), each carrying the
-actions that used to live on the feed page: a link to the feed's scoped item
-list, refresh (`POST /feeds/{id}/refresh`), feed-scoped mark-all-read, "load
-older items" (`POST /feeds/{id}/older`, which appends OOB to the author's item
-list), the external home/feed link, the last-polled line and the cached-media
-stat. `GET /feeds/{id}/edit` still redirects to the author edit page.
+`/feeds` is the library index and `/feeds/{id}` a feed's own item list. An
+author's assigned feeds also render as cards inside the `details.author-feeds`
+section of `/authors/{id}` (`FeedRow`), carrying refresh
+(`POST /feeds/{id}/refresh`), an edit link (`GET /feeds/{id}/edit`), the
+external home/feed link, the last-polled line and the cached-media stat. "load
+older items" (`POST /feeds/{id}/older`) appends OOB to the author's item list.
+An unassigned feed appears only in the library, `/domains` and the global
+lists, and `FeedRow` links its title to `/feeds/{id}`.
 
 The feed-scoped list (`/authors/{id}?feed=`) and the feed card's unread badge
 use the same author-scoped predicate (`CountFiltered` with `AuthorID` +
@@ -603,16 +604,28 @@ excludes the current author, and a successful save returns an empty `200` so the
 `outerHTML` swap removes that feed's accordion item from the current author's
 edit page without a reload.
 
-A feed's item list is the author page filtered with `?feed={id}`
-(`Server.authorFeedFilter` validates ownership; `authorScopedItems` sets
-`ItemFilter.FeedID`), which scopes the tabs, counts, sort, tags, pagination and
-the header mark-all to that feed. Every former `/feeds/{id}` link now points at
-an author page: the feed card title at `/authors/{id}?feed=`, item/source/author
-links at `/authors/{id}`, the item modal's tag chips at `/authors/{id}?tags=`,
-the command-palette feed entity and the provision success link at
-`/authors/{id}?feed=`. The item menu's old "go to feed" is "go to author" (and
-is omitted on the author's own page). Display-mode scopes drop `/feeds/{id}`;
-the author page's scope stays `/authors/{id}`.
+A feed is a library row now. `feeds.author_id = 0` means **unassigned**
+(schemaV69 removed the author foreign key): the feed still polls and appears in
+the global lists, `/feeds`, `/domains` and its own `/feeds/{id}` page, but on no
+author page or collection. Deleting an author unassigns its feeds instead of
+deleting them; the author delete label says so.
+
+- `GET /feeds` is the feed library, `GET /feeds/{id}` its item list, and
+  `GET /feeds/{id}/edit` the standalone editor (the author edit page embeds the
+  same editor for its own feeds). `GET /feeds/{id}/items` is the list fragment.
+- An assigned feed still has an author-scoped list at
+  `/authors/{id}?feed={id}` (`Server.authorFeedFilter` validates ownership;
+  `authorScopedItems` sets `ItemFilter.FeedID`). `FeedRow` links to the author
+  list when assigned and to `/feeds/{id}` when not.
+- `ListByAuthor` / `ListByAuthorWithUnread` return nothing for `authorID == 0`,
+  so the unassigned sentinel can never leak onto an author page. Guard any new
+  author-scoped query the same way.
+- The add-feed form offers `author_id=none` ("unassigned, library only"); the
+  other paths (`/api/save`, extension, plugin provisioning, OPML) still create
+  an author.
+- Item/source/author links, tag chips, the command palette and the provision
+  success link still point at the author page; only the feed library pages use
+  `/feeds`.
 
 ## Author index unread counts are cached
 

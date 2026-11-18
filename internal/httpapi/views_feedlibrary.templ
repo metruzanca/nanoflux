@@ -1,0 +1,59 @@
+package httpapi
+
+import (
+	"strconv"
+
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+// feedsPage is the feed library. Feeds are first-class rows: an assigned feed
+// still appears on its author's page, and an unassigned feed lives only here
+// (plus the global lists).
+templ feedsPage(u store.User, rows []feedRow) {
+	<div class="row">
+		<h1>feeds</h1>
+		<div class="row-actions">
+			<button type="button" data-action="addFeed">+ add feed</button>
+			<a class="button" href="/domains">domains</a>
+		</div>
+	</div>
+	if len(rows) == 0 {
+		<p class="muted">no feeds yet. add one, or add a site and let discovery find it.</p>
+		return
+	}
+	<ul class="feed-cards" id="feeds-list">
+		for _, r := range rows {
+			@FeedRow(r)
+		}
+	</ul>
+}
+
+// feedPage is one feed's item list.
+templ feedPage(u store.User, r feedRow, scoped scopedItemsData) {
+	<div class="row">
+		<h1>{ r.Title }</h1>
+		<div class="row-actions">
+			@markAllReadControl(markAllReadData{
+				Action: "/feeds/" + strconv.FormatInt(r.ID, 10) + "/read-all",
+				Unread: scoped.UnreadCount,
+				Label:  "mark all as read",
+			})
+			<a class="button" title="edit" href={ templ.URL("/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit") }>@web.EditIcon() edit</a>
+			<a class="button" href="/feeds">all feeds</a>
+		</div>
+	</div>
+	@FeedsList([]feedRow{r})
+	@ScopedItems(scoped)
+}
+
+// feedEditPage is the standalone editor for a feed, assigned or not.
+templ feedEditPage(u store.User, d feedsData, r feedRow) {
+	<div class="row">
+		<h1>edit feed</h1>
+		<a class="button" href={ templ.URL("/feeds/" + strconv.FormatInt(r.ID, 10)) }>close</a>
+	</div>
+	<div id={ "feed-acc-" + strconv.FormatInt(r.ID, 10) }>
+		@feedEditorPanel(d)
+	</div>
+}

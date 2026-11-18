@@ -136,6 +136,10 @@ func (s *FeedStore) List(userID int64) ([]Feed, error) {
 }
 
 func (s *FeedStore) ListByAuthor(userID, authorID int64) ([]Feed, error) {
+	// 0 is the unassigned sentinel, not an author: no author page lists those.
+	if authorID == 0 {
+		return nil, nil
+	}
 	rows, err := s.q.ListFeedsByAuthor(context.Background(), sqlcgen.ListFeedsByAuthorParams{
 		UserID:   userID,
 		AuthorID: authorID,
@@ -166,6 +170,9 @@ func (s *FeedStore) ListWithUnread(userID int64) ([]FeedWithUnread, error) {
 
 // ListByAuthorWithUnread is ListWithUnread scoped to one author.
 func (s *FeedStore) ListByAuthorWithUnread(userID, authorID int64) ([]FeedWithUnread, error) {
+	if authorID == 0 {
+		return nil, nil
+	}
 	rows, err := s.q.ListFeedsByAuthorWithUnread(context.Background(), sqlcgen.ListFeedsByAuthorWithUnreadParams{
 		UserID:   userID,
 		AuthorID: authorID,

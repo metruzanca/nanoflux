@@ -79,6 +79,7 @@ var migrations = []migration{
 	{66, schemaV66},
 	{67, schemaV67},
 	{68, schemaV68},
+	{69, schemaV69},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -1060,9 +1061,7 @@ ALTER TABLE users ADD COLUMN show_tag_cloud INTEGER NOT NULL DEFAULT 0;
 // like the feed kind, and always combines with OR. SQLite cannot replace a view,
 // so the old one is dropped and rebuilt. Keep it in sync with schema.sql and
 // authorRuleMatchSQL.
-const schemaV67 = `
-DROP VIEW IF EXISTS visible_items;
-CREATE VIEW visible_items AS
+const visibleItemsViewSQL = `CREATE VIEW visible_items AS
 SELECT i.*
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
@@ -1138,6 +1137,9 @@ AND NOT EXISTS (
 );
 `
 
+const schemaV67 = `DROP VIEW IF EXISTS visible_items;
+` + visibleItemsViewSQL
+
 // schemaV68 turns collections into groups of authors. A feed belongs to a
 // collection through its author now, so adding an author brings that author's
 // feeds and views. Auto collections are removed entirely: the feed library's
@@ -1182,6 +1184,55 @@ JOIN collections c ON c.id = cv.collection_id;
 DROP TABLE collection_feeds;
 DROP TABLE collection_views;
 `
+
+// schemaV69 lets a feed exist without an author. Feeds become a library: an
+// unassigned feed still polls and appears in the global lists and /feeds, but
+// it belongs to no author page or collection. author_id keeps 0 as the
+// unassigned sentinel and drops the author foreign key, so deleting an author
+// leaves their feeds in the library instead of deleting them.
+const schemaV69 = `
+DROP VIEW IF EXISTS visible_items;
+CREATE TABLE feeds_v69 (
+    id                INTEGER PRIMARY KEY,
+    user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id         INTEGER NOT NULL DEFAULT 0,
+    title             TEXT NOT NULL,
+    feed_url          TEXT NOT NULL,
+    home_url          TEXT,
+    description       TEXT,
+    etag              TEXT,
+    last_modified     TEXT,
+    last_polled_at    TEXT,
+    last_error        TEXT,
+    next_page_url     TEXT NOT NULL DEFAULT '',
+    poll_interval_sec INTEGER NOT NULL DEFAULT 900,
+    poll_interval_auto INTEGER NOT NULL DEFAULT 1,
+    last_item_at      TEXT,
+    next_poll_at      TEXT,
+    next_poll_scheduled INTEGER NOT NULL DEFAULT 0,
+    plugin_name       TEXT NOT NULL DEFAULT '',
+    disabled_reason   TEXT,
+    enabled           INTEGER NOT NULL DEFAULT 1,
+    is_system         INTEGER NOT NULL DEFAULT 0,
+    rank              INTEGER NOT NULL DEFAULT 0,
+    cache_images      INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT INTO feeds_v69 (id, user_id, author_id, title, feed_url, home_url, description,
+    etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec,
+    poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name,
+    disabled_reason, enabled, is_system, rank, cache_images, created_at)
+SELECT id, user_id, author_id, title, feed_url, home_url, description,
+    etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec,
+    poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name,
+    disabled_reason, enabled, is_system, rank, cache_images, created_at
+FROM feeds;
+DROP TABLE feeds;
+ALTER TABLE feeds_v69 RENAME TO feeds;
+CREATE INDEX idx_feeds_user ON feeds(user_id);
+CREATE INDEX idx_feeds_author ON feeds(author_id);
+CREATE UNIQUE INDEX idx_feeds_system ON feeds(user_id) WHERE is_system = 1;
+` + visibleItemsViewSQL
 
 // Migrate applies any pending migrations in order, recording each in
 // schema_migrations. Each migration runs in its own transaction.

@@ -68,7 +68,9 @@ CREATE UNIQUE INDEX idx_authors_system ON authors(user_id) WHERE is_system = 1;
 CREATE TABLE feeds (
     id                INTEGER PRIMARY KEY,
     user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    author_id         INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    -- 0 means unassigned. Feeds live in the library independently of an
+    -- author (schemaV69), so a feed can exist before any author selects it.
+    author_id         INTEGER NOT NULL DEFAULT 0,
     title             TEXT NOT NULL,
     feed_url          TEXT NOT NULL,
     home_url          TEXT,
