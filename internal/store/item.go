@@ -101,10 +101,12 @@ func CrossFeedKey(sharedKey string) string { return crossFeedKey(sharedKey) }
 
 // DisplayTitle returns the title to render for an item, falling back to its
 // external id when the feed supplied none (image-only posts and some RSS
-// bridges). Every list, modal and API response renders this so a row is never
-// blank. Dedup and content classification keep using the raw Title.
+// bridges). The stored title is feed HTML, so it is reduced to plain text
+// first; a title that is only markup (an <img>, say) strips to empty and takes
+// the same fallback. Every list, modal and API response renders this so a row is
+// never blank. Dedup and content classification keep using the raw Title.
 func (i Item) DisplayTitle() string {
-	if t := strings.TrimSpace(i.Title); t != "" {
+	if t := strings.TrimSpace(sanitize.Text(i.Title)); t != "" {
 		return t
 	}
 	if id := strings.TrimSpace(i.GUID); id != "" {

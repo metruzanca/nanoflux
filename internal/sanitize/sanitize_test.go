@@ -47,3 +47,26 @@ func TestHTMLPlainTextUnchanged(t *testing.T) {
 		t.Fatalf("empty changed: %q", got)
 	}
 }
+
+func TestTextStripsMarkup(t *testing.T) {
+	cases := []struct {
+		name, in, want string
+	}{
+		{"plain text", "just text", "just text"},
+		{"inline markup", `A <b>bold</b> title`, "A bold title"},
+		{"character references", `Tom &amp; Jerry &#8217;s`, "Tom & Jerry ’s"},
+		{"block boundaries", `<p>one</p><p>two</p>`, "one two"},
+		{"line break", `line<br>break`, "line break"},
+		{"markup only", `<img src="https://example.test/a.png">`, ""},
+		{"literal angle bracket", `5 < 10 things`, "5 < 10 things"},
+		{"script is dropped", `<script>alert(1)</script>hi`, "hi"},
+		{"empty", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Text(c.in); got != c.want {
+				t.Fatalf("Text(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}

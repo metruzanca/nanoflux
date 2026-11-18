@@ -19,6 +19,21 @@ func TestItemDisplayTitle(t *testing.T) {
 			want: "A real headline",
 		},
 		{
+			name: "markup is stripped from the title",
+			item: Item{ID: 1, GUID: "external-id", Title: "A <b>real</b> headline"},
+			want: "A real headline",
+		},
+		{
+			name: "character references are decoded",
+			item: Item{ID: 1, GUID: "external-id", Title: "Tom &amp; Jerry"},
+			want: "Tom & Jerry",
+		},
+		{
+			name: "markup-only title falls back to the external id",
+			item: Item{ID: 1, GUID: "external-id", Title: `<img src="https://example.test/a.png">`},
+			want: "external-id",
+		},
+		{
 			name: "empty title falls back to the external id",
 			item: Item{ID: 40192, GUID: "832737045877309440"},
 			want: "832737045877309440",

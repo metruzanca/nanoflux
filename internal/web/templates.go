@@ -22,6 +22,7 @@ import (
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/feedparse"
+	"github.com/metruzanca/nanoflux/internal/sanitize"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -492,24 +493,7 @@ func BestImageURL(summary, imageURL string) string {
 
 // StripHTML extracts plain text from feed-provided HTML.
 func StripHTML(s string) string {
-	doc, err := html.Parse(strings.NewReader(s))
-	if err != nil {
-		return s
-	}
-	var b strings.Builder
-	var walk func(n *html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.TextNode {
-			b.WriteString(n.Data)
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
-		}
-	}
-	for c := doc.FirstChild; c != nil; c = c.NextSibling {
-		walk(c)
-	}
-	return strings.TrimSpace(b.String())
+	return sanitize.Text(s)
 }
 
 // StaleFeed describes a feed that has stopped posting for a while.

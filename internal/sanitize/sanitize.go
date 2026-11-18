@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/microcosm-cc/bluemonday"
+	"golang.org/x/net/html"
 )
 
 // policy is the allow-list applied to every stored item body. It keeps the
@@ -23,6 +24,74 @@ func HTML(s string) string {
 		return s
 	}
 	return policy.Sanitize(s)
+}
+
+// Text returns the visible text of s with markup removed and character
+// references decoded. Feed titles are HTML too, so rendering a title verbatim
+// would show its literal tags ("A <b>bold</b> title"). It is safe on plain
+// text, including a bare "<" that is not a tag ("5 < 10 things").
+//
+// Block-level elements and <br> become a space, so "<p>one</p><p>two</p>"
+// reads as "one two" instead of "onetwo". Whitespace is collapsed to single
+// spaces, matching how HTML renders it.
+func Text(s string) string {
+	if s == "" {
+		return s
+	}
+	if !strings.Contains(s, "<") {
+		// Plain text can still carry a character reference (a feed that
+		// double-escaped its title); decode it but leave the text otherwise
+		// untouched.
+		if strings.Contains(s, "&") {
+			return html.UnescapeString(s)
+		}
+		return s
+	}
+	doc, err := html.Parse(strings.NewReader(s))
+	if err != nil {
+		return s
+	}
+	var b strings.Builder
+	var walk func(n *html.Node)
+	walk = func(n *html.Node) {
+		switch n.Type {
+		case html.TextNode:
+			b.WriteString(n.Data)
+			return
+		case html.ElementNode:
+			switch n.Data {
+			case "script", "style", "noscript", "template":
+				return
+			}
+			if textSeparatorElements[n.Data] {
+				b.WriteByte(' ')
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+		if n.Type == html.ElementNode && textSeparatorElements[n.Data] {
+			b.WriteByte(' ')
+		}
+	}
+	for c := doc.FirstChild; c != nil; c = c.NextSibling {
+		walk(c)
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// textSeparatorElements are the elements whose boundaries separate words in
+// rendered text. Without them a paragraph or line break would join the text on
+// either side.
+var textSeparatorElements = map[string]bool{
+	"address": true, "article": true, "aside": true, "blockquote": true,
+	"br": true, "dd": true, "div": true, "dl": true, "dt": true,
+	"figcaption": true, "figure": true, "footer": true, "form": true,
+	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+	"header": true, "hr": true, "li": true, "main": true, "nav": true,
+	"ol": true, "p": true, "pre": true, "section": true, "table": true,
+	"tbody": true, "td": true, "tfoot": true, "th": true, "thead": true,
+	"tr": true, "ul": true,
 }
 
 func buildPolicy() *bluemonday.Policy {
