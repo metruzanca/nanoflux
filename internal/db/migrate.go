@@ -78,6 +78,7 @@ var migrations = []migration{
 	{65, schemaV65},
 	{66, schemaV66},
 	{67, schemaV67},
+	{68, schemaV68},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -1135,6 +1136,51 @@ AND NOT EXISTS (
         END
       )
 );
+`
+
+// schemaV68 turns collections into groups of authors. A feed belongs to a
+// collection through its author now, so adding an author brings that author's
+// feeds and views. Auto collections are removed entirely: the feed library's
+// /domains page groups feeds by registrable domain instead, so collections stay
+// simple user-managed groups.
+//
+// Membership is migrated before the old join tables are dropped. A view's
+// collection membership becomes a membership of the view's author; because a
+// collection includes its member authors' views, the view's content is kept.
+const schemaV68 = `
+CREATE TABLE collections_v68 (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT INTO collections_v68 (id, user_id, name, created_at)
+SELECT id, user_id, name, created_at FROM collections WHERE is_auto = 0;
+DROP TABLE collections;
+ALTER TABLE collections_v68 RENAME TO collections;
+CREATE INDEX idx_collections_user ON collections(user_id);
+
+CREATE TABLE collection_authors (
+    collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    author_id     INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    PRIMARY KEY (collection_id, author_id)
+);
+CREATE INDEX idx_collection_authors_author ON collection_authors(author_id);
+
+INSERT OR IGNORE INTO collection_authors (collection_id, author_id)
+SELECT cf.collection_id, f.author_id
+FROM collection_feeds cf
+JOIN feeds f ON f.id = cf.feed_id
+JOIN collections c ON c.id = cf.collection_id;
+
+INSERT OR IGNORE INTO collection_authors (collection_id, author_id)
+SELECT cv.collection_id, v.author_id
+FROM collection_views cv
+JOIN saved_views v ON v.id = cv.view_id
+JOIN collections c ON c.id = cv.collection_id;
+
+DROP TABLE collection_feeds;
+DROP TABLE collection_views;
 `
 
 // Migrate applies any pending migrations in order, recording each in

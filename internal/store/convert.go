@@ -185,7 +185,6 @@ func toCollection(c sqlcgen.Collection) Collection {
 		ID:        c.ID,
 		UserID:    c.UserID,
 		Name:      c.Name,
-		IsAuto:    c.IsAuto != 0,
 		CreatedAt: c.CreatedAt,
 	}
 }

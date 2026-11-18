@@ -211,6 +211,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Authors.
 	mux.Handle("GET /authors", s.auth.Require(http.HandlerFunc(s.authors)))
+	mux.Handle("GET /domains", s.auth.Require(http.HandlerFunc(s.domains)))
 	mux.Handle("POST /authors", s.auth.Require(http.HandlerFunc(s.authorCreate)))
 	mux.Handle("POST /authors/{id}/feeds", s.auth.Require(http.HandlerFunc(s.authorFeedCreate)))
 	mux.Handle("GET /authors/{id}", s.auth.Require(http.HandlerFunc(s.authorPage)))
@@ -219,6 +220,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /authors/{id}/edit", s.auth.Require(http.HandlerFunc(s.authorEdit)))
 	mux.Handle("POST /authors/{id}/edit", s.auth.Require(http.HandlerFunc(s.authorUpdate)))
 	mux.Handle("POST /authors/{id}/auto-read", s.auth.Require(http.HandlerFunc(s.authorAutoReadUpdate)))
+	mux.Handle("POST /authors/{id}/collections", s.auth.Require(http.HandlerFunc(s.authorCollectionsUpdate)))
 	mux.Handle("POST /authors/{id}/filters", s.auth.Require(http.HandlerFunc(s.authorFiltersUpdate)))
 	mux.Handle("POST /authors/{id}/delete", s.auth.Require(http.HandlerFunc(s.authorDelete)))
 	mux.Handle("GET /authors/{id}/avatar", s.auth.Require(http.HandlerFunc(s.authorAvatar)))
@@ -242,9 +244,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /collections/{id}/delete", s.auth.Require(http.HandlerFunc(s.collectionDelete)))
 	mux.Handle("POST /collections/{id}/refresh", s.auth.Require(http.HandlerFunc(s.collectionRefresh)))
 	mux.Handle("POST /collections/{id}/read-all", s.auth.Require(http.HandlerFunc(s.collectionReadAll)))
-	mux.Handle("POST /collections/{id}/remove-feed/{feed_id}", s.auth.Require(http.HandlerFunc(s.collectionRemoveFeed)))
-	mux.Handle("POST /collections/{id}/add-view", s.auth.Require(http.HandlerFunc(s.collectionAddView)))
-	mux.Handle("POST /collections/{id}/remove-view/{view_id}", s.auth.Require(http.HandlerFunc(s.collectionRemoveView)))
+	mux.Handle("POST /collections/{id}/add-author", s.auth.Require(http.HandlerFunc(s.collectionAddAuthor)))
+	mux.Handle("POST /collections/{id}/remove-author/{author_id}", s.auth.Require(http.HandlerFunc(s.collectionRemoveAuthor)))
 
 	// Lists (user-defined sets of items; favorites is the special list).
 	mux.Handle("GET /lists", s.auth.Require(http.HandlerFunc(s.listsPage)))

@@ -477,7 +477,8 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	other, _ := s.store.Feeds.Create(u.ID, author.ID, "Other", "https://other.example/feed.xml", "", "", 900)
+	otherAuthor, _ := s.store.Authors.Create(u.ID, "Other author", "", "")
+	other, _ := s.store.Feeds.Create(u.ID, otherAuthor.ID, "Other", "https://other.example/feed.xml", "", "", 900)
 	if _, err := s.store.Items.Upsert(other.ID, store.Item{
 		GUID: "rust", Title: "Rust post", Link: "https://other.example/rust",
 		Categories: []string{"r/rust"}, FetchedAt: db.Now(),
@@ -492,7 +493,7 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 	}
 
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
-	if err := s.store.Collections.AddFeed(u.ID, c.ID, f.ID); err != nil {
+	if err := s.store.Collections.AddAuthor(u.ID, c.ID, f.AuthorID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -534,19 +535,15 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 	if !strings.Contains(body, "from view") || !strings.Contains(body, `href="`+viewHref+`"`) {
 		t.Fatalf("view-sourced item should link its view: %s", body)
 	}
-	if !strings.Contains(body, "sources (2)") {
-		t.Fatalf("collection sources count should include the view: %s", body)
+	if !strings.Contains(body, "sources (1)") {
+		t.Fatalf("collection sources count should be its member authors: %s", body)
 	}
 
 	body = doGet(h, base+"?tab=feeds", cookie).Body.String()
-	if !strings.Contains(body, `id="collection-view-`+viewID+`"`) ||
-		!strings.Contains(body, ">Rust view<") ||
-		!strings.Contains(body, ">Aggregate</a>") ||
-		!strings.Contains(body, "1 unread") {
-		t.Fatalf("sources tab should list the view as a source card: %s", body)
-	}
-	if strings.Contains(body, "/views/"+viewID+"/edit") {
-		t.Fatalf("sources tab view card should not render its edit button: %s", body)
+	if !strings.Contains(body, `id="collection-authors-list"`) ||
+		!strings.Contains(body, "Aggregate") ||
+		!strings.Contains(body, "unread") {
+		t.Fatalf("sources tab should list the member author: %s", body)
 	}
 
 	// The index card's unread count is the union, not just the member feed.
@@ -585,12 +582,12 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 		}
 	}
 
-	if rr := doForm(h, http.MethodPost, base+"/remove-view/"+viewID, nil, cookie); rr.Code != http.StatusNoContent {
-		t.Fatalf("remove view: %d %s", rr.Code, rr.Body.String())
+	if rr := doForm(h, http.MethodPost, base+"/remove-author/"+itoa(author.ID), nil, cookie); rr.Code != http.StatusNoContent {
+		t.Fatalf("remove author: %d %s", rr.Code, rr.Body.String())
 	}
 	body = doGet(h, base, cookie).Body.String()
-	if strings.Contains(body, "Rust post") {
-		t.Fatalf("removed view items should leave the collection: %s", body)
+	if strings.Contains(body, "Rust post") || strings.Contains(body, "Go post") {
+		t.Fatalf("removed author's items should leave the collection: %s", body)
 	}
 }
 
@@ -608,7 +605,8 @@ func TestCollectionViewSourceOnlyWhenViewSoleSource(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	outside, _ := s.store.Feeds.Create(u.ID, author.ID, "Outside", "https://outside.example/feed.xml", "", "", 900)
+	outsideAuthor, _ := s.store.Authors.Create(u.ID, "Outside author", "", "")
+	outside, _ := s.store.Feeds.Create(u.ID, outsideAuthor.ID, "Outside", "https://outside.example/feed.xml", "", "", 900)
 	if _, err := s.store.Items.Upsert(outside.ID, store.Item{
 		GUID: "outside-rust", Title: "Outside Rust post", Link: "https://outside.example/rust",
 		Categories: []string{"r/rust"}, FetchedAt: db.Now(),
@@ -618,16 +616,13 @@ func TestCollectionViewSourceOnlyWhenViewSoleSource(t *testing.T) {
 	outsideID, _ := s.store.Items.ByFeedIdentity(outside.ID, "outside-rust")
 
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
-	if err := s.store.Collections.AddFeed(u.ID, c.ID, member.ID); err != nil {
+	if err := s.store.Collections.AddAuthor(u.ID, c.ID, member.AuthorID); err != nil {
 		t.Fatal(err)
 	}
 	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{
 		AuthorID: author.ID, Title: "Rust", Filters: []string{"tag:show:r/rust"},
 	})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.store.SavedViews.SetCollections(u.ID, view.ID, []int64{c.ID}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -686,13 +681,13 @@ func TestViewSourcedCardShowsOnlyTheView(t *testing.T) {
 	outsideID, _ := s.store.Items.ByFeedIdentity(outside.ID, "outside-rust")
 
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
+	if err := s.store.Collections.AddAuthor(u.ID, c.ID, author.ID); err != nil {
+		t.Fatal(err)
+	}
 	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{
 		AuthorID: author.ID, Title: "Rust", Filters: []string{"tag:show:r/rust"},
 	})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.store.SavedViews.SetCollections(u.ID, view.ID, []int64{c.ID}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -735,6 +730,9 @@ func TestAuthorEditViewPanel(t *testing.T) {
 	cookie := sessionCookie(t, h)
 	u, author, _ := savedViewFixture(t, s)
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
+	if err := s.store.Collections.AddAuthor(u.ID, c.ID, author.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	created, err := s.store.SavedViews.Create(u.ID, store.SavedView{
 		AuthorID: author.ID, Title: "Inline view",
@@ -748,7 +746,6 @@ func TestAuthorEditViewPanel(t *testing.T) {
 		`id="view-acc-` + itoa(created.ID) + `"`,
 		`hx-post="/views/` + itoa(created.ID) + `/edit"`,
 		`name="title"`,
-		`name="collections"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("author edit view panel missing %q: %s", want, page)

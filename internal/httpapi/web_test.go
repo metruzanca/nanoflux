@@ -410,8 +410,8 @@ func TestCollectionPageDedups(t *testing.T) {
 	f1, _ := s.store.Feeds.Create(u.ID, a.ID, "r/videos", "https://v.dev/rss.xml", "", "", 900)
 	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Metru's feed", "https://m.dev/rss.xml", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "all")
-	s.store.Collections.AddFeed(u.ID, c.ID, f1.ID)
-	s.store.Collections.AddFeed(u.ID, c.ID, f2.ID)
+	s.store.Collections.AddAuthor(u.ID, c.ID, f1.AuthorID)
+	s.store.Collections.AddAuthor(u.ID, c.ID, f2.AuthorID)
 	s.store.Items.Upsert(f1.ID, store.Item{GUID: "a", Title: "Funny cat video", Link: "https://v.dev/1", FetchedAt: db.Now()})
 	s.store.Items.Upsert(f2.ID, store.Item{GUID: "b", Title: "Funny cat video", Link: "https://m.dev/1", FetchedAt: db.Now()})
 
@@ -448,8 +448,8 @@ func TestCollectionDedupsCrosspostsByLink(t *testing.T) {
 	oneFeed, _ := s.store.Feeds.Create(u.ID, oneA.ID, "r/one", "https://www.reddit.com/r/one.rss", "", "", 900)
 	twoFeed, _ := s.store.Feeds.Create(u.ID, twoA.ID, "r/two", "https://www.reddit.com/r/two.rss", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "all")
-	s.store.Collections.AddFeed(u.ID, c.ID, oneFeed.ID)
-	s.store.Collections.AddFeed(u.ID, c.ID, twoFeed.ID)
+	s.store.Collections.AddAuthor(u.ID, c.ID, oneFeed.AuthorID)
+	s.store.Collections.AddAuthor(u.ID, c.ID, twoFeed.AuthorID)
 
 	link := `<p><a href="https://example.com/article">[link]</a></p>`
 	s.store.Items.Upsert(oneFeed.ID, store.Item{
@@ -566,7 +566,7 @@ func TestCollectionFeedsTab(t *testing.T) {
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "all")
-	s.store.Collections.AddFeed(u.ID, c.ID, f.ID)
+	s.store.Collections.AddAuthor(u.ID, c.ID, f.AuthorID)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Post", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
 	base := "/collections/" + itoa(c.ID)
@@ -577,12 +577,12 @@ func TestCollectionFeedsTab(t *testing.T) {
 		t.Fatalf("collection page missing sources tab: %s", body)
 	}
 
-	// The feeds view lists the feed card with its author and unread count, and
+	// The sources view lists the member author with their unread count, and
 	// none of the scope's items.
 	body = doGet(h, base+"?tab=feeds", cookie).Body.String()
-	for _, want := range []string{"Blog", "Metru", "1 unread", `id="collection-feeds-list"`} {
+	for _, want := range []string{"Metru", "1 unread", `id="collection-authors-list"`} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("feeds view missing %q: %s", want, body)
+			t.Fatalf("sources view missing %q: %s", want, body)
 		}
 	}
 	if strings.Contains(body, `data-item-link="https://b.dev/1"`) {
@@ -594,7 +594,7 @@ func TestCollectionFeedsTab(t *testing.T) {
 	for _, want := range []string{
 		`class="picker" data-picker="feeds"`,
 		`data-option="abc"`, `data-option="newest"`, `data-option="unread"`,
-		`data-title="Blog"`, `data-unread="1"`,
+		`data-title="Metru"`, `data-unread="1"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("feeds sort control missing %q: %s", want, body)
@@ -606,14 +606,14 @@ func TestCollectionFeedsTab(t *testing.T) {
 
 	// The fragment endpoint returns the same card list.
 	rr := doGet(h, base+"/items?tab=feeds", cookie)
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `id="collection-feeds-list"`) {
-		t.Fatalf("feeds fragment: %d %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `id="collection-authors-list"`) {
+		t.Fatalf("sources fragment: %d %s", rr.Code, rr.Body.String())
 	}
 
 	// An empty collection shows its empty state on the feeds tab.
 	empty, _ := s.store.Collections.Create(u.ID, "empty")
 	body = doGet(h, "/collections/"+itoa(empty.ID)+"?tab=feeds", cookie).Body.String()
-	if !strings.Contains(body, "no sources in this collection") {
+	if !strings.Contains(body, "no authors in this collection") {
 		t.Fatalf("empty sources view missing empty state: %s", body)
 	}
 }
@@ -802,12 +802,12 @@ func TestFeedAuthorCollectionFlow(t *testing.T) {
 	}
 	cols, _ := s.store.Collections.List(u.ID)
 	feeds, _ = s.store.Feeds.List(u.ID)
-	if err := s.store.Collections.AddFeed(u.ID, cols[0].ID, feeds[0].ID); err != nil {
+	if err := s.store.Collections.AddAuthor(u.ID, cols[0].ID, feeds[0].AuthorID); err != nil {
 		t.Fatalf("add feed to collection: %v", err)
 	}
 	body = doGet(h, "/collections/"+itoa(cols[0].ID)+"/edit", cookie).Body.String()
-	if !strings.Contains(body, "Blog") {
-		t.Fatal("collection edit page missing feed")
+	if !strings.Contains(body, "Metru") {
+		t.Fatal("collection edit page missing author")
 	}
 }
 
@@ -1772,7 +1772,7 @@ func TestScopedReadUnreadTabs(t *testing.T) {
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Unread Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g2", Title: "Read Item", Link: "https://b.dev/2", FetchedAt: db.Now()})
 	coll, _ := s.store.Collections.Create(u.ID, "Dev")
-	s.store.Collections.AddFeed(u.ID, coll.ID, f.ID)
+	s.store.Collections.AddAuthor(u.ID, coll.ID, f.AuthorID)
 
 	items, _ := s.store.Items.List(u.ID, store.ItemFilter{})
 	var readID int64
@@ -1905,7 +1905,7 @@ func TestDisplayModeControlPresent(t *testing.T) {
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Feed Item", Link: "https://b.dev/1", FetchedAt: db.Now()})
 	coll, _ := s.store.Collections.Create(u.ID, "Dev")
-	s.store.Collections.AddFeed(u.ID, coll.ID, f.ID)
+	s.store.Collections.AddAuthor(u.ID, coll.ID, f.AuthorID)
 	list, _ := s.store.Lists.Create(u.ID, "Reading")
 
 	option := `role="menuitemradio" data-option="grid"`
@@ -1929,25 +1929,23 @@ func TestDisplayModeControlPresent(t *testing.T) {
 	}
 }
 
-func TestAuthorPageFeedShowsCollectionTags(t *testing.T) {
+func TestAuthorPageShowsCollectionTags(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
-	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
-	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
+	s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	cats, _ := s.store.Collections.Create(u.ID, "cats")
 	dev, _ := s.store.Collections.Create(u.ID, "dev")
-	s.store.Collections.AddFeed(u.ID, cats.ID, f.ID)
-	s.store.Collections.AddFeed(u.ID, dev.ID, f.ID)
-	// An auto collection also holds the feed but must not render a tag.
-	yt, _ := s.store.Collections.EnsureAuto(u.ID, "youtube.com")
-	s.store.Collections.AddFeed(u.ID, yt.ID, f.ID)
+	if err := s.store.Collections.AddAuthor(u.ID, cats.ID, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.Collections.AddAuthor(u.ID, dev.ID, a.ID); err != nil {
+		t.Fatal(err)
+	}
 
 	body := doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
-	// Both collections render as clickable "#name" tags linking to the
-	// collection page, next to the feed they belong to.
 	for _, want := range []string{
 		`class="tag" href="/collections/` + itoa(cats.ID) + `"`,
 		`class="tag" href="/collections/` + itoa(dev.ID) + `"`,
@@ -1957,18 +1955,11 @@ func TestAuthorPageFeedShowsCollectionTags(t *testing.T) {
 			t.Fatalf("author page missing collection tag %q: %s", want, body)
 		}
 	}
-	// Auto collections don't render a tag (they mirror the feed's own site).
-	if strings.Contains(body, `href="/collections/`+itoa(yt.ID)+`"`) || strings.Contains(body, "#youtube.com") {
-		t.Fatalf("auto collection should not render a tag: %s", body)
-	}
-	// The feed with no collections renders no tags.
-	body2 := doGet(h, "/feeds/"+itoa(f2.ID), cookie).Body.String()
-	if strings.Contains(body2, `class="tag"`) {
-		t.Fatalf("collection-free feed page should have no tags: %s", body2)
-	}
 
-	// Removing the feed from a collection drops its tag.
-	s.store.Collections.RemoveFeed(u.ID, cats.ID, f.ID)
+	// Removing the author from a collection drops its tag.
+	if err := s.store.Collections.RemoveAuthor(u.ID, cats.ID, a.ID); err != nil {
+		t.Fatal(err)
+	}
 	body = doGet(h, "/authors/"+itoa(a.ID), cookie).Body.String()
 	if strings.Contains(body, "#cats") {
 		t.Fatalf("removed collection tag should be gone: %s", body)
@@ -2439,8 +2430,8 @@ func TestCollectionsIndexShowsStats(t *testing.T) {
 	f1, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
-	s.store.Collections.AddFeed(u.ID, c.ID, f1.ID)
-	s.store.Collections.AddFeed(u.ID, c.ID, f2.ID)
+	s.store.Collections.AddAuthor(u.ID, c.ID, f1.AuthorID)
+	s.store.Collections.AddAuthor(u.ID, c.ID, f2.AuthorID)
 	s.store.Items.Upsert(f1.ID, store.Item{GUID: "a", Title: "a", Link: "https://b.dev/1", FetchedAt: db.Now()})
 	s.store.Items.Upsert(f1.ID, store.Item{GUID: "b", Title: "b", Link: "https://b.dev/2", FetchedAt: db.Now()})
 	s.store.Items.Upsert(f2.ID, store.Item{GUID: "c", Title: "c", Link: "https://o.dev/1", FetchedAt: db.Now()})
@@ -2451,7 +2442,7 @@ func TestCollectionsIndexShowsStats(t *testing.T) {
 
 	body := doGet(h, "/collections", cookie).Body.String()
 	if !strings.Contains(body, `class="card"`) ||
-		!strings.Contains(body, "2 feeds · 2 unread") {
+		!strings.Contains(body, "1 authors · 2 unread") {
 		t.Fatalf("collections index should render cards with stats: %s", body)
 	}
 	// The "read" stat was dropped from the collection card.
@@ -2460,84 +2451,36 @@ func TestCollectionsIndexShowsStats(t *testing.T) {
 	}
 }
 
-// TestCollectionsIndexSectionsAndOrder covers item 5: user collections render
-// without a heading, auto collections render under an "auto collections"
-// heading, and each section is ordered most-unread first.
+// TestCollectionsIndexSectionsAndOrder covers the collections index: one list,
+// ordered most-unread first (not alphabetically).
 func TestCollectionsIndexSectionsAndOrder(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 
-	// Two user collections with distinct unread counts (zebra > alpha, so
-	// alphabetical order would be wrong) and one auto collection.
 	zebra, _ := s.store.Collections.Create(u.ID, "zebra")
 	alpha, _ := s.store.Collections.Create(u.ID, "alpha")
-	auto, _ := s.store.Collections.EnsureAuto(u.ID, "auto-site")
 
-	newFeed := func(title, host string, n int) store.Feed {
-		f, _ := s.store.Feeds.Create(u.ID, a.ID, title, "https://"+host+"/rss.xml", "https://"+host, "", 900)
+	a2, _ := s.store.Authors.Create(u.ID, "A", "", "")
+	newFeed := func(authorID int64, title, host string, n int) store.Feed {
+		f, _ := s.store.Feeds.Create(u.ID, authorID, title, "https://"+host+"/rss.xml", "https://"+host, "", 900)
 		for i := 0; i < n; i++ {
 			s.store.Items.Upsert(f.ID, store.Item{GUID: title + itoa(int64(i)), Title: title, Link: "https://" + host + "/" + itoa(int64(i)), FetchedAt: db.Now()})
 		}
 		return f
 	}
-	fz := newFeed("Z", "z.dev", 3)
-	fa := newFeed("A", "a.dev", 1)
-	fauto := newFeed("Auto", "auto.dev", 2)
-	s.store.Collections.AddFeed(u.ID, zebra.ID, fz.ID)
-	s.store.Collections.AddFeed(u.ID, alpha.ID, fa.ID)
-	s.store.Collections.AddFeed(u.ID, auto.ID, fauto.ID)
+	fz := newFeed(a.ID, "Z", "z.dev", 3)
+	fa := newFeed(a2.ID, "A", "a.dev", 1)
+	s.store.Collections.AddAuthor(u.ID, zebra.ID, fz.AuthorID)
+	s.store.Collections.AddAuthor(u.ID, alpha.ID, fa.AuthorID)
 
 	body := doGet(h, "/collections", cookie).Body.String()
-
-	// The auto collection is under the heading and in its own list.
-	if !strings.Contains(body, "auto collections") || !strings.Contains(body, `id="auto-collections-list"`) {
-		t.Fatalf("auto section should render with a heading: %s", body)
+	if !strings.Contains(body, `id="collections-list"`) {
+		t.Fatalf("collections list missing: %s", body)
 	}
-	// The auto collection is not in the user list: the user list closes before
-	// the auto list starts.
-	userList := body[strings.Index(body, `id="collections-list"`):strings.Index(body, `id="auto-collections-list"`)]
-	if strings.Contains(userList, "auto-site") {
-		t.Fatalf("auto collection should not appear in the user section: %s", userList)
-	}
-	// Within the user section, zebra (3 unread) sorts before alpha (1 unread)
-	// despite alphabetical order.
-	if iz, ia := strings.Index(userList, "zebra"), strings.Index(userList, "alpha"); iz < 0 || ia < 0 || iz > ia {
-		t.Fatalf("user collections should sort by unread, got zebra=%d alpha=%d: %s", iz, ia, userList)
-	}
-}
-
-// TestNoCollection covers the synthetic auto collection that lists the feeds a
-// user has not put in any collection of their own.
-func TestNoCollection(t *testing.T) {
-	s, h := newTestServer(t)
-	cookie := sessionCookie(t, h)
-	u, _ := s.store.Users.ByUsername("alice")
-	a, _ := s.store.Authors.Create(u.ID, "A", "", "")
-	f1, _ := s.store.Feeds.Create(u.ID, a.ID, "Grouped", "https://one.dev/rss", "", "", 900)
-	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Orphan", "https://two.dev/rss", "", "", 900)
-	dev, _ := s.store.Collections.Create(u.ID, "dev")
-	s.store.Collections.AddFeed(u.ID, dev.ID, f1.ID)
-
-	// The index shows a no-collection card counting the one ungrouped feed.
-	body := doGet(h, "/collections", cookie).Body.String()
-	if !strings.Contains(body, "no-collection") || !strings.Contains(body, "1 feeds · 0 unread") {
-		t.Fatalf("no-collection card missing: %s", body)
-	}
-
-	// Its feeds tab lists the orphan feed, not the grouped one.
-	nc, _ := s.store.Collections.EnsureNoCollection(u.ID)
-	page := doGet(h, "/collections/"+itoa(nc.ID)+"?tab=feeds", cookie).Body.String()
-	if !strings.Contains(page, "Orphan") || strings.Contains(page, "Grouped") {
-		t.Fatalf("no-collection feeds tab wrong feeds: %s", page)
-	}
-
-	// Grouping the orphan removes it from no-collection on the next render.
-	s.store.Collections.AddFeed(u.ID, dev.ID, f2.ID)
-	body = doGet(h, "/collections", cookie).Body.String()
-	if !strings.Contains(body, "0 feeds · 0 unread") {
-		t.Fatalf("no-collection should be empty after grouping both feeds: %s", body)
+	if iz, ia := strings.Index(body, "zebra"), strings.Index(body, "alpha"); iz < 0 || ia < 0 || iz > ia {
+		t.Fatalf("collections should sort by unread, got zebra=%d alpha=%d: %s", iz, ia, body)
 	}
 }
 
@@ -2762,7 +2705,7 @@ func TestCollectionPageHasNoAddFeedControl(t *testing.T) {
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
-	s.store.Collections.AddFeed(u.ID, c.ID, f.ID)
+	s.store.Collections.AddAuthor(u.ID, c.ID, f.AuthorID)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g", Title: "Post", Link: "https://b.dev/1", FetchedAt: db.Now()})
 
 	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
@@ -2787,10 +2730,11 @@ func TestCollectionMarkAllRead(t *testing.T) {
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	outAuthor, _ := s.store.Authors.Create(u.ID, "Other", "", "")
 	in, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
-	out, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
+	out, _ := s.store.Feeds.Create(u.ID, outAuthor.ID, "Other", "https://o.dev/rss.xml", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
-	s.store.Collections.AddFeed(u.ID, c.ID, in.ID)
+	s.store.Collections.AddAuthor(u.ID, c.ID, in.AuthorID)
 	s.store.Items.Upsert(in.ID, store.Item{GUID: "g", Title: "Inside", Link: "https://b.dev/1", FetchedAt: db.Now()})
 	s.store.Items.Upsert(out.ID, store.Item{GUID: "g", Title: "Outside", Link: "https://o.dev/1", FetchedAt: db.Now()})
 
@@ -3039,6 +2983,35 @@ func TestCollectionEditAndDelete(t *testing.T) {
 	rr = doForm(h, "POST", "/collections/"+itoa(c.ID)+"/delete", url.Values{}, cookie)
 	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/collections" {
 		t.Fatalf("delete collection: %d %q", rr.Code, rr.Header().Get("Location"))
+	}
+}
+
+// TestCollectionEditAddAuthor covers the edit page's author picker: adding an
+// author re-renders the chips, and removing one empties them.
+func TestCollectionEditAddAuthor(t *testing.T) {
+	s, h := newTestServer(t)
+	cookie := sessionCookie(t, h)
+	u, _ := s.store.Users.ByUsername("alice")
+	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
+	c, _ := s.store.Collections.Create(u.ID, "Dev")
+
+	rr := doHtmxForm(h, "POST", "/collections/"+itoa(c.ID)+"/add-author", url.Values{
+		"author_id": {itoa(a.ID)}, "edit": {"1"},
+	}, cookie)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Metru") {
+		t.Fatalf("add author: %d %s", rr.Code, rr.Body.String())
+	}
+	if ids, _ := s.store.Collections.AuthorIDs(u.ID, c.ID); len(ids) != 1 || ids[0] != a.ID {
+		t.Fatalf("collection authors = %v", ids)
+	}
+
+	rr = doForm(h, "POST", "/collections/"+itoa(c.ID)+"/remove-author/"+itoa(a.ID), nil, cookie)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("remove author: %d %s", rr.Code, rr.Body.String())
+	}
+	if ids, _ := s.store.Collections.AuthorIDs(u.ID, c.ID); len(ids) != 0 {
+		t.Fatalf("collection authors after remove = %v", ids)
 	}
 }
 

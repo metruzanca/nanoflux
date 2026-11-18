@@ -630,10 +630,11 @@ func TestOpmlExport(t *testing.T) {
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	a2, _ := s.store.Authors.Create(u.ID, "Grouped", "", "")
 	s.store.Feeds.Create(u.ID, a.ID, "Solo", "https://solo.dev/rss.xml", "https://solo.dev", "", 900)
-	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Grouped", "https://group.dev/rss.xml", "https://group.dev", "", 900)
+	s.store.Feeds.Create(u.ID, a2.ID, "Grouped", "https://group.dev/rss.xml", "https://group.dev", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "tech")
-	s.store.Collections.AddFeed(u.ID, c.ID, f.ID)
+	s.store.Collections.AddAuthor(u.ID, c.ID, a2.ID)
 
 	rr := doGet(h, "/settings/export.opml", cookie)
 	if rr.Code != http.StatusOK {
@@ -696,8 +697,7 @@ func TestOpmlImport(t *testing.T) {
 			t.Fatalf("imported feed missing author: %+v", f)
 		}
 	}
-	// The grouped feed lands in a "tech" collection; each imported feed also
-	// auto-lands in a per-website collection.
+	// The grouped feed's author lands in the "tech" collection.
 	cols, _ := s.store.Collections.List(u.ID)
 	var tech store.Collection
 	for _, c := range cols {
@@ -708,22 +708,9 @@ func TestOpmlImport(t *testing.T) {
 	if tech.ID == 0 {
 		t.Fatalf("expected a tech collection: %+v", cols)
 	}
-	if tech.IsAuto {
-		t.Fatalf("tech collection should be a manual collection: %+v", tech)
-	}
 	in, _ := s.store.Collections.Feeds(u.ID, tech.ID)
 	if len(in) != 1 {
 		t.Fatalf("collection should contain the grouped feed: %+v", in)
-	}
-	// The imp.dev home url maps to an auto collection for that site.
-	var imp store.Collection
-	for _, c := range cols {
-		if c.IsAuto && c.Name == "imp.dev" {
-			imp = c
-		}
-	}
-	if imp.ID == 0 {
-		t.Fatalf("expected an imp.dev auto collection: %+v", cols)
 	}
 
 	// Re-importing skips the existing feed urls.

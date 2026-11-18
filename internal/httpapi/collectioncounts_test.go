@@ -50,7 +50,7 @@ func TestCollectionsIndexCountsAreCached(t *testing.T) {
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://cache.dev/rss.xml", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
-	if err := s.store.Collections.AddFeed(u.ID, c.ID, f.ID); err != nil {
+	if err := s.store.Collections.AddAuthor(u.ID, c.ID, f.AuthorID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "One", Link: "https://cache.dev/1", FetchedAt: db.Now()}); err != nil {
@@ -90,7 +90,7 @@ func TestCollectionsIndexCountsIncludeMemberViews(t *testing.T) {
 	member, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://scope.dev/rss.xml", "", "", 900)
 	elsewhere, _ := s.store.Feeds.Create(u.ID, a.ID, "Other", "https://elsewhere.dev/rss.xml", "", "", 900)
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
-	if err := s.store.Collections.AddFeed(u.ID, c.ID, member.ID); err != nil {
+	if err := s.store.Collections.AddAuthor(u.ID, c.ID, member.AuthorID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.store.Items.Upsert(member.ID, store.Item{GUID: "own", Title: "Own", Link: "https://scope.dev/own", FetchedAt: db.Now()}); err != nil {
@@ -102,20 +102,16 @@ func TestCollectionsIndexCountsIncludeMemberViews(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	v, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+	if _, err := s.store.SavedViews.Create(u.ID, store.SavedView{
 		AuthorID: a.ID,
 		Title:    "Example",
 		Filters:  []string{"tag:show:u/example-poster"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.store.SavedViews.SetCollections(u.ID, v.ID, []int64{c.ID}); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
 	card := collectionCard(doGet(h, "/collections", cookie).Body.String(), c.ID)
-	if !strings.Contains(card, "1 views") || !strings.Contains(card, "2 unread") {
-		t.Fatalf("collection card should count the member feed and the view: %s", card)
+	if !strings.Contains(card, "1 authors") || !strings.Contains(card, "2 unread") {
+		t.Fatalf("collection card should count the member author and the view: %s", card)
 	}
 }

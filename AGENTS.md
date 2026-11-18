@@ -596,8 +596,9 @@ a different author". The button (`data-change-author`) loads
 `GET /fragments/change-author` into the shared `#change-author-dialog` (a topbar
 dialog, outside the panel form, so its own `<form>` is valid) and
 `POST /feeds/{id}/author` performs the move through `FeedStore.SetAuthor`. Only
-`feeds.author_id` changes: items, collections and list memberships follow the
-feed, and the old author is not deleted when it ends up empty. The picker
+`feeds.author_id` changes: items and list memberships follow the feed, and the
+old author is not deleted when it ends up empty. Collections group authors, so a
+moved feed leaves the old author's collections and joins the new author's. The picker
 excludes the current author, and a successful save returns an empty `200` so the
 `outerHTML` swap removes that feed's accordion item from the current author's
 edit page without a reload.
@@ -645,23 +646,25 @@ pass over the user's items plus a scoped query per view-bearing author.
 costs a scan per collection scope, plus a scoped query per view-bearing
 collection.
 
+Collections group **authors** (schemaV68), not feeds. A collection's item scope
+is the union of its member authors' pages: their owned feeds plus their views.
+Auto collections and the synthetic no-collection are gone; `/domains` groups the
+feed library by registrable domain as a derived page.
+
 - `httpapi.collectionCountsCache` (`internal/httpapi/collectioncounts.go`)
   memoizes `map[collectionID]store.CollectionCounts` per user for
   `collectionCountsTTL` (60s), with member views' scopes already merged. It is
   TTL-only like the other index caches; do not add invalidation hooks.
 - The entry stores the timezone it was computed under, because a member view may
   carry a time filter.
-- `collectionRows` keeps the structural fields live (`ListForIndex`: name, feed
-  count, view count), so only `Unread`/`Read` lag.
-- `computeCollectionCounts` is the slow path: `CountsByFeed` (one grouped
-  `visible_items` scan for every collection), then `ListByCollectionAll` +
-  `CountsByScope` (one `UNION ALL`, one branch per view-bearing collection)
-  merged on top. It replaced two `CountFiltered` calls and one `ListByCollection`
-  query per collection.
-- Rendering must not write: `SyncNoCollection` only runs its delete+insert when
-  `noCollectionStale` reports drift, and `EnsureAuto` reads without opening a
-  transaction unless it has to create the row. Keep both paths write-free on the
-  common case.
+- `collectionRows` keeps the structural fields live (`ListForIndex`: name,
+  author count), so only `Unread`/`Read` lag.
+- `computeCollectionCounts` is the slow path: `CountsByAuthor` (one grouped
+  `visible_items` scan through `collection_authors`), then
+  `ListByCollectionAll` + `CountsByScope` (one `UNION ALL`, one branch per
+  view-bearing collection) merged on top.
+- Rendering is write-free: `/domains` derives its groups from
+  `Feeds.ListWithUnread`, and there is no auto/no-collection sync to run.
 - Tests that mutate items or membership and re-render `/collections` must expire
   the cache (`s.collectionCounts.ttl = 0`).
 
@@ -714,13 +717,13 @@ code.
 - A view stores its title, assigned author and the canonical `?f=` filter
   params. It always matches **all feeds**; limiting it is expressed through its
   own filter rows. The tab and sort are page state, not saved on the view.
-- Views can be collection sources too (`collection_views`, schemaV62). A
-  collection's item scope is the union of its member feeds and its member views:
-  `ItemFilter.CollectionViews` feeds `collectionScopeClause`, and every
-  collection read (list, counts, tag options, home sections, the JSON API) must
-  pass the collection's view predicates. Auto and no-collection never hold
-  views; the view form's picker and the membership writer exclude auto
-  collections.
+- Views reach a collection through their author. Collections group authors
+  (`collection_authors`, schemaV68), so a collection's source set is its member
+  authors' owned feeds plus those authors' views. `ItemFilter.CollectionViews`
+  still feeds `collectionScopeClause`, but the predicates are resolved from the
+  member authors (`SavedViewStore.ListByCollection`); every collection read
+  (list, counts, tag options, home sections, the JSON API) must pass them. A
+  view has no collection picker of its own.
 - A collection item reached only through a member view (its owner feed and
   cross-feed memberships are outside the collection's feeds) carries
   `ItemWithFeed.ViewSources` and renders "from view <title>" linking
@@ -730,10 +733,10 @@ code.
   reuses `viewFilterClause`; `ItemViewSource` carries the view's `AuthorID`.
   `dedupItems` unions the view sources of merged rows. `ItemWithFeed.CollectionID`
   carries the collection through row toggles so the link survives a swapped row.
-- A view's collection memberships are edited with the `collections` multi-select
-  in its form (`SavedViewStore.SetCollections`, `CollectionIDs`,
-  `ListByCollection`, `CollectionsByView`). Removing a view from a collection
-  leaves the view itself intact.
+- A view follows its assigned author's collection memberships
+  (`SavedViewStore.CollectionIDs`, `ListByCollection`, `CollectionsByView`).
+  Collections are edited on the author edit page's collections card
+  (`POST /authors/{id}/collections`).
 - `author_id` is required (schemaV65) and is the author the view feeds, exactly
   like a feed. An author page's scope is `author's own feeds OR every assigned
   view`, so a subreddit feed plus a view such as `tag=u/example-poster` can

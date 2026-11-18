@@ -95,8 +95,9 @@ func TestViewFilterCollectionScope(t *testing.T) {
 	s := newTestStore(t)
 	u := mustUser(t, s, "alice")
 	author, _ := s.Authors.Create(u.ID, "Blog", "", "")
+	otherAuthor, _ := s.Authors.Create(u.ID, "Out", "", "")
 	inCollection, _ := s.Feeds.Create(u.ID, author.ID, "In", "https://in.example/rss.xml", "", "", 900)
-	outside, _ := s.Feeds.Create(u.ID, author.ID, "Out", "https://out.example/rss.xml", "", "", 900)
+	outside, _ := s.Feeds.Create(u.ID, otherAuthor.ID, "Out", "https://out.example/rss.xml", "", "", 900)
 
 	for _, it := range []Item{
 		{GUID: "in", Title: "Feed post", Link: "https://in.example/1", FetchedAt: db.Now()},
@@ -113,17 +114,15 @@ func TestViewFilterCollectionScope(t *testing.T) {
 	}
 
 	col, _ := s.Collections.Create(u.ID, "Dev")
-	if err := s.Collections.AddFeed(u.ID, col.ID, inCollection.ID); err != nil {
-		t.Fatalf("add feed: %v", err)
+	if err := s.Collections.AddAuthor(u.ID, col.ID, author.ID); err != nil {
+		t.Fatalf("add author: %v", err)
 	}
-	view, err := s.SavedViews.Create(u.ID, SavedView{
+	// The view is assigned to the collection's member author, so it joins the
+	// collection scope alongside that author's feeds.
+	if _, err := s.SavedViews.Create(u.ID, SavedView{
 		AuthorID: author.ID, Title: "Go", Filters: []string{"tag:show:r/golang"},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("saved view: %v", err)
-	}
-	if err := s.SavedViews.SetCollections(u.ID, view.ID, []int64{col.ID}); err != nil {
-		t.Fatalf("set collections: %v", err)
 	}
 
 	scope := ItemFilter{

@@ -87,8 +87,10 @@ WHERE i.user_id = sqlc.arg('userID')
         SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
         WHERE mf.item_id = i.id AND mf2.author_id = CAST(sqlc.arg('authorID') AS INTEGER)))
   AND (CAST(sqlc.arg('collectionID') AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (
-          SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(sqlc.arg('collectionID') AS INTEGER))))
+        SELECT 1 FROM item_feeds mf
+        JOIN feeds mf2 ON mf2.id = mf.feed_id
+        JOIN collection_authors ca ON ca.author_id = mf2.author_id
+        WHERE mf.item_id = i.id AND ca.collection_id = CAST(sqlc.arg('collectionID') AS INTEGER)))
   AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
@@ -118,8 +120,10 @@ WHERE i.user_id = sqlc.arg('userID')
         SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
         WHERE mf.item_id = i.id AND mf2.author_id = CAST(sqlc.arg('authorID') AS INTEGER)))
   AND (CAST(sqlc.arg('collectionID') AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (
-          SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(sqlc.arg('collectionID') AS INTEGER))))
+        SELECT 1 FROM item_feeds mf
+        JOIN feeds mf2 ON mf2.id = mf.feed_id
+        JOIN collection_authors ca ON ca.author_id = mf2.author_id
+        WHERE mf.item_id = i.id AND ca.collection_id = CAST(sqlc.arg('collectionID') AS INTEGER)))
   AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
@@ -179,8 +183,10 @@ WHERE i.user_id = sqlc.arg('userID')
         SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
         WHERE mf.item_id = i.id AND mf2.author_id = CAST(sqlc.arg('authorID') AS INTEGER)))
   AND (CAST(sqlc.arg('collectionID') AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id IN (
-          SELECT feed_id FROM collection_feeds WHERE collection_id = CAST(sqlc.arg('collectionID') AS INTEGER))))
+        SELECT 1 FROM item_feeds mf
+        JOIN feeds mf2 ON mf2.id = mf.feed_id
+        JOIN collection_authors ca ON ca.author_id = mf2.author_id
+        WHERE mf.item_id = i.id AND ca.collection_id = CAST(sqlc.arg('collectionID') AS INTEGER)))
   AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
   AND (CAST(sqlc.arg('favorites') AS INTEGER) = 0 OR i.favorite = 1)
@@ -603,14 +609,18 @@ SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = sqlc.arg('userID') AND i.read = 0
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf
-    WHERE mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = sqlc.arg('collectionID')));
+    JOIN feeds f ON f.id = mf.feed_id
+    JOIN collection_authors ca ON ca.author_id = f.author_id
+    WHERE ca.collection_id = sqlc.arg('collectionID'));
 
 -- name: CountReadItemsByCollection :one
 SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = sqlc.arg('userID') AND i.read = 1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf
-    WHERE mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = sqlc.arg('collectionID')));
+    JOIN feeds f ON f.id = mf.feed_id
+    JOIN collection_authors ca ON ca.author_id = f.author_id
+    WHERE ca.collection_id = sqlc.arg('collectionID'));
 
 -- name: GetAuthorItemStats :one
 -- Aggregate stats for one author across all of their feeds: all-time post
@@ -688,7 +698,9 @@ ORDER BY item_count DESC, ic.category ASC;
 SELECT ic.category, COUNT(*) AS item_count
 FROM item_categories ic
 JOIN item_feeds mf ON mf.item_id = ic.item_id
-WHERE mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = sqlc.arg('collectionID'))
+JOIN feeds f ON f.id = mf.feed_id
+JOIN collection_authors ca ON ca.author_id = f.author_id
+WHERE ca.collection_id = sqlc.arg('collectionID')
   AND EXISTS (SELECT 1 FROM collections c WHERE c.id = sqlc.arg('collectionID') AND c.user_id = sqlc.arg('userID'))
 GROUP BY ic.category
 ORDER BY item_count DESC, ic.category ASC;

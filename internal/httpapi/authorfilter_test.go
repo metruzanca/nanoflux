@@ -222,7 +222,7 @@ func TestAuthorFilterSettings(t *testing.T) {
 
 	// Collections and lists use the same enforcement.
 	c, _ := s.store.Collections.Create(u.ID, "Set")
-	if err := s.store.Collections.AddFeed(u.ID, c.ID, f.ID); err != nil {
+	if err := s.store.Collections.AddAuthor(u.ID, c.ID, f.AuthorID); err != nil {
 		t.Fatal(err)
 	}
 	body = doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
@@ -423,7 +423,7 @@ func TestAuthorViewFollowsAssignedAuthorRules(t *testing.T) {
 
 	// A collection's member view carries the same rule source.
 	col, _ := s.store.Collections.Create(u.ID, "Slice")
-	if err := s.store.SavedViews.SetCollections(u.ID, capView.ID, []int64{col.ID}); err != nil {
+	if err := s.store.Collections.AddAuthor(u.ID, col.ID, capView.AuthorID); err != nil {
 		t.Fatal(err)
 	}
 	body = doGet(h, "/collections/"+itoa(col.ID), cookie).Body.String()

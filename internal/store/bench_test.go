@@ -157,8 +157,8 @@ func benchmarkCollections(b *testing.B, authors, itemsPerFeed, collections int) 
 			b.Fatalf("create collection: %v", err)
 		}
 		for j := i; j < len(feeds); j += collections {
-			if err := s.Collections.AddFeed(userID, c.ID, feeds[j].ID); err != nil {
-				b.Fatalf("add feed: %v", err)
+			if err := s.Collections.AddAuthor(userID, c.ID, feeds[j].AuthorID); err != nil {
+				b.Fatalf("add author: %v", err)
 			}
 		}
 		ids = append(ids, c.ID)
@@ -166,11 +166,11 @@ func benchmarkCollections(b *testing.B, authors, itemsPerFeed, collections int) 
 	return s, userID, ids
 }
 
-func BenchmarkCountsByFeed(b *testing.B) {
+func BenchmarkCountsByAuthor(b *testing.B) {
 	s, userID, _ := benchmarkCollections(b, 20, 1000, 10)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := s.Collections.CountsByFeed(userID); err != nil {
+		if _, err := s.Collections.CountsByAuthor(userID); err != nil {
 			b.Fatal(err)
 		}
 	}

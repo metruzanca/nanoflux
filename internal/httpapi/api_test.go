@@ -162,9 +162,9 @@ func TestAPISave(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &feed); err != nil {
 		t.Fatal(err)
 	}
-	feeds, _ := s.store.Collections.Feeds(u.ID, c.ID)
-	if len(feeds) != 1 || feeds[0].ID != feed.ID {
-		t.Fatalf("collection membership wrong: %+v", feeds)
+	authorIDs, _ := s.store.Collections.AuthorIDs(u.ID, c.ID)
+	if len(authorIDs) != 1 || authorIDs[0] != authors[0].ID {
+		t.Fatalf("collection should hold the feed's author: %+v", authorIDs)
 	}
 
 	// Save with no author at all: one is auto-created from the feed.

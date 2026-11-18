@@ -3421,7 +3421,7 @@ func scopedItemsInner(d scopedItemsData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if d.View == "feeds" {
-			templ_7745c5c3_Err = CollectionSourceCards(mergeCollectionSources(d.Feeds, d.Views)).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = CollectionAuthorCards(d.Authors).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

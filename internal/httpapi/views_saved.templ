@@ -125,8 +125,7 @@ templ viewEditorBody(u store.User, f savedViewForm) {
 	@authorPicker(f.AuthorID, f.AuthorOptions, "new-view-author", "", authorPreviewForm{
 		Name: f.NewAuthorName, AvatarURL: f.NewAuthorAvatar,
 	})
-	@comboMulti("collections", "collections", savedViewCollectionValues(f.CollectionIDs), f.CollectionOptions)
-	<p class="muted small">The view matches every feed; use its filters to limit the posts. It is a source on its author's page, and collections add it as a source.</p>
+	<p class="muted small">The view matches every feed; use its filters to limit the posts. It is a source on its author's page, and it follows its author's collections.</p>
 	<div class="field-group" data-filter-scope>
 		<h3>filters</h3>
 		{{ kinds := []string{filterKindTag} }}

@@ -19,7 +19,7 @@ func TestMigrate(t *testing.T) {
 
 	tables := []string{
 		"users", "sessions", "authors", "feeds",
-		"items", "collections", "collection_feeds", "collection_views", "schema_migrations",
+		"items", "collections", "collection_authors", "schema_migrations",
 		"author_filter_rules", "author_filter_values", "saved_views",
 	}
 	for _, name := range tables {
@@ -295,9 +295,10 @@ func TestMigrateV65AssignsUnassignedViews(t *testing.T) {
 	if authorName != "Example posts" {
 		t.Fatalf("imported author = %q, want the view title", authorName)
 	}
+	// schemaV68 maps the old view collection membership to the view's author.
 	var members int
 	if err := sqldb.QueryRow(
-		`SELECT COUNT(*) FROM collection_views WHERE collection_id = ? AND view_id = ?`, collectionID, viewID,
+		`SELECT COUNT(*) FROM collection_authors WHERE collection_id = ? AND author_id = ?`, collectionID, authorID,
 	).Scan(&members); err != nil {
 		t.Fatal(err)
 	}

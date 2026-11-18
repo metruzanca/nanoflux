@@ -953,15 +953,16 @@ func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilt
 	return "(" + strings.Join(branches, " OR ") + ")", args
 }
 
-// collectionScopeClause builds the OR of a collection's member feeds and its
-// member views. itemID is the item-id expression of the caller's query; timeExpr
-// is its item-time expression. When rawBase is true the caller reads raw items,
-// so the member-feed branch carries its own visible_items check.
+// collectionScopeClause builds the OR of a collection's member authors' owned
+// feeds and the views those authors carry. itemID is the item-id expression of
+// the caller's query; timeExpr is its item-time expression. When rawBase is true
+// the caller reads raw items, so the member-feed branch carries its own
+// visible_items check.
 func collectionScopeClause(itemID, timeExpr string, collectionID int64, views []ViewFilter, rawBase bool) (string, []any) {
 	var branches []string
 	var args []any
 	if collectionID != 0 {
-		branch := "EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = " + itemID + " AND mf.feed_id IN (SELECT feed_id FROM collection_feeds WHERE collection_id = ?))"
+		branch := "EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id JOIN collection_authors ca ON ca.author_id = mf2.author_id WHERE mf.item_id = " + itemID + " AND ca.collection_id = ?)"
 		if rawBase {
 			branch = "(" + branch + " AND " + visibleItemExists(itemID) + ")"
 		}

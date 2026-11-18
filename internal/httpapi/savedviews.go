@@ -196,15 +196,6 @@ func (s *Server) savedViewPrefillAuthor(userID int64, raw string) (int64, bool) 
 	return id, true
 }
 
-// savedViewCollectionValues renders selected collection ids as combo values.
-func savedViewCollectionValues(ids []int64) []string {
-	out := make([]string, 0, len(ids))
-	for _, id := range ids {
-		out = append(out, strconv.FormatInt(id, 10))
-	}
-	return out
-}
-
 // savedViewTitleFromFilters builds the create form's starting title from the
 // filters it was opened with. A single value names a small view perfectly; a
 // larger recipe falls back to its labels, in row order, with hide rows marked
@@ -243,8 +234,6 @@ func (s *Server) savedViewFormData(userID int64, v savedViewForm) savedViewForm 
 	authors, _ := s.store.Authors.List(userID)
 	v.AuthorOptions = authorItems(authors)
 	v.FilterAuthorOptions = filterAuthorItems(authors)
-	collections, _ := s.store.Collections.List(userID)
-	v.CollectionOptions = nonAutoCollections(collections)
 	cats, _ := s.store.Items.ListCategoriesFilter(userID, store.ItemFilter{
 		Views: []store.ViewFilter{{AuthorID: v.AuthorID}},
 	})
@@ -267,7 +256,6 @@ func (s *Server) viewEditorData(u store.User, v store.SavedView) savedViewForm {
 		Filters:  s.savedViewFilters(u.ID, filtersFromParams(v.Filters)),
 		AuthorID: v.AuthorID,
 	}
-	form.CollectionIDs, _ = s.store.SavedViews.CollectionIDs(u.ID, v.ID)
 	return s.savedViewFormData(u.ID, form)
 }
 
@@ -319,9 +307,6 @@ func (s *Server) savedViewCreate(w http.ResponseWriter, r *http.Request) {
 		form.Error = "could not save this view"
 		s.renderSavedViewForm(w, r, u, form, http.StatusInternalServerError)
 		return
-	}
-	if err := s.store.SavedViews.SetCollections(u.ID, created.ID, form.CollectionIDs); err != nil {
-		log.Error("set view collections", "view_id", created.ID, "err", err)
 	}
 	http.Redirect(w, r, savedViewAuthorURL(created.AuthorID, created.ID), http.StatusSeeOther)
 }
@@ -384,12 +369,6 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		log.Error("update saved view", "err", err)
 		form.Error = "could not save this view"
-		s.renderViewPanel(w, r, u, id, form, http.StatusBadRequest)
-		return
-	}
-	if err := s.store.SavedViews.SetCollections(u.ID, id, form.CollectionIDs); err != nil {
-		log.Error("set view collections", "view_id", id, "err", err)
-		form.Error = "could not save this view's collections"
 		s.renderViewPanel(w, r, u, id, form, http.StatusBadRequest)
 		return
 	}
@@ -457,7 +436,6 @@ func (s *Server) savedViewFormFromRequest(userID int64, r *http.Request) savedVi
 		Title:           strings.TrimSpace(r.FormValue("title")),
 		NewAuthorName:   strings.TrimSpace(r.FormValue("author_name")),
 		NewAuthorAvatar: strings.TrimSpace(r.FormValue("avatar_url")),
-		CollectionIDs:   s.savedViewCollectionIDs(userID, r.Form["collections"]),
 		Filters:         s.savedViewFilters(userID, filtersFromValues(r.Form)),
 	}
 	switch {
@@ -478,29 +456,6 @@ func (s *Server) savedViewFormFromRequest(userID int64, r *http.Request) savedVi
 	}
 	parsed.AuthorID = authorID
 	return parsed
-}
-
-// savedViewCollectionIDs validates a view form's collection selections against
-// the user's non-auto collections, silently dropping stale values.
-func (s *Server) savedViewCollectionIDs(userID int64, raw []string) []int64 {
-	collections, _ := s.store.Collections.List(userID)
-	allowed := make(map[int64]bool, len(collections))
-	for _, c := range collections {
-		if !c.IsAuto {
-			allowed[c.ID] = true
-		}
-	}
-	out := make([]int64, 0, len(raw))
-	seen := make(map[int64]bool, len(raw))
-	for _, value := range raw {
-		id, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
-		if err != nil || !allowed[id] || seen[id] {
-			continue
-		}
-		seen[id] = true
-		out = append(out, id)
-	}
-	return out
 }
 
 // savedViewDelete removes a view and returns to its author's edit page.

@@ -10,59 +10,72 @@ import (
 	"database/sql"
 )
 
-const addFeedToCollection = `-- name: AddFeedToCollection :execresult
-INSERT INTO collection_feeds (collection_id, feed_id)
+const addAuthorToCollection = `-- name: AddAuthorToCollection :execresult
+INSERT INTO collection_authors (collection_id, author_id)
 VALUES (?, ?)
-ON CONFLICT (collection_id, feed_id) DO NOTHING
+ON CONFLICT (collection_id, author_id) DO NOTHING
 `
 
-type AddFeedToCollectionParams struct {
+type AddAuthorToCollectionParams struct {
 	CollectionID int64 `json:"collection_id"`
-	FeedID       int64 `json:"feed_id"`
+	AuthorID     int64 `json:"author_id"`
 }
 
-func (q *Queries) AddFeedToCollection(ctx context.Context, arg AddFeedToCollectionParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, addFeedToCollection, arg.CollectionID, arg.FeedID)
+func (q *Queries) AddAuthorToCollection(ctx context.Context, arg AddAuthorToCollectionParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, addAuthorToCollection, arg.CollectionID, arg.AuthorID)
 }
 
-const addFeedsWithoutUserCollection = `-- name: AddFeedsWithoutUserCollection :exec
-INSERT OR IGNORE INTO collection_feeds (collection_id, feed_id)
-SELECT ?1, f.id
-FROM feeds f
-WHERE f.user_id = ?2 AND f.is_system = 0
-  AND NOT EXISTS (
-    SELECT 1 FROM collection_feeds cf
-    JOIN collections c ON c.id = cf.collection_id
-    WHERE cf.feed_id = f.id AND c.user_id = ?2 AND c.is_auto = 0)
+const authorIDsInCollection = `-- name: AuthorIDsInCollection :many
+SELECT ca.author_id
+FROM collection_authors ca
+JOIN collections c ON c.id = ca.collection_id
+WHERE ca.collection_id = ? AND c.user_id = ?
+ORDER BY ca.author_id
 `
 
-type AddFeedsWithoutUserCollectionParams struct {
-	CollectionID int64 `json:"collectionID"`
-	UserID       int64 `json:"userID"`
+type AuthorIDsInCollectionParams struct {
+	CollectionID int64 `json:"collection_id"`
+	UserID       int64 `json:"user_id"`
 }
 
-// Add every non-system feed the user has that is not in any user-created
-// (non-auto) collection to the given collection. Recomputes the synthetic
-// "no-collection" so it always lists precisely the ungrouped feeds.
-func (q *Queries) AddFeedsWithoutUserCollection(ctx context.Context, arg AddFeedsWithoutUserCollectionParams) error {
-	_, err := q.db.ExecContext(ctx, addFeedsWithoutUserCollection, arg.CollectionID, arg.UserID)
-	return err
+func (q *Queries) AuthorIDsInCollection(ctx context.Context, arg AuthorIDsInCollectionParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, authorIDsInCollection, arg.CollectionID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var author_id int64
+		if err := rows.Scan(&author_id); err != nil {
+			return nil, err
+		}
+		items = append(items, author_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-const collectionIDsForFeed = `-- name: CollectionIDsForFeed :many
-SELECT cf.collection_id
-FROM collection_feeds cf
-JOIN collections c ON c.id = cf.collection_id
-WHERE cf.feed_id = ? AND c.user_id = ?
+const collectionIDsForAuthor = `-- name: CollectionIDsForAuthor :many
+SELECT ca.collection_id
+FROM collection_authors ca
+JOIN collections c ON c.id = ca.collection_id
+WHERE ca.author_id = ? AND c.user_id = ?
+ORDER BY ca.collection_id
 `
 
-type CollectionIDsForFeedParams struct {
-	FeedID int64 `json:"feed_id"`
-	UserID int64 `json:"user_id"`
+type CollectionIDsForAuthorParams struct {
+	AuthorID int64 `json:"author_id"`
+	UserID   int64 `json:"user_id"`
 }
 
-func (q *Queries) CollectionIDsForFeed(ctx context.Context, arg CollectionIDsForFeedParams) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, collectionIDsForFeed, arg.FeedID, arg.UserID)
+func (q *Queries) CollectionIDsForAuthor(ctx context.Context, arg CollectionIDsForAuthorParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, collectionIDsForAuthor, arg.AuthorID, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -85,25 +98,23 @@ func (q *Queries) CollectionIDsForFeed(ctx context.Context, arg CollectionIDsFor
 }
 
 const createCollection = `-- name: CreateCollection :one
-INSERT INTO collections (user_id, name, is_auto)
-VALUES (?, ?, ?)
-RETURNING id, user_id, name, is_auto, created_at
+INSERT INTO collections (user_id, name)
+VALUES (?, ?)
+RETURNING id, user_id, name, created_at
 `
 
 type CreateCollectionParams struct {
 	UserID int64  `json:"user_id"`
 	Name   string `json:"name"`
-	IsAuto int64  `json:"is_auto"`
 }
 
 func (q *Queries) CreateCollection(ctx context.Context, arg CreateCollectionParams) (Collection, error) {
-	row := q.db.QueryRowContext(ctx, createCollection, arg.UserID, arg.Name, arg.IsAuto)
+	row := q.db.QueryRowContext(ctx, createCollection, arg.UserID, arg.Name)
 	var i Collection
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
 		&i.Name,
-		&i.IsAuto,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -123,41 +134,8 @@ func (q *Queries) DeleteCollection(ctx context.Context, arg DeleteCollectionPara
 	return q.db.ExecContext(ctx, deleteCollection, arg.ID, arg.UserID)
 }
 
-const deleteCollectionFeeds = `-- name: DeleteCollectionFeeds :exec
-DELETE FROM collection_feeds WHERE collection_id = ?
-`
-
-func (q *Queries) DeleteCollectionFeeds(ctx context.Context, collectionID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteCollectionFeeds, collectionID)
-	return err
-}
-
-const getAutoCollection = `-- name: GetAutoCollection :one
-SELECT id, user_id, name, is_auto, created_at
-FROM collections
-WHERE user_id = ? AND name = ? AND is_auto = 1
-`
-
-type GetAutoCollectionParams struct {
-	UserID int64  `json:"user_id"`
-	Name   string `json:"name"`
-}
-
-func (q *Queries) GetAutoCollection(ctx context.Context, arg GetAutoCollectionParams) (Collection, error) {
-	row := q.db.QueryRowContext(ctx, getAutoCollection, arg.UserID, arg.Name)
-	var i Collection
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Name,
-		&i.IsAuto,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getCollection = `-- name: GetCollection :one
-SELECT id, user_id, name, is_auto, created_at
+SELECT id, user_id, name, created_at
 FROM collections
 WHERE id = ? AND user_id = ?
 `
@@ -174,14 +152,13 @@ func (q *Queries) GetCollection(ctx context.Context, arg GetCollectionParams) (C
 		&i.ID,
 		&i.UserID,
 		&i.Name,
-		&i.IsAuto,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listCollections = `-- name: ListCollections :many
-SELECT id, user_id, name, is_auto, created_at
+SELECT id, user_id, name, created_at
 FROM collections
 WHERE user_id = ?
 ORDER BY name
@@ -200,7 +177,6 @@ func (q *Queries) ListCollections(ctx context.Context, userID int64) ([]Collecti
 			&i.ID,
 			&i.UserID,
 			&i.Name,
-			&i.IsAuto,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -216,44 +192,33 @@ func (q *Queries) ListCollections(ctx context.Context, userID int64) ([]Collecti
 	return items, nil
 }
 
-const listCollectionsForAuthorFeeds = `-- name: ListCollectionsForAuthorFeeds :many
-SELECT cf.feed_id, c.id, c.name, c.is_auto
-FROM collection_feeds cf
-JOIN collections c ON c.id = cf.collection_id
-JOIN feeds f ON f.id = cf.feed_id
-WHERE c.user_id = ? AND f.user_id = ? AND f.author_id = ? AND c.is_auto = 0
+const listCollectionsForAuthor = `-- name: ListCollectionsForAuthor :many
+SELECT c.id, c.user_id, c.name, c.created_at
+FROM collections c
+JOIN collection_authors ca ON ca.collection_id = c.id
+WHERE c.user_id = ? AND ca.author_id = ?
 ORDER BY c.name
 `
 
-type ListCollectionsForAuthorFeedsParams struct {
+type ListCollectionsForAuthorParams struct {
 	UserID   int64 `json:"user_id"`
-	UserID_2 int64 `json:"user_id_2"`
 	AuthorID int64 `json:"author_id"`
 }
 
-type ListCollectionsForAuthorFeedsRow struct {
-	FeedID int64  `json:"feed_id"`
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
-	IsAuto int64  `json:"is_auto"`
-}
-
-// Auto collections (is_auto = 1) are excluded: they track a feed's site, not a
-// user grouping, and would duplicate the feed's own site as a tag.
-func (q *Queries) ListCollectionsForAuthorFeeds(ctx context.Context, arg ListCollectionsForAuthorFeedsParams) ([]ListCollectionsForAuthorFeedsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listCollectionsForAuthorFeeds, arg.UserID, arg.UserID_2, arg.AuthorID)
+func (q *Queries) ListCollectionsForAuthor(ctx context.Context, arg ListCollectionsForAuthorParams) ([]Collection, error) {
+	rows, err := q.db.QueryContext(ctx, listCollectionsForAuthor, arg.UserID, arg.AuthorID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListCollectionsForAuthorFeedsRow
+	var items []Collection
 	for rows.Next() {
-		var i ListCollectionsForAuthorFeedsRow
+		var i Collection
 		if err := rows.Scan(
-			&i.FeedID,
 			&i.ID,
+			&i.UserID,
 			&i.Name,
-			&i.IsAuto,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -269,16 +234,18 @@ func (q *Queries) ListCollectionsForAuthorFeeds(ctx context.Context, arg ListCol
 }
 
 const listCollectionsWithCounts = `-- name: ListCollectionsWithCounts :many
-SELECT c.id, c.user_id, c.name, c.is_auto, c.created_at,
-       COUNT(DISTINCT cf.feed_id) AS feed_count,
-       COUNT(DISTINCT cv.view_id) AS view_count,
-       (SELECT COUNT(*) FROM visible_items i JOIN collection_feeds cf2 ON cf2.feed_id = i.feed_id
-         WHERE cf2.collection_id = c.id AND i.read = 0) AS unread_count,
-       (SELECT COUNT(*) FROM visible_items i JOIN collection_feeds cf2 ON cf2.feed_id = i.feed_id
-         WHERE cf2.collection_id = c.id AND i.read = 1) AS read_count
+SELECT c.id, c.user_id, c.name, c.created_at,
+       COUNT(DISTINCT ca.author_id) AS author_count,
+       (SELECT COUNT(DISTINCT i.id) FROM visible_items i
+          JOIN feeds f2 ON f2.id = i.feed_id
+          JOIN collection_authors ca2 ON ca2.author_id = f2.author_id
+         WHERE ca2.collection_id = c.id AND i.read = 0) AS unread_count,
+       (SELECT COUNT(DISTINCT i.id) FROM visible_items i
+          JOIN feeds f2 ON f2.id = i.feed_id
+          JOIN collection_authors ca2 ON ca2.author_id = f2.author_id
+         WHERE ca2.collection_id = c.id AND i.read = 1) AS read_count
 FROM collections c
-LEFT JOIN collection_feeds cf ON cf.collection_id = c.id
-LEFT JOIN collection_views cv ON cv.collection_id = c.id
+LEFT JOIN collection_authors ca ON ca.collection_id = c.id
 WHERE c.user_id = ?
 GROUP BY c.id
 ORDER BY unread_count DESC, c.name
@@ -288,14 +255,15 @@ type ListCollectionsWithCountsRow struct {
 	ID          int64  `json:"id"`
 	UserID      int64  `json:"user_id"`
 	Name        string `json:"name"`
-	IsAuto      int64  `json:"is_auto"`
 	CreatedAt   string `json:"created_at"`
-	FeedCount   int64  `json:"feed_count"`
-	ViewCount   int64  `json:"view_count"`
+	AuthorCount int64  `json:"author_count"`
 	UnreadCount int64  `json:"unread_count"`
 	ReadCount   int64  `json:"read_count"`
 }
 
+// Author count is live. Item counts cover the member authors' owned feeds; a
+// collection that also inherits member views gets exact counts from the
+// collections index cache (CountsByScope).
 func (q *Queries) ListCollectionsWithCounts(ctx context.Context, userID int64) ([]ListCollectionsWithCountsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listCollectionsWithCounts, userID)
 	if err != nil {
@@ -309,10 +277,8 @@ func (q *Queries) ListCollectionsWithCounts(ctx context.Context, userID int64) (
 			&i.ID,
 			&i.UserID,
 			&i.Name,
-			&i.IsAuto,
 			&i.CreatedAt,
-			&i.FeedCount,
-			&i.ViewCount,
+			&i.AuthorCount,
 			&i.UnreadCount,
 			&i.ReadCount,
 		); err != nil {
@@ -333,8 +299,8 @@ const listFeedsInCollection = `-- name: ListFeedsInCollection :many
 SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
        f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at
 FROM feeds f
-JOIN collection_feeds cf ON cf.feed_id = f.id
-WHERE cf.collection_id = ? AND f.user_id = ? AND f.is_system = 0
+JOIN collection_authors ca ON ca.author_id = f.author_id
+WHERE ca.collection_id = ? AND f.user_id = ? AND f.is_system = 0
 ORDER BY f.title
 `
 
@@ -391,63 +357,25 @@ func (q *Queries) ListFeedsInCollection(ctx context.Context, arg ListFeedsInColl
 	return items, nil
 }
 
-const listUserFeedCollectionIDs = `-- name: ListUserFeedCollectionIDs :many
-SELECT cf.feed_id, cf.collection_id
-FROM collection_feeds cf
-JOIN collections c ON c.id = cf.collection_id
-WHERE c.user_id = ? AND c.is_auto = 0
-ORDER BY c.name
+const removeAuthorFromCollection = `-- name: RemoveAuthorFromCollection :execresult
+DELETE FROM collection_authors
+WHERE collection_authors.collection_id = ?
+  AND collection_authors.author_id = ?
+  AND collection_authors.collection_id IN (SELECT c.id FROM collections c WHERE c.user_id = ?)
+  AND collection_authors.author_id IN (SELECT a.id FROM authors a WHERE a.user_id = ?)
 `
 
-type ListUserFeedCollectionIDsRow struct {
-	FeedID       int64 `json:"feed_id"`
+type RemoveAuthorFromCollectionParams struct {
 	CollectionID int64 `json:"collection_id"`
-}
-
-// The user's own (non-auto) collection memberships, used to group feeds into
-// folders without an N+1 query per collection.
-func (q *Queries) ListUserFeedCollectionIDs(ctx context.Context, userID int64) ([]ListUserFeedCollectionIDsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listUserFeedCollectionIDs, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListUserFeedCollectionIDsRow
-	for rows.Next() {
-		var i ListUserFeedCollectionIDsRow
-		if err := rows.Scan(&i.FeedID, &i.CollectionID); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const removeFeedFromCollection = `-- name: RemoveFeedFromCollection :execresult
-DELETE FROM collection_feeds
-WHERE collection_feeds.collection_id = ?
-  AND collection_feeds.feed_id = ?
-  AND collection_feeds.collection_id IN (SELECT c.id FROM collections c WHERE c.user_id = ?)
-  AND collection_feeds.feed_id IN (SELECT f.id FROM feeds f WHERE f.user_id = ?)
-`
-
-type RemoveFeedFromCollectionParams struct {
-	CollectionID int64 `json:"collection_id"`
-	FeedID       int64 `json:"feed_id"`
+	AuthorID     int64 `json:"author_id"`
 	UserID       int64 `json:"user_id"`
 	UserID_2     int64 `json:"user_id_2"`
 }
 
-func (q *Queries) RemoveFeedFromCollection(ctx context.Context, arg RemoveFeedFromCollectionParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, removeFeedFromCollection,
+func (q *Queries) RemoveAuthorFromCollection(ctx context.Context, arg RemoveAuthorFromCollectionParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, removeAuthorFromCollection,
 		arg.CollectionID,
-		arg.FeedID,
+		arg.AuthorID,
 		arg.UserID,
 		arg.UserID_2,
 	)
@@ -469,20 +397,20 @@ func (q *Queries) RenameCollection(ctx context.Context, arg RenameCollectionPara
 	return q.db.ExecContext(ctx, renameCollection, arg.Name, arg.ID, arg.UserID)
 }
 
-const verifyCollectionFeed = `-- name: VerifyCollectionFeed :one
+const verifyCollectionAuthor = `-- name: VerifyCollectionAuthor :one
 SELECT COUNT(*) FROM collections c
-JOIN feeds f ON f.user_id = c.user_id
-WHERE c.id = ? AND f.id = ? AND c.user_id = ?
+JOIN authors a ON a.user_id = c.user_id
+WHERE c.id = ? AND a.id = ? AND c.user_id = ?
 `
 
-type VerifyCollectionFeedParams struct {
+type VerifyCollectionAuthorParams struct {
 	ID     int64 `json:"id"`
 	ID_2   int64 `json:"id_2"`
 	UserID int64 `json:"user_id"`
 }
 
-func (q *Queries) VerifyCollectionFeed(ctx context.Context, arg VerifyCollectionFeedParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, verifyCollectionFeed, arg.ID, arg.ID_2, arg.UserID)
+func (q *Queries) VerifyCollectionAuthor(ctx context.Context, arg VerifyCollectionAuthorParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, verifyCollectionAuthor, arg.ID, arg.ID_2, arg.UserID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err

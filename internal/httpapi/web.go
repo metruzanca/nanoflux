@@ -189,11 +189,17 @@ type authorsData struct {
 	// day count); AutoReadDefault labels the account window it inherits from.
 	AutoReadValue   string
 	AutoReadDefault string
-	// FormError/AutoReadError/FilterError render validation errors in the
-	// auto-saving author basics, auto-read and filter cards.
-	FormError     string
-	AutoReadError string
-	FilterError   string
+	// Collections are the user collections this author belongs to. The edit
+	// page saves them from an explicit card.
+	Collections       []store.Collection
+	CollectionIDs     []int64
+	CollectionOptions []comboItem
+	// FormError/AutoReadError/FilterError/CollectionError render validation
+	// errors in the auto-saving author cards.
+	FormError       string
+	AutoReadError   string
+	FilterError     string
+	CollectionError string
 }
 
 type authorData struct {
@@ -204,8 +210,8 @@ type authorData struct {
 	// LinkIcons maps a link's normalized domain to its cached Simple Icons path
 	// data. A domain absent from the map has no icon.
 	LinkIcons map[string][]string
-	// Collections is every feed collection the author's feeds belong to,
-	// combined and deduped. Shown as chips on the author card.
+	// Collections are the user collections this author belongs to. Shown as
+	// chips on the author card.
 	Collections []store.Collection
 	Scoped      scopedItemsData
 	Stats       store.AuthorItemStats
@@ -224,16 +230,13 @@ type markAllReadData struct {
 
 type collectionData struct {
 	Collection store.Collection
-	Feeds      []store.Feed
-	Views      []savedViewRow
-	AllViews   []comboItem
+	Authors    []authorRow
+	AllAuthors []comboItem
 	MarkAll    markAllReadData
 	Scoped     scopedItemsData
 }
 
 // collectionFeedGroup is one author's feeds for an author-grouped feed picker.
-// Collections hold feeds (not authors), but a picker presents them grouped by
-// author so feeds are seen from the perspective of authors.
 type collectionFeedGroup struct {
 	AuthorName string
 	Feeds      []store.FeedWithUnread
@@ -255,8 +258,9 @@ type scopedItemsData struct {
 	HideAuthor  bool           // drop the author link from item meta (author-scoped page)
 	Mode        string         // saved display mode for this scope ("list" or "grid")
 	FeedsTab    bool           // collection scope only: render the "sources" tab
-	FeedCount   int            // feeds in the collection, for the "sources (N)" tab
+	FeedCount   int            // sources in the collection, for the "sources (N)" tab
 	Feeds       []feedRow      // feed cards for the sources view
+	Authors     []authorRow    // author cards for the sources view
 	Views       []savedViewRow // view cards for the sources view
 	ViewCount   int            // views in the collection, for the "sources (N)" tab
 	FavTab      bool           // author scope only: render the "favorites" tab
@@ -1458,10 +1462,9 @@ func validateFeedFields(r *http.Request) string {
 	return ""
 }
 
-// createFeed validates and persists a new feed under an author, attaching it
-// to any selected collections, its site's auto collection, and caching the
-// site icon. Returns the created feed, or a non-empty user-facing error
-// message on failure.
+// createFeed validates and persists a new feed under an author, adding the
+// author to any selected collections, and caching the site icon. Returns the
+// created feed, or a non-empty user-facing error message on failure.
 func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed, string) {
 	title := strings.TrimSpace(r.FormValue("title"))
 	feedURL := normalizeURL(r.FormValue("feed_url"))
@@ -1489,11 +1492,8 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 	}
 	for _, cid := range r.Form["collections"] {
 		if n, err := strconv.ParseInt(cid, 10, 64); err == nil {
-			s.store.Collections.AddFeed(userID, n, f.ID)
+			s.store.Collections.AddAuthor(userID, n, authorID)
 		}
-	}
-	if err := s.store.Collections.AssignAuto(userID, f.ID, homeURL, feedURL); err != nil {
-		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
 	}
 	// Auto-cache the site's favicon when the form supplied a home url. Best
 	// effort and bounded so a slow site can't stall the create response. A
@@ -1635,24 +1635,16 @@ func (s *Server) feedEditorData(u store.User, f store.Feed) *feedsData {
 		CacheImages: f.CacheImages, CacheForced: s.imageCacheForced(f.FeedURL),
 		MinPollIntervalSec: floor,
 	}
-	form.CollectionIDs = s.collectionIDsForFeed(u.ID, f.ID)
-	collections, _ := s.store.Collections.List(u.ID)
-
 	var panel *feedPanelData
 	if p, ok := s.feedPanel(f, ""); ok {
 		panel = &p
 	}
 	stats, _ := s.store.Items.StatsFeed(u.ID, f.ID)
 	return &feedsData{
-		Collections: collections, Form: form, DocsPlugin: s.pluginDocNameFor(f.FeedURL), Panel: panel,
+		Form: form, DocsPlugin: s.pluginDocNameFor(f.FeedURL), Panel: panel,
 		NextPageURL: f.NextPageURL, Stats: stats, Timezone: u.Timezone,
 		LastError: f.LastError, LastPolledAt: f.LastPolledAt, PluginName: f.PluginName,
 	}
-}
-
-func (s *Server) collectionIDsForFeed(userID, feedID int64) []int64 {
-	ids, _ := s.store.Collections.FeedCollectionIDs(userID, feedID)
-	return ids
 }
 
 func (s *Server) feedUpdate(w http.ResponseWriter, r *http.Request) {
@@ -1731,62 +1723,7 @@ func (s *Server) applyFeedForm(u store.User, old store.Feed, form url.Values) (b
 		homeURL, "", interval, auto, form.Get("enabled") == "1", cacheImages); err != nil {
 		return false, err
 	}
-	// Auto collections track the feed's website; re-assign when its host
-	// changes, and drop the feed from its old site collection.
-	if err := s.store.Collections.UnassignAuto(u.ID, id, old.HomeURL, old.FeedURL); err != nil {
-		log.Error("unassign auto collection", "feed_id", id, "err", err)
-	}
-	if err := s.store.Collections.AssignAuto(u.ID, id, homeURL, feedURL); err != nil {
-		log.Error("assign auto collection", "feed_id", id, "err", err)
-	}
-	// Sync collection memberships.
-	want := make([]int64, 0, len(form["collections"]))
-	for _, cid := range form["collections"] {
-		if n, err := strconv.ParseInt(cid, 10, 64); err == nil {
-			want = append(want, n)
-		}
-	}
-	want = unique(want)
-	collections, _ := s.store.Collections.List(u.ID)
-	for _, c := range collections {
-		if c.IsAuto {
-			continue
-		}
-		has := false
-		for _, w := range want {
-			if w == c.ID {
-				has = true
-				break
-			}
-		}
-		feeds, _ := s.store.Collections.Feeds(u.ID, c.ID)
-		contains := false
-		for _, f := range feeds {
-			if f.ID == id {
-				contains = true
-				break
-			}
-		}
-		switch {
-		case has && !contains:
-			s.store.Collections.AddFeed(u.ID, c.ID, id)
-		case !has && contains:
-			s.store.Collections.RemoveFeed(u.ID, c.ID, id)
-		}
-	}
 	return true, nil
-}
-
-func unique(ids []int64) []int64 {
-	seen := map[int64]bool{}
-	var out []int64
-	for _, id := range ids {
-		if !seen[id] {
-			seen[id] = true
-			out = append(out, id)
-		}
-	}
-	return out
 }
 
 // normalizeURL trims s and prepends https:// when no scheme is present, so
@@ -2301,10 +2238,11 @@ func (s *Server) authorPage(w http.ResponseWriter, r *http.Request) {
 		Unread: scoped.UnreadCount,
 	}
 	views := s.savedViewsForAuthor(u.ID, id, u.Timezone)
+	collections, _ := s.store.Collections.ListForAuthor(u.ID, id)
 	web.Render(w, r, basePage(a.Name, u, authorPage(u, authorData{
 		Author: a, Rows: rows, Views: views, Links: links,
 		LinkIcons: icons,
-		Scoped:    scoped, Collections: authorCollections(rows, views),
+		Scoped:    scoped, Collections: collections,
 		Stats: stats, Frequency: frequency, Timezone: u.Timezone,
 		MarkAll: markAll,
 	})))
@@ -2752,12 +2690,10 @@ func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 // feedRowFor builds a single feed card row with its collection tags and cached
 // media, for the feed row fragments the add/refresh/toggle handlers render.
 func (s *Server) feedRowFor(userID int64, f store.Feed, authorName, tz string, unread int) feedRow {
-	byFeed, _ := s.store.Collections.CollectionsByAuthorFeed(userID, f.AuthorID)
 	storage, _ := s.store.Items.StorageByFeed(f.ID)
 	return feedRow{
 		Feed: f, AuthorName: authorName, Unread: unread, Timezone: tz,
-		Storage:     storage,
-		Collections: byFeed[f.ID],
+		Storage: storage,
 	}
 }
 
@@ -2808,39 +2744,15 @@ func (s *Server) feedRowsForAuthor(userID, authorID int64, tz string) ([]feedRow
 	// grouped query covers every feed, instead of a count per card.
 	views := s.authorStoreViewFilters(userID, authorID, tz)
 	unreadByFeed, _ := s.store.Items.UnreadCountsByFeedScope(userID, authorID, views)
-	byFeed, _ := s.store.Collections.CollectionsByAuthorFeed(userID, authorID)
 	out := make([]feedRow, 0, len(rows))
 	for _, r := range rows {
 		storage, _ := s.store.Items.StorageByFeed(r.Feed.ID)
 		out = append(out, feedRow{
 			Feed: r.Feed, AuthorName: r.AuthorName, Unread: unreadByFeed[r.Feed.ID], Timezone: tz,
-			Storage: storage, Collections: byFeed[r.Feed.ID],
+			Storage: storage,
 		})
 	}
 	return out, nil
-}
-
-// authorCollections returns the distinct collections the author's feeds and
-// views belong to, combined and deduped, ordered by name, for the author card's
-// chips.
-func authorCollections(rows []feedRow, views []savedViewRow) []store.Collection {
-	seen := make(map[int64]store.Collection)
-	for _, r := range rows {
-		for _, c := range r.Collections {
-			seen[c.ID] = c
-		}
-	}
-	for _, v := range views {
-		for _, c := range v.Collections {
-			seen[c.ID] = c
-		}
-	}
-	out := make([]store.Collection, 0, len(seen))
-	for _, c := range seen {
-		out = append(out, c)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out
 }
 
 func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
@@ -2880,6 +2792,8 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 	for _, f := range feeds {
 		feedOpts = append(feedOpts, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
 	}
+	allCollections, _ := s.store.Collections.List(u.ID)
+	collectionIDs, _ := s.store.Collections.CollectionIDsForAuthor(u.ID, a.ID)
 	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
 		Form:                authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
 		Links:               links,
@@ -2895,6 +2809,9 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 		FilterPreview:       preview,
 		AutoReadValue:       authorAutoReadValue(a.AutoReadAfterDays),
 		AutoReadDefault:     autoReadLabel(u.AutoReadAfterDays),
+		Collections:         allCollections,
+		CollectionIDs:       collectionIDs,
+		CollectionOptions:   nonAutoCollections(allCollections),
 	})))
 }
 
@@ -2980,6 +2897,84 @@ func (s *Server) authorAutoReadData(u store.User, a store.Author, errMsg string)
 		AutoReadValue:   authorAutoReadValue(a.AutoReadAfterDays),
 		AutoReadDefault: autoReadLabel(u.AutoReadAfterDays),
 		AutoReadError:   errMsg,
+	}
+}
+
+// authorCollectionsUpdate saves which user collections the author belongs to.
+// Collections group authors, so this is the one place a feed's collection
+// membership is edited.
+func (s *Server) authorCollectionsUpdate(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	a, err := s.store.Authors.ByID(u.ID, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	want := s.collectionIDsFromForm(u.ID, r.Form["collections"])
+	existing, _ := s.store.Collections.CollectionIDsForAuthor(u.ID, id)
+	has := make(map[int64]bool, len(existing))
+	for _, cid := range existing {
+		has[cid] = true
+	}
+	keep := make(map[int64]bool, len(want))
+	for _, cid := range want {
+		keep[cid] = true
+		if !has[cid] {
+			if err := s.store.Collections.AddAuthor(u.ID, cid, id); err != nil && err != store.ErrNotFound {
+				log.Error("add author to collection", "author_id", id, "collection_id", cid, "err", err)
+			}
+		}
+	}
+	for _, cid := range existing {
+		if !keep[cid] {
+			if err := s.store.Collections.RemoveAuthor(u.ID, cid, id); err != nil && err != store.ErrNotFound {
+				log.Error("remove author from collection", "author_id", id, "collection_id", cid, "err", err)
+			}
+		}
+	}
+	web.Render(w, r, authorCollectionsCard(s.authorCollectionsData(u, a, "")))
+}
+
+// collectionIDsFromForm validates submitted collection ids against the user's
+// collections, dropping stale values.
+func (s *Server) collectionIDsFromForm(userID int64, raw []string) []int64 {
+	collections, _ := s.store.Collections.List(userID)
+	allowed := make(map[int64]bool, len(collections))
+	for _, c := range collections {
+		allowed[c.ID] = true
+	}
+	out := make([]int64, 0, len(raw))
+	seen := make(map[int64]bool, len(raw))
+	for _, value := range raw {
+		id, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+		if err != nil || !allowed[id] || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
+}
+
+// authorCollectionsData assembles the author collection card.
+func (s *Server) authorCollectionsData(u store.User, a store.Author, errMsg string) authorsData {
+	all, _ := s.store.Collections.List(u.ID)
+	ids, _ := s.store.Collections.CollectionIDsForAuthor(u.ID, a.ID)
+	return authorsData{
+		Form:              authorForm{ID: a.ID},
+		Collections:       all,
+		CollectionIDs:     ids,
+		CollectionOptions: nonAutoCollections(all),
+		CollectionError:   errMsg,
 	}
 }
 
@@ -3141,18 +3136,13 @@ func (s *Server) authorFormFragment(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) collections(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	// Refresh the synthetic "no-collection" so its card lists the feeds that
-	// are still ungrouped.
-	if _, err := s.store.Collections.SyncNoCollection(u.ID); err != nil {
-		log.Error("sync no-collection", "err", err)
-	}
 	rows := s.collectionRows(u.ID, u.Timezone)
 	web.Render(w, r, basePage("collections", u, collectionsPage(u, rows)))
 }
 
-// collectionRows returns the collections index's rows: member feed and view
-// counts are read live, unread/read come from the per-user counts cache (and may
-// lag by up to collectionCountsTTL), then the rows sort most-unread-first.
+// collectionRows returns the collections index's rows: member author counts are
+// read live, unread/read come from the per-user counts cache (and may lag by up
+// to collectionCountsTTL), then the rows sort most-unread-first.
 func (s *Server) collectionRows(userID int64, tz string) []store.CollectionWithCounts {
 	rows, _ := s.store.Collections.ListForIndex(userID)
 	counts, ok := s.collectionCounts.get(userID, tz)
@@ -3173,12 +3163,12 @@ func (s *Server) collectionRows(userID int64, tz string) []store.CollectionWithC
 	return rows
 }
 
-// computeCollectionCounts is the slow path behind collectionRows: member-feed
+// computeCollectionCounts is the slow path behind collectionRows: member-author
 // counts for every collection in one grouped scan, then one UNION ALL for the
-// collections that also carry saved views. Both read the same user's items, so
-// the numbers agree with the collection pages.
+// collections whose member authors also carry saved views. Both read the same
+// user's items, so the numbers agree with the collection pages.
 func (s *Server) computeCollectionCounts(userID int64, tz string) map[int64]store.CollectionCounts {
-	counts, err := s.store.Collections.CountsByFeed(userID)
+	counts, err := s.store.Collections.CountsByAuthor(userID)
 	if err != nil || counts == nil {
 		counts = map[int64]store.CollectionCounts{}
 	}
@@ -3214,30 +3204,6 @@ func (s *Server) computeCollectionCounts(userID int64, tz string) map[int64]stor
 	return counts
 }
 
-// userCollections returns the non-auto collections, preserving the query's
-// order (most unread first).
-func userCollections(rows []store.CollectionWithCounts) []store.CollectionWithCounts {
-	out := make([]store.CollectionWithCounts, 0, len(rows))
-	for _, c := range rows {
-		if !c.IsAuto {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-// autoCollections returns the auto collections, preserving the query's order
-// (most unread first).
-func autoCollections(rows []store.CollectionWithCounts) []store.CollectionWithCounts {
-	out := make([]store.CollectionWithCounts, 0, len(rows))
-	for _, c := range rows {
-		if c.IsAuto {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
 func (s *Server) collectionCreate(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -3252,8 +3218,8 @@ func (s *Server) collectionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Creating from the shared add dialog lands on the new collection's page so
-	// the user can add views to it; feeds are attached from a feed's editor. The
-	// row body still renders for non-htmx callers.
+	// the user can add authors to it. The row body still renders for non-htmx
+	// callers.
 	w.Header().Set("HX-Redirect", "/collections/"+strconv.FormatInt(c.ID, 10))
 	web.Render(w, r, collectionCreated(store.CollectionWithCounts{Collection: c}))
 }
@@ -3278,22 +3244,24 @@ func (s *Server) collectionDataFor(userID, id int64, view string, sort itemSort,
 	if err != nil {
 		return collectionData{}, err
 	}
-	// The no-collection is computed, not user-managed: refresh it before reading
-	// its feeds so the page matches the current grouping.
-	if c.IsNoCollection() {
-		s.store.Collections.SyncNoCollection(userID)
+	authorIDs, _ := s.store.Collections.AuthorIDs(userID, id)
+	members := make(map[int64]bool, len(authorIDs))
+	for _, aid := range authorIDs {
+		members[aid] = true
 	}
-	feeds, _ := s.store.Collections.Feeds(userID, id)
-	views := s.collectionViewRows(userID, id, tz)
-	allViews, _ := s.store.SavedViews.List(userID)
-	member := make(map[int64]bool, len(views))
-	for _, v := range views {
-		member[v.ID] = true
+	allAuthors := s.authorRows(userID, tz)
+	authors := make([]authorRow, 0, len(authorIDs))
+	for _, r := range allAuthors {
+		if members[r.ID] {
+			authors = append(authors, r)
+		}
 	}
-	addable := make([]store.SavedView, 0, len(allViews))
-	for _, v := range allViews {
-		if !member[v.ID] {
-			addable = append(addable, v)
+	allOptions := s.authorOptions(userID)
+	addable := make([]comboItem, 0, len(allOptions))
+	for _, option := range allOptions {
+		aid, _ := strconv.ParseInt(option.Value, 10, 64)
+		if !members[aid] {
+			addable = append(addable, option)
 		}
 	}
 	scoped := s.collectionScopedItems(userID, id, view, sort, tz, filters)
@@ -3308,8 +3276,7 @@ func (s *Server) collectionDataFor(userID, id int64, view string, sort itemSort,
 	})
 	base := "/collections/" + strconv.FormatInt(id, 10)
 	return collectionData{
-		Collection: c, Feeds: feeds, Views: views,
-		AllViews: savedViewComboItems(addable),
+		Collection: c, Authors: authors, AllAuthors: addable,
 		MarkAll: markAllReadData{
 			Action: filterActionURL(base+"/read-all", filters),
 			Unread: unread,
@@ -3325,25 +3292,8 @@ func (s *Server) collectionViewRows(userID, collectionID int64, tz string) []sav
 	return s.savedViewRows(userID, views, tz)
 }
 
-// savedViewComboItems maps views to combo items for the add-view picker.
-func savedViewComboItems(views []store.SavedView) []comboItem {
-	out := make([]comboItem, 0, len(views))
-	for _, v := range views {
-		out = append(out, comboItem{Value: strconv.FormatInt(v.ID, 10), Label: v.Title})
-	}
-	return out
-}
-
-// firstSavedViewValue is the default selection for the add-view picker.
-func firstSavedViewValue(items []comboItem) string {
-	if len(items) == 0 {
-		return ""
-	}
-	return items[0].Value
-}
-
-// groupFeedsByAuthor groups a user's feeds by author name for the collection
-// add-feed dropdown, ordering feed titles within each author.
+// groupFeedsByAuthor groups a user's feeds by author name for author-grouped
+// feed pickers, ordering feed titles within each author.
 func groupFeedsByAuthor(rows []store.FeedWithUnread) []collectionFeedGroup {
 	var groups []collectionFeedGroup
 	index := map[string]int{}
@@ -3365,25 +3315,33 @@ func groupFeedsByAuthor(rows []store.FeedWithUnread) []collectionFeedGroup {
 
 // collectionScopedItems loads one read/unread item list for a collection plus
 // the counts that drive the tabs. The collection scope also gets a "feeds" tab
-// listing the collection's feeds as cards; when that view is active no items
-// are loaded.
+// listing the collection's member authors as cards; when that view is active no
+// items are loaded.
 func (s *Server) collectionScopedItems(userID, collectionID int64, view string, sort itemSort, tz string, filters listFilters) scopedItemsData {
 	sorts := unreadSorts(view)
 	sort = sorts.coerce(sort)
-	memberFeeds, _ := s.store.Collections.Feeds(userID, collectionID)
+	authorIDs, _ := s.store.Collections.AuthorIDs(userID, collectionID)
+	members := make(map[int64]bool, len(authorIDs))
+	for _, aid := range authorIDs {
+		members[aid] = true
+	}
+	var authors []authorRow
+	for _, r := range s.authorRows(userID, tz) {
+		if members[r.ID] {
+			authors = append(authors, r)
+		}
+	}
 	collectionViews := s.collectionViewFilters(userID, collectionID, tz)
-	viewRows := s.collectionViewRows(userID, collectionID, tz)
 	base := "/collections/" + strconv.FormatInt(collectionID, 10)
 	d := scopedItemsData{
 		Path: base, ItemsPath: base + "/items", View: view, Sort: sort, Sorts: sorts,
-		FeedsTab: true, FeedCount: len(memberFeeds), ViewCount: len(viewRows),
+		FeedsTab: true, FeedCount: len(authors),
 		Mode: s.store.ViewPrefs.Mode(userID, base), Filters: filters,
 		ScopeCollectionID: collectionID,
 	}
 	d.AuthorOptions = s.authorOptions(userID)
 	if view == "feeds" {
-		d.Feeds = s.collectionFeedRows(userID, memberFeeds, tz)
-		d.Views = viewRows
+		d.Authors = authors
 		return d
 	}
 	f := scopedFilter(view, sort, 0, 0, collectionID, filters, tz)
@@ -3420,56 +3378,6 @@ func collectionCountFilter(collectionID int64, views []store.ViewFilter, view st
 	f.CollectionViews = views
 	f.Limit = 0
 	return f
-}
-
-// collectionSourceRow is one entry in a collection's interleaved source list.
-type collectionSourceRow struct {
-	Kind string // "feed" or "view"
-	Feed feedRow
-	View savedViewRow
-}
-
-// mergeCollectionSources interleaves a collection's feeds and views by title.
-func mergeCollectionSources(feeds []feedRow, views []savedViewRow) []collectionSourceRow {
-	out := make([]collectionSourceRow, 0, len(feeds)+len(views))
-	for _, f := range feeds {
-		out = append(out, collectionSourceRow{Kind: "feed", Feed: f})
-	}
-	for _, v := range views {
-		out = append(out, collectionSourceRow{Kind: "view", View: v})
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return strings.ToLower(collectionSourceTitle(out[i])) < strings.ToLower(collectionSourceTitle(out[j]))
-	})
-	return out
-}
-
-func collectionSourceTitle(r collectionSourceRow) string {
-	if r.Kind == "view" {
-		return r.View.Title
-	}
-	return r.Feed.Title
-}
-
-// collectionFeedRows joins a collection's member feeds with their author name
-// and unread count (the same join the add-feed picker uses), preserving the
-// title order Collections.Feeds returns.
-func (s *Server) collectionFeedRows(userID int64, memberFeeds []store.Feed, tz string) []feedRow {
-	withUnread, _ := s.store.Feeds.ListWithUnread(userID)
-	byID := make(map[int64]store.FeedWithUnread, len(withUnread))
-	for _, f := range withUnread {
-		byID[f.ID] = f
-	}
-	out := make([]feedRow, 0, len(memberFeeds))
-	for _, f := range memberFeeds {
-		row := feedRow{Feed: f, Timezone: tz}
-		if w, ok := byID[f.ID]; ok {
-			row.AuthorName = w.AuthorName
-			row.Unread = w.Unread
-		}
-		out = append(out, row)
-	}
-	return out
 }
 
 func (s *Server) collectionItems(w http.ResponseWriter, r *http.Request) {
@@ -3511,16 +3419,9 @@ func (s *Server) collectionRefresh(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	c, err := s.store.Collections.ByID(u.ID, id)
-	if err != nil {
+	if _, err := s.store.Collections.ByID(u.ID, id); err != nil {
 		http.NotFound(w, r)
 		return
-	}
-	// The no-collection is computed, so rebuild its membership before reading.
-	if c.IsNoCollection() {
-		if _, err := s.store.Collections.SyncNoCollection(u.ID); err != nil {
-			log.Error("sync no-collection", "err", err)
-		}
 	}
 	feeds, _ := s.store.Collections.Feeds(u.ID, id)
 	now := db.Now()
@@ -3572,10 +3473,7 @@ func (s *Server) collectionDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/collections", http.StatusSeeOther)
 }
 
-// collectionEdit renders the collection's edit form (name + feeds + delete).
-// Auto collections render the same screen but read-only: their name can't be
-// changed and their feeds can't be removed, so it doubles as the place to see
-// every feed in the collection.
+// collectionEdit renders the collection's edit form (name, authors, delete).
 func (s *Server) collectionEdit(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
@@ -3588,9 +3486,33 @@ func (s *Server) collectionEdit(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	feeds, _ := s.store.Collections.Feeds(u.ID, id)
-	views := s.collectionViewRows(u.ID, id, u.Timezone)
-	web.Render(w, r, basePage("edit "+c.Name, u, collectionEditPage(u, collectionData{Collection: c, Feeds: feeds, Views: views})))
+	web.Render(w, r, basePage("edit "+c.Name, u, collectionEditPage(u, s.collectionAuthorsData(u.ID, id, u.Timezone))))
+}
+
+// collectionAuthorsData assembles a collection's member authors and the authors
+// still available to add, for the page and edit cards.
+func (s *Server) collectionAuthorsData(userID, id int64, tz string) collectionData {
+	c, _ := s.store.Collections.ByID(userID, id)
+	authorIDs, _ := s.store.Collections.AuthorIDs(userID, id)
+	members := make(map[int64]bool, len(authorIDs))
+	for _, aid := range authorIDs {
+		members[aid] = true
+	}
+	authors := make([]authorRow, 0, len(authorIDs))
+	for _, r := range s.authorRows(userID, tz) {
+		if members[r.ID] {
+			authors = append(authors, r)
+		}
+	}
+	allOptions := s.authorOptions(userID)
+	addable := make([]comboItem, 0, len(allOptions))
+	for _, option := range allOptions {
+		aid, _ := strconv.ParseInt(option.Value, 10, 64)
+		if !members[aid] {
+			addable = append(addable, option)
+		}
+	}
+	return collectionData{Collection: c, Authors: authors, AllAuthors: addable}
 }
 
 // collectionUpdate renames a collection.
@@ -3601,13 +3523,8 @@ func (s *Server) collectionUpdate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	c, err := s.store.Collections.ByID(u.ID, id)
-	if err != nil {
+	if _, err := s.store.Collections.ByID(u.ID, id); err != nil {
 		http.NotFound(w, r)
-		return
-	}
-	if c.IsAuto {
-		renderError(w, r, "auto collections are managed automatically")
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -3654,98 +3571,52 @@ func (s *Server) collectionReadAll(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) collectionRemoveFeed(w http.ResponseWriter, r *http.Request) {
+// collectionAddAuthor adds an author as a collection source.
+func (s *Server) collectionAddAuthor(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	c, err := s.store.Collections.ByID(u.ID, id)
-	if err != nil {
+	if _, err := s.store.Collections.ByID(u.ID, id); err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	if c.IsAuto {
-		renderError(w, r, "auto collections are managed automatically")
-		return
-	}
-	feedID, err := strconv.ParseInt(r.PathValue("feed_id"), 10, 64)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	s.store.Collections.RemoveFeed(u.ID, id, feedID)
-	// The feed list is a client-side multi-select: the chip is already gone, so
-	// just confirm. A failure (non-2xx) makes the client restore the chip.
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// collectionAddView adds a saved view as a collection source.
-func (s *Server) collectionAddView(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r)
-	id, err := parseID(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	c, err := s.store.Collections.ByID(u.ID, id)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	if c.IsAuto {
-		renderError(w, r, "auto collections are managed automatically")
-		return
-	}
-	viewID, _ := strconv.ParseInt(r.FormValue("view_id"), 10, 64)
-	if viewID != 0 {
-		if _, err := s.store.SavedViews.ByID(u.ID, viewID); err == nil {
-			ids, _ := s.store.SavedViews.CollectionIDs(u.ID, viewID)
-			ids = append(ids, id)
-			if err := s.store.SavedViews.SetCollections(u.ID, viewID, ids); err != nil {
-				log.Error("add view to collection", "collection_id", id, "view_id", viewID, "err", err)
+	authorID, _ := strconv.ParseInt(r.FormValue("author_id"), 10, 64)
+	if authorID != 0 {
+		if _, err := s.store.Authors.ByID(u.ID, authorID); err == nil {
+			if err := s.store.Collections.AddAuthor(u.ID, id, authorID); err != nil {
+				log.Error("add author to collection", "collection_id", id, "author_id", authorID, "err", err)
 			}
 		}
+	}
+	if r.FormValue("edit") == "1" {
+		web.Render(w, r, collectionAuthors(s.collectionAuthorsData(u.ID, id, u.Timezone)))
+		return
 	}
 	web.Render(w, r, ScopedItems(s.collectionScopedItems(u.ID, id, normalizeCollectionView(formTab(r)), itemSortOf(r), u.Timezone, filtersFromRequest(r).withoutFeedFilters())))
 }
 
-// collectionRemoveView removes a view from a collection.
-func (s *Server) collectionRemoveView(w http.ResponseWriter, r *http.Request) {
+// collectionRemoveAuthor removes an author from a collection.
+func (s *Server) collectionRemoveAuthor(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
 	id, err := parseID(r)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	c, err := s.store.Collections.ByID(u.ID, id)
+	if _, err := s.store.Collections.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	authorID, err := strconv.ParseInt(r.PathValue("author_id"), 10, 64)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	if c.IsAuto {
-		renderError(w, r, "auto collections are managed automatically")
-		return
-	}
-	viewID, err := strconv.ParseInt(r.PathValue("view_id"), 10, 64)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	ids, err := s.store.SavedViews.CollectionIDs(u.ID, viewID)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	remaining := make([]int64, 0, len(ids))
-	for _, cid := range ids {
-		if cid != id {
-			remaining = append(remaining, cid)
-		}
-	}
-	if err := s.store.SavedViews.SetCollections(u.ID, viewID, remaining); err != nil && err != store.ErrNotFound {
-		log.Error("remove view from collection", "collection_id", id, "view_id", viewID, "err", err)
+	if err := s.store.Collections.RemoveAuthor(u.ID, id, authorID); err != nil && err != store.ErrNotFound {
+		log.Error("remove author from collection", "collection_id", id, "author_id", authorID, "err", err)
 		http.Error(w, "remove failed", http.StatusInternalServerError)
 		return
 	}

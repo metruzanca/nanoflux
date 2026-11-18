@@ -638,11 +638,7 @@ func viewEditorBody(u store.User, f savedViewForm) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = comboMulti("collections", "collections", savedViewCollectionValues(f.CollectionIDs), f.CollectionOptions).Render(ctx, templ_7745c5c3_Buffer)
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<p class=\"muted small\">The view matches every feed; use its filters to limit the posts. It is a source on its author's page, and collections add it as a source.</p><div class=\"field-group\" data-filter-scope><h3>filters</h3>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<p class=\"muted small\">The view matches every feed; use its filters to limit the posts. It is a source on its author's page, and it follows its author's collections.</p><div class=\"field-group\" data-filter-scope><h3>filters</h3>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -698,7 +694,7 @@ func viewEditorBody(u store.User, f savedViewForm) templ.Component {
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.URL("/views/" + id + "/delete"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_saved.templ`, Line: 155, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_saved.templ`, Line: 154, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 			if templ_7745c5c3_Err != nil {

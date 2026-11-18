@@ -1,6 +1,20 @@
 # Feeds are a library, authors are lenses
 
-Status: design agreed, decisions below must be confirmed before implementation.
+## Progress
+
+- [x] **Step 1: collections group authors (schemaV68).** Collections store
+  `collection_authors`. A collection's scope is the union of its members' author
+  pages (owned feeds plus their views). Auto collections and the synthetic
+  no-collection are gone. A `/domains` page groups the feed library by
+  registrable domain instead. No collection-level filters yet.
+- [ ] **Step 2: unassigned feeds and the `/feeds` library page (schemaV69).**
+- [ ] Step 3: `author_feeds` many-to-many and membership-based author scope.
+- [ ] Step 4: flatten saved views into authors.
+- [ ] Step 5: drop `feeds.author_id`, move auto-read to feeds, momentum by feed.
+- [ ] Step 6: simplify `visible_items` and update the docs.
+
+Status: design agreed. Step 1 is implemented; the remaining decisions below are
+still to be confirmed before the later steps.
 Supersedes the ownership parts of `author-collection.plan.md`; that plan's
 collection-by-author membership is absorbed here.
 

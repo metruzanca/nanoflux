@@ -662,7 +662,7 @@ templ scopedItemsInner(d scopedItemsData) {
 	</div>
 	@momentumHint(d.Sort)
 	if d.View == "feeds" {
-		@CollectionSourceCards(mergeCollectionSources(d.Feeds, d.Views))
+		@CollectionAuthorCards(d.Authors)
 	} else {
 		@filterChips(fp)
 		@ItemsListPage(d.Items, d.More, d.HideAuthor, d.Mode, d.View == "unread")

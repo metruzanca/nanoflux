@@ -33,45 +33,20 @@ templ addCollectionDialog() {
 	<div id="add-collection-result"></div>
 }
 
-// CollectionsList renders the collections index grouped into two sections:
-// the user's own collections, then auto collections (created from a feed's
-// site) under a heading that explains them. Both groups keep the query's
-// order, most unread first.
+// CollectionsList renders the user's collections, most unread first.
 templ CollectionsList(rows []store.CollectionWithCounts) {
-	@collectionsGroup(userCollections(rows), false)
-	@collectionsGroup(autoCollections(rows), true)
-}
-
-templ collectionsGroup(rows []store.CollectionWithCounts, auto bool) {
-	if auto {
-		if len(rows) == 0 {
-			return
+	<ul class="plain" id="collections-list">
+		for _, c := range rows {
+			@CollectionRow(c)
 		}
-		<div class="row">
-			<h2>auto collections</h2>
-		</div>
-		<p class="muted small">auto collections are created from a feed's site and update automatically. Use edit to see every feed in one.</p>
-		<ul class="plain" id="auto-collections-list">
-			for _, c := range rows {
-				@CollectionRow(c)
-			}
-		</ul>
-	} else {
-		<ul class="plain" id="collections-list">
-			for _, c := range rows {
-				@CollectionRow(c)
-			}
-		</ul>
-		if len(rows) == 0 {
-			<p class="muted" id="collections-empty">no collections yet — add one, or add a feed and its site gets an auto collection.</p>
-		}
+	</ul>
+	if len(rows) == 0 {
+		<p class="muted" id="collections-empty">no collections yet — add one to group authors together.</p>
 	}
 }
 
 // collectionCreated is the response to creating a collection: the new row plus
-// an out-of-band delete of the empty-state note (present only when the user had
-// no collections yet). The shared add dialog redirects to the new collection, so
-// this body only reaches non-htmx callers.
+// an out-of-band delete of the empty-state note.
 templ collectionCreated(c store.CollectionWithCounts) {
 	@CollectionRow(c)
 	<p id="collections-empty" hx-swap-oob="delete" hidden></p>
@@ -83,21 +58,12 @@ templ CollectionRow(c store.CollectionWithCounts) {
 			<div class="row">
 				<div>
 					<a href={ "/collections/" + strconv.FormatInt(c.ID, 10) }><strong>{ c.Name }</strong></a>
-					if c.IsAuto {
-						<span class="badge">auto</span>
-					}
 				</div>
 			</div>
 			<div class="item-meta">
-				{ c.FeedCount } feeds
-				if c.ViewCount > 0 {
-					· { c.ViewCount } views
-				}
+				{ c.AuthorCount } authors
 				· { c.Unread } unread
 			</div>
-			if c.IsNoCollection() {
-				<p class="muted small">feeds you have not added to any collection.</p>
-			}
 		</div>
 	</li>
 }
@@ -132,177 +98,88 @@ templ collectionPage(u store.User, d collectionData) {
 	<div class="row">
 		<h1>{ d.Collection.Name }</h1>
 		<div class="row-actions">
-			if len(d.Feeds) > 0 {
-				<button type="button" title="fetch every feed in this collection now" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/refresh" } hx-target="#collection-refresh-status" hx-swap="outerHTML">@web.Lucide("refresh-cw") refresh all</button>
+			if len(d.Authors) > 0 {
+				<button type="button" title="fetch every feed from this collection's authors now" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/refresh" } hx-target="#collection-refresh-status" hx-swap="outerHTML">@web.Lucide("refresh-cw") refresh all</button>
 				<span id="collection-refresh-status" class="muted small"></span>
 			}
 			@markAllReadControl(d.MarkAll)
-			if d.Collection.IsAuto {
-				<span class="badge">auto</span>
-			}
 			<a class="button" title="edit" href={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>@web.EditIcon() edit</a>
-			if !d.Collection.IsAuto && len(d.AllViews) > 0 {
-				<button type="button" data-open="collection-add-view-dialog">+ add view</button>
+			if len(d.AllAuthors) > 0 {
+				<button type="button" data-open="collection-add-author-dialog">+ add author</button>
 			}
 		</div>
 	</div>
-	if d.Collection.IsNoCollection() {
-		<p class="muted small">feeds you have not added to a collection of your own. Add one to a collection to move it out of here.</p>
-	} else if d.Collection.IsAuto {
-		<p class="muted small">auto collections are created from a feed's site and update automatically. Use edit to see every feed in this collection.</p>
-	}
 	@ScopedItems(d.Scoped)
 
-	if !d.Collection.IsAuto && len(d.AllViews) > 0 {
-		<dialog id="collection-add-view-dialog" class="modal">
+	if len(d.AllAuthors) > 0 {
+		<dialog id="collection-add-author-dialog" class="modal">
 			<div class="row">
-				<h2>add view</h2>
+				<h2>add author</h2>
 				<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
 			</div>
-			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-view" } hx-target="#scoped-items" hx-swap="outerHTML" data-form-close-reset>
-				<input type="hidden" name="view" value={ d.Scoped.View }/>
-				@comboSelect("view_id", firstSavedViewValue(d.AllViews), "view", "search views", d.AllViews, nil)
+			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-author" } hx-target="#scoped-items" hx-swap="outerHTML" data-form-close-reset>
+				<input type="hidden" name="tab" value={ d.Scoped.View }/>
+				@comboSelect("author_id", d.AllAuthors[0].Value, "author", "search authors", d.AllAuthors, nil)
 				<button type="submit">add</button>
 			</form>
 		</dialog>
 	}
 }
 
-// collectionEditPage edits a collection's name, removes its feeds, and deletes
-// it — the collection's own management surface, mirroring the author/feed edit
-// pages (delete lives in the form, not on the listing). Auto collections use the
-// same screen to inspect their feeds, but the name is read-only and feeds can't
-// be removed: they are managed from each feed's site.
+// collectionEditPage edits a collection's name, its member authors, and deletes
+// it. Collections group authors, so a feed joins a collection by adding its
+// author.
 templ collectionEditPage(u store.User, d collectionData) {
 	<section class="card">
 		<div class="row">
 			<h1>edit collection</h1>
-			if d.Collection.IsAuto {
-				<span class="badge">auto</span>
-			}
 		</div>
-		if d.Collection.IsAuto {
-			<p class="muted small">auto collections follow a feed's site and can't be renamed or have feeds removed. Add or remove the feed itself to change this collection.</p>
-			<form class="stack">
-				<label>name
-					<input name="name" value={ d.Collection.Name } readonly/>
-				</label>
-			</form>
-		} else {
-			<form class="stack" method="post" action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>
-				@csrfField()
-				<label>name
-					<input name="name" value={ d.Collection.Name } required/>
-				</label>
-				<button type="submit">save</button>
-			</form>
-		}
+		<form class="stack" method="post" action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/edit" }>
+			@csrfField()
+			<label>name
+				<input name="name" value={ d.Collection.Name } required/>
+			</label>
+			<button type="submit">save</button>
+		</form>
 		<div class="stack delete-form">
 			<button type="button" class="danger" data-post-action={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/delete" } data-confirm="delete this collection?">delete</button>
 		</div>
 	</section>
 	<section class="card">
-		<h2>sources</h2>
-		<h3>feeds</h3>
-		@collectionFeeds(d)
-		<h3>views</h3>
-		@collectionViews(d)
+		<h2>authors</h2>
+		@collectionAuthors(d)
+		if len(d.AllAuthors) > 0 {
+			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-author" } hx-target="#collection-authors" hx-swap="outerHTML">
+				<input type="hidden" name="edit" value="1"/>
+				@comboSelect("author_id", d.AllAuthors[0].Value, "add an author", "search authors", d.AllAuthors, nil)
+				<button type="submit">add author</button>
+			</form>
+		}
 	</section>
 }
 
-// CollectionSourceCards lists a collection's feeds and views as one card list
-// for the collection page's "sources" tab. They are interleaved by title so a
-// collection reads as a single set of sources, not two separate groups.
-templ CollectionSourceCards(rows []collectionSourceRow) {
+// CollectionAuthorCards lists a collection's member authors as cards for the
+// collection page's "sources" tab.
+templ CollectionAuthorCards(rows []authorRow) {
 	if len(rows) == 0 {
-		<p class="muted">no sources in this collection</p>
+		<p class="muted">no authors in this collection</p>
 		return
 	}
-	<ul class="plain" id="collection-feeds-list" data-feed-sort-list>
+	<ul class="plain" id="collection-authors-list" data-feed-sort-list>
 		for _, r := range rows {
-			if r.Kind == "view" {
-				@CollectionViewCard(r.View)
-			} else {
-				@CollectionFeedCard(r.Feed)
-			}
+			@AuthorRow(r)
 		}
 	</ul>
 }
 
-templ CollectionFeedCard(r feedRow) {
-	<li id={ "collection-feed-" + strconv.FormatInt(r.ID, 10) } data-title={ r.Title } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Unread) }>
-		<div class="card">
-			<div class="row">
-				<div>
-					<a href={ templ.URL(authorFeedURL(r.AuthorID, r.ID)) }>
-						<strong>
-							@web.SourceIcon(feedIconURL(r.Feed))
-							{ r.Title }
-						</strong>
-					</a>
-				</div>
-			</div>
-			<div class="item-meta">
-				if r.AuthorName != "" {
-					<a href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.AuthorName }</a>
-				} else {
-					no author
-				}
-				· <span class="unread-count">{ r.Unread } unread</span>
-			</div>
-		</div>
-	</li>
-}
-
-// CollectionViewCard is a view as a source card, matching CollectionFeedCard:
-// the bookmark glyph and a linked title, its author, and its unread count.
-templ CollectionViewCard(r savedViewRow) {
-	{{ id := strconv.FormatInt(r.ID, 10) }}
-	{{ href := savedViewAuthorURL(r.AuthorID, r.ID) }}
-	<li id={ "collection-view-" + id } data-title={ r.Title } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Count) }>
-		<div class="card">
-			<div class="row">
-				<div>
-					<a href={ templ.URL(href) }>
-						<strong>
-							@web.Lucide("bookmark-plus")
-							{ r.Title }
-						</strong>
-					</a>
-				</div>
-			</div>
-			<div class="item-meta">
-				if r.AuthorName != "" {
-					<a href={ "/authors/" + strconv.FormatInt(r.AuthorID, 10) }>{ r.AuthorName }</a>
-				} else {
-					no author
-				}
-				· <span class="unread-count">{ r.Count } unread</span>
-			</div>
-		</div>
-	</li>
-}
-
-// collectionFeeds renders the collection's feeds as a large multi-select: every
-// feed is a chip. User collections get a remove button per chip (POSTing to the
-// remove-feed endpoint); auto collections are readonly and carry no remove URL,
-// so their chips show every feed but can't be removed. auto-expand keeps all
-// names visible (wrapping horizontally and vertically) instead of collapsing
-// into an overflow count.
-templ collectionFeeds(d collectionData) {
-	if len(d.Feeds) == 0 {
-		<p class="muted">no feeds in this collection</p>
+// collectionAuthors renders the collection's member authors as remove-able
+// chips. Removing an author removes their feeds and views from the collection.
+templ collectionAuthors(d collectionData) {
+	if len(d.Authors) == 0 {
+		<p class="muted" id="collection-authors">no authors in this collection</p>
 		return
 	}
-	@comboChips(removeFeedURL(d.Collection), feedIDs(d.Feeds), feedItems(d.Feeds), d.Collection.IsAuto)
-}
-
-// collectionViews renders the collection's views as remove-able chips, mirroring
-// the feed chips above. Auto collections never hold views.
-templ collectionViews(d collectionData) {
-	if len(d.Views) == 0 {
-		<p class="muted">no views in this collection</p>
-		return
-	}
-	@comboChips(removeViewURL(d.Collection), viewIDs(d.Views), viewItems(d.Views), d.Collection.IsAuto)
+	<div id="collection-authors">
+		@comboChips(removeAuthorURL(d.Collection), authorRowIDs(d.Authors), authorRowItems(d.Authors), false)
+	</div>
 }

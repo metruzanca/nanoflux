@@ -34,12 +34,13 @@ func TestCollectionRefreshQueuesMemberFeeds(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	outAuthor, _ := s.store.Authors.Create(u.ID, "Outside", "", "")
 	f1, _ := s.store.Feeds.Create(u.ID, a.ID, "One", srv.URL+"/one", "", "", 86400)
 	f2, _ := s.store.Feeds.Create(u.ID, a.ID, "Two", srv.URL+"/two", "", "", 86400)
-	outside, _ := s.store.Feeds.Create(u.ID, a.ID, "Outside", srv.URL+"/outside", "", "", 86400)
+	outside, _ := s.store.Feeds.Create(u.ID, outAuthor.ID, "Outside", srv.URL+"/outside", "", "", 86400)
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
 	for _, f := range []store.Feed{f1, f2} {
-		if err := s.store.Collections.AddFeed(u.ID, c.ID, f.ID); err != nil {
+		if err := s.store.Collections.AddAuthor(u.ID, c.ID, f.AuthorID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -109,7 +110,7 @@ func TestCollectionRefreshSkipsPausedAndRateLimited(t *testing.T) {
 	f3, _ := s.store.Feeds.Create(u.ID, a.ID, "Three", "https://three.example/feed", "", "", 86400)
 	c, _ := s.store.Collections.Create(u.ID, "Dev")
 	for _, f := range []store.Feed{f1, f2, f3} {
-		if err := s.store.Collections.AddFeed(u.ID, c.ID, f.ID); err != nil {
+		if err := s.store.Collections.AddAuthor(u.ID, c.ID, f.AuthorID); err != nil {
 			t.Fatal(err)
 		}
 	}

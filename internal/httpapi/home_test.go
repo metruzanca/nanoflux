@@ -20,8 +20,8 @@ func homeFixture(t *testing.T, s *Server) (u store.User, cats, quiet store.Colle
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	cats, _ = s.store.Collections.Create(u.ID, "cats")
 	quiet, _ = s.store.Collections.Create(u.ID, "quiet")
-	s.store.Collections.AddFeed(u.ID, cats.ID, f.ID)
-	s.store.Collections.AddFeed(u.ID, quiet.ID, f.ID)
+	s.store.Collections.AddAuthor(u.ID, cats.ID, f.AuthorID)
+	s.store.Collections.AddAuthor(u.ID, quiet.ID, f.AuthorID)
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Unread cat", Link: "https://b.dev/1", FetchedAt: db.Now()})
 	return u, cats, quiet
 }
@@ -83,7 +83,7 @@ func TestHomeConfigScopedToUser(t *testing.T) {
 	oa, _ := s.store.Authors.Create(other.ID, "Bob", "", "")
 	of, _ := s.store.Feeds.Create(other.ID, oa.ID, "BobFeed", "https://bob.dev/rss.xml", "", "", 900)
 	oc, _ := s.store.Collections.Create(other.ID, "bobcol")
-	s.store.Collections.AddFeed(other.ID, oc.ID, of.ID)
+	s.store.Collections.AddAuthor(other.ID, oc.ID, of.AuthorID)
 	s.store.Items.Upsert(of.ID, store.Item{GUID: "b1", Title: "Bob item", Link: "https://bob.dev/1", FetchedAt: db.Now()})
 
 	s.store.Users.SetHomeConfig(u.ID, `[{"kind":"collection","ref_id":`+itoa(oc.ID)+`}]`)
@@ -135,34 +135,6 @@ func TestSettingsHomeCard(t *testing.T) {
 	after, _ = s.store.Users.ByID(u.ID)
 	if strings.Contains(after.HomeConfig, itoa(cats.ID)) {
 		t.Fatalf("home config should no longer contain the collection: %q", after.HomeConfig)
-	}
-}
-
-// TestSettingsHomePickerIncludesAuto asserts the pin-collection picker offers
-// auto collections too, not just user-created ones, and that pinning one
-// renders it on the home dashboard.
-func TestSettingsHomePickerIncludesAuto(t *testing.T) {
-	s, h := newTestServer(t)
-	cookie := sessionCookie(t, h)
-	u, _, _ := homeFixture(t, s)
-	auto, err := s.store.Collections.EnsureAuto(u.ID, "b.dev")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	body := doGet(h, "/settings", cookie).Body.String()
-	if !strings.Contains(body, `value="`+itoa(auto.ID)+`"`) {
-		t.Fatalf("pin picker should offer the auto collection: %s", body)
-	}
-
-	rr := doForm(h, "POST", "/settings/home", url.Values{
-		"action": {"add"}, "add_collection": {itoa(auto.ID)},
-	}, cookie)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("pin auto collection: %d %s", rr.Code, rr.Body.String())
-	}
-	if after, _ := s.store.Users.ByID(u.ID); !strings.Contains(after.HomeConfig, itoa(auto.ID)) {
-		t.Fatalf("home config should record the pinned auto collection: %q", after.HomeConfig)
 	}
 }
 
@@ -342,14 +314,13 @@ func TestHomePinnedCollectionIncludesViews(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+	if _, err := s.store.SavedViews.Create(u.ID, store.SavedView{
 		AuthorID: author.ID, Title: "Go view", Filters: []string{"tag:show:r/golang"},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 	col, _ := s.store.Collections.Create(u.ID, "view only")
-	if err := s.store.SavedViews.SetCollections(u.ID, view.ID, []int64{col.ID}); err != nil {
+	if err := s.store.Collections.AddAuthor(u.ID, col.ID, author.ID); err != nil {
 		t.Fatal(err)
 	}
 	s.store.Users.SetHomeConfig(u.ID, `[{"kind":"collection","ref_id":`+itoa(col.ID)+`}]`)

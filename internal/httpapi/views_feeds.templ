@@ -358,9 +358,6 @@ templ feedFields(d feedsData) {
 			home url
 			<input name="home_url" type="url" value={ d.Form.HomeURL }/>
 		</label>
-		if len(d.Collections) > 0 {
-			@comboMulti("collections", "collections", nonAutoCollectionValues(d.Collections, d.Form.CollectionIDs), nonAutoCollections(d.Collections))
-		}
 	</div>
 	<div class="field-group">
 		<h3>author</h3>

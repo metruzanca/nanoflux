@@ -90,7 +90,7 @@ templ authorsDivider() {
 }
 
 templ AuthorRow(r authorRow) {
-	<li id={ "author-" + strconv.FormatInt(r.ID, 10) } data-name={ r.Name } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Unread) } data-taste={ strconv.Itoa(r.Taste) }>
+	<li id={ "author-" + strconv.FormatInt(r.ID, 10) } data-name={ r.Name } data-title={ r.Name } data-created={ r.CreatedAt } data-unread={ strconv.Itoa(r.Unread) } data-taste={ strconv.Itoa(r.Taste) }>
 		<div class="row">
 			<a href={ "/authors/" + strconv.FormatInt(r.ID, 10) }>
 				if r.AvatarKey != "" {
@@ -120,6 +120,7 @@ templ AuthorRow(r authorRow) {
 // feed and view panel is its own form, so a change saves just that panel.
 templ authorEditPage(u store.User, d authorsData) {
 	@authorBasicsCard(d)
+	@authorCollectionsCard(d)
 	@authorFilterCard(d)
 	@authorAutoReadCard(d)
 	{{ sources := len(d.Feeds) + len(d.Views) }}
@@ -200,6 +201,33 @@ templ authorAvatarCard(d authorAvatarCardData) {
 			}
 		</span>
 	</div>
+}
+
+// authorCollectionsCard picks the user collections this author belongs to.
+// Collections group authors, so this is where a feed joins a collection.
+templ authorCollectionsCard(d authorsData) {
+	{{ action := "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/collections" }}
+	<details id="author-collections-card" class="card" open?={ len(d.CollectionIDs) > 0 }>
+		<summary>
+			<h2>collections</h2>
+			if len(d.CollectionIDs) > 0 {
+				<span class="badge">{ strconv.Itoa(len(d.CollectionIDs)) }</span>
+			}
+		</summary>
+		<p class="muted small">A collection groups authors. Adding this author brings all of their feeds and views into each selected collection.</p>
+		<form class="stack" method="post" action={ action } hx-post={ action } hx-target="#author-collections-card" hx-swap="outerHTML" hx-disinherit="*">
+			@csrfField()
+			if d.CollectionError != "" {
+				<div class="error" role="alert">{ d.CollectionError }</div>
+			}
+			if len(d.CollectionOptions) > 0 {
+				@comboMulti("collections", "collections", nonAutoCollectionValues(d.Collections, d.CollectionIDs), d.CollectionOptions)
+			} else {
+				<p class="muted small">no collections yet. create one from the add menu.</p>
+			}
+			<button type="submit">apply</button>
+		</form>
+	</details>
 }
 
 // authorFilterCard configures the author's always-on allow/block rules. It is
@@ -414,7 +442,7 @@ templ authorPage(u store.User, d authorData) {
 		}
 		@authorStats(d.Stats, len(d.Rows), d.Frequency, d.Timezone)
 		if len(d.Collections) > 0 {
-			<div class="author-collections" aria-label="collections this author's feeds belong to">
+			<div class="author-collections" aria-label="collections this author belongs to">
 				for _, c := range d.Collections {
 					<a class="tag" href={ "/collections/" + strconv.FormatInt(c.ID, 10) } title={ c.Name }>#{ c.Name }</a>
 				}

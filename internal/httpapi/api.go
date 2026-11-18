@@ -295,12 +295,9 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.CollectionID != 0 {
-		if err := s.store.Collections.AddFeed(u.ID, req.CollectionID, f.ID); err != nil {
+		if err := s.store.Collections.AddAuthor(u.ID, req.CollectionID, authorID); err != nil {
 			log.Error("add to collection", "collection_id", req.CollectionID, "err", err)
 		}
-	}
-	if err := s.store.Collections.AssignAuto(u.ID, f.ID, homeURL, req.FeedURL); err != nil {
-		log.Error("assign auto collection", "feed_id", f.ID, "err", err)
 	}
 	s.pollFeedNow()
 

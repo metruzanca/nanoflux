@@ -21,7 +21,7 @@ func TestAPIEntities(t *testing.T) {
 	f, _ := s.store.Feeds.Create(u.ID, a.ID, "Blog", "https://b.dev/rss.xml", "", "", 900)
 	// One unread item so the author, collection, feed, and view all report unread=1.
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "g1", Title: "Post", Link: "https://b.dev/1", Categories: []string{"r/golang"}, FetchedAt: db.Now()})
-	if err := s.store.Collections.AddFeed(u.ID, coll.ID, f.ID); err != nil {
+	if err := s.store.Collections.AddAuthor(u.ID, coll.ID, f.AuthorID); err != nil {
 		t.Fatal(err)
 	}
 	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{

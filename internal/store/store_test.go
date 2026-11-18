@@ -944,7 +944,7 @@ func TestItemScopedCounts(t *testing.T) {
 	a, _ := s.Authors.Create(u.ID, "Metru", "", "")
 	f, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 	coll, _ := s.Collections.Create(u.ID, "Dev")
-	s.Collections.AddFeed(u.ID, coll.ID, f.ID)
+	s.Collections.AddAuthor(u.ID, coll.ID, a.ID)
 
 	s.Items.Upsert(f.ID, Item{GUID: "g1", Title: "One", Link: "https://metru.dev/1", FetchedAt: db.Now()})
 	s.Items.Upsert(f.ID, Item{GUID: "g2", Title: "Two", Link: "https://metru.dev/2", FetchedAt: db.Now()})
@@ -1023,8 +1023,7 @@ func TestListWithCounts(t *testing.T) {
 	f1, _ := s.Feeds.Create(u.ID, a.ID, "Blog", "https://metru.dev/rss.xml", "", "", 900)
 	f2, _ := s.Feeds.Create(u.ID, a.ID, "Other", "https://other.dev/rss.xml", "", "", 900)
 	c, _ := s.Collections.Create(u.ID, "Dev")
-	s.Collections.AddFeed(u.ID, c.ID, f1.ID)
-	s.Collections.AddFeed(u.ID, c.ID, f2.ID)
+	s.Collections.AddAuthor(u.ID, c.ID, a.ID)
 
 	s.Items.Upsert(f1.ID, Item{GUID: "a", Title: "a", Link: "https://metru.dev/1", FetchedAt: db.Now()})
 	s.Items.Upsert(f1.ID, Item{GUID: "b", Title: "b", Link: "https://metru.dev/2", FetchedAt: db.Now()})
@@ -1043,8 +1042,8 @@ func TestListWithCounts(t *testing.T) {
 		t.Fatalf("collections = %d, want 1", len(rows))
 	}
 	got := rows[0]
-	if got.FeedCount != 2 || got.Unread != 2 || got.Read != 1 {
-		t.Fatalf("collection counts = feeds:%d unread:%d read:%d, want 2/2/1", got.FeedCount, got.Unread, got.Read)
+	if got.AuthorCount != 1 || got.Unread != 2 || got.Read != 1 {
+		t.Fatalf("collection counts = authors:%d unread:%d read:%d, want 1/2/1", got.AuthorCount, got.Unread, got.Read)
 	}
 }
 
@@ -1365,20 +1364,19 @@ func TestCollectionFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create collection: %v", err)
 	}
-	if err := s.Collections.AddFeed(u.ID, c.ID, f.ID); err != nil {
-		t.Fatalf("AddFeed: %v", err)
+	if err := s.Collections.AddAuthor(u.ID, c.ID, a.ID); err != nil {
+		t.Fatalf("AddAuthor: %v", err)
 	}
 	feeds, err := s.Collections.Feeds(u.ID, c.ID)
 	if err != nil || len(feeds) != 1 {
 		t.Fatalf("collection feeds: %v %d", err, len(feeds))
 	}
 
-	// AddFeed must reject a feed owned by another user.
+	// AddAuthor must reject an author owned by another user.
 	other := mustUser(t, s, "bob")
 	a2, _ := s.Authors.Create(other.ID, "Bob", "", "")
-	f2, _ := s.Feeds.Create(other.ID, a2.ID, "Bobs", "https://bob.dev/rss.xml", "", "", 900)
-	if err := s.Collections.AddFeed(u.ID, c.ID, f2.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected ErrNotFound cross-user AddFeed, got %v", err)
+	if err := s.Collections.AddAuthor(u.ID, c.ID, a2.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound cross-user AddAuthor, got %v", err)
 	}
 
 	// Items filterable by collection.
@@ -1392,8 +1390,8 @@ func TestCollectionFlow(t *testing.T) {
 		t.Fatalf("expected author join, got %q", byCol[0].AuthorName)
 	}
 
-	if err := s.Collections.RemoveFeed(u.ID, c.ID, f.ID); err != nil {
-		t.Fatalf("RemoveFeed: %v", err)
+	if err := s.Collections.RemoveAuthor(u.ID, c.ID, a.ID); err != nil {
+		t.Fatalf("RemoveAuthor: %v", err)
 	}
 	if err := s.Collections.Delete(u.ID, c.ID); err != nil {
 		t.Fatalf("delete collection: %v", err)

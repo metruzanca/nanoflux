@@ -256,20 +256,23 @@ AND NOT EXISTS (
       )
 );
 
+-- Collections are simple groups of authors (schemaV68). A collection's item
+-- scope is the union of its member authors' pages, so adding an author brings
+-- that author's feeds and views.
 CREATE TABLE collections (
     id         INTEGER PRIMARY KEY,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name       TEXT NOT NULL,
-    is_auto    INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_collections_user ON collections(user_id);
 
-CREATE TABLE collection_feeds (
+CREATE TABLE collection_authors (
     collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
-    feed_id       INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
-    PRIMARY KEY (collection_id, feed_id)
+    author_id     INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    PRIMARY KEY (collection_id, author_id)
 );
+CREATE INDEX idx_collection_authors_author ON collection_authors(author_id);
 
 -- Saved views: private named filter recipes over the item lists (schemaV57).
 -- author_id is required (schemaV65): a view is a source on an author page.
@@ -285,15 +288,6 @@ CREATE TABLE saved_views (
 );
 CREATE INDEX idx_saved_views_user ON saved_views(user_id);
 CREATE INDEX idx_saved_views_author ON saved_views(author_id);
-
--- A saved view can be a collection source (schemaV62). A collection's item
--- scope is the union of its member feeds and its member views.
-CREATE TABLE collection_views (
-    collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
-    view_id       INTEGER NOT NULL REFERENCES saved_views(id) ON DELETE CASCADE,
-    PRIMARY KEY (collection_id, view_id)
-);
-CREATE INDEX idx_collection_views_view ON collection_views(view_id);
 
 CREATE TABLE item_enclosures (
     id        INTEGER PRIMARY KEY,

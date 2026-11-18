@@ -10,22 +10,23 @@ import (
 	"github.com/metruzanca/nanoflux/internal/tagnorm"
 )
 
+// Collection is a simple user-managed group of authors. A collection's item
+// scope is the union of its member authors' pages, so adding an author brings
+// that author's feeds and views.
 type Collection struct {
 	ID        int64
 	UserID    int64
 	Name      string
-	IsAuto    bool
 	CreatedAt string
 }
 
-// CollectionWithCounts joins a collection with its feed and item counts for
+// CollectionWithCounts joins a collection with its author and item counts for
 // the collections index cards.
 type CollectionWithCounts struct {
 	Collection
-	FeedCount int
-	ViewCount int
-	Unread    int
-	Read      int
+	AuthorCount int
+	Unread      int
+	Read        int
 }
 
 type CollectionStore struct {
@@ -37,166 +38,11 @@ func (s *CollectionStore) Create(userID int64, name string) (Collection, error) 
 	c, err := s.q.CreateCollection(context.Background(), sqlcgen.CreateCollectionParams{
 		UserID: userID,
 		Name:   tagnorm.Label(name),
-		IsAuto: 0,
 	})
 	if err != nil {
 		return Collection{}, fmt.Errorf("create collection: %w", err)
 	}
 	return toCollection(c), nil
-}
-
-// NoCollectionName is the reserved name of the synthetic auto collection that
-// lists every feed the user has not put into a collection of their own. It is
-// not a hostname (RegistrableDomain never yields it), so it cannot collide with
-// a per-site auto collection.
-const NoCollectionName = "no-collection"
-
-// IsNoCollection reports whether c is the synthetic "no-collection".
-func (c Collection) IsNoCollection() bool { return c.IsAuto && c.Name == NoCollectionName }
-
-// EnsureNoCollection returns the user's no-collection, creating it if needed.
-func (s *CollectionStore) EnsureNoCollection(userID int64) (Collection, error) {
-	return s.EnsureAuto(userID, NoCollectionName)
-}
-
-// SyncNoCollection recomputes the no-collection's membership: every non-system
-// feed the user has that is not in any user-created collection. Idempotent, and
-// run when the collections index/page is rendered so it reflects recent feed or
-// collection changes. It returns the collection's id.
-//
-// Rendering a page must not write when nothing changed, so the delete+insert
-// rewrite only runs when the current membership actually differs from the
-// derived set (see noCollectionStale).
-func (s *CollectionStore) SyncNoCollection(userID int64) (int64, error) {
-	c, err := s.EnsureNoCollection(userID)
-	if err != nil {
-		return 0, err
-	}
-	stale, err := s.noCollectionStale(userID, c.ID)
-	if err != nil {
-		return c.ID, err
-	}
-	if !stale {
-		return c.ID, nil
-	}
-	if err := s.q.DeleteCollectionFeeds(context.Background(), c.ID); err != nil {
-		return 0, err
-	}
-	if err := s.q.AddFeedsWithoutUserCollection(context.Background(), sqlcgen.AddFeedsWithoutUserCollectionParams{
-		CollectionID: c.ID,
-		UserID:       userID,
-	}); err != nil {
-		return 0, err
-	}
-	return c.ID, nil
-}
-
-// noCollectionStale reports whether the no-collection's membership differs from
-// the set SyncNoCollection would write: non-system feeds not in any user-created
-// collection. It counts both directions (missing members and members that should
-// not be there) in one read, mirroring AddFeedsWithoutUserCollection's predicate
-// exactly.
-func (s *CollectionStore) noCollectionStale(userID, collectionID int64) (bool, error) {
-	var missing, extra int
-	err := s.db.QueryRowContext(context.Background(), `
-		SELECT
-		  (SELECT COUNT(*) FROM feeds f
-		     WHERE f.user_id = ? AND f.is_system = 0
-		       AND NOT EXISTS (
-		         SELECT 1 FROM collection_feeds cf JOIN collections c ON c.id = cf.collection_id
-		         WHERE cf.feed_id = f.id AND c.user_id = ? AND c.is_auto = 0)
-		       AND NOT EXISTS (
-		         SELECT 1 FROM collection_feeds m
-		         WHERE m.collection_id = ? AND m.feed_id = f.id)),
-		  (SELECT COUNT(*) FROM collection_feeds m JOIN feeds f ON f.id = m.feed_id
-		     WHERE m.collection_id = ?
-		       AND (f.user_id <> ? OR f.is_system = 1 OR EXISTS (
-		         SELECT 1 FROM collection_feeds cf JOIN collections c ON c.id = cf.collection_id
-		         WHERE cf.feed_id = f.id AND c.user_id = ? AND c.is_auto = 0)))`,
-		userID, userID, collectionID, collectionID, userID, userID).Scan(&missing, &extra)
-	if err != nil {
-		return false, err
-	}
-	return missing > 0 || extra > 0, nil
-}
-
-// EnsureAuto returns the auto collection for a hostname, creating it if it
-// does not exist. A user-created collection with the same name is left alone;
-// auto collections are always separate rows.
-func (s *CollectionStore) EnsureAuto(userID int64, host string) (Collection, error) {
-	ctx := context.Background()
-	// The common case is an existing auto collection, so read it without opening
-	// a transaction (the collections index calls this on every render).
-	if c, err := s.q.GetAutoCollection(ctx, sqlcgen.GetAutoCollectionParams{UserID: userID, Name: host}); err == nil {
-		return toCollection(c), nil
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return Collection{}, err
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return Collection{}, err
-	}
-	defer tx.Rollback()
-	q := s.q.WithTx(tx)
-	// Re-check inside the transaction: a concurrent request may have created it.
-	if c, err := q.GetAutoCollection(ctx, sqlcgen.GetAutoCollectionParams{UserID: userID, Name: host}); err == nil {
-		if err := tx.Commit(); err != nil {
-			return Collection{}, err
-		}
-		return toCollection(c), nil
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return Collection{}, err
-	}
-	c, err := q.CreateCollection(ctx, sqlcgen.CreateCollectionParams{UserID: userID, Name: host, IsAuto: 1})
-	if err != nil {
-		return Collection{}, fmt.Errorf("create auto collection: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return Collection{}, err
-	}
-	return toCollection(c), nil
-}
-
-// AssignAuto adds a feed to the auto collection for its website, derived from
-// its home url (falling back to the feed url). It is a no-op when no
-// registrable domain can be derived.
-func (s *CollectionStore) AssignAuto(userID, feedID int64, homeURL, feedURL string) error {
-	host := RegistrableDomain(homeURL)
-	if host == "" {
-		host = RegistrableDomain(feedURL)
-	}
-	if host == "" {
-		return nil
-	}
-	c, err := s.EnsureAuto(userID, host)
-	if err != nil {
-		return err
-	}
-	return s.AddFeed(userID, c.ID, feedID)
-}
-
-// UnassignAuto removes a feed from the auto collection of its previous
-// website. Used when a feed's home/feed url changes hosts, so it does not
-// linger in the old auto collection.
-func (s *CollectionStore) UnassignAuto(userID, feedID int64, homeURL, feedURL string) error {
-	host := RegistrableDomain(homeURL)
-	if host == "" {
-		host = RegistrableDomain(feedURL)
-	}
-	if host == "" {
-		return nil
-	}
-	c, err := s.q.GetAutoCollection(context.Background(), sqlcgen.GetAutoCollectionParams{
-		UserID: userID,
-		Name:   host,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return s.RemoveFeed(userID, c.ID, feedID)
 }
 
 func (s *CollectionStore) ByID(userID, id int64) (Collection, error) {
@@ -222,8 +68,8 @@ func (s *CollectionStore) List(userID int64) ([]Collection, error) {
 	return out, nil
 }
 
-// ListWithCounts returns the user's collections with their feed, view, unread,
-// and read counts in one query, for the collections index cards.
+// ListWithCounts returns the user's collections with their author, unread, and
+// read counts in one query, for the collections index cards.
 func (s *CollectionStore) ListWithCounts(userID int64) ([]CollectionWithCounts, error) {
 	rows, err := s.q.ListCollectionsWithCounts(context.Background(), userID)
 	if err != nil {
@@ -232,30 +78,26 @@ func (s *CollectionStore) ListWithCounts(userID int64) ([]CollectionWithCounts, 
 	out := make([]CollectionWithCounts, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, CollectionWithCounts{
-			Collection: toCollection(sqlcgen.Collection{
-				ID: r.ID, UserID: r.UserID, Name: r.Name, IsAuto: r.IsAuto, CreatedAt: r.CreatedAt,
-			}),
-			FeedCount: int(r.FeedCount),
-			ViewCount: int(r.ViewCount),
-			Unread:    int(r.UnreadCount),
-			Read:      int(r.ReadCount),
+			Collection: Collection{
+				ID: r.ID, UserID: r.UserID, Name: r.Name, CreatedAt: r.CreatedAt,
+			},
+			AuthorCount: int(r.AuthorCount),
+			Unread:      int(r.UnreadCount),
+			Read:        int(r.ReadCount),
 		})
 	}
 	return out, nil
 }
 
 // ListForIndex returns the user's collections with only the counts that are
-// cheap to derive: member feeds and member views. Item counts come from the
-// collections index's per-user cache, so this avoids the two visible_items
-// subqueries per collection that ListWithCounts runs.
+// cheap to derive: member authors. Item counts come from the collections
+// index's per-user cache.
 func (s *CollectionStore) ListForIndex(userID int64) ([]CollectionWithCounts, error) {
 	rows, err := s.db.QueryContext(context.Background(), `
-		SELECT c.id, c.user_id, c.name, c.is_auto, c.created_at,
-		       COUNT(DISTINCT cf.feed_id) AS feed_count,
-		       COUNT(DISTINCT cv.view_id) AS view_count
+		SELECT c.id, c.user_id, c.name, c.created_at,
+		       COUNT(DISTINCT ca.author_id) AS author_count
 		FROM collections c
-		LEFT JOIN collection_feeds cf ON cf.collection_id = c.id
-		LEFT JOIN collection_views cv ON cv.collection_id = c.id
+		LEFT JOIN collection_authors ca ON ca.collection_id = c.id
 		WHERE c.user_id = ?
 		GROUP BY c.id
 		ORDER BY c.name, c.id`, userID)
@@ -266,11 +108,9 @@ func (s *CollectionStore) ListForIndex(userID int64) ([]CollectionWithCounts, er
 	var out []CollectionWithCounts
 	for rows.Next() {
 		var c CollectionWithCounts
-		var isAuto int
-		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &isAuto, &c.CreatedAt, &c.FeedCount, &c.ViewCount); err != nil {
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &c.CreatedAt, &c.AuthorCount); err != nil {
 			return nil, err
 		}
-		c.IsAuto = isAuto != 0
 		out = append(out, c)
 	}
 	return out, rows.Err()
@@ -287,8 +127,7 @@ func (s *CollectionStore) Delete(userID, id int64) error {
 	return nil
 }
 
-// Rename updates a collection's name (not auto collections are excluded by the
-// caller; this only verifies ownership).
+// Rename updates a collection's name.
 func (s *CollectionStore) Rename(userID, id int64, name string) error {
 	res, err := s.q.RenameCollection(context.Background(), sqlcgen.RenameCollectionParams{
 		Name: tagnorm.Label(name), ID: id, UserID: userID,
@@ -302,11 +141,12 @@ func (s *CollectionStore) Rename(userID, id int64, name string) error {
 	return nil
 }
 
-// AddFeed associates a feed with a collection, verifying both belong to the user.
-func (s *CollectionStore) AddFeed(userID, collectionID, feedID int64) error {
-	n, err := s.q.VerifyCollectionFeed(context.Background(), sqlcgen.VerifyCollectionFeedParams{
+// AddAuthor associates an author with a collection, verifying both belong to
+// the user.
+func (s *CollectionStore) AddAuthor(userID, collectionID, authorID int64) error {
+	n, err := s.q.VerifyCollectionAuthor(context.Background(), sqlcgen.VerifyCollectionAuthorParams{
 		ID:     collectionID,
-		ID_2:   feedID,
+		ID_2:   authorID,
 		UserID: userID,
 	})
 	if err != nil {
@@ -315,17 +155,17 @@ func (s *CollectionStore) AddFeed(userID, collectionID, feedID int64) error {
 	if n == 0 {
 		return ErrNotFound
 	}
-	_, err = s.q.AddFeedToCollection(context.Background(), sqlcgen.AddFeedToCollectionParams{
+	_, err = s.q.AddAuthorToCollection(context.Background(), sqlcgen.AddAuthorToCollectionParams{
 		CollectionID: collectionID,
-		FeedID:       feedID,
+		AuthorID:     authorID,
 	})
 	return err
 }
 
-func (s *CollectionStore) RemoveFeed(userID, collectionID, feedID int64) error {
-	res, err := s.q.RemoveFeedFromCollection(context.Background(), sqlcgen.RemoveFeedFromCollectionParams{
+func (s *CollectionStore) RemoveAuthor(userID, collectionID, authorID int64) error {
+	res, err := s.q.RemoveAuthorFromCollection(context.Background(), sqlcgen.RemoveAuthorFromCollectionParams{
 		CollectionID: collectionID,
-		FeedID:       feedID,
+		AuthorID:     authorID,
 		UserID:       userID,
 		UserID_2:     userID,
 	})
@@ -338,6 +178,40 @@ func (s *CollectionStore) RemoveFeed(userID, collectionID, feedID int64) error {
 	return nil
 }
 
+// AuthorIDs returns a collection's member author ids.
+func (s *CollectionStore) AuthorIDs(userID, collectionID int64) ([]int64, error) {
+	return s.q.AuthorIDsInCollection(context.Background(), sqlcgen.AuthorIDsInCollectionParams{
+		CollectionID: collectionID,
+		UserID:       userID,
+	})
+}
+
+// CollectionIDsForAuthor returns the ids of the user's collections that hold
+// the author.
+func (s *CollectionStore) CollectionIDsForAuthor(userID, authorID int64) ([]int64, error) {
+	return s.q.CollectionIDsForAuthor(context.Background(), sqlcgen.CollectionIDsForAuthorParams{
+		AuthorID: authorID,
+		UserID:   userID,
+	})
+}
+
+// ListForAuthor returns the collections an author belongs to.
+func (s *CollectionStore) ListForAuthor(userID, authorID int64) ([]Collection, error) {
+	rows, err := s.q.ListCollectionsForAuthor(context.Background(), sqlcgen.ListCollectionsForAuthorParams{
+		UserID:   userID,
+		AuthorID: authorID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Collection, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Collection{ID: r.ID, UserID: r.UserID, Name: r.Name, CreatedAt: r.CreatedAt})
+	}
+	return out, nil
+}
+
+// Feeds returns every feed brought in by a collection's member authors.
 func (s *CollectionStore) Feeds(userID, collectionID int64) ([]Feed, error) {
 	rows, err := s.q.ListFeedsInCollection(context.Background(), sqlcgen.ListFeedsInCollectionParams{
 		CollectionID: collectionID,
@@ -349,54 +223,6 @@ func (s *CollectionStore) Feeds(userID, collectionID int64) ([]Feed, error) {
 	out := make([]Feed, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.NextPollScheduled, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.CreatedAt)))
-	}
-	return out, nil
-}
-
-// FeedCollectionIDs returns the ids of a user's collections that contain
-// feedID, in one query.
-func (s *CollectionStore) FeedCollectionIDs(userID, feedID int64) ([]int64, error) {
-	return s.q.CollectionIDsForFeed(context.Background(), sqlcgen.CollectionIDsForFeedParams{
-		FeedID: feedID,
-		UserID: userID,
-	})
-}
-
-// UserCollectionIDsByFeed returns the ids of a user's own (non-auto)
-// collections containing each feed, keyed by feed id. Feeds with no user
-// collection are absent from the map.
-func (s *CollectionStore) UserCollectionIDsByFeed(userID int64) (map[int64][]int64, error) {
-	rows, err := s.q.ListUserFeedCollectionIDs(context.Background(), userID)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[int64][]int64, len(rows))
-	for _, r := range rows {
-		out[r.FeedID] = append(out[r.FeedID], r.CollectionID)
-	}
-	return out, nil
-}
-
-// CollectionsByAuthorFeed returns, in one query, the collections each of an
-// author's feeds belongs to, keyed by feed id. Feeds with no collections are
-// absent from the map. Used to render collection tags on the author page.
-func (s *CollectionStore) CollectionsByAuthorFeed(userID, authorID int64) (map[int64][]Collection, error) {
-	rows, err := s.q.ListCollectionsForAuthorFeeds(context.Background(), sqlcgen.ListCollectionsForAuthorFeedsParams{
-		UserID:   userID,
-		UserID_2: userID,
-		AuthorID: authorID,
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[int64][]Collection, len(rows))
-	for _, r := range rows {
-		out[r.FeedID] = append(out[r.FeedID], Collection{
-			ID:     r.ID,
-			UserID: userID,
-			Name:   r.Name,
-			IsAuto: r.IsAuto != 0,
-		})
 	}
 	return out, nil
 }

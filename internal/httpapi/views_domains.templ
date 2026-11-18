@@ -1,0 +1,90 @@
+package httpapi
+
+import (
+	"strconv"
+	"strings"
+
+	"github.com/metruzanca/nanoflux/internal/store"
+	"github.com/metruzanca/nanoflux/internal/web"
+)
+
+// domainsPage groups the feed library by registrable domain. It replaces the
+// old auto collections: domains are derived, read-only views of the feeds.
+templ domainsPage(u store.User, groups []domainGroup, domain string, feeds []store.FeedWithUnread) {
+	<div class="row">
+		<h1>domains</h1>
+		if domain != "" {
+			<a class="button" href="/domains">all domains</a>
+		}
+	</div>
+	if domain != "" {
+		<h2>{ domain }</h2>
+		@domainFeedList(feeds)
+		return
+	}
+	if len(groups) == 0 {
+		<p class="muted">no feeds yet.</p>
+		return
+	}
+	<ul class="plain" id="domains-list">
+		for _, g := range groups {
+			<li>
+				<div class="card">
+					<div class="row">
+						<a href={ templ.URL("/domains?domain=" + g.Name) }>
+							<strong>
+								@web.SourceIcon(g.Name)
+								{ g.Name }
+							</strong>
+						</a>
+					</div>
+					<div class="item-meta">
+						{ strconv.Itoa(g.FeedCount) } feeds · { strconv.Itoa(g.Unread) } unread
+					</div>
+				</div>
+			</li>
+		}
+	</ul>
+}
+
+// domainFeedList lists one domain's feeds.
+templ domainFeedList(feeds []store.FeedWithUnread) {
+	if len(feeds) == 0 {
+		<p class="muted">no feeds in this domain.</p>
+		return
+	}
+	<ul class="plain" id="domain-feeds-list">
+		for _, f := range feeds {
+			<li>
+				<div class="card">
+					<div class="row">
+						<a href={ templ.URL(authorFeedURL(f.AuthorID, f.ID)) }>
+							<strong>
+								@web.SourceIcon(feedIconURL(f.Feed))
+								{ f.Title }
+							</strong>
+						</a>
+					</div>
+					<div class="item-meta">
+						if f.AuthorName != "" {
+							<a href={ "/authors/" + strconv.FormatInt(f.AuthorID, 10) }>{ f.AuthorName }</a>
+						} else {
+							unassigned
+						}
+						· <span class="unread-count">{ strconv.Itoa(f.Unread) } unread</span>
+					</div>
+				</div>
+			</li>
+		}
+	</ul>
+}
+
+// domainOf is the grouping key for a feed: its registrable domain, falling back
+// to its feed url. Feeds with no parseable host group under "unknown".
+func domainOf(f store.Feed) string {
+	d := store.RegistrableDomain(feedIconURL(f))
+	if strings.TrimSpace(d) == "" {
+		return "unknown"
+	}
+	return d
+}

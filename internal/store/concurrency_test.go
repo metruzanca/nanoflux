@@ -55,36 +55,6 @@ func TestConcurrentEnsureList(t *testing.T) {
 	}
 }
 
-// TestConcurrentEnsureAutoCollection is the collection twin of the list test.
-func TestConcurrentEnsureAutoCollection(t *testing.T) {
-	s := newPooledStore(t)
-	u, err := s.Users.Create("u", "x")
-	if err != nil {
-		t.Fatalf("create user: %v", err)
-	}
-	const n = 20
-	ids := make([]int64, n)
-	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			c, err := s.Collections.EnsureAuto(u.ID, "example.com")
-			if err != nil {
-				t.Errorf("ensure auto: %v", err)
-				return
-			}
-			ids[i] = c.ID
-		}(i)
-	}
-	wg.Wait()
-	for _, id := range ids {
-		if id != ids[0] {
-			t.Fatalf("EnsureAuto created multiple collections: %v", ids)
-		}
-	}
-}
-
 // TestConcurrentShareFavorites hammers the token get-or-create: every caller
 // must get the same token, not a divergent one.
 func TestConcurrentShareFavorites(t *testing.T) {

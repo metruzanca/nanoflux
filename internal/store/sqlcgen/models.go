@@ -48,18 +48,12 @@ type Collection struct {
 	ID        int64  `json:"id"`
 	UserID    int64  `json:"user_id"`
 	Name      string `json:"name"`
-	IsAuto    int64  `json:"is_auto"`
 	CreatedAt string `json:"created_at"`
 }
 
-type CollectionFeed struct {
+type CollectionAuthor struct {
 	CollectionID int64 `json:"collection_id"`
-	FeedID       int64 `json:"feed_id"`
-}
-
-type CollectionView struct {
-	CollectionID int64 `json:"collection_id"`
-	ViewID       int64 `json:"view_id"`
+	AuthorID     int64 `json:"author_id"`
 }
 
 type Feed struct {

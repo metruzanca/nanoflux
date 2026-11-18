@@ -95,27 +95,22 @@ func tagItems(cats []store.CategoryCount) []comboItem {
 	return out
 }
 
-// nonAutoCollections returns the user's own collections (auto collections are
-// managed from each feed's site and are not user-selectable on the feed form).
+// nonAutoCollections maps the user's collections to combo items. The name is
+// retained for the callers that used to filter auto collections; collections
+// are now always user-managed.
 func nonAutoCollections(cs []store.Collection) []comboItem {
 	out := make([]comboItem, 0, len(cs))
 	for _, c := range cs {
-		if !c.IsAuto {
-			out = append(out, comboItem{Value: strconv.FormatInt(c.ID, 10), Label: c.Name})
-		}
+		out = append(out, comboItem{Value: strconv.FormatInt(c.ID, 10), Label: c.Name})
 	}
 	return out
 }
 
-// nonAutoCollectionValues returns the selected collection ids that are
-// user-selectable (non-auto), so auto collections never appear as combo
-// selections even though they are part of the feed's membership.
+// nonAutoCollectionValues renders the selected collection ids as combo values.
 func nonAutoCollectionValues(collections []store.Collection, ids []int64) []string {
 	selectable := map[int64]bool{}
 	for _, c := range collections {
-		if !c.IsAuto {
-			selectable[c.ID] = true
-		}
+		selectable[c.ID] = true
 	}
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {
@@ -144,21 +139,28 @@ func feedIDs(feeds []store.Feed) []string {
 	return out
 }
 
-// removeFeedURL is the per-feed remove endpoint prefix for a user collection, or
-// "" for an auto collection (its chips are readonly, so no removal is offered).
-func removeFeedURL(c store.Collection) string {
-	if c.IsAuto {
-		return ""
-	}
-	return "/collections/" + strconv.FormatInt(c.ID, 10) + "/remove-feed/"
+// removeAuthorURL is the per-author remove endpoint prefix for a collection.
+func removeAuthorURL(c store.Collection) string {
+	return "/collections/" + strconv.FormatInt(c.ID, 10) + "/remove-author/"
 }
 
-// removeViewURL is the per-view remove endpoint prefix for a user collection.
-func removeViewURL(c store.Collection) string {
-	if c.IsAuto {
-		return ""
+// authorIDs renders author ids as combo values, in the same order as
+// authorItems.
+func authorRowIDs(authors []authorRow) []string {
+	out := make([]string, 0, len(authors))
+	for _, a := range authors {
+		out = append(out, strconv.FormatInt(a.ID, 10))
 	}
-	return "/collections/" + strconv.FormatInt(c.ID, 10) + "/remove-view/"
+	return out
+}
+
+// authorItems maps author rows to combo items (id value, name label).
+func authorRowItems(authors []authorRow) []comboItem {
+	out := make([]comboItem, 0, len(authors))
+	for _, a := range authors {
+		out = append(out, comboItem{Value: strconv.FormatInt(a.ID, 10), Label: a.Name})
+	}
+	return out
 }
 
 // viewIDs renders view ids as combo values, in the same order as viewItems.
