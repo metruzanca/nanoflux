@@ -556,11 +556,13 @@ for a clean reimplementation.
 ## Pagination ("load older items")
 
 A feed may advertise a next page via a feed-level `rel="next"` link or a
-`page=`-style query. The first poll records that cursor. The feed's card on its
-author page offers a **"load older items"** button which walks up to 5 pages per
-click (bounded so an unbounded history cannot stall the request) until the
-history is exhausted, refreshing the author's item list as it goes. Routine
-polls never touch the cursor, so they cannot clobber an in-progress backfill.
+`page=`-style query. The first poll records that cursor. The feed's page and its
+settings panel both show a **"load older items"** button which walks up to 5
+pages per click (bounded so an unbounded history cannot stall the request)
+until the history is exhausted. A request from the feed page carries the page's
+current tab/sort/filters and the response out-of-band swaps the item list, so
+the newly loaded entries appear without a reload. Routine polls never touch the
+cursor, so they cannot clobber an in-progress backfill.
 
 ## Configuration
 

@@ -29,8 +29,10 @@ templ feedsPage(u store.User, rows []feedRow) {
 	</ul>
 }
 
-// feedPage is one feed's item list.
-templ feedPage(u store.User, r feedRow, scoped scopedItemsData) {
+// feedPage is one feed's item list. The history card sits above the list so
+// "load older items" is reachable where the entries are read, not only from the
+// feed's settings panel.
+templ feedPage(u store.User, r feedRow, scoped scopedItemsData, history feedHistoryData) {
 	<div class="row">
 		<h1>{ r.Title }</h1>
 		<div class="row-actions">
@@ -44,6 +46,7 @@ templ feedPage(u store.User, r feedRow, scoped scopedItemsData) {
 		</div>
 	</div>
 	@FeedsList([]feedRow{r})
+	@feedHistoryCard(history)
 	@ScopedItems(scoped)
 }
 

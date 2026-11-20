@@ -48,7 +48,10 @@ func (s *Server) feedPage(w http.ResponseWriter, r *http.Request) {
 	unread, _ := s.store.Items.CountUnread(u.ID, f.ID)
 	row := s.feedRowFor(u.ID, f, authorName, u.Timezone, unread)
 	scoped := s.feedScopedItems(u.ID, f, itemsView(r), sortsTime.coerce(itemSortOf(r)), u.Timezone, filtersFromRequest(r))
-	web.Render(w, r, basePage(f.Title, u, feedPage(u, row, scoped)))
+	history := s.feedHistoryData(u.ID, f, u.Timezone)
+	history.Query = "?tab=" + scoped.View + "&sort=" + scoped.Sort.param()
+	history.Query = scoped.Filters.appendFilters(history.Query)
+	web.Render(w, r, basePage(f.Title, u, feedPage(u, row, scoped, history)))
 }
 
 // feedItems returns the feed page's list fragment for paging and tab changes.

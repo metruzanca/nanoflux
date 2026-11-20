@@ -905,7 +905,10 @@ func (p *Poller) pollOne(ctx context.Context, f store.Feed) (int, error) {
 	// "load older items". Detection is cheap (parsing only) — no extra fetches.
 	// This only happens on the first poll (a newly added feed): routine polls
 	// leave the cursor untouched so they can't clobber a user's in-progress
-	// "load older items" walk by resetting it to page two.
+	// "load older items" walk by resetting it to page two. An empty cursor is
+	// not refilled on every poll: it is also the exhausted state of a feed that
+	// has walked its whole history, and refilling would make the control
+	// reappear forever.
 	if f.LastPolledAt == "" {
 		if err := p.store.Feeds.SetNextPageURL(f.ID, res.NextPageURL); err != nil {
 			return newItems, err

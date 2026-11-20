@@ -556,8 +556,11 @@ parallel implementation.
 author's assigned feeds also render as cards inside the `details.author-feeds`
 section of `/authors/{id}` (`FeedRow`), carrying refresh
 (`POST /feeds/{id}/refresh`), an edit link (`GET /feeds/{id}/edit`), the
-external home/feed link, the last-polled line and the cached-media stat. "load
-older items" (`POST /feeds/{id}/older`) appends OOB to the author's item list.
+external home/feed link, the last-polled line and the cached-media stat. The
+feed page and the feed editor both carry a history card with "load older items"
+(`POST /feeds/{id}/older`); a page request carries the list's tab, sort and
+filters and OOB-swaps `#scoped-items` so the loaded entries appear, while an
+editor request only refreshes the card.
 An unassigned feed appears only in the library, `/domains` and the global
 lists, and `FeedRow` links its title to `/feeds/{id}`.
 

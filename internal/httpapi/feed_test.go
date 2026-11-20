@@ -173,9 +173,16 @@ func TestFeedOlder(t *testing.T) {
 		t.Fatalf("feed settings missing load-older control: %s", body)
 	}
 
+	// The feed page shows it too, next to the entries it loads.
+	page := doGet(h, "/feeds/"+itoa(f.ID), cookie).Body.String()
+	if !strings.Contains(page, "load older items") {
+		t.Fatalf("feed page missing load-older control: %s", page)
+	}
+
 	// Clicking it imports page 2 and reports how many items/unread it produced;
-	// the cursor is now exhausted.
-	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/older", nil, cookie)
+	// the feed page's request also carries the list query, so the response
+	// refreshes the item list out of band. The cursor is now exhausted.
+	rr := doForm(h, "POST", "/feeds/"+itoa(f.ID)+"/older?tab=unread&sort=newest", nil, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("POST /older status = %d, want 200: %s", rr.Code, rr.Body.String())
 	}
@@ -185,6 +192,12 @@ func TestFeedOlder(t *testing.T) {
 	}
 	if !strings.Contains(out, "full history loaded") {
 		t.Fatalf("older response missing exhausted note: %s", out)
+	}
+	if !strings.Contains(out, `id="scoped-items" hx-swap-oob="outerHTML"`) {
+		t.Fatalf("feed page load should swap the item list: %s", out)
+	}
+	if !strings.Contains(out, "old one") || !strings.Contains(out, "old two") {
+		t.Fatalf("feed page load should include the new entries: %s", out)
 	}
 
 	// Both older items are stored, unread; the cursor is cleared.

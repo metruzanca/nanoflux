@@ -2029,6 +2029,14 @@ func (s *Server) feedOlder(w http.ResponseWriter, r *http.Request) {
 	}
 	data = s.feedHistoryData(u.ID, f, u.Timezone)
 	data.Message = "loaded " + strconv.Itoa(newItems) + " items · " + strconv.Itoa(data.Unread) + " unread"
+	// A request from the feed page carries the list query, so refresh the list
+	// out of band with the new entries; the feed editor has no item list.
+	if r.URL.Query().Get("tab") != "" {
+		scoped := s.feedScopedItems(u.ID, f, itemsView(r), itemSortOf(r), u.Timezone, filtersFromRequest(r))
+		scoped.SwapOOB = true
+		web.Render(w, r, templ.Join(feedHistoryCard(data), ScopedItems(scoped)))
+		return
+	}
 	renderCard(http.StatusOK)
 }
 

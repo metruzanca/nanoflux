@@ -67,8 +67,10 @@ func feedsPage(u store.User, rows []feedRow) templ.Component {
 	})
 }
 
-// feedPage is one feed's item list.
-func feedPage(u store.User, r feedRow, scoped scopedItemsData) templ.Component {
+// feedPage is one feed's item list. The history card sits above the list so
+// "load older items" is reachable where the entries are read, not only from the
+// feed's settings panel.
+func feedPage(u store.User, r feedRow, scoped scopedItemsData, history feedHistoryData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -96,7 +98,7 @@ func feedPage(u store.User, r feedRow, scoped scopedItemsData) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(r.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_feedlibrary.templ`, Line: 35, Col: 15}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_feedlibrary.templ`, Line: 37, Col: 15}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -121,7 +123,7 @@ func feedPage(u store.User, r feedRow, scoped scopedItemsData) templ.Component {
 		var templ_7745c5c3_Var4 templ.SafeURL
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/feeds/" + strconv.FormatInt(r.ID, 10) + "/edit"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_feedlibrary.templ`, Line: 42, Col: 101}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_feedlibrary.templ`, Line: 44, Col: 101}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -140,6 +142,10 @@ func feedPage(u store.User, r feedRow, scoped scopedItemsData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		templ_7745c5c3_Err = FeedsList([]feedRow{r}).Render(ctx, templ_7745c5c3_Buffer)
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = feedHistoryCard(history).Render(ctx, templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -180,7 +186,7 @@ func feedEditPage(u store.User, d feedsData, r feedRow) templ.Component {
 		var templ_7745c5c3_Var6 templ.SafeURL
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/feeds/" + strconv.FormatInt(r.ID, 10)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_feedlibrary.templ`, Line: 54, Col: 77}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_feedlibrary.templ`, Line: 57, Col: 77}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -193,7 +199,7 @@ func feedEditPage(u store.User, d feedsData, r feedRow) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue("feed-acc-" + strconv.FormatInt(r.ID, 10))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_feedlibrary.templ`, Line: 56, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/httpapi/views_feedlibrary.templ`, Line: 59, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 		if templ_7745c5c3_Err != nil {
