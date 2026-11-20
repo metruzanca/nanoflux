@@ -163,11 +163,13 @@ type ItemSource struct {
 }
 
 // ItemViewSource is one saved view that brings an item into a collection when
-// none of the collection's member feeds do.
+// none of the collection's member feeds do. A collection groups authors, so the
+// view's author is the source the UI shows; the view's own title stays out of
+// the item's source line.
 type ItemViewSource struct {
-	ID       int64
-	Title    string
-	AuthorID int64 // the view's author, for the source line's internal link
+	ID         int64
+	AuthorID   int64
+	AuthorName string
 }
 
 // TagGroup is one tag predicate from a filter row: its tags are combined with

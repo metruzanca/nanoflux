@@ -29,6 +29,26 @@ func savedViewFixture(t *testing.T, s *Server) (store.User, store.Author, store.
 	return u, a, f
 }
 
+// itemMetaHTML returns the rendered meta line of an item row, so a test can
+// assert on one row without the rest of the page matching too.
+func itemMetaHTML(body string, itemID int64) string {
+	start := strings.Index(body, `id="item-`+itoa(itemID)+`"`)
+	if start < 0 {
+		return ""
+	}
+	row := body[start:]
+	if end := strings.Index(row, "</li>"); end >= 0 {
+		row = row[:end]
+	}
+	if i := strings.Index(row, `class="item-meta"`); i >= 0 {
+		row = row[i:]
+		if end := strings.Index(row, "</div>"); end >= 0 {
+			row = row[:end]
+		}
+	}
+	return row
+}
+
 func TestSavedViewFilterParamsRoundTrip(t *testing.T) {
 	in := listFilters{
 		{Kind: filterKindTag, Action: filterShow, Combine: filterAll, Values: []string{"r/golang", "r/rust"}},
@@ -530,10 +550,11 @@ func TestCollectionViewsScopeAndCounts(t *testing.T) {
 	if strings.Contains(body, "Misc post") {
 		t.Fatalf("non-matching view item leaked into the collection: %s", body)
 	}
-	// The post that only the view brings in names that view and links to it.
-	viewHref := "/authors/" + itoa(author.ID) + "?view=" + viewID
-	if !strings.Contains(body, "from view") || !strings.Contains(body, `href="`+viewHref+`"`) {
-		t.Fatalf("view-sourced item should link its view: %s", body)
+	// The post that only the view brings in names the view's author, and does
+	// not surface the view itself.
+	authorHref := "/authors/" + itoa(author.ID)
+	if strings.Contains(body, "from view") || !strings.Contains(body, `href="`+authorHref+`"`) {
+		t.Fatalf("view-sourced item should link its author: %s", body)
 	}
 	if !strings.Contains(body, "sources (1)") {
 		t.Fatalf("collection sources count should be its member authors: %s", body)
@@ -619,10 +640,9 @@ func TestCollectionViewSourceOnlyWhenViewSoleSource(t *testing.T) {
 	if err := s.store.Collections.AddAuthor(u.ID, c.ID, member.AuthorID); err != nil {
 		t.Fatal(err)
 	}
-	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+	if _, err := s.store.SavedViews.Create(u.ID, store.SavedView{
 		AuthorID: author.ID, Title: "Rust", Filters: []string{"tag:show:r/rust"},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -630,39 +650,46 @@ func TestCollectionViewSourceOnlyWhenViewSoleSource(t *testing.T) {
 	if !strings.Contains(body, "Member Rust post") || !strings.Contains(body, "Outside Rust post") {
 		t.Fatalf("collection should show both rust posts: %s", body)
 	}
-	if got := strings.Count(body, "from view"); got != 1 {
-		t.Fatalf("only the view-only item should claim the view, got %d: %s", got, body)
-	}
-	viewHref := "/authors/" + itoa(author.ID) + "?view=" + itoa(view.ID)
-	if !strings.Contains(body, `href="`+viewHref+`"`) ||
-		!strings.Contains(body, "from view") {
-		t.Fatalf("view-only item should link its view: %s", body)
+	if strings.Contains(body, "from view") {
+		t.Fatalf("collection cards should not name views: %s", body)
 	}
 	if !strings.Contains(body, `id="item-`+itoa(outsideID)+`"`) {
-		t.Fatalf("outside item should be the linked view row: %s", body)
+		t.Fatalf("outside item should be the view-sourced row: %s", body)
+	}
+	meta := itemMetaHTML(body, outsideID)
+	if !strings.Contains(meta, `href="/authors/`+itoa(author.ID)+`"`) ||
+		!strings.Contains(meta, author.Name) {
+		t.Fatalf("view-only card should link its author: %s", meta)
 	}
 
 	modal := doGet(h, "/items/"+itoa(outsideID)+"/view?collection="+itoa(c.ID), cookie).Body.String()
-	if !strings.Contains(modal, "from view") || !strings.Contains(modal, `href="`+viewHref+`"`) {
-		t.Fatalf("item modal should link the view when opened from the collection: %s", modal)
+	if strings.Contains(modal, "from view") {
+		t.Fatalf("item modal should not name views: %s", modal)
+	}
+	if !strings.Contains(modal, `href="/authors/`+itoa(author.ID)+`"`) {
+		t.Fatalf("item modal should link the view's author: %s", modal)
 	}
 	plainModal := doGet(h, "/items/"+itoa(outsideID)+"/view", cookie).Body.String()
-	if strings.Contains(plainModal, "from view") {
+	if strings.Contains(plainModal, `href="/authors/`+itoa(author.ID)+`"`) {
 		t.Fatalf("item modal outside a collection should not claim a view source: %s", plainModal)
 	}
 
-	// A row toggle carries the collection context and keeps the link.
+	// A row toggle carries the collection context and keeps its author.
 	rr := doForm(h, "POST", "/items/"+itoa(outsideID)+"/favorite", url.Values{"collection": {itoa(c.ID)}}, cookie)
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "from view") {
-		t.Fatalf("toggled row should keep its view link: %d %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Fatalf("toggle row: %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `href="/authors/`+itoa(author.ID)+`"`) ||
+		strings.Contains(rr.Body.String(), "from view") {
+		t.Fatalf("toggled row should keep its view author: %d %s", rr.Code, rr.Body.String())
 	}
 }
 
-// TestViewSourcedCardShowsOnlyTheView checks the card/detail split for a
+// TestViewSourcedCardShowsOnlyTheAuthor checks the card/detail split for a
 // collection item a saved view brings in: the card shows one source line (the
-// view link) rather than its feed and author, and the item details still name
-// them.
-func TestViewSourcedCardShowsOnlyTheView(t *testing.T) {
+// view's author) rather than its feed, the original author or the view title,
+// and the item details still name the original author as well.
+func TestViewSourcedCardShowsOnlyTheAuthor(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, author, _ := savedViewFixture(t, s)
@@ -684,41 +711,37 @@ func TestViewSourcedCardShowsOnlyTheView(t *testing.T) {
 	if err := s.store.Collections.AddAuthor(u.ID, c.ID, author.ID); err != nil {
 		t.Fatal(err)
 	}
-	view, err := s.store.SavedViews.Create(u.ID, store.SavedView{
+	if _, err := s.store.SavedViews.Create(u.ID, store.SavedView{
 		AuthorID: author.ID, Title: "Rust", Filters: []string{"tag:show:r/rust"},
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 
 	body := doGet(h, "/collections/"+itoa(c.ID), cookie).Body.String()
-	start := strings.Index(body, `id="item-`+itoa(outsideID)+`"`)
-	if start < 0 {
+	if !strings.Contains(body, `id="item-`+itoa(outsideID)+`"`) {
 		t.Fatalf("collection should render the view-sourced row: %s", body)
 	}
-	row := body[start:]
-	if end := strings.Index(row, "</li>"); end >= 0 {
-		row = row[:end]
+	meta := itemMetaHTML(body, outsideID)
+	if strings.Contains(meta, "from view") || strings.Contains(meta, "Rust") {
+		t.Fatalf("view-sourced card should not name the view: %s", meta)
 	}
-	viewHref := "/authors/" + itoa(author.ID) + "?view=" + itoa(view.ID)
-	meta := row
-	if i := strings.Index(meta, `class="item-meta"`); i >= 0 {
-		meta = meta[i:]
-		if end := strings.Index(meta, "</div>"); end >= 0 {
-			meta = meta[:end]
-		}
-	}
-	if !strings.Contains(meta, "from view") || !strings.Contains(meta, `href="`+viewHref+`"`) {
-		t.Fatalf("view-sourced card should link only its view: %s", meta)
+	if !strings.Contains(meta, `href="/authors/`+itoa(author.ID)+`"`) || !strings.Contains(meta, author.Name) {
+		t.Fatalf("view-sourced card should link its author: %s", meta)
 	}
 	if strings.Contains(meta, "Outside author") || strings.Contains(meta, "Outside feed") ||
 		strings.Contains(meta, `href="/authors/`+itoa(outsideAuthor.ID)+`"`) {
-		t.Fatalf("view-sourced card should not name its feed or author: %s", meta)
+		t.Fatalf("view-sourced card should not name its feed or original author: %s", meta)
 	}
 
 	modal := doGet(h, "/items/"+itoa(outsideID)+"/view?collection="+itoa(c.ID), cookie).Body.String()
+	if strings.Contains(modal, "from view") {
+		t.Fatalf("item details should not name the view: %s", modal)
+	}
 	if !strings.Contains(modal, "Outside author") || !strings.Contains(modal, `href="/authors/`+itoa(outsideAuthor.ID)+`"`) {
 		t.Fatalf("item details should still name the feed author: %s", modal)
+	}
+	if !strings.Contains(modal, `href="/authors/`+itoa(author.ID)+`"`) {
+		t.Fatalf("item details should link the view's author: %s", modal)
 	}
 }
 

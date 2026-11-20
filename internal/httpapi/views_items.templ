@@ -172,20 +172,43 @@ templ sourcesList(sources []store.ItemSource) {
 	}
 }
 
-// viewSourcesList renders the saved views that a collection reaches an item
-// through when that item's own feeds are not collection members.
-templ viewSourcesList(sources []store.ItemViewSource) {
-	if len(sources) == 1 {
-		· from view <a href={ templ.URL(savedViewAuthorURL(sources[0].AuthorID, sources[0].ID)) } title={ "open the view that matches this post" }>{ sources[0].Title }</a>
-	} else if len(sources) > 1 {
-		· from views
-		for i, v := range sources {
-			if i > 0 {
-				{ ", " }
-			}
-			<a href={ templ.URL(savedViewAuthorURL(v.AuthorID, v.ID)) } title={ "open the view that matches this post" }>{ v.Title }</a>
+// viewSourceLinks renders the authors of the saved views that bring an item
+// into a collection. A collection groups authors, so the author is the visible
+// source; the view itself stays out of the item's source line.
+templ viewSourceLinks(sources []store.ItemViewSource) {
+	for i, src := range viewSourceAuthorList(sources) {
+		if i > 0 {
+			{ ", " }
+		}
+		if src.AuthorID > 0 {
+			<a href={ templ.URL("/authors/" + strconv.FormatInt(src.AuthorID, 10)) }>{ viewSourceAuthorName(src) }</a>
+		} else {
+			<span>{ viewSourceAuthorName(src) }</span>
 		}
 	}
+}
+
+// viewSourceAuthorList dedupes view sources by author, in first-seen order.
+func viewSourceAuthorList(sources []store.ItemViewSource) []store.ItemViewSource {
+	out := make([]store.ItemViewSource, 0, len(sources))
+	seen := make(map[int64]bool, len(sources))
+	for _, src := range sources {
+		if src.AuthorID <= 0 || seen[src.AuthorID] {
+			continue
+		}
+		seen[src.AuthorID] = true
+		out = append(out, src)
+	}
+	return out
+}
+
+// viewSourceAuthorName is a view author's display name, falling back to "author"
+// when the row is gone.
+func viewSourceAuthorName(src store.ItemViewSource) string {
+	if name := strings.TrimSpace(src.AuthorName); name != "" {
+		return name
+	}
+	return "author"
 }
 
 // attrParts renders an attribution as space-separated parts, linking the ones
@@ -259,10 +282,10 @@ templ itemRowInner(it store.ItemWithFeed, v itemVisuals, hideAuthor, oob bool) {
 							// source is plain text, not a navigation link.
 							<span>saved</span><a href={ templ.URL(it.Link) } target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" class="external"></a>
 						} else if len(it.ViewSources) > 0 {
-							// A card carries one source line. A view-sourced row
-							// names the view instead of its feed/author, which
-							// stay available in the item details.
-							@viewSourcesList(it.ViewSources)
+							// A collection groups authors, so a view-sourced row
+							// names the author whose view brought it in, not
+							// the view or its title.
+							@viewSourceLinks(it.ViewSources)
 						} else if len(it.Attribution) > 0 {
 							@attrParts(it.Attribution)
 						} else if it.AuthorName != "" && !hideAuthor {
@@ -912,7 +935,10 @@ templ itemViewInner(d itemViewData, v itemVisuals) {
 				}
 			}
 			@sourcesList(d.Sources)
-			@viewSourcesList(d.ViewSources)
+			if len(d.ViewSources) > 0 {
+				·
+				@viewSourceLinks(d.ViewSources)
+			}
 			if d.PublishedAt != "" {
 				· { web.TimeFmt(d.Timezone, d.PublishedAt) }
 			}

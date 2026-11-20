@@ -512,10 +512,9 @@ func (s *Server) viewFiltersFromViews(userID int64, views []store.SavedView, tz 
 }
 
 // collectionViewMatch is one usable saved view in a collection: its item
-// predicate plus the id and title used by a view-source link.
+// predicate plus the id and author used by view-source attribution.
 type collectionViewMatch struct {
 	ID        int64
-	Title     string
 	AuthorID  int64
 	Predicate store.ViewFilter
 }
@@ -533,7 +532,7 @@ func (s *Server) collectionViewFilters(userID, collectionID int64, tz string) []
 
 // collectionViewMatches resolves a collection's member views into item
 // predicates. Unfiltered legacy views are skipped, matching the collection
-// scope. The id and title ride along for view-source attribution.
+// scope. The id and author ride along for view-source attribution.
 func (s *Server) collectionViewMatches(userID, collectionID int64, tz string) []collectionViewMatch {
 	views, _ := s.store.SavedViews.ListByCollection(userID, collectionID)
 	out := make([]collectionViewMatch, 0, len(views))
@@ -544,7 +543,7 @@ func (s *Server) collectionViewMatches(userID, collectionID int64, tz string) []
 		}
 		tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 		out = append(out, collectionViewMatch{
-			ID: v.ID, Title: v.Title, AuthorID: v.AuthorID,
+			ID: v.ID, AuthorID: v.AuthorID,
 			Predicate: store.ViewFilter{
 				AuthorID:  v.AuthorID,
 				TagGroups: tagGroups, FeedGroups: feedGroups, AuthorGroups: authorGroups,
@@ -557,9 +556,9 @@ func (s *Server) collectionViewMatches(userID, collectionID int64, tz string) []
 
 // annotateCollectionViews marks the items a collection reaches only through a
 // member view, meaning neither their owner feed nor any cross-feed membership
-// is a collection member feed. Those items carry a link to the matching view so
-// the reason they are here is visible, and CollectionID lets a row toggle
-// preserve the context through its swap.
+// is a collection member feed. Those items carry the view's author so the reason
+// they are here is visible, and CollectionID lets a row toggle preserve the
+// context through its swap.
 func (s *Server) annotateCollectionViews(userID, collectionID int64, tz string, items []store.ItemWithFeed) {
 	if collectionID <= 0 || len(items) == 0 {
 		return
@@ -595,6 +594,10 @@ func (s *Server) annotateCollectionViews(userID, collectionID int64, tz string, 
 		log.Error("match collection views", "collection_id", collectionID, "err", err)
 		return
 	}
+	if len(matched) == 0 {
+		return
+	}
+	names := s.savedViewAuthorNames(userID)
 	for id, viewIndexes := range matched {
 		i, ok := index[id]
 		if !ok {
@@ -605,7 +608,8 @@ func (s *Server) annotateCollectionViews(userID, collectionID int64, tz string, 
 				continue
 			}
 			items[i].ViewSources = append(items[i].ViewSources, store.ItemViewSource{
-				ID: matches[vi].ID, Title: matches[vi].Title, AuthorID: matches[vi].AuthorID,
+				ID: matches[vi].ID, AuthorID: matches[vi].AuthorID,
+				AuthorName: names[matches[vi].AuthorID],
 			})
 		}
 	}

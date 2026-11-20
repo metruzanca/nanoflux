@@ -104,8 +104,8 @@ func TestDedupItems(t *testing.T) {
 		item("Same post", 1),
 		item("Same post", 2),
 	}
-	items[0].ViewSources = []store.ItemViewSource{{ID: 7, Title: "First"}}
-	items[1].ViewSources = []store.ItemViewSource{{ID: 8, Title: "Second"}, {ID: 7, Title: "First"}}
+	items[0].ViewSources = []store.ItemViewSource{{ID: 7, AuthorID: 70, AuthorName: "First"}}
+	items[1].ViewSources = []store.ItemViewSource{{ID: 8, AuthorID: 80, AuthorName: "Second"}, {ID: 7, AuthorID: 70, AuthorName: "First"}}
 	got = dedupItems(items)
 	if len(got) != 1 || len(got[0].ViewSources) != 2 ||
 		got[0].ViewSources[0].ID != 7 || got[0].ViewSources[1].ID != 8 {

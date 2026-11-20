@@ -77,7 +77,7 @@ func dedupItems(items []store.ItemWithFeed) []store.ItemWithFeed {
 			})
 		}
 		// Keep the view sources of every merged duplicate: the survivor then
-		// links each view that also put the content in the collection.
+		// shows every author whose view also put the content in the collection.
 		for _, vs := range it.ViewSources {
 			seen := false
 			for _, have := range surv.ViewSources {
