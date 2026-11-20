@@ -326,6 +326,12 @@ func TestHomePinnedCollectionIncludesViews(t *testing.T) {
 	s.store.Users.SetHomeConfig(u.ID, `[{"kind":"collection","ref_id":`+itoa(col.ID)+`}]`)
 
 	body := doGet(h, "/", cookie).Body.String()
+	// The section must actually render as a dashboard section, not silently
+	// degrade to the unread fallback (which would also contain the item, so a
+	// bare item check cannot tell the two apart).
+	if !strings.Contains(body, `id="home-sections"`) {
+		t.Fatalf("pinned view collection should render a dashboard: %s", body)
+	}
 	if !strings.Contains(body, "View cat") {
 		t.Fatalf("pinned collection should include its view's items: %s", body)
 	}

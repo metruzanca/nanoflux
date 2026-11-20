@@ -848,6 +848,17 @@ func TestMagicSort(t *testing.T) {
 	if len(page2) != 2 || page2[0].FeedID != neutral.ID || page2[1].FeedID != lowered.ID {
 		t.Fatalf("magic page 2: %+v", page2)
 	}
+
+	// A filter that forces the hand-written dynamic query (here a negative feed
+	// filter) must produce the same order. Its favorite-count join belongs after
+	// the SELECT's FROM clause, not before the SELECT.
+	dyn, _, err := s.Items.ListPage(u.ID, ItemFilter{Magic: true, ExcludeFeedID: lowered.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("magic dynamic ListPage: %v", err)
+	}
+	if len(dyn) != 3 || dyn[0].FeedID != raised.ID || dyn[1].FeedID != neutral.ID || dyn[2].FeedID != neutral.ID {
+		t.Fatalf("magic dynamic order: %+v", dyn)
+	}
 }
 
 // The momentum sort groups items into author blocks, fewest items first, and

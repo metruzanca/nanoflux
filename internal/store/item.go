@@ -808,6 +808,12 @@ func (s *ItemStore) listPageTaggedFrom(userID int64, f ItemFilter, limit int, fr
 		b.WriteString(itemListColumnNames)
 		b.WriteString(" FROM (")
 	}
+	extra := ""
+	if f.Momentum {
+		extra = `,
+       COUNT(*) OVER (PARTITION BY f.author_id) AS author_backlog`
+	}
+	b.WriteString(itemListColumnsExtra(from, extra))
 	if f.Magic {
 		b.WriteString(` LEFT JOIN (
 			SELECT feed_id, COUNT(*) AS fav_count FROM items
@@ -815,12 +821,6 @@ func (s *ItemStore) listPageTaggedFrom(userID int64, f ItemFilter, limit int, fr
 		) fc ON fc.feed_id = i.feed_id`)
 		args = append(args, userID)
 	}
-	extra := ""
-	if f.Momentum {
-		extra = `,
-       COUNT(*) OVER (PARTITION BY f.author_id) AS author_backlog`
-	}
-	b.WriteString(itemListColumnsExtra(from, extra))
 	b.WriteString(" WHERE i.user_id = ?")
 	args = append(args, userID)
 	appendItemFilterPredicates(&b, &args, f, from == "items")
