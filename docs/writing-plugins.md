@@ -477,10 +477,13 @@ func (p *AppC) Configure(values map[string]string) {
 ```
 
 `Kind` is `text` (default), `url`, `password`, or `bool`. A `password` value is
-write-only: the admin form shows only whether a value is set (never the value),
-and a blank submit leaves the stored one unchanged, so a secret survives a save.
-A `bool` renders as a checkbox and reaches `Configure` as `"1"` (on) or `"0"`
-(off). `Required` rejects an empty value on save.
+a write-only secret (an API token or session cookie): the admin form shows only
+whether a value is set (never the value), and a blank submit leaves the stored
+one unchanged, so a secret survives a save. It renders as a plain token input
+with password-manager opt-outs, not an HTML password field, so a manager never
+offers to fill or save it. A `bool` renders as a checkbox and reaches
+`Configure` as `"1"` (on) or `"0"` (off). `Required` rejects an empty value on
+save.
 
 Delivery is a **push**: the host calls `Configure` once at load with the stored
 values (so `Match` can rely on configuration — it receives no `Host`) and again

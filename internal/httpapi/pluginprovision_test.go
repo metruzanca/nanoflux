@@ -216,6 +216,23 @@ func TestAdminPluginSettings(t *testing.T) {
 	if !strings.Contains(body, "set)") {
 		t.Fatalf("password field should report it is set: %s", body)
 	}
+	// A plugin token is not a login credential, so it must not be an HTML
+	// password input (which triggers password-manager autofill and save
+	// prompts) and must carry the managers' ignore attributes.
+	if strings.Contains(body, `type="password"`) {
+		t.Fatalf("plugin token rendered as a password input: %s", body)
+	}
+	for _, want := range []string{
+		`autocomplete="off"`,
+		`data-1p-ignore="true"`,
+		`data-lpignore="true"`,
+		`data-bwignore="true"`,
+		`data-form-type="other"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("settings form missing %s, password managers may autofill it: %s", want, body)
+		}
+	}
 
 	// A required field cannot be cleared.
 	bad := doForm(h, "POST", "/admin/plugins/mailsite/settings", url.Values{

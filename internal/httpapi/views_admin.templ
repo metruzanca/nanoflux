@@ -114,16 +114,16 @@ templ AdminPluginsCard(rows []adminPluginRow) {
 
 // adminPluginSettingsForm is the settings form for one configurable plugin,
 // rendered inside that plugin's modal from its declared schema. A password field
-// is write-only: it shows whether a value is set and never renders the stored
-// secret back; a "clear" checkbox unsets it. Submitting re-renders the whole
-// plugins card.
+// is a write-only secret (an API token or session cookie): it shows whether a
+// value is set and never renders the stored secret back; a "clear" checkbox
+// unsets it. Submitting re-renders the whole plugins card.
 templ adminPluginSettingsForm(r adminPluginRow) {
 	<form class="stack plugin-settings" hx-post={ "/admin/plugins/" + r.Name + "/settings" } hx-target="#admin-plugins-card" hx-swap="outerHTML">
 		for _, s := range r.Settings {
 			<label>
 				{ s.Label }
 				if s.Kind == "password" {
-					<input type="password" name={ "setting_" + s.Name } placeholder={ passwordPlaceholder(s) } autocomplete="new-password"/>
+					<input type="text" name={ "setting_" + s.Name } placeholder={ passwordPlaceholder(s) } { pluginSettingAttrs()... }/>
 					if s.Set {
 						<label class="check">
 							<input type="checkbox" name={ "clear_" + s.Name } value="1"/>
@@ -131,11 +131,11 @@ templ adminPluginSettingsForm(r adminPluginRow) {
 						</label>
 					}
 				} else if s.Kind == "url" {
-					<input type="url" name={ "setting_" + s.Name } value={ s.Value } placeholder={ s.Placeholder } required?={ s.Required }/>
+					<input type="url" name={ "setting_" + s.Name } value={ s.Value } placeholder={ s.Placeholder } required?={ s.Required } { pluginSettingAttrs()... }/>
 				} else if s.Kind == "bool" {
 					<input type="checkbox" name={ "setting_" + s.Name } value="1" checked?={ s.Checked }/>
 				} else {
-					<input type="text" name={ "setting_" + s.Name } value={ s.Value } placeholder={ s.Placeholder } required?={ s.Required }/>
+					<input type="text" name={ "setting_" + s.Name } value={ s.Value } placeholder={ s.Placeholder } required?={ s.Required } { pluginSettingAttrs()... }/>
 				}
 				if s.Help != "" {
 					<span class="muted small">{ s.Help }</span>
@@ -144,6 +144,25 @@ templ adminPluginSettingsForm(r adminPluginRow) {
 		}
 		<button type="submit" class="small">save settings</button>
 	</form>
+}
+
+// pluginSettingAttrs opts a plugin settings input out of browser and password
+// manager autofill. These are configuration values pasted from a remote service
+// (an API token, a session cookie), not credentials for this app, so a manager
+// must never offer to fill or save them. They are rendered as text inputs rather
+// than type="password" for the same reason; the value stays write-only because
+// it is only ever a placeholder, never the stored secret.
+func pluginSettingAttrs() templ.Attributes {
+	return templ.Attributes{
+		"autocomplete":   "off",
+		"autocapitalize": "off",
+		"autocorrect":    "off",
+		"spellcheck":     "false",
+		"data-1p-ignore": "true",
+		"data-lpignore":  "true",
+		"data-bwignore":  "true",
+		"data-form-type": "other",
+	}
 }
 
 // passwordPlaceholder describes a write-only password field's stored state

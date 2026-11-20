@@ -1091,7 +1091,12 @@ tokens, session cookies) instead of reading env vars or a sidecar config file.
 - **UI**: the admin plugins card renders a settings form per configurable plugin
   (`POST /admin/plugins/{name}/settings`); a `password` field shows only whether
   a value is set and offers a "clear" checkbox, so a secret is never rendered
-  back. Saving stores, calls `Configure`, and re-renders the card.
+  back. It is a **token** field, not a login credential: render it as
+  `type="text"` with `autocomplete="off"` and the password managers' ignore
+  attributes (`data-1p-ignore`, `data-lpignore`, `data-bwignore`,
+  `data-form-type="other"`; `pluginSettingAttrs` in `views_admin.templ`), never
+  `type="password"`, so a manager does not offer to fill or save a session
+  cookie or API token. Saving stores, calls `Configure`, and re-renders the card.
 - A plugin whose service base URL is configurable updates what `Match`
   recognizes and what `Provision`/`Action` call when `Configure` pushes a new
   value. Plugin-specific settings belong in that plugin's own repository docs.
