@@ -515,9 +515,42 @@ if (itemDialog) {
     if (window.nanofluxDestroyHLS) window.nanofluxDestroyHLS(itemDialog);
     if (window.nanofluxDestroyProgress) window.nanofluxDestroyProgress(itemDialog);
   });
-  // The item dialog closes only via Esc (native) or the ✕ button. A click on
-  // the backdrop deliberately does NOT close it: an accidental outside click
-  // shouldn't dismiss the item (and would stop embedded video playback).
+  // Esc (native) and the ✕ button close the dialog, and so does a click on the
+  // backdrop. Only a press that both starts and ends outside the dialog counts:
+  // the coordinates keep a click in the dialog's own padding from dismissing it,
+  // and the pointerdown flag keeps a text selection dragged out of the body from
+  // doing so.
+  function outsideItemDialog(e) {
+    var r = itemDialog.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  }
+  var backdropPress = false;
+  itemDialog.addEventListener('pointerdown', function (e) {
+    backdropPress = e.target === itemDialog && outsideItemDialog(e);
+  });
+  itemDialog.addEventListener('click', function (e) {
+    var startedOutside = backdropPress;
+    backdropPress = false;
+    if (startedOutside && e.target === itemDialog && outsideItemDialog(e)) itemDialog.close();
+  });
+  // f / b toggle the open item's favorite / bookmark by clicking the header
+  // buttons, so the existing htmx POST and controls swap run unchanged. Ignore
+  // editing fields, modifiers, key repeat, and any dialog stacked above it.
+  document.addEventListener('keydown', function (e) {
+    if (!itemDialog.open || e.repeat) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var key = e.key.toLowerCase();
+    if (key !== 'f' && key !== 'b') return;
+    if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    // A native player owns f (fullscreen) while it has focus.
+    if (e.target.closest && e.target.closest('video, audio')) return;
+    var openDialogs = document.querySelectorAll('dialog[open]');
+    if (openDialogs.length && openDialogs[openDialogs.length - 1] !== itemDialog) return;
+    var btn = itemDialog.querySelector(key === 'f' ? '.fav-btn' : '.bookmark-btn');
+    if (!btn) return;
+    e.preventDefault();
+    btn.click();
+  });
 }
 
 // youtubeEmbed reports whether an iframe is a YouTube player. Only YouTube's

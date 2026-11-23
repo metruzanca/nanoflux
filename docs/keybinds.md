@@ -12,12 +12,17 @@ update both when a binding changes.
 | Key | Action | Context |
 | --- | --- | --- |
 | `←` / `→` | Previous / next item | Item preview is open |
+| `f` / `b` | Favorite / bookmark the open item | Item preview is open |
 | `Ctrl+P` / `⌘P` or `Ctrl+Shift+P` / `⌘Shift+P` | Open the command palette and search | Anywhere |
 | `Esc` | Close the active dialog, menu, or picker | Anywhere |
 
 ## Item preview
 
 - `←` and `→` move through the rows in the current list.
+- `f` and `b` toggle the open item's favorite and bookmark state, the same
+  action as the star and bookmark buttons in the preview header.
+- Clicking the backdrop outside the preview closes it, as does `Esc` or the ✕
+  button.
 - At the end of the loaded rows, `→` fetches the next page and continues into
   it, so reading does not stop at a page boundary.
 - The modal pager buttons and horizontal swipe use the same navigation.
