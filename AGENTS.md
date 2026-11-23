@@ -589,7 +589,11 @@ and its label names the feed. The remote opt-in is `delete_remote_<id>`, and the
 plugin panel's sync is an htmx button (`hx-params="action"`, `hx-vals`) rather
 than a form. Every delete control
 (feed, author, list, collection, saved view) follows the same rule: a
-`type="button"` explicit action, never a submit button. htmx-in-panel actions
+`type="button"` explicit action, never a submit button. No destructive control
+uses the browser's `confirm()`: `data-confirm` opens the shared in-app
+`#confirm-dialog` (via `confirmDialog` in `app.js`) and `hx-confirm` is bridged
+to it through `htmx:confirm`, because browsers can silently suppress a native
+dialog while the page is not the focused document. htmx-in-panel actions
 (refetch, refresh now, load older) use `hx-params="none"` so clicking them does
 not post the panel form. Removing an author link or view filter row fires the
 enclosing auto-save form's `change` event from `app.js`.

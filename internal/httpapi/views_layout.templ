@@ -179,6 +179,20 @@ templ topbar(u store.User) {
 	     (change-author-dialog) into it before showing. -->
 	<dialog id="change-author-dialog" class="modal"></dialog>
 
+	<!-- Confirmation dialog; app.js's confirmDialog fills it for a data-confirm
+	     control (postAction) and for an htmx hx-confirm request, instead of the
+	     browser's own confirm(), which some browsers silently suppress. -->
+	<dialog id="confirm-dialog" class="modal" aria-labelledby="confirm-dialog-message">
+		<div class="row">
+			<h2 id="confirm-dialog-message"></h2>
+			<button type="button" class="link" title="close" data-close="confirm-dialog">@web.Lucide("x")</button>
+		</div>
+		<div class="row-actions">
+			<button type="button" class="link" data-close="confirm-dialog" autofocus>cancel</button>
+			<button type="button" id="confirm-dialog-ok" class="danger">confirm</button>
+		</div>
+	</dialog>
+
 	<!-- Command palette and unified search (ctrl/cmd+p, ctrl/cmd+shift+p, or a
 	     downward swipe on the topbar). Filled client-side by app.js. -->
 	<dialog id="command-palette" class="palette">

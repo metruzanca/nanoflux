@@ -1196,6 +1196,10 @@ dialog.modal {
 dialog.modal::backdrop { background: rgba(0, 0, 0, 0.55); }
 dialog.modal h2 { margin: 0; }
 
+/* The shared confirmation dialog's heading is the prompt and may carry a
+   user-supplied feed/author/view title, so it wraps instead of widening it. */
+#confirm-dialog-message { overflow-wrap: anywhere; }
+
 /* Filter preview: wide but content-height, with keep vs delete columns. */
 dialog.filter-preview-dialog {
   width: min(56rem, calc(100vw - 2rem));

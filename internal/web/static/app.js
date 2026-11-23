@@ -1155,20 +1155,52 @@ function postForm(path) {
   f.submit();
 }
 
+// confirmDialog shows the shared in-app confirmation dialog (#confirm-dialog)
+// and runs the pending action only once the user confirms. It replaces
+// window.confirm, which some browsers silently suppress while the page is not
+// the focused document (so a delete click just looks like a no-op). The message
+// is set as text, never markup: it carries user titles. The label defaults from
+// the message, so a "delete …?" prompt confirms with "delete".
+var confirmPending = null;
+
+function confirmDialog(message, label, run) {
+  var d = document.getElementById('confirm-dialog');
+  var msg = document.getElementById('confirm-dialog-message');
+  var ok = document.getElementById('confirm-dialog-ok');
+  if (!d || !d.showModal || !msg || !ok) {
+    if (!message || window.confirm(message)) run();
+    return;
+  }
+  msg.textContent = message;
+  ok.textContent = label || (/^delete\b/i.test(message) ? 'delete' : 'confirm');
+  confirmPending = run;
+  d.showModal();
+}
+
 // postAction submits a destructive control as an explicit POST instead of a
 // form submit button, so pressing Enter in the surrounding form can never
-// trigger it. The control names its target with data-post-action and may list
-// field names to copy from the nearest form with data-include (comma separated;
-// unchecked checkboxes are skipped). CSRF rides the same meta token htmx uses.
+// trigger it. The control names its target with data-post-action, may carry a
+// data-confirm message (shown in the shared confirm dialog) and may list field
+// names to copy from the nearest form with data-include (comma separated;
+// unchecked checkboxes are skipped). The target and included values are read
+// when the control is clicked, so a panel that re-renders while the dialog is
+// open cannot change what is submitted. CSRF rides the same meta token htmx
+// uses.
 function postAction(el) {
   var msg = el.getAttribute('data-confirm');
-  if (msg && !window.confirm(msg)) return;
-  var form = document.createElement('form');
-  form.method = 'POST';
-  form.action = el.getAttribute('data-post-action');
-  form.style.display = 'none';
-  var csrf = document.querySelector('meta[name="csrf-token"]');
-  if (csrf && csrf.getAttribute('content')) addFormValue(form, 'csrf_token', csrf.getAttribute('content'));
+  var action = el.getAttribute('data-post-action');
+  var fields = includedFields(el);
+  var run = function () { submitPostAction(action, fields); };
+  if (msg) {
+    confirmDialog(msg, el.getAttribute('data-confirm-label'), run);
+    return;
+  }
+  run();
+}
+
+// includedFields reads the data-include field values of a postAction control.
+function includedFields(el) {
+  var fields = [];
   var scope = el.closest('form') || document;
   var names = (el.getAttribute('data-include') || '').split(',');
   for (var i = 0; i < names.length; i++) {
@@ -1176,8 +1208,19 @@ function postAction(el) {
     if (!name) continue;
     var field = scope.querySelector('[name="' + name.replace(/"/g, '\\"') + '"]');
     if (!field || (field.type === 'checkbox' && !field.checked)) continue;
-    addFormValue(form, name, field.value);
+    fields.push({ name: name, value: field.value });
   }
+  return fields;
+}
+
+function submitPostAction(action, fields) {
+  var form = document.createElement('form');
+  form.method = 'POST';
+  form.action = action;
+  form.style.display = 'none';
+  var csrf = document.querySelector('meta[name="csrf-token"]');
+  if (csrf && csrf.getAttribute('content')) addFormValue(form, 'csrf_token', csrf.getAttribute('content'));
+  for (var i = 0; i < fields.length; i++) addFormValue(form, fields[i].name, fields[i].value);
   document.body.appendChild(form);
   form.submit();
 }
@@ -1661,13 +1704,51 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
 
   document.addEventListener('submit', function (e) {
     var f = e.target;
+    if (!f || !f.hasAttribute) return;
+    // Re-entry from our own requestSubmit below.
+    if (f.hasAttribute('data-confirmed')) { f.removeAttribute('data-confirmed'); return; }
     var btn = e.submitter;
     // A button may carry its own data-confirm (e.g. a future submit action
     // inside a shared form); otherwise fall back to the form's.
     var msg = (btn && btn.getAttribute && btn.getAttribute('data-confirm')) ||
-      (f && f.hasAttribute && f.hasAttribute('data-confirm') && f.getAttribute('data-confirm'));
-    if (msg && !window.confirm(msg)) e.preventDefault();
+      (f.hasAttribute('data-confirm') && f.getAttribute('data-confirm'));
+    if (!msg) return;
+    e.preventDefault();
+    var label = (btn && btn.getAttribute && btn.getAttribute('data-confirm-label')) ||
+      f.getAttribute('data-confirm-label');
+    confirmDialog(msg, label, function () {
+      f.setAttribute('data-confirmed', '1');
+      if (f.requestSubmit) f.requestSubmit(btn || undefined); else f.submit();
+    });
   }, true);
+
+  // htmx's own hx-confirm uses window.confirm; route it through the same
+  // in-app dialog so admin/user/item confirmations behave like the deletes.
+  document.body.addEventListener('htmx:confirm', function (e) {
+    var q = e.detail && e.detail.question;
+    if (!q) return;
+    e.preventDefault();
+    confirmDialog(q, e.detail.elt && e.detail.elt.getAttribute && e.detail.elt.getAttribute('data-confirm-label'), function () {
+      e.detail.issueRequest(true);
+    });
+  });
+
+  // The confirm dialog's OK button runs the pending action. Cancel, Esc or the
+  // close ✕ drop it, so a dismissed prompt can never fire later.
+  (function setupConfirmDialog() {
+    var d = byId('confirm-dialog');
+    if (!d) return;
+    var ok = byId('confirm-dialog-ok');
+    if (ok) {
+      ok.addEventListener('click', function () {
+        var run = confirmPending;
+        confirmPending = null;
+        d.close();
+        if (run) run();
+      });
+    }
+    d.addEventListener('close', function () { confirmPending = null; });
+  })();
 
   // Broken images marked data-hide-on-error hide themselves (was onerror=).
   // A thumbnail also marks its frame broken: a video keeps its play glyph, any

@@ -2566,6 +2566,17 @@ func TestFeedEditLibraryPage(t *testing.T) {
 	if strings.Contains(body, "formaction=") {
 		t.Fatalf("feed delete must not use formaction: %s", body)
 	}
+	// The prompt renders through the shared in-app confirm dialog, not the
+	// browser's confirm(), which some browsers silently suppress.
+	for _, want := range []string{
+		`id="confirm-dialog"`,
+		`id="confirm-dialog-message"`,
+		`id="confirm-dialog-ok"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("author edit page missing the shared confirm dialog %q", want)
+		}
+	}
 	if strings.Contains(body, "save author and feeds") {
 		t.Fatalf("the author edit page should not have a page-level save button: %s", body)
 	}
