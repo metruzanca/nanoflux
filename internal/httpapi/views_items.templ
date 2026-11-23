@@ -1137,7 +1137,7 @@ templ itemMenuFullSys(itemID, authorID int64, sourceURL, shareToken string, inMo
 templ itemListsDialogInner(itemID int64, items []comboItem, selected []string) {
 	<div class="row">
 		<h2>add to list</h2>
-		<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
+		<button type="button" class="link" aria-label="close" data-close-dialog>@web.Lucide("x")</button>
 	</div>
 	<form class="stack" hx-post={ "/items/" + strconv.FormatInt(itemID, 10) + "/lists" } hx-target="#item-lists-dialog" hx-swap="innerHTML">
 		@comboMulti("lists", "lists", selected, items)

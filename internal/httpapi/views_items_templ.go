@@ -5484,7 +5484,7 @@ func itemListsDialogInner(itemID int64, items []comboItem, selected []string) te
 			templ_7745c5c3_Var250 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 422, "<div class=\"row\"><h2>add to list</h2><button type=\"button\" class=\"link\" data-close-dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 422, "<div class=\"row\"><h2>add to list</h2><button type=\"button\" class=\"link\" aria-label=\"close\" data-close-dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

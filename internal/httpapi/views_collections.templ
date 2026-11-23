@@ -22,7 +22,7 @@ templ addCollectionDialog() {
 	<form class="stack" hx-post="/collections" hx-target="#add-collection-result" hx-swap="innerHTML" data-form-close-reset>
 		<div class="row">
 			<h2>add collection</h2>
-			<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
+			<button type="button" class="link" aria-label="close" data-close-dialog>@web.Lucide("x")</button>
 		</div>
 		<label>name
 			<input name="name" autofocus required/>
@@ -115,7 +115,7 @@ templ collectionPage(u store.User, d collectionData) {
 		<dialog id="collection-add-author-dialog" class="modal">
 			<div class="row">
 				<h2>add author</h2>
-				<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
+				<button type="button" class="link" aria-label="close" data-close-dialog>@web.Lucide("x")</button>
 			</div>
 			<form class="stack" hx-post={ "/collections/" + strconv.FormatInt(d.Collection.ID, 10) + "/add-author" } hx-target="#scoped-items" hx-swap="outerHTML" data-form-close-reset>
 				<input type="hidden" name="tab" value={ d.Scoped.View }/>

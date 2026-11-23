@@ -352,6 +352,40 @@ button:where(:not([data-slot])) {
 
 button.link { background: none; border: none; color: var(--accent); padding: 0; }
 
+/* Dialog close ✕ (a .link button carrying data-close / data-close-dialog and an
+   icon): a 2rem square with a real hit area, a hover fill and a focus ring. The
+   guard on a direct .ic child leaves the plain text "cancel" buttons that share
+   data-close-dialog alone. */
+button.link:is([data-close], [data-close-dialog]):has(> .ic) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 6px;
+  color: var(--muted);
+}
+/* A heading row aligns its children on the text baseline, so center the ✕
+   against the heading instead. A header that grows with its content (the item
+   dialog's title) keeps the default top alignment from its container. */
+.row > button.link:is([data-close], [data-close-dialog]):has(> .ic) {
+  align-self: center;
+}
+button.link:is([data-close], [data-close-dialog]):has(> .ic) .ic {
+  width: 18px;
+  height: 18px;
+}
+button.link:is([data-close], [data-close-dialog]):has(> .ic):hover {
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+  color: var(--fg);
+}
+button.link:is([data-close], [data-close-dialog]):has(> .ic):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Red ghost button for destructive actions: transparent, red border + text,
    light red fill on hover. Used by standalone destructive buttons (the
    "delete" forms). */

@@ -29,7 +29,7 @@ templ authorsPage(u store.User, d authorsData) {
 templ addFeedDialog() {
 	<div class="row">
 		<h2>add feed</h2>
-		<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
+		<button type="button" class="link" aria-label="close" data-close-dialog>@web.Lucide("x")</button>
 	</div>
 	<form class="stack" hx-post="/fragments/feed-preview" hx-target="#author-preview" hx-swap="innerHTML">
 		<label>url
@@ -49,7 +49,7 @@ templ createAuthorDialog() {
 	<form class="stack" hx-post="/authors">
 		<div class="row">
 			<h2>add author</h2>
-			<button type="button" class="link" data-close-dialog>@web.Lucide("x")</button>
+			<button type="button" class="link" aria-label="close" data-close-dialog>@web.Lucide("x")</button>
 		</div>
 		<label>name
 			<input name="name" autofocus required/>
