@@ -900,9 +900,9 @@ stored on `users` (schemaV43), rendered server-side into the topbar and
   (`POST /settings/auto-read`, options 3/7/30/60/off).
 - `authors.auto_read_after_days` (schemaV59, nullable) overrides that window
   per author: `NULL` inherits the account window, `0` is off for that author,
-  and a positive value is its own window. It is set on the author edit page
-  (`POST /authors/{id}/edit`, options inherit/3/7/30/60/off) and rendered by
-  `authorAutoReadCard`. Scope is the item's owner author
+  and a positive value is its own window. It is set on the author edit page's
+  card (`POST /authors/{id}/auto-read`, options inherit/3/7/30/60/off) and
+  rendered by `authorAutoReadCard`. Scope is the item's owner author
   (`items.feed_id -> feeds.author_id`), the same identity author filters use, so
   a cross-feed post owned by another author keeps that author's window.
 - `ItemStore.MarkAutoRead(userID)` is the sweep,
@@ -910,13 +910,47 @@ stored on `users` (schemaV43), rendered server-side into the topbar and
   evaluates each item's effective window (author override, else account window)
   and skips authors whose effective window is 0. It ignores favorite and
   bookmark state (both are swept) and is user-scoped through `feeds.user_id`.
+  The author join is a `LEFT JOIN` so unassigned feeds (schemaV69) inherit the
+  account window.
 - `maintenance.Sweeper` runs `MarkAutoRead` at startup and every 24h
   (`maintenance.DefaultInterval`), started in `cmd/server/main.go`. It runs for
   every user, because an author override may be on while the account window is
   off. The settings handler and the author edit handler also sweep immediately
   after a save, scoped to the changed author when one is involved.
 - The sweep only flips `read`/`read_at` — nothing is deleted, so it is
-  reversible with "mark all unread".
+  reversible with "mark all unread". Deletion is the separate opt-in sweep
+  below.
+
+## Delete old read items
+
+A second, optional window deletes read items. It is independent of auto-read:
+with the read window off it still cleans items the user marked read manually.
+
+- `users.auto_delete_after_days` (schemaV70, default 0/off) is the account
+  window; `authors.auto_delete_after_days` (nullable: NULL inherits, 0 off)
+  overrides it per author. Options are 7/30/90/180/365/off.
+- The clock is `items.read_at`, not item time: an item becomes eligible only
+  after it has been read for the window. Legacy `read = 1 AND read_at IS NULL`
+  rows are never deleted.
+- `items.unprotected_at` (schemaV70) restarts the window when an item leaves
+  its last list, favorite or bookmark. `SetFavorite(false)`,
+  `SetBookmark(false)`, `ListStore.RemoveItem` and `ListStore.Delete` stamp it;
+  favoriting, bookmarking or adding to a list clears it. Deletion also requires
+  `unprotected_at` to be older than the same window, so an accidental removal
+  gets one full window to be restored. A stamp while the item is still
+  protected is harmless because the final removal stamps it again.
+- Never deleted: unread items, items in any `list_items` row, favorites,
+  bookmarks, and items owned by the hidden system feed (saved pages).
+- `ItemStore.DeleteOldReadItems(userID)` / `DeleteOldReadItemsForAuthor` select
+  and delete in bounded 500-row write transactions (so the eligibility check
+  cannot race a favorite or list add) and return the deleted count plus the
+  cached-media keys (`items.image_cache_key` and
+  `item_enclosures.cache_key`) to purge. The FK cascade removes memberships,
+  enclosures, categories, list rows and shares.
+- `maintenance.Sweeper` runs the delete pass after the auto-read pass and purges
+  the returned blobs through `SetFileStore` (wired in `cmd/server/main.go`).
+  The settings and author save handlers also run it immediately. The query uses
+  `LEFT JOIN authors`, so unassigned feeds inherit the account window.
 
 ## Bookmarks and favorites
 

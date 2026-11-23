@@ -23,7 +23,11 @@ type Author struct {
 	// author's feeds. nil inherits users.auto_read_after_days; 0 disables
 	// auto-read for this author.
 	AutoReadAfterDays *int
-	CreatedAt         string
+	// AutoDeleteAfterDays overrides the account's delete window for this
+	// author's feeds. nil inherits users.auto_delete_after_days; 0 disables
+	// deletion for this author.
+	AutoDeleteAfterDays *int
+	CreatedAt           string
 }
 
 // AuthorWithCount joins an author with its number of feeds and the taste
@@ -103,16 +107,17 @@ func (s *AuthorStore) ListWithFeedCount(userID int64) ([]AuthorWithCount, error)
 	for _, r := range rows {
 		out = append(out, AuthorWithCount{
 			Author: toAuthor(sqlcgen.Author{
-				ID:                r.ID,
-				UserID:            r.UserID,
-				Name:              r.Name,
-				AvatarUrl:         r.AvatarUrl,
-				AvatarKey:         r.AvatarKey,
-				LastFetchedAt:     r.LastFetchedAt,
-				Description:       r.Description,
-				IsSystem:          0,
-				AutoReadAfterDays: r.AutoReadAfterDays,
-				CreatedAt:         r.CreatedAt,
+				ID:                  r.ID,
+				UserID:              r.UserID,
+				Name:                r.Name,
+				AvatarUrl:           r.AvatarUrl,
+				AvatarKey:           r.AvatarKey,
+				LastFetchedAt:       r.LastFetchedAt,
+				Description:         r.Description,
+				IsSystem:            0,
+				AutoReadAfterDays:   r.AutoReadAfterDays,
+				AutoDeleteAfterDays: r.AutoDeleteAfterDays,
+				CreatedAt:           r.CreatedAt,
 			}),
 			FeedCount: int(r.FeedCount),
 			MaxRank:   intFromSQL(r.MaxRank),
@@ -185,6 +190,28 @@ func (s *AuthorStore) SetAutoReadAfterDays(userID, id int64, days *int) error {
 	})
 	if err != nil {
 		return fmt.Errorf("set author auto-read: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// SetAutoDeleteAfterDays stores the author's delete-window override. nil
+// inherits the account window, 0 disables deletion for this author, and a
+// positive value is its own retention window.
+func (s *AuthorStore) SetAutoDeleteAfterDays(userID, id int64, days *int) error {
+	var value sql.NullInt64
+	if days != nil {
+		value = sql.NullInt64{Int64: int64(*days), Valid: true}
+	}
+	res, err := s.q.SetAuthorAutoDeleteAfterDays(context.Background(), sqlcgen.SetAuthorAutoDeleteAfterDaysParams{
+		AutoDeleteAfterDays: value,
+		ID:                  id,
+		UserID:              userID,
+	})
+	if err != nil {
+		return fmt.Errorf("set author auto-delete: %w", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound

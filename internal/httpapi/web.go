@@ -187,8 +187,11 @@ type authorsData struct {
 	FilterPreview store.AuthorFilterPreview
 	// AutoReadValue is the author's auto-read override ("inherit", "off", or a
 	// day count); AutoReadDefault labels the account window it inherits from.
-	AutoReadValue   string
-	AutoReadDefault string
+	// AutoDeleteValue/AutoDeleteDefault are the same for the delete window.
+	AutoReadValue     string
+	AutoReadDefault   string
+	AutoDeleteValue   string
+	AutoDeleteDefault string
 	// Collections are the user collections this author belongs to. The edit
 	// page saves them from an explicit card.
 	Collections       []store.Collection
@@ -2863,6 +2866,8 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 		FilterPreview:       preview,
 		AutoReadValue:       authorAutoReadValue(a.AutoReadAfterDays),
 		AutoReadDefault:     autoReadLabel(u.AutoReadAfterDays),
+		AutoDeleteValue:     authorAutoReadValue(a.AutoDeleteAfterDays),
+		AutoDeleteDefault:   autoReadLabel(u.AutoDeleteAfterDays),
 		Collections:         allCollections,
 		CollectionIDs:       collectionIDs,
 		CollectionOptions:   nonAutoCollections(allCollections),
@@ -2947,10 +2952,12 @@ func (s *Server) authorBasicsData(u store.User, a store.Author, formErr string) 
 // authorAutoReadData assembles the auto-read card for its auto-save response.
 func (s *Server) authorAutoReadData(u store.User, a store.Author, errMsg string) authorsData {
 	return authorsData{
-		Form:            authorForm{ID: a.ID},
-		AutoReadValue:   authorAutoReadValue(a.AutoReadAfterDays),
-		AutoReadDefault: autoReadLabel(u.AutoReadAfterDays),
-		AutoReadError:   errMsg,
+		Form:              authorForm{ID: a.ID},
+		AutoReadValue:     authorAutoReadValue(a.AutoReadAfterDays),
+		AutoReadDefault:   autoReadLabel(u.AutoReadAfterDays),
+		AutoDeleteValue:   authorAutoReadValue(a.AutoDeleteAfterDays),
+		AutoDeleteDefault: autoReadLabel(u.AutoDeleteAfterDays),
+		AutoReadError:     errMsg,
 	}
 }
 
@@ -3070,20 +3077,38 @@ func (s *Server) authorAutoReadUpdate(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var autoRead *int
-	value := strings.TrimSpace(r.FormValue("author_auto_read_after_days"))
-	if value != "inherit" {
-		days, ok := parseAutoReadValue(value)
+	// An absent field is invalid rather than "inherit" so a malformed post
+	// cannot silently clear an override.
+	parseWindow := func(field string, parse func(string) (int, bool)) (*int, bool) {
+		value := strings.TrimSpace(r.FormValue(field))
+		if value == "inherit" {
+			return nil, true
+		}
+		days, ok := parse(value)
 		if !ok {
-			if r.Header.Get("HX-Request") != "" {
-				w.WriteHeader(http.StatusBadRequest)
-				web.Render(w, r, authorAutoReadCard(s.authorAutoReadData(u, a, "choose an auto-read option")))
-				return
-			}
-			http.Error(w, "choose an auto-read option", http.StatusBadRequest)
+			return nil, false
+		}
+		return &days, true
+	}
+	autoRead, ok := parseWindow("author_auto_read_after_days", parseAutoReadValue)
+	if !ok {
+		if r.Header.Get("HX-Request") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			web.Render(w, r, authorAutoReadCard(s.authorAutoReadData(u, a, "choose an auto-read option")))
 			return
 		}
-		autoRead = &days
+		http.Error(w, "choose an auto-read option", http.StatusBadRequest)
+		return
+	}
+	autoDelete, ok := parseWindow("author_auto_delete_after_days", parseAutoDeleteValue)
+	if !ok {
+		if r.Header.Get("HX-Request") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			web.Render(w, r, authorAutoReadCard(s.authorAutoReadData(u, a, "choose a delete option")))
+			return
+		}
+		http.Error(w, "choose a delete option", http.StatusBadRequest)
+		return
 	}
 	if err := s.store.Authors.SetAutoReadAfterDays(u.ID, id, autoRead); err != nil {
 		log.Error("update author auto-read", "author_id", id, "err", err)
@@ -3095,9 +3120,28 @@ func (s *Server) authorAutoReadUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
 	}
-	// Apply the (possibly newly enabled) window to this author right away.
+	if err := s.store.Authors.SetAutoDeleteAfterDays(u.ID, id, autoDelete); err != nil {
+		log.Error("update author auto-delete", "author_id", id, "err", err)
+		if r.Header.Get("HX-Request") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			web.Render(w, r, authorAutoReadCard(s.authorAutoReadData(u, a, "could not save this setting")))
+			return
+		}
+		http.Error(w, "update failed", http.StatusInternalServerError)
+		return
+	}
+	// Apply the (possibly newly enabled) windows to this author right away.
 	if _, err := s.store.Items.MarkAutoReadForAuthor(u.ID, id); err != nil {
 		log.Error("auto-read sweep on author save", "author_id", id, "err", err)
+	}
+	deleted, keys, err := s.store.Items.DeleteOldReadItemsForAuthor(u.ID, id)
+	if err != nil {
+		log.Error("delete sweep on author save", "author_id", id, "err", err)
+	} else {
+		s.purgeObjects(r.Context(), keys)
+		if deleted > 0 {
+			log.Info("delete sweep on author save removed old read items", "author_id", id, "count", deleted)
+		}
 	}
 	if r.Header.Get("HX-Request") != "" {
 		a, err := s.store.Authors.ByID(u.ID, id)

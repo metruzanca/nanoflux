@@ -35,7 +35,7 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, password_hash)
 VALUES (?, ?)
-RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
+RETURNING id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, auto_delete_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
 `
 
 type CreateUserParams struct {
@@ -44,21 +44,22 @@ type CreateUserParams struct {
 }
 
 type CreateUserRow struct {
-	ID                int64          `json:"id"`
-	Username          string         `json:"username"`
-	PasswordHash      string         `json:"password_hash"`
-	IsAdmin           bool           `json:"is_admin"`
-	AvatarKey         sql.NullString `json:"avatar_key"`
-	Timezone          sql.NullString `json:"timezone"`
-	Theme             string         `json:"theme"`
-	AccentColor       string         `json:"accent_color"`
-	HomeConfig        sql.NullString `json:"home_config"`
-	AutoReadAfterDays int64          `json:"auto_read_after_days"`
-	HideUnreadCounts  bool           `json:"hide_unread_counts"`
-	HideUnreadNav     bool           `json:"hide_unread_nav"`
-	GridMaxColumns    int64          `json:"grid_max_columns"`
-	ShowTagCloud      bool           `json:"show_tag_cloud"`
-	CreatedAt         string         `json:"created_at"`
+	ID                  int64          `json:"id"`
+	Username            string         `json:"username"`
+	PasswordHash        string         `json:"password_hash"`
+	IsAdmin             bool           `json:"is_admin"`
+	AvatarKey           sql.NullString `json:"avatar_key"`
+	Timezone            sql.NullString `json:"timezone"`
+	Theme               string         `json:"theme"`
+	AccentColor         string         `json:"accent_color"`
+	HomeConfig          sql.NullString `json:"home_config"`
+	AutoReadAfterDays   int64          `json:"auto_read_after_days"`
+	AutoDeleteAfterDays int64          `json:"auto_delete_after_days"`
+	HideUnreadCounts    bool           `json:"hide_unread_counts"`
+	HideUnreadNav       bool           `json:"hide_unread_nav"`
+	GridMaxColumns      int64          `json:"grid_max_columns"`
+	ShowTagCloud        bool           `json:"show_tag_cloud"`
+	CreatedAt           string         `json:"created_at"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
@@ -75,6 +76,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.AccentColor,
 		&i.HomeConfig,
 		&i.AutoReadAfterDays,
+		&i.AutoDeleteAfterDays,
 		&i.HideUnreadCounts,
 		&i.HideUnreadNav,
 		&i.GridMaxColumns,
@@ -106,27 +108,28 @@ func (q *Queries) GetUserAvatarKey(ctx context.Context, id int64) (sql.NullStrin
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, auto_delete_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
 FROM users
 WHERE id = ?
 `
 
 type GetUserByIDRow struct {
-	ID                int64          `json:"id"`
-	Username          string         `json:"username"`
-	PasswordHash      string         `json:"password_hash"`
-	IsAdmin           bool           `json:"is_admin"`
-	AvatarKey         sql.NullString `json:"avatar_key"`
-	Timezone          sql.NullString `json:"timezone"`
-	Theme             string         `json:"theme"`
-	AccentColor       string         `json:"accent_color"`
-	HomeConfig        sql.NullString `json:"home_config"`
-	AutoReadAfterDays int64          `json:"auto_read_after_days"`
-	HideUnreadCounts  bool           `json:"hide_unread_counts"`
-	HideUnreadNav     bool           `json:"hide_unread_nav"`
-	GridMaxColumns    int64          `json:"grid_max_columns"`
-	ShowTagCloud      bool           `json:"show_tag_cloud"`
-	CreatedAt         string         `json:"created_at"`
+	ID                  int64          `json:"id"`
+	Username            string         `json:"username"`
+	PasswordHash        string         `json:"password_hash"`
+	IsAdmin             bool           `json:"is_admin"`
+	AvatarKey           sql.NullString `json:"avatar_key"`
+	Timezone            sql.NullString `json:"timezone"`
+	Theme               string         `json:"theme"`
+	AccentColor         string         `json:"accent_color"`
+	HomeConfig          sql.NullString `json:"home_config"`
+	AutoReadAfterDays   int64          `json:"auto_read_after_days"`
+	AutoDeleteAfterDays int64          `json:"auto_delete_after_days"`
+	HideUnreadCounts    bool           `json:"hide_unread_counts"`
+	HideUnreadNav       bool           `json:"hide_unread_nav"`
+	GridMaxColumns      int64          `json:"grid_max_columns"`
+	ShowTagCloud        bool           `json:"show_tag_cloud"`
+	CreatedAt           string         `json:"created_at"`
 }
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, error) {
@@ -143,6 +146,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, er
 		&i.AccentColor,
 		&i.HomeConfig,
 		&i.AutoReadAfterDays,
+		&i.AutoDeleteAfterDays,
 		&i.HideUnreadCounts,
 		&i.HideUnreadNav,
 		&i.GridMaxColumns,
@@ -153,27 +157,28 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (GetUserByIDRow, er
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, auto_delete_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
 FROM users
 WHERE username = ?
 `
 
 type GetUserByUsernameRow struct {
-	ID                int64          `json:"id"`
-	Username          string         `json:"username"`
-	PasswordHash      string         `json:"password_hash"`
-	IsAdmin           bool           `json:"is_admin"`
-	AvatarKey         sql.NullString `json:"avatar_key"`
-	Timezone          sql.NullString `json:"timezone"`
-	Theme             string         `json:"theme"`
-	AccentColor       string         `json:"accent_color"`
-	HomeConfig        sql.NullString `json:"home_config"`
-	AutoReadAfterDays int64          `json:"auto_read_after_days"`
-	HideUnreadCounts  bool           `json:"hide_unread_counts"`
-	HideUnreadNav     bool           `json:"hide_unread_nav"`
-	GridMaxColumns    int64          `json:"grid_max_columns"`
-	ShowTagCloud      bool           `json:"show_tag_cloud"`
-	CreatedAt         string         `json:"created_at"`
+	ID                  int64          `json:"id"`
+	Username            string         `json:"username"`
+	PasswordHash        string         `json:"password_hash"`
+	IsAdmin             bool           `json:"is_admin"`
+	AvatarKey           sql.NullString `json:"avatar_key"`
+	Timezone            sql.NullString `json:"timezone"`
+	Theme               string         `json:"theme"`
+	AccentColor         string         `json:"accent_color"`
+	HomeConfig          sql.NullString `json:"home_config"`
+	AutoReadAfterDays   int64          `json:"auto_read_after_days"`
+	AutoDeleteAfterDays int64          `json:"auto_delete_after_days"`
+	HideUnreadCounts    bool           `json:"hide_unread_counts"`
+	HideUnreadNav       bool           `json:"hide_unread_nav"`
+	GridMaxColumns      int64          `json:"grid_max_columns"`
+	ShowTagCloud        bool           `json:"show_tag_cloud"`
+	CreatedAt           string         `json:"created_at"`
 }
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error) {
@@ -190,6 +195,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 		&i.AccentColor,
 		&i.HomeConfig,
 		&i.AutoReadAfterDays,
+		&i.AutoDeleteAfterDays,
 		&i.HideUnreadCounts,
 		&i.HideUnreadNav,
 		&i.GridMaxColumns,
@@ -238,27 +244,28 @@ func (q *Queries) ListUserIconKeys(ctx context.Context, userID int64) ([]sql.Nul
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, home_config, auto_read_after_days, auto_delete_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
 FROM users
 ORDER BY username
 `
 
 type ListUsersRow struct {
-	ID                int64          `json:"id"`
-	Username          string         `json:"username"`
-	PasswordHash      string         `json:"password_hash"`
-	IsAdmin           bool           `json:"is_admin"`
-	AvatarKey         sql.NullString `json:"avatar_key"`
-	Timezone          sql.NullString `json:"timezone"`
-	Theme             string         `json:"theme"`
-	AccentColor       string         `json:"accent_color"`
-	HomeConfig        sql.NullString `json:"home_config"`
-	AutoReadAfterDays int64          `json:"auto_read_after_days"`
-	HideUnreadCounts  bool           `json:"hide_unread_counts"`
-	HideUnreadNav     bool           `json:"hide_unread_nav"`
-	GridMaxColumns    int64          `json:"grid_max_columns"`
-	ShowTagCloud      bool           `json:"show_tag_cloud"`
-	CreatedAt         string         `json:"created_at"`
+	ID                  int64          `json:"id"`
+	Username            string         `json:"username"`
+	PasswordHash        string         `json:"password_hash"`
+	IsAdmin             bool           `json:"is_admin"`
+	AvatarKey           sql.NullString `json:"avatar_key"`
+	Timezone            sql.NullString `json:"timezone"`
+	Theme               string         `json:"theme"`
+	AccentColor         string         `json:"accent_color"`
+	HomeConfig          sql.NullString `json:"home_config"`
+	AutoReadAfterDays   int64          `json:"auto_read_after_days"`
+	AutoDeleteAfterDays int64          `json:"auto_delete_after_days"`
+	HideUnreadCounts    bool           `json:"hide_unread_counts"`
+	HideUnreadNav       bool           `json:"hide_unread_nav"`
+	GridMaxColumns      int64          `json:"grid_max_columns"`
+	ShowTagCloud        bool           `json:"show_tag_cloud"`
+	CreatedAt           string         `json:"created_at"`
 }
 
 func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
@@ -281,6 +288,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.AccentColor,
 			&i.HomeConfig,
 			&i.AutoReadAfterDays,
+			&i.AutoDeleteAfterDays,
 			&i.HideUnreadCounts,
 			&i.HideUnreadNav,
 			&i.GridMaxColumns,
@@ -327,6 +335,22 @@ type SetUserAdminParams struct {
 
 func (q *Queries) SetUserAdmin(ctx context.Context, arg SetUserAdminParams) error {
 	_, err := q.db.ExecContext(ctx, setUserAdmin, arg.IsAdmin, arg.ID)
+	return err
+}
+
+const setUserAutoDeleteAfterDays = `-- name: SetUserAutoDeleteAfterDays :exec
+UPDATE users SET auto_delete_after_days = ?
+WHERE id = ?
+`
+
+type SetUserAutoDeleteAfterDaysParams struct {
+	AutoDeleteAfterDays int64 `json:"auto_delete_after_days"`
+	ID                  int64 `json:"id"`
+}
+
+// 0 disables the delete sweep. Negative values are clamped in the store.
+func (q *Queries) SetUserAutoDeleteAfterDays(ctx context.Context, arg SetUserAutoDeleteAfterDaysParams) error {
+	_, err := q.db.ExecContext(ctx, setUserAutoDeleteAfterDays, arg.AutoDeleteAfterDays, arg.ID)
 	return err
 }
 

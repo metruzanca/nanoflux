@@ -182,6 +182,7 @@ func runServer() {
 	// drop playback positions older than the retention window.
 	sweeper := maintenance.New(store.New(bgDB), maintenance.DefaultInterval)
 	sweeper.SetProgressRetention(cfg.ProgressRetention)
+	sweeper.SetFileStore(files)
 	go sweeper.Run(ctx)
 
 	srv := &http.Server{

@@ -274,24 +274,26 @@ templ authorFilterCard(d authorsData) {
 	</details>
 }
 
-// authorAutoReadCard overrides the account auto-read window for this author's
-// feeds. "inherit" follows the account setting; off keeps the author's items
-// unread. It is collapsible and saves from its explicit apply button.
+// authorAutoReadCard overrides the account auto-read and delete windows for
+// this author's feeds. "inherit" follows the account setting; off disables the
+// sweep for this author. It is collapsible and saves from its explicit apply
+// button.
 templ authorAutoReadCard(d authorsData) {
 	{{ action := "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/auto-read" }}
-	<details id="author-auto-read-card" class="card author-auto-read-card" open?={ d.AutoReadValue != "inherit" || d.AutoReadError != "" }>
+	<details id="author-auto-read-card" class="card author-auto-read-card" open?={ d.AutoReadValue != "inherit" || d.AutoDeleteValue != "inherit" || d.AutoReadError != "" }>
 		<summary>
-			<h2>auto-read</h2>
+			<h2>old items</h2>
 		</summary>
 		<form class="stack" method="post" action={ action } hx-post={ action } hx-sync="closest form:replace" hx-target="#author-auto-read-card" hx-swap="outerHTML" hx-disinherit="*">
 			@csrfField()
-			<p class="muted small">Overrides the account auto-read window for this author's feeds. Items older than the effective window are marked read automatically, including favorites and bookmarks. Off keeps this author's items unread.</p>
+			<p class="muted small">Overrides the account windows for this author's feeds. Unread items older than the first window are marked read automatically; read items older than the second window are deleted. Lists, favorites, bookmarks and saved pages are never deleted.</p>
 			<input type="hidden" name="author_auto_read_present" value="1"/>
 			if d.AutoReadError != "" {
 				<div class="error" role="alert">{ d.AutoReadError }</div>
 			}
 			@comboSelect("author_auto_read_after_days", d.AutoReadValue, "mark items read after", "select a window", authorAutoReadItems, nil)
-			<p class="muted small">account default: { d.AutoReadDefault }</p>
+			@comboSelect("author_auto_delete_after_days", d.AutoDeleteValue, "delete read items after", "select a window", authorAutoDeleteItems, nil)
+			<p class="muted small">account defaults: { d.AutoReadDefault } read, { d.AutoDeleteDefault } delete</p>
 			<div class="row-actions">
 				<button type="submit">apply</button>
 			</div>

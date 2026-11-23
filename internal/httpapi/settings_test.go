@@ -319,10 +319,13 @@ func TestSettingsAutoRead(t *testing.T) {
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 
-	// Default is 30 days.
+	// Default is 30 days read and delete off.
 	after, _ := s.store.Users.ByID(u.ID)
 	if after.AutoReadAfterDays != 30 {
 		t.Fatalf("default auto_read_after_days = %d; want 30", after.AutoReadAfterDays)
+	}
+	if after.AutoDeleteAfterDays != 0 {
+		t.Fatalf("default auto_delete_after_days = %d; want 0", after.AutoDeleteAfterDays)
 	}
 
 	// Set 7 days, with an old unread item that should be swept immediately.
@@ -331,7 +334,10 @@ func TestSettingsAutoRead(t *testing.T) {
 	old := db.FormatTime(time.Now().AddDate(0, 0, -10))
 	s.store.Items.Upsert(f.ID, store.Item{GUID: "old", Title: "old", PublishedAt: old, FetchedAt: db.Now()})
 
-	rr := doForm(h, "POST", "/settings/auto-read", url.Values{"auto_read_after_days": {"7"}}, cookie)
+	rr := doForm(h, "POST", "/settings/auto-read", url.Values{
+		"auto_read_after_days":   {"7"},
+		"auto_delete_after_days": {"off"},
+	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("set auto-read: %d %s", rr.Code, rr.Body.String())
 	}
@@ -344,24 +350,64 @@ func TestSettingsAutoRead(t *testing.T) {
 		t.Fatalf("saving should sweep immediately: unread = %d; want 0", unread)
 	}
 
-	// Off disables it (0).
-	rr = doForm(h, "POST", "/settings/auto-read", url.Values{"auto_read_after_days": {"off"}}, cookie)
+	// Enabling the delete window removes an old read item immediately.
+	res, err := s.store.Items.UpsertMany(f.ID, []store.Item{{
+		GUID: "old-read", Title: "old-read", PublishedAt: old, FetchedAt: db.Now(),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldReadID := res[0].ItemID
+	if _, err := s.store.DB().Exec(`UPDATE items SET read = 1, read_at = ? WHERE id = ?`,
+		db.FormatTime(time.Now().AddDate(0, 0, -40)), oldReadID); err != nil {
+		t.Fatal(err)
+	}
+	rr = doForm(h, "POST", "/settings/auto-read", url.Values{
+		"auto_read_after_days":   {"off"},
+		"auto_delete_after_days": {"30"},
+	}, cookie)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("set auto-delete: %d %s", rr.Code, rr.Body.String())
+	}
+	after, _ = s.store.Users.ByID(u.ID)
+	if after.AutoDeleteAfterDays != 30 {
+		t.Fatalf("auto-delete not persisted: %d", after.AutoDeleteAfterDays)
+	}
+	if _, err := s.store.Items.ByID(u.ID, oldReadID); err == nil {
+		t.Fatalf("saving the delete window should remove the old read item")
+	}
+
+	// Off disables both (0).
+	rr = doForm(h, "POST", "/settings/auto-read", url.Values{
+		"auto_read_after_days":   {"off"},
+		"auto_delete_after_days": {"off"},
+	}, cookie)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("set off: %d", rr.Code)
 	}
 	after, _ = s.store.Users.ByID(u.ID)
-	if after.AutoReadAfterDays != 0 {
-		t.Fatalf("off should store 0, got %d", after.AutoReadAfterDays)
+	if after.AutoReadAfterDays != 0 || after.AutoDeleteAfterDays != 0 {
+		t.Fatalf("off should store 0/0, got %d/%d", after.AutoReadAfterDays, after.AutoDeleteAfterDays)
 	}
 
-	// Invalid value -> 400, nothing saved.
-	rr = doForm(h, "POST", "/settings/auto-read", url.Values{"auto_read_after_days": {"99"}}, cookie)
+	// Invalid values -> 400, nothing saved.
+	rr = doForm(h, "POST", "/settings/auto-read", url.Values{
+		"auto_read_after_days":   {"99"},
+		"auto_delete_after_days": {"30"},
+	}, cookie)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("invalid auto-read: %d %s", rr.Code, rr.Body.String())
 	}
+	rr = doForm(h, "POST", "/settings/auto-read", url.Values{
+		"auto_read_after_days":   {"7"},
+		"auto_delete_after_days": {"99"},
+	}, cookie)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid auto-delete: %d %s", rr.Code, rr.Body.String())
+	}
 	after, _ = s.store.Users.ByID(u.ID)
-	if after.AutoReadAfterDays != 0 {
-		t.Fatalf("invalid value should not overwrite: %d", after.AutoReadAfterDays)
+	if after.AutoReadAfterDays != 0 || after.AutoDeleteAfterDays != 0 {
+		t.Fatalf("invalid values should not overwrite: %d/%d", after.AutoReadAfterDays, after.AutoDeleteAfterDays)
 	}
 }
 

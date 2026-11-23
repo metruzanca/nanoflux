@@ -200,10 +200,11 @@ templ appearanceGridColumns(d settingsAppearanceData) {
 
 templ settingsAutoRead(d settingsAutoReadData) {
 	<section class="card" id="settings-auto-read-card">
-		<h2>auto-read old items</h2>
-		<p class="muted small">Unread items older than this are marked read automatically, including favorites and bookmarks. Off leaves everything as is. Marking read is reversible with "mark all unread".</p>
+		<h2>old items</h2>
+		<p class="muted small">Unread items older than the first window are marked read automatically, including favorites and bookmarks. The second window deletes read items once they are older than that, measured from when they were read. Deletion is off by default and never touches items in a list, favorites, bookmarks, or saved pages; an item that leaves a list waits one full delete window before it can be removed. Marking read is reversible with "mark all unread".</p>
 		<form class="stack" hx-post="/settings/auto-read" hx-trigger="change" hx-target="#settings-auto-read-card" hx-swap="outerHTML">
 			@comboSelect("auto_read_after_days", d.Value, "mark items read after", "select a window", autoReadItems, nil)
+			@comboSelect("auto_delete_after_days", d.DeleteValue, "delete read items after", "select a window", autoDeleteItems, nil)
 			if d.Error != "" {
 				<div class="error" role="alert">{ d.Error }</div>
 			}

@@ -51,24 +51,34 @@ func intFromSQL(v interface{}) int {
 	}
 }
 
-func toUser(id int64, username, passwordHash string, isAdmin bool, avatarKey, timezone sql.NullString, theme, accentColor, homeConfig string, autoReadAfterDays int64, hideUnreadCounts, hideUnreadNav bool, gridMaxColumns int64, showTagCloud bool, createdAt string) User {
+func toUser(id int64, username, passwordHash string, isAdmin bool, avatarKey, timezone sql.NullString, theme, accentColor, homeConfig string, autoReadAfterDays, autoDeleteAfterDays int64, hideUnreadCounts, hideUnreadNav bool, gridMaxColumns int64, showTagCloud bool, createdAt string) User {
 	return User{
-		ID:                id,
-		Username:          username,
-		PasswordHash:      passwordHash,
-		IsAdmin:           isAdmin,
-		HasAvatar:         avatarKey.Valid,
-		Timezone:          timezone.String,
-		Theme:             theme,
-		AccentColor:       accentColor,
-		HomeConfig:        homeConfig,
-		AutoReadAfterDays: int(autoReadAfterDays),
-		HideUnreadCounts:  hideUnreadCounts,
-		HideUnreadNav:     hideUnreadNav,
-		GridMaxColumns:    int(gridMaxColumns),
-		ShowTagCloud:      showTagCloud,
-		CreatedAt:         createdAt,
+		ID:                  id,
+		Username:            username,
+		PasswordHash:        passwordHash,
+		IsAdmin:             isAdmin,
+		HasAvatar:           avatarKey.Valid,
+		Timezone:            timezone.String,
+		Theme:               theme,
+		AccentColor:         accentColor,
+		HomeConfig:          homeConfig,
+		AutoReadAfterDays:   int(autoReadAfterDays),
+		AutoDeleteAfterDays: int(autoDeleteAfterDays),
+		HideUnreadCounts:    hideUnreadCounts,
+		HideUnreadNav:       hideUnreadNav,
+		GridMaxColumns:      int(gridMaxColumns),
+		ShowTagCloud:        showTagCloud,
+		CreatedAt:           createdAt,
 	}
+}
+
+// nullableInt maps a nullable INTEGER column to *int; NULL means inherit.
+func nullableInt(v sql.NullInt64) *int {
+	if !v.Valid {
+		return nil
+	}
+	n := int(v.Int64)
+	return &n
 }
 
 func toFeed(f sqlcgen.Feed) Feed {
@@ -161,22 +171,17 @@ func toItemWithFeed(id, feedID int64, guid, title, link, summary, categories str
 
 func toAuthor(a sqlcgen.Author) Author {
 	return Author{
-		ID:            a.ID,
-		UserID:        a.UserID,
-		Name:          a.Name,
-		AvatarURL:     a.AvatarUrl.String,
-		AvatarKey:     a.AvatarKey.String,
-		LastFetchedAt: a.LastFetchedAt.String,
-		Description:   a.Description.String,
-		IsSystem:      a.IsSystem != 0,
-		AutoReadAfterDays: func() *int {
-			if !a.AutoReadAfterDays.Valid {
-				return nil
-			}
-			v := int(a.AutoReadAfterDays.Int64)
-			return &v
-		}(),
-		CreatedAt: a.CreatedAt,
+		ID:                  a.ID,
+		UserID:              a.UserID,
+		Name:                a.Name,
+		AvatarURL:           a.AvatarUrl.String,
+		AvatarKey:           a.AvatarKey.String,
+		LastFetchedAt:       a.LastFetchedAt.String,
+		Description:         a.Description.String,
+		IsSystem:            a.IsSystem != 0,
+		AutoReadAfterDays:   nullableInt(a.AutoReadAfterDays),
+		AutoDeleteAfterDays: nullableInt(a.AutoDeleteAfterDays),
+		CreatedAt:           a.CreatedAt,
 	}
 }
 

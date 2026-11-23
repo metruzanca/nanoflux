@@ -16,6 +16,7 @@ CREATE TABLE users (
     accent_color  TEXT NOT NULL DEFAULT '#5b8cff',
     home_config   TEXT,
     auto_read_after_days INTEGER NOT NULL DEFAULT 30,
+    auto_delete_after_days INTEGER NOT NULL DEFAULT 0,
     hide_unread_counts INTEGER NOT NULL DEFAULT 0,
     hide_unread_nav INTEGER NOT NULL DEFAULT 0,
     grid_max_columns INTEGER NOT NULL DEFAULT 2,
@@ -60,6 +61,7 @@ CREATE TABLE authors (
     description TEXT,
     is_system   INTEGER NOT NULL DEFAULT 0,
     auto_read_after_days INTEGER,
+    auto_delete_after_days INTEGER,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_authors_user ON authors(user_id);
@@ -119,6 +121,10 @@ CREATE TABLE items (
     read_at      TEXT,
     favorite     INTEGER NOT NULL DEFAULT 0,
     bookmark     INTEGER NOT NULL DEFAULT 0,
+    -- When the item last stopped being in every list, favorite and bookmark
+    -- (schemaV70). The delete sweep waits one window from it so removing an
+    -- item from a list is not an instant, unrecoverable delete.
+    unprotected_at TEXT,
     UNIQUE(feed_id, guid)
 );
 CREATE INDEX idx_items_feed ON items(feed_id);
@@ -133,6 +139,7 @@ CREATE UNIQUE INDEX idx_items_cross ON items(user_id, cross_key) WHERE cross_key
 -- (counts, favorites/bookmarks, the item list's user filter and time order), so
 -- without these the queries full-scan the table.
 CREATE INDEX idx_items_user_read ON items(user_id, read);
+CREATE INDEX idx_items_user_read_at ON items(user_id, read_at) WHERE read = 1;
 CREATE INDEX idx_items_user_time ON items(user_id, COALESCE(published_at, fetched_at) DESC, id DESC);
 CREATE INDEX idx_items_user_favorite ON items(user_id) WHERE favorite = 1;
 CREATE INDEX idx_items_user_bookmark ON items(user_id) WHERE bookmark = 1;

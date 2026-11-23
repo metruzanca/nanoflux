@@ -123,9 +123,37 @@ var authorAutoReadItems = func() []comboItem {
 	return append(out, autoReadItems...)
 }()
 
+// autoDeleteOptions are the supported retention windows for deleting old read
+// items. The clock is read_at, so they start at 7 days; off maps to 0.
+var autoDeleteOptions = []autoReadOption{
+	{"7", "7 days"},
+	{"30", "30 days"},
+	{"90", "90 days"},
+	{"180", "180 days"},
+	{"365", "365 days"},
+	{"off", "off"},
+}
+
+// autoDeleteItems are the combo options for the delete window setting.
+var autoDeleteItems = func() []comboItem {
+	out := make([]comboItem, 0, len(autoDeleteOptions))
+	for _, o := range autoDeleteOptions {
+		out = append(out, comboItem{Value: o.Value, Label: o.Label})
+	}
+	return out
+}()
+
+// authorAutoDeleteItems adds the inherit option to the per-author override.
+var authorAutoDeleteItems = func() []comboItem {
+	out := make([]comboItem, 0, len(autoDeleteItems)+1)
+	out = append(out, comboItem{Value: "inherit", Label: "use account default"})
+	return append(out, autoDeleteItems...)
+}()
+
 type settingsAutoReadData struct {
-	Value string // selected option value, matching autoReadOptions
-	Error string
+	Value       string // selected auto-read option
+	DeleteValue string // selected delete option
+	Error       string
 }
 
 // autoReadValue maps a stored day count to its option value; 0 is "off".
@@ -160,6 +188,22 @@ func parseAutoReadValue(value string) (days int, ok bool) {
 	case "off":
 		return 0, true
 	case "3", "7", "30", "60":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	default:
+		return 0, false
+	}
+}
+
+// parseAutoDeleteValue maps a saved delete-window option to its day count.
+func parseAutoDeleteValue(value string) (days int, ok bool) {
+	switch value {
+	case "off":
+		return 0, true
+	case "7", "30", "90", "180", "365":
 		n, err := strconv.Atoi(value)
 		if err != nil {
 			return 0, false
@@ -250,9 +294,12 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		Algorithm:          s.settingsAlgorithmData(u.ID),
 		Timezone:           settingsTimezoneData{Timezone: u.Timezone, Items: timezoneItems()},
 		Appearance:         settingsAppearanceData{Theme: u.Theme, Accent: u.AccentColor, HideUnreadCounts: u.HideUnreadCounts, HideUnreadNav: u.HideUnreadNav, GridMaxColumns: store.ClampGridColumns(u.GridMaxColumns), ShowTagCloud: u.ShowTagCloud},
-		AutoRead:           settingsAutoReadData{Value: autoReadValue(u.AutoReadAfterDays)},
-		Sessions:           s.settingsSessionsData(u, auth.Token(r)),
-		Extension:          settingsExtensionData{ServerURL: s.requestBaseURL(r)},
+		AutoRead: settingsAutoReadData{
+			Value:       autoReadValue(u.AutoReadAfterDays),
+			DeleteValue: autoReadValue(u.AutoDeleteAfterDays),
+		},
+		Sessions:  s.settingsSessionsData(u, auth.Token(r)),
+		Extension: settingsExtensionData{ServerURL: s.requestBaseURL(r)},
 	})))
 }
 
@@ -370,26 +417,43 @@ func (s *Server) settingsTheme(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, appearanceTheme(settingsThemeData{Theme: theme}))
 }
 
-// settingsAutoRead stores the user's auto-read window and, when enabled,
-// sweeps immediately so the change is visible without waiting for the daily
-// background pass.
+// settingsAutoRead stores the user's auto-read and delete windows and applies
+// both immediately, so a change is visible without waiting for the daily pass.
 func (s *Server) settingsAutoRead(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.UserFrom(r)
-	value := strings.TrimSpace(r.FormValue("auto_read_after_days"))
-	render := func(v string, errMsg string) {
-		if errMsg != "" {
+	readValue := strings.TrimSpace(r.FormValue("auto_read_after_days"))
+	deleteValue := strings.TrimSpace(r.FormValue("auto_delete_after_days"))
+	current := func(errMsg string) settingsAutoReadData {
+		return settingsAutoReadData{
+			Value:       autoReadValue(u.AutoReadAfterDays),
+			DeleteValue: autoReadValue(u.AutoDeleteAfterDays),
+			Error:       errMsg,
+		}
+	}
+	render := func(d settingsAutoReadData) {
+		if d.Error != "" {
 			w.WriteHeader(http.StatusBadRequest)
 		}
-		web.Render(w, r, settingsAutoRead(settingsAutoReadData{Value: v, Error: errMsg}))
+		web.Render(w, r, settingsAutoRead(d))
 	}
-	days, ok := parseAutoReadValue(value)
+	readDays, ok := parseAutoReadValue(readValue)
 	if !ok {
-		render(autoReadValue(u.AutoReadAfterDays), "choose an option")
+		render(current("choose an auto-read window"))
 		return
 	}
-	if err := s.store.Users.SetAutoReadAfterDays(u.ID, days); err != nil {
+	deleteDays, ok := parseAutoDeleteValue(deleteValue)
+	if !ok {
+		render(current("choose a delete window"))
+		return
+	}
+	if err := s.store.Users.SetAutoReadAfterDays(u.ID, readDays); err != nil {
 		log.Error("set auto-read", "err", err)
-		render(autoReadValue(u.AutoReadAfterDays), "could not save")
+		render(current("could not save"))
+		return
+	}
+	if err := s.store.Users.SetAutoDeleteAfterDays(u.ID, deleteDays); err != nil {
+		log.Error("set auto-delete", "err", err)
+		render(current("could not save"))
 		return
 	}
 	// Sweep even when the account window is off: an author override may still
@@ -397,7 +461,19 @@ func (s *Server) settingsAutoRead(w http.ResponseWriter, r *http.Request) {
 	if _, err := s.store.Items.MarkAutoRead(u.ID); err != nil {
 		log.Error("auto-read sweep on save", "err", err)
 	}
-	render(autoReadValue(days), "")
+	deleted, keys, err := s.store.Items.DeleteOldReadItems(u.ID)
+	if err != nil {
+		log.Error("delete sweep on save", "err", err)
+	} else {
+		s.purgeObjects(r.Context(), keys)
+		if deleted > 0 {
+			log.Info("delete sweep on save removed old read items", "user_id", u.ID, "count", deleted)
+		}
+	}
+	render(settingsAutoReadData{
+		Value:       autoReadValue(readDays),
+		DeleteValue: autoReadValue(deleteDays),
+	})
 }
 
 // settingsAccent stores the user's accent color as a "#rrggbb" hex value.

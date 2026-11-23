@@ -21,11 +21,14 @@ type User struct {
 	AccentColor       string
 	HomeConfig        string // raw JSON home-screen config, "" when unset
 	AutoReadAfterDays int    // days after which unread items are auto-marked read; 0 = off
-	HideUnreadCounts  bool   // hide the unread/authors badges in the top navigation
-	HideUnreadNav     bool   // move the "unread" nav item into the user menu
-	GridMaxColumns    int    // max columns for grid-mode item lists (2..6)
-	ShowTagCloud      bool   // show the collapsible author tag cloud
-	CreatedAt         string
+	// AutoDeleteAfterDays deletes read items whose read_at is older than it;
+	// 0 = off.
+	AutoDeleteAfterDays int
+	HideUnreadCounts    bool // hide the unread/authors badges in the top navigation
+	HideUnreadNav       bool // move the "unread" nav item into the user menu
+	GridMaxColumns      int  // max columns for grid-mode item lists (2..6)
+	ShowTagCloud        bool // show the collapsible author tag cloud
+	CreatedAt           string
 }
 
 type UserStore struct {
@@ -42,7 +45,7 @@ func (s *UserStore) Create(username, passwordHash string) (User, error) {
 	if err != nil {
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.AutoDeleteAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
 }
 
 // CreateFirstAdmin creates a user and, when they are the first account on the
@@ -83,7 +86,7 @@ func (s *UserStore) CreateFirstAdmin(username, passwordHash string) (User, bool,
 	if err := tx.Commit(); err != nil {
 		return User{}, false, fmt.Errorf("commit create user: %w", err)
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), first, nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.AutoDeleteAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), first, nil
 }
 
 func (s *UserStore) ByID(id int64) (User, error) {
@@ -94,7 +97,7 @@ func (s *UserStore) ByID(id int64) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.AutoDeleteAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
 }
 
 // ByUsername looks an account up case-insensitively: usernames are stored
@@ -107,7 +110,7 @@ func (s *UserStore) ByUsername(username string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.AutoDeleteAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
 }
 
 func (s *UserStore) List() ([]User, error) {
@@ -117,7 +120,7 @@ func (s *UserStore) List() ([]User, error) {
 	}
 	out := make([]User, 0, len(rows))
 	for _, u := range rows {
-		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt))
+		out = append(out, toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, u.HomeConfig.String, u.AutoReadAfterDays, u.AutoDeleteAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt))
 	}
 	return out, nil
 }
@@ -269,6 +272,18 @@ func (s *UserStore) SetAutoReadAfterDays(userID int64, days int) error {
 	})
 }
 
+// SetAutoDeleteAfterDays stores the user's retention window for deleting old
+// read items. A value of 0 disables the sweep; negative values clamp to 0.
+func (s *UserStore) SetAutoDeleteAfterDays(userID int64, days int) error {
+	if days < 0 {
+		days = 0
+	}
+	return s.q.SetUserAutoDeleteAfterDays(context.Background(), sqlcgen.SetUserAutoDeleteAfterDaysParams{
+		AutoDeleteAfterDays: int64(days),
+		ID:                  userID,
+	})
+}
+
 // SetHideUnreadCounts stores whether the top navigation hides its numeric
 // unread/authors badges.
 func (s *UserStore) SetHideUnreadCounts(userID int64, hide bool) error {
@@ -377,7 +392,7 @@ func (s *UserStore) ByFavoritesShareToken(token string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.AutoReadAfterDays, u.AutoDeleteAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
 }
 
 // BookmarksShareToken returns the user's public bookmarks share token, or ""
@@ -441,5 +456,5 @@ func (s *UserStore) ByBookmarksShareToken(token string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.AutoReadAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
+	return toUser(u.ID, u.Username, u.PasswordHash, u.IsAdmin, u.AvatarKey, u.Timezone, u.Theme, u.AccentColor, "", u.AutoReadAfterDays, u.AutoDeleteAfterDays, u.HideUnreadCounts, u.HideUnreadNav, u.GridMaxColumns, u.ShowTagCloud, u.CreatedAt), nil
 }

@@ -2200,6 +2200,25 @@ func TestAutoReadAfterDays(t *testing.T) {
 	if got.AutoReadAfterDays != 0 {
 		t.Fatalf("negative should clamp to 0, got %d", got.AutoReadAfterDays)
 	}
+
+	// The delete window defaults off and clamps the same way.
+	if got.AutoDeleteAfterDays != 0 {
+		t.Fatalf("default auto_delete_after_days = %d; want 0", got.AutoDeleteAfterDays)
+	}
+	if err := s.Users.SetAutoDeleteAfterDays(u.ID, 90); err != nil {
+		t.Fatalf("SetAutoDeleteAfterDays: %v", err)
+	}
+	got, _ = s.Users.ByID(u.ID)
+	if got.AutoDeleteAfterDays != 90 {
+		t.Fatalf("after set = %d; want 90", got.AutoDeleteAfterDays)
+	}
+	if err := s.Users.SetAutoDeleteAfterDays(u.ID, -5); err != nil {
+		t.Fatalf("SetAutoDeleteAfterDays(-5): %v", err)
+	}
+	got, _ = s.Users.ByID(u.ID)
+	if got.AutoDeleteAfterDays != 0 {
+		t.Fatalf("negative should clamp to 0, got %d", got.AutoDeleteAfterDays)
+	}
 }
 
 func TestMarkAutoRead(t *testing.T) {

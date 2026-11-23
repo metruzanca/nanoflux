@@ -1,12 +1,44 @@
 package maintenance
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
+
+func sweepItem(t *testing.T, s *store.Store, feedID int64, guid string, published string) int64 {
+	t.Helper()
+	res, err := s.Items.UpsertMany(feedID, []store.Item{{
+		GUID: guid, Title: guid, PublishedAt: published, FetchedAt: db.Now(),
+	}})
+	if err != nil {
+		t.Fatalf("upsert %s: %v", guid, err)
+	}
+	return res[0].ItemID
+}
+
+func setReadAt(t *testing.T, s *store.Store, itemID int64, at string) {
+	t.Helper()
+	if _, err := s.DB().Exec(`UPDATE items SET read = 1, read_at = ? WHERE id = ?`, at, itemID); err != nil {
+		t.Fatalf("set read_at: %v", err)
+	}
+}
+
+func itemExists(t *testing.T, s *store.Store, userID, itemID int64) bool {
+	t.Helper()
+	_, err := s.Items.ByID(userID, itemID)
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, store.ErrNotFound) {
+		return false
+	}
+	t.Fatalf("item lookup: %v", err)
+	return false
+}
 
 func newTestStore(t *testing.T) *store.Store {
 	t.Helper()
@@ -70,6 +102,52 @@ func TestSweepMarksStaleItems(t *testing.T) {
 	bobUnread, _ := s.Items.CountUnread(bob.ID, 0)
 	if bobUnread != 1 {
 		t.Fatalf("bob unread = %d; want 1 (disabled, untouched)", bobUnread)
+	}
+}
+
+// TestSweepDeletesOldReadItems verifies the retention sweep removes a read item
+// once its read_at passes the delete window, while an item auto-read in the
+// same pass keeps its fresh read_at and survives.
+func TestSweepDeletesOldReadItems(t *testing.T) {
+	s := newTestStore(t)
+	alice, err := s.Users.Create("alice", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := mustFeed(t, s, alice)
+	if err := s.Users.SetAutoReadAfterDays(alice.ID, 30); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Users.SetAutoDeleteAfterDays(alice.ID, 30); err != nil {
+		t.Fatal(err)
+	}
+
+	old := db.FormatTime(time.Now().AddDate(0, 0, -40))
+	oldRead := sweepItem(t, s, f.ID, "old-read", old)
+	justRead := sweepItem(t, s, f.ID, "just-read", old)
+	recentRead := sweepItem(t, s, f.ID, "recent-read", db.Now())
+	protected := sweepItem(t, s, f.ID, "protected", old)
+
+	setReadAt(t, s, oldRead, old)
+	setReadAt(t, s, recentRead, db.FormatTime(time.Now().AddDate(0, 0, -2)))
+	setReadAt(t, s, protected, old)
+	if err := s.Items.SetFavorite(alice.ID, protected, true); err != nil {
+		t.Fatal(err)
+	}
+
+	New(s, 0).Sweep()
+
+	if itemExists(t, s, alice.ID, oldRead) {
+		t.Fatalf("old read item should have been deleted")
+	}
+	if !itemExists(t, s, alice.ID, justRead) {
+		t.Fatalf("item auto-read in this pass should keep its fresh read_at")
+	}
+	if !itemExists(t, s, alice.ID, recentRead) {
+		t.Fatalf("recently read item should survive")
+	}
+	if !itemExists(t, s, alice.ID, protected) {
+		t.Fatalf("favorited item should never be deleted")
 	}
 }
 

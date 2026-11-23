@@ -450,7 +450,7 @@ func (q *Queries) GetFeedItemStats(ctx context.Context, arg GetFeedItemStatsPara
 
 const getItem = `-- name: GetItem :one
 SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url, i.image_cache_key, i.image_cache_size,
-       i.published_at, i.fetched_at, i.read, i.read_at, i.favorite, i.bookmark
+       i.published_at, i.fetched_at, i.read, i.read_at, i.favorite, i.bookmark, i.unprotected_at
 FROM items i
 WHERE i.id = ? AND i.user_id = ?
 `
@@ -485,6 +485,7 @@ func (q *Queries) GetItem(ctx context.Context, arg GetItemParams) (Item, error) 
 		&i.ReadAt,
 		&i.Favorite,
 		&i.Bookmark,
+		&i.UnprotectedAt,
 	)
 	return i, err
 }
@@ -1925,7 +1926,7 @@ WHERE read = 0
   AND items.feed_id IN (
     SELECT f.id
     FROM feeds f
-    JOIN authors a ON a.id = f.author_id
+    LEFT JOIN authors a ON a.id = f.author_id
     JOIN users u ON u.id = f.user_id
     WHERE f.user_id = ?2
       AND (CAST(?3 AS INTEGER) = 0 OR f.author_id = CAST(?3 AS INTEGER))
@@ -1947,7 +1948,9 @@ type MarkItemsAutoReadParams struct {
 // the owner author's override when set, else the account's window. authorID 0
 // means every author of the user's feeds. An effective window of 0 disables
 // the sweep for that author. COALESCE(published_at, fetched_at) is the
-// canonical item time; favorites and bookmarks are swept too.
+// canonical item time; favorites and bookmarks are swept too. The author join
+// is a LEFT JOIN because an unassigned feed (author_id 0, schemaV69) has no
+// author row and must still inherit the account window.
 func (q *Queries) MarkItemsAutoRead(ctx context.Context, arg MarkItemsAutoReadParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, markItemsAutoRead,
 		arg.ReadAt,
@@ -2052,18 +2055,25 @@ func (q *Queries) SetEnclosureCacheSizeByKey(ctx context.Context, arg SetEnclosu
 
 const setItemBookmark = `-- name: SetItemBookmark :execresult
 UPDATE items
-SET bookmark = ?
-WHERE items.id = ? AND items.user_id = ?
+SET bookmark = ?1,
+    unprotected_at = ?2
+WHERE items.id = ?3 AND items.user_id = ?4
 `
 
 type SetItemBookmarkParams struct {
-	Bookmark bool  `json:"bookmark"`
-	ID       int64 `json:"id"`
-	UserID   int64 `json:"user_id"`
+	Bookmark      bool           `json:"bookmark"`
+	UnprotectedAt sql.NullString `json:"unprotectedAt"`
+	ID            int64          `json:"id"`
+	UserID        int64          `json:"userID"`
 }
 
 func (q *Queries) SetItemBookmark(ctx context.Context, arg SetItemBookmarkParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, setItemBookmark, arg.Bookmark, arg.ID, arg.UserID)
+	return q.db.ExecContext(ctx, setItemBookmark,
+		arg.Bookmark,
+		arg.UnprotectedAt,
+		arg.ID,
+		arg.UserID,
+	)
 }
 
 const setItemContent = `-- name: SetItemContent :exec
@@ -2108,18 +2118,28 @@ func (q *Queries) SetItemCrossKeyByID(ctx context.Context, arg SetItemCrossKeyBy
 
 const setItemFavorite = `-- name: SetItemFavorite :execresult
 UPDATE items
-SET favorite = ?
-WHERE items.id = ? AND items.user_id = ?
+SET favorite = ?1,
+    unprotected_at = ?2
+WHERE items.id = ?3 AND items.user_id = ?4
 `
 
 type SetItemFavoriteParams struct {
-	Favorite bool  `json:"favorite"`
-	ID       int64 `json:"id"`
-	UserID   int64 `json:"user_id"`
+	Favorite      bool           `json:"favorite"`
+	UnprotectedAt sql.NullString `json:"unprotectedAt"`
+	ID            int64          `json:"id"`
+	UserID        int64          `json:"userID"`
 }
 
+// unprotected_at is the delete sweep's grace clock: set now when the item is
+// no longer protected, clear it when it is. A removal while the item is still
+// protected is harmless, because the final removal stamps it again.
 func (q *Queries) SetItemFavorite(ctx context.Context, arg SetItemFavoriteParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, setItemFavorite, arg.Favorite, arg.ID, arg.UserID)
+	return q.db.ExecContext(ctx, setItemFavorite,
+		arg.Favorite,
+		arg.UnprotectedAt,
+		arg.ID,
+		arg.UserID,
+	)
 }
 
 const setItemImageCacheKey = `-- name: SetItemImageCacheKey :exec
@@ -2186,6 +2206,25 @@ func (q *Queries) SetItemRead(ctx context.Context, arg SetItemReadParams) (sql.R
 		arg.ID,
 		arg.UserID,
 	)
+}
+
+const setItemUnprotectedAt = `-- name: SetItemUnprotectedAt :exec
+UPDATE items
+SET unprotected_at = ?1
+WHERE id = ?2 AND user_id = ?3
+`
+
+type SetItemUnprotectedAtParams struct {
+	UnprotectedAt sql.NullString `json:"unprotectedAt"`
+	ItemID        int64          `json:"itemID"`
+	UserID        int64          `json:"userID"`
+}
+
+// NULL marks the item as protected (in a list/favorite/bookmark); a timestamp
+// starts the delete sweep's grace clock after the last protection is removed.
+func (q *Queries) SetItemUnprotectedAt(ctx context.Context, arg SetItemUnprotectedAtParams) error {
+	_, err := q.db.ExecContext(ctx, setItemUnprotectedAt, arg.UnprotectedAt, arg.ItemID, arg.UserID)
+	return err
 }
 
 const storageByAuthor = `-- name: StorageByAuthor :one

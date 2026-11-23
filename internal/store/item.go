@@ -2014,10 +2014,18 @@ func (s *ItemStore) MarkAuthorOlderRead(userID, itemID int64) error {
 
 // SetFavorite marks an item as a favorite or not, verifying it belongs to the user.
 func (s *ItemStore) SetFavorite(userID, itemID int64, fav bool) error {
+	// Removing a protection restarts the delete sweep's grace clock. Setting it
+	// while the item is still listed is harmless: the delete query excludes
+	// protected items, and the final removal stamps the clock again.
+	var unprotected sql.NullString
+	if !fav {
+		unprotected = ns(db.Now())
+	}
 	res, err := s.q.SetItemFavorite(context.Background(), sqlcgen.SetItemFavoriteParams{
-		Favorite: fav,
-		ID:       itemID,
-		UserID:   userID,
+		Favorite:      fav,
+		UnprotectedAt: unprotected,
+		ID:            itemID,
+		UserID:        userID,
 	})
 	if err != nil {
 		return err
@@ -2031,10 +2039,15 @@ func (s *ItemStore) SetFavorite(userID, itemID int64, fav bool) error {
 // SetBookmark marks an item as bookmarked (save-for-later) or not, verifying it
 // belongs to the user.
 func (s *ItemStore) SetBookmark(userID, itemID int64, bookmark bool) error {
+	var unprotected sql.NullString
+	if !bookmark {
+		unprotected = ns(db.Now())
+	}
 	res, err := s.q.SetItemBookmark(context.Background(), sqlcgen.SetItemBookmarkParams{
-		Bookmark: bookmark,
-		ID:       itemID,
-		UserID:   userID,
+		Bookmark:      bookmark,
+		UnprotectedAt: unprotected,
+		ID:            itemID,
+		UserID:        userID,
 	})
 	if err != nil {
 		return err
@@ -2273,6 +2286,159 @@ func (s *ItemStore) markAutoRead(userID, authorID int64) (int64, error) {
 	}
 	n, _ := res.RowsAffected()
 	return n, nil
+}
+
+// deleteOldReadBatchSize bounds one retention transaction so a large backlog
+// does not hold SQLite's write lock for long.
+const deleteOldReadBatchSize = 500
+
+// oldReadSelect selects one batch of items eligible for the delete sweep. The
+// clock is read_at, not item time, so an item marked read now gets the full
+// window. A legacy read row with a NULL read_at is never deleted.
+// unprotected_at restarts the window when the item left its last list,
+// favorite or bookmark; NULL means it was never protected.
+const oldReadSelect = `
+SELECT items.id, items.image_cache_key
+FROM items
+JOIN feeds f ON f.id = items.feed_id
+LEFT JOIN authors a ON a.id = f.author_id
+JOIN users u ON u.id = items.user_id
+WHERE items.user_id = ?
+  AND items.read = 1
+  AND items.read_at IS NOT NULL
+  AND items.read_at < datetime(?, printf('-%d days', COALESCE(a.auto_delete_after_days, u.auto_delete_after_days)))
+  AND items.favorite = 0
+  AND items.bookmark = 0
+  AND f.is_system = 0
+  AND (? = 0 OR f.author_id = ?)
+  AND COALESCE(a.auto_delete_after_days, u.auto_delete_after_days) > 0
+  AND NOT EXISTS (SELECT 1 FROM list_items li WHERE li.item_id = items.id)
+  AND (items.unprotected_at IS NULL
+       OR items.unprotected_at < datetime(?, printf('-%d days', COALESCE(a.auto_delete_after_days, u.auto_delete_after_days))))
+ORDER BY items.id
+LIMIT ?`
+
+// DeleteOldReadItems removes a user's eligible old read items and returns the
+// deleted count plus the cached-media keys to purge. It runs in bounded
+// batches to keep SQLite responsive.
+func (s *ItemStore) DeleteOldReadItems(userID int64) (int64, []string, error) {
+	return s.deleteOldReadItems(userID, 0)
+}
+
+// DeleteOldReadItemsForAuthor applies the same sweep to one author's feeds. It
+// is the immediate pass after an author's delete window changes.
+func (s *ItemStore) DeleteOldReadItemsForAuthor(userID, authorID int64) (int64, []string, error) {
+	return s.deleteOldReadItems(userID, authorID)
+}
+
+func (s *ItemStore) deleteOldReadItems(userID, authorID int64) (int64, []string, error) {
+	var total int64
+	var keys []string
+	for {
+		n, batchKeys, err := s.deleteOldReadBatch(userID, authorID)
+		if err != nil {
+			return total, keys, err
+		}
+		total += n
+		keys = append(keys, batchKeys...)
+		if n < deleteOldReadBatchSize {
+			return total, keys, nil
+		}
+	}
+}
+
+// deleteOldReadBatch selects and removes one batch in a single write
+// transaction, so the eligibility check cannot race a concurrent favorite or
+// list add. The DELETE cascades item_feeds, item_enclosures, item_categories,
+// list_items and shared_items.
+func (s *ItemStore) deleteOldReadBatch(userID, authorID int64) (int64, []string, error) {
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, nil, fmt.Errorf("begin delete old items: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := db.Now()
+	rows, err := tx.QueryContext(ctx, oldReadSelect,
+		userID, now, authorID, authorID, now, deleteOldReadBatchSize)
+	if err != nil {
+		return 0, nil, fmt.Errorf("select old items: %w", err)
+	}
+	ids := make([]int64, 0, deleteOldReadBatchSize)
+	var keys []string
+	for rows.Next() {
+		var id int64
+		var imageKey sql.NullString
+		if err := rows.Scan(&id, &imageKey); err != nil {
+			rows.Close()
+			return 0, nil, err
+		}
+		ids = append(ids, id)
+		if imageKey.Valid && imageKey.String != "" {
+			keys = append(keys, imageKey.String)
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return 0, nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, nil, err
+	}
+	if len(ids) == 0 {
+		return 0, nil, tx.Commit()
+	}
+
+	encKeys, err := enclosureCacheKeys(ctx, tx, ids)
+	if err != nil {
+		return 0, nil, err
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	res, err := tx.ExecContext(ctx, "DELETE FROM items WHERE id IN ("+placeholders+")", args...)
+	if err != nil {
+		return 0, nil, fmt.Errorf("delete old items: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, nil, err
+	}
+	if int(n) != len(ids) {
+		return 0, nil, fmt.Errorf("delete old items: removed %d of %d", n, len(ids))
+	}
+	keys = append(keys, encKeys...)
+	if err := tx.Commit(); err != nil {
+		return 0, nil, err
+	}
+	return n, keys, nil
+}
+
+// enclosureCacheKeys lists the cached-media keys of the given items before
+// their delete cascades the enclosure rows away.
+func enclosureCacheKeys(ctx context.Context, tx *sql.Tx, itemIDs []int64) ([]string, error) {
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(itemIDs)), ",")
+	args := make([]any, len(itemIDs))
+	for i, id := range itemIDs {
+		args[i] = id
+	}
+	rows, err := tx.QueryContext(ctx,
+		"SELECT cache_key FROM item_enclosures WHERE cache_key <> '' AND item_id IN ("+placeholders+")", args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var keys []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
 }
 
 // MarkAllUnread marks every item unread for a user; pass feedID 0 for all feeds.

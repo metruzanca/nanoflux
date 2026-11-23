@@ -1,7 +1,7 @@
 // Package maintenance runs low-frequency background housekeeping that is not
-// tied to feed fetching. Today that is the auto-read sweep: per user, unread
-// items older than the effective window are marked read (an author's override,
-// else the user's chosen window).
+// tied to feed fetching: the auto-read sweep (per user, unread items older than
+// the effective window are marked read) and the retention sweep (per user, old
+// read items outside every list are deleted once their grace window passes).
 package maintenance
 
 import (
@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/metruzanca/nanoflux/internal/filestore"
 	"github.com/metruzanca/nanoflux/internal/store"
 )
 
@@ -17,9 +18,11 @@ import (
 // daily pass is enough; a save also sweeps the user immediately.
 const DefaultInterval = 24 * time.Hour
 
-// Sweeper marks stale unread items read on a fixed interval.
+// Sweeper marks stale unread items read and deletes old read items on a fixed
+// interval.
 type Sweeper struct {
 	store    *store.Store
+	files    filestore.Store
 	interval time.Duration
 	// progressRetention drops media playback positions not updated within it.
 	// Zero disables the sweep.
@@ -38,6 +41,13 @@ func New(st *store.Store, interval time.Duration) *Sweeper {
 // disables the sweep; a per-user row cap still applies on every write.
 func (s *Sweeper) SetProgressRetention(d time.Duration) {
 	s.progressRetention = d
+}
+
+// SetFileStore supplies the blob store used to purge cached media of deleted
+// items. Without it the rows are still removed and the blobs become orphans
+// that `nanoflux storage gc` can reclaim.
+func (s *Sweeper) SetFileStore(files filestore.Store) {
+	s.files = files
 }
 
 // Run sweeps once, then every interval until ctx is done.
@@ -88,6 +98,17 @@ func (s *Sweeper) Sweep() {
 		if n > 0 {
 			log.Info("auto-read sweep marked items read", "user_id", u.ID, "count", n)
 		}
+		// The delete sweep is independent of auto-read: with the read window off
+		// it still cleans items the user marked read manually.
+		deleted, keys, err := s.store.Items.DeleteOldReadItems(u.ID)
+		if err != nil {
+			log.Error("delete sweep", "user_id", u.ID, "err", err)
+			continue
+		}
+		s.purge(keys)
+		if deleted > 0 {
+			log.Info("delete sweep removed old read items", "user_id", u.ID, "count", deleted)
+		}
 	}
 	if s.progressRetention > 0 {
 		n, err := s.store.Progress.DeleteOlderThan(time.Now().Add(-s.progressRetention))
@@ -95,6 +116,23 @@ func (s *Sweeper) Sweep() {
 			log.Error("progress sweep", "err", err)
 		} else if n > 0 {
 			log.Info("progress sweep removed stale positions", "count", n, "retention", s.progressRetention)
+		}
+	}
+}
+
+// purge deletes the cached-media blobs of items the delete sweep removed.
+// Best-effort: a failed purge leaves an orphan for `nanoflux storage gc`.
+func (s *Sweeper) purge(keys []string) {
+	if s.files == nil {
+		return
+	}
+	ctx := context.Background()
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		if err := s.files.Delete(ctx, key); err != nil {
+			log.Warn("delete sweep: purge object", "key", key, "err", err)
 		}
 	}
 }

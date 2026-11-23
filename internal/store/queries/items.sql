@@ -200,7 +200,7 @@ LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: GetItem :one
 SELECT i.id, i.feed_id, i.user_id, i.guid, i.dedup_key, i.cross_key, i.title, i.link, i.summary, i.content, i.categories, i.duration_sec, i.image_url, i.image_cache_key, i.image_cache_size,
-       i.published_at, i.fetched_at, i.read, i.read_at, i.favorite, i.bookmark
+       i.published_at, i.fetched_at, i.read, i.read_at, i.favorite, i.bookmark, i.unprotected_at
 FROM items i
 WHERE i.id = ? AND i.user_id = ?;
 
@@ -231,15 +231,27 @@ UPDATE items
 SET read = ?, read_at = ?
 WHERE items.id = ? AND items.user_id = ?;
 
--- name: SetItemFavorite :execresult
+-- name: SetItemUnprotectedAt :exec
+-- NULL marks the item as protected (in a list/favorite/bookmark); a timestamp
+-- starts the delete sweep's grace clock after the last protection is removed.
 UPDATE items
-SET favorite = ?
-WHERE items.id = ? AND items.user_id = ?;
+SET unprotected_at = sqlc.narg('unprotectedAt')
+WHERE id = sqlc.arg('itemID') AND user_id = sqlc.arg('userID');
+
+-- name: SetItemFavorite :execresult
+-- unprotected_at is the delete sweep's grace clock: set now when the item is
+-- no longer protected, clear it when it is. A removal while the item is still
+-- protected is harmless, because the final removal stamps it again.
+UPDATE items
+SET favorite = sqlc.arg('favorite'),
+    unprotected_at = sqlc.narg('unprotectedAt')
+WHERE items.id = sqlc.arg('id') AND items.user_id = sqlc.arg('userID');
 
 -- name: SetItemBookmark :execresult
 UPDATE items
-SET bookmark = ?
-WHERE items.id = ? AND items.user_id = ?;
+SET bookmark = sqlc.arg('bookmark'),
+    unprotected_at = sqlc.narg('unprotectedAt')
+WHERE items.id = sqlc.arg('id') AND items.user_id = sqlc.arg('userID');
 
 -- name: MarkAllItemsRead :exec
 -- Scope by membership so a cross-feed item is marked even on a feed that does
@@ -271,7 +283,9 @@ WHERE items.user_id = sqlc.arg('userID')
 -- the owner author's override when set, else the account's window. authorID 0
 -- means every author of the user's feeds. An effective window of 0 disables
 -- the sweep for that author. COALESCE(published_at, fetched_at) is the
--- canonical item time; favorites and bookmarks are swept too.
+-- canonical item time; favorites and bookmarks are swept too. The author join
+-- is a LEFT JOIN because an unassigned feed (author_id 0, schemaV69) has no
+-- author row and must still inherit the account window.
 UPDATE items
 SET read = 1, read_at = sqlc.arg('readAt')
 WHERE read = 0
@@ -279,7 +293,7 @@ WHERE read = 0
   AND items.feed_id IN (
     SELECT f.id
     FROM feeds f
-    JOIN authors a ON a.id = f.author_id
+    LEFT JOIN authors a ON a.id = f.author_id
     JOIN users u ON u.id = f.user_id
     WHERE f.user_id = sqlc.arg('userID')
       AND (CAST(sqlc.arg('authorID') AS INTEGER) = 0 OR f.author_id = CAST(sqlc.arg('authorID') AS INTEGER))

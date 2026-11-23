@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/metruzanca/nanoflux/internal/db"
 	"github.com/metruzanca/nanoflux/internal/store/sqlcgen"
 	"github.com/metruzanca/nanoflux/internal/tagnorm"
 )
@@ -137,14 +138,31 @@ func (s *ListStore) List(userID int64) ([]ListWithCount, error) {
 }
 
 func (s *ListStore) Delete(userID, id int64) error {
-	res, err := s.q.DeleteList(context.Background(), sqlcgen.DeleteListParams{ID: id, UserID: userID})
+	ctx := context.Background()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete list: %w", err)
+	}
+	defer tx.Rollback()
+	// Deleting a list unprotects its items. Stamp the grace clock before the
+	// cascade drops list_items, or every old read item in the list would be
+	// eligible for deletion immediately.
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE items SET unprotected_at = ?
+		WHERE id IN (SELECT li.item_id FROM list_items li
+		             JOIN lists l ON l.id = li.list_id
+		             WHERE li.list_id = ? AND l.user_id = ?)`,
+		db.Now(), id, userID); err != nil {
+		return fmt.Errorf("unprotect list items: %w", err)
+	}
+	res, err := s.q.WithTx(tx).DeleteList(ctx, sqlcgen.DeleteListParams{ID: id, UserID: userID})
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	return nil
+	return tx.Commit()
 }
 
 // Rename updates a list's name.
@@ -185,11 +203,18 @@ func (s *ListStore) AddItem(userID, listID, itemID int64) error {
 	if n == 0 {
 		return ErrNotFound
 	}
-	_, err = s.q.AddItemToList(context.Background(), sqlcgen.AddItemToListParams{
+	if _, err = s.q.AddItemToList(context.Background(), sqlcgen.AddItemToListParams{
 		ListID: listID,
 		ItemID: itemID,
+	}); err != nil {
+		return err
+	}
+	// A listed item is protected: clear any pending grace clock.
+	return s.q.SetItemUnprotectedAt(context.Background(), sqlcgen.SetItemUnprotectedAtParams{
+		UnprotectedAt: sql.NullString{},
+		ItemID:        itemID,
+		UserID:        userID,
 	})
-	return err
 }
 
 // RemoveItem drops an item from a list, verifying both belong to the user.
@@ -205,7 +230,14 @@ func (s *ListStore) RemoveItem(userID, listID, itemID int64) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	return nil
+	// The item just left a list, so restart the delete sweep's grace clock.
+	// Stamping it while another list still holds the item is harmless: the
+	// final removal stamps it again.
+	return s.q.SetItemUnprotectedAt(context.Background(), sqlcgen.SetItemUnprotectedAtParams{
+		UnprotectedAt: ns(db.Now()),
+		ItemID:        itemID,
+		UserID:        userID,
+	})
 }
 
 // ItemListIDs returns the ids of a user's lists that contain itemID.

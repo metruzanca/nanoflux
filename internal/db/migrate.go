@@ -80,6 +80,7 @@ var migrations = []migration{
 	{67, schemaV67},
 	{68, schemaV68},
 	{69, schemaV69},
+	{70, schemaV70},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -1184,6 +1185,22 @@ JOIN collections c ON c.id = cv.collection_id;
 DROP TABLE collection_feeds;
 DROP TABLE collection_views;
 `
+
+// schemaV70 adds the optional retention sweep that deletes old read items:
+// users.auto_delete_after_days is the account window (0 = off), an author's
+// auto_delete_after_days overrides it (NULL inherits, 0 = off), and
+// items.unprotected_at records when an item last left every list, favorite and
+// bookmark so it gets one full window before deletion. The clock is read_at, so
+// items with a NULL read_at (legacy read rows) are never deleted. visible_items
+// is recreated because it is SELECT i.* and would otherwise miss the new item
+// column.
+const schemaV70 = `
+DROP VIEW IF EXISTS visible_items;
+ALTER TABLE users ADD COLUMN auto_delete_after_days INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE authors ADD COLUMN auto_delete_after_days INTEGER;
+ALTER TABLE items ADD COLUMN unprotected_at TEXT;
+CREATE INDEX idx_items_user_read_at ON items(user_id, read_at) WHERE read = 1;
+` + visibleItemsViewSQL
 
 // schemaV69 lets a feed exist without an author. Feeds become a library: an
 // unassigned feed still polls and appears in the global lists and /feeds, but

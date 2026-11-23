@@ -9,16 +9,17 @@ import (
 )
 
 type Author struct {
-	ID                int64          `json:"id"`
-	UserID            int64          `json:"user_id"`
-	Name              string         `json:"name"`
-	AvatarUrl         sql.NullString `json:"avatar_url"`
-	AvatarKey         sql.NullString `json:"avatar_key"`
-	LastFetchedAt     sql.NullString `json:"last_fetched_at"`
-	Description       sql.NullString `json:"description"`
-	IsSystem          int64          `json:"is_system"`
-	AutoReadAfterDays sql.NullInt64  `json:"auto_read_after_days"`
-	CreatedAt         string         `json:"created_at"`
+	ID                  int64          `json:"id"`
+	UserID              int64          `json:"user_id"`
+	Name                string         `json:"name"`
+	AvatarUrl           sql.NullString `json:"avatar_url"`
+	AvatarKey           sql.NullString `json:"avatar_key"`
+	LastFetchedAt       sql.NullString `json:"last_fetched_at"`
+	Description         sql.NullString `json:"description"`
+	IsSystem            int64          `json:"is_system"`
+	AutoReadAfterDays   sql.NullInt64  `json:"auto_read_after_days"`
+	AutoDeleteAfterDays sql.NullInt64  `json:"auto_delete_after_days"`
+	CreatedAt           string         `json:"created_at"`
 }
 
 type AuthorFilterRule struct {
@@ -105,6 +106,7 @@ type Item struct {
 	ReadAt         sql.NullString `json:"read_at"`
 	Favorite       bool           `json:"favorite"`
 	Bookmark       bool           `json:"bookmark"`
+	UnprotectedAt  sql.NullString `json:"unprotected_at"`
 }
 
 type ItemCategory struct {
@@ -219,6 +221,7 @@ type User struct {
 	AccentColor           string         `json:"accent_color"`
 	HomeConfig            sql.NullString `json:"home_config"`
 	AutoReadAfterDays     int64          `json:"auto_read_after_days"`
+	AutoDeleteAfterDays   int64          `json:"auto_delete_after_days"`
 	HideUnreadCounts      bool           `json:"hide_unread_counts"`
 	HideUnreadNav         bool           `json:"hide_unread_nav"`
 	GridMaxColumns        int64          `json:"grid_max_columns"`
@@ -257,4 +260,5 @@ type VisibleItem struct {
 	ReadAt         sql.NullString `json:"read_at"`
 	Favorite       bool           `json:"favorite"`
 	Bookmark       bool           `json:"bookmark"`
+	UnprotectedAt  sql.NullString `json:"unprotected_at"`
 }

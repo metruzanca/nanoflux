@@ -24,7 +24,7 @@ func (q *Queries) CountAllAuthors(ctx context.Context) (int64, error) {
 const createAuthor = `-- name: CreateAuthor :one
 INSERT INTO authors (user_id, name, avatar_url, description)
 VALUES (?, ?, ?, ?)
-RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, created_at
+RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, created_at
 `
 
 type CreateAuthorParams struct {
@@ -52,6 +52,7 @@ func (q *Queries) CreateAuthor(ctx context.Context, arg CreateAuthorParams) (Aut
 		&i.Description,
 		&i.IsSystem,
 		&i.AutoReadAfterDays,
+		&i.AutoDeleteAfterDays,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -60,7 +61,7 @@ func (q *Queries) CreateAuthor(ctx context.Context, arg CreateAuthorParams) (Aut
 const createSystemAuthor = `-- name: CreateSystemAuthor :one
 INSERT INTO authors (user_id, name, description, is_system)
 VALUES (?, ?, ?, 1)
-RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, created_at
+RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, created_at
 `
 
 type CreateSystemAuthorParams struct {
@@ -82,6 +83,7 @@ func (q *Queries) CreateSystemAuthor(ctx context.Context, arg CreateSystemAuthor
 		&i.Description,
 		&i.IsSystem,
 		&i.AutoReadAfterDays,
+		&i.AutoDeleteAfterDays,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -102,7 +104,7 @@ func (q *Queries) DeleteAuthor(ctx context.Context, arg DeleteAuthorParams) (sql
 }
 
 const getAuthor = `-- name: GetAuthor :one
-SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, created_at
 FROM authors
 WHERE id = ? AND user_id = ?
 `
@@ -125,13 +127,14 @@ func (q *Queries) GetAuthor(ctx context.Context, arg GetAuthorParams) (Author, e
 		&i.Description,
 		&i.IsSystem,
 		&i.AutoReadAfterDays,
+		&i.AutoDeleteAfterDays,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getSystemAuthor = `-- name: GetSystemAuthor :one
-SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, created_at
 FROM authors
 WHERE user_id = ? AND is_system = 1
 LIMIT 1
@@ -151,13 +154,14 @@ func (q *Queries) GetSystemAuthor(ctx context.Context, userID int64) (Author, er
 		&i.Description,
 		&i.IsSystem,
 		&i.AutoReadAfterDays,
+		&i.AutoDeleteAfterDays,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listAuthors = `-- name: ListAuthors :many
-SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, created_at
 FROM authors
 WHERE user_id = ? AND is_system = 0
 ORDER BY name
@@ -182,6 +186,7 @@ func (q *Queries) ListAuthors(ctx context.Context, userID int64) ([]Author, erro
 			&i.Description,
 			&i.IsSystem,
 			&i.AutoReadAfterDays,
+			&i.AutoDeleteAfterDays,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -226,7 +231,7 @@ func (q *Queries) ListAuthorsAvatarKeys(ctx context.Context, userID int64) ([]sq
 }
 
 const listAuthorsWithFeedCount = `-- name: ListAuthorsWithFeedCount :many
-SELECT a.id, a.user_id, a.name, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.is_system, a.auto_read_after_days, a.created_at,
+SELECT a.id, a.user_id, a.name, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.is_system, a.auto_read_after_days, a.auto_delete_after_days, a.created_at,
        (SELECT COUNT(*) FROM feeds f
           WHERE f.author_id = a.id AND f.user_id = a.user_id AND f.is_system = 0) AS feed_count,
        (SELECT COALESCE(MAX(f2.rank), 0) FROM feeds f2
@@ -239,19 +244,20 @@ ORDER BY a.name
 `
 
 type ListAuthorsWithFeedCountRow struct {
-	ID                int64          `json:"id"`
-	UserID            int64          `json:"user_id"`
-	Name              string         `json:"name"`
-	AvatarUrl         sql.NullString `json:"avatar_url"`
-	AvatarKey         sql.NullString `json:"avatar_key"`
-	LastFetchedAt     sql.NullString `json:"last_fetched_at"`
-	Description       sql.NullString `json:"description"`
-	IsSystem          int64          `json:"is_system"`
-	AutoReadAfterDays sql.NullInt64  `json:"auto_read_after_days"`
-	CreatedAt         string         `json:"created_at"`
-	FeedCount         int64          `json:"feed_count"`
-	MaxRank           interface{}    `json:"max_rank"`
-	FavCount          int64          `json:"fav_count"`
+	ID                  int64          `json:"id"`
+	UserID              int64          `json:"user_id"`
+	Name                string         `json:"name"`
+	AvatarUrl           sql.NullString `json:"avatar_url"`
+	AvatarKey           sql.NullString `json:"avatar_key"`
+	LastFetchedAt       sql.NullString `json:"last_fetched_at"`
+	Description         sql.NullString `json:"description"`
+	IsSystem            int64          `json:"is_system"`
+	AutoReadAfterDays   sql.NullInt64  `json:"auto_read_after_days"`
+	AutoDeleteAfterDays sql.NullInt64  `json:"auto_delete_after_days"`
+	CreatedAt           string         `json:"created_at"`
+	FeedCount           int64          `json:"feed_count"`
+	MaxRank             interface{}    `json:"max_rank"`
+	FavCount            int64          `json:"fav_count"`
 }
 
 // max_rank and fav_count carry the author's magic-sort taste signal: the highest
@@ -278,6 +284,7 @@ func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([
 			&i.Description,
 			&i.IsSystem,
 			&i.AutoReadAfterDays,
+			&i.AutoDeleteAfterDays,
 			&i.CreatedAt,
 			&i.FeedCount,
 			&i.MaxRank,
@@ -294,6 +301,23 @@ func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const setAuthorAutoDeleteAfterDays = `-- name: SetAuthorAutoDeleteAfterDays :execresult
+UPDATE authors
+SET auto_delete_after_days = ?1
+WHERE id = ?2 AND user_id = ?3 AND is_system = 0
+`
+
+type SetAuthorAutoDeleteAfterDaysParams struct {
+	AutoDeleteAfterDays sql.NullInt64 `json:"auto_delete_after_days"`
+	ID                  int64         `json:"id"`
+	UserID              int64         `json:"userID"`
+}
+
+// NULL inherits the account delete window; 0 disables the sweep for this author.
+func (q *Queries) SetAuthorAutoDeleteAfterDays(ctx context.Context, arg SetAuthorAutoDeleteAfterDaysParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, setAuthorAutoDeleteAfterDays, arg.AutoDeleteAfterDays, arg.ID, arg.UserID)
 }
 
 const setAuthorAutoReadAfterDays = `-- name: SetAuthorAutoReadAfterDays :execresult

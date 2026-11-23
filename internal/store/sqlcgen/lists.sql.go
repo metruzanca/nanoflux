@@ -208,26 +208,27 @@ func (q *Queries) GetListByToken(ctx context.Context, token sql.NullString) (Lis
 }
 
 const getUserByBookmarksShareToken = `-- name: GetUserByBookmarksShareToken :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, auto_delete_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
 FROM users
 WHERE bookmarks_share_token = ?1
 `
 
 type GetUserByBookmarksShareTokenRow struct {
-	ID                int64          `json:"id"`
-	Username          string         `json:"username"`
-	PasswordHash      string         `json:"password_hash"`
-	IsAdmin           bool           `json:"is_admin"`
-	AvatarKey         sql.NullString `json:"avatar_key"`
-	Timezone          sql.NullString `json:"timezone"`
-	Theme             string         `json:"theme"`
-	AccentColor       string         `json:"accent_color"`
-	AutoReadAfterDays int64          `json:"auto_read_after_days"`
-	HideUnreadCounts  bool           `json:"hide_unread_counts"`
-	HideUnreadNav     bool           `json:"hide_unread_nav"`
-	GridMaxColumns    int64          `json:"grid_max_columns"`
-	ShowTagCloud      bool           `json:"show_tag_cloud"`
-	CreatedAt         string         `json:"created_at"`
+	ID                  int64          `json:"id"`
+	Username            string         `json:"username"`
+	PasswordHash        string         `json:"password_hash"`
+	IsAdmin             bool           `json:"is_admin"`
+	AvatarKey           sql.NullString `json:"avatar_key"`
+	Timezone            sql.NullString `json:"timezone"`
+	Theme               string         `json:"theme"`
+	AccentColor         string         `json:"accent_color"`
+	AutoReadAfterDays   int64          `json:"auto_read_after_days"`
+	AutoDeleteAfterDays int64          `json:"auto_delete_after_days"`
+	HideUnreadCounts    bool           `json:"hide_unread_counts"`
+	HideUnreadNav       bool           `json:"hide_unread_nav"`
+	GridMaxColumns      int64          `json:"grid_max_columns"`
+	ShowTagCloud        bool           `json:"show_tag_cloud"`
+	CreatedAt           string         `json:"created_at"`
 }
 
 func (q *Queries) GetUserByBookmarksShareToken(ctx context.Context, token sql.NullString) (GetUserByBookmarksShareTokenRow, error) {
@@ -243,6 +244,7 @@ func (q *Queries) GetUserByBookmarksShareToken(ctx context.Context, token sql.Nu
 		&i.Theme,
 		&i.AccentColor,
 		&i.AutoReadAfterDays,
+		&i.AutoDeleteAfterDays,
 		&i.HideUnreadCounts,
 		&i.HideUnreadNav,
 		&i.GridMaxColumns,
@@ -253,26 +255,27 @@ func (q *Queries) GetUserByBookmarksShareToken(ctx context.Context, token sql.Nu
 }
 
 const getUserByFavoritesShareToken = `-- name: GetUserByFavoritesShareToken :one
-SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
+SELECT id, username, password_hash, is_admin, avatar_key, timezone, theme, accent_color, auto_read_after_days, auto_delete_after_days, hide_unread_counts, hide_unread_nav, grid_max_columns, show_tag_cloud, created_at
 FROM users
 WHERE favorites_share_token = ?1
 `
 
 type GetUserByFavoritesShareTokenRow struct {
-	ID                int64          `json:"id"`
-	Username          string         `json:"username"`
-	PasswordHash      string         `json:"password_hash"`
-	IsAdmin           bool           `json:"is_admin"`
-	AvatarKey         sql.NullString `json:"avatar_key"`
-	Timezone          sql.NullString `json:"timezone"`
-	Theme             string         `json:"theme"`
-	AccentColor       string         `json:"accent_color"`
-	AutoReadAfterDays int64          `json:"auto_read_after_days"`
-	HideUnreadCounts  bool           `json:"hide_unread_counts"`
-	HideUnreadNav     bool           `json:"hide_unread_nav"`
-	GridMaxColumns    int64          `json:"grid_max_columns"`
-	ShowTagCloud      bool           `json:"show_tag_cloud"`
-	CreatedAt         string         `json:"created_at"`
+	ID                  int64          `json:"id"`
+	Username            string         `json:"username"`
+	PasswordHash        string         `json:"password_hash"`
+	IsAdmin             bool           `json:"is_admin"`
+	AvatarKey           sql.NullString `json:"avatar_key"`
+	Timezone            sql.NullString `json:"timezone"`
+	Theme               string         `json:"theme"`
+	AccentColor         string         `json:"accent_color"`
+	AutoReadAfterDays   int64          `json:"auto_read_after_days"`
+	AutoDeleteAfterDays int64          `json:"auto_delete_after_days"`
+	HideUnreadCounts    bool           `json:"hide_unread_counts"`
+	HideUnreadNav       bool           `json:"hide_unread_nav"`
+	GridMaxColumns      int64          `json:"grid_max_columns"`
+	ShowTagCloud        bool           `json:"show_tag_cloud"`
+	CreatedAt           string         `json:"created_at"`
 }
 
 func (q *Queries) GetUserByFavoritesShareToken(ctx context.Context, token sql.NullString) (GetUserByFavoritesShareTokenRow, error) {
@@ -288,6 +291,7 @@ func (q *Queries) GetUserByFavoritesShareToken(ctx context.Context, token sql.Nu
 		&i.Theme,
 		&i.AccentColor,
 		&i.AutoReadAfterDays,
+		&i.AutoDeleteAfterDays,
 		&i.HideUnreadCounts,
 		&i.HideUnreadNav,
 		&i.GridMaxColumns,

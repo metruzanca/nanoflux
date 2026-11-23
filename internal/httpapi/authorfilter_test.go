@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,6 +28,15 @@ func TestAuthorAutoReadSettings(t *testing.T) {
 	if _, err := s.store.Items.Upsert(f.ID, store.Item{GUID: "old", Title: "old", PublishedAt: old, FetchedAt: db.Now()}); err != nil {
 		t.Fatal(err)
 	}
+	res, err := s.store.Items.UpsertMany(f.ID, []store.Item{{GUID: "old-read", Title: "old-read", PublishedAt: old, FetchedAt: db.Now()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldReadID := res[0].ItemID
+	if _, err := s.store.DB().Exec(`UPDATE items SET read = 1, read_at = ? WHERE id = ?`,
+		db.FormatTime(time.Now().AddDate(0, 0, -40)), oldReadID); err != nil {
+		t.Fatal(err)
+	}
 
 	editURL := "/authors/" + itoa(a.ID) + "/edit"
 	autoReadURL := "/authors/" + itoa(a.ID) + "/auto-read"
@@ -34,18 +44,26 @@ func TestAuthorAutoReadSettings(t *testing.T) {
 	if !strings.Contains(body, `name="author_auto_read_after_days"`) || !strings.Contains(body, "use account default") {
 		t.Fatalf("edit page missing the auto-read override card: %s", body)
 	}
+	if !strings.Contains(body, `name="author_auto_delete_after_days"`) {
+		t.Fatalf("edit page missing the delete override card: %s", body)
+	}
 
 	// Saving a window sweeps this author immediately, even though the account
-	// window is off. The htmx path returns the refreshed card.
+	// windows are off. The htmx path returns the refreshed card.
 	if rr := doHtmxForm(h, http.MethodPost, autoReadURL, url.Values{
-		"author_auto_read_present":    {"1"},
-		"author_auto_read_after_days": {"7"},
+		"author_auto_read_present":      {"1"},
+		"author_auto_read_after_days":   {"7"},
+		"author_auto_delete_after_days": {"30"},
 	}, cookie); rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `id="author-auto-read-card"`) {
 		t.Fatalf("htmx auto-read save: %d %s", rr.Code, rr.Body.String())
 	}
+	if _, err := s.store.Items.ByID(u.ID, oldReadID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("saving the delete window should remove the old read item, got %v", err)
+	}
 	if rr := doForm(h, http.MethodPost, autoReadURL, url.Values{
-		"author_auto_read_present":    {"1"},
-		"author_auto_read_after_days": {"3"},
+		"author_auto_read_present":      {"1"},
+		"author_auto_read_after_days":   {"3"},
+		"author_auto_delete_after_days": {"30"},
 	}, cookie); rr.Code != http.StatusSeeOther {
 		t.Fatalf("save author auto-read: %d %s", rr.Code, rr.Body.String())
 	}
@@ -53,26 +71,41 @@ func TestAuthorAutoReadSettings(t *testing.T) {
 	if got.AutoReadAfterDays == nil || *got.AutoReadAfterDays != 3 {
 		t.Fatalf("author override = %v; want 3", got.AutoReadAfterDays)
 	}
+	if got.AutoDeleteAfterDays == nil || *got.AutoDeleteAfterDays != 30 {
+		t.Fatalf("author delete override = %v; want 30", got.AutoDeleteAfterDays)
+	}
 	if unread, _ := s.store.Items.CountUnread(u.ID, f.ID); unread != 0 {
 		t.Fatalf("saving should sweep the author immediately: unread = %d", unread)
 	}
 
 	// An invalid value is rejected and does not overwrite the stored one.
 	if rr := doForm(h, http.MethodPost, autoReadURL, url.Values{
-		"author_auto_read_present":    {"1"},
-		"author_auto_read_after_days": {"99"},
+		"author_auto_read_present":      {"1"},
+		"author_auto_read_after_days":   {"99"},
+		"author_auto_delete_after_days": {"30"},
 	}, cookie); rr.Code != http.StatusBadRequest {
 		t.Fatalf("invalid author auto-read: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := doForm(h, http.MethodPost, autoReadURL, url.Values{
+		"author_auto_read_present":      {"1"},
+		"author_auto_read_after_days":   {"3"},
+		"author_auto_delete_after_days": {"99"},
+	}, cookie); rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid author auto-delete: %d %s", rr.Code, rr.Body.String())
 	}
 	got, _ = s.store.Authors.ByID(u.ID, a.ID)
 	if got.AutoReadAfterDays == nil || *got.AutoReadAfterDays != 3 {
 		t.Fatalf("invalid value changed the override: %v", got.AutoReadAfterDays)
 	}
+	if got.AutoDeleteAfterDays == nil || *got.AutoDeleteAfterDays != 30 {
+		t.Fatalf("invalid delete changed the override: %v", got.AutoDeleteAfterDays)
+	}
 
 	// "off" is a real override, distinct from inherit.
 	if rr := doForm(h, http.MethodPost, autoReadURL, url.Values{
-		"author_auto_read_present":    {"1"},
-		"author_auto_read_after_days": {"off"},
+		"author_auto_read_present":      {"1"},
+		"author_auto_read_after_days":   {"off"},
+		"author_auto_delete_after_days": {"off"},
 	}, cookie); rr.Code != http.StatusSeeOther {
 		t.Fatalf("save off: %d %s", rr.Code, rr.Body.String())
 	}
@@ -80,17 +113,24 @@ func TestAuthorAutoReadSettings(t *testing.T) {
 	if got.AutoReadAfterDays == nil || *got.AutoReadAfterDays != 0 {
 		t.Fatalf("off override = %v; want 0", got.AutoReadAfterDays)
 	}
+	if got.AutoDeleteAfterDays == nil || *got.AutoDeleteAfterDays != 0 {
+		t.Fatalf("off delete override = %v; want 0", got.AutoDeleteAfterDays)
+	}
 
-	// Inherit clears the override.
+	// Inherit clears both overrides.
 	if rr := doForm(h, http.MethodPost, autoReadURL, url.Values{
-		"author_auto_read_present":    {"1"},
-		"author_auto_read_after_days": {"inherit"},
+		"author_auto_read_present":      {"1"},
+		"author_auto_read_after_days":   {"inherit"},
+		"author_auto_delete_after_days": {"inherit"},
 	}, cookie); rr.Code != http.StatusSeeOther {
 		t.Fatalf("save inherit: %d %s", rr.Code, rr.Body.String())
 	}
 	got, _ = s.store.Authors.ByID(u.ID, a.ID)
 	if got.AutoReadAfterDays != nil {
 		t.Fatalf("inherit should clear the override, got %v", got.AutoReadAfterDays)
+	}
+	if got.AutoDeleteAfterDays != nil {
+		t.Fatalf("inherit should clear the delete override, got %v", got.AutoDeleteAfterDays)
 	}
 }
 
