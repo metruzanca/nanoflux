@@ -1,115 +1,118 @@
 # Feeds are a library, authors are lenses
 
+Status: 2026-11-24. Steps 1 and 2 are implemented. Step 3 is next. The old
+"flatten views into authors" step is cancelled.
+
 ## Progress
 
-- [x] **Step 1: collections group authors (schemaV68).** Collections store
-  `collection_authors`. A collection's scope is the union of its members' author
-  pages (owned feeds plus their views). Auto collections and the synthetic
-  no-collection are gone. A `/domains` page groups the feed library by
+- [x] **Step 1: collections group authors (schemaV68).** Commit `23c11cc`.
+  Collections store `collection_authors`. A collection's scope is the union of
+  its members' author pages (owned feeds plus their views). Auto collections and
+  the synthetic no-collection are gone. `/domains` groups the feed library by
   registrable domain instead. No collection-level filters yet.
 - [x] **Step 2: unassigned feeds and the `/feeds` library page (schemaV69).**
-  `feeds.author_id` is still an owner pointer but `0` means unassigned, and the
-  author foreign key is gone. `/feeds` lists every feed, `/feeds/{id}` shows its
-  items, and `/feeds/{id}/edit` is a standalone editor. Deleting an author
-  unassigns its feeds instead of deleting them. Add-feed offers an
-  "unassigned (library only)" choice.
-- [ ] Step 3: `author_feeds` many-to-many and membership-based author scope.
-- [ ] Step 4: flatten saved views into authors.
-- [ ] Step 5: drop `feeds.author_id`, move auto-read to feeds, momentum by feed.
-- [ ] Step 6: simplify `visible_items` and update the docs.
+  Commit `b588d57`. `feeds.author_id` is still an owner pointer, `0` means
+  unassigned, and the author foreign key is gone. `/feeds` lists every feed,
+  `/feeds/{id}` shows its items, `/feeds/{id}/edit` is a standalone editor, and
+  an author delete unassigns its feeds instead of deleting them.
+- [ ] **Step 3: `author_feeds` compatibility membership (schemaV71).** Next.
+  See the plan below. V70 is already used by read-item retention.
+- [x] **Step 4: flatten saved views into authors.** Cancelled. The live data
+  shows views are an author's filter lenses, not redundant sources. See below.
+- [ ] Step 5: drop the compatibility owner, move auto-read/delete ownership,
+  momentum by feed. Deferred until global filter semantics are decided.
+- [ ] Step 6: simplify `visible_items`. Deferred to a separate read-path
+  cleanup after step 5's semantics are settled.
 
-Status: design agreed. Step 1 is implemented; the remaining decisions below are
-still to be confirmed before the later steps.
-Supersedes the ownership parts of `author-collection.plan.md`; that plan's
-collection-by-author membership is absorbed here.
+## Live usage review (2026-11-24)
 
-## The problem
+Reviewed the current data from a schemaV69 backup. This is the only active
+account, so its usage is the product's usage.
 
-`feeds.author_id` carries two unrelated responsibilities:
+Counts:
 
-1. Polling identity: one URL, one poll state, one plugin owner, one cache folder.
-2. Presentation and filtering identity: whose page the items appear on, whose
-   always-on rules apply, which auto-read window applies, how momentum groups
-   items, what the source line says.
+- 109 saved views, 379 authors, 370 feeds, 34 collections, 36,744 items.
+- 88 authors have views: 64 with zero feeds, 20 with one feed, 4 with more than
+  one feed.
+- 105 of 109 views are a single `tag:show:u/<user>` filter. The other 4 are
+  compound tag recipes.
+- 4 authors hold multiple views: one holds 19 and three hold 2. All four have
+  zero feeds.
+- Views are real streams: of the 105 single-tag views, 2 match zero items, 23
+  match 1-9, 77 match 10-99, 3 match 100+, for 2,703 matched rows total.
+- Collections are large author groups: the largest hold 131, 104, 101, 70 and 43
+  authors. One of the largest has 39 view-bearing members and 107 with feeds.
 
-`saved_views` exists as the escape hatch for "a second filter lens over feeds I
-do not own". The read path then reconciles owner rules, page-author rules and
-view-author rules through `visible_items`, `authorScopeClause`,
-`viewFilterClause`, `authorRulesVisibleSQL`, `visibleItemExists` and
-`collectionScopeClause`. That reconciliation is the abstraction leaking.
+What this means:
 
-## Target model
+- A view is usually an author's **filter lens**, and for 64 authors it is the
+  only thing the author has. The author profile is the identity; the view is how
+  a poster or person is followed across the library.
+- Flattening views into one author each would split multi-lens authors (the
+  19-view author into 19 pages), lose author groupings, and turn every lens into
+  an author that must pin a static feed list. Views currently match every feed
+  dynamically; a pinned list would silently miss feeds added later.
+- Worse, collections group authors and expand each member's page. If every
+  flattened lens selected all feeds, a collection holding those authors would
+  pull the entire library. One large collection alone has 39 view-bearing
+  members, and a multi-lens author sits in a small collection. This would break
+  collections.
+- The real model in use is: **feeds are a library, authors are profiles with
+  optional selected feeds and optional filter lenses, collections group
+  authors.** That is still a large simplification over feed ownership.
 
-Feeds are the library. Authors are lenses. Collections group lenses.
+Decision: keep `saved_views` as an author's lenses. Do not flatten. A rename to
+"lenses" is optional and can happen later without a data migration.
+
+## Revised target model
 
 ```
 feeds               user_id, url, poll state, plugin, rank, cache_images
-                    (no author_id)
+                    author_id = compatibility owner (0 = none)
 authors             user_id, name, profile, filter rules
-author_feeds        author_id, feed_id             -- explicit selection
-collections         user_id, name, is_auto
+author_feeds        author_id, feed_id             -- selected feeds
+saved_views         author_id, title, filters      -- author lenses
+collections         user_id, name
 collection_authors  collection_id, author_id
-items               unchanged: owner feed (items.feed_id) + item_feeds
+items               unchanged: owner feed + item_feeds
 ```
 
-An author's item scope is: items reachable through its selected feeds, then that
-author's filter rules. No ownership join, no view branches, no special handling
-for cross-feed posts.
+An author's item scope is the union of:
 
-This deletes:
+1. items reachable through its `author_feeds` membership, and
+2. items matching any of its views.
 
-- `saved_views`, `collection_views`, `ViewFilter`, and every view query path.
-- `authorScopeClause` OR branches (becomes a membership predicate).
-- `collectionScopeClause` feed/view union (becomes a union of author scopes).
-- `visible_items` as the global correctness backbone.
-- `authorRulesVisibleSQL`, `visibleItemExists`, and the raw-items vs view-scope
-  split in most call sites.
-- `SetFeedAuthor`, the feed "move to another author" dialog, and the ownership
-  checks in feed create/edit/delete.
+Collections are a union of their member authors' scopes.
 
-The subreddit case: one `r/cats` feed; author `u/alice` selects it with a
-`u/alice` tag rule; author `u/bob` selects it with a `u/bob` rule; optionally an
-author `r/cats` selects it unfiltered. One poll, one item row, shared read state.
+In step 3 the compatibility owner (`feeds.author_id`) stays authoritative for
+global behavior: `visible_items`, auto-read, auto-delete, momentum and global
+attribution. Author pages use membership plus views. This keeps the step
+additive and reversible.
 
-## Decisions (recommended defaults)
+## Decisions
 
-Record the final answer next to each before starting.
+1. **Authors may hold multiple lenses.** Answered by live usage. Do not flatten
+   views. `saved_views` stays as an author-owned lens, with the current
+   `tag`/`feed`/`author`/time filter rows.
+2. **Keep the owner column during step 3.** `feeds.author_id` remains the
+   compatibility owner for global visibility, auto-read/delete, momentum and
+   attribution. Step 5 removes it only after global filter semantics are
+   decided.
+3. **Author filters are page-local in the end state.** Pending for step 5.
+   Global lists would ignore author rules, with feed-level or user-level rules
+   as a later feature. Not part of step 3.
+4. **Auto-read and auto-delete move off authors in step 5.** Both currently key
+   off the owner author (`LEFT JOIN authors` so unassigned feeds inherit the
+   account window). Shared feeds need a feed or user window. Pending.
+5. **Momentum groups by feed in step 5.** Pending.
+6. **Collections group authors only.** Implemented. Never mix feeds and authors
+   in one collection.
+7. **Attribution is scope-derived in the end state.** Step 3 keeps owner
+   attribution on global lists and shows the scope author on an author page.
 
-1. **One lens per author.** An author has exactly one feed selection and one
-   filter recipe. This is what actually removes views. Multi-lens authors are
-   migrated into separate authors grouped by a collection.
-   - Alternative: an author profile may hold several lens branches. That keeps a
-     `saved_views`-shaped sub-entity and does not remove the abstraction.
-2. **Author filters are page-local.** They shape that author's lists only.
-   Global library lists (`/unread`, `/search`, stats) show the library without
-   author rules. Feed-level default rules are deferred; if "block this tag
-   everywhere" is later needed, it belongs on the feed or the user, not an
-   author.
-   - Alternative: keep owner-derived global visibility, which keeps most of
-     today's complexity and adds a join table.
-3. **Auto-read moves off authors.** `items.read` is shared per item, so two
-   authors including the same feed with different windows have no unambiguous
-   answer. Move the window to the feed (`feeds.auto_read_after_days`) with the
-   user window as fallback, and drop `authors.auto_read_after_days`.
-   - Alternative: effective window is the minimum positive window across
-     authors that include the item. Deterministic but surprising.
-4. **Momentum groups by feed.** `feeds.author_id` disappears, so "small authors
-   first" has no owner to group by. Group the backlog by feed and adjust the
-   hint. Only offer momentum where a feed backlog is meaningful.
-5. **Collections group authors only.** Never mix feeds and authors in one
-   collection, or the union complexity returns. The library and `/feeds` cover
-   raw feeds; an auto collection can list authors not in a user collection.
-6. **Attribution becomes scope-derived.** There is no owner author. On an author
-   page, the row's source is that author/lens; on global lists, the feed plus
-   any plugin decoration. An aggregator feed no longer falsely attributes every
-   post to one author.
+## Step 3 plan: author_feeds compatibility membership
 
-## Schema and migration
-
-Split into small migrations so each step can ship green. Numbering starts after
-the latest (`schemaV67` recreates `visible_items`).
-
-### V68: author_feeds
+### Migration V71
 
 ```sql
 CREATE TABLE author_feeds (
@@ -119,295 +122,118 @@ CREATE TABLE author_feeds (
 );
 CREATE INDEX idx_author_feeds_feed ON author_feeds(feed_id);
 INSERT OR IGNORE INTO author_feeds (author_id, feed_id)
-SELECT author_id, id FROM feeds WHERE author_id IS NOT NULL;
+SELECT author_id, id FROM feeds WHERE author_id <> 0;
 ```
 
-Keep `feeds.author_id` for now. This is the compatibility stage: writes touch
-both, reads can move to membership first.
+Do not touch `feeds.author_id` in this migration.
 
-### V69: collections group authors
+### Write rules
 
-```sql
-CREATE TABLE collection_authors (
-    collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
-    author_id     INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
-    PRIMARY KEY (collection_id, author_id)
-);
-INSERT OR IGNORE INTO collection_authors (collection_id, author_id)
-SELECT DISTINCT cf.collection_id, f.author_id
-FROM collection_feeds cf JOIN feeds f ON f.id = cf.feed_id;
+- Feed create with an author: insert membership, set the owner to that author.
+- Feed create unassigned: no membership, owner stays 0.
+- Feed move to another author: replace the old membership with the new one and
+  set the owner.
+- Add an author to a feed: insert membership. If the feed's owner is 0, promote
+  that author to owner so global rules, auto-read/delete and attribution keep a
+  sensible owner.
+- Remove an author from a feed: delete membership. If the removed author was the
+  owner, promote the lowest remaining member author to owner, else set 0. A feed
+  with no members becomes unassigned.
+- Author delete: delete memberships. If the deleted author owned feeds, hand
+  each feed to its lowest remaining member, else set 0. The feeds and their
+  items always survive.
+- Feed delete: memberships cascade; no author deletion.
 
-INSERT OR IGNORE INTO collection_authors (collection_id, author_id)
-SELECT cv.collection_id, v.author_id
-FROM collection_views cv JOIN saved_views v ON v.id = cv.view_id;
+### Read rules
 
-DROP TABLE collection_feeds;
-DROP TABLE collection_views;
-```
+- `authorScopeClause` uses membership (`author_feeds`) plus the author's views.
+- `authorRulesVisibleSQL`'s `feed` kind matches through `author_feeds` for the
+  rule's author, not `feeds.author_id`.
+- `ListFeedsByAuthor` and `ListFeedsByAuthorWithUnread` join `author_feeds`.
+- `ListAuthorsWithFeedCount` counts membership.
+- `UnreadCountsByFeedScope` and `UnreadCountsByAuthor` count membership.
+- `authorFeedFilter` validates that the feed is in the author's membership, not
+  that the author owns it.
+- Collection feed expansion (`ListFeedsInCollection`) joins
+  `collection_authors` to `author_feeds`.
+- Global reads, `visible_items`, auto-read, auto-delete, momentum and OPML keep
+  using `feeds.author_id`.
 
-This matches the intended widening in `author-collection.plan.md`: a collection
-holding one feed of an author now holds that author, so all of that author's
-lenses come with them. Existing collection splits by feed are lost; the
-replacement is an author-level lens or a separate collection.
+### UI
 
-### V70: views become authors
+- Author edit gains a `feeds` multi-select for membership. Keep the existing
+  views/lens editor.
+- Author page feed cards come from membership. The inline feed accordion can
+  stay during step 3, but the canonical feed editor is now
+  `/feeds/{id}/edit`; prefer linking feed cards there rather than editing feed
+  settings inside a shared author page.
+- A feed can show "used by N authors" in the library. Add an author picker or
+  membership control to the feed editor.
+- Author create can select feeds up front. The add-feed flow can select several
+  authors later, but is not required for step 3.
 
-For each saved view, create a lens that preserves it exactly:
+### Tests
 
-```sql
--- One author per view, unless the view's author has no feeds and no other views.
-INSERT INTO authors (user_id, name, description)
-SELECT v.user_id, v.title, 'imported saved view' FROM saved_views v;
+- Two authors share one feed; both author pages show it, one feed row and one
+  item set.
+- Author page scope is membership + views; global unread is unchanged.
+- Collection scope is unchanged for the same authors.
+- Feed-scoped list under a non-owner member author works.
+- Author delete removes memberships, keeps feeds and items, and hands ownership
+  to another member or 0.
+- Adding a member to an ownerless feed promotes the first author.
+- Removing the owner from a multi-member feed hands ownership to the other
+  member.
+- Unassigned feed + membership: a feed with no owner but a member still appears
+  on that author's page.
 
-INSERT OR IGNORE INTO author_feeds (author_id, feed_id)
-SELECT <new author id>, f.id
-FROM feeds f WHERE f.user_id = <view user> AND f.is_system = 0;
+## Deferred later steps
 
--- Copy v.filters into author_filter_rules / author_filter_values.
-```
+### Step 5: drop the compatibility owner
 
-Because a view currently matches all feeds, the faithful translation is a new
-author selecting every feed with the view's filters. Do **not** fold the filter
-into the view's assigned author: that author's own feeds are currently
-unfiltered, so folding would start hiding items. Copy collections membership
-(`collection_authors`) from the view's assigned author only if the assigned
-author had no feeds; otherwise the new author inherits the view's collection
-members.
+Gated on deciding global filter semantics. Once decided:
 
-Then `DROP TABLE saved_views;`.
+- Make `visible_items` no longer depend on the owner's rules, or replace it.
+- Move auto-read and auto-delete to feed or user windows.
+- Group momentum by feed.
+- Make attribution scope-derived.
+- Rebuild `feeds` without `author_id` and remove the owner handoff logic.
 
-### V71: drop feeds.author_id
+### Step 6: simplify `visible_items`
 
-SQLite needs a table rebuild to drop a column that participates in indexes and
-FKs. Recreate `feeds` without `author_id`, copy rows, recreate indexes. Update
-`item_feeds`/`items` FKs unchanged (they point at `feeds.id`).
+A separate cleanup after step 5. Touch one read path at a time: global lists,
+author lists, collections, search, history, list items, shares and stats. Keep a
+test per read path for both a global and a scoped read.
 
-Also remove the system-author concept: keep `feeds.is_system`, drop
-`authors.is_system` and the `EnsureSystemAuthor` path. `EnsureSystemFeed` stops
-needing an author. Saved-page items keep surfacing only in lists, favorites and
-bookmarks exactly as today.
+### Cancelled
 
-### V72: visible_items becomes identity
+- Flattening views into authors. Keep views as author lenses. A future rename to
+  "lenses" is cosmetic.
 
-Once every read path is scope-aware, replace the view with:
+## Open questions for later review
 
-```sql
-DROP VIEW visible_items;
-CREATE VIEW visible_items AS SELECT * FROM items;
-```
-
-Keep the name temporarily for call sites, then delete it in a follow-up. Or
-drop it outright in the same migration once no query selects from it. Feed-level
-default rules, if added later, get their own predicate at the chokepoint rather
-than resurrecting owner-based visibility.
-
-### Filter rules
-
-`author_filter_rules` stays as the per-lens rule set. `kind='author'` (just
-added for owner-based matching) is redefined to match `author_feeds` of the
-referenced author instead of `feeds.author_id`. Author delete removes that id
-from other authors' `kind='author'` rows; feed delete removes it from
-`kind='feed'` rows. Keep the existing non-collision rule.
-
-## Store and query rewrite
-
-This is the bulk of the work.
-
-### `internal/store/queries/feeds.sql`
-
-- Remove `author_id` from every column list and from `CreateFeed`,
-  `UpdateFeed`, `CreateSystemFeed`.
-- Delete `ListFeedsByAuthor`, `ListFeedsByAuthorWithUnread`, `SetFeedAuthor`.
-- Add:
-  - `ListFeedsForAuthor` joined through `author_feeds`.
-  - `ListAuthorsForFeed` (feed library page) and a count.
-  - `ListFeedsWithAuthorCount`.
-- `ListFeedsWithUnread`: unread is items in the feed; no owner rules.
-
-### `internal/store/queries/items.sql`
-
-- Every `LEFT JOIN authors a ON a.id = f.author_id` goes. `ListItems` no longer
-  has an author join.
-- `authorID` matching becomes:
-
-  ```sql
-  EXISTS (SELECT 1 FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
-          WHERE mf.item_id = i.id AND af.author_id = ?)
-  ```
-
-- `collectionID` matching becomes the union of member authors:
-
-  ```sql
-  EXISTS (SELECT 1 FROM item_feeds mf
-          JOIN author_feeds af ON af.feed_id = mf.feed_id
-          JOIN collection_authors ca ON ca.author_id = af.author_id
-          WHERE mf.item_id = i.id AND ca.collection_id = ?)
-  ```
-
-- Select from `items`, not `visible_items`. Author rules are applied as an
-  explicit predicate only on author-scoped reads.
-- `ListItemSourcesForItems` keeps feed membership and joins `author_feeds`
-  instead of `f.author_id`, so a source can carry all authors that include it.
-
-### `internal/store/item.go`
-
-- `ItemFilter`: remove `OwnerAuthorID`, `Views`, `CollectionViews`, `ViewFilter`.
-  Keep `AuthorID` and `CollectionID` with membership semantics.
-- Replace `authorScopeClause` with one predicate:
-  membership through `author_feeds` AND the author's rules
-  (`authorRulesVisibleSQL(itemID, "?")`).
-- Replace `collectionScopeClause` with an `EXISTS` over
-  `collection_authors -> author_feeds`, with each member author's rules applied.
-  If SQL per-author rules get unwieldy, resolve member author ids first and
-  build an OR of per-author predicates in Go, like today's views array.
-- Delete `viewFilterClause`, `visibleItemExists`, and the raw-base split.
-- `ItemWithFeed.AuthorID/AuthorName`: no longer a join result. The handler sets
-  the author context for an author-scoped list; global lists leave it zero. The
-  card source line uses the scope author, else the decoration, else the feed.
-- `ItemSource`: add the authors that include the feed, so "also in" stays
-  meaningful.
-
-### Other stores
-
-- `feed.go`: `Create` takes no author. `Delete` no longer has an owner to
-  re-home around (item_feeds re-homing is unchanged). Delete the move-feed
-  helper.
-- `author.go`: add `SetFeeds(authorID, feedIDs)` (transactional replace),
-  `Feeds(authorID)`, `AuthorsForFeed(feedID)`, and
-  `DeleteOrphans(userID)`/a reference-count check for the convenience delete.
-- `collection.go`: membership queries move to `collection_authors`. No-collection
-  sync inserts authors with no user collection, not feeds.
-- `savedview.go`: delete the file and its tests.
-- `stats.go`: reads `items`; group by owner feed as today. Remove rule joins.
-- `normalize.go`: normalize rules unchanged. Remove saved-view normalization.
-- `authorfilter.go`: `kind='author'` matches `author_feeds`.
-- `saved.go`: `EnsureSystemFeed` no longer creates a system author.
-
-### Auto-read
-
-- Add `feeds.auto_read_after_days` (nullable, inherits `users.auto_read_after_days`).
-- Migrate each author's window onto its selected feeds, taking the smallest
-  non-zero window when a feed has several authors; an author with `0` and no
-  other author keeps `0`.
-- `MarkAutoRead` evaluates the feed window per item (items.feed_id), not an
-  author join. `MarkAutoReadForFeed` replaces `MarkAutoReadForAuthor`.
-- Author edit page loses the auto-read card. The feed panel gains it.
-
-### Counts, caches, sorts
-
-- `ListAuthorsWithFeedCount`: `feed_count` via `author_feeds`; `max_rank` and
-  `fav_count` via `author_feeds -> feeds`.
-- `UnreadCountsByAuthor`: count items in `author_feeds` under each author's
-  rules. Keep the author-unread cache and its TTL-only behavior.
-- Collection counts: union of member author scopes. Keep
-  `collectionCountsCache`; replace the counts-by-feed fast path with
-  counts-by-author.
-- Momentum: `COUNT(*) OVER (PARTITION BY mf.feed_id)` or a resolved feed-block
-  query, not `f.author_id`.
-- Magic: unchanged, `feeds.rank` is still a feed property.
-
-## HTTP and UI
-
-### Routes
-
-- Re-add `GET /feeds` (library index) and `GET /feeds/{id}` (feed page).
-  The feed page carries: poll state, refresh, load older, mark all read, edit,
-  plugin panel, delete, and "authors (N)".
-- Keep `/feeds/{id}/edit` as a real page or fragment again.
-- Author edit: replace the sources accordion's feed panels with a feed
-  multi-select (`combo` component), plus the filter card. No add-feed form on
-  the author page, since feeds are library members. Keep "new author" and
-  "new feed" in the add menu.
-- Delete saved-view routes, handlers, templates, the command-palette entity and
-  tests: `GET /views/new`, `POST /views`, `GET /views/{id}/edit-fragment`,
-  `POST /views/{id}/edit`, `POST /views/{id}/delete`.
-- Collection edit: author multi-select instead of feed/view pickers. Collection
-  page sources are author cards.
-
-### Flows
-
-- **Add feed**: URL -> preview -> "create an author for this feed" checked by
-  default, name prefilled from the title. Unchecked adds to the library only.
-- **Add author**: name, feed picker, filter rows. Can create a feed inline.
-- **Author from a feed filter**: pick a feed, add a tag/author filter, name the
-  author. This is the subreddit-user shortcut.
-- **Delete author**: if it is the last author selecting a feed, offer to delete
-  the feed too (explicit opt-in, `type=button` action). Shared feeds are never
-  deleted automatically.
-- **Delete feed**: removes it from every author's lens (cascade), no author
-  deletion. Show "used by N authors" in the confirmation.
-- **Remove a feed from an author**: membership edit, no item deletion.
-
-### Templates and JS
-
-- `views_feeds.templ`: feed cards become library cards; author cards lose the
-  ownership framing.
-- `views_items.templ`: source line uses scope author/decoration.
-- `views_collections.templ`: author cards.
-- `views_authors.templ` (or equivalent): feed picker in the edit page; remove
-  views.
-- Remove view templates, `savedviews.go`, dialog wiring and command-palette
-  entries.
-- Feed delete dialog: replace the remote-only opt-in with remote plus "also
-  delete the feed if no other author uses it".
-- Author delete dialog: name the author and offer the orphan-feed cleanup.
-
-### OPML
-
-Feeds are the library, so OPML export stays feed-based. Do not emit one feed per
-author, which would duplicate. Decide grouping: flat, or grouped by the first
-collection/author, and document it.
-
-## Phased delivery (each phase ships and commits)
-
-Project rules: commit each built plan, conventional commits, update
-`.env.example` if any env var is added (none expected), do not mention external
-plugins in internal docs.
-
-1. **Membership stage (V68).** Add `author_feeds`, dual-write on feed create/edit,
-   move author scope and counts to membership while `feeds.author_id` remains a
-   compatibility column. Author scope is now selectable before ownership is
-   removed. Add `/feeds` library and the add-feed create-author flow. Tests:
-   author scope, counts, caches.
-2. **Collections by author (V69).** Replace `collection_feeds`/`collection_views`
-   with `collection_authors`. Update collection queries, counts, caches, UI,
-   OPML, refresh-all (refresh member authors' feeds, deduped).
-3. **Flatten views (V70).** Migrate saved views to lens authors, remove view
-   routes/stores/templates/filters, remove `ViewFilter` from `ItemFilter`.
-   Update the filter dialog (drop the "save as view" chip) and the command
-   palette.
-4. **Drop ownership (V71).** Rebuild `feeds` without `author_id`; remove
-   `SetFeedAuthor`, owner joins, the system author; switch auto-read to feeds;
-   switch momentum to feed blocks.
-5. **Simplify visibility (V72).** Remove `visible_items` usage from read paths,
-   reduce or drop the view, delete `authorRulesVisibleSQL`'s global role, and
-   update stats/search/history/list/share reads.
-6. **Docs and dead code.** Update `AGENTS.md` sections: author filters, feeds
-   live on the author page (now a feed library page exists), saved views
-   (removed), collections, auto-read, momentum, cross-feed/attribution, stats,
-   image caching wording, security invariants. Delete obsolete tests and
-   migrations comments that describe ownership.
-
-## Open questions
-
-1. One lens per author, or multi-lens profiles? (Recommended: one lens.)
-2. Author filters page-local, or a global rule source? (Recommended: page-local.)
-3. Auto-read on feeds, or min-window across authors? (Recommended: feeds.)
-4. Momentum groups by feed, or is author-page only? (Recommended: feed.)
-5. Does a collection with no authors and only filters mean "all authors"
-   (inherited from `author-collection.plan.md`)?
-6. OPML grouping for author-based collections: flat or first-group.
+1. Global filter semantics after shared feeds: author rules page-local, feed
+   defaults, or user-level rules. Recommended: page-local, with feed defaults
+   later if needed.
+2. Auto-read and auto-delete ownership once feeds are shared: feed window, user
+   window, or minimum positive window across member authors. Recommended: feed
+   or user.
+3. Momentum: group by feed on global lists. Recommended.
+4. Compatibility owner handoff: confirm "lowest remaining member author" when an
+   owner is deleted or removed.
+5. Should `saved_views` be renamed to "lenses" in the UI once step 3 lands?
 
 ## Risks
 
-- **Read-path blast radius.** `visible_items` is used by lists, counts, badges,
-  history, list items, shares and stats. Doing phases 1 and 5 without a
-  per-phase test sweep will break counts subtly. Add a test per read path for an
-  author-scoped and a global read before removing the owner join.
-- **Shared read state.** Cross-lens items share `items.read`. A mark-all or
-  auto-read on one lens affects others. This is already true for cross-feed
-  items, but the model makes it common. Document it.
-- **Migration duplication.** Flattening views can produce many authors. Group
-  them into a collection during migration to keep the UI usable.
-- **Feed deletion.** Feeds no longer disappear with their author. Orphan cleanup
-  must be explicit, never automatic, and never for a feed another author uses.
+- **Owner handoff is the subtle part of step 3.** A feed can outlive its owner.
+  Every path that deletes or removes an author must leave the owner consistent,
+  or global rules and auto-read silently stop applying.
+- **Author page reads must use membership everywhere.** Missing one
+  owner-based join makes a shared feed invisible on the second author's page.
+- **Do not change global visibility in step 3.** Keeping `visible_items`
+  owner-based is what makes this step safe and reversible.
+- **Do not flatten views.** It would break multi-lens authors and make
+  collections expand to the entire library.
+- **Shared read state.** Reading an item on one author page reads it on every
+  author page, because items are shared. This is already true for cross-feed
+  items and becomes more common.
