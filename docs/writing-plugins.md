@@ -149,6 +149,14 @@ a feed it does not fetch at all.
   hotlink freely in a browser but refuse the host's server-side `/img` request,
   claim `Match(u, CapBypassProxy)` for those image hosts. Matching URLs then
   load directly. Pure (no network I/O); it runs for every rendered image URL.
+- **Embed sandbox (capability only, no method)** — if the site's oEmbed player
+  opens a new tab or navigates the top window when the video is clicked, claim
+  `Match(u, CapSandboxEmbed)` for the item's link. The host renders that item's
+  player iframe with
+  `sandbox="allow-scripts allow-same-origin allow-presentation"`, so the player
+  still plays but cannot open a popup or leave the app. The item's own external
+  link remains the explicit way out. Pure (no network I/O); matched on the item
+  link in the modal and the public share page.
 - **`Icon` (optional)** — return a built-in source icon (MIME type and bytes)
   for a site URL via `Match(u, CapIcon)`. The host uses it when no cached favicon
   exists. Pure (no network I/O); it runs while serving an icon request.

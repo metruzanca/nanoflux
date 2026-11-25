@@ -1050,6 +1050,33 @@ func TestRegistryBypassesProxy(t *testing.T) {
 	}
 }
 
+// TestRegistrySandboxesEmbed covers the plugin-driven embed sandbox: a plugin
+// claiming CapSandboxEmbed for an item's link makes the host sandbox its player
+// iframe, and an unclaimed link stays unsandboxed.
+func TestRegistrySandboxesEmbed(t *testing.T) {
+	reg := NewRegistry()
+	reg.RegisterExternal(fakeFetcher{
+		name: "media",
+		match: func(u *url.URL, cap pluginapi.Capability) bool {
+			return cap == pluginapi.CapSandboxEmbed && u.Hostname() == "media.example"
+		},
+	})
+	reg.RegisterExternal(fakeFetcher{name: "plain", match: func(*url.URL, pluginapi.Capability) bool { return false }})
+
+	if !reg.SandboxesEmbed("https://media.example/watch/abc") {
+		t.Error("claimed item link should sandbox its embed")
+	}
+	if reg.SandboxesEmbed("https://other.example/watch/abc") {
+		t.Error("unclaimed item link should not sandbox its embed")
+	}
+	if reg.SandboxesEmbed("not a url") {
+		t.Error("an unparsable url should not sandbox")
+	}
+	if (&Registry{}).SandboxesEmbed("https://media.example/watch/abc") {
+		t.Error("an empty registry should not sandbox")
+	}
+}
+
 // MinPollInterval returns the largest floor among the plugins that claim the
 // feed URL, ignoring plugins that declare none or do not match.
 func TestRegistryMinPollInterval(t *testing.T) {

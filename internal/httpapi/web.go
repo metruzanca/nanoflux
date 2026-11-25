@@ -845,6 +845,7 @@ type itemViewData struct {
 	Body          template.HTML
 	SourceURL     string                  // external destination of a link post
 	EmbedSrc      string                  // iframe src from the destination's oEmbed
+	EmbedSandbox  bool                    // render the embed in a restrictive sandbox (plugin-claimed)
 	Gallery       []string                // full-res images of a gallery post
 	FeedIsSystem  bool                    // true for a saved page (hidden feed/author, no internal links)
 	Attribution   []store.AttributionPart // source line from the item's decoration; author/feed when empty
@@ -993,6 +994,9 @@ func (s *Server) itemView(w http.ResponseWriter, r *http.Request) {
 	if data.EmbedSrc == "" {
 		data.EmbedSrc = s.resolveMediaEmbed(ctx, data)
 	}
+	if data.EmbedSrc != "" {
+		data.EmbedSandbox = s.embedsSandboxed(data.Link)
+	}
 	s.loadProgress(u.ID, &it, &data, s.requestBaseURL(r))
 	if sh, err := s.store.Shares.ByItem(u.ID, it.ID); err == nil {
 		data.ShareToken = sh.Token
@@ -1097,6 +1101,9 @@ func (s *Server) sharedPage(w http.ResponseWriter, r *http.Request) {
 	data.SourceURL, data.EmbedSrc, data.Gallery = s.resolveItemPlugins(ctx, data)
 	if data.EmbedSrc == "" {
 		data.EmbedSrc = s.resolveMediaEmbed(ctx, data)
+	}
+	if data.EmbedSrc != "" {
+		data.EmbedSandbox = s.embedsSandboxed(data.Link)
 	}
 	web.Render(w, r, sharedItemPage(it, data))
 }

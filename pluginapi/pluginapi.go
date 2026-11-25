@@ -110,6 +110,13 @@ const (
 	// a plugin can tag items it does not fetch: a link aggregator where a post
 	// points at another site can label the item with that site's domain.
 	CapCategorize
+	// CapSandboxEmbed asks whether an item's embeddable player iframe should be
+	// rendered inside a restrictive sandbox. It is matched on the item's link and
+	// must be pure and cheap. A plugin claims it for a site whose player opens a
+	// new tab or navigates the top window on click; the host then allows the
+	// player's scripts and origin but not popups or top navigation, so only the
+	// item's own external link leaves the app.
+	CapSandboxEmbed
 )
 
 // Meta describes a plugin to the host.

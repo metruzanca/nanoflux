@@ -258,6 +258,14 @@ executables loaded from `NF_PLUGINS_DIR`.
   `httpapi.Server.SetPlugins` installs the predicate into `web`
   (`web.SetProxyBypass`) once at startup. Pure; a plugin lists the media hosts
   that hotlink freely.
+- **`CapSandboxEmbed`** (URL-matched capability, item link): a plugin whose
+  site's oEmbed player opens a new tab or navigates the top window when the
+  video is clicked claims this for the item's link. `Registry.SandboxesEmbed`
+  matches the link; both the authenticated modal and the public share page then
+  render that item's player iframe with
+  `sandbox="allow-scripts allow-same-origin allow-presentation"`. The player
+  still plays, but it cannot open a popup or leave the app; only the item's own
+  `open live` link does. Pure and cheap.
 - **`CapIcon`** (URL-matched capability): a plugin may supply a built-in source
   icon for its site when no cached favicon exists. `Registry.Icon` matches the
   URL and calls `IconProvider.Icon`, and `httpapi` uses it before the generic
@@ -292,8 +300,9 @@ hosts; it does
 case where the plugin returns false for the URL-matched capabilities that would
 misread it (otherwise discovery would read it as a feed shape and the URL policy
 would rewrite it to the feed origin), leaving those to a plugin that owns it. The
-item-link capabilities (`CapRender`, `CapDecorate`) and any capability matched on
-the item's URL still apply, so results cross-dedupe with subscribed feeds and
+item-link capabilities (`CapRender`, `CapDecorate`, `CapSandboxEmbed`) and any
+capability matched on the item's URL still apply, so results cross-dedupe with
+subscribed feeds and
 render the plugin's attribution. `ItemWithFeed.Kind` drives the row card (`KindText` default,
 `KindImage`, `KindGallery`, `KindLink`, `KindVideo`, `KindAudio`); a generic
 single-image baseline (`web.IsSingleImagePost`) still applies when no plugin

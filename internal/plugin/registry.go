@@ -613,6 +613,21 @@ func (r *Registry) BypassesProxy(rawurl string) bool {
 	return r.Match(u, pluginapi.CapBypassProxy) != nil
 }
 
+// SandboxesEmbed reports whether any loaded plugin wants an item's embeddable
+// player iframe rendered inside a restrictive sandbox. A plugin claims
+// CapSandboxEmbed for a site whose player opens a new tab or navigates the top
+// window on click. Matched on the item's link; pure and cheap.
+func (r *Registry) SandboxesEmbed(rawurl string) bool {
+	if r.Empty() || rawurl == "" {
+		return false
+	}
+	u, err := url.Parse(rawurl)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return r.Match(u, pluginapi.CapSandboxEmbed) != nil
+}
+
 // Icon returns the built-in source icon a plugin supplies for rawURL, or
 // ok=false when no plugin provides one. It is matched on CapIcon.
 func (r *Registry) Icon(rawURL string) (mimeType string, data []byte, ok bool) {

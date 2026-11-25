@@ -25,6 +25,13 @@ func enclosuresToPlugin(encs []store.Enclosure) []pluginapi.Enclosure {
 	return out
 }
 
+// embedsSandboxed reports whether a plugin asks the host to render an embeddable
+// player iframe for link inside a restrictive sandbox, so the player cannot open
+// a popup or navigate the top window. The item's own "open live" link stays.
+func (s *Server) embedsSandboxed(link string) bool {
+	return s.plugins != nil && !s.plugins.Empty() && s.plugins.SandboxesEmbed(link)
+}
+
 // resolveItemPlugins asks a view-time rendering plugin to resolve an item's
 // media: an external destination, an embeddable player, or a multi-image
 // gallery — content a site marks only in the item's HTML that a stored Item

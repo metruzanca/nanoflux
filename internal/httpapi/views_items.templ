@@ -986,6 +986,9 @@ templ itemContent(d itemViewData, v itemVisuals) {
 				allowfullscreen
 				loading="lazy"
 				referrerpolicy="origin"
+				if d.EmbedSandbox {
+					sandbox="allow-scripts allow-same-origin allow-presentation"
+				}
 				if d.Progress != nil && d.Progress.Player == web.PlayerYouTube {
 					data-progress-item={ strconv.FormatInt(d.Progress.ItemID, 10) }
 					data-progress-key={ d.Progress.Key }
