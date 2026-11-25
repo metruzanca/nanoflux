@@ -34,3 +34,5 @@ sql:
             go_type: "bool"
           - column: "users.show_tag_cloud"
             go_type: "bool"
+          - column: "authors.is_aggregator"
+            go_type: "bool"

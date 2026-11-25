@@ -80,7 +80,10 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
 FROM list_items li
 JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN authors a ON a.id = (
+    SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+    ORDER BY af.created_at, af.author_id LIMIT 1
+)
 WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID')
   AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
@@ -98,7 +101,10 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
 FROM list_items li
 JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN authors a ON a.id = (
+    SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+    ORDER BY af.created_at, af.author_id LIMIT 1
+)
 WHERE li.list_id = sqlc.arg('listID') AND f.user_id = sqlc.arg('userID')
   AND (CAST(sqlc.arg('unread') AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(sqlc.arg('read') AS INTEGER) = 0 OR i.read = 1)
@@ -128,7 +134,10 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
 FROM list_items li
 JOIN visible_items i ON i.id = li.item_id
 JOIN feeds f ON f.id = i.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN authors a ON a.id = (
+    SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+    ORDER BY af.created_at, af.author_id LIMIT 1
+)
 WHERE li.list_id = sqlc.arg('listID')
   AND (CAST(sqlc.arg('beforeItemID') AS INTEGER) = 0 OR
        (li.created_at, i.id) < (SELECT li2.created_at, li2.item_id FROM list_items li2 WHERE li2.list_id = sqlc.arg('listID') AND li2.item_id = CAST(sqlc.arg('beforeItemID') AS INTEGER)))

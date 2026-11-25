@@ -36,20 +36,23 @@ type Store struct {
 	SavedViews    *SavedViewStore
 	ViewPrefs     *ViewPrefStore
 	Progress      *ProgressStore
+	Claims        *ClaimStore
 }
 
 func New(sqldb *sql.DB) *Store {
 	q := sqlcgen.New(sqldb)
 	policy := URLPolicy(identityPolicy{})
+	authors := &AuthorStore{q: q, db: sqldb}
+	views := &SavedViewStore{db: sqldb}
 	return &Store{
 		db:            sqldb,
 		q:             q,
 		Users:         &UserStore{q: q, db: sqldb},
 		Sessions:      &SessionStore{q: q},
 		Settings:      &SettingStore{q: q, db: sqldb},
-		Authors:       &AuthorStore{q: q, db: sqldb},
+		Authors:       authors,
 		Feeds:         &FeedStore{q: q, db: sqldb, policy: policy},
-		Items:         &ItemStore{q: q, db: sqldb, policy: policy},
+		Items:         &ItemStore{q: q, db: sqldb, policy: policy, views: views},
 		Collections:   &CollectionStore{q: q, db: sqldb},
 		SourceIcons:   &SourceIconStore{q: q},
 		Shares:        &ShareStore{q: q, db: sqldb},
@@ -57,9 +60,10 @@ func New(sqldb *sql.DB) *Store {
 		AuthorLinks:   &AuthorLinkStore{q: q},
 		AuthorFilters: &AuthorFilterStore{db: sqldb},
 		LinkIcons:     &LinkIconStore{db: sqldb},
-		SavedViews:    &SavedViewStore{db: sqldb},
+		SavedViews:    views,
 		ViewPrefs:     &ViewPrefStore{q: q},
 		Progress:      &ProgressStore{db: sqldb},
+		Claims:        NewClaimStore(sqldb, views, authors),
 	}
 }
 

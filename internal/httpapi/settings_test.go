@@ -759,10 +759,19 @@ func TestOpmlImport(t *testing.T) {
 		t.Fatalf("collection should contain the grouped feed: %+v", in)
 	}
 
-	// Re-importing skips the existing feed urls.
+	// Re-importing attaches the existing feeds to the same authors without
+	// creating duplicates.
 	rr = uploadForm(h, "/settings/opml", "file", "feeds.opml", []byte(opml), cookie)
-	if !strings.Contains(rr.Body.String(), "skipped 2") {
-		t.Fatalf("re-import should skip existing: %s", rr.Body.String())
+	if !strings.Contains(rr.Body.String(), "imported 2") {
+		t.Fatalf("re-import should attach existing feeds: %s", rr.Body.String())
+	}
+	feeds, _ = s.store.Feeds.List(u.ID)
+	if len(feeds) != 2 {
+		t.Fatalf("re-import must not duplicate feeds: %+v", feeds)
+	}
+	authors, _ = s.store.Authors.List(u.ID)
+	if len(authors) != 2 {
+		t.Fatalf("re-import must not duplicate authors: %+v", authors)
 	}
 
 	// Invalid xml -> 400 with a visible error.

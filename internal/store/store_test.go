@@ -1164,7 +1164,7 @@ func TestMarkAuthorRangeRead(t *testing.T) {
 
 	// Author newer: items across the author's feeds, including the sibling
 	// feed; a different author's feed is untouched.
-	if err := s.Items.MarkAuthorNewerRead(u.ID, middle); err != nil {
+	if err := s.Items.MarkAuthorNewerRead(u.ID, a.ID, middle); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
@@ -1180,7 +1180,7 @@ func TestMarkAuthorRangeRead(t *testing.T) {
 	}
 
 	// Author older: older items across the author's feeds.
-	if err := s.Items.MarkAuthorOlderRead(u.ID, middle); err != nil {
+	if err := s.Items.MarkAuthorOlderRead(u.ID, a.ID, middle); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
@@ -1463,7 +1463,7 @@ func TestListDue(t *testing.T) {
 	}
 
 	// Disabled feeds are never due.
-	s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://a.dev/rss.xml", "", "", 900, true, false, false)
+	s.Feeds.Update(u.ID, f.ID, "feed", "https://a.dev/rss.xml", "", "", 900, true, false, false)
 	if err := s.Feeds.SetPollMeta(f.ID, "", "", "", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -1571,7 +1571,7 @@ func TestURLPolicyApplied(t *testing.T) {
 		t.Fatalf("create FeedURL = %q, want the policy-canonical shape", f.FeedURL)
 	}
 
-	if err := s.Feeds.Update(u.ID, f.ID, a.ID, "feed", "https://legacy.example/u/bar", "", "", 900, true, true, false); err != nil {
+	if err := s.Feeds.Update(u.ID, f.ID, "feed", "https://legacy.example/u/bar", "", "", 900, true, true, false); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.Feeds.ByID(u.ID, f.ID)
@@ -1646,7 +1646,7 @@ func TestReenableLegacyPluginParked(t *testing.T) {
 
 	// A user pause (no reason) is never resumed.
 	paused, _ := s.Feeds.CreateWithPlugin(u.ID, a.ID, "u", "https://example.org/u", "", "", "zorg", 900)
-	s.Feeds.Update(u.ID, paused.ID, a.ID, "u", "https://example.org/u", "", "", 900, true, false, false)
+	s.Feeds.Update(u.ID, paused.ID, "u", "https://example.org/u", "", "", 900, true, false, false)
 	gotPaused, _ := s.Feeds.ByID(u.ID, paused.ID)
 	if gotPaused.DisabledReason != "" {
 		t.Fatalf("a user save should clear the disabled reason: %q", gotPaused.DisabledReason)
@@ -1862,7 +1862,7 @@ func TestMigrateBackfillsCadence(t *testing.T) {
 		t.Fatalf("new feed should default to auto on")
 	}
 	// Turning it off via Update sticks.
-	if err := s.Feeds.Update(u.ID, f.ID, a.ID, "Blog", "https://b.dev/feed.xml", "", "", 900, false, true, false); err != nil {
+	if err := s.Feeds.Update(u.ID, f.ID, "Blog", "https://b.dev/feed.xml", "", "", 900, false, true, false); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.Feeds.ByID(u.ID, f.ID)

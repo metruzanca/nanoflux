@@ -25,7 +25,7 @@ func TestFeedChangeAuthorFragment(t *testing.T) {
 		t.Fatalf("fragment: %d %s", rr.Code, rr.Body.String())
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, "change author") || !strings.Contains(body, `name="author_id"`) {
+	if !strings.Contains(body, "add author") || !strings.Contains(body, `name="author_id"`) {
 		t.Fatalf("fragment missing the form: %s", body)
 	}
 	if !strings.Contains(body, "Other") {
@@ -71,18 +71,23 @@ func TestFeedChangeAuthorMove(t *testing.T) {
 	if rr.Body.Len() != 0 {
 		t.Fatalf("success should return an empty body for the outerHTML swap, got %q", rr.Body.String())
 	}
-	got, err := s.store.Feeds.ByID(u.ID, f.ID)
-	if err != nil || got.AuthorID != second.ID {
-		t.Fatalf("feed author = %v, %v; want %d", got.AuthorID, err, second.ID)
+	if _, err := s.store.Feeds.ByID(u.ID, f.ID); err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(doGet(h, "/authors/"+itoa(first.ID)+"/edit", cookie).Body.String(), "Movable") {
-		t.Fatal("the moved feed should be gone from the first author's page")
+	if !s.store.Feeds.IsAuthorOfFeed(u.ID, f.ID, second.ID) {
+		t.Fatalf("second author should select the feed")
+	}
+	if !s.store.Feeds.IsAuthorOfFeed(u.ID, f.ID, first.ID) {
+		t.Fatalf("adding another author must keep the first membership")
+	}
+	if !strings.Contains(doGet(h, "/authors/"+itoa(first.ID)+"/edit", cookie).Body.String(), "Movable") {
+		t.Fatal("the shared feed should stay on the first author's page")
 	}
 	if !strings.Contains(doGet(h, "/authors/"+itoa(second.ID)+"/edit", cookie).Body.String(), "Movable") {
-		t.Fatal("the moved feed should appear on the second author's page")
+		t.Fatal("the shared feed should appear on the second author's page")
 	}
 
-	// The same author is rejected, leaving the feed put.
+	// The same author is rejected, leaving the membership set put.
 	if rr := doForm(h, http.MethodPost, "/feeds/"+itoa(f.ID)+"/author", url.Values{
 		"author_id": {itoa(second.ID)},
 	}, cookie); rr.Code != http.StatusBadRequest {
@@ -101,9 +106,8 @@ func TestFeedChangeAuthorMove(t *testing.T) {
 	if rr.Header().Get("HX-Retarget") != "#change-author-dialog" {
 		t.Fatalf("error should retarget the dialog, got %q", rr.Header().Get("HX-Retarget"))
 	}
-	got, _ = s.store.Feeds.ByID(u.ID, f.ID)
-	if got.AuthorID != second.ID {
-		t.Fatalf("rejected move changed the author to %d", got.AuthorID)
+	if !s.store.Feeds.IsAuthorOfFeed(u.ID, f.ID, first.ID) {
+		t.Fatalf("rejected move removed the first membership")
 	}
 
 	// A missing selection is rejected too.

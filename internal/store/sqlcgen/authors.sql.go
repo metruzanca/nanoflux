@@ -24,7 +24,7 @@ func (q *Queries) CountAllAuthors(ctx context.Context) (int64, error) {
 const createAuthor = `-- name: CreateAuthor :one
 INSERT INTO authors (user_id, name, avatar_url, description)
 VALUES (?, ?, ?, ?)
-RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, created_at
+RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, is_aggregator, created_at
 `
 
 type CreateAuthorParams struct {
@@ -53,6 +53,7 @@ func (q *Queries) CreateAuthor(ctx context.Context, arg CreateAuthorParams) (Aut
 		&i.IsSystem,
 		&i.AutoReadAfterDays,
 		&i.AutoDeleteAfterDays,
+		&i.IsAggregator,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -61,7 +62,7 @@ func (q *Queries) CreateAuthor(ctx context.Context, arg CreateAuthorParams) (Aut
 const createSystemAuthor = `-- name: CreateSystemAuthor :one
 INSERT INTO authors (user_id, name, description, is_system)
 VALUES (?, ?, ?, 1)
-RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, created_at
+RETURNING id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, is_aggregator, created_at
 `
 
 type CreateSystemAuthorParams struct {
@@ -84,6 +85,7 @@ func (q *Queries) CreateSystemAuthor(ctx context.Context, arg CreateSystemAuthor
 		&i.IsSystem,
 		&i.AutoReadAfterDays,
 		&i.AutoDeleteAfterDays,
+		&i.IsAggregator,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -104,7 +106,7 @@ func (q *Queries) DeleteAuthor(ctx context.Context, arg DeleteAuthorParams) (sql
 }
 
 const getAuthor = `-- name: GetAuthor :one
-SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, is_aggregator, created_at
 FROM authors
 WHERE id = ? AND user_id = ?
 `
@@ -128,13 +130,14 @@ func (q *Queries) GetAuthor(ctx context.Context, arg GetAuthorParams) (Author, e
 		&i.IsSystem,
 		&i.AutoReadAfterDays,
 		&i.AutoDeleteAfterDays,
+		&i.IsAggregator,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getSystemAuthor = `-- name: GetSystemAuthor :one
-SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, is_aggregator, created_at
 FROM authors
 WHERE user_id = ? AND is_system = 1
 LIMIT 1
@@ -155,13 +158,14 @@ func (q *Queries) GetSystemAuthor(ctx context.Context, userID int64) (Author, er
 		&i.IsSystem,
 		&i.AutoReadAfterDays,
 		&i.AutoDeleteAfterDays,
+		&i.IsAggregator,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listAuthors = `-- name: ListAuthors :many
-SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, created_at
+SELECT id, user_id, name, avatar_url, avatar_key, last_fetched_at, description, is_system, auto_read_after_days, auto_delete_after_days, is_aggregator, created_at
 FROM authors
 WHERE user_id = ? AND is_system = 0
 ORDER BY name
@@ -187,6 +191,7 @@ func (q *Queries) ListAuthors(ctx context.Context, userID int64) ([]Author, erro
 			&i.IsSystem,
 			&i.AutoReadAfterDays,
 			&i.AutoDeleteAfterDays,
+			&i.IsAggregator,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -231,13 +236,15 @@ func (q *Queries) ListAuthorsAvatarKeys(ctx context.Context, userID int64) ([]sq
 }
 
 const listAuthorsWithFeedCount = `-- name: ListAuthorsWithFeedCount :many
-SELECT a.id, a.user_id, a.name, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.is_system, a.auto_read_after_days, a.auto_delete_after_days, a.created_at,
-       (SELECT COUNT(*) FROM feeds f
-          WHERE f.author_id = a.id AND f.user_id = a.user_id AND f.is_system = 0) AS feed_count,
-       (SELECT COALESCE(MAX(f2.rank), 0) FROM feeds f2
-          WHERE f2.author_id = a.id AND f2.user_id = a.user_id) AS max_rank,
-       (SELECT COUNT(*) FROM items i2 JOIN feeds f2 ON f2.id = i2.feed_id
-          WHERE f2.author_id = a.id AND f2.user_id = a.user_id AND i2.favorite = 1) AS fav_count
+SELECT a.id, a.user_id, a.name, a.avatar_url, a.avatar_key, a.last_fetched_at, a.description, a.is_system, a.auto_read_after_days, a.auto_delete_after_days, a.is_aggregator, a.created_at,
+       (SELECT COUNT(*) FROM author_feeds af JOIN feeds f ON f.id = af.feed_id
+          WHERE af.author_id = a.id AND f.user_id = a.user_id AND f.is_system = 0) AS feed_count,
+       (SELECT COALESCE(MAX(f2.rank), 0) FROM author_feeds af2 JOIN feeds f2 ON f2.id = af2.feed_id
+          WHERE af2.author_id = a.id AND f2.user_id = a.user_id) AS max_rank,
+       (SELECT COUNT(*) FROM author_feeds af3
+          JOIN feeds f3 ON f3.id = af3.feed_id
+          JOIN items i3 ON i3.feed_id = f3.id
+          WHERE af3.author_id = a.id AND f3.user_id = a.user_id AND i3.favorite = 1) AS fav_count
 FROM authors a
 WHERE a.user_id = ? AND a.is_system = 0
 ORDER BY a.name
@@ -254,6 +261,7 @@ type ListAuthorsWithFeedCountRow struct {
 	IsSystem            int64          `json:"is_system"`
 	AutoReadAfterDays   sql.NullInt64  `json:"auto_read_after_days"`
 	AutoDeleteAfterDays sql.NullInt64  `json:"auto_delete_after_days"`
+	IsAggregator        bool           `json:"is_aggregator"`
 	CreatedAt           string         `json:"created_at"`
 	FeedCount           int64          `json:"feed_count"`
 	MaxRank             interface{}    `json:"max_rank"`
@@ -261,10 +269,10 @@ type ListAuthorsWithFeedCountRow struct {
 }
 
 // max_rank and fav_count carry the author's magic-sort taste signal: the highest
-// manual rank across the author's feeds (raised/neutral/lowered tier) and the
-// total favorites their feeds own. Unread counts are a separate grouped query
-// (ItemStore.UnreadCountsByAuthor), so this list does not multiply rows through
-// a join to visible_items.
+// manual rank across the author's member feeds (raised/neutral/lowered tier) and
+// the total favorites their feeds own. Unread counts are a separate grouped
+// query (ItemStore.UnreadCountsByAuthor), so this list does not multiply rows
+// through a join to visible_items.
 func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([]ListAuthorsWithFeedCountRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAuthorsWithFeedCount, userID)
 	if err != nil {
@@ -285,6 +293,7 @@ func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([
 			&i.IsSystem,
 			&i.AutoReadAfterDays,
 			&i.AutoDeleteAfterDays,
+			&i.IsAggregator,
 			&i.CreatedAt,
 			&i.FeedCount,
 			&i.MaxRank,
@@ -301,6 +310,24 @@ func (q *Queries) ListAuthorsWithFeedCount(ctx context.Context, userID int64) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const setAuthorAggregator = `-- name: SetAuthorAggregator :execresult
+UPDATE authors
+SET is_aggregator = ?1
+WHERE id = ?2 AND user_id = ?3 AND is_system = 0
+`
+
+type SetAuthorAggregatorParams struct {
+	IsAggregator bool  `json:"isAggregator"`
+	ID           int64 `json:"id"`
+	UserID       int64 `json:"userID"`
+}
+
+// An aggregator does not claim its items and hides items claimed by other
+// authors. Toggling this rebuilds the author's claim rows outside SQL.
+func (q *Queries) SetAuthorAggregator(ctx context.Context, arg SetAuthorAggregatorParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, setAuthorAggregator, arg.IsAggregator, arg.ID, arg.UserID)
 }
 
 const setAuthorAutoDeleteAfterDays = `-- name: SetAuthorAutoDeleteAfterDays :execresult

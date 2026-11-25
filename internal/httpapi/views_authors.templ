@@ -60,6 +60,11 @@ templ createAuthorDialog() {
 		<label>description
 			<textarea name="description" rows="3"></textarea>
 		</label>
+		<label class="check">
+			<input type="checkbox" name="is_aggregator" value="1"/>
+			aggregator feed
+		</label>
+		<p class="muted small">Aggregators do not claim their items, and they hide items claimed by other authors.</p>
 		@authorLinkFields(authorsData{})
 		<div id="add-author-error" class="error"></div>
 		<button type="submit">add author</button>
@@ -120,6 +125,7 @@ templ AuthorRow(r authorRow) {
 // feed and view panel is its own form, so a change saves just that panel.
 templ authorEditPage(u store.User, d authorsData) {
 	@authorBasicsCard(d)
+	@authorFeedsCard(d)
 	@authorCollectionsCard(d)
 	@authorFilterCard(d)
 	@authorAutoReadCard(d)
@@ -140,7 +146,7 @@ templ authorEditPage(u store.User, d authorsData) {
 		}
 	</div>
 	<div class="stack delete-form">
-		<button type="button" class="danger" data-post-action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm={ "delete author " + d.Form.Name + "? their feeds stay in the library, unassigned." }>{ "delete author " + d.Form.Name }</button>
+		<button type="button" class="danger" data-post-action={ "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/delete" } data-confirm={ "delete author " + d.Form.Name + "? their feeds stay in the library." }>{ "delete author " + d.Form.Name }</button>
 	</div>
 }
 
@@ -354,6 +360,33 @@ templ authorFields(d authorsData) {
 	<label>description
 		<textarea name="description" rows="3">{ d.Form.Description }</textarea>
 	</label>
+	<label class="check">
+		<input type="checkbox" name="is_aggregator" value="1" checked?={ d.Form.IsAggregator }/>
+		aggregator feed
+	</label>
+	<p class="muted small">Aggregators do not claim their items, and they hide items claimed by other authors. Leave this off for a curated stream or a poster author.</p>
+}
+
+// authorFeedsCard selects the library feeds this author shows. A feed can serve
+// several authors, each with its own rules and windows.
+templ authorFeedsCard(d authorsData) {
+	{{ action := "/authors/" + strconv.FormatInt(d.Form.ID, 10) + "/feed-membership" }}
+	<section id="author-feeds-card" class="card">
+		<h2>feeds</h2>
+		<p class="muted small">Select library feeds for this author. The same feed can be selected by several authors.</p>
+		<form class="stack" method="post" action={ action } hx-post={ action } hx-target="#author-feeds-card" hx-swap="outerHTML" hx-disinherit="*">
+			@csrfField()
+			if d.FeedError != "" {
+				<div class="error" role="alert">{ d.FeedError }</div>
+			}
+			if len(d.FeedChoices) > 0 {
+				@comboMulti("author_feed_ids", "feeds", d.FeedIDs, d.FeedChoices)
+			} else {
+				<p class="muted small">no feeds in the library yet.</p>
+			}
+			<button type="submit">apply</button>
+		</form>
+	</section>
 }
 
 // authorLinkFields renders an author's external bookmarks as editable form

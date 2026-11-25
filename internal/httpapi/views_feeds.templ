@@ -370,7 +370,7 @@ templ feedFields(d feedsData) {
 	</div>
 	<div class="field-group">
 		<h3>author</h3>
-		<p class="muted small">move this feed and its items to a <button type="button" class="link" data-change-author={ id }>different author</button>.</p>
+		<p class="muted small">add this feed to <button type="button" class="link" data-change-author={ id }>another author</button>.</p>
 	</div>
 }
 
@@ -382,7 +382,7 @@ templ feedFields(d feedsData) {
 templ changeAuthorForm(d changeAuthorData) {
 	{{ id := strconv.FormatInt(d.FeedID, 10) }}
 	<div class="row">
-		<h2>change author</h2>
+		<h2>add author</h2>
 		<button type="button" class="link" title="close" data-close-dialog>@web.Lucide("x")</button>
 	</div>
 	<p class="muted small">move “{ d.FeedTitle }” and its items to another author.</p>

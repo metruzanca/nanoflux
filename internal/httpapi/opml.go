@@ -148,24 +148,82 @@ func (s *Server) opmlImport(w http.ResponseWriter, r *http.Request) {
 		walk(o, "")
 	}
 
-	// Existing feed urls are skipped (normalized to a comparable form).
-	existing := map[string]bool{}
+	// Existing feed urls are reused: the same library feed is attached to the
+	// imported author instead of being duplicated.
+	existing := map[string]store.Feed{}
 	for _, f := range s.mustFeeds(u.ID) {
-		existing[normalizeFeedKey(f.FeedURL)] = true
+		existing[normalizeFeedKey(f.FeedURL)] = f
 	}
 	collections, _ := s.store.Collections.List(u.ID)
+	authorsByName := map[string]int64{}
+	if existingAuthors, err := s.store.Authors.List(u.ID); err == nil {
+		for _, a := range existingAuthors {
+			authorsByName[a.Name] = a.ID
+		}
+	}
 
 	client := s.client
 	var imported, skipped, failed int
-	authorsByName := map[string]int64{}
+	ensureAuthor := func(name string) (int64, bool) {
+		if id, ok := authorsByName[name]; ok {
+			return id, true
+		}
+		a, err := s.store.Authors.Create(u.ID, name, "", "")
+		if err != nil {
+			log.Error("opml import author", "name", name, "err", err)
+			return 0, false
+		}
+		authorsByName[name] = a.ID
+		return a.ID, true
+	}
+	attachCollection := func(authorID int64, collection string) {
+		if collection == "" {
+			return
+		}
+		if cid := findCollection(collections, collection); cid != 0 {
+			s.store.Collections.AddAuthor(u.ID, cid, authorID)
+		} else if c, err := s.store.Collections.Create(u.ID, collection); err == nil {
+			collections = append(collections, c)
+			s.store.Collections.AddAuthor(u.ID, c.ID, authorID)
+		}
+	}
 	for _, e := range entries {
 		feedURL := strings.TrimSpace(e.outline.XMLURL)
-		if feedURL == "" || existing[normalizeFeedKey(feedURL)] {
+		if feedURL == "" {
 			skipped++
 			continue
 		}
 		title := strings.TrimSpace(e.outline.Title)
 		homeURL := strings.TrimSpace(e.outline.HTMLURL)
+		authorName := strings.TrimSpace(e.outline.Title)
+		if authorName == "" {
+			authorName = strings.TrimSpace(e.outline.Text)
+		}
+		existingFeed, already := existing[normalizeFeedKey(feedURL)]
+		if already {
+			if title == "" {
+				title = existingFeed.Title
+			}
+			if authorName == "" {
+				authorName = title
+			}
+			authorID, ok := ensureAuthor(authorName)
+			if !ok {
+				failed++
+				continue
+			}
+			if err := s.store.Feeds.AddAuthor(u.ID, existingFeed.ID, authorID); err != nil {
+				log.Error("opml attach feed", "url", feedURL, "err", err)
+				failed++
+				continue
+			}
+			if _, err := s.store.Claims.RebuildAuthor(u.ID, authorID); err != nil {
+				log.Error("opml rebuild claims", "author_id", authorID, "err", err)
+			}
+			imported++
+			attachCollection(authorID, e.collection)
+			continue
+		}
 		res, err := feedparse.Fetch(r.Context(), feedURL, client, "", "")
 		if err != nil {
 			log.Error("opml import feed", "url", feedURL, "err", err)
@@ -181,42 +239,25 @@ func (s *Server) opmlImport(w http.ResponseWriter, r *http.Request) {
 		if homeURL == "" {
 			homeURL = res.Feed.HomeURL
 		}
-		// Every feed belongs to an author. One author per imported feed, named
-		// after the outline (or the feed); feeds sharing an outline name share
-		// an author.
-		authorName := strings.TrimSpace(e.outline.Title)
-		if authorName == "" {
-			authorName = strings.TrimSpace(e.outline.Text)
-		}
 		if authorName == "" {
 			authorName = title
 		}
-		authorID, ok := authorsByName[authorName]
+		authorID, ok := ensureAuthor(authorName)
 		if !ok {
-			a, err := s.store.Authors.Create(u.ID, authorName, "", "")
-			if err != nil {
-				log.Error("opml import author", "name", authorName, "err", err)
-				failed++
-				continue
-			}
-			authorID = a.ID
-			authorsByName[authorName] = authorID
+			failed++
+			continue
 		}
 		if _, err := s.store.Feeds.CreateWithPlugin(u.ID, authorID, title, feedURL, homeURL, "", s.pluginNameFor(feedURL), s.defaultPollIntervalSec(feedURL)); err != nil {
 			log.Error("opml import create", "url", feedURL, "err", err)
 			failed++
 			continue
 		}
-		existing[normalizeFeedKey(feedURL)] = true
-		imported++
-		if e.collection != "" {
-			if cid := findCollection(collections, e.collection); cid != 0 {
-				s.store.Collections.AddAuthor(u.ID, cid, authorID)
-			} else if c, err := s.store.Collections.Create(u.ID, e.collection); err == nil {
-				collections = append(collections, c)
-				s.store.Collections.AddAuthor(u.ID, c.ID, authorID)
-			}
+		if _, err := s.store.Claims.RebuildAuthor(u.ID, authorID); err != nil {
+			log.Error("opml rebuild claims", "author_id", authorID, "err", err)
 		}
+		existing[normalizeFeedKey(feedURL)] = store.Feed{ID: 0, Title: title, FeedURL: feedURL}
+		imported++
+		attachCollection(authorID, e.collection)
 	}
 
 	msg := "imported " + strconv.Itoa(imported) + " · skipped " + strconv.Itoa(skipped) + " · failed " + strconv.Itoa(failed)

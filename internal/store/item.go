@@ -258,6 +258,13 @@ type ItemFilter struct {
 	// TimeGroups are per-row time-window predicates over
 	// COALESCE(published_at, fetched_at), in UTC TimeFormat strings.
 	TimeGroups []TimeGroup
+	// UnclaimedOnly applies an aggregator author's display rule: hide items
+	// claimed by another author. It only means something with AuthorID set.
+	UnclaimedOnly bool
+	// Library reads raw items instead of the author-union visible_items view.
+	// The feed library's own page uses it so /feeds/{id} shows every item in
+	// the feed, regardless of which authors filter it out.
+	Library bool
 	// Views extend the scope with OR branches. With AuthorID set they are added
 	// to the author's own feeds; without AuthorID they are the whole scope.
 	Views []ViewFilter
@@ -275,6 +282,9 @@ type ItemStore struct {
 	policy URLPolicy
 	// decorator supplies view-time item decoration (from the plugin layer).
 	decorator ItemDecorator
+	// views compiles saved-view recipes for background work (auto-read and
+	// claims) with the same parser the author page uses.
+	views *SavedViewStore
 }
 
 // Upsert stores an item for feedID, deduplicating within the feed on
@@ -499,7 +509,7 @@ func (s *ItemStore) ListPage(userID int64, f ItemFilter) ([]ItemWithFeed, bool, 
 	// author) cannot express. The momentum sort needs a window count over that
 	// same filtered set, so it always uses the dynamic query too. sqlc owns the
 	// rest of the list paths.
-	if f.AuthorID != 0 || f.Momentum || len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 ||
+	if f.Library || f.AuthorID != 0 || f.UnclaimedOnly || f.Momentum || len(f.Tags) > 0 || len(f.ExcludeTags) > 0 || f.ExcludeFeedID != 0 ||
 		len(f.TagGroups) > 0 || len(f.FeedGroups) > 0 || len(f.AuthorGroups) > 0 || len(f.TimeGroups) > 0 ||
 		len(f.Views) > 0 || len(f.CollectionViews) > 0 {
 		return s.listPageTagged(userID, f, limit)
@@ -705,7 +715,7 @@ func (s *ItemStore) ListReadHistoryFiltered(userID int64, offset, limit int, f I
 	b.WriteString(itemListColumns("visible_items"))
 	b.WriteString(" WHERE i.user_id = ?")
 	args := []any{userID}
-	appendItemFilterPredicates(&b, &args, f, false)
+	appendItemFilterPredicates(&b, &args, f)
 	b.WriteString(" ORDER BY i.read_at DESC, i.id DESC LIMIT ? OFFSET ?")
 	args = append(args, limit+1, offset)
 	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
@@ -742,7 +752,10 @@ func itemListColumnsExtra(from, extra string) string {
        a.id AS author_id, a.name AS author_name` + extra + `
 FROM ` + from + ` i
 JOIN feeds f ON f.id = i.feed_id
-LEFT JOIN authors a ON a.id = f.author_id`
+LEFT JOIN authors a ON a.id = (
+	SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+	ORDER BY af.created_at, af.author_id LIMIT 1
+)`
 }
 
 // itemListColumnNames is the bare column list matching itemListColumns, used by
@@ -792,7 +805,7 @@ func (s *ItemStore) listPageTagged(userID int64, f ItemFilter, limit int) ([]Ite
 // owned by another author), and a view follows its assigned author. Every other
 // read uses the author-filtered visible_items view.
 func (f ItemFilter) itemSource() string {
-	if f.AuthorID != 0 || len(f.Views) > 0 || len(f.CollectionViews) > 0 {
+	if f.Library || f.AuthorID != 0 || f.UnclaimedOnly || len(f.Views) > 0 || len(f.CollectionViews) > 0 {
 		return "items"
 	}
 	return "visible_items"
@@ -813,7 +826,7 @@ func (s *ItemStore) listPageTaggedFrom(userID int64, f ItemFilter, limit int, fr
 	extra := ""
 	if f.Momentum {
 		extra = `,
-       COUNT(*) OVER (PARTITION BY f.author_id) AS author_backlog`
+       COUNT(*) OVER (PARTITION BY f.id) AS feed_backlog`
 	}
 	b.WriteString(itemListColumnsExtra(from, extra))
 	if f.Magic {
@@ -825,10 +838,10 @@ func (s *ItemStore) listPageTaggedFrom(userID int64, f ItemFilter, limit int, fr
 	}
 	b.WriteString(" WHERE i.user_id = ?")
 	args = append(args, userID)
-	appendItemFilterPredicates(&b, &args, f, from == "items")
+	appendItemFilterPredicates(&b, &args, f)
 	switch {
 	case f.Momentum:
-		b.WriteString(") ORDER BY author_backlog ASC, CASE WHEN author_name IS NULL THEN 1 ELSE 0 END ASC, COALESCE(author_name, '') ASC, COALESCE(author_id, 0) ASC, COALESCE(published_at, fetched_at) DESC, id DESC LIMIT ? OFFSET ?")
+		b.WriteString(") ORDER BY feed_backlog ASC, COALESCE(feed_title, '') ASC, feed_id ASC, COALESCE(published_at, fetched_at) DESC, id DESC LIMIT ? OFFSET ?")
 		args = append(args, limit+1, f.Offset)
 	case f.Magic:
 		b.WriteString(" ORDER BY CASE WHEN f.rank > 0 THEN 0 WHEN f.rank < 0 THEN 2 ELSE 1 END ASC, COALESCE(fc.fav_count, 0) DESC, COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ? OFFSET ?")
@@ -868,13 +881,13 @@ func (s *ItemStore) listPageTaggedFrom(userID int64, f ItemFilter, limit int, fr
 // must join feeds as f and items as i. rawBase reports that the caller selected
 // from raw items rather than visible_items, so the author/collection feed
 // branches have to carry their own visibility check.
-func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter, rawBase bool) {
+func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter) {
 	if f.FeedID != 0 {
 		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = ?)")
 		*args = append(*args, f.FeedID)
 	}
-	if f.AuthorID != 0 || len(f.Views) > 0 {
-		clause, scopeArgs := authorScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", f.AuthorID, f.Views)
+	if f.AuthorID != 0 || f.UnclaimedOnly || len(f.Views) > 0 {
+		clause, scopeArgs := authorScopeClauseWith("i.id", "COALESCE(i.published_at, i.fetched_at)", f.AuthorID, f.Views, f.UnclaimedOnly)
 		if clause != "" {
 			b.WriteString(" AND ")
 			b.WriteString(clause)
@@ -882,11 +895,11 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter, r
 		}
 	}
 	if f.OwnerAuthorID != 0 {
-		b.WriteString(" AND i.feed_id IN (SELECT oa.id FROM feeds oa WHERE oa.author_id = ?)")
+		b.WriteString(" AND EXISTS (SELECT 1 FROM item_feeds oamf JOIN author_feeds oaaf ON oaaf.feed_id = oamf.feed_id WHERE oamf.item_id = i.id AND oaaf.author_id = ?)")
 		*args = append(*args, f.OwnerAuthorID)
 	}
 	if f.CollectionID != 0 || len(f.CollectionViews) > 0 {
-		clause, scopeArgs := collectionScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", f.CollectionID, f.CollectionViews, rawBase)
+		clause, scopeArgs := collectionScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", f.CollectionID, f.CollectionViews)
 		if clause != "" {
 			b.WriteString(" AND ")
 			b.WriteString(clause)
@@ -934,10 +947,17 @@ func appendItemFilterPredicates(b *strings.Builder, args *[]any, f ItemFilter, r
 // another author while still being part of this author's feed. A view branch
 // applies the rules of the author the view is assigned to (see viewFilterClause).
 func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilter) (string, []any) {
+	return authorScopeClauseWith(itemID, timeExpr, authorID, views, false)
+}
+
+// authorScopeClauseWith is authorScopeClause with the aggregator display rule:
+// an aggregator hides every item claimed by another author. The claim
+// subtraction is page-local; global and collection reads do not pass it.
+func authorScopeClauseWith(itemID, timeExpr string, authorID int64, views []ViewFilter, unclaimedOnly bool) (string, []any) {
 	var branches []string
 	var args []any
 	if authorID != 0 {
-		branch := "EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds sf ON sf.id = mf.feed_id WHERE mf.item_id = " + itemID + " AND sf.author_id = ? AND (" + authorRulesVisibleSQL(itemID, "sf.author_id") + "))"
+		branch := "EXISTS (SELECT 1 FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id WHERE mf.item_id = " + itemID + " AND af.author_id = ? AND (" + authorRulesVisibleSQL(itemID, "af.author_id") + "))"
 		branches = append(branches, branch)
 		args = append(args, authorID)
 	}
@@ -952,22 +972,35 @@ func authorScopeClause(itemID, timeExpr string, authorID int64, views []ViewFilt
 	if len(branches) == 0 {
 		return "", nil
 	}
-	return "(" + strings.Join(branches, " OR ") + ")", args
+	clause := "(" + strings.Join(branches, " OR ") + ")"
+	if unclaimedOnly {
+		self := authorID
+		if self == 0 {
+			for _, v := range views {
+				if v.AuthorID != 0 {
+					self = v.AuthorID
+					break
+				}
+			}
+		}
+		if self != 0 {
+			clause += " AND NOT EXISTS (SELECT 1 FROM item_claims ic WHERE ic.item_id = " + itemID + " AND ic.author_id <> ?)"
+			args = append(args, self)
+		}
+	}
+	return clause, args
 }
 
-// collectionScopeClause builds the OR of a collection's member authors' owned
-// feeds and the views those authors carry. itemID is the item-id expression of
-// the caller's query; timeExpr is its item-time expression. When rawBase is true
-// the caller reads raw items, so the member-feed branch carries its own
-// visible_items check.
-func collectionScopeClause(itemID, timeExpr string, collectionID int64, views []ViewFilter, rawBase bool) (string, []any) {
+// collectionScopeClause builds the OR of a collection's member authors' member
+// feeds and the views those authors carry. Each member-feed branch applies that
+// member author's rules, so an item appears when any member author's slice
+// includes it. itemID is the item-id expression of the caller's query; timeExpr
+// is its item-time expression.
+func collectionScopeClause(itemID, timeExpr string, collectionID int64, views []ViewFilter) (string, []any) {
 	var branches []string
 	var args []any
 	if collectionID != 0 {
-		branch := "EXISTS (SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id JOIN collection_authors ca ON ca.author_id = mf2.author_id WHERE mf.item_id = " + itemID + " AND ca.collection_id = ?)"
-		if rawBase {
-			branch = "(" + branch + " AND " + visibleItemExists(itemID) + ")"
-		}
+		branch := "EXISTS (SELECT 1 FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id JOIN collection_authors ca ON ca.author_id = af.author_id WHERE mf.item_id = " + itemID + " AND ca.collection_id = ? AND (" + authorRulesVisibleSQL(itemID, "af.author_id") + "))"
 		branches = append(branches, branch)
 		args = append(args, collectionID)
 	}
@@ -1012,16 +1045,9 @@ func viewFilterClause(itemID, timeExpr string, v ViewFilter) (string, []any) {
 	return strings.Join(parts, " AND "), args
 }
 
-// visibleItemExists reports whether itemID is visible under the rules of the
-// author who owns its feed. It is the guard the owned-feed branches need when
-// the query reads raw items so a view branch can bypass those rules.
-func visibleItemExists(itemID string) string {
-	return "EXISTS (SELECT 1 FROM visible_items vi WHERE vi.id = " + itemID + ")"
-}
-
 // authorRulesVisibleSQL is the per-author form of the visible_items predicate:
 // the item is visible under the rules of the author identified by authorExpr. An
-// author page passes the membership feed's author (`sf.author_id`); a saved view
+// author page passes `af.author_id` from its member-feeds branch; a saved view
 // passes `?` and binds its assigned author twice (the hide subquery and the show
 // subquery). visible_items applies the same expression to the item's owner
 // author. Keep the three in sync (TestAuthorRulesVisibleSQLMatchesView guards
@@ -1054,19 +1080,19 @@ func authorRuleMatchSQL(itemID string) string {
 		END
 		WHEN 'feed' THEN CASE r.combine
 			WHEN 'all' THEN
-				(SELECT COUNT(DISTINCT mf.feed_id) FROM item_feeds mf
-				   JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
-				   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
-				  WHERE mf.item_id = ` + itemID + `)
+				(SELECT COUNT(DISTINCT mf2.feed_id) FROM item_feeds mf2
+				   JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id AND af2.author_id = r.author_id
+				   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf2.feed_id AS TEXT)
+				  WHERE mf2.item_id = ` + itemID + `)
 				= (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
-			ELSE EXISTS (SELECT 1 FROM item_feeds mf
-				   JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
-				   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
-				  WHERE mf.item_id = ` + itemID + `)
+			ELSE EXISTS (SELECT 1 FROM item_feeds mf2
+				   JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id AND af2.author_id = r.author_id
+				   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf2.feed_id AS TEXT)
+				  WHERE mf2.item_id = ` + itemID + `)
 		END
 		WHEN 'author' THEN EXISTS (SELECT 1 FROM item_feeds mfa
-			   JOIN feeds mfa2 ON mfa2.id = mfa.feed_id
-			   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mfa2.author_id AS TEXT)
+			   JOIN author_feeds afa ON afa.feed_id = mfa.feed_id
+			   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(afa.author_id AS TEXT)
 			  WHERE mfa.item_id = ` + itemID + `)
 		ELSE 0
 	END`
@@ -1091,7 +1117,7 @@ func (s *ItemStore) CountTabsFilter(userID int64, f ItemFilter) (TabCounts, erro
 		COUNT(CASE WHEN i.favorite = 1 THEN 1 END)
 		FROM ` + source + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 	args := []any{userID}
-	appendItemFilterPredicates(&b, &args, f, source == "items")
+	appendItemFilterPredicates(&b, &args, f)
 	var t TabCounts
 	err := s.db.QueryRowContext(context.Background(), b.String(), args...).Scan(&t.Unread, &t.Read, &t.Favorites)
 	return t, err
@@ -1107,7 +1133,7 @@ func (s *ItemStore) countFilteredFrom(userID int64, f ItemFilter, from string) (
 	var b strings.Builder
 	b.WriteString(`SELECT COUNT(*) FROM ` + from + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 	args := []any{userID}
-	appendItemFilterPredicates(&b, &args, f, from == "items")
+	appendItemFilterPredicates(&b, &args, f)
 	var n int
 	if err := s.db.QueryRowContext(context.Background(), b.String(), args...).Scan(&n); err != nil {
 		return 0, err
@@ -1211,7 +1237,7 @@ func (s *ItemStore) PreviewAuthorFilters(userID, authorID int64, tagGroups []Tag
 	}
 	var b strings.Builder
 	b.WriteString(itemListColumns("items"))
-	b.WriteString(" WHERE i.user_id = ? AND i.feed_id IN (SELECT oa.id FROM feeds oa WHERE oa.author_id = ?)")
+	b.WriteString(" WHERE i.user_id = ? AND EXISTS (SELECT 1 FROM item_feeds oamf JOIN author_feeds oaaf ON oaaf.feed_id = oamf.feed_id WHERE oamf.item_id = i.id AND oaaf.author_id = ?)")
 	b.WriteString(" AND NOT (")
 	b.WriteString(clause)
 	b.WriteString(") ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ?")
@@ -1286,11 +1312,7 @@ func (s *ItemStore) RecentTimes(feedID int64, limit int) ([]string, error) {
 // AuthorRecentTimes returns the newest item times across an author's feeds,
 // newest first, up to limit. Used to estimate the author's posting cadence.
 func (s *ItemStore) AuthorRecentTimes(userID, authorID int64, limit int) ([]string, error) {
-	return s.q.ListAuthorRecentItemTimes(context.Background(), sqlcgen.ListAuthorRecentItemTimesParams{
-		UserID:   userID,
-		AuthorID: authorID,
-		Limit:    int64(limit),
-	})
+	return s.RecentTimesFilter(userID, ItemFilter{AuthorID: authorID}, limit)
 }
 
 // AuthorItemStats aggregates one author's posts across all of their feeds.
@@ -1309,24 +1331,13 @@ type AuthorItemStats struct {
 // feeds: total/read/unread/favorite counts, first and last post times, and how
 // many posts fall in the last 30 days.
 func (s *ItemStore) StatsAuthor(userID, authorID int64) (AuthorItemStats, error) {
-	r, err := s.q.GetAuthorItemStats(context.Background(), sqlcgen.GetAuthorItemStatsParams{
-		UserID:   userID,
-		AuthorID: authorID,
-	})
+	stats, err := s.StatsFilter(userID, ItemFilter{AuthorID: authorID})
 	if err != nil {
 		return AuthorItemStats{}, err
 	}
 	storage, _ := s.StorageByAuthor(userID, authorID)
-	return AuthorItemStats{
-		Total:     int(r.TotalPosts),
-		Unread:    int(r.UnreadPosts),
-		Read:      int(r.ReadPosts),
-		Favorites: int(r.FavoritePosts),
-		Recent:    int(r.RecentPosts),
-		FirstAt:   r.FirstPostAt,
-		LastAt:    r.LastPostAt,
-		Storage:   storage,
-	}, nil
+	stats.Storage = storage
+	return stats, nil
 }
 
 // StatsFilter returns author-style aggregate stats for an arbitrary item scope
@@ -1345,7 +1356,7 @@ func (s *ItemStore) StatsFilter(userID int64, f ItemFilter) (AuthorItemStats, er
 		CAST(COALESCE(MAX(COALESCE(i.published_at, i.fetched_at)), '') AS TEXT)
 		FROM ` + source + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 	args := []any{db.FormatTime(time.Now().AddDate(0, 0, -30)), userID}
-	appendItemFilterPredicates(&b, &args, f, source == "items")
+	appendItemFilterPredicates(&b, &args, f)
 	var (
 		total, unread, read, favorites, recent int
 		firstAt, lastAt                        string
@@ -1373,7 +1384,7 @@ func (s *ItemStore) RecentTimesFilter(userID int64, f ItemFilter, limit int) ([]
 	b.WriteString(`SELECT COALESCE(i.published_at, i.fetched_at)
 		FROM ` + source + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 	args := []any{userID}
-	appendItemFilterPredicates(&b, &args, f, source == "items")
+	appendItemFilterPredicates(&b, &args, f)
 	b.WriteString(" ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC LIMIT ?")
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
@@ -1402,7 +1413,7 @@ func (s *ItemStore) ListCategoriesFilter(userID int64, f ItemFilter) ([]Category
 		FROM item_categories ic WHERE ic.item_id IN (
 			SELECT i.id FROM ` + source + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 	args := []any{userID}
-	appendItemFilterPredicates(&b, &args, f, source == "items")
+	appendItemFilterPredicates(&b, &args, f)
 	b.WriteString(`) GROUP BY ic.category ORDER BY COUNT(DISTINCT ic.item_id) DESC, ic.category`)
 	rows, err := s.db.QueryContext(context.Background(), b.String(), args...)
 	if err != nil {
@@ -1662,11 +1673,7 @@ func (s *ItemStore) ListCategories(userID int64, f ItemFilter) ([]CategoryCount,
 		}
 		return categoryCounts(len(rows), func(i int) (string, int64) { return rows[i].Category, rows[i].ItemCount }), nil
 	case f.AuthorID != 0:
-		rows, err := s.q.ListCategoriesForAuthor(ctx, sqlcgen.ListCategoriesForAuthorParams{AuthorID: f.AuthorID, UserID: userID})
-		if err != nil {
-			return nil, err
-		}
-		return categoryCounts(len(rows), func(i int) (string, int64) { return rows[i].Category, rows[i].ItemCount }), nil
+		return s.ListCategoriesFilter(userID, f)
 	case f.CollectionID != 0:
 		rows, err := s.q.ListCategoriesForCollection(ctx, sqlcgen.ListCategoriesForCollectionParams{CollectionID: f.CollectionID, UserID: userID})
 		if err != nil {
@@ -1824,6 +1831,23 @@ func attachSources(q *sqlcgen.Queries, userID int64, policy URLPolicy, decorator
 			AuthorID:   r.AuthorID.Int64,
 			AuthorName: r.AuthorName.String,
 		})
+	}
+	// A claiming author wins the card's source line over the feed's earliest
+	// member author. A page-scoped read (an author page) overrides this again
+	// with the page author.
+	claims, err := q.ListClaimAuthorsForItems(context.Background(), ids)
+	if err != nil {
+		return err
+	}
+	claimed := make(map[int64]bool, len(claims))
+	for _, r := range claims {
+		idx, ok := byID[r.ItemID]
+		if !ok || claimed[r.ItemID] {
+			continue
+		}
+		claimed[r.ItemID] = true
+		items[idx].AuthorID = r.AuthorID
+		items[idx].AuthorName = r.AuthorName
 	}
 	if err := decorate(q, userID, policy, decorator, items); err != nil {
 		return err
@@ -1994,22 +2018,72 @@ func (s *ItemStore) MarkOlderRead(userID, feedID, itemID int64) error {
 // MarkAuthorNewerRead marks every unread item newer than itemID across all
 // feeds owned by the item's author as read. Used on an author page, where the
 // bulk action spans the author's whole feed set.
-func (s *ItemStore) MarkAuthorNewerRead(userID, itemID int64) error {
-	return s.q.MarkAuthorItemsNewerRead(context.Background(), sqlcgen.MarkAuthorItemsNewerReadParams{
-		ReadAt: ns(db.Now()),
-		ItemID: itemID,
-		UserID: userID,
-	})
+func (s *ItemStore) MarkAuthorNewerRead(userID, authorID, itemID int64) error {
+	return s.markAuthorRangeRead(userID, authorID, itemID, true)
 }
 
-// MarkAuthorOlderRead marks every unread item older than itemID across all
-// feeds owned by the item's author as read.
-func (s *ItemStore) MarkAuthorOlderRead(userID, itemID int64) error {
-	return s.q.MarkAuthorItemsOlderRead(context.Background(), sqlcgen.MarkAuthorItemsOlderReadParams{
-		ReadAt: ns(db.Now()),
-		ItemID: itemID,
-		UserID: userID,
-	})
+// MarkAuthorOlderRead marks every unread item older than itemID across the
+// author's displayed slice as read.
+func (s *ItemStore) MarkAuthorOlderRead(userID, authorID, itemID int64) error {
+	return s.markAuthorRangeRead(userID, authorID, itemID, false)
+}
+
+// markAuthorRangeRead applies the author's full scope (member feeds, views and
+// the aggregator claim subtraction) to a newer/older bulk mark, so an
+// aggregator's range action never touches a claimed item.
+func (s *ItemStore) markAuthorRangeRead(userID, authorID, itemID int64, newer bool) error {
+	ctx := context.Background()
+	var itemTime string
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(published_at, fetched_at) FROM items WHERE id = ? AND user_id = ?`,
+		itemID, userID).Scan(&itemTime); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return err
+	}
+	var tz string
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT COALESCE(timezone, '') FROM users WHERE id = ?`, userID).Scan(&tz); err != nil {
+		return err
+	}
+	var aggregator bool
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT is_aggregator FROM authors WHERE id = ? AND user_id = ?`, authorID, userID).Scan(&aggregator); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return err
+	}
+	var views []ViewFilter
+	if s.views != nil {
+		var err error
+		views, err = s.views.FiltersForAuthor(userID, authorID, tz)
+		if err != nil {
+			return err
+		}
+	}
+	scope, scopeArgs := authorScopeClauseWith("i.id", "COALESCE(i.published_at, i.fetched_at)", authorID, views, aggregator)
+	if scope == "" {
+		return nil
+	}
+	op := ">"
+	if !newer {
+		op = "<"
+	}
+	q := `UPDATE items SET read = 1, read_at = ?
+		WHERE read = 0 AND items.user_id = ?
+		  AND items.id IN (
+			SELECT i.id FROM items i JOIN feeds f ON f.id = i.feed_id
+			WHERE i.user_id = ? AND f.is_system = 0
+			  AND (` + scope + `)
+			  AND (COALESCE(i.published_at, i.fetched_at), i.id) ` + op + ` (?, ?)
+		  )`
+	args := []any{ns(db.Now()), userID, userID}
+	args = append(args, scopeArgs...)
+	args = append(args, itemTime, itemID)
+	_, err := s.db.ExecContext(ctx, q, args...)
+	return err
 }
 
 // SetFavorite marks an item as a favorite or not, verifying it belongs to the user.
@@ -2137,7 +2211,7 @@ func unreadFilteredQuery(userID int64, f ItemFilter, mark bool) (string, []any) 
 		AND items.id IN (SELECT i.id FROM ` + source + ` i JOIN feeds f ON f.id = i.feed_id WHERE i.user_id = ?`)
 		args = append(args, userID, userID)
 	}
-	appendItemFilterPredicates(&b, &args, f, source == "items")
+	appendItemFilterPredicates(&b, &args, f)
 	b.WriteString(")")
 	return b.String(), args
 }
@@ -2213,7 +2287,7 @@ func filterGroupsClause(itemID string, tagGroups []TagGroup, feedGroups []FeedGr
 	for _, g := range authorGroups {
 		terms := make([]string, 0, len(g.AuthorIDs))
 		for _, authorID := range g.AuthorIDs {
-			terms = append(terms, "EXISTS (SELECT 1 FROM item_feeds mfa JOIN feeds mfa2 ON mfa2.id = mfa.feed_id WHERE mfa.item_id = "+itemID+" AND mfa2.author_id = ?)")
+			terms = append(terms, "EXISTS (SELECT 1 FROM item_feeds mfa JOIN author_feeds afa ON afa.feed_id = mfa.feed_id WHERE mfa.item_id = "+itemID+" AND afa.author_id = ?)")
 			args = append(args, authorID)
 		}
 		if clause := groupClause(terms, false, g.Exclude); clause != "" {
@@ -2251,13 +2325,10 @@ func appendFilterGroups(b *strings.Builder, args *[]any, itemID string, tagGroup
 	*args = append(*args, groupArgs...)
 }
 
-// MarkAuthorRead marks every item read across all of an author's feeds.
+// MarkAuthorRead marks every item read across an author's member feeds.
 func (s *ItemStore) MarkAuthorRead(userID, authorID int64) error {
-	return s.q.MarkAuthorItemsRead(context.Background(), sqlcgen.MarkAuthorItemsReadParams{
-		ReadAt:   ns(db.Now()),
-		UserID:   userID,
-		AuthorID: authorID,
-	})
+	_, err := s.MarkAllReadFiltered(userID, ItemFilter{AuthorID: authorID})
+	return err
 }
 
 // MarkAutoRead applies the auto-read retention policy across a user's feeds.
@@ -2275,12 +2346,124 @@ func (s *ItemStore) MarkAutoReadForAuthor(userID, authorID int64) (int64, error)
 }
 
 func (s *ItemStore) markAutoRead(userID, authorID int64) (int64, error) {
-	res, err := s.q.MarkItemsAutoRead(context.Background(), sqlcgen.MarkItemsAutoReadParams{
-		ReadAt:   ns(db.Now()),
-		Now:      db.FormatTime(time.Now()),
-		UserID:   userID,
-		AuthorID: authorID,
-	})
+	ctx := context.Background()
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT a.id, COALESCE(a.auto_read_after_days, u.auto_read_after_days), a.is_aggregator
+		FROM authors a
+		JOIN users u ON u.id = a.user_id
+		WHERE a.user_id = ? AND a.is_system = 0
+		  AND COALESCE(a.auto_read_after_days, u.auto_read_after_days) > 0
+		  AND (? = 0 OR a.id = ?)
+		ORDER BY a.id`, userID, authorID, authorID)
+	if err != nil {
+		return 0, err
+	}
+	type target struct {
+		id         int64
+		days       int
+		aggregator bool
+	}
+	var targets []target
+	for rows.Next() {
+		var t target
+		var days int64
+		if err := rows.Scan(&t.id, &days, &t.aggregator); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		t.days = int(days)
+		targets = append(targets, t)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	var total int64
+	for _, t := range targets {
+		n, err := s.markAutoReadAuthor(userID, t.id, t.days, t.aggregator)
+		if err != nil {
+			return total, err
+		}
+		total += n
+	}
+	// The library residual (feeds no author selected) follows the account
+	// window. It is skipped for a single-author immediate sweep.
+	if authorID == 0 {
+		n, err := s.markAutoReadResidual(userID)
+		if err != nil {
+			return total, err
+		}
+		total += n
+	}
+	return total, nil
+}
+
+// markAutoReadAuthor sweeps one author's displayed slice: its member feeds with
+// the author's rules applied, plus (for a claiming author) its claimed items.
+// An aggregator additionally excludes every claimed item, matching its page.
+func (s *ItemStore) markAutoReadAuthor(userID, authorID int64, days int, aggregator bool) (int64, error) {
+	// Use the same scope builder as the author page, so views and the
+	// aggregator claim subtraction behave identically.
+	var tz string
+	if err := s.db.QueryRowContext(context.Background(),
+		`SELECT COALESCE(timezone, '') FROM users WHERE id = ?`, userID).Scan(&tz); err != nil {
+		return 0, err
+	}
+	var views []ViewFilter
+	if s.views != nil {
+		var err error
+		views, err = s.views.FiltersForAuthor(userID, authorID, tz)
+		if err != nil {
+			return 0, err
+		}
+	}
+	scope, scopeArgs := authorScopeClauseWith("i.id", "COALESCE(i.published_at, i.fetched_at)", authorID, views, aggregator)
+	if scope == "" {
+		return 0, nil
+	}
+	q := `UPDATE items SET read = 1, read_at = ?
+		WHERE read = 0 AND items.user_id = ?
+		  AND items.id IN (
+			SELECT i.id FROM items i JOIN feeds f ON f.id = i.feed_id
+			WHERE i.user_id = ? AND f.is_system = 0
+			  AND (` + scope + `)
+			  AND COALESCE(i.published_at, i.fetched_at) < datetime(?, ?)
+		  )`
+	args := []any{ns(db.Now()), userID, userID}
+	args = append(args, scopeArgs...)
+	args = append(args, db.FormatTime(time.Now()), fmt.Sprintf("-%d days", days))
+	res, err := s.db.ExecContext(context.Background(), q, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// markAutoReadResidual sweeps items on feeds no author selected, using the
+// account window. It never touches a member feed, so an author with auto-read
+// off is protected by the absence of an author sweep.
+func (s *ItemStore) markAutoReadResidual(userID int64) (int64, error) {
+	var days int
+	if err := s.db.QueryRowContext(context.Background(),
+		`SELECT auto_read_after_days FROM users WHERE id = ?`, userID).Scan(&days); err != nil {
+		return 0, err
+	}
+	if days <= 0 {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(context.Background(), `
+		UPDATE items SET read = 1, read_at = ?
+		WHERE read = 0 AND items.user_id = ?
+		  AND items.feed_id IN (
+			SELECT f.id FROM feeds f
+			WHERE f.user_id = ? AND f.is_system = 0
+			  AND NOT EXISTS (SELECT 1 FROM author_feeds af WHERE af.feed_id = f.id)
+		  )
+		  AND COALESCE(items.published_at, items.fetched_at) < datetime(?, ?)`,
+		ns(db.Now()), userID, userID, db.FormatTime(time.Now()), fmt.Sprintf("-%d days", days))
 	if err != nil {
 		return 0, err
 	}
@@ -2298,24 +2481,55 @@ const deleteOldReadBatchSize = 500
 // unprotected_at restarts the window when the item left its last list,
 // favorite or bookmark; NULL means it was never protected.
 const oldReadSelect = `
-SELECT items.id, items.image_cache_key
-FROM items
-JOIN feeds f ON f.id = items.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
-JOIN users u ON u.id = items.user_id
-WHERE items.user_id = ?
-  AND items.read = 1
-  AND items.read_at IS NOT NULL
-  AND items.read_at < datetime(?, printf('-%d days', COALESCE(a.auto_delete_after_days, u.auto_delete_after_days)))
-  AND items.favorite = 0
-  AND items.bookmark = 0
-  AND f.is_system = 0
-  AND (? = 0 OR f.author_id = ?)
-  AND COALESCE(a.auto_delete_after_days, u.auto_delete_after_days) > 0
-  AND NOT EXISTS (SELECT 1 FROM list_items li WHERE li.item_id = items.id)
-  AND (items.unprotected_at IS NULL
-       OR items.unprotected_at < datetime(?, printf('-%d days', COALESCE(a.auto_delete_after_days, u.auto_delete_after_days))))
-ORDER BY items.id
+WITH eligible AS (
+  SELECT items.id, items.image_cache_key, items.read_at, items.unprotected_at,
+    COALESCE(
+      (SELECT MAX(d) FROM (
+         SELECT COALESCE(a.auto_delete_after_days, u.auto_delete_after_days) AS d
+           FROM item_feeds mf
+           JOIN author_feeds af ON af.feed_id = mf.feed_id
+           JOIN authors a ON a.id = af.author_id
+          WHERE mf.item_id = items.id
+         UNION ALL
+         SELECT COALESCE(a.auto_delete_after_days, u.auto_delete_after_days) AS d
+           FROM item_claims ic
+           JOIN authors a ON a.id = ic.author_id
+          WHERE ic.item_id = items.id
+       )),
+      u.auto_delete_after_days) AS days,
+    EXISTS (
+      SELECT 1 FROM (
+         SELECT COALESCE(a.auto_delete_after_days, u.auto_delete_after_days) AS d
+           FROM item_feeds mf
+           JOIN author_feeds af ON af.feed_id = mf.feed_id
+           JOIN authors a ON a.id = af.author_id
+          WHERE mf.item_id = items.id
+         UNION ALL
+         SELECT COALESCE(a.auto_delete_after_days, u.auto_delete_after_days) AS d
+           FROM item_claims ic
+           JOIN authors a ON a.id = ic.author_id
+          WHERE ic.item_id = items.id
+      ) WHERE d = 0) AS blocked
+  FROM items
+  JOIN users u ON u.id = items.user_id
+  WHERE items.user_id = ?
+    AND items.read = 1
+    AND items.read_at IS NOT NULL
+    AND items.favorite = 0
+    AND items.bookmark = 0
+    AND items.feed_id NOT IN (SELECT id FROM feeds WHERE is_system = 1)
+    AND (? = 0 OR EXISTS (
+      SELECT 1 FROM item_feeds mf
+      JOIN author_feeds af ON af.feed_id = mf.feed_id
+      WHERE mf.item_id = items.id AND af.author_id = ?))
+    AND NOT EXISTS (SELECT 1 FROM list_items li WHERE li.item_id = items.id)
+)
+SELECT id, image_cache_key FROM eligible
+WHERE days > 0
+  AND NOT blocked
+  AND read_at < datetime(?, printf('-%d days', days))
+  AND (unprotected_at IS NULL OR unprotected_at < datetime(?, printf('-%d days', days)))
+ORDER BY id
 LIMIT ?`
 
 // DeleteOldReadItems removes a user's eligible old read items and returns the
@@ -2361,7 +2575,7 @@ func (s *ItemStore) deleteOldReadBatch(userID, authorID int64) (int64, []string,
 
 	now := db.Now()
 	rows, err := tx.QueryContext(ctx, oldReadSelect,
-		userID, now, authorID, authorID, now, deleteOldReadBatchSize)
+		userID, authorID, authorID, now, now, deleteOldReadBatchSize)
 	if err != nil {
 		return 0, nil, fmt.Errorf("select old items: %w", err)
 	}
@@ -2487,38 +2701,22 @@ func (s *ItemStore) CountBookmarks(userID, feedID int64) (int, error) {
 
 // CountUnreadAuthor counts unread items across an author's feeds.
 func (s *ItemStore) CountUnreadAuthor(userID, authorID int64) (int, error) {
-	n, err := s.q.CountUnreadItemsByAuthor(context.Background(), sqlcgen.CountUnreadItemsByAuthorParams{
-		UserID:   userID,
-		AuthorID: authorID,
-	})
-	return int(n), err
+	return s.CountFiltered(userID, ItemFilter{AuthorID: authorID, UnreadOnly: true})
 }
 
 // CountReadAuthor counts read items across an author's feeds.
 func (s *ItemStore) CountReadAuthor(userID, authorID int64) (int, error) {
-	n, err := s.q.CountReadItemsByAuthor(context.Background(), sqlcgen.CountReadItemsByAuthorParams{
-		UserID:   userID,
-		AuthorID: authorID,
-	})
-	return int(n), err
+	return s.CountFiltered(userID, ItemFilter{AuthorID: authorID, ReadOnly: true})
 }
 
 // CountFavoritesAuthor counts favorited items across an author's feeds.
 func (s *ItemStore) CountFavoritesAuthor(userID, authorID int64) (int, error) {
-	n, err := s.q.CountFavoriteItemsByAuthor(context.Background(), sqlcgen.CountFavoriteItemsByAuthorParams{
-		UserID:   userID,
-		AuthorID: authorID,
-	})
-	return int(n), err
+	return s.CountFiltered(userID, ItemFilter{AuthorID: authorID, FavoritesOnly: true})
 }
 
 // CountBookmarksAuthor counts bookmarked items across an author's feeds.
 func (s *ItemStore) CountBookmarksAuthor(userID, authorID int64) (int, error) {
-	n, err := s.q.CountBookmarkItemsByAuthor(context.Background(), sqlcgen.CountBookmarkItemsByAuthorParams{
-		UserID:   userID,
-		AuthorID: authorID,
-	})
-	return int(n), err
+	return s.CountFiltered(userID, ItemFilter{AuthorID: authorID, BookmarksOnly: true})
 }
 
 // CountUnreadCollection counts unread items across a collection's feeds.

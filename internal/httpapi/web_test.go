@@ -2903,11 +2903,12 @@ func TestFeedPanelsAutoSaveIndependently(t *testing.T) {
 	}
 }
 
-func TestFeedCreateBlocksDuplicateURL(t *testing.T) {
+func TestFeedCreateAttachesExistingURL(t *testing.T) {
 	s, h := newTestServer(t)
 	cookie := sessionCookie(t, h)
 	u, _ := s.store.Users.ByUsername("alice")
 	a, _ := s.store.Authors.Create(u.ID, "Metru", "", "")
+	b, _ := s.store.Authors.Create(u.ID, "Second", "", "")
 
 	rr := doForm(h, "POST", "/authors/"+itoa(a.ID)+"/feeds", url.Values{
 		"title": {"Blog"}, "feed_url": {"https://b.dev/rss.xml"},
@@ -2915,21 +2916,22 @@ func TestFeedCreateBlocksDuplicateURL(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("first add: %d %s", rr.Code, rr.Body.String())
 	}
-	// The same feed URL again is blocked with a visible warning.
-	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/feeds", url.Values{
+	// The same URL for another author attaches to the existing feed.
+	rr = doForm(h, "POST", "/authors/"+itoa(b.ID)+"/feeds", url.Values{
 		"title": {"Blog again"}, "feed_url": {"https://b.dev/rss.xml"},
 	}, cookie)
-	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "already have this feed") {
-		t.Fatalf("duplicate feed should be blocked: %d %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Fatalf("second add should attach: %d %s", rr.Code, rr.Body.String())
 	}
 	feeds, _ := s.store.Feeds.List(u.ID)
 	if len(feeds) != 1 {
-		t.Fatalf("duplicate feed should not be created: %+v", feeds)
+		t.Fatalf("one URL must stay one feed: %+v", feeds)
 	}
-	// The warning links to the feed the user already has.
-	wantLink := `href="/authors/` + itoa(a.ID) + `?feed=` + itoa(feeds[0].ID) + `"`
-	if !strings.Contains(rr.Body.String(), wantLink) {
-		t.Fatalf("duplicate feed error should link to the existing feed %q: %s", wantLink, rr.Body.String())
+	for _, authorID := range []int64{a.ID, b.ID} {
+		got, _ := s.store.Feeds.ListByAuthor(u.ID, authorID)
+		if len(got) != 1 || got[0].ID != feeds[0].ID {
+			t.Fatalf("author %d feed membership = %+v, want feed %d", authorID, got, feeds[0].ID)
+		}
 	}
 	// The same title/home with a different feed URL is allowed.
 	rr = doForm(h, "POST", "/authors/"+itoa(a.ID)+"/feeds", url.Values{

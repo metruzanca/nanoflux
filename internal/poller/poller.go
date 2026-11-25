@@ -1124,6 +1124,7 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 	}
 
 	var stored []store.Item
+	var touchedIDs []int64
 	for i, inc := range incomingItems {
 		res := results[i]
 		if res.Inserted {
@@ -1132,6 +1133,9 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 		// The upsert returns the stored id, so enclosures and the image cache do
 		// not need a separate lookup (the old IngestItemID query).
 		itemID := res.ItemID
+		if itemID != 0 {
+			touchedIDs = append(touchedIDs, itemID)
+		}
 		var enclosureKeys []string
 		var enclosureSizes []int64
 		if cacheImages && itemID != 0 {
@@ -1157,6 +1161,9 @@ func (p *Poller) ingest(ctx context.Context, f store.Feed, res feedparse.Result,
 		}
 	}
 	p.enrichStored(f.UserID, stored)
+	if err := p.store.Claims.RefreshItems(f.UserID, touchedIDs); err != nil {
+		log.Error("refresh item claims", "feed_id", f.ID, "err", err)
+	}
 	return newItems, nil
 }
 

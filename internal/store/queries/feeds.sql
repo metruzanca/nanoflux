@@ -1,78 +1,82 @@
 -- name: CreateFeed :one
-INSERT INTO feeds (user_id, author_id, title, feed_url, home_url, description, poll_interval_sec, plugin_name)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, user_id, author_id, title, feed_url, home_url, description,
+INSERT INTO feeds (user_id, title, feed_url, home_url, description, poll_interval_sec, plugin_name)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, user_id, title, feed_url, home_url, description,
          etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at;
 
 -- name: GetFeed :one
-SELECT id, user_id, author_id, title, feed_url, home_url, description,
+SELECT id, user_id, title, feed_url, home_url, description,
        etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE id = ? AND user_id = ?;
 
 -- name: GetFeedAny :one
-SELECT id, user_id, author_id, title, feed_url, home_url, description,
+SELECT id, user_id, title, feed_url, home_url, description,
        etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE id = ?;
 
 -- name: ListFeeds :many
-SELECT id, user_id, author_id, title, feed_url, home_url, description,
+SELECT id, user_id, title, feed_url, home_url, description,
        etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE user_id = ? AND is_system = 0
 ORDER BY title;
 
 -- name: ListFeedsByAuthor :many
-SELECT id, user_id, author_id, title, feed_url, home_url, description,
-       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
-FROM feeds
-WHERE user_id = ? AND author_id = ? AND is_system = 0
-ORDER BY title;
+SELECT f.id, f.user_id, f.title, f.feed_url, f.home_url, f.description,
+       f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at
+FROM feeds f
+JOIN author_feeds af ON af.feed_id = f.id
+WHERE f.user_id = ? AND af.author_id = ? AND f.is_system = 0
+ORDER BY f.title;
 
 -- name: ListFeedsWithUnread :many
-SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
+SELECT f.id, f.user_id, f.title, f.feed_url, f.home_url, f.description,
        f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
-       a.name AS author_name,
+       CAST(COALESCE((SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+                 ORDER BY af.created_at, af.author_id LIMIT 1), 0) AS INTEGER) AS author_id,
+       CAST(COALESCE((SELECT a.name FROM author_feeds af JOIN authors a ON a.id = af.author_id
+                 WHERE af.feed_id = f.id ORDER BY af.created_at, af.author_id LIMIT 1), '') AS TEXT) AS author_name,
        (SELECT COUNT(*) FROM visible_items i JOIN item_feeds mf ON mf.item_id = i.id
         WHERE mf.feed_id = f.id AND i.read = 0) AS unread
 FROM feeds f
-LEFT JOIN authors a ON a.id = f.author_id
 WHERE f.user_id = ? AND f.is_system = 0
 ORDER BY f.title;
 
 -- name: ListFeedsByAuthorWithUnread :many
-SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
+SELECT f.id, f.user_id, f.title, f.feed_url, f.home_url, f.description,
        f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
+       af.author_id AS author_id,
        a.name AS author_name,
        (SELECT COUNT(*) FROM visible_items i JOIN item_feeds mf ON mf.item_id = i.id
         WHERE mf.feed_id = f.id AND i.read = 0) AS unread
 FROM feeds f
-LEFT JOIN authors a ON a.id = f.author_id
-WHERE f.user_id = ? AND f.author_id = ? AND f.is_system = 0
+JOIN author_feeds af ON af.feed_id = f.id
+JOIN authors a ON a.id = af.author_id
+WHERE f.user_id = ? AND af.author_id = ? AND f.is_system = 0
 ORDER BY f.title;
 
 -- name: GetSystemFeed :one
 -- The hidden per-user feed that holds saved pages, or no rows when none exists.
-SELECT id, user_id, author_id, title, feed_url, home_url, description,
+SELECT id, user_id, title, feed_url, home_url, description,
        etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE user_id = ? AND is_system = 1
 LIMIT 1;
 
 -- name: CreateSystemFeed :one
--- The system feed holds arbitrary saved pages: it is never polled (enabled 0)
--- and owned by the system author.
-INSERT INTO feeds (user_id, author_id, title, feed_url, description, poll_interval_sec, plugin_name, enabled, is_system)
-VALUES (?, ?, ?, ?, ?, 0, '', 0, 1)
-RETURNING id, user_id, author_id, title, feed_url, home_url, description,
+-- The system feed holds arbitrary saved pages: it is never polled (enabled 0).
+INSERT INTO feeds (user_id, title, feed_url, description, poll_interval_sec, plugin_name, enabled, is_system)
+VALUES (?, ?, ?, ?, 0, '', 0, 1)
+RETURNING id, user_id, title, feed_url, home_url, description,
          etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at;
 
 -- name: UpdateFeed :execresult
 -- A user save clears any automatic disabled reason: the user took over the
 -- feed's state, so it must not later be resumed by the plugin reconciler.
 UPDATE feeds
-SET author_id = sqlc.arg('authorID'), title = sqlc.arg('title'),
+SET title = sqlc.arg('title'),
     feed_url = sqlc.arg('feedURL'), home_url = sqlc.arg('homeURL'),
     description = sqlc.arg('description'),
     poll_interval_sec = sqlc.arg('pollIntervalSec'),
@@ -81,12 +85,35 @@ SET author_id = sqlc.arg('authorID'), title = sqlc.arg('title'),
     disabled_reason = NULL
 WHERE id = sqlc.arg('id') AND user_id = sqlc.arg('userID');
 
--- name: SetFeedAuthor :execresult
--- Move a feed to another author. Only the owner is changed; items, collections
--- and list memberships follow the feed unchanged.
-UPDATE feeds
-SET author_id = ?
-WHERE id = ? AND user_id = ?;
+-- name: FindFeedByURL :one
+-- Look up an existing feed by its canonical URL, so adding a URL that is
+-- already in the library attaches authors instead of creating a duplicate.
+SELECT id, user_id, title, feed_url, home_url, description,
+       etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
+FROM feeds
+WHERE user_id = ? AND feed_url = ? AND is_system = 0
+LIMIT 1;
+
+-- name: AddAuthorFeed :exec
+INSERT INTO author_feeds (author_id, feed_id)
+VALUES (?, ?)
+ON CONFLICT (author_id, feed_id) DO NOTHING;
+
+-- name: RemoveAuthorFeed :exec
+DELETE FROM author_feeds WHERE author_id = ? AND feed_id = ?;
+
+-- name: ClearFeedAuthors :exec
+DELETE FROM author_feeds WHERE feed_id = ?;
+
+-- name: ListFeedAuthors :many
+SELECT af.author_id, a.name
+FROM author_feeds af
+JOIN authors a ON a.id = af.author_id
+WHERE af.feed_id = ?
+ORDER BY af.created_at, af.author_id;
+
+-- name: CountFeedAuthors :one
+SELECT COUNT(*) FROM author_feeds WHERE feed_id = ?;
 
 -- name: DeleteFeed :execresult
 DELETE FROM feeds
@@ -186,7 +213,7 @@ WHERE id = ?
   AND disabled_reason LIKE 'plugin not loaded:%';
 
 -- name: ListFeedsDue :many
-SELECT id, user_id, author_id, title, feed_url, home_url, description,
+SELECT id, user_id, title, feed_url, home_url, description,
        etag, last_modified, last_polled_at, last_error, next_page_url, poll_interval_sec, poll_interval_auto, last_item_at, next_poll_at, next_poll_scheduled, plugin_name, disabled_reason, enabled, is_system, rank, cache_images, created_at
 FROM feeds
 WHERE enabled = 1 AND is_system = 0
@@ -202,17 +229,19 @@ WHERE enabled = 1 AND is_system = 0
   );
 
 -- name: ListUserFeeds :many
--- The user's subscribed feeds (id, url, author). Used with the URL policy's
--- FeedToken to resolve an item's category tokens to the subscribed feed for
--- them, so source attribution can link internally even before a matching feed
--- has polled the item (and thus before an item_feeds membership exists).
-SELECT f.id AS feed_id, f.feed_url AS feed_url, f.author_id AS author_id
+-- The user's subscribed feeds (id, url). Used with the URL policy's FeedToken
+-- to resolve an item's category tokens to the subscribed feed for them, so
+-- source attribution can link internally even before a matching feed has
+-- polled the item (and thus before an item_feeds membership exists).
+SELECT f.id AS feed_id, f.feed_url AS feed_url,
+       CAST(COALESCE((SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+                      ORDER BY af.created_at, af.author_id LIMIT 1), 0) AS INTEGER) AS author_id
 FROM feeds f
 WHERE f.user_id = ? AND f.is_system = 0
 ORDER BY f.id;
 
 -- name: ListAllFeeds :many
-SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
+SELECT f.id, f.user_id, f.title, f.feed_url, f.home_url, f.description,
        f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
        u.username AS owner
 FROM feeds f
@@ -233,11 +262,13 @@ WHERE id = ? AND user_id = ?;
 -- Every non-system feed of a user with its owner-feed favorite count, for the
 -- magic-sort algorithm editor: most favorited first, then by title. A feed with
 -- no favorites still appears (count 0).
-SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
+SELECT f.id, f.user_id, f.title, f.feed_url, f.home_url, f.description,
        f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at,
-       a.name AS author_name,
+       CAST(COALESCE((SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+                 ORDER BY af.created_at, af.author_id LIMIT 1), 0) AS INTEGER) AS author_id,
+       CAST(COALESCE((SELECT a.name FROM author_feeds af JOIN authors a ON a.id = af.author_id
+                 WHERE af.feed_id = f.id ORDER BY af.created_at, af.author_id LIMIT 1), '') AS TEXT) AS author_name,
        (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.favorite = 1) AS favorite_count
 FROM feeds f
-LEFT JOIN authors a ON a.id = f.author_id
 WHERE f.user_id = ? AND f.is_system = 0
 ORDER BY favorite_count DESC, f.title;

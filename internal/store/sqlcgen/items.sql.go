@@ -121,8 +121,9 @@ const countBookmarkItemsByAuthor = `-- name: CountBookmarkItemsByAuthor :one
 SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.bookmark = 1
   AND i.id IN (
-    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    SELECT mf.item_id FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
+    JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND af.author_id = ?2)
 `
 
 type CountBookmarkItemsByAuthorParams struct {
@@ -160,8 +161,9 @@ const countFavoriteItemsByAuthor = `-- name: CountFavoriteItemsByAuthor :one
 SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.favorite = 1
   AND i.id IN (
-    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    SELECT mf.item_id FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
+    JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND af.author_id = ?2)
 `
 
 type CountFavoriteItemsByAuthorParams struct {
@@ -200,8 +202,9 @@ const countReadItemsByAuthor = `-- name: CountReadItemsByAuthor :one
 SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.read = 1
   AND i.id IN (
-    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    SELECT mf.item_id FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
+    JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND af.author_id = ?2)
 `
 
 type CountReadItemsByAuthorParams struct {
@@ -222,7 +225,8 @@ WHERE i.user_id = ?1 AND i.read = 1
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf
     JOIN feeds f ON f.id = mf.feed_id
-    JOIN collection_authors ca ON ca.author_id = f.author_id
+    JOIN author_feeds af ON af.feed_id = mf.feed_id
+    JOIN collection_authors ca ON ca.author_id = af.author_id
     WHERE ca.collection_id = ?2)
 `
 
@@ -265,8 +269,9 @@ const countUnreadItemsByAuthor = `-- name: CountUnreadItemsByAuthor :one
 SELECT COUNT(*) FROM visible_items i
 WHERE i.user_id = ?1 AND i.read = 0
   AND i.id IN (
-    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    SELECT mf.item_id FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
+    JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND af.author_id = ?2)
 `
 
 type CountUnreadItemsByAuthorParams struct {
@@ -287,7 +292,8 @@ WHERE i.user_id = ?1 AND i.read = 0
   AND i.id IN (
     SELECT mf.item_id FROM item_feeds mf
     JOIN feeds f ON f.id = mf.feed_id
-    JOIN collection_authors ca ON ca.author_id = f.author_id
+    JOIN author_feeds af ON af.feed_id = mf.feed_id
+    JOIN collection_authors ca ON ca.author_id = af.author_id
     WHERE ca.collection_id = ?2)
 `
 
@@ -368,8 +374,9 @@ SELECT
 FROM visible_items i
 WHERE i.user_id = ?1
   AND i.id IN (
-    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    SELECT mf.item_id FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
+    JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND af.author_id = ?2)
 `
 
 type GetAuthorItemStatsParams struct {
@@ -573,7 +580,10 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categor
        a.id AS author_id, a.name AS author_name
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN authors a ON a.id = (
+    SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+    ORDER BY af.created_at, af.author_id LIMIT 1
+)
 WHERE i.id = ? AND i.user_id = ?
 `
 
@@ -647,7 +657,10 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.content, i.categor
        a.id AS author_id, a.name AS author_name
 FROM items i
 JOIN feeds f ON f.id = i.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN authors a ON a.id = (
+    SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+    ORDER BY af.created_at, af.author_id LIMIT 1
+)
 WHERE i.id = ?
 `
 
@@ -747,8 +760,9 @@ SELECT COALESCE(i.published_at, i.fetched_at) AS t
 FROM items i
 WHERE i.user_id = ?1
   AND i.id IN (
-    SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?1 AND f.author_id = ?2)
+    SELECT mf.item_id FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
+    JOIN feeds f ON f.id = mf.feed_id
+    WHERE f.user_id = ?1 AND af.author_id = ?2)
 ORDER BY COALESCE(i.published_at, i.fetched_at) DESC, i.id DESC
 LIMIT ?3
 `
@@ -789,7 +803,8 @@ SELECT ic.category, COUNT(*) AS item_count
 FROM item_categories ic
 JOIN item_feeds mf ON mf.item_id = ic.item_id
 JOIN feeds f ON f.id = mf.feed_id
-WHERE f.author_id = ?1 AND f.user_id = ?2
+JOIN author_feeds af ON af.feed_id = mf.feed_id
+WHERE af.author_id = ?1 AND f.user_id = ?2
 GROUP BY ic.category
 ORDER BY item_count DESC, ic.category ASC
 `
@@ -833,7 +848,8 @@ SELECT ic.category, COUNT(*) AS item_count
 FROM item_categories ic
 JOIN item_feeds mf ON mf.item_id = ic.item_id
 JOIN feeds f ON f.id = mf.feed_id
-JOIN collection_authors ca ON ca.author_id = f.author_id
+JOIN author_feeds af2 ON af2.feed_id = mf.feed_id
+JOIN collection_authors ca ON ca.author_id = af2.author_id
 WHERE ca.collection_id = ?1
   AND EXISTS (SELECT 1 FROM collections c WHERE c.id = ?1 AND c.user_id = ?2)
 GROUP BY ic.category
@@ -953,6 +969,55 @@ func (q *Queries) ListCategoriesForUser(ctx context.Context, arg ListCategoriesF
 	for rows.Next() {
 		var i ListCategoriesForUserRow
 		if err := rows.Scan(&i.Category, &i.ItemCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listClaimAuthorsForItems = `-- name: ListClaimAuthorsForItems :many
+SELECT ic.item_id, a.id AS author_id, a.name AS author_name
+FROM item_claims ic
+JOIN authors a ON a.id = ic.author_id
+WHERE ic.item_id IN (/*SLICE:itemIDs*/?)
+ORDER BY ic.item_id, a.created_at, a.id
+`
+
+type ListClaimAuthorsForItemsRow struct {
+	ItemID     int64  `json:"item_id"`
+	AuthorID   int64  `json:"author_id"`
+	AuthorName string `json:"author_name"`
+}
+
+// Claiming authors for a page of items, earliest author first. The card source
+// line prefers a claiming author over the feed's earliest member author.
+func (q *Queries) ListClaimAuthorsForItems(ctx context.Context, itemids []int64) ([]ListClaimAuthorsForItemsRow, error) {
+	query := listClaimAuthorsForItems
+	var queryParams []interface{}
+	if len(itemids) > 0 {
+		for _, v := range itemids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", strings.Repeat(",?", len(itemids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:itemIDs*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListClaimAuthorsForItemsRow
+	for rows.Next() {
+		var i ListClaimAuthorsForItemsRow
+		if err := rows.Scan(&i.ItemID, &i.AuthorID, &i.AuthorName); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1121,7 +1186,10 @@ SELECT mf.item_id, i.cross_key,
 FROM item_feeds mf
 JOIN items i ON i.id = mf.item_id
 JOIN feeds f ON f.id = mf.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN authors a ON a.id = (
+    SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+    ORDER BY af.created_at, af.author_id LIMIT 1
+)
 WHERE mf.item_id IN (/*SLICE:itemIDs*/?)
 ORDER BY mf.item_id, f.title
 `
@@ -1188,17 +1256,20 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        a.id AS author_id, a.name AS author_name
 FROM visible_items i
 JOIN feeds f ON f.id = i.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN authors a ON a.id = (
+    SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+    ORDER BY af.created_at, af.author_id LIMIT 1
+)
 WHERE i.user_id = ?1
   AND (CAST(?2 AS INTEGER) = 0 OR EXISTS (
         SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?2 AS INTEGER)))
   AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
-        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?3 AS INTEGER)))
+        SELECT 1 FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
+        WHERE mf.item_id = i.id AND af.author_id = CAST(?3 AS INTEGER)))
   AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
         SELECT 1 FROM item_feeds mf
-        JOIN feeds mf2 ON mf2.id = mf.feed_id
-        JOIN collection_authors ca ON ca.author_id = mf2.author_id
+        JOIN author_feeds af ON af.feed_id = mf.feed_id
+        JOIN collection_authors ca ON ca.author_id = af.author_id
         WHERE mf.item_id = i.id AND ca.collection_id = CAST(?4 AS INTEGER)))
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
@@ -1320,17 +1391,20 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        a.id AS author_id, a.name AS author_name
 FROM visible_items i
 JOIN feeds f ON f.id = i.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN authors a ON a.id = (
+    SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+    ORDER BY af.created_at, af.author_id LIMIT 1
+)
 WHERE i.user_id = ?1
   AND (CAST(?2 AS INTEGER) = 0 OR EXISTS (
         SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?2 AS INTEGER)))
   AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
-        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?3 AS INTEGER)))
+        SELECT 1 FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
+        WHERE mf.item_id = i.id AND af.author_id = CAST(?3 AS INTEGER)))
   AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
         SELECT 1 FROM item_feeds mf
-        JOIN feeds mf2 ON mf2.id = mf.feed_id
-        JOIN collection_authors ca ON ca.author_id = mf2.author_id
+        JOIN author_feeds af ON af.feed_id = mf.feed_id
+        JOIN collection_authors ca ON ca.author_id = af.author_id
         WHERE mf.item_id = i.id AND ca.collection_id = CAST(?4 AS INTEGER)))
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
@@ -1448,7 +1522,10 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        a.id AS author_id, a.name AS author_name
 FROM visible_items i
 JOIN feeds f ON f.id = i.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN authors a ON a.id = (
+    SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+    ORDER BY af.created_at, af.author_id LIMIT 1
+)
 LEFT JOIN (
   SELECT feed_id, COUNT(*) AS fav_count
   FROM items
@@ -1459,12 +1536,12 @@ WHERE i.user_id = ?1
   AND (CAST(?2 AS INTEGER) = 0 OR EXISTS (
         SELECT 1 FROM item_feeds mf WHERE mf.item_id = i.id AND mf.feed_id = CAST(?2 AS INTEGER)))
   AND (CAST(?3 AS INTEGER) = 0 OR EXISTS (
-        SELECT 1 FROM item_feeds mf JOIN feeds mf2 ON mf2.id = mf.feed_id
-        WHERE mf.item_id = i.id AND mf2.author_id = CAST(?3 AS INTEGER)))
+        SELECT 1 FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
+        WHERE mf.item_id = i.id AND af.author_id = CAST(?3 AS INTEGER)))
   AND (CAST(?4 AS INTEGER) = 0 OR EXISTS (
         SELECT 1 FROM item_feeds mf
-        JOIN feeds mf2 ON mf2.id = mf.feed_id
-        JOIN collection_authors ca ON ca.author_id = mf2.author_id
+        JOIN author_feeds af ON af.feed_id = mf.feed_id
+        JOIN collection_authors ca ON ca.author_id = af.author_id
         WHERE mf.item_id = i.id AND ca.collection_id = CAST(?4 AS INTEGER)))
   AND (CAST(?5 AS INTEGER) = 0 OR i.read = 0)
   AND (CAST(?6 AS INTEGER) = 0 OR i.read = 1)
@@ -1586,7 +1663,10 @@ SELECT i.id, i.feed_id, i.guid, i.title, i.link, i.summary, i.categories, i.imag
        a.id AS author_id, a.name AS author_name
 FROM visible_items i
 JOIN feeds f ON f.id = i.feed_id
-LEFT JOIN authors a ON a.id = f.author_id
+LEFT JOIN authors a ON a.id = (
+    SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+    ORDER BY af.created_at, af.author_id LIMIT 1
+)
 WHERE i.user_id = ?1
   AND i.read = 1
   AND f.is_system = 0
@@ -1837,29 +1917,31 @@ SET read = 1, read_at = ?1
 WHERE read = 0
   AND items.id IN (
     SELECT mf.item_id FROM item_feeds mf
+    JOIN author_feeds af ON af.feed_id = mf.feed_id
     JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?2
-      AND f.author_id = (
-        SELECT fa.author_id FROM feeds fa
-        JOIN item_feeds mfx ON mfx.feed_id = fa.id
-        WHERE mfx.item_id = ?3 AND fa.user_id = ?2
-      ))
+    WHERE f.user_id = ?2 AND af.author_id = ?3)
   AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?2)
   AND (COALESCE(items.published_at, items.fetched_at), items.id) >
-      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?4)
 `
 
 type MarkAuthorItemsNewerReadParams struct {
-	ReadAt sql.NullString `json:"readAt"`
-	UserID int64          `json:"userID"`
-	ItemID int64          `json:"itemID"`
+	ReadAt   sql.NullString `json:"readAt"`
+	UserID   int64          `json:"userID"`
+	AuthorID int64          `json:"authorID"`
+	ItemID   int64          `json:"itemID"`
 }
 
 // Mark unread items newer than itemID by item time (published, else fetched)
 // across every feed owned by the item's author as read. Used on an author page,
 // where the bulk action spans all of the author's feeds.
 func (q *Queries) MarkAuthorItemsNewerRead(ctx context.Context, arg MarkAuthorItemsNewerReadParams) error {
-	_, err := q.db.ExecContext(ctx, markAuthorItemsNewerRead, arg.ReadAt, arg.UserID, arg.ItemID)
+	_, err := q.db.ExecContext(ctx, markAuthorItemsNewerRead,
+		arg.ReadAt,
+		arg.UserID,
+		arg.AuthorID,
+		arg.ItemID,
+	)
 	return err
 }
 
@@ -1869,28 +1951,30 @@ SET read = 1, read_at = ?1
 WHERE read = 0
   AND items.id IN (
     SELECT mf.item_id FROM item_feeds mf
+    JOIN author_feeds af ON af.feed_id = mf.feed_id
     JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?2
-      AND f.author_id = (
-        SELECT fa.author_id FROM feeds fa
-        JOIN item_feeds mfx ON mfx.feed_id = fa.id
-        WHERE mfx.item_id = ?3 AND fa.user_id = ?2
-      ))
+    WHERE f.user_id = ?2 AND af.author_id = ?3)
   AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?2)
   AND (COALESCE(items.published_at, items.fetched_at), items.id) <
-      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?3)
+      (SELECT COALESCE(i.published_at, i.fetched_at), i.id FROM items i WHERE i.id = ?4)
 `
 
 type MarkAuthorItemsOlderReadParams struct {
-	ReadAt sql.NullString `json:"readAt"`
-	UserID int64          `json:"userID"`
-	ItemID int64          `json:"itemID"`
+	ReadAt   sql.NullString `json:"readAt"`
+	UserID   int64          `json:"userID"`
+	AuthorID int64          `json:"authorID"`
+	ItemID   int64          `json:"itemID"`
 }
 
 // Mark unread items older than itemID by item time (published, else fetched)
 // across every feed owned by the item's author as read.
 func (q *Queries) MarkAuthorItemsOlderRead(ctx context.Context, arg MarkAuthorItemsOlderReadParams) error {
-	_, err := q.db.ExecContext(ctx, markAuthorItemsOlderRead, arg.ReadAt, arg.UserID, arg.ItemID)
+	_, err := q.db.ExecContext(ctx, markAuthorItemsOlderRead,
+		arg.ReadAt,
+		arg.UserID,
+		arg.AuthorID,
+		arg.ItemID,
+	)
 	return err
 }
 
@@ -1900,8 +1984,9 @@ SET read = 1, read_at = ?1
 WHERE items.user_id = ?2
   AND items.id IN (
     SELECT mf.item_id FROM item_feeds mf
+    JOIN author_feeds af ON af.feed_id = mf.feed_id
     JOIN feeds f ON f.id = mf.feed_id
-    WHERE f.user_id = ?2 AND f.author_id = ?3
+    WHERE f.user_id = ?2 AND af.author_id = ?3
   )
   AND items.id IN (SELECT vi.id FROM visible_items vi WHERE vi.user_id = ?2)
 `
@@ -1916,48 +2001,6 @@ type MarkAuthorItemsReadParams struct {
 func (q *Queries) MarkAuthorItemsRead(ctx context.Context, arg MarkAuthorItemsReadParams) error {
 	_, err := q.db.ExecContext(ctx, markAuthorItemsRead, arg.ReadAt, arg.UserID, arg.AuthorID)
 	return err
-}
-
-const markItemsAutoRead = `-- name: MarkItemsAutoRead :execresult
-UPDATE items
-SET read = 1, read_at = ?1
-WHERE read = 0
-  AND items.user_id = ?2
-  AND items.feed_id IN (
-    SELECT f.id
-    FROM feeds f
-    LEFT JOIN authors a ON a.id = f.author_id
-    JOIN users u ON u.id = f.user_id
-    WHERE f.user_id = ?2
-      AND (CAST(?3 AS INTEGER) = 0 OR f.author_id = CAST(?3 AS INTEGER))
-      AND COALESCE(a.auto_read_after_days, u.auto_read_after_days) > 0
-      AND COALESCE(items.published_at, items.fetched_at) < datetime(
-            CAST(?4 AS TEXT),
-            printf('-%d days', COALESCE(a.auto_read_after_days, u.auto_read_after_days)))
-  )
-`
-
-type MarkItemsAutoReadParams struct {
-	ReadAt   sql.NullString `json:"readAt"`
-	UserID   int64          `json:"userID"`
-	AuthorID int64          `json:"authorID"`
-	Now      string         `json:"now"`
-}
-
-// Mark unread items read according to each item's effective auto-read window:
-// the owner author's override when set, else the account's window. authorID 0
-// means every author of the user's feeds. An effective window of 0 disables
-// the sweep for that author. COALESCE(published_at, fetched_at) is the
-// canonical item time; favorites and bookmarks are swept too. The author join
-// is a LEFT JOIN because an unassigned feed (author_id 0, schemaV69) has no
-// author row and must still inherit the account window.
-func (q *Queries) MarkItemsAutoRead(ctx context.Context, arg MarkItemsAutoReadParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, markItemsAutoRead,
-		arg.ReadAt,
-		arg.UserID,
-		arg.AuthorID,
-		arg.Now,
-	)
 }
 
 const markItemsNewerRead = `-- name: MarkItemsNewerRead :exec
@@ -2232,14 +2275,16 @@ SELECT CAST(COALESCE(SUM(sz), 0) AS INTEGER) AS bytes FROM (
   SELECT i.image_cache_size AS sz FROM items i
   WHERE i.user_id = ?1 AND i.image_cache_size > 0
     AND i.id IN (
-      SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-      WHERE f.user_id = ?1 AND f.author_id = ?2)
+      SELECT mf.item_id FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
+      JOIN feeds f ON f.id = mf.feed_id
+      WHERE f.user_id = ?1 AND af.author_id = ?2)
   UNION ALL
   SELECT e.cache_size AS sz FROM item_enclosures e
   WHERE e.cache_size > 0
     AND e.item_id IN (
-      SELECT mf.item_id FROM item_feeds mf JOIN feeds f ON f.id = mf.feed_id
-      WHERE f.user_id = ?1 AND f.author_id = ?2)
+      SELECT mf.item_id FROM item_feeds mf JOIN author_feeds af ON af.feed_id = mf.feed_id
+      JOIN feeds f ON f.id = mf.feed_id
+      WHERE f.user_id = ?1 AND af.author_id = ?2)
 )
 `
 

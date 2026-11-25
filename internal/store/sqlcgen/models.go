@@ -19,7 +19,14 @@ type Author struct {
 	IsSystem            int64          `json:"is_system"`
 	AutoReadAfterDays   sql.NullInt64  `json:"auto_read_after_days"`
 	AutoDeleteAfterDays sql.NullInt64  `json:"auto_delete_after_days"`
+	IsAggregator        bool           `json:"is_aggregator"`
 	CreatedAt           string         `json:"created_at"`
+}
+
+type AuthorFeed struct {
+	AuthorID  int64  `json:"author_id"`
+	FeedID    int64  `json:"feed_id"`
+	CreatedAt string `json:"created_at"`
 }
 
 type AuthorFilterRule struct {
@@ -60,7 +67,6 @@ type CollectionAuthor struct {
 type Feed struct {
 	ID                int64          `json:"id"`
 	UserID            int64          `json:"user_id"`
-	AuthorID          int64          `json:"author_id"`
 	Title             string         `json:"title"`
 	FeedUrl           string         `json:"feed_url"`
 	HomeUrl           sql.NullString `json:"home_url"`
@@ -112,6 +118,12 @@ type Item struct {
 type ItemCategory struct {
 	ItemID   int64  `json:"item_id"`
 	Category string `json:"category"`
+}
+
+type ItemClaim struct {
+	ItemID    int64  `json:"item_id"`
+	AuthorID  int64  `json:"author_id"`
+	CreatedAt string `json:"created_at"`
 }
 
 type ItemEnclosure struct {

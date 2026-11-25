@@ -421,7 +421,7 @@ func TestUnreadCountsByFeedScope(t *testing.T) {
 	}
 
 	views := []ViewFilter{{TagGroups: []TagGroup{{Tags: []string{"r/other"}}}}}
-	counts, err := s.Items.UnreadCountsByFeedScope(u.ID, a.ID, views)
+	counts, err := s.Items.UnreadCountsByFeedScope(u.ID, a.ID, views, false)
 	if err != nil {
 		t.Fatalf("UnreadCountsByFeedScope: %v", err)
 	}

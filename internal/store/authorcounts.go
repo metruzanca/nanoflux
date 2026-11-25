@@ -5,24 +5,33 @@ import (
 	"strings"
 )
 
-// AuthorScope is one author page's count scope: the author's own feeds plus any
+// AuthorScope is one author page's count scope: the author's feeds plus any
 // saved views assigned to them. It mirrors ItemFilter{AuthorID, Views}.
 type AuthorScope struct {
-	AuthorID int64
-	Views    []ViewFilter
+	AuthorID      int64
+	Views         []ViewFilter
+	UnclaimedOnly bool
 }
 
-// UnreadCountsByAuthor returns unread item counts keyed by the owner feed's
-// author, using visible_items so each author's always-on rules apply. It is one
-// grouped query for the whole author list instead of a count per author.
+// UnreadCountsByAuthor returns unread item counts keyed by the author who
+// selects the feed. It applies each author's rules and the aggregator claim
+// subtraction, and covers view-bearing authors through
+// UnreadCountsByAuthorScope in the caller.
 func (s *ItemStore) UnreadCountsByAuthor(userID int64) (map[int64]int, error) {
 	out := make(map[int64]int)
 	rows, err := s.db.QueryContext(context.Background(), `
-		SELECT f.author_id, COUNT(*) AS unread
-		FROM visible_items i
+		SELECT af.author_id, COUNT(DISTINCT i.id) AS unread
+		FROM items i
+		JOIN item_feeds mf ON mf.item_id = i.id
+		JOIN author_feeds af ON af.feed_id = mf.feed_id
 		JOIN feeds f ON f.id = i.feed_id
 		WHERE i.user_id = ? AND i.read = 0 AND f.is_system = 0
-		GROUP BY f.author_id`, userID)
+		  AND `+authorRulesVisibleSQL(`i.id`, `af.author_id`)+`
+		  AND (
+		    NOT EXISTS (SELECT 1 FROM authors a WHERE a.id = af.author_id AND a.is_aggregator = 1)
+		    OR NOT EXISTS (SELECT 1 FROM item_claims ic WHERE ic.item_id = i.id AND ic.author_id <> af.author_id)
+		  )
+		GROUP BY af.author_id`, userID)
 	if err != nil {
 		return out, err
 	}
@@ -39,13 +48,13 @@ func (s *ItemStore) UnreadCountsByAuthor(userID int64) (map[int64]int, error) {
 }
 
 // UnreadCountsByFeedScope returns unread counts keyed by feed for one author
-// page's scope: the author's own feeds ORed with the assigned view predicates,
-// with the author's always-on rules applied. It is the grouped form of
-// CountFiltered(ItemFilter{AuthorID, Views, FeedID, UnreadOnly}), so a page with
-// many feed cards does not run one count per feed.
-func (s *ItemStore) UnreadCountsByFeedScope(userID, authorID int64, views []ViewFilter) (map[int64]int, error) {
+// page's scope: the author's selected feeds ORed with the assigned view
+// predicates, with the author's always-on rules applied. It is the grouped form
+// of CountFiltered(ItemFilter{AuthorID, Views, FeedID, UnreadOnly}), so a page
+// with many feed cards does not run one count per feed.
+func (s *ItemStore) UnreadCountsByFeedScope(userID, authorID int64, views []ViewFilter, unclaimedOnly bool) (map[int64]int, error) {
 	out := make(map[int64]int)
-	clause, clauseArgs := authorScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", authorID, views)
+	clause, clauseArgs := authorScopeClauseWith("i.id", "COALESCE(i.published_at, i.fetched_at)", authorID, views, unclaimedOnly)
 	if clause == "" {
 		return out, nil
 	}
@@ -92,7 +101,7 @@ func (s *ItemStore) UnreadCountsByAuthorScope(userID int64, scopes []AuthorScope
 			FROM items i JOIN feeds f ON f.id = i.feed_id
 			WHERE i.user_id = ? AND i.read = 0 AND `)
 		args = append(args, sc.AuthorID, userID)
-		clause, clauseArgs := authorScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", sc.AuthorID, sc.Views)
+		clause, clauseArgs := authorScopeClauseWith("i.id", "COALESCE(i.published_at, i.fetched_at)", sc.AuthorID, sc.Views, sc.UnclaimedOnly)
 		if clause == "" {
 			b.WriteString("1=0")
 		} else {

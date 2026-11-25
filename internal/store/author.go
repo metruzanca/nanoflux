@@ -27,7 +27,10 @@ type Author struct {
 	// author's feeds. nil inherits users.auto_delete_after_days; 0 disables
 	// deletion for this author.
 	AutoDeleteAfterDays *int
-	CreatedAt           string
+	// IsAggregator marks a feed aggregator: it does not claim its items and
+	// hides items claimed by other authors.
+	IsAggregator bool
+	CreatedAt    string
 }
 
 // AuthorWithCount joins an author with its number of feeds and the taste
@@ -219,6 +222,24 @@ func (s *AuthorStore) SetAutoDeleteAfterDays(userID, id int64, days *int) error 
 	return nil
 }
 
+// SetAggregator marks an author as a feed aggregator. An aggregator does not
+// claim its items and hides items claimed by other authors. The caller rebuilds
+// or clears the author's claims after the toggle.
+func (s *AuthorStore) SetAggregator(userID, authorID int64, aggregator bool) error {
+	res, err := s.q.SetAuthorAggregator(context.Background(), sqlcgen.SetAuthorAggregatorParams{
+		IsAggregator: aggregator,
+		ID:           authorID,
+		UserID:       userID,
+	})
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // Delete removes an author and cascades to their feeds (and those feeds'
 // items and collection links). The cached avatar object is not touched here —
 // callers purge it via AvatarKey. Author-filter rules owned by the deleted
@@ -240,12 +261,9 @@ func (s *AuthorStore) Delete(userID, id int64) error {
 		id, userID); err != nil {
 		return fmt.Errorf("remove author from author filters: %w", err)
 	}
-	// Feeds are library rows now: deleting an author unassigns its feeds
-	// instead of deleting them. They keep polling and stay on /feeds.
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE feeds SET author_id = 0 WHERE author_id = ? AND user_id = ?`, id, userID); err != nil {
-		return fmt.Errorf("unassign author feeds: %w", err)
-	}
+	// Feeds are library rows now: deleting an author removes only its
+	// memberships (the author_feeds cascade). The feeds keep polling and stay on
+	// /feeds.
 	res, err := s.q.WithTx(tx).DeleteAuthor(ctx, sqlcgen.DeleteAuthorParams{ID: id, UserID: userID})
 	if err != nil {
 		return fmt.Errorf("delete author: %w", err)

@@ -80,7 +80,6 @@ func (s *FeedStore) CreateWithPlugin(userID, authorID int64, title, feedURL, hom
 	feedURL = s.policy.CanonicalizeFeedURL(feedURL)
 	f, err := s.q.CreateFeed(context.Background(), sqlcgen.CreateFeedParams{
 		UserID:          userID,
-		AuthorID:        authorID,
 		Title:           tagnorm.Label(title),
 		FeedUrl:         feedURL,
 		HomeUrl:         ns(homeURL),
@@ -91,7 +90,80 @@ func (s *FeedStore) CreateWithPlugin(userID, authorID int64, title, feedURL, hom
 	if err != nil {
 		return Feed{}, fmt.Errorf("create feed: %w", err)
 	}
-	return toFeed(f), nil
+	feed := toFeed(f)
+	if authorID != 0 {
+		if err := s.AddAuthor(userID, feed.ID, authorID); err != nil {
+			return Feed{}, err
+		}
+		feed.AuthorID = authorID
+	}
+	return feed, nil
+}
+
+// FindByURL returns the user's non-system feed with a canonical URL, so callers
+// can attach authors to an existing library feed instead of creating a
+// duplicate subscription.
+func (s *FeedStore) FindByURL(userID int64, feedURL string) (Feed, bool) {
+	feedURL = s.policy.CanonicalizeFeedURL(feedURL)
+	f, err := s.q.FindFeedByURL(context.Background(), sqlcgen.FindFeedByURLParams{
+		UserID:  userID,
+		FeedUrl: feedURL,
+	})
+	if err != nil {
+		return Feed{}, false
+	}
+	feed := toFeed(f)
+	if primary, err := s.primaryAuthorIDs(userID); err == nil {
+		feed.AuthorID = primary[feed.ID]
+	}
+	return feed, true
+}
+
+// SetAuthorFeeds replaces the feeds an author selects. The author record is the
+// source of truth for the author page; feeds not in the list are removed from
+// this author only.
+func (s *FeedStore) SetAuthorFeeds(userID, authorID int64, feedIDs []int64) error {
+	if _, err := s.db.ExecContext(context.Background(), `
+		DELETE FROM author_feeds WHERE author_id = ? AND EXISTS (
+			SELECT 1 FROM authors a WHERE a.id = ? AND a.user_id = ? AND a.is_system = 0)`,
+		authorID, authorID, userID); err != nil {
+		return err
+	}
+	seen := make(map[int64]bool, len(feedIDs))
+	for _, feedID := range feedIDs {
+		if feedID == 0 || seen[feedID] {
+			continue
+		}
+		seen[feedID] = true
+		var exists int
+		if err := s.db.QueryRowContext(context.Background(),
+			`SELECT COUNT(*) FROM feeds WHERE id = ? AND user_id = ? AND is_system = 0`,
+			feedID, userID).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			return ErrNotFound
+		}
+		if _, err := s.db.ExecContext(context.Background(),
+			`INSERT INTO author_feeds (author_id, feed_id) VALUES (?, ?) ON CONFLICT DO NOTHING`,
+			authorID, feedID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// IsAuthorOfFeed reports whether the author currently selects the feed.
+func (s *FeedStore) IsAuthorOfFeed(userID, feedID, authorID int64) bool {
+	var n int
+	if err := s.db.QueryRowContext(context.Background(), `
+		SELECT COUNT(*) FROM author_feeds af
+		JOIN feeds f ON f.id = af.feed_id
+		WHERE af.author_id = ? AND af.feed_id = ? AND f.user_id = ?`,
+		authorID, feedID, userID).Scan(&n); err != nil {
+		return false
+	}
+	return n > 0
 }
 
 // ByID returns a user's feed by id. The hidden system feed that holds saved
@@ -108,7 +180,11 @@ func (s *FeedStore) ByID(userID, id int64) (Feed, error) {
 	if f.IsSystem != 0 {
 		return Feed{}, ErrNotFound
 	}
-	return toFeed(f), nil
+	feed := toFeed(f)
+	if ids, err := s.primaryAuthorIDs(userID); err == nil {
+		feed.AuthorID = ids[feed.ID]
+	}
+	return feed, nil
 }
 
 // ByIDAny returns a feed by id regardless of user. Used by the poller and CLI.
@@ -128,9 +204,12 @@ func (s *FeedStore) List(userID int64) ([]Feed, error) {
 	if err != nil {
 		return nil, err
 	}
+	primary, _ := s.primaryAuthorIDs(userID)
 	out := make([]Feed, 0, len(rows))
 	for _, f := range rows {
-		out = append(out, toFeed(f))
+		feed := toFeed(f)
+		feed.AuthorID = primary[feed.ID]
+		out = append(out, feed)
 	}
 	return out, nil
 }
@@ -149,9 +228,36 @@ func (s *FeedStore) ListByAuthor(userID, authorID int64) ([]Feed, error) {
 	}
 	out := make([]Feed, 0, len(rows))
 	for _, f := range rows {
-		out = append(out, toFeed(f))
+		feed := toFeed(f)
+		feed.AuthorID = authorID
+		out = append(out, feed)
 	}
 	return out, nil
+}
+
+// primaryAuthorIDs maps each feed to its earliest member author, for the
+// display-only Feed.AuthorID field on library listings.
+func (s *FeedStore) primaryAuthorIDs(userID int64) (map[int64]int64, error) {
+	rows, err := s.db.QueryContext(context.Background(), `
+		SELECT af.feed_id, af.author_id
+		FROM author_feeds af JOIN feeds f ON f.id = af.feed_id
+		WHERE f.user_id = ?
+		ORDER BY af.created_at, af.author_id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int64]int64)
+	for rows.Next() {
+		var feedID, authorID int64
+		if err := rows.Scan(&feedID, &authorID); err != nil {
+			return nil, err
+		}
+		if _, ok := out[feedID]; !ok {
+			out[feedID] = authorID
+		}
+	}
+	return out, rows.Err()
 }
 
 // ListWithUnread returns a user's feeds with author name and unread counts in
@@ -223,14 +329,94 @@ func (s *FeedStore) SetRank(userID, id int64, rank int) error {
 	return nil
 }
 
-// SetAuthor moves a feed to another author, verifying the feed belongs to the
-// user. The feed's items, collections and list memberships are not touched.
+// SetAuthor replaces a feed's author memberships with a single author. Kept as
+// the compatibility form of SetAuthors for callers that still move one feed to
+// one author; author id 0 leaves the feed in the library unassigned.
 func (s *FeedStore) SetAuthor(userID, id, authorID int64) error {
-	res, err := s.q.SetFeedAuthor(context.Background(), sqlcgen.SetFeedAuthorParams{
-		AuthorID: authorID,
-		ID:       id,
-		UserID:   userID,
-	})
+	return s.SetAuthors(userID, id, []int64{authorID})
+}
+
+// SetAuthors replaces a feed's author memberships. It validates that the feed
+// and every author belong to the user, then writes the membership set in one
+// transaction. System authors and feeds are rejected.
+func (s *FeedStore) SetAuthors(userID, id int64, authorIDs []int64) error {
+	f, err := s.q.GetFeed(context.Background(), sqlcgen.GetFeedParams{ID: id, UserID: userID})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if f.IsSystem != 0 {
+		return ErrNotFound
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin set feed authors: %w", err)
+	}
+	defer tx.Rollback()
+	ctx := context.Background()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM author_feeds WHERE feed_id = ?`, id); err != nil {
+		return fmt.Errorf("clear feed authors: %w", err)
+	}
+	seen := make(map[int64]bool, len(authorIDs))
+	for _, authorID := range authorIDs {
+		if authorID == 0 || seen[authorID] {
+			continue
+		}
+		seen[authorID] = true
+		var exists int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM authors WHERE id = ? AND user_id = ? AND is_system = 0`,
+			authorID, userID).Scan(&exists); err != nil {
+			return fmt.Errorf("check author: %w", err)
+		}
+		if exists == 0 {
+			return ErrNotFound
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO author_feeds (author_id, feed_id) VALUES (?, ?)`, authorID, id); err != nil {
+			return fmt.Errorf("add feed author: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// AuthorRef is an author id and display name, used by membership pickers.
+type AuthorRef struct {
+	ID   int64
+	Name string
+}
+
+// AddAuthor adds one author to a feed without touching its other members.
+func (s *FeedStore) AddAuthor(userID, feedID, authorID int64) error {
+	if authorID == 0 {
+		return nil
+	}
+	var exists int
+	if err := s.db.QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM authors WHERE id = ? AND user_id = ? AND is_system = 0`,
+		authorID, userID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists == 0 {
+		return ErrNotFound
+	}
+	_, err := s.db.ExecContext(context.Background(),
+		`INSERT INTO author_feeds (author_id, feed_id) VALUES (?, ?) ON CONFLICT DO NOTHING`,
+		authorID, feedID)
+	if err != nil {
+		return fmt.Errorf("add feed author: %w", err)
+	}
+	return nil
+}
+
+// RemoveAuthor removes one author from a feed's membership set.
+func (s *FeedStore) RemoveAuthor(userID, feedID, authorID int64) error {
+	res, err := s.db.ExecContext(context.Background(),
+		`DELETE FROM author_feeds WHERE author_id = ? AND feed_id = ? AND EXISTS (
+			SELECT 1 FROM feeds f WHERE f.id = ? AND f.user_id = ? AND f.is_system = 0)`,
+		authorID, feedID, feedID, userID)
 	if err != nil {
 		return err
 	}
@@ -240,10 +426,32 @@ func (s *FeedStore) SetAuthor(userID, id, authorID int64) error {
 	return nil
 }
 
-func (s *FeedStore) Update(userID, id int64, authorID int64, title, feedURL, homeURL, description string, pollIntervalSec int, pollIntervalAuto bool, enabled, cacheImages bool) error {
+// AuthorsForFeed returns the authors currently selecting a feed, in add order.
+func (s *FeedStore) AuthorsForFeed(userID, feedID int64) ([]AuthorRef, error) {
+	rows, err := s.db.QueryContext(context.Background(), `
+		SELECT a.id, a.name FROM author_feeds af
+		JOIN authors a ON a.id = af.author_id
+		JOIN feeds f ON f.id = af.feed_id
+		WHERE af.feed_id = ? AND f.user_id = ?
+		ORDER BY af.created_at, af.author_id`, feedID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AuthorRef
+	for rows.Next() {
+		var r AuthorRef
+		if err := rows.Scan(&r.ID, &r.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *FeedStore) Update(userID, id int64, title, feedURL, homeURL, description string, pollIntervalSec int, pollIntervalAuto bool, enabled, cacheImages bool) error {
 	feedURL = s.policy.CanonicalizeFeedURL(feedURL)
 	res, err := s.q.UpdateFeed(context.Background(), sqlcgen.UpdateFeedParams{
-		AuthorID:         authorID,
 		Title:            tagnorm.Label(title),
 		FeedURL:          feedURL,
 		HomeURL:          ns(homeURL),
@@ -321,22 +529,20 @@ func (s *FeedStore) Delete(userID, id int64) ([]string, error) {
 		return nil, fmt.Errorf("re-home feed items: %w", err)
 	}
 
-	// Drop this feed from the author's stored feed-filter rules, and any rule
+	// Drop this feed from every author's stored feed-filter rules, and any rule
 	// left with no values. Rules live outside the feed cascade, so a stale id
-	// would otherwise keep showing in the author's settings. The kind guard
-	// keeps a numeric feed id from colliding with an author id in an author row.
+	// would otherwise keep showing in the author's settings.
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM author_filter_values
 		WHERE value = CAST(? AS TEXT)
-		  AND rule_id IN (SELECT id FROM author_filter_rules WHERE author_id = ? AND kind = 'feed')`,
-		f.ID, f.AuthorID); err != nil {
+		  AND rule_id IN (SELECT id FROM author_filter_rules WHERE kind = 'feed')`,
+		f.ID); err != nil {
 		return nil, fmt.Errorf("remove feed from author filters: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 		DELETE FROM author_filter_rules
-		WHERE author_id = ?
-		  AND NOT EXISTS (SELECT 1 FROM author_filter_values v WHERE v.rule_id = author_filter_rules.id)`,
-		f.AuthorID); err != nil {
+		WHERE kind = 'feed'
+		  AND NOT EXISTS (SELECT 1 FROM author_filter_values v WHERE v.rule_id = author_filter_rules.id)`); err != nil {
 		return nil, fmt.Errorf("delete empty author filters: %w", err)
 	}
 
@@ -617,7 +823,7 @@ func (s *FeedStore) ListAll() ([]FeedWithOwner, error) {
 	out := make([]FeedWithOwner, 0, len(rows))
 	for _, f := range rows {
 		out = append(out, FeedWithOwner{
-			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.AuthorID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.NextPollScheduled, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.CreatedAt)),
+			Feed:  toFeed(feedFromUnreadRow(f.ID, f.UserID, f.Title, f.FeedUrl, f.HomeUrl, f.Description, f.Etag, f.LastModified, f.LastPolledAt, f.LastError, f.NextPageUrl, f.PollIntervalSec, f.PollIntervalAuto, f.LastItemAt, f.NextPollAt, f.NextPollScheduled, f.PluginName, f.DisabledReason, f.Enabled, f.IsSystem, f.Rank, f.CacheImages, f.CreatedAt)),
 			Owner: f.Owner,
 		})
 	}

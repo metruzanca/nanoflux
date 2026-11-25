@@ -348,7 +348,7 @@ func TestPollOneStaleBacksOff(t *testing.T) {
 
 	// auto is off, but the stale rule still forces the 7-day ceiling.
 	f, _ := st.Feeds.Create(u.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 900)
-	st.Feeds.Update(u.ID, f.ID, a.ID, "Blog", srv.URL+"/feed", "", "", 3600, false, true, false)
+	st.Feeds.Update(u.ID, f.ID, "Blog", srv.URL+"/feed", "", "", 3600, false, true, false)
 	fresh, _ := st.Feeds.ByID(u.ID, f.ID)
 	p := New(st, time.Minute, 1)
 	if _, err := p.PollOne(context.Background(), fresh); err != nil {
@@ -855,7 +855,7 @@ func TestPollOneRecordsLastError(t *testing.T) {
 		w.Write([]byte(`<?xml version="1.0"?><rss version="2.0"><channel><title>B</title><item><guid>1</guid><title>One</title></item></channel></rss>`))
 	}))
 	defer ok.Close()
-	if err := st.Feeds.Update(u.ID, f.ID, a.ID, "Broken", ok.URL, "", "", 900, false, true, false); err != nil {
+	if err := st.Feeds.Update(u.ID, f.ID, "Broken", ok.URL, "", "", 900, false, true, false); err != nil {
 		t.Fatal(err)
 	}
 	fresh, _ := st.Feeds.ByID(u.ID, f.ID)

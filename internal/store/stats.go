@@ -285,18 +285,20 @@ func (s *ItemStore) StatsTopSources(userID int64, p StatsPeriod, limit int) ([]S
 	if limit <= 0 {
 		limit = 15
 	}
-	q := `SELECT f.author_id, a.name, COUNT(DISTINCT f.id),
+	q := `SELECT COALESCE(a.id, 0), COALESCE(a.name, 'unknown'), COUNT(DISTINCT f.id),
 		COUNT(*), COALESCE(SUM(i.read), 0), COALESCE(SUM(i.favorite), 0)
 		FROM visible_items i
 		JOIN feeds f ON f.id = i.feed_id
-		JOIN authors a ON a.id = f.author_id
+		LEFT JOIN authors a ON a.id = (
+			SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+			ORDER BY af.created_at, af.author_id LIMIT 1)
 		WHERE i.user_id = ? AND f.is_system = 0`
 	args := []any{userID}
 	if since := p.since(); since != "" {
 		q += " AND " + statsItemTime + " >= ?"
 		args = append(args, since)
 	}
-	q += ` GROUP BY f.author_id ORDER BY COUNT(*) DESC, SUM(i.read) DESC, a.name LIMIT ?`
+	q += ` GROUP BY a.id ORDER BY COUNT(*) DESC, SUM(i.read) DESC, a.name LIMIT ?`
 	args = append(args, limit)
 
 	rows, err := s.db.QueryContext(context.Background(), q, args...)
@@ -482,7 +484,9 @@ func (s *ItemStore) StatsMedia(userID int64, p StatsPeriod, limit int) ([]MediaS
 		FROM item_progress p
 		JOIN visible_items i ON i.id = p.item_id AND i.user_id = p.user_id
 		JOIN feeds f ON f.id = i.feed_id AND f.is_system = 0
-		LEFT JOIN authors a ON a.id = f.author_id
+		LEFT JOIN authors a ON a.id = (
+			SELECT af.author_id FROM author_feeds af WHERE af.feed_id = f.id
+			ORDER BY af.created_at, af.author_id LIMIT 1)
 		WHERE p.user_id = ?`
 	args := []any{userID}
 	if since := p.since(); since != "" {

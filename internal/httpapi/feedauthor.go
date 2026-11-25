@@ -39,13 +39,19 @@ func (s *Server) changeAuthorFragment(w http.ResponseWriter, r *http.Request) {
 	web.Render(w, r, changeAuthorForm(s.changeAuthorDialogData(u, f, "")))
 }
 
-// changeAuthorDialogData lists every author but the feed's current one. A
+// changeAuthorDialogData lists every author not already selecting the feed. A
 // failed save reuses it to render the error inside the dialog.
 func (s *Server) changeAuthorDialogData(u store.User, f store.Feed, errMsg string) changeAuthorData {
 	authors, _ := s.store.Authors.List(u.ID)
+	members := map[int64]bool{}
+	if current, err := s.store.Feeds.AuthorsForFeed(u.ID, f.ID); err == nil {
+		for _, a := range current {
+			members[a.ID] = true
+		}
+	}
 	items := make([]comboItem, 0, len(authors))
 	for _, a := range authors {
-		if a.ID == f.AuthorID {
+		if members[a.ID] {
 			continue
 		}
 		items = append(items, comboItem{Value: strconv.FormatInt(a.ID, 10), Label: a.Name})
@@ -86,7 +92,7 @@ func (s *Server) feedChangeAuthor(w http.ResponseWriter, r *http.Request) {
 		fail("choose an author")
 		return
 	}
-	if newID == f.AuthorID {
+	if s.store.Feeds.IsAuthorOfFeed(u.ID, f.ID, newID) {
 		fail("this feed already belongs to that author")
 		return
 	}
@@ -96,15 +102,18 @@ func (s *Server) feedChangeAuthor(w http.ResponseWriter, r *http.Request) {
 		fail("choose a valid author")
 		return
 	}
-	if err := s.store.Feeds.SetAuthor(u.ID, f.ID, newID); err != nil {
-		log.Error("change feed author", "feed_id", f.ID, "author_id", newID, "err", err)
-		fail("could not move the feed")
+	if err := s.store.Feeds.AddAuthor(u.ID, f.ID, newID); err != nil {
+		log.Error("add feed author", "feed_id", f.ID, "author_id", newID, "err", err)
+		fail("could not add the feed to that author")
 		return
+	}
+	if _, err := s.store.Claims.RebuildAuthor(u.ID, newID); err != nil {
+		log.Error("rebuild claims after feed author add", "author_id", newID, "err", err)
 	}
 	// The target author's auto-read window now covers this feed; apply it right
 	// away, like the author edit page does for its own save.
 	if _, err := s.store.Items.MarkAutoReadForAuthor(u.ID, newID); err != nil {
-		log.Error("auto-read sweep on feed move", "feed_id", f.ID, "author_id", newID, "err", err)
+		log.Error("auto-read sweep on feed author add", "feed_id", f.ID, "author_id", newID, "err", err)
 	}
 	w.WriteHeader(http.StatusOK)
 }

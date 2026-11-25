@@ -1125,7 +1125,7 @@ func settingsOpml(d settingsOpmlData) templ.Component {
 			templ_7745c5c3_Var40 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<section class=\"card\" id=\"settings-opml-card\"><h2>opml</h2><p class=\"muted small\">Export your subscriptions or import them from another reader. Feed urls that already exist are skipped.</p><div class=\"row\"><a class=\"button\" href=\"/settings/export.opml\">export</a><form class=\"stack\" hx-post=\"/settings/opml\" hx-target=\"#settings-opml-card\" hx-swap=\"outerHTML\" enctype=\"multipart/form-data\"><label>import file <input type=\"file\" name=\"file\" accept=\".opml,.xml,application/xml,text/xml\"></label><div id=\"opml-error\" class=\"error\"></div><button type=\"submit\">import</button></form></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 76, "<section class=\"card\" id=\"settings-opml-card\"><h2>opml</h2><p class=\"muted small\">Export your subscriptions or import them from another reader. Feed urls that already exist are attached to the imported author.</p><div class=\"row\"><a class=\"button\" href=\"/settings/export.opml\">export</a><form class=\"stack\" hx-post=\"/settings/opml\" hx-target=\"#settings-opml-card\" hx-swap=\"outerHTML\" enctype=\"multipart/form-data\"><label>import file <input type=\"file\" name=\"file\" accept=\".opml,.xml,application/xml,text/xml\"></label><div id=\"opml-error\" class=\"error\"></div><button type=\"submit\">import</button></form></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

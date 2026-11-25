@@ -282,7 +282,7 @@ templ settingsSessions(d settingsSessionsData) {
 templ settingsOpml(d settingsOpmlData) {
 	<section class="card" id="settings-opml-card">
 		<h2>opml</h2>
-		<p class="muted small">Export your subscriptions or import them from another reader. Feed urls that already exist are skipped.</p>
+		<p class="muted small">Export your subscriptions or import them from another reader. Feed urls that already exist are attached to the imported author.</p>
 		<div class="row">
 			<a class="button" href="/settings/export.opml">export</a>
 			<form class="stack" hx-post="/settings/opml" hx-target="#settings-opml-card" hx-swap="outerHTML" enctype="multipart/form-data">

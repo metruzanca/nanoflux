@@ -81,6 +81,7 @@ var migrations = []migration{
 	{68, schemaV68},
 	{69, schemaV69},
 	{70, schemaV70},
+	{71, schemaV71},
 }
 
 // schemaV10 adds full-text search over item titles and summaries. items_fts is
@@ -1250,6 +1251,132 @@ CREATE INDEX idx_feeds_user ON feeds(user_id);
 CREATE INDEX idx_feeds_author ON feeds(author_id);
 CREATE UNIQUE INDEX idx_feeds_system ON feeds(user_id) WHERE is_system = 1;
 ` + visibleItemsViewSQL
+
+// visibleItemsViewV71SQL is the schemaV71 global read scope: the union of every
+// author's feed slice plus items on feeds no author selected. It replaces the
+// owner-author rule from visibleItemsViewSQL. A saved view stays an author-page
+// lens and does not widen this view.
+const visibleItemsViewV71SQL = `CREATE VIEW visible_items AS
+SELECT i.*
+FROM items i
+WHERE EXISTS (
+    SELECT 1 FROM item_feeds mf
+    JOIN author_feeds af ON af.feed_id = mf.feed_id
+    WHERE mf.item_id = i.id
+      AND NOT EXISTS (
+        SELECT 1 FROM author_filter_rules r
+        WHERE r.author_id = af.author_id AND r.action = 'hide'
+          AND (
+            CASE r.kind
+              WHEN 'tag' THEN CASE r.combine
+                WHEN 'all' THEN
+                  (SELECT COUNT(DISTINCT ic.category) FROM item_categories ic
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                    WHERE ic.item_id = i.id)
+                  = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+                ELSE EXISTS (SELECT 1 FROM item_categories ic
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                    WHERE ic.item_id = i.id)
+              END
+              WHEN 'feed' THEN CASE r.combine
+                WHEN 'all' THEN
+                  (SELECT COUNT(DISTINCT mf2.feed_id) FROM item_feeds mf2
+                     JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id AND af2.author_id = r.author_id
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf2.feed_id AS TEXT)
+                    WHERE mf2.item_id = i.id)
+                  = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+                ELSE EXISTS (SELECT 1 FROM item_feeds mf2
+                     JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id AND af2.author_id = r.author_id
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf2.feed_id AS TEXT)
+                    WHERE mf2.item_id = i.id)
+              END
+              WHEN 'author' THEN EXISTS (SELECT 1 FROM item_feeds mfa
+                   JOIN author_feeds afa ON afa.feed_id = mfa.feed_id
+                   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(afa.author_id AS TEXT)
+                  WHERE mfa.item_id = i.id)
+              ELSE 0
+            END
+          )
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM author_filter_rules r
+        WHERE r.author_id = af.author_id AND r.action = 'show'
+          AND NOT (
+            CASE r.kind
+              WHEN 'tag' THEN CASE r.combine
+                WHEN 'all' THEN
+                  (SELECT COUNT(DISTINCT ic.category) FROM item_categories ic
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                    WHERE ic.item_id = i.id)
+                  = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+                ELSE EXISTS (SELECT 1 FROM item_categories ic
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                    WHERE ic.item_id = i.id)
+              END
+              WHEN 'feed' THEN CASE r.combine
+                WHEN 'all' THEN
+                  (SELECT COUNT(DISTINCT mf2.feed_id) FROM item_feeds mf2
+                     JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id AND af2.author_id = r.author_id
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf2.feed_id AS TEXT)
+                    WHERE mf2.item_id = i.id)
+                  = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+                ELSE EXISTS (SELECT 1 FROM item_feeds mf2
+                     JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id AND af2.author_id = r.author_id
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf2.feed_id AS TEXT)
+                    WHERE mf2.item_id = i.id)
+              END
+              WHEN 'author' THEN EXISTS (SELECT 1 FROM item_feeds mfa
+                   JOIN author_feeds afa ON afa.feed_id = mfa.feed_id
+                   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(afa.author_id AS TEXT)
+                  WHERE mfa.item_id = i.id)
+              ELSE 0
+            END
+          )
+      )
+)
+OR EXISTS (
+    SELECT 1 FROM item_feeds mf
+    WHERE mf.item_id = i.id
+      AND NOT EXISTS (SELECT 1 FROM author_feeds af2 WHERE af2.feed_id = mf.feed_id)
+);
+`
+
+// schemaV71 makes feeds a shared library. Authors select feeds through
+// author_feeds, item_claims records the items a claiming author owns, and an
+// author marked is_aggregator neither claims nor sees claimed items. The
+// one-time backfill makes every existing author an aggregator except those with
+// a view, which claim. New authors are claiming by default.
+const schemaV71 = `
+DROP VIEW IF EXISTS visible_items;
+
+CREATE TABLE author_feeds (
+    author_id  INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    feed_id    INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (author_id, feed_id)
+);
+CREATE INDEX idx_author_feeds_feed ON author_feeds(feed_id);
+
+INSERT OR IGNORE INTO author_feeds (author_id, feed_id)
+SELECT author_id, id FROM feeds WHERE author_id <> 0 AND is_system = 0;
+
+CREATE TABLE item_claims (
+    item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    author_id  INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (item_id, author_id)
+);
+CREATE INDEX idx_item_claims_author ON item_claims(author_id);
+
+ALTER TABLE authors ADD COLUMN is_aggregator INTEGER NOT NULL DEFAULT 0;
+UPDATE authors SET is_aggregator = 1;
+UPDATE authors SET is_aggregator = 0 WHERE EXISTS (
+    SELECT 1 FROM saved_views v WHERE v.author_id = authors.id
+);
+
+DROP INDEX IF EXISTS idx_feeds_author;
+ALTER TABLE feeds DROP COLUMN author_id;
+` + visibleItemsViewV71SQL
 
 // Migrate applies any pending migrations in order, recording each in
 // schema_migrations. Each migration runs in its own transaction.

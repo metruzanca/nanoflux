@@ -21,12 +21,14 @@ func (s *CollectionStore) CountsByAuthor(userID int64) (map[int64]CollectionCoun
 	out := make(map[int64]CollectionCounts)
 	rows, err := s.db.QueryContext(context.Background(), `
 		SELECT ca.collection_id,
-		       COALESCE(SUM(CASE WHEN i.read = 0 THEN 1 ELSE 0 END), 0) AS unread,
-		       COALESCE(SUM(CASE WHEN i.read = 1 THEN 1 ELSE 0 END), 0) AS read
-		FROM visible_items i
-		JOIN feeds f ON f.id = i.feed_id
-		JOIN collection_authors ca ON ca.author_id = f.author_id
-		WHERE i.user_id = ?
+		       COUNT(DISTINCT CASE WHEN i.read = 0 THEN i.id END) AS unread,
+		       COUNT(DISTINCT CASE WHEN i.read = 1 THEN i.id END) AS read
+		FROM items i
+		JOIN feeds f ON f.id = i.feed_id AND f.is_system = 0
+		JOIN item_feeds mf ON mf.item_id = i.id
+		JOIN author_feeds af ON af.feed_id = mf.feed_id
+		JOIN collection_authors ca ON ca.author_id = af.author_id
+		WHERE i.user_id = ? AND `+authorRulesVisibleSQL("i.id", "af.author_id")+`
 		GROUP BY ca.collection_id`, userID)
 	if err != nil {
 		return out, err
@@ -73,7 +75,7 @@ func (s *CollectionStore) CountsByScope(userID int64, scopes []CollectionScope) 
 			FROM items i JOIN feeds f ON f.id = i.feed_id
 			WHERE i.user_id = ? AND `)
 		args = append(args, sc.CollectionID, userID)
-		clause, clauseArgs := collectionScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", sc.CollectionID, sc.Views, true)
+		clause, clauseArgs := collectionScopeClause("i.id", "COALESCE(i.published_at, i.fetched_at)", sc.CollectionID, sc.Views)
 		if clause == "" {
 			b.WriteString("1=0")
 		} else {

@@ -237,12 +237,14 @@ const listCollectionsWithCounts = `-- name: ListCollectionsWithCounts :many
 SELECT c.id, c.user_id, c.name, c.created_at,
        COUNT(DISTINCT ca.author_id) AS author_count,
        (SELECT COUNT(DISTINCT i.id) FROM visible_items i
-          JOIN feeds f2 ON f2.id = i.feed_id
-          JOIN collection_authors ca2 ON ca2.author_id = f2.author_id
+          JOIN item_feeds mf2 ON mf2.item_id = i.id
+          JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id
+          JOIN collection_authors ca2 ON ca2.author_id = af2.author_id
          WHERE ca2.collection_id = c.id AND i.read = 0) AS unread_count,
        (SELECT COUNT(DISTINCT i.id) FROM visible_items i
-          JOIN feeds f2 ON f2.id = i.feed_id
-          JOIN collection_authors ca2 ON ca2.author_id = f2.author_id
+          JOIN item_feeds mf2 ON mf2.item_id = i.id
+          JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id
+          JOIN collection_authors ca2 ON ca2.author_id = af2.author_id
          WHERE ca2.collection_id = c.id AND i.read = 1) AS read_count
 FROM collections c
 LEFT JOIN collection_authors ca ON ca.collection_id = c.id
@@ -296,10 +298,11 @@ func (q *Queries) ListCollectionsWithCounts(ctx context.Context, userID int64) (
 }
 
 const listFeedsInCollection = `-- name: ListFeedsInCollection :many
-SELECT f.id, f.user_id, f.author_id, f.title, f.feed_url, f.home_url, f.description,
+SELECT DISTINCT f.id, f.user_id, f.title, f.feed_url, f.home_url, f.description,
        f.etag, f.last_modified, f.last_polled_at, f.last_error, f.next_page_url, f.poll_interval_sec, f.poll_interval_auto, f.last_item_at, f.next_poll_at, f.next_poll_scheduled, f.plugin_name, f.disabled_reason, f.enabled, f.is_system, f.rank, f.cache_images, f.created_at
 FROM feeds f
-JOIN collection_authors ca ON ca.author_id = f.author_id
+JOIN author_feeds af ON af.feed_id = f.id
+JOIN collection_authors ca ON ca.author_id = af.author_id
 WHERE ca.collection_id = ? AND f.user_id = ? AND f.is_system = 0
 ORDER BY f.title
 `
@@ -321,7 +324,6 @@ func (q *Queries) ListFeedsInCollection(ctx context.Context, arg ListFeedsInColl
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
-			&i.AuthorID,
 			&i.Title,
 			&i.FeedUrl,
 			&i.HomeUrl,

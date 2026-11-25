@@ -347,16 +347,22 @@ func TestMigrateUpgrade(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	// Data survived the rebuild.
-	var (
-		title  string
-		author int64
-	)
-	if err := sqldb.QueryRow(`SELECT title, author_id FROM feeds WHERE id = 1`).Scan(&title, &author); err != nil {
+	// Data survived the rebuild, and the old owner became author_feeds membership.
+	var title string
+	if err := sqldb.QueryRow(`SELECT title FROM feeds WHERE id = 1`).Scan(&title); err != nil {
 		t.Fatalf("read feed: %v", err)
 	}
-	if title != "f" || author != 1 {
-		t.Fatalf("feed after upgrade: title=%q author=%d", title, author)
+	if title != "f" {
+		t.Fatalf("feed after upgrade: title=%q", title)
+	}
+	var memberships int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM author_feeds WHERE feed_id = 1 AND author_id = 1`,
+	).Scan(&memberships); err != nil {
+		t.Fatalf("read author_feeds: %v", err)
+	}
+	if memberships != 1 {
+		t.Fatalf("author_feeds after upgrade = %d, want 1", memberships)
 	}
 	var itemCount int
 	if err := sqldb.QueryRow(`SELECT COUNT(*) FROM items`).Scan(&itemCount); err != nil {
@@ -366,11 +372,15 @@ func TestMigrateUpgrade(t *testing.T) {
 		t.Fatalf("items after upgrade: %d", itemCount)
 	}
 
-	// author_id is now required (schemaV20), not nullable.
-	if _, err := sqldb.Exec(
-		`INSERT INTO feeds(id, user_id, author_id, title, feed_url) VALUES(2, 1, NULL, 'f2', 'https://f/2')`,
-	); err == nil {
-		t.Fatalf("author_id must be NOT NULL after schemaV20")
+	// schemaV71 removed feeds.author_id: the ownership column is gone.
+	var feedCols int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('feeds') WHERE name = 'author_id'`,
+	).Scan(&feedCols); err != nil {
+		t.Fatal(err)
+	}
+	if feedCols != 0 {
+		t.Fatalf("feeds.author_id should be gone after schemaV71")
 	}
 
 	// schemaV38 backfills the item's owner user_id and a feed membership.
@@ -427,35 +437,36 @@ func TestMigrateBackfillsAuthorlessFeeds(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	// The authorless feed was assigned a backfilled author, named after the feed.
-	var authorID int64
-	if err := sqldb.QueryRow(`SELECT author_id FROM feeds WHERE id = 2`).Scan(&authorID); err != nil {
-		t.Fatalf("read orphan feed: %v", err)
-	}
-	if authorID == 0 {
-		t.Fatal("orphan feed should have been assigned an author")
+	// schemaV20 backfills an author for the original authorless feed, and
+	// schemaV71 carries it into author_feeds membership.
+	var orphanAuthor int64
+	if err := sqldb.QueryRow(
+		`SELECT author_id FROM author_feeds WHERE feed_id = 2`,
+	).Scan(&orphanAuthor); err != nil {
+		t.Fatalf("read orphan membership: %v", err)
 	}
 	var backfilled string
-	if err := sqldb.QueryRow(`SELECT name FROM authors WHERE id = ?`, authorID).Scan(&backfilled); err != nil {
+	if err := sqldb.QueryRow(`SELECT name FROM authors WHERE id = ?`, orphanAuthor).Scan(&backfilled); err != nil {
 		t.Fatalf("read backfilled author: %v", err)
 	}
 	if backfilled != "orphan" {
 		t.Fatalf("backfilled author name = %q, want %q", backfilled, "orphan")
 	}
-	// The already-authored feed is untouched.
 	var title string
-	var aID int64
-	if err := sqldb.QueryRow(`SELECT title, author_id FROM feeds WHERE id = 1`).Scan(&title, &aID); err != nil {
+	if err := sqldb.QueryRow(`SELECT title FROM feeds WHERE id = 1`).Scan(&title); err != nil {
 		t.Fatal(err)
 	}
-	if title != "authored" || aID != 1 {
-		t.Fatalf("authored feed changed: title=%q author=%d", title, aID)
+	if title != "authored" {
+		t.Fatalf("authored feed changed: title=%q", title)
 	}
-	// New feeds must now carry an author.
-	if _, err := sqldb.Exec(
-		`INSERT INTO feeds(id, user_id, author_id, title, feed_url) VALUES(3, 1, NULL, 'f3', 'https://f/3')`,
-	); err == nil {
-		t.Fatal("author_id must be NOT NULL after schemaV20")
+	var authoredMembers int
+	if err := sqldb.QueryRow(
+		`SELECT COUNT(*) FROM author_feeds WHERE feed_id = 1 AND author_id = 1`,
+	).Scan(&authoredMembers); err != nil {
+		t.Fatal(err)
+	}
+	if authoredMembers != 1 {
+		t.Fatalf("authored feed membership = %d, want 1", authoredMembers)
 	}
 }
 
@@ -466,10 +477,16 @@ func TestForeignKeys(t *testing.T) {
 	}
 	defer sqldb.Close()
 
-	// A feed referencing a nonexistent author must fail.
+	// A membership referencing a nonexistent author must fail.
 	if _, err := sqldb.Exec(
-		`INSERT INTO feeds(user_id, author_id, title, feed_url) VALUES(1, 999, 'x', 'http://x')`,
+		`INSERT INTO author_feeds(author_id, feed_id) VALUES(999, 1)`,
 	); err == nil {
-		t.Fatal("expected foreign key violation")
+		t.Fatal("expected foreign key violation for author_feeds.author_id")
+	}
+	// A membership referencing a nonexistent feed must fail too.
+	if _, err := sqldb.Exec(
+		`INSERT INTO author_feeds(author_id, feed_id) VALUES(1, 999)`,
+	); err == nil {
+		t.Fatal("expected foreign key violation for author_feeds.feed_id")
 	}
 }

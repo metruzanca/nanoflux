@@ -223,6 +223,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /authors/{id}/read-all", s.auth.Require(http.HandlerFunc(s.authorReadAll)))
 	mux.Handle("GET /authors/{id}/edit", s.auth.Require(http.HandlerFunc(s.authorEdit)))
 	mux.Handle("POST /authors/{id}/edit", s.auth.Require(http.HandlerFunc(s.authorUpdate)))
+	mux.Handle("POST /authors/{id}/feed-membership", s.auth.Require(http.HandlerFunc(s.authorFeedsUpdate)))
 	mux.Handle("POST /authors/{id}/auto-read", s.auth.Require(http.HandlerFunc(s.authorAutoReadUpdate)))
 	mux.Handle("POST /authors/{id}/collections", s.auth.Require(http.HandlerFunc(s.authorCollectionsUpdate)))
 	mux.Handle("POST /authors/{id}/filters", s.auth.Require(http.HandlerFunc(s.authorFiltersUpdate)))

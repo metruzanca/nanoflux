@@ -74,6 +74,7 @@ func New(version string, st *store.Store, env Env, stdout, stderr io.Writer) *co
 	root.AddCommand(backupCmd(st, env, version, stdout, stderr))
 	root.AddCommand(restoreCmd(st, env, stdout, stderr))
 	root.AddCommand(storageCmd(st, env, stdout, stderr))
+	root.AddCommand(claimsCmd(st, stdout))
 	root.AddCommand(versionCmd(version))
 	return root
 }

@@ -127,6 +127,30 @@ func runServer() {
 		log.Info("backfilled item categories", "items", n)
 	}
 
+	// Build the derived item_claims table once per user. Claims are the items a
+	// claiming author owns; aggregator authors hide them. Safe to rerun, and a
+	// cheap no-op after the first boot.
+	userRows, err := st.DB().Query(`SELECT id FROM users`)
+	if err != nil {
+		log.Error("list users for claim backfill", "err", err)
+	} else {
+		var userIDs []int64
+		for userRows.Next() {
+			var id int64
+			if err := userRows.Scan(&id); err == nil {
+				userIDs = append(userIDs, id)
+			}
+		}
+		userRows.Close()
+		for _, uid := range userIDs {
+			if n, err := st.Claims.EnsureBackfilled(uid); err != nil {
+				log.Error("backfill item claims", "user_id", uid, "err", err)
+			} else if n > 0 {
+				log.Info("backfilled item claims", "user_id", uid, "claims", n)
+			}
+		}
+	}
+
 	p := poller.New(st, cfg.PollInterval, cfg.PollWorkers)
 	p.SetHostSpacing(cfg.PollHostSpacing)
 	// One cooldown shared by the poller and the plugin host: a rate limit seen

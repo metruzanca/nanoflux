@@ -102,6 +102,7 @@ func (s *Server) feedReadAll(w http.ResponseWriter, r *http.Request) {
 	tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 	if _, err := s.store.Items.MarkAllReadFiltered(u.ID, store.ItemFilter{
 		FeedID:       id,
+		Library:      true,
 		TagGroups:    tagGroups,
 		FeedGroups:   feedGroups,
 		AuthorGroups: authorGroups,
@@ -125,9 +126,15 @@ func (s *Server) feedScopedItems(userID int64, f store.Feed, view string, sort i
 	d.AuthorOptions = s.authorOptions(userID)
 	filter := scopedFilter(view, sort, 0, 0, 0, filters, tz)
 	filter.FeedID = f.ID
+	filter.Library = true
 	items, more, _ := s.store.Items.ListPage(userID, filter)
-	d.UnreadCount, _ = s.store.Items.CountFiltered(userID, store.ItemFilter{FeedID: f.ID, UnreadOnly: true})
-	d.ReadCount, _ = s.store.Items.CountFiltered(userID, store.ItemFilter{FeedID: f.ID, ReadOnly: true})
+	// /feeds is the library view: its source line names the feed, not an author.
+	for i := range items {
+		items[i].AuthorID = 0
+		items[i].AuthorName = ""
+	}
+	d.UnreadCount, _ = s.store.Items.CountFiltered(userID, store.ItemFilter{FeedID: f.ID, UnreadOnly: true, Library: true})
+	d.ReadCount, _ = s.store.Items.CountFiltered(userID, store.ItemFilter{FeedID: f.ID, ReadOnly: true, Library: true})
 	cats, _ := s.store.Items.ListCategories(userID, store.ItemFilter{FeedID: f.ID})
 	d.TagOptions = tagItems(cats)
 	d.Items = withTZ(tz, dedupItems(items))
@@ -136,6 +143,7 @@ func (s *Server) feedScopedItems(userID int64, f store.Feed, view string, sort i
 	if len(filters) > 0 {
 		countFilter := scopedFilter(view, sortNewest, 0, 0, 0, filters, tz)
 		countFilter.FeedID = f.ID
+		countFilter.Library = true
 		d.FilteredCount, _ = s.store.Items.CountFiltered(userID, countFilter)
 	}
 	return d

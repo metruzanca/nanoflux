@@ -57,6 +57,18 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 	if title == "" {
 		title = feedURL
 	}
+	if existing, ok := s.store.Feeds.FindByURL(u.ID, feedURL); ok && authorID == 0 {
+		authorName := existing.Title
+		if existing.AuthorID != 0 {
+			if a, err := s.store.Authors.ByID(u.ID, existing.AuthorID); err == nil {
+				authorName = a.Name
+			}
+		}
+		return apiFeed{
+			ID: existing.ID, Title: existing.Title, FeedURL: existing.FeedURL, HomeURL: existing.HomeURL,
+			AuthorID: existing.AuthorID, AuthorName: authorName,
+		}, nil
+	}
 	authorName := title
 	if authorID != 0 {
 		a, err := s.store.Authors.ByID(u.ID, authorID)
@@ -81,9 +93,25 @@ func (s *Server) saveFeed(ctx context.Context, u store.User, feedURL, homeURL, t
 		}
 		authorID = a.ID
 	}
+	if existing, ok := s.store.Feeds.FindByURL(u.ID, feedURL); ok {
+		if err := s.store.Feeds.AddAuthor(u.ID, existing.ID, authorID); err != nil {
+			return apiFeed{}, err
+		}
+		if _, err := s.store.Claims.RebuildAuthor(u.ID, authorID); err != nil {
+			log.Error("rebuild claims after extension attach", "author_id", authorID, "err", err)
+		}
+		s.pollFeedNow()
+		return apiFeed{
+			ID: existing.ID, Title: existing.Title, FeedURL: existing.FeedURL, HomeURL: existing.HomeURL,
+			AuthorID: authorID, AuthorName: authorName,
+		}, nil
+	}
 	f, err := s.store.Feeds.CreateWithPlugin(u.ID, authorID, title, feedURL, homeURL, "", s.pluginNameFor(feedURL), s.defaultPollIntervalSec(feedURL))
 	if err != nil {
 		return apiFeed{}, err
+	}
+	if _, err := s.store.Claims.RebuildAuthor(u.ID, authorID); err != nil {
+		log.Error("rebuild claims after extension feed", "author_id", authorID, "err", err)
 	}
 	s.pollFeedNow()
 	return apiFeed{
@@ -176,20 +204,6 @@ func (s *Server) savedFeedsFor(userID int64) *savedFeeds {
 // isn't saved.
 func (sf *savedFeeds) saved(feedURL string) savedFeedRef {
 	return sf.feeds[normExtKey(feedURL)]
-}
-
-// savedFeedRefFor returns the user's saved feed with this exact feed URL
-// (normalized), or the zero value when there is none. It backs the duplicate
-// check for adding a feed: two feeds may share a title or home URL, but not
-// their feed URL.
-func (s *Server) savedFeedRefFor(userID int64, feedURL string) savedFeedRef {
-	return s.savedFeedsFor(userID).saved(feedURL)
-}
-
-// feedURLExists reports whether the user already has a feed with this exact
-// feed URL (normalized).
-func (s *Server) feedURLExists(userID int64, feedURL string) bool {
-	return s.savedFeedRefFor(userID, feedURL).FeedID != 0
 }
 
 // normExtKey normalizes a URL for "already saved" matching: lowercase host

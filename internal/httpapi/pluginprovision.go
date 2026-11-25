@@ -94,10 +94,6 @@ func (s *Server) feedProvision(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "provision-error", "the integration did not return a feed")
 		return
 	}
-	if s.feedURLExists(u.ID, feedURL) {
-		writeFormError(w, r, "provision-error", "you already have this feed")
-		return
-	}
 	feedTitle := got.Title
 	if feedTitle == "" {
 		feedTitle = title
@@ -110,12 +106,28 @@ func (s *Server) feedProvision(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "provision-error", "could not create the feed")
 		return
 	}
+	if existing, ok := s.store.Feeds.FindByURL(u.ID, feedURL); ok {
+		if err := s.store.Feeds.AddAuthor(u.ID, existing.ID, author.ID); err != nil {
+			log.Error("attach provisioned feed", "err", err)
+			writeFormError(w, r, "provision-error", "could not attach the feed")
+			return
+		}
+		if _, err := s.store.Claims.RebuildAuthor(u.ID, author.ID); err != nil {
+			log.Error("rebuild claims after provision attach", "author_id", author.ID, "err", err)
+		}
+		s.pollFeedNow()
+		web.Render(w, r, provisionCreated(existing.ID, author.ID, feedTitle, got.Fields))
+		return
+	}
 	feed, err := s.store.Feeds.CreateWithPlugin(u.ID, author.ID, feedTitle, feedURL, got.HomeURL, "",
 		s.pluginNameFor(feedURL), s.defaultPollIntervalSec(feedURL))
 	if err != nil {
 		log.Error("create provisioned feed", "err", err)
 		writeFormError(w, r, "provision-error", "could not save the feed")
 		return
+	}
+	if _, err := s.store.Claims.RebuildAuthor(u.ID, author.ID); err != nil {
+		log.Error("rebuild claims after provision feed", "author_id", author.ID, "err", err)
 	}
 	s.pollFeedNow()
 

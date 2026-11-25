@@ -167,18 +167,24 @@ func TestAPISave(t *testing.T) {
 		t.Fatalf("collection should hold the feed's author: %+v", authorIDs)
 	}
 
-	// Save with no author at all: one is auto-created from the feed.
+	// Save the same URL with no author: the existing feed and its primary
+	// author are returned, and no duplicate author is created.
+	beforeAuthors, _ := s.store.Authors.List(u.ID)
 	rr = apiJSON(h, "POST", "/api/save", token, map[string]any{
 		"feed_url": feedSrv.URL,
 	})
 	if rr.Code != http.StatusOK {
-		t.Fatalf("save auto-author: %d %s", rr.Code, rr.Body.String())
+		t.Fatalf("save existing without author: %d %s", rr.Code, rr.Body.String())
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &feed); err != nil {
 		t.Fatal(err)
 	}
-	if feed.AuthorName != "API Feed" {
-		t.Fatalf("auto-created author should be named after the feed: %+v", feed)
+	if feed.AuthorName != "Metru" {
+		t.Fatalf("existing feed should keep its primary author: %+v", feed)
+	}
+	afterAuthors, _ := s.store.Authors.List(u.ID)
+	if len(afterAuthors) != len(beforeAuthors) {
+		t.Fatalf("re-saving an existing URL must not create an author: %d -> %d", len(beforeAuthors), len(afterAuthors))
 	}
 }
 
@@ -228,8 +234,11 @@ func TestAPIExtSaveHomeURL(t *testing.T) {
 	}
 
 	// Without home_url, fall back to the feed's own home (https://api.dev/).
+	// A separate URL keeps this a distinct feed under the one-URL-one-feed rule.
+	feedSrv2 := feedServer(t)
+	defer feedSrv2.Close()
 	rr = doForm(h, "POST", "/api/ext/save", url.Values{
-		"feed_url": {feedSrv.URL},
+		"feed_url": {feedSrv2.URL},
 		"title":    {"No Home"},
 	}, cookie)
 	if rr.Code != http.StatusOK {

@@ -258,6 +258,24 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		title = req.FeedURL
 	}
 
+	// A URL already in the library is the same feed. With no explicit author in
+	// the request, return the existing feed and its primary author instead of
+	// auto-creating a duplicate author.
+	if req.AuthorID == 0 && req.Author == nil {
+		if existing, ok := s.store.Feeds.FindByURL(u.ID, req.FeedURL); ok {
+			name := existing.Title
+			if existing.AuthorID != 0 {
+				if a, err := s.store.Authors.ByID(u.ID, existing.AuthorID); err == nil {
+					name = a.Name
+				}
+			}
+			writeJSON(w, http.StatusOK, apiFeed{
+				ID: existing.ID, Title: existing.Title, FeedURL: existing.FeedURL, HomeURL: existing.HomeURL,
+				AuthorID: existing.AuthorID, AuthorName: name,
+			})
+			return
+		}
+	}
 	// Resolve the author: an existing id, one created from the provided object,
 	// or (every feed needs an author) one auto-created from the feed itself.
 	authorID := req.AuthorID
@@ -289,10 +307,34 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if existing, ok := s.store.Feeds.FindByURL(u.ID, req.FeedURL); ok {
+		if err := s.store.Feeds.AddAuthor(u.ID, existing.ID, authorID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "attach feed failed"})
+			return
+		}
+		if _, err := s.store.Claims.RebuildAuthor(u.ID, authorID); err != nil {
+			log.Error("rebuild claims after api attach", "author_id", authorID, "err", err)
+		}
+		if req.CollectionID != 0 {
+			if err := s.store.Collections.AddAuthor(u.ID, req.CollectionID, authorID); err != nil {
+				log.Error("add to collection", "collection_id", req.CollectionID, "err", err)
+			}
+		}
+		s.pollFeedNow()
+		author, _ := s.store.Authors.ByID(u.ID, authorID)
+		writeJSON(w, http.StatusOK, apiFeed{
+			ID: existing.ID, Title: existing.Title, FeedURL: existing.FeedURL, HomeURL: existing.HomeURL,
+			AuthorID: authorID, AuthorName: author.Name,
+		})
+		return
+	}
 	f, err := s.store.Feeds.CreateWithPlugin(u.ID, authorID, title, req.FeedURL, homeURL, "", s.pluginNameFor(req.FeedURL), s.defaultPollIntervalSec(req.FeedURL))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "create feed failed"})
 		return
+	}
+	if _, err := s.store.Claims.RebuildAuthor(u.ID, authorID); err != nil {
+		log.Error("rebuild claims after api feed", "author_id", authorID, "err", err)
 	}
 	if req.CollectionID != 0 {
 		if err := s.store.Collections.AddAuthor(u.ID, req.CollectionID, authorID); err != nil {
@@ -304,6 +346,6 @@ func (s *Server) apiSave(w http.ResponseWriter, r *http.Request) {
 	author, _ := s.store.Authors.ByID(u.ID, authorID)
 	writeJSON(w, http.StatusOK, apiFeed{
 		ID: f.ID, Title: f.Title, FeedURL: f.FeedURL, HomeURL: f.HomeURL,
-		AuthorID: f.AuthorID, AuthorName: author.Name,
+		AuthorID: authorID, AuthorName: author.Name,
 	})
 }

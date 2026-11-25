@@ -62,6 +62,9 @@ CREATE TABLE authors (
     is_system   INTEGER NOT NULL DEFAULT 0,
     auto_read_after_days INTEGER,
     auto_delete_after_days INTEGER,
+    -- An aggregator does not claim its items and hides items claimed by other
+    -- authors. New authors default to claiming (0).
+    is_aggregator INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_authors_user ON authors(user_id);
@@ -70,9 +73,6 @@ CREATE UNIQUE INDEX idx_authors_system ON authors(user_id) WHERE is_system = 1;
 CREATE TABLE feeds (
     id                INTEGER PRIMARY KEY,
     user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    -- 0 means unassigned. Feeds live in the library independently of an
-    -- author (schemaV69), so a feed can exist before any author selects it.
-    author_id         INTEGER NOT NULL DEFAULT 0,
     title             TEXT NOT NULL,
     feed_url          TEXT NOT NULL,
     home_url          TEXT,
@@ -96,8 +96,18 @@ CREATE TABLE feeds (
     created_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_feeds_user ON feeds(user_id);
-CREATE INDEX idx_feeds_author ON feeds(author_id);
 CREATE UNIQUE INDEX idx_feeds_system ON feeds(user_id) WHERE is_system = 1;
+
+-- A feed is a library row independent of any author (schemaV71). Authors
+-- select feeds; the same feed can serve several authors, each with its own
+-- rules and read state view.
+CREATE TABLE author_feeds (
+    author_id  INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    feed_id    INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (author_id, feed_id)
+);
+CREATE INDEX idx_author_feeds_feed ON author_feeds(feed_id);
 
 CREATE TABLE items (
     id           INTEGER PRIMARY KEY,
@@ -164,6 +174,19 @@ CREATE TABLE item_categories (
 );
 CREATE INDEX idx_item_categories_category ON item_categories(category);
 
+-- Items claimed by a curated author (schemaV71). A claiming author (not an
+-- aggregator) claims every item in its source slice (member feeds plus views,
+-- with its rules applied). Aggregator authors hide claimed items, so promoting
+-- a poster author removes that poster from every aggregator. Derived data: it
+-- can always be rebuilt from author_feeds, saved_views and the filter rules.
+CREATE TABLE item_claims (
+    item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    author_id  INTEGER NOT NULL REFERENCES authors(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (item_id, author_id)
+);
+CREATE INDEX idx_item_claims_author ON item_claims(author_id);
+
 -- Author-level always-on allow/block filters (schemaV55). Rules mirror the
 -- transient list filter rows: kind (tag/feed), action (show/hide, labelled
 -- allow/block in the UI), combine (any/all) and one value per row.
@@ -183,86 +206,93 @@ CREATE TABLE author_filter_values (
     PRIMARY KEY (rule_id, value)
 );
 
--- visible_items is the read-side translation of author rules: an item is hidden
--- when any block rule of its owner author matches, or when any allow rule of
--- that author does not match. Item read paths select from this view so the
--- rules apply everywhere (lists, counts, badges) without per-caller
--- predicates. Keep the expression in sync with the migration in
--- internal/db/migrate.go (schemaV55, recreated by schemaV67) and with
--- authorRuleMatchSQL.
+-- visible_items is the global read scope: the union of every author's feed
+-- slice (member feeds with that author's rules applied) plus items on feeds no
+-- author selected. Saved views stay author-page lenses and do not widen this
+-- global scope. Keep the expression in sync with visibleItemsViewSQL in
+-- internal/db/migrate.go and with authorRuleMatchSQL.
 CREATE VIEW visible_items AS
 SELECT i.*
 FROM items i
-JOIN feeds f ON f.id = i.feed_id
-WHERE NOT EXISTS (
-    SELECT 1 FROM author_filter_rules r
-    WHERE r.author_id = f.author_id AND r.action = 'hide'
-      AND (
-        CASE r.kind
-          WHEN 'tag' THEN CASE r.combine
-            WHEN 'all' THEN
-              (SELECT COUNT(DISTINCT ic.category) FROM item_categories ic
-                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
-                WHERE ic.item_id = i.id)
-              = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
-            ELSE EXISTS (SELECT 1 FROM item_categories ic
-                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
-                WHERE ic.item_id = i.id)
-          END
-          WHEN 'feed' THEN CASE r.combine
-            WHEN 'all' THEN
-              (SELECT COUNT(DISTINCT mf.feed_id) FROM item_feeds mf
-                 JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
-                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
-                WHERE mf.item_id = i.id)
-              = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
-            ELSE EXISTS (SELECT 1 FROM item_feeds mf
-                 JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
-                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
-                WHERE mf.item_id = i.id)
-          END
-          WHEN 'author' THEN EXISTS (SELECT 1 FROM item_feeds mfa
-               JOIN feeds mfa2 ON mfa2.id = mfa.feed_id
-               JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mfa2.author_id AS TEXT)
-              WHERE mfa.item_id = i.id)
-          ELSE 0
-        END
+WHERE EXISTS (
+    SELECT 1 FROM item_feeds mf
+    JOIN author_feeds af ON af.feed_id = mf.feed_id
+    WHERE mf.item_id = i.id
+      AND NOT EXISTS (
+        SELECT 1 FROM author_filter_rules r
+        WHERE r.author_id = af.author_id AND r.action = 'hide'
+          AND (
+            CASE r.kind
+              WHEN 'tag' THEN CASE r.combine
+                WHEN 'all' THEN
+                  (SELECT COUNT(DISTINCT ic.category) FROM item_categories ic
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                    WHERE ic.item_id = i.id)
+                  = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+                ELSE EXISTS (SELECT 1 FROM item_categories ic
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                    WHERE ic.item_id = i.id)
+              END
+              WHEN 'feed' THEN CASE r.combine
+                WHEN 'all' THEN
+                  (SELECT COUNT(DISTINCT mf2.feed_id) FROM item_feeds mf2
+                     JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id AND af2.author_id = r.author_id
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf2.feed_id AS TEXT)
+                    WHERE mf2.item_id = i.id)
+                  = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+                ELSE EXISTS (SELECT 1 FROM item_feeds mf2
+                     JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id AND af2.author_id = r.author_id
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf2.feed_id AS TEXT)
+                    WHERE mf2.item_id = i.id)
+              END
+              WHEN 'author' THEN EXISTS (SELECT 1 FROM item_feeds mfa
+                   JOIN author_feeds afa ON afa.feed_id = mfa.feed_id
+                   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(afa.author_id AS TEXT)
+                  WHERE mfa.item_id = i.id)
+              ELSE 0
+            END
+          )
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM author_filter_rules r
+        WHERE r.author_id = af.author_id AND r.action = 'show'
+          AND NOT (
+            CASE r.kind
+              WHEN 'tag' THEN CASE r.combine
+                WHEN 'all' THEN
+                  (SELECT COUNT(DISTINCT ic.category) FROM item_categories ic
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                    WHERE ic.item_id = i.id)
+                  = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+                ELSE EXISTS (SELECT 1 FROM item_categories ic
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
+                    WHERE ic.item_id = i.id)
+              END
+              WHEN 'feed' THEN CASE r.combine
+                WHEN 'all' THEN
+                  (SELECT COUNT(DISTINCT mf2.feed_id) FROM item_feeds mf2
+                     JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id AND af2.author_id = r.author_id
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf2.feed_id AS TEXT)
+                    WHERE mf2.item_id = i.id)
+                  = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
+                ELSE EXISTS (SELECT 1 FROM item_feeds mf2
+                     JOIN author_feeds af2 ON af2.feed_id = mf2.feed_id AND af2.author_id = r.author_id
+                     JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf2.feed_id AS TEXT)
+                    WHERE mf2.item_id = i.id)
+              END
+              WHEN 'author' THEN EXISTS (SELECT 1 FROM item_feeds mfa
+                   JOIN author_feeds afa ON afa.feed_id = mfa.feed_id
+                   JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(afa.author_id AS TEXT)
+                  WHERE mfa.item_id = i.id)
+              ELSE 0
+            END
+          )
       )
 )
-AND NOT EXISTS (
-    SELECT 1 FROM author_filter_rules r
-    WHERE r.author_id = f.author_id AND r.action = 'show'
-      AND NOT (
-        CASE r.kind
-          WHEN 'tag' THEN CASE r.combine
-            WHEN 'all' THEN
-              (SELECT COUNT(DISTINCT ic.category) FROM item_categories ic
-                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
-                WHERE ic.item_id = i.id)
-              = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
-            ELSE EXISTS (SELECT 1 FROM item_categories ic
-                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = ic.category
-                WHERE ic.item_id = i.id)
-          END
-          WHEN 'feed' THEN CASE r.combine
-            WHEN 'all' THEN
-              (SELECT COUNT(DISTINCT mf.feed_id) FROM item_feeds mf
-                 JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
-                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
-                WHERE mf.item_id = i.id)
-              = (SELECT COUNT(*) FROM author_filter_values v2 WHERE v2.rule_id = r.id)
-            ELSE EXISTS (SELECT 1 FROM item_feeds mf
-                 JOIN feeds mf2 ON mf2.id = mf.feed_id AND mf2.author_id = r.author_id
-                 JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mf.feed_id AS TEXT)
-                WHERE mf.item_id = i.id)
-          END
-          WHEN 'author' THEN EXISTS (SELECT 1 FROM item_feeds mfa
-               JOIN feeds mfa2 ON mfa2.id = mfa.feed_id
-               JOIN author_filter_values v ON v.rule_id = r.id AND v.value = CAST(mfa2.author_id AS TEXT)
-              WHERE mfa.item_id = i.id)
-          ELSE 0
-        END
-      )
+OR EXISTS (
+    SELECT 1 FROM item_feeds mf
+    WHERE mf.item_id = i.id
+      AND NOT EXISTS (SELECT 1 FROM author_feeds af2 WHERE af2.feed_id = mf.feed_id)
 );
 
 -- Collections are simple groups of authors (schemaV68). A collection's item

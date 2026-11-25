@@ -19,6 +19,26 @@
 
 # Notes
 
+## Feed membership (schemaV71)
+
+`feeds.author_id` is gone. Feeds are library rows, and authors select them
+through `author_feeds(author_id, feed_id)`. The same feed can serve several
+authors, each with its own rules, views, auto-read and auto-delete windows.
+
+- An author page's scope is its **member feeds** (with that author's rules)
+  OR its **saved views**. `authorScopeClause` and `authorScopeClauseWith` build
+  it; `UnclaimedOnly` adds the aggregator claim subtraction.
+- The global `visible_items` view is the union of every author's member-feed
+  slice plus items on feeds no author selected. Saved views do not widen it.
+- `feeds.author_id`, owner-author joins, `SetFeedAuthor` and the old
+  "move the feed" semantics are removed. Use `author_feeds`, `AddAuthor`,
+  `RemoveAuthor`, `SetAuthors` or `SetAuthorFeeds`.
+- `authors.is_aggregator` (default 0) marks an aggregator: it does not claim its
+  items and hides items claimed by other authors. `item_claims` is derived and
+  rebuildable (`nanoflux claims rebuild`).
+- Any text below that still describes a feed "owner author" or tells you to join
+  `feeds.author_id` predates schemaV71; use membership instead.
+
 htmx 2.x does not swap `4xx`/`5xx` response bodies by default. `app.js`
 (loaded by `views_layout.templ`) installs a global `htmx:beforeSwap` listener
 that sets `shouldSwap = true` for any `status >= 400`, so error fragments
@@ -494,19 +514,16 @@ parallel implementation.
   **allow**/**block**.
 - **Author rows.** `kind: author` selects authors; it has no combine control and
   always ORs, like the feed kind but one level up. It matches an item seen
-  through any feed owned by a selected author (`item_feeds` membership, not the
-  owner author), which is what makes it useful on an author page for cross-feed
-  posts. Values are validated against every author the user owns. Author rows
+  through any feed **selected by** a selected author (`author_feeds`), which is
+  what makes it useful on an author page for cross-feed posts. Values are validated against every author the user owns. Author rows
   are offered when the user has more than one author, on the author card, the
   transient dialog and the saved-view editor.
 - **Semantics.** Every allow row must match (like show rows); any matching block
   row excludes (like hide rows). An author with no allow rows allows everything
-  not blocked. Matching keys on the author the rule set belongs to: the item's
-  owner author (`items.feed_id -> feeds.author_id`) for global reads, the scoped
-  author for that author's page (a cross-feed post can be owned by another
-  author but still belong to this author's feed), and the assigned author for a
-  saved view (see "Saved views"). Feed rules match through `item_feeds`
-  membership restricted to that author's feeds.
+  not blocked. Matching keys on the author the rule set belongs to: the scoped
+  author for that author's page and the assigned author for a saved view (see
+  "Saved views"). Global reads use the union view. Feed rules match through
+  `author_feeds` membership for the rule's author.
 - **Storage (schemaV55, view recreated by schemaV67).** `author_filter_rules` +
   `author_filter_values`, owned by `AuthorFilterStore` (`store.AuthorFilters`).
   `POST /authors/{id}/edit` replaces them when the form carries
@@ -514,32 +531,26 @@ parallel implementation.
   Feed delete removes its id from `kind='feed'` rows only (a numeric feed id must
   not collide with an author id) and drops any rule left empty; author delete
   removes that id from other authors' `kind='author'` rows the same way.
-- **One read path.** The `visible_items` view (schemaV55, recreated by
-  schemaV67, mirrored in `schema.sql`) applies the rules in SQL. Item lists,
-  counts, badges, read history, list items, and public shared lists select from
-  `visible_items`
-  instead of `items`. Item detail (`GetItem*`) and shared-item fetch stay on raw
-  `items`, so a blocked item is still reachable by direct link. Auto-read
-  retention (`ItemStore.MarkAutoRead`) deliberately stays on raw `items`. Any new
-  item read path must use `visible_items`; write paths and storage/dedup stay on
-  `items`.
-  Two scopes read raw `items` because the rule source is not the item's owner
-  feed. An author scope (`AuthorID != 0`) applies the scoped author's rules to
-  the membership branch (`authorScopeClause`), so a cross-feed post follows the
-  rules of the author whose feed surfaces it, and `ListPage` forces the dynamic
-  query for it. A saved-view scope (`Views`/`CollectionViews`) applies the
-  view's assigned author. `ItemFilter.itemSource()` picks the base; a collection
-  member-feed branch inside a raw view scope still carries the
-  `visibleItemExists` guard (owner author). `authorRulesVisibleSQL` is the
-  per-author form of the rule expression; `TestAuthorRulesVisibleSQLMatchesView`
-  guards the duplication with `visible_items`.
+- **One read path.** `visible_items` (schemaV71) is the global union: an item is
+  visible when at least one author's member-feed slice includes it, or when its
+  feed has no member author. Item lists, counts, badges, read history, list
+  items, and public shared lists select from it. Item detail (`GetItem*`) and
+  shared-item fetch stay on raw `items`, so a blocked item is still reachable by
+  direct link. The feed library page (`/feeds/{id}`) reads raw items through
+  `ItemFilter.Library`, because the library shows a feed's full item set.
+  An author scope (`AuthorID != 0` or `Views`) reads raw `items` and applies
+  `authorScopeClauseWith`, including the aggregator claim subtraction
+  (`UnclaimedOnly`). A collection scope uses `collectionScopeClause`, which
+  applies each member author's rules. `authorRulesVisibleSQL` is the per-author
+  form of the rule expression; `TestAuthorRulesVisibleSQLMatchesView` guards the
+  duplication.
   `visible_items` is `SELECT i.*`, so a future migration that adds an `items`
   column must recreate the view in the same migration.
 - **Writes respect it too.** Mark-all read/unread and the scoped filtered mark
   gate on the same predicates as the list (`visible_items`, or an author/view
   branch's own rule check), so hidden items keep their state.
 - **Preview.** `POST /authors/{id}/filters/preview` evaluates the submitted
-  (draft) rows against raw items scoped to the author's owned feeds: allowed is
+  (draft) rows against raw items scoped to the author's member feeds: allowed is
   the normal group predicate, blocked is its complement. It never persists and
   never double-applies saved rules. The author card re-posts on change
   (`hx-include="#author-filter-fields"`) and on `authorfilterschanged` from
@@ -550,10 +561,10 @@ parallel implementation.
   to the nearest `[data-tag-items]` container, so the dialog and the author card
   share the same component.
 
-## Feeds are a library; author pages show assigned feeds
+## Feeds are a library; author pages show selected feeds
 
 `/feeds` is the library index and `/feeds/{id}` a feed's own item list. An
-author's assigned feeds also render as cards inside the `details.author-feeds`
+author's selected feeds also render as cards inside the `details.author-feeds`
 section of `/authors/{id}` (`FeedRow`), carrying refresh
 (`POST /feeds/{id}/refresh`), an edit link (`GET /feeds/{id}/edit`), the
 external home/feed link, the last-polled line and the cached-media stat. The
@@ -561,13 +572,13 @@ feed page and the feed editor both carry a history card with "load older items"
 (`POST /feeds/{id}/older`); a page request carries the list's tab, sort and
 filters and OOB-swaps `#scoped-items` so the loaded entries appear, while an
 editor request only refreshes the card.
-An unassigned feed appears only in the library, `/domains` and the global
+A feed with no member authors appears only in the library, `/domains` and the global
 lists, and `FeedRow` links its title to `/feeds/{id}`.
 
 The feed-scoped list (`/authors/{id}?feed=`) and the feed card's unread badge
 use the same author-scoped predicate (`CountFiltered` with `AuthorID` +
-`FeedID`), so a cross-feed post owned by another author but reachable through
-this author's feed is filtered and counted by this author's rules.
+`FeedID`), so a cross-feed post reachable through this author's selected feed is
+filtered and counted by this author's rules.
 
 The author edit page is a set of independent sections. The profile card (headed
 `profile`) auto-saves to `POST /authors/{id}/edit` (name, description, avatar,
@@ -598,41 +609,35 @@ dialog while the page is not the focused document. htmx-in-panel actions
 not post the panel form. Removing an author link or view filter row fires the
 enclosing auto-save form's `change` event from `app.js`.
 
-A feed can move between authors from its expanded panel's "author" group, which
-is an inline link-style button in the sentence "move this feed and its items to
-a different author". The button (`data-change-author`) loads
-`GET /fragments/change-author` into the shared `#change-author-dialog` (a topbar
-dialog, outside the panel form, so its own `<form>` is valid) and
-`POST /feeds/{id}/author` performs the move through `FeedStore.SetAuthor`. Only
-`feeds.author_id` changes: items and list memberships follow the feed, and the
-old author is not deleted when it ends up empty. Collections group authors, so a
-moved feed leaves the old author's collections and joins the new author's. The picker
-excludes the current author, and a successful save returns an empty `200` so the
-`outerHTML` swap removes that feed's accordion item from the current author's
-edit page without a reload.
+A feed's expanded panel's "author" group is an inline link-style button in the
+sentence "add this feed to another author". The button (`data-change-author`)
+loads `GET /fragments/change-author` into the shared `#change-author-dialog` (a
+topbar dialog, outside the panel form, so its own `<form>` is valid) and
+`POST /feeds/{id}/author` adds membership through `FeedStore.AddAuthor`; it never
+removes an existing author. The picker excludes authors already on the feed, and
+a successful save returns an empty `200` so the dialog closes.
 
-A feed is a library row now. `feeds.author_id = 0` means **unassigned**
-(schemaV69 removed the author foreign key): the feed still polls and appears in
-the global lists, `/feeds`, `/domains` and its own `/feeds/{id}` page, but on no
-author page or collection. Deleting an author unassigns its feeds instead of
-deleting them; the author delete label says so.
+A feed is a library row. It has **no member authors** when `author_feeds` has no
+row for it: it still polls and appears in the global lists, `/feeds`, `/domains`
+and its own `/feeds/{id}` page, but on no author page or collection. Deleting an
+author removes only its memberships; the feeds survive for every other author.
 
 - `GET /feeds` is the feed library, `GET /feeds/{id}` its item list, and
   `GET /feeds/{id}/edit` the standalone editor (the author edit page embeds the
   same editor for its own feeds). `GET /feeds/{id}/items` is the list fragment.
-- An assigned feed still has an author-scoped list at
-  `/authors/{id}?feed={id}` (`Server.authorFeedFilter` validates ownership;
-  `authorScopedItems` sets `ItemFilter.FeedID`). `FeedRow` links to the author
-  list when assigned and to `/feeds/{id}` when not.
+- A feed with member authors still has an author-scoped list at
+  `/authors/{id}?feed={id}`; `authorScopedItems` sets `ItemFilter.FeedID` after
+  checking the author selects the feed. `FeedRow` links to the author list when
+  the feed has a primary member and to `/feeds/{id}` otherwise.
 - `ListByAuthor` / `ListByAuthorWithUnread` return nothing for `authorID == 0`,
-  so the unassigned sentinel can never leak onto an author page. Guard any new
+  so a sentinel can never leak onto an author page. Guard any new
   author-scoped query the same way.
 - The add-feed form offers `author_id=none` ("unassigned, library only"); the
   other paths (`/api/save`, extension, plugin provisioning, OPML) still create
   an author.
-- Item/source/author links, tag chips, the command palette and the provision
-  success link still point at the author page; only the feed library pages use
-  `/feeds`.
+- Item cards prefer a claiming author, then the earliest member author; author
+  pages show the page author and `/feeds/{id}` shows the feed. Tag chips on a
+  feed-library row are plain text because there is no single author.
 
 ## Author index unread counts are cached
 
@@ -667,7 +672,7 @@ costs a scan per collection scope, plus a scoped query per view-bearing
 collection.
 
 Collections group **authors** (schemaV68), not feeds. A collection's item scope
-is the union of its member authors' pages: their owned feeds plus their views.
+is the union of its member authors' pages: their member feeds plus their views.
 Auto collections and the synthetic no-collection are gone; `/domains` groups the
 feed library by registrable domain as a derived page.
 
@@ -739,7 +744,7 @@ code.
   own filter rows. The tab and sort are page state, not saved on the view.
 - Views reach a collection through their author. Collections group authors
   (`collection_authors`, schemaV68), so a collection's source set is its member
-  authors' owned feeds plus those authors' views. `ItemFilter.CollectionViews`
+  authors' member feeds plus those authors' views. `ItemFilter.CollectionViews`
   still feeds `collectionScopeClause`, but the predicates are resolved from the
   member authors (`SavedViewStore.ListByCollection`); every collection read
   (list, counts, tag options, home sections, the JSON API) must pass them. A
@@ -761,7 +766,7 @@ code.
   Collections are edited on the author edit page's collections card
   (`POST /authors/{id}/collections`).
 - `author_id` is required (schemaV65) and is the author the view feeds, exactly
-  like a feed. An author page's scope is `author's own feeds OR every assigned
+  like a feed. An author page's scope is `member feeds OR every assigned
   view`, so a subreddit feed plus a view such as `tag=u/example-poster` can
   replace a per-user profile feed. There are no unassigned views: the migration
   assigns each legacy unassigned view to an author named after the view.
@@ -775,7 +780,7 @@ code.
   filter-chip, filter-dialog and pagination helpers carry both values through
   `scopedViewQueryFor` and `scopedViewSep`.
 - The store scope is `store.ViewFilter` + `ItemFilter.Views`. `authorScopeClause`
-  builds the OR of author-owned feeds and each view predicate; `viewFilterClause`
+  builds the OR of the author's member feeds and each view predicate; `viewFilterClause`
   applies the view's tag/feed groups and time windows. `listPageTagged` is forced
   whenever `Views` or `CollectionViews` is non-empty, and `unreadFilteredQuery`
   delegates to the same predicate builder so mark-all and unread counts include
@@ -841,9 +846,9 @@ dataset is small, and the page may be a little slow.
 - **Scoping.** `internal/store/stats.go` reads from `visible_items` for every
   item aggregate (`StatsOverview`, `StatsReadSeries`, `StatsTopSources`,
   `StatsTags`, `StatsUnreadAging`, `StatsReadLag`, `StatsMedia`), so the
-  always-on author allow/block rules apply exactly as in the lists. Counts are
-  grouped by the owner feed, so a cross-feed post is attributed once, to the feed
-  that published it. The hidden system feed (saved pages) is excluded.
+  always-on author allow/block rules apply exactly as in the lists. Source
+  counts are grouped by the feed's primary member author, so a cross-feed post is
+  attributed once. The hidden system feed (saved pages) is excluded.
 - **Period.** `?period=30d|90d|1y|all` (default `90d`, via `statsPeriodOf`).
   Activity series filter on `read_at`; source/tag aggregates filter on item time
   (`COALESCE(published_at, fetched_at)`), so "top sources in the last 30 days"
@@ -902,16 +907,16 @@ stored on `users` (schemaV43), rendered server-side into the topbar and
   per author: `NULL` inherits the account window, `0` is off for that author,
   and a positive value is its own window. It is set on the author edit page's
   card (`POST /authors/{id}/auto-read`, options inherit/3/7/30/60/off) and
-  rendered by `authorAutoReadCard`. Scope is the item's owner author
-  (`items.feed_id -> feeds.author_id`), the same identity author filters use, so
-  a cross-feed post owned by another author keeps that author's window.
+  rendered by `authorAutoReadCard`. Scope is the author's **displayed slice**:
+  member feeds with the author's rules, plus (for a claiming author) claimed
+  items. An aggregator also excludes claimed items.
 - `ItemStore.MarkAutoRead(userID)` is the sweep,
-  `MarkAutoReadForAuthor(userID, authorID)` its single-author form. The query
-  evaluates each item's effective window (author override, else account window)
-  and skips authors whose effective window is 0. It ignores favorite and
-  bookmark state (both are swept) and is user-scoped through `feeds.user_id`.
-  The author join is a `LEFT JOIN` so unassigned feeds (schemaV69) inherit the
-  account window.
+  `MarkAutoReadForAuthor(userID, authorID)` its single-author form. It loops the
+  authors with an effective window > 0 and notes the item's `read` flag, so
+  shared read state means one author's sweep marks the item read everywhere.
+  An item on a feed with member authors is never touched by the account-wide
+  residual pass, so an author with auto-read off is protected. Feeds with no
+  member authors use the account window.
 - `maintenance.Sweeper` runs `MarkAutoRead` at startup and every 24h
   (`maintenance.DefaultInterval`), started in `cmd/server/main.go`. It runs for
   every user, because an author override may be on while the account window is
@@ -928,7 +933,10 @@ with the read window off it still cleans items the user marked read manually.
 
 - `users.auto_delete_after_days` (schemaV70, default 0/off) is the account
   window; `authors.auto_delete_after_days` (nullable: NULL inherits, 0 off)
-  overrides it per author. Options are 7/30/90/180/365/off.
+  overrides it per author. Options are 7/30/90/180/365/off. For a shared item the
+  effective window is the **maximum** across its member authors and claiming
+  authors; any of those with `0` blocks deletion. Feeds with no member authors
+  use the account window.
 - The clock is `items.read_at`, not item time: an item becomes eligible only
   after it has been read for the window. Legacy `read = 1 AND read_at IS NULL`
   rows are never deleted.
@@ -949,8 +957,9 @@ with the read window off it still cleans items the user marked read manually.
   enclosures, categories, list rows and shares.
 - `maintenance.Sweeper` runs the delete pass after the auto-read pass and purges
   the returned blobs through `SetFileStore` (wired in `cmd/server/main.go`).
-  The settings and author save handlers also run it immediately. The query uses
-  `LEFT JOIN authors`, so unassigned feeds inherit the account window.
+  The settings and author save handlers also run it immediately. The eligibility
+  CTE unions member-author and claiming-author windows; there is no
+  `feeds.author_id` join.
 
 ## Bookmarks and favorites
 
@@ -980,7 +989,7 @@ renders, and `sortSet.coerce` maps a sort the scope or tab does not offer onto
 actual order cannot disagree.
 
 - Ranking is hard-tiered and transparent: the manual rank dominates, then the
-  feed's owner-feed favorite count, then item time. `CASE WHEN f.rank > 0 THEN 0
+  feed's favorite count, then item time. `CASE WHEN f.rank > 0 THEN 0
   WHEN f.rank < 0 THEN 2 ELSE 1 END`, then `fav_count DESC`, then
   `COALESCE(published_at, fetched_at) DESC`.
 - `feeds.rank` (schemaV42) is the per-feed manual lever: -1 lowered, 0 neutral,
@@ -997,11 +1006,10 @@ actual order cannot disagree.
 ## Momentum sort
 
 `?sort=momentum` (`ItemFilter.Momentum`) is a second sort for the unread list:
-it groups items into contiguous author blocks, ordered by the author's unread
-count in the same filtered set ascending, then by author name and id (unassigned
-last), and orders inside a block newest first. The point is the clearing flow: authors
-with one or two unread items come first, so a reader clears a small author and
-works up to the heavy ones.
+it groups items into contiguous **feed** blocks, ordered by the feed's unread
+count in the same filtered set ascending, then by feed title and id, and orders
+inside a block newest first. It groups by feed because a shared feed has no
+single owner author.
 
 - It is unread-only and offset-paged like magic. It is offered on the global
   unread page, `/search`'s unread tab, a collection's unread tab, and a pinned
@@ -1009,14 +1017,13 @@ works up to the heavy ones.
   offer it, and a request that arrives with `?sort=momentum` there coerces to
   newest (see `sortSet.coerce` and `unreadSorts`).
 - It always uses the hand-written `listPageTaggedFrom` path (never a generated
-  query), because the backlog is a `COUNT(*) OVER (PARTITION BY f.author_id)`
-  window over the filtered rows. The window is projected away in an outer select
-  so `scanItemList` still sees the fixed row shape. Filters, collection views
-  and the always-on author rules therefore shape the backlog exactly as they
-  shape the list.
-- Attribution is the owner-feed author (`items.feed_id -> feeds.author_id`), the
-  same identity auto-read, stats and author filters use, so a cross-feed post
-  counts once, under its owner.
+  query), because the backlog is a `COUNT(*) OVER (PARTITION BY f.id)` window
+  over the filtered rows. The window is projected away in an outer select so
+  `scanItemList` still sees the fixed row shape. Filters, collection views and
+  the always-on author rules therefore shape the backlog exactly as they shape
+  the list.
+- Attribution prefers a claiming author, then the earliest member author, so a
+  shared feed's post is credited to a real page.
 - Because the backlog is live, marking items read shifts later offsets; the same
   caveat magic has. Mark-page-read reloads the list, so the common flow is
   unaffected. The active sort shows an "authors with the fewest unread first"

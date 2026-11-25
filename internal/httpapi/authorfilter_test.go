@@ -158,7 +158,7 @@ func TestAuthorEditAutoSaveLayout(t *testing.T) {
 		`id="author-filter-card"`,
 		`hx-post="/authors/` + itoa(a.ID) + `/filters"`,
 		`<h2>sources</h2>`,
-		`move this feed and its items to a <button`,
+		`add this feed to <button`,
 		`hx-post="/feeds/` + itoa(f.ID) + `/edit"`,
 		`data-autosave`,
 	} {

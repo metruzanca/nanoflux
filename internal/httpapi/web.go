@@ -157,10 +157,11 @@ type authorRow struct {
 }
 
 type authorForm struct {
-	ID          int64
-	Name        string
-	AvatarURL   string
-	Description string
+	ID           int64
+	Name         string
+	AvatarURL    string
+	Description  string
+	IsAggregator bool
 }
 
 type authorsData struct {
@@ -169,6 +170,10 @@ type authorsData struct {
 	Links      []store.AuthorLink   // edit page: the author's external links, editable
 	Feeds      []feedRow            // edit page: the author's feeds, shown as a UX assist
 	AvatarCard authorAvatarCardData // edit page avatar cache card
+	// FeedChoices/FeedIDs back the author's feed membership picker.
+	FeedChoices []comboItem
+	FeedIDs     []string
+	FeedError   string
 	// Editor is the combined page's feed editor, for the feed named by the
 	// ?feed= query. nil when no feed is selected.
 	Editor *feedsData
@@ -584,14 +589,14 @@ func (s *Server) authorReadAll(w http.ResponseWriter, r *http.Request) {
 	// selected view, so a click marks exactly the items the list shows.
 	filters := s.authorFilters(u.ID, id, filtersFromRequest(r))
 	_, viewID := authorViewState(r)
-	scopeAuthor, scopeViews, ok := s.authorScope(u.ID, id, viewID, u.Timezone)
+	scopeAuthor, scopeViews, unclaimed, ok := s.authorScope(u.ID, id, viewID, u.Timezone)
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 	tagGroups, feedGroups, authorGroups, _ := filters.storeGroups()
 	if _, err := s.store.Items.MarkAllReadFiltered(u.ID, store.ItemFilter{
-		AuthorID: scopeAuthor, Views: scopeViews,
+		AuthorID: scopeAuthor, Views: scopeViews, UnclaimedOnly: unclaimed,
 		TagGroups: tagGroups, FeedGroups: feedGroups, AuthorGroups: authorGroups,
 		TimeGroups: filters.timeGroups(u.Timezone),
 	}); err != nil {
@@ -1221,16 +1226,18 @@ func (s *Server) markRangeRead(w http.ResponseWriter, r *http.Request, newer boo
 	}
 	currentURL := r.Header.Get("HX-Current-URL")
 	authorScoped := isAuthorPageURL(currentURL)
+	authorID := int64(0)
 	feedID := int64(0)
 	if authorScoped {
+		authorID = authorPageID(currentURL)
 		feedID = feedFilterID(currentURL)
 	}
 	var derr error
 	switch {
 	case authorScoped && feedID == 0 && newer:
-		derr = s.store.Items.MarkAuthorNewerRead(u.ID, id)
+		derr = s.store.Items.MarkAuthorNewerRead(u.ID, authorID, id)
 	case authorScoped && feedID == 0:
-		derr = s.store.Items.MarkAuthorOlderRead(u.ID, id)
+		derr = s.store.Items.MarkAuthorOlderRead(u.ID, authorID, id)
 	case newer:
 		derr = s.store.Items.MarkNewerRead(u.ID, feedID, id)
 	default:
@@ -1261,6 +1268,23 @@ func isAuthorPageURL(rawurl string) bool {
 	}
 	_, err = strconv.ParseInt(parts[1], 10, 64)
 	return err == nil
+}
+
+// authorPageID parses the author id from an /authors/{id} page URL, or 0.
+func authorPageID(rawurl string) int64 {
+	if rawurl == "" {
+		return 0
+	}
+	u, err := url.Parse(rawurl)
+	if err != nil {
+		return 0
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) != 2 || parts[0] != "authors" {
+		return 0
+	}
+	id, _ := strconv.ParseInt(parts[1], 10, 64)
+	return id
 }
 
 // feedFilterID parses a single-feed filter (?feed=) out of a page URL, or 0
@@ -1389,10 +1413,6 @@ func (s *Server) feedCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-feed-error", errMsg)
 		return
 	}
-	if feedURL := normalizeURL(r.FormValue("feed_url")); s.feedURLExists(u.ID, feedURL) {
-		s.writeDuplicateFeedError(w, r, "add-feed-error", u.ID, feedURL)
-		return
-	}
 	var authorID int64
 	var isNew bool
 	var errMsg string
@@ -1456,17 +1476,15 @@ func (s *Server) authorFeedCreate(w http.ResponseWriter, r *http.Request) {
 		writeFormError(w, r, "add-feed-error", errMsg)
 		return
 	}
-	if feedURL := normalizeURL(r.FormValue("feed_url")); s.feedURLExists(u.ID, feedURL) {
-		s.writeDuplicateFeedError(w, r, "add-feed-error", u.ID, feedURL)
-		return
-	}
 	f, errMsg := s.createFeed(r, u.ID, authorID)
 	if errMsg != "" {
 		writeFormError(w, r, "add-feed-error", errMsg)
 		return
 	}
-	unread, _ := s.store.Items.CountUnread(u.ID, f.ID)
-	web.Render(w, r, FeedRow(s.feedRowFor(u.ID, f, author.Name, u.Timezone, unread)))
+	f.AuthorID = authorID
+	views := s.authorStoreViewFilters(u.ID, authorID, u.Timezone)
+	unreadByFeed, _ := s.store.Items.UnreadCountsByFeedScope(u.ID, authorID, views, author.IsAggregator)
+	web.Render(w, r, FeedRow(s.feedRowFor(u.ID, f, author.Name, u.Timezone, unreadByFeed[f.ID])))
 }
 
 // validateFeedFields checks the required title and feed url fields of the add
@@ -1492,6 +1510,26 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 	if title == "" || feedURL == "" {
 		return store.Feed{}, "title and feed url are required"
 	}
+	// A URL already in the library is the same subscription: attach the selected
+	// author to it instead of creating a duplicate feed and item set.
+	if existing, ok := s.store.Feeds.FindByURL(userID, feedURL); ok {
+		if authorID != 0 {
+			if err := s.store.Feeds.AddAuthor(userID, existing.ID, authorID); err != nil {
+				log.Error("attach existing feed", "feed_id", existing.ID, "author_id", authorID, "err", err)
+				return store.Feed{}, "could not attach this feed"
+			}
+			if _, err := s.store.Claims.RebuildAuthor(userID, authorID); err != nil {
+				log.Error("rebuild claims after feed attach", "author_id", authorID, "err", err)
+			}
+			for _, cid := range r.Form["collections"] {
+				if n, err := strconv.ParseInt(cid, 10, 64); err == nil {
+					s.store.Collections.AddAuthor(userID, n, authorID)
+				}
+			}
+		}
+		s.pollFeedNow()
+		return existing, ""
+	}
 	f, err := s.store.Feeds.CreateWithPlugin(userID, authorID, title, feedURL, homeURL, "",
 		s.pluginNameFor(feedURL), interval)
 	if err != nil {
@@ -1501,6 +1539,11 @@ func (s *Server) createFeed(r *http.Request, userID, authorID int64) (store.Feed
 	// A plugin whose images expire forces caching on; the user cannot disable it
 	// later. A feed with no forcing plugin starts with caching off (the user may
 	// enable it from the feed's edit page).
+	if authorID != 0 {
+		if _, err := s.store.Claims.RebuildAuthor(userID, authorID); err != nil {
+			log.Error("rebuild claims after feed create", "author_id", authorID, "err", err)
+		}
+	}
 	if s.imageCacheForced(feedURL) {
 		if err := s.store.Feeds.SetCacheImages(userID, f.ID, true); err != nil {
 			log.Error("force feed image cache", "feed_id", f.ID, "err", err)
@@ -1757,9 +1800,8 @@ func (s *Server) applyFeedForm(u store.User, old store.Feed, form url.Values) (b
 	// below it, so editing a feed cannot undercut its pacing.
 	interval = s.clampPollIntervalSec(feedURL, interval)
 	homeURL := form.Get("home_url")
-	// Editing happens on the feed's author's page, so the feed keeps its author.
 	cacheImages := form.Get("cache_images") == "1" || s.imageCacheForced(feedURL)
-	if err := s.store.Feeds.Update(u.ID, id, old.AuthorID, title, feedURL,
+	if err := s.store.Feeds.Update(u.ID, id, title, feedURL,
 		homeURL, "", interval, auto, form.Get("enabled") == "1", cacheImages); err != nil {
 		return false, err
 	}
@@ -2194,7 +2236,11 @@ func (s *Server) computeAuthorUnread(userID int64, viewFilters map[int64][]store
 	}
 	scopes := make([]store.AuthorScope, 0, len(viewFilters))
 	for authorID, views := range viewFilters {
-		scopes = append(scopes, store.AuthorScope{AuthorID: authorID, Views: views})
+		unclaimed := false
+		if a, err := s.store.Authors.ByID(userID, authorID); err == nil {
+			unclaimed = a.IsAggregator
+		}
+		scopes = append(scopes, store.AuthorScope{AuthorID: authorID, Views: views, UnclaimedOnly: unclaimed})
 	}
 	if scoped, err := s.store.Items.UnreadCountsByAuthorScope(userID, scopes); err == nil {
 		for authorID, n := range scoped {
@@ -2234,6 +2280,11 @@ func (s *Server) authorCreate(w http.ResponseWriter, r *http.Request) {
 		log.Error("create author", "err", err)
 		writeFormError(w, r, "add-author-error", "could not create author")
 		return
+	}
+	if r.FormValue("is_aggregator") == "1" {
+		if err := s.store.Authors.SetAggregator(u.ID, a.ID, true); err != nil {
+			log.Error("set new author aggregator", "author_id", a.ID, "err", err)
+		}
 	}
 	s.reconcileAuthorLinks(u.ID, a.ID, r)
 	if a.AvatarURL != "" {
@@ -2548,14 +2599,23 @@ func (s *Server) authorScopedItems(userID, authorID int64, view string, sort ite
 	// collections), so a momentum/magic request here falls back to newest.
 	sorts := sortsTime
 	sort = sorts.coerce(sort)
-	scopeAuthor, scopeViews, ok := s.authorScope(userID, authorID, viewID, tz)
+	scopeAuthor, scopeViews, unclaimed, ok := s.authorScope(userID, authorID, viewID, tz)
 	if !ok {
 		return scopedItemsData{}, false
 	}
 	pageFilter := scopedFilter(view, sort, 0, scopeAuthor, 0, filters, tz)
 	pageFilter.Views = scopeViews
+	pageFilter.UnclaimedOnly = unclaimed
 	items, more, _ := s.store.Items.ListPage(userID, pageFilter)
-	tagScope := store.ItemFilter{AuthorID: scopeAuthor, Views: scopeViews}
+	// The card names the page author, not the feed's earliest member author or a
+	// claiming author from another stream.
+	if a, err := s.store.Authors.ByID(userID, authorID); err == nil {
+		for i := range items {
+			items[i].AuthorID = authorID
+			items[i].AuthorName = a.Name
+		}
+	}
+	tagScope := store.ItemFilter{AuthorID: scopeAuthor, Views: scopeViews, UnclaimedOnly: unclaimed}
 	// The common page (no transient filters, no selected view) can take its tab
 	// counts from the same aggregate the stats card needs. Everything else runs
 	// one combined tab count instead of three separate ones.
@@ -2679,15 +2739,19 @@ func (s *Server) searchItems(w http.ResponseWriter, r *http.Request) {
 
 // authorScope resolves the store scope for an author page: the author's feeds
 // plus all usable views, or just one selected view.
-func (s *Server) authorScope(userID, authorID, viewID int64, tz string) (scopeAuthor int64, views []store.ViewFilter, ok bool) {
+func (s *Server) authorScope(userID, authorID, viewID int64, tz string) (scopeAuthor int64, views []store.ViewFilter, unclaimed bool, ok bool) {
+	a, err := s.store.Authors.ByID(userID, authorID)
+	if err != nil {
+		return 0, nil, false, false
+	}
 	if viewID > 0 {
 		vf, found := s.authorStoreViewFilter(userID, authorID, viewID, tz)
 		if !found {
-			return 0, nil, false
+			return 0, nil, false, false
 		}
-		return 0, []store.ViewFilter{vf}, true
+		return 0, []store.ViewFilter{vf}, a.IsAggregator, true
 	}
-	return authorID, s.authorStoreViewFilters(userID, authorID, tz), true
+	return authorID, s.authorStoreViewFilters(userID, authorID, tz), a.IsAggregator, true
 }
 
 // authorFeedOptions maps the feeds offered by the author filter modal. When the
@@ -2719,7 +2783,7 @@ func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 	view, viewID := authorViewState(r)
 	sort := sortsTime.coerce(itemSortOf(r))
 	filters := s.authorFilters(u.ID, id, filtersFromRequest(r))
-	scopeAuthor, scopeViews, ok := s.authorScope(u.ID, id, viewID, u.Timezone)
+	scopeAuthor, scopeViews, unclaimed, ok := s.authorScope(u.ID, id, viewID, u.Timezone)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -2727,10 +2791,17 @@ func (s *Server) authorItems(w http.ResponseWriter, r *http.Request) {
 	if cursor := cursorID(r, sort); cursor > 0 {
 		f := scopedFilter(view, sort, cursor, scopeAuthor, 0, filters, u.Timezone)
 		f.Views = scopeViews
+		f.UnclaimedOnly = unclaimed
 		items, more, err := s.store.Items.ListPage(u.ID, f)
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
+		}
+		if a, err := s.store.Authors.ByID(u.ID, id); err == nil {
+			for i := range items {
+				items[i].AuthorID = id
+				items[i].AuthorName = a.Name
+			}
 		}
 		base := filters.appendFilters(scopedViewQueryFor("/authors/"+strconv.FormatInt(id, 10)+"/items", view, viewID) + "&sort=" + sort.param())
 		web.Render(w, r, ItemsPage(withTZ(u.Timezone, dedupItems(items)), pageCursorFor(base, items, more, sort, int(cursor)), true, view == "unread"))
@@ -2754,8 +2825,8 @@ func (s *Server) feedRowFor(userID int64, f store.Feed, authorName, tz string, u
 	}
 }
 
-// authorFeedURL is the author page scoped to a single feed, the replacement for
-// the removed /feeds/{id} page. It returns "" when the author is unknown.
+// authorFeedURL is the author page scoped to a single feed. It returns "" when
+// the author is unknown, so callers fall back to /feeds/{id}.
 func authorFeedURL(authorID, feedID int64) string {
 	if authorID == 0 {
 		return ""
@@ -2800,7 +2871,8 @@ func (s *Server) feedRowsForAuthor(userID, authorID int64, tz string) ([]feedRow
 	// cross-feed post owned by another author must not leak into the badge. One
 	// grouped query covers every feed, instead of a count per card.
 	views := s.authorStoreViewFilters(userID, authorID, tz)
-	unreadByFeed, _ := s.store.Items.UnreadCountsByFeedScope(userID, authorID, views)
+	a, _ := s.store.Authors.ByID(userID, authorID)
+	unreadByFeed, _ := s.store.Items.UnreadCountsByFeedScope(userID, authorID, views, a.IsAggregator)
 	out := make([]feedRow, 0, len(rows))
 	for _, r := range rows {
 		storage, _ := s.store.Items.StorageByFeed(r.Feed.ID)
@@ -2829,7 +2901,7 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 	views := s.savedViewsForAuthor(u.ID, a.ID, u.Timezone)
 	var editor *feedsData
 	if fid, err := strconv.ParseInt(r.URL.Query().Get("feed"), 10, 64); err == nil && fid != 0 {
-		if f, err := s.store.Feeds.ByID(u.ID, fid); err == nil && f.AuthorID == a.ID {
+		if f, err := s.store.Feeds.ByID(u.ID, fid); err == nil && s.store.Feeds.IsAuthorOfFeed(u.ID, f.ID, a.ID) {
 			editor = s.feedEditorData(u, f)
 		}
 	}
@@ -2844,15 +2916,25 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 	ruleFilters := s.authorRulesToFilters(u.ID, a.ID, rules)
 	tagGroups, feedGroups, authorGroups, _ := ruleFilters.storeGroups()
 	preview, _ := s.store.Items.PreviewAuthorFilters(u.ID, a.ID, tagGroups, feedGroups, authorGroups, 5)
-	cats, _ := s.store.Items.ListCategories(u.ID, store.ItemFilter{AuthorID: a.ID})
+	viewsForTags := s.authorStoreViewFilters(u.ID, a.ID, u.Timezone)
+	cats, _ := s.store.Items.ListCategoriesFilter(u.ID, store.ItemFilter{AuthorID: a.ID, Views: viewsForTags, UnclaimedOnly: a.IsAggregator})
 	feedOpts := make([]comboItem, 0, len(feeds))
 	for _, f := range feeds {
 		feedOpts = append(feedOpts, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
 	}
 	allCollections, _ := s.store.Collections.List(u.ID)
 	collectionIDs, _ := s.store.Collections.CollectionIDsForAuthor(u.ID, a.ID)
+	allFeeds, _ := s.store.Feeds.ListWithUnread(u.ID)
+	feedChoices := make([]comboItem, 0, len(allFeeds))
+	for _, f := range allFeeds {
+		feedChoices = append(feedChoices, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
+	}
+	feedIDs := make([]string, 0, len(feeds))
+	for _, f := range feeds {
+		feedIDs = append(feedIDs, strconv.FormatInt(f.ID, 10))
+	}
 	web.Render(w, r, basePage("edit "+a.Name, u, authorEditPage(u, authorsData{
-		Form:                authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
+		Form:                authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description, IsAggregator: a.IsAggregator},
 		Links:               links,
 		Feeds:               feeds,
 		AvatarCard:          s.authorAvatarCardData(a, u.Timezone, ""),
@@ -2871,6 +2953,8 @@ func (s *Server) authorEdit(w http.ResponseWriter, r *http.Request) {
 		Collections:         allCollections,
 		CollectionIDs:       collectionIDs,
 		CollectionOptions:   nonAutoCollections(allCollections),
+		FeedChoices:         feedChoices,
+		FeedIDs:             feedIDs,
 	})))
 }
 
@@ -2906,6 +2990,7 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		// row changes so neither an orphaned object nor a stale key survives.
 		s.clearAuthorAvatar(r.Context(), old)
 	}
+	aggregator := r.FormValue("is_aggregator") == "1"
 	if err := s.store.Authors.Update(u.ID, id, name, avatarURL, r.FormValue("description")); err != nil {
 		log.Error("update author", "err", err)
 		if r.Header.Get("HX-Request") != "" {
@@ -2915,6 +3000,13 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
+	}
+	if aggregator != old.IsAggregator {
+		if err := s.store.Authors.SetAggregator(u.ID, id, aggregator); err != nil {
+			log.Error("set author aggregator", "author_id", id, "err", err)
+		} else if _, err := s.store.Claims.RebuildAuthor(u.ID, id); err != nil {
+			log.Error("rebuild author claims", "author_id", id, "err", err)
+		}
 	}
 	s.reconcileAuthorLinks(u.ID, id, r)
 	if avatarURL != "" {
@@ -2937,12 +3029,79 @@ func (s *Server) authorUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/authors/"+strconv.FormatInt(id, 10), http.StatusFound)
 }
 
+// authorFeedsUpdate replaces the feeds an author selects. It reloads the edit
+// page so the sources accordion reflects added and removed feeds immediately.
+func (s *Server) authorFeedsUpdate(w http.ResponseWriter, r *http.Request) {
+	u, _ := auth.UserFrom(r)
+	id, err := parseID(r)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.store.Authors.ByID(u.ID, id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	var feedIDs []int64
+	for _, raw := range r.Form["author_feed_ids"] {
+		if v, err := strconv.ParseInt(raw, 10, 64); err == nil && v > 0 {
+			feedIDs = append(feedIDs, v)
+		}
+	}
+	if err := s.store.Feeds.SetAuthorFeeds(u.ID, id, feedIDs); err != nil {
+		log.Error("set author feeds", "author_id", id, "err", err)
+		if r.Header.Get("HX-Request") != "" {
+			a, aerr := s.store.Authors.ByID(u.ID, id)
+			if aerr != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.WriteHeader(http.StatusBadRequest)
+			web.Render(w, r, authorFeedsCard(s.authorFeedsCardData(u, a, "could not save these feeds")))
+			return
+		}
+		http.Error(w, "could not save feeds", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.store.Claims.RebuildAuthor(u.ID, id); err != nil {
+		log.Error("rebuild author claims", "author_id", id, "err", err)
+	}
+	if r.Header.Get("HX-Request") != "" {
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, "/authors/"+strconv.FormatInt(id, 10)+"/edit", http.StatusFound)
+}
+
+// authorFeedsCardData rebuilds the feed membership card for an error response.
+func (s *Server) authorFeedsCardData(u store.User, a store.Author, errMsg string) authorsData {
+	feeds, _ := s.store.Feeds.ListByAuthor(u.ID, a.ID)
+	allFeeds, _ := s.store.Feeds.ListWithUnread(u.ID)
+	choices := make([]comboItem, 0, len(allFeeds))
+	for _, f := range allFeeds {
+		choices = append(choices, comboItem{Value: strconv.FormatInt(f.ID, 10), Label: f.Title})
+	}
+	ids := make([]string, 0, len(feeds))
+	for _, f := range feeds {
+		ids = append(ids, strconv.FormatInt(f.ID, 10))
+	}
+	return authorsData{
+		Form:        authorForm{ID: a.ID, Name: a.Name, IsAggregator: a.IsAggregator},
+		FeedChoices: choices, FeedIDs: ids, FeedError: errMsg,
+	}
+}
+
 // authorBasicsData assembles just the top author card: its fields, links and
 // cached-avatar state, with an optional validation error.
 func (s *Server) authorBasicsData(u store.User, a store.Author, formErr string) authorsData {
 	links, _ := s.store.AuthorLinks.ListByAuthor(u.ID, a.ID)
 	return authorsData{
-		Form:       authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description},
+		Form:       authorForm{ID: a.ID, Name: a.Name, AvatarURL: a.AvatarURL, Description: a.Description, IsAggregator: a.IsAggregator},
 		Links:      links,
 		AvatarCard: s.authorAvatarCardData(a, u.Timezone, ""),
 		FormError:  formErr,
@@ -3046,7 +3205,8 @@ func (s *Server) authorFilterData(u store.User, a store.Author, errMsg string) a
 	ruleFilters := s.authorRulesToFilters(u.ID, a.ID, rules)
 	tagGroups, feedGroups, authorGroups, _ := ruleFilters.storeGroups()
 	preview, _ := s.store.Items.PreviewAuthorFilters(u.ID, a.ID, tagGroups, feedGroups, authorGroups, 5)
-	cats, _ := s.store.Items.ListCategories(u.ID, store.ItemFilter{AuthorID: a.ID})
+	viewsForTags := s.authorStoreViewFilters(u.ID, a.ID, u.Timezone)
+	cats, _ := s.store.Items.ListCategoriesFilter(u.ID, store.ItemFilter{AuthorID: a.ID, Views: viewsForTags, UnclaimedOnly: a.IsAggregator})
 	feeds, _ := s.store.Feeds.ListByAuthor(u.ID, a.ID)
 	feedOpts := make([]comboItem, 0, len(feeds))
 	for _, f := range feeds {
@@ -3183,6 +3343,9 @@ func (s *Server) authorFiltersUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
+	}
+	if _, err := s.store.Claims.RebuildAuthor(u.ID, id); err != nil {
+		log.Error("rebuild claims after filter save", "author_id", id, "err", err)
 	}
 	if r.Header.Get("HX-Request") != "" {
 		web.Render(w, r, authorFilterCard(s.authorFilterData(u, a, "")))
@@ -3800,21 +3963,6 @@ func normalizeAuthorView(v string) string {
 func writeFormError(w http.ResponseWriter, r *http.Request, target, msg string) {
 	w.WriteHeader(http.StatusBadRequest)
 	web.Render(w, r, FormErrorOOB(target, msg))
-}
-
-// writeDuplicateFeedError responds with the add-feed duplicate warning plus a
-// link to the feed the user already subscribes to (its author page, scoped to
-// the feed), since there is no standalone feed page.
-func (s *Server) writeDuplicateFeedError(w http.ResponseWriter, r *http.Request, target string, userID int64, feedURL string) {
-	const msg = "you already have this feed."
-	ref := s.savedFeedRefFor(userID, feedURL)
-	if ref.FeedID == 0 {
-		writeFormError(w, r, target, msg)
-		return
-	}
-	href := "/authors/" + strconv.FormatInt(ref.AuthorID, 10) + "?feed=" + strconv.FormatInt(ref.FeedID, 10)
-	w.WriteHeader(http.StatusBadRequest)
-	web.Render(w, r, FormErrorOOBLink(target, msg, href, "open it"))
 }
 
 // renderError responds to an htmx request whose target is the preview

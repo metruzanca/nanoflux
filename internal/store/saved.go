@@ -55,13 +55,8 @@ func (s *Store) EnsureSystemFeed(userID int64) (Feed, error) {
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Feed{}, err
 	}
-	a, err := s.EnsureSystemAuthor(userID)
-	if err != nil {
-		return Feed{}, err
-	}
 	f, err = s.q.CreateSystemFeed(context.Background(), sqlcgen.CreateSystemFeedParams{
 		UserID:      userID,
-		AuthorID:    a.ID,
 		Title:       systemFeedTitle,
 		FeedUrl:     systemFeedURL,
 		Description: ns("holds pages saved from the browser extension"),

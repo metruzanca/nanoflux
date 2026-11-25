@@ -308,6 +308,9 @@ func (s *Server) savedViewCreate(w http.ResponseWriter, r *http.Request) {
 		s.renderSavedViewForm(w, r, u, form, http.StatusInternalServerError)
 		return
 	}
+	if _, err := s.store.Claims.RebuildAuthor(u.ID, created.AuthorID); err != nil {
+		log.Error("rebuild claims after view create", "author_id", created.AuthorID, "err", err)
+	}
 	http.Redirect(w, r, savedViewAuthorURL(created.AuthorID, created.ID), http.StatusSeeOther)
 }
 
@@ -371,6 +374,14 @@ func (s *Server) savedViewUpdate(w http.ResponseWriter, r *http.Request) {
 		form.Error = "could not save this view"
 		s.renderViewPanel(w, r, u, id, form, http.StatusBadRequest)
 		return
+	}
+	for _, authorID := range []int64{old.AuthorID, form.AuthorID} {
+		if authorID == 0 {
+			continue
+		}
+		if _, err := s.store.Claims.RebuildAuthor(u.ID, authorID); err != nil {
+			log.Error("rebuild claims after view update", "author_id", authorID, "err", err)
+		}
 	}
 	// Changing the assigned author moves the view to that author's page. Send
 	// the browser there instead of re-rendering a panel that no longer belongs
@@ -475,6 +486,9 @@ func (s *Server) savedViewDelete(w http.ResponseWriter, r *http.Request) {
 		log.Error("delete saved view", "id", id, "err", err)
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		return
+	}
+	if _, err := s.store.Claims.RebuildAuthor(u.ID, v.AuthorID); err != nil {
+		log.Error("rebuild claims after view delete", "author_id", v.AuthorID, "err", err)
 	}
 	http.Redirect(w, r, "/authors/"+strconv.FormatInt(v.AuthorID, 10)+"/edit", http.StatusSeeOther)
 }
